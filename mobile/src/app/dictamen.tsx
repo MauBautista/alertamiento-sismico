@@ -12,6 +12,11 @@ import { DictamenCertificate } from "@/features/dictamen/DictamenCertificate";
 import { certificateView } from "@/features/dictamen/dictamenView";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
+import { useStaleSince } from "@/ui/useStaleSince";
+
+/** Cuánto se sigue afirmando que este dictamen es el vigente. Sin poll del que
+ *  derivarlo: la cadena puede recibir una versión nueva en cualquier momento. */
+const DICTAMEN_STALE_MS = 60_000;
 
 export default function Dictamen() {
   const siteId = useWatchedSiteId();
@@ -31,6 +36,13 @@ export default function Dictamen() {
       return res.data;
     },
   });
+  // [T-5.21] Del RELOJ, y no de `failureCount`. Esta pantalla NO hace poll —
+  // un dictamen firmado no cambia—, pero **puede ser sustituido**: la cadena
+  // admite una versión nueva en cualquier momento, y este documento es el que
+  // dice si el edificio se ocupa. Pasado el minuto se deja de afirmar que es
+  // el vigente. El umbral va escrito porque aquí no hay intervalo del que
+  // derivarlo, y un umbral inventado sin decirlo es lo que esta ficha corrige.
+  const dictamenStaleSinceMs = useStaleSince(dictamen.dataUpdatedAt, DICTAMEN_STALE_MS / 3);
 
   const [downloading, setDownloading] = useState(false);
   const [cached, setCached] = useState(false);
@@ -91,9 +103,7 @@ export default function Dictamen() {
       }
       error={dictamen.isError && !dictamen.data ? "No se pudo cargar el dictamen." : null}
       loading={dictamen.isLoading && incidentId !== null}
-      staleSinceMs={
-        dictamen.data != null && dictamen.failureCount > 0 ? dictamen.dataUpdatedAt : null
-      }
+      staleSinceMs={dictamenStaleSinceMs}
     >
       {cert ? (
         <DictamenCertificate

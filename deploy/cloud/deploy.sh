@@ -12,6 +12,22 @@
 #    a tmpfs, en el arranque. Aquí no viaja ni una contraseña (regla de oro 6).
 set -euo pipefail
 
+# [T-2.171] La regla A-1 (README §0), en codigo y no en una checklist. El 27-ago
+# esa checklist fallo y el despliegue salio de una rama de trabajo: la nube corrio
+# un build sin la migracion que lo acompanaba, y todos los gates dieron verde
+# porque cada uno comprobaba el commit EQUIVOCADO contra si mismo.
+# Escotilla: `--desde-esta-rama` (o `TAKAB_DEPLOY_RAMA_LIBRE=1 make cloud-deploy`).
+_AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../lib/guardas.sh
+. "${_AQUI}/../lib/guardas.sh"
+for _arg in "$@"; do
+  case "$_arg" in
+  --desde-esta-rama) export TAKAB_DEPLOY_RAMA_LIBRE=1 ;;
+  *) echo "ERROR: argumento desconocido: $_arg" >&2; exit 1 ;;
+  esac
+done
+guarda_de_rama "cloud"
+
 : "${AWS_PROFILE:?}" "${AWS_REGION:?}" "${TF_DEV:?}" "${CLOUD_TAG:?}"
 
 tf() { terraform -chdir="$TF_DEV" output -raw "$1"; }
@@ -79,6 +95,17 @@ TAKAB_API_AUTH_OCCUPANTS_JWKS_URL=$(tf occupants_issuer)/.well-known/jwks.json
 TAKAB_API_QUEUE_URL_EVENTS=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["events"])')
 TAKAB_API_QUEUE_URL_TELEMETRY=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["telemetry"])')
 TAKAB_API_QUEUE_URL_BACKFILL=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["backfill"])')
+# [T-3.12.b] La cola del analisis de CCTV. Se resuelve con get(clave, vacio) y no con
+# indexacion directa, y no es pereza: hasta que el apply del Lambda entre en TODOS los
+# entornos esa clave puede no existir, y un KeyError aqui tumbaria el despliegue ENTERO de
+# la nube por una funcion opcional. Vacia significa no encolar, y el worker lo dice en su
+# log en vez de fallar.
+#
+# SIN COMILLAS INVERTIDAS, por lo mismo que avisa el bloque de arriba: esto vive dentro
+# del heredoc sin comillas de la linea 33 y el despliegue EJECUTARIA lo que hubiera entre
+# ellas. Lo caza test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar — y me
+# lo acaba de cazar.
+TAKAB_API_CCTV_QUEUE_URL=$(terraform -chdir="$TF_DEV" output -json queue_urls | python3 -c 'import json,sys;print(json.load(sys.stdin).get("cctv",""))')
 # GAP-1 (T-1.38): los consumidores EXIGEN las URLs de DLQ al arrancar (SystemExit).
 TAKAB_API_DLQ_URL_EVENTS=$(terraform -chdir="$TF_DEV" output -json dlq_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["events"])')
 TAKAB_API_DLQ_URL_TELEMETRY=$(terraform -chdir="$TF_DEV" output -json dlq_urls | python3 -c 'import json,sys;print(json.load(sys.stdin)["telemetry"])')

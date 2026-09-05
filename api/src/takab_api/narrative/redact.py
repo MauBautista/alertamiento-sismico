@@ -6,9 +6,26 @@ polaridad contraria: un campo nuevo saldría solo, y el día que ese campo fuera
 del inmueble o la nota de un ocupante ya sería tarde.
 
 **Nunca salen**: ``site_name``, dirección, coordenadas del sitio o del epicentro,
-``user_sub``, ``signed_by``, notas de ocupantes, ``tenant_id``, ``incident_id``,
-``s3_key`` ni hashes de evidencia. Los reportes de daño entrarían solo como conteo por
-categoría.
+``user_sub``, ``signed_by``, notas de ocupantes, ``tenant_id``, ``s3_key`` ni hashes de
+evidencia. Los reportes de daño entrarían solo como conteo por categoría.
+
+**El FOLIO sí sale, entero, y hay que decirlo** (T-5.27). Esta lista afirmaba que el
+``incident_id`` nunca salía, y era falso a medias: el folio lo lleva dentro. Un folio es
+``TKB-<código de sitio>-<fecha>-<8 hex del incident_id>-<E|T>``, o sea que por él viajan
+**el código del sitio** y un **prefijo del identificador del incidente**.
+
+Se decidió DEJARLO, no recortarlo, por dos razones. (1) El folio es el nombre público
+del documento —``folio_of`` lo dice: «se imprime y se cita por teléfono»— y la prosa
+tiene que poder nombrar el dictamen que describe; un folio recortado en el texto sería
+un folio que no existe, y el que lo teclee no encontrará nada. (2) Lo que viaja no es un
+dato personal: es un identificador de documento, estable y correlacionable entre
+dictámenes del mismo incidente, que es justo para lo que se diseñó.
+
+Lo que NO sale por ninguna vía es el ``incident_id`` **completo**, ni el ``event_id``
+(ver ``_BASIS_EVIDENCE_KEYS``): con 8 hex se puede correlacionar dos documentos, no
+reconstruir el identificador ni cruzarlo con otra tabla. La diferencia entre las dos
+cosas la fija ``tests/narrative/test_redact.py``, que ya no borra el folio antes de
+mirar.
 """
 
 from __future__ import annotations

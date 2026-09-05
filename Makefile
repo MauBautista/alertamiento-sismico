@@ -1,12 +1,14 @@
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
-        cloud-images cloud-deploy cloud-allow-my-ip restore-drill \
+        objetos \
+        cloud-images cloud-deploy cloud-apply cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
 
 API_DIR := api
 WEB_DIR := web
 EDGE_DIR := edge
+ANALYZER_DIR := analyzer
 MOBILE_DIR := mobile
 LANDING_DIR := landing
 SDK_DIR := shared/sdk-ts
@@ -36,6 +38,12 @@ install:
 
 db:
 	docker compose up -d db
+
+# [T-5.29] Almacén de objetos local. La escena C4 de la demo genera el reporte
+# del simulacro —evidencia con sha256— y `put_object` necesita un bucket; el
+# servicio `minio-init` lo crea y termina.
+objetos:
+	docker compose up -d minio minio-init
 
 api:
 	cd $(API_DIR) && uvicorn takab_api.main:app --reload --host 0.0.0.0 --port 8000
@@ -79,7 +87,7 @@ test-db: db
 	  "select 1 from pg_database where datname='takab_test'" | grep -q 1 \
 	  || docker compose exec -T db createdb -U takab takab_test
 
-demo-db: db
+demo-db: db objetos
 	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
 	cd $(API_DIR) && DATABASE_URL="$(DEMO_DSN)" uv run python -m alembic upgrade head
 	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/prod_fleet.sql
@@ -165,6 +173,7 @@ lint:
 	cd $(API_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(WEB_DIR) && npm run lint && npm run format:check && npm run typecheck
 	cd $(EDGE_DIR) && uv run ruff check . && uv run ruff format --check .
+	cd $(ANALYZER_DIR) && uv run ruff check . && uv run ruff format --check .
 	cd $(MOBILE_DIR) && npm run lint && npm run typecheck
 	cd $(LANDING_DIR) && npm run lint && npm run format:check && npm run typecheck
 	terraform fmt -check -recursive infra/terraform
@@ -179,6 +188,7 @@ test: test-db
 	cd $(API_DIR) && DATABASE_URL="$(TEST_DSN)" uv run pytest -q ../demo/tests
 	cd $(WEB_DIR) && npm run test -- --run
 	cd $(EDGE_DIR) && GPIOZERO_PIN_FACTORY=mock uv run pytest -q -rs
+	cd $(ANALYZER_DIR) && uv run pytest -q -rs
 	cd $(MOBILE_DIR) && npm test
 	cd $(LANDING_DIR) && npm run test
 	cd $(TF_OBSERVABILITY) && terraform init -backend=false -input=false >/dev/null && terraform test
@@ -188,6 +198,11 @@ test: test-db
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 	bash infra/scripts/tests/test_secret_scan.sh
+	# [T-5.22] El recolector del acta del reflejo. Un procedimiento que se ejecuta
+	# una vez cada varios meses no puede descubrirse roto delante del gabinete: el
+	# que sustituye lo estaba en sus tres pasos.
+	bash edge/tests/test_acta_reflejo_script.sh
+	./ci/check-licenses.sh
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo
 # commiteado. Los dos primeros solo vivían en CI; el de design-tokens no lo
@@ -199,6 +214,13 @@ drift:
 	git diff --exit-code $(SDK_DIR)/src/gen
 	cd $(SDK_DIR) && npm run check
 	cd $(TOKENS_DIR) && npm run check
+	# [T-5.28] La matriz RBAC que consumen los tests de web. Era una tabla escrita
+	# a mano que se declaraba espejo de `auth/matrix.py` y divergió en 13 celdas;
+	# ahora se genera, y aquí es donde se caza que alguien mueva la matriz sin
+	# regenerarla. `api/tests/auth/test_rbac_fixture_es_la_matriz.py` lo ata además
+	# por igualdad, celda a celda.
+	cd $(API_DIR) && uv run python scripts/export_rbac_matrix.py
+	git diff --exit-code shared/fixtures/rbac-matrix.json
 
 # El bundler, en su propio target: `test` ya levanta Docker, corre terraform y 4
 # suites; meterle vite lo convertiría en otra cosa. Aquí vive el `vite build` que
@@ -295,6 +317,31 @@ cloud-deploy:
 	@CLOUD_TAG=$(CLOUD_TAG) AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
 		TF_DEV=$(TF_DEV) bash deploy/cloud/deploy.sh
 
+# [T-2.171] `terraform apply` con las mismas guardas que un despliegue, porque es
+# un despliegue: cambia infraestructura viva. Es el que menos se deja guardar
+# —se teclea a mano, sin script de por medio— y por eso existe este target.
+#
+# Las DOS guardas salen de fallos medidos el 2026-08-27:
+#
+#   · A-1 (rama): un apply desde una rama de trabajo NO aplico el topic ni la
+#     regla IoT que venia a aplicar, y no fallo — «sin cambios» es la respuesta
+#     correcta cuando el codigo no trae el cambio.
+#
+#   · `local.auto.tfvars`: esta en .gitignore, asi que un arbol donde no exista
+#     —un worktree recien creado, por ejemplo— hace que TODO lo que va con
+#     `count` evalue a cero. Aquel dia el plan proponia DESTRUIR los tres
+#     registros DKIM, DMARC, MAIL FROM y la consola. Lo caza un `plan` que
+#     alguien mire, y eso no es una guardia: es suerte. Aqui se niega antes.
+cloud-apply:
+	@test -f $(TF_DEV)/local.auto.tfvars || { \
+		echo "ERROR: falta $(TF_DEV)/local.auto.tfvars (esta en .gitignore)."; \
+		echo "  Sin el, todo lo que lleva 'count' evalua a CERO y el plan propone DESTRUIR"; \
+		echo "  SES, los tres DKIM, DMARC, MAIL FROM y la consola. Aplica desde tu arbol"; \
+		echo "  de siempre, o copia ese fichero antes de planificar."; exit 1; }
+	@bash -c '. deploy/lib/guardas.sh && guarda_de_rama "terraform"'
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
+		terraform -chdir=$(TF_DEV) apply
+
 # --- Landing pública (takabailert.com) -----------------------------------------
 # El sitio se sirve desde S3+CloudFront (modules/site). El contenido lo posee
 # `aws s3 sync` (deploy/landing/deploy.sh), NO terraform: el módulo dejó de subir
@@ -337,3 +384,49 @@ cloud-mobile-users:
 # (default crisis). Siembra por SQL vía túnel SSM; no hay POST /incidents.
 cloud-staging-incident:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_staging_incident.sh $(PHASE)
+
+# --- [T-3.12.b] Imagen del Lambda de conteo de CCTV --------------------------
+#
+# El modelo se descarga AQUI y se comprueba su sha256 antes de entrar en el contexto de
+# build. Bajarlo dentro del Dockerfile dejaria la imagen dependiendo de que una release de
+# GitHub no cambie bajo sus pies — y el peso es lo que produce un numero que va a un
+# dictamen, asi que su identidad no puede ser «lo que hubiera ese dia».
+CCTV_MODELO_URL := https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx
+CCTV_MODELO_SHA := c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d
+
+.PHONY: cctv-modelo
+cctv-modelo: ## Descarga y VERIFICA el peso YOLOX-nano (Apache-2.0) del Lambda
+	@mkdir -p $(ANALYZER_DIR)/modelos
+	@test -f $(ANALYZER_DIR)/modelos/yolox_nano.onnx || \
+		curl -fsSL -o $(ANALYZER_DIR)/modelos/yolox_nano.onnx "$(CCTV_MODELO_URL)"
+	@echo "$(CCTV_MODELO_SHA)  $(ANALYZER_DIR)/modelos/yolox_nano.onnx" | sha256sum -c - \
+		|| (echo "✗ el peso NO coincide con el declarado: no se construye"; exit 1)
+
+# Las TRES banderas de abajo no son gusto: sin ellas Lambda RECHAZA la imagen.
+#
+#   --platform linux/amd64  el Lambda corre en x86-64 salvo que se pida arm64, y buildx
+#                           construye para la arquitectura de quien compila.
+#   --provenance=false      buildx añade por defecto una attestation `unknown/unknown`, y
+#   --sbom=false            eso convierte el manifiesto en un OCI *image index*.
+#
+# Lambda solo acepta un manifiesto de UNA arquitectura, no un índice. Con el índice falla
+# con `InvalidParameterValueException: The image manifest ... is not supported`, que no
+# menciona ni buildx ni las attestations — medido el 2026-08-30, con la imagen ya subida.
+.PHONY: cctv-lambda-image
+cctv-lambda-image: cctv-modelo ## Construye la imagen del Lambda (necesita el peso verificado)
+	docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+		--load -t takab/cctv-analyzer:$(shell git rev-parse --short HEAD) $(ANALYZER_DIR)
+
+.PHONY: cctv-lambda-push
+cctv-lambda-push: cctv-modelo ## Construye y EMPUJA la imagen a ECR, en un solo manifiesto
+	@TAG=$$(git rev-parse --short HEAD); \
+	URI=$(CCTV_ECR)/takab/cctv-analyzer:$$TAG; \
+	aws ecr get-login-password --profile $(AWS_PROFILE) --region $(AWS_REGION) \
+		| docker login --username AWS --password-stdin $(CCTV_ECR); \
+	docker buildx build --platform linux/amd64 --provenance=false --sbom=false \
+		--push -t $$URI $(ANALYZER_DIR); \
+	echo "cctv_analyzer_image_uri = \"$$URI\""
+
+AWS_PROFILE ?= takab-dev
+AWS_REGION  ?= us-east-2
+CCTV_ECR    ?= 634882473845.dkr.ecr.us-east-2.amazonaws.com

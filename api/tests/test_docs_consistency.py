@@ -1766,3 +1766,194 @@ def test_los_documentos_declaran_las_menciones_de_soporte_que_el_manual_tiene() 
             "H-2 es un bloqueo de entrega: contarlo por lo bajo hace que quien lo lea corra "
             "menos de lo que debería. Actualiza el número en el mismo commit que toque el manual."
         )
+
+
+# ── [T-5.09] Los otros dos censos del proyecto ───────────────────────────────
+#
+# `TASKS.md` no diverge porque un test lo cuenta (arriba). Los otros dos documentos
+# de gobierno declaraban cifras a mano y **los dos ya habían divergido**:
+#
+#   · `DECISIONES-MAURICIO.md` decía «23 decisiones · última 2026-08-22» con 26
+#     dentro y la última del 2026-08-30. Se corrigió a mano… y **volvió a diverger
+#     tres días después**: `D-28` entró con su sección y sin fila en el índice.
+#     Corregir a mano no es un mecanismo.
+#   · `TRASPASO-SESION.md §0` fijaba la deriva de despliegue en «tres commits»
+#     sobre un commit que ya estaba 103 por detrás de `main`. Es el archivo que se
+#     manda leer al EMPEZAR una sesión: un número fijo ahí no envejece, miente.
+#
+# Es la doctrina que este repositorio predica —*un censo que enumera a mano acaba
+# divergiendo*— sin aplicar a dos de sus tres censos.
+
+DECISIONES = REPO / "takab-docs" / "DECISIONES-MAURICIO.md"
+TRASPASO = REPO / "takab-docs" / "TRASPASO-SESION.md"
+
+#: Cómo rehacer el conteo, en el mensaje de fallo — igual que hace el de `TASKS.md`.
+_COMO_CONTAR = (
+    "  Rehaz el conteo así:\n"
+    "    anclas: grep -cE '^## D-[0-9]+' takab-docs/DECISIONES-MAURICIO.md\n"
+    "    índice: grep -cE '^\\| \\[D-[0-9]+\\]' takab-docs/DECISIONES-MAURICIO.md\n"
+    "  y actualiza la cabecera en el MISMO commit que añade la decisión."
+)
+
+
+def _decisiones() -> tuple[list[str], list[str]]:
+    """Las decisiones por sus DOS caminos: anclas de sección y filas del índice."""
+    texto = DECISIONES.read_text(encoding="utf-8")
+    anclas = re.findall(r"^## (D-\d+)", texto, re.M)
+    indice = re.findall(r"^\| \[(D-\d+)\]", texto, re.M)
+    return anclas, indice
+
+
+def test_la_bitacora_de_decisiones_declara_su_conteo_real() -> None:
+    """Las TRES cifras tienen que cuadrar: cabecera, índice y secciones.
+
+    Comparar solo dos dejaría pasar el caso real: `D-28` tenía sección, no tenía
+    fila y la cabecera decía 27. Cualquier par de esos tres «cuadraba».
+    """
+    texto = DECISIONES.read_text(encoding="utf-8")
+    anclas, indice = _decisiones()
+
+    m = re.search(r"\*\*(\d+) decisiones\*\*", texto)
+    assert m, (
+        "`DECISIONES-MAURICIO.md` no declara su conteo en la cabecera.\n"
+        "  Formato esperado:  **Última actualización:** AAAA-MM-DD · **N decisiones** · …"
+    )
+    declarado = int(m.group(1))
+
+    assert declarado == len(anclas) == len(indice), (
+        "La cabecera de `DECISIONES-MAURICIO.md` no cuadra con el archivo.\n"
+        f"  cabecera: {declarado}\n"
+        f"  secciones (`## D-nn`): {len(anclas)}\n"
+        f"  filas del índice: {len(indice)}\n"
+        f"  faltan en el índice: {sorted(set(anclas) - set(indice))}\n"
+        f"  sin sección: {sorted(set(indice) - set(anclas))}\n" + _COMO_CONTAR
+    )
+
+
+def test_ninguna_decision_se_queda_sin_fila_ni_sin_seccion() -> None:
+    """Por identificador, no por cuenta: dos errores que se compensan darían el
+    mismo total. Es exactamente lo que habría pasado si al añadir `D-28` sin fila
+    alguien hubiera borrado otra."""
+    anclas, indice = _decisiones()
+
+    assert set(anclas) == set(indice), (
+        "el índice y las secciones de `DECISIONES-MAURICIO.md` hablan de decisiones "
+        f"distintas.\n  solo con sección: {sorted(set(anclas) - set(indice))}\n"
+        f"  solo en el índice: {sorted(set(indice) - set(anclas))}\n" + _COMO_CONTAR
+    )
+    # NO se exige orden numérico, y conviene decir por qué: el archivo NO lo tiene
+    # (…D-19, D-23, D-22, D-20, D-21, D-01, D-02, D-03, D-24…) y no es un defecto —
+    # las secciones están agrupadas como se escribieron. Exigirlo obligaría a
+    # reordenar 1 400 líneas de bitácora para satisfacer a un test, que es la cola
+    # meneando al perro. Lo que importa es que no falte ninguna, y eso ya está arriba.
+
+
+def test_la_fecha_declarada_no_es_ANTERIOR_a_la_ultima_decision() -> None:
+    """La otra mitad de la cabecera, y la que engaña más callada.
+
+    Un conteo correcto con una fecha vieja hace creer que no hay nada nuevo desde
+    entonces. Pasó: decía «última 2026-08-22» con una decisión del 2026-08-30.
+    """
+    texto = DECISIONES.read_text(encoding="utf-8")
+    m = re.search(r"\*\*Última actualización:\*\* (\d{4}-\d{2}-\d{2})", texto)
+    assert m, "`DECISIONES-MAURICIO.md` no declara su fecha de última actualización"
+    declarada = m.group(1)
+
+    # Las fechas de las decisiones, que van en su propia línea `**Fecha:** …`.
+    fechas = re.findall(r"^\*\*Fecha:\*\* (\d{4}-\d{2}-\d{2})", texto, re.M)
+    assert fechas, "no se encontró ninguna línea `**Fecha:**`: el barrido quedó ciego"
+
+    ultima = max(fechas)
+    assert declarada >= ultima, (
+        f"`DECISIONES-MAURICIO.md` dice que se actualizó el {declarada} y contiene una "
+        f"decisión del {ultima}. Quien lea solo la cabecera creerá que no hay nada nuevo.\n"
+        "  Actualiza la fecha en el MISMO commit que añade la decisión."
+    )
+
+
+def test_el_traspaso_NO_fija_la_deriva_de_despliegue_a_un_numero() -> None:
+    """El archivo que se manda leer al EMPEZAR una sesión no puede abrir con una
+    cifra que caduca. Tiene que decir cómo preguntárselo al sistema."""
+    texto = TRASPASO.read_text(encoding="utf-8")
+    bloque = texto[texto.index("## 0 ") : texto.index("## 1 ")]
+
+    assert "/api/health" in bloque and "rev-list --count" in bloque, (
+        "el bloque §0 de `TRASPASO-SESION.md` no dice cómo PREGUNTAR la deriva de "
+        "despliegue. La API declara su commit en `/health`; sin ese comando, el "
+        "lector se queda con el número escrito, que caduca el día siguiente."
+    )
+    assert "tres commits por detrás" not in bloque.split("Por qué esto no lleva")[0], (
+        "el §0 volvió a fijar la deriva en una cifra de prosa"
+    )
+
+
+def test_la_medicion_historica_del_traspaso_es_CIERTA() -> None:
+    """Lo que sí puede quedarse escrito: la medición de aquel día.
+
+    Es estable porque la distancia se declara **entre los dos commits citados**, no
+    contra `main` —que se mueve—. Y se comprueba de verdad: si alguien teclea mal un
+    hash, o inventa la deriva, esto se pone rojo.
+    """
+    import subprocess
+
+    texto = TRASPASO.read_text(encoding="utf-8")
+    m = re.search(
+        r"(\d{4}-\d{2}-\d{2}) · main: ([0-9a-f]{7,40}) · nube: ([0-9a-f]{7,40})"
+        r" · deriva medida: (\d+) commits",
+        texto,
+    )
+    assert m, (
+        "`TRASPASO-SESION.md §0` no declara su medición histórica en el formato "
+        "esperado:\n    AAAA-MM-DD · main: <sha> · nube: <sha> · deriva medida: N commits"
+    )
+    _, sha_main, sha_nube, declarada = m.groups()
+
+    def _existe(sha: str) -> bool:
+        return (
+            subprocess.run(  # noqa: S603
+                ["git", "cat-file", "-e", f"{sha}^{{commit}}"],  # noqa: S607
+                cwd=REPO,
+                capture_output=True,
+            ).returncode
+            == 0
+        )
+
+    _PISTA = (
+        "\n  Si esto falla en CI y no en local, es un CLON SUPERFICIAL: "
+        "`actions/checkout` clona con `fetch-depth: 1` por defecto y el commit no "
+        "está en la historia descargada. El job `api` lo pide con `fetch-depth: 0`."
+    )
+    assert _existe(sha_main), f"el commit citado como `main` no existe: {sha_main}{_PISTA}"
+    assert _existe(sha_nube), f"el commit citado como nube no existe: {sha_nube}{_PISTA}"
+
+    real = subprocess.run(  # noqa: S603
+        ["git", "rev-list", "--count", f"{sha_nube}..{sha_main}"],  # noqa: S607
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    assert real == declarada, (
+        f"la medición histórica del traspaso dice {declarada} commits de deriva y entre "
+        f"{sha_nube} y {sha_main} hay {real}.\n"
+        "  Es un hecho fechado: si el número estaba mal, corrígelo; no lo actualices "
+        "contra `main` — para eso está el comando que pregunta al sistema."
+    )
+
+
+def test_los_censos_de_gobierno_declaran_SU_TAMAÑO() -> None:
+    """Guarda de no-vacuidad de los cuatro tests de arriba.
+
+    Todos parsean con expresiones regulares sobre prosa. Si un formato cambia y el
+    barrido deja de encontrar nada, `set() == set()` pasa en verde y la cabecera
+    vuelve a quedarse sola. Los números van escritos.
+    """
+    anclas, indice = _decisiones()
+    assert len(anclas) >= 28, f"solo se leyeron {len(anclas)} secciones `## D-nn`"
+    assert len(indice) >= 28, f"solo se leyeron {len(indice)} filas del índice"
+
+    texto = TRASPASO.read_text(encoding="utf-8")
+    assert texto.count("## 0 ") == 1 and texto.count("## 1 ") == 1, (
+        "cambiaron los encabezados de `TRASPASO-SESION.md` y el recorte del §0 dejó "
+        "de acotar lo que cree acotar"
+    )

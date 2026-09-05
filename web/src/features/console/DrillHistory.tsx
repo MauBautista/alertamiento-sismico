@@ -11,11 +11,19 @@ import { useState } from "react";
 
 import type { DrillOut } from "@takab/sdk";
 
+import { useSessionStore } from "../../auth/session.store";
 import Modal from "../../components/Modal";
 import StateFrame from "../../components/StateFrame";
-import { utcStamp } from "../../lib/time";
-import { ackLabel, drillAckReport, drillSiteAck, isPendingSchedule } from "./drill";
-import { useDrills, type DrillKind } from "./useDrills";
+import { openPendingDownload } from "../../lib/download";
+import { latenciaLegible, utcStamp } from "../../lib/time";
+import {
+  ackLabel,
+  drillAckReport,
+  drillSiteAck,
+  isPendingSchedule,
+  medianaLatencia,
+} from "./drill";
+import { useDrillReport, useDrills, type DrillKind } from "./useDrills";
 
 const KIND_TABS: readonly { value: DrillKind; label: string }[] = [
   { value: "all", label: "TODOS" },
@@ -37,6 +45,9 @@ function ackSummary(drill: DrillOut): string {
   if (r.rejected > 0) parts.push(`${r.rejected} RECHAZADO(S)`);
   if (r.noGateway > 0) parts.push(`${r.noGateway} SIN GABINETE COMANDABLE`);
   if (r.notSent > 0) parts.push(`${r.notSent} SIN COMANDO EMITIDO`);
+  // `S/D` y no `+0:00`: sin un solo acuse no hay mediana que dar, y un cero
+  // afirmaría que todos respondieron al instante.
+  parts.push(`MEDIANA ${latenciaLegible(medianaLatencia(drill)) ?? "S/D"}`);
   return parts.join(" · ");
 }
 
@@ -44,6 +55,11 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
   const [kind, setKind] = useState<DrillKind>("all");
   const [open, setOpen] = useState<string | null>(null);
   const history = useDrills(kind);
+  const report = useDrillReport();
+  // Generar INSCRIBE una evidencia inmutable del tenant, así que va con quien
+  // inicia simulacros — igual que `generate_report` en el dictamen. Quien solo
+  // recoge la evidencia (`gov_operator`) la descarga después por `export`.
+  const canExport = useSessionStore((s) => s.me?.allowed_actions.drill_start === true);
 
   const hasItems = history.items.length > 0;
   return (
@@ -103,16 +119,42 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
                   >
                     DETALLE · {d.sites.length} SITIO(S)
                   </button>
+                  {canExport && !pendingSchedule && (
+                    <button
+                      type="button"
+                      className="soc-btn soc-btn--ghost"
+                      data-testid={`drill-export-${d.drill_id}`}
+                      disabled={report.pendingId === d.drill_id}
+                      // La pestaña se reserva AQUÍ, dentro del gesto: la URL
+                      // presignada no existe hasta que el servidor responde y
+                      // abrirla entonces la bloquea el navegador en silencio.
+                      onClick={() => report.exportar(d.drill_id, openPendingDownload())}
+                    >
+                      {report.pendingId === d.drill_id ? "GENERANDO…" : "EXPORTAR REPORTE"}
+                    </button>
+                  )}
                   {open === d.drill_id && (
                     <ul className="soc-drillhist__sites" data-testid={`drill-sites-${d.drill_id}`}>
                       {d.sites.map((s) => {
                         const state = drillSiteAck(s, d);
+                        // `null` = no acusó, y entonces NO se pinta nada: un
+                        // `+0:00` o un `—` en la columna del tiempo se leen como
+                        // «respondió al instante», que es lo contrario del hecho.
+                        const lat = state === "acked" ? latenciaLegible(s.ack_latency_s) : null;
                         return (
                           <li key={s.site_id} data-ack={state}>
                             <span>{s.site_name ?? `SITIO ${s.site_id.slice(0, 8)}`}</span>
                             <span className={`soc-drillhist__ackpill is-${state}`}>
                               {ackLabel(state)}
                             </span>
+                            {lat !== null && s.acked_at != null && (
+                              <span
+                                className="soc-mono soc-drillhist__lat"
+                                data-testid={`drill-lat-${s.site_id}`}
+                              >
+                                {lat} · {utcStamp(Date.parse(s.acked_at))} UTC
+                              </span>
+                            )}
                           </li>
                         );
                       })}
@@ -122,6 +164,11 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
               );
             })}
           </ul>
+          {report.error !== null && (
+            <p className="soc-user__error" role="alert">
+              {report.error.toUpperCase()} · LA PESTAÑA QUE SE ABRIÓ SE CERRÓ SOLA
+            </p>
+          )}
           {history.error !== null && hasItems && (
             <p className="soc-user__error" role="alert">
               {history.error.toUpperCase()}

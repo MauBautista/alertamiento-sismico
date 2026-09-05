@@ -65,6 +65,7 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 
+from takab_api import demo_mode
 from takab_api.auth.matrix import roles_with_action
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
@@ -296,6 +297,16 @@ WHERE job_id = %(job)s
 
 _SIMULATED_NOTE = "canal simulado: sin proveedor real configurado, nadie recibió nada"
 
+# [T-5.02] `sent_at` NULL por la misma razón que en simulado: no llegó a nadie, y
+# cualquier consulta de entregados (`sent_at IS NOT NULL`) lo excluye sin saber
+# que este estado existe.
+_MARK_BLOCKED_DEMO_SQL = """
+UPDATE notification_jobs SET status = 'blocked_demo', error = %(note)s
+WHERE job_id = %(job)s
+"""
+
+_BLOCKED_DEMO_NOTE = "modo demostración activo para este cliente: nadie recibió nada"
+
 # [T-1.62] El job sigue 'pending': solo suma el intento, guarda el motivo y se
 # aplaza. `_dispatch` no lo re-selecciona en esta pasada (due_at > now, y `now`
 # es fijo por pass) — nada de bucles calientes.
@@ -330,6 +341,11 @@ VALUES (%(incident)s, %(tenant)s, %(kind)s, %(actor)s, %(payload)s::jsonb)
 
 _KIND_SENT = "notify_sent"
 _KIND_SIMULATED = "notify_simulated"
+#: [T-5.02] Suprimido por el MODO DEMOSTRACIÓN del cliente. Kind propio: los tres
+#: desenlaces que acaban en «nadie recibió nada» —simulado, saltado y bloqueado—
+#: responden a preguntas distintas, y la del día siguiente es siempre «¿por qué
+#: no llegó ESTE aviso?».
+_KIND_BLOCKED_DEMO = "notify_blocked_demo"
 _KIND_FAILED = "notify_failed"
 # [T-2.109] Cuarto verbo. No es entregado, no es simulado (el proveedor existe y
 # entrega) y no es fallo (no hay avería que arreglar ni a quién reintentar): es
@@ -577,6 +593,34 @@ def _enqueue(
     ).fetchall()
     inserted = 0
     for row in rows:
+        # [T-5.02 · D-27] LO REAL GANA, y el ORDEN es la promesa.
+        #
+        # Un incidente nuevo apaga el modo demostración de su cliente ANTES de que
+        # se planifique un solo aviso. Así la ventana en la que un sismo podría
+        # quedar suprimido **no existe por construcción**, en vez de ser una
+        # ventana estrecha que alguien tendría que medir.
+        #
+        # Va AQUÍ y no en cada escritor de incidentes —la ingesta, el motor de
+        # quórum y el pánico de la app son TRES— porque esto es el embudo por el
+        # que pasan los tres antes de que nadie reciba nada. Un cuarto escritor
+        # futuro queda cubierto sin tocar esto.
+        #
+        # Y no hace falta preguntar si el incidente es «real»: un simulacro JAMÁS
+        # crea incidente (`test_un_drill_jamas_crea_incidentes`), así que todo lo
+        # que llega hasta aquí lo es.
+        if demo_mode.apagar_por_evento_real_sync(
+            conn,
+            tenant_id=row["tenant_id"],
+            causa=f"incident:{row['incident_id']}:{row['trigger']}",
+        ):
+            counts["demo_mode_auto_off"] = counts.get("demo_mode_auto_off", 0) + 1
+            logger.warning(
+                "modo demostración APAGADO por un evento real: tenant=%s incidente=%s trigger=%s",
+                row["tenant_id"],
+                row["incident_id"],
+                row["trigger"],
+            )
+
         destinations = resolve_destinations(_config_for(conn, config_cache, row))
         # [T-2.04] Push CRISIS si el sitio tiene dispositivos registrados: el
         # target solo lleva el site_id (la lista de dispositivos se resuelve
@@ -890,6 +934,15 @@ def _dispatch_one(
             counts["skipped"] += 1
             return
 
+    # [T-5.02 · D-27] MODO DEMOSTRACIÓN, y va ANTES de preguntar por el proveedor
+    # a propósito: así no depende del registro para nada y cubre hasta un canal
+    # sin proveedor cableado. Un canal nuevo queda bloqueado el día que nace, sin
+    # que nadie tenga que acordarse de añadirlo a ninguna lista — que es
+    # exactamente lo que este bloqueo tiene que garantizar.
+    if demo_mode.ventana_viva_sync(conn, row["tenant_id"], now=now) is not None:
+        _blocked_by_demo(conn, counts, row, now=now)
+        return
+
     provider = providers.get(row["channel"])
     if provider is None:  # canal sin provider cableado: cuenta como fallo
         _fail(conn, counts, row, "provider no configurado", now=now, max_attempts=max_attempts)
@@ -1102,6 +1155,62 @@ def _dispatch_push(
         len(outcome.disabled_ids),
         latency_s,
     )
+
+
+def _blocked_by_demo(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+    *,
+    now: datetime,
+) -> None:
+    """[T-5.02] Desenlace de un job suprimido por el MODO DEMOSTRACIÓN.
+
+    Espejo deliberado de :func:`_simulate`, y por la misma razón: a efectos de
+    «¿llegó a un humano?» esto es un NO ENTREGADO, así que ni ``sent`` (sería
+    mentir) ni ``failed`` (mandaría a arreglar un proveedor que está perfecto).
+    Estado propio y terminal, con su evidencia propia.
+
+    **Avanza la cascada** igual que un simulado. La alternativa —dejar los jobs
+    siguientes en ``pending``— los devolvería a la cola en cada pasada para ser
+    bloqueados otra vez, y la bitácora crecería con una fila por pasada en vez de
+    una por aviso suprimido.
+
+    **Y deja fila en `audit_log`**: un modo que bloquea en silencio es otra
+    superficie muda, y la pregunta del día siguiente —¿por qué no llegó este
+    aviso?— tiene que poder contestarse sin leer código.
+    """
+    conn.execute(_MARK_BLOCKED_DEMO_SQL, {"job": row["job_id"], "note": _BLOCKED_DEMO_NOTE})
+    if row["mode"] == "cascade":
+        conn.execute(
+            _ADVANCE_NEXT_SQL,
+            {"incident": row["incident_id"], "position": row["position"], "now": now},
+        )
+    actor_suffix = f":{row['action_id']}" if row.get("action_id") else ""
+    conn.execute(
+        _ACTION_SQL,
+        {
+            "incident": row["incident_id"],
+            "tenant": row["tenant_id"],
+            "kind": _KIND_BLOCKED_DEMO,
+            "actor": f"system:demo_mode:{row['channel']}:{row['mode']}{actor_suffix}",
+            "payload": json.dumps(
+                {
+                    "job_id": str(row["job_id"]),
+                    "channel": row["channel"],
+                    "mode": row["mode"],
+                    "note": _BLOCKED_DEMO_NOTE,
+                }
+            ),
+        },
+    )
+    demo_mode.auditar_bloqueo_sync(
+        conn,
+        tenant_id=row["tenant_id"],
+        obj=f"incident:{row['incident_id']}",
+        meta={"channel": row["channel"], "mode": row["mode"], "job_id": str(row["job_id"])},
+    )
+    counts["blocked_demo"] = counts.get("blocked_demo", 0) + 1
 
 
 def _simulate(

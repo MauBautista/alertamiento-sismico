@@ -8,11 +8,28 @@
 
 ---
 
-## 0 · ⚠️ LO PRIMERO: la nube va por detrás del repo (2026-08-23)
+## 0 · ⚠️ LO PRIMERO: la nube va por detrás del repo
+
+**PREGÚNTASELO AL SISTEMA. No te fíes del número de abajo.**
+
+```bash
+# Qué corre la nube AHORA (la API declara su commit):
+curl -s https://<consola>/api/health | jq -r .build
+# Y a cuántos commits está de este repo:
+git rev-list --count "$(curl -s https://<consola>/api/health | jq -r .build)"..main
+```
+
+> **Por qué esto no lleva una cifra fija** (`T-5.09`): la llevaba, y decía «tres commits por
+> detrás» — cierto el 2026-08-23 y **falso cualquier otro día**, porque `main` se mueve y el
+> despliegue no. Cuando la auditoría lo miró, el commit citado como `main` estaba **103 commits
+> por detrás** del `main` de ese momento. Un número fijo en el archivo que se manda leer al
+> EMPEZAR una sesión no envejece: **miente**.
+
+**La medición que se hizo aquel día, como hecho histórico** (esto sí es estable, y un test lo
+comprueba: los dos commits existen y la distancia entre ELLOS DOS es la declarada):
 
 ```
-main:  fc06bd5
-nube:  eaeb82a          ← tres commits por detrás
+2026-08-23 · main: fc06bd5 · nube: eaeb82a · deriva medida: 3 commits
 ```
 
 **No es un olvido, es una decisión tomada:** el rebuild cuesta ~40 min y lo que falta desplegar no

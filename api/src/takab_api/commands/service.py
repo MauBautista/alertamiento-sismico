@@ -23,6 +23,7 @@ from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher, PublishError
 from takab_api.commands.rejection_audit import PROOF_SESSION, audit_command_rejection
 from takab_api.commands.signing import canonical_payload, sign_command
+from takab_api.demo_mode import ventana_viva
 from takab_api.queries import commands as q
 from takab_api.routers._common import http_error
 from takab_api.settings import Settings
@@ -73,6 +74,22 @@ async def issue_signed_command(
             channel=channel,
             action=action,
             actor_proof=actor_proof,
+        )
+
+    # [T-5.02 · D-27] MODO DEMOSTRACIÓN. Va la PRIMERA de las guardas a propósito:
+    # un comando suprimido no debe consumir presupuesto de rate-limit ni reservar
+    # nonce. Vive AQUÍ —en el embudo único que firma— y no en cada router, así que
+    # drills y quórum de pánico lo heredan sin duplicar la superficie sensible,
+    # igual que heredan la auditoría de rechazos (RO-8.k).
+    #
+    # Lo que esto NO alcanza, y es lo que hace aceptable que exista: el reflejo
+    # SASMEX→sirena del gabinete. No pasa por aquí, no pasa por la nube y no sabe
+    # que este modo existe (regla de oro 1).
+    if await ventana_viva(conn, tenant_id, now=now) is not None:
+        await _rejected("demo_mode", 409)
+        raise http_error(
+            409,
+            "modo demostración activo para este cliente: no se emiten comandos de actuador",
         )
 
     since = now - timedelta(seconds=_RATE_WINDOW_S)

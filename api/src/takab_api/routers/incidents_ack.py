@@ -33,6 +33,25 @@ _require_ack = require_roles(*ACK_ROLES)
 
 router = APIRouter()
 
+#: [T-5.15] LA LATENCIA DEL ACUSE, que hasta aquí no existía en ninguna capa.
+#:
+#: El acuse escribía su fila con el sello de la transacción y **nunca leía el
+#: instante de apertura**, así que "¿en cuánto tiempo acusaron?" era derivable
+#: restando a mano y nadie lo hacía. Ahora la fila lo lleva escrito, con el mismo
+#: `t0` y la misma clave (`latency_s`) que la de despacho de `notify_sent`: las
+#: dos cifras se comparan sin traducir nada.
+#:
+#: Se calcula EN SQL y en el MISMO statement que inserta la fila, no en Python:
+#: así el `now()` del que sale la latencia es exactamente el `now()` del `ts` de
+#: la fila. Restar un instante de Python contra uno de la base produce un número
+#: plausible y falso en cuanto los relojes difieren un segundo.
+_INSERT_ACK_ACTION = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "SELECT :id, :tenant, 'ack', :actor, "
+    "       jsonb_build_object('latency_s', EXTRACT(EPOCH FROM (now() - i.opened_at))) "
+    "  FROM incidents i WHERE i.incident_id = :id"
+)
+
 
 @router.post("/incidents/{incident_id}/ack")
 async def ack_incident(
@@ -87,13 +106,7 @@ async def _tenant_ack(conn: AsyncConnection, incident_id: UUID, claims: Claims) 
         text("UPDATE incidents SET state = 'acked' WHERE incident_id = :id AND state = 'open'"),
         {"id": incident_id},
     )
-    await conn.execute(
-        text(
-            "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor) "
-            "VALUES (:id, :tenant, 'ack', :actor)"
-        ),
-        {"id": incident_id, "tenant": tenant_id, "actor": actor},
-    )
+    await conn.execute(_INSERT_ACK_ACTION, {"id": incident_id, "tenant": tenant_id, "actor": actor})
     await audit_async(
         conn,
         tenant_id=tenant_id,

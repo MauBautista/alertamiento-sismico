@@ -34,6 +34,12 @@ vi.mock("./useTenants", () => ({
   TENANTS_STALE_MS: 120_000,
 }));
 vi.mock("./useRuleSetPublish", () => ({ useRuleSetPublish: mocks.useRuleSetPublish }));
+// [T-5.16] `useRuleSetRollback` monta react-query y esta suite no lleva provider
+// a propósito. Su semántica se prueba en `RuleSetHistory.test.tsx`.
+vi.mock("./useRuleSetRollback", async () => ({
+  ...(await vi.importActual<typeof import("./useRuleSetRollback")>("./useRuleSetRollback")),
+  useRuleSetRollback: () => ({ volver: vi.fn(), pendingId: null, error: null, conflict: false }),
+}));
 // [T-2.75.a] La realidad de los providers tiene su propia suite
 // (NotificationChannels.test.tsx, anclada al fixture compartido con la API).
 // Aquí solo hace falta que el hook exista para que la página monte.

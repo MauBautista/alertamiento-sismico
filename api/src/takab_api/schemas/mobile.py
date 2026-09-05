@@ -296,6 +296,12 @@ class MobileStateOut(BaseModel):
     site_id: UUID
     site_name: str
     server_ts: datetime
+    #: [T-5.02 · D-27] ¿El cliente está en MODO DEMOSTRACIÓN? Mientras lo esté, la
+    #: nube no manda avisos: si la app no lo dijera, un ocupante vería una
+    #: pantalla en calma sin saber que el canal que le avisaría está suprimido.
+    #: Va aquí y no en un endpoint propio porque el token de la app no pasa por la
+    #: superficie web, y porque es estado del sitio como cualquier otro.
+    demo_mode: bool = False
     phase: Phase
     incident: MobileIncidentOut | None
     latest_tier: str | None

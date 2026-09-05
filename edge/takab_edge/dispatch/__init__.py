@@ -195,7 +195,22 @@ class CommandDispatcher(EdgeModule):
                     # es el cinturón para todo lo demás que pueda romperse ahí.
                     log.exception("drill_start %s reventó; se ACKea el fallo", command_id)
                     ok, reason = False, f"el simulacro no pudo arrancar: {exc}"
-                self._ack(command_id, nonce, channel, action, ok, reason)
+                # [T-5.17] QUÉ va a sonar, en el acuse. Se lee del estado que el
+                # controlador acaba de fijar —una sola resolución— y SOLO si el
+                # simulacro arrancó: un `results.audio` en un rechazo afirmaría
+                # un voceo que no hubo. El aislamiento es el de siempre: la
+                # evidencia es advisory y no puede dejar un comando FIRMADO sin
+                # acuse (`T-2.70.a`).
+                resultados = None
+                if ok:
+                    try:
+                        evidencia = self._drill.status().get("audio")
+                    except Exception:  # noqa: BLE001 — advisory
+                        log.exception("no se pudo leer la evidencia de audio del drill (aislado)")
+                        evidencia = None
+                    if evidencia is not None:
+                        resultados = {"audio": evidencia}
+                self._ack(command_id, nonce, channel, action, ok, reason, results=resultados)
             else:
                 ended = self._drill.end_drill(drill_id, reason="drill_stop firmado")
                 # Idempotente: parar un drill ya terminado es un no-op acked.

@@ -279,6 +279,103 @@
   align-items: flex-end;
   gap: 4px;
 }
+/* [T-5.05] Rótulo de dato de DEMOSTRACIÓN.
+   Gris neutro y borde discontinuo, NO ámbar: en esta consola el ámbar ya
+   significa «simulacro en curso» y «dato retenido», y darle un tercer
+   significado lo vacía de los tres. El discontinuo es el mismo lenguaje que
+   usan los botones inertes del panel del gabinete (T-5.01): «esto no es real».
+   No reserva espacio: en producción no hay sitios sim y la tarjeta es idéntica. */
+/* [T-5.02] Banner del modo demostración. Cian y discontinuo, NO ámbar: el ámbar
+   de esta consola ya significa «simulacro» y «dato retenido». El discontinuo es
+   el idioma compartido de las tres fichas de demostración (T-5.01, T-5.02,
+   T-5.05): «esto no es real». */
+/* El marco del StateFrame: sin regla propia la clase existiría solo en el JSX, y
+   el contrato clase↔regla lo caza. Aquí solo separa del bloque siguiente. */
+/* [T-5.15] Cadena de aviso: qué proveedor recibió qué y cuándo. Los tonos NO
+   son decorativos — `wait` (ámbar) es «el proveedor lo aceptó y no confirmó»,
+   que no puede compartir color con `ok` («alguien lo tiene en la mano»). */
+.notifychain__count { margin: 0 0 6px; }
+/* [T-5.16] Historial de umbrales con vuelta atrás. */
+/* El marco del histórico: separa de la tarjeta de sliders de arriba. La clase
+   existe en el JSX, así que su regla también — lo exige el contrato clase↔CSS. */
+.rs-hist { margin-top: 10px; }
+.rs-hist__list { list-style: none; margin: 0; padding: 0; }
+.rs-hist__row {
+  display: flex; align-items: baseline; gap: 8px; padding: 4px 0;
+  border-bottom: 1px solid var(--tk-border); font: 400 11px/1.4 var(--f-ui);
+}
+.rs-hist__ts { color: var(--tk-fg-3); }
+.rs-hist__pill {
+  padding: 1px 7px; border-radius: var(--tk-radius-pill);
+  background: var(--tk-status-normal-15); color: var(--tk-status-normal);
+  font: 700 9px/1.6 var(--f-ui); letter-spacing: 0.08em;
+}
+.rs-hist__from { color: var(--tk-fg-3); font-size: 10px; letter-spacing: 0.06em; }
+.rs-hist__row > button { margin-left: auto; }
+.notifychain__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.notifychain__item {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px;
+  padding: 5px 0; border-bottom: 1px solid var(--tk-border);
+  font: 400 11px/1.4 var(--f-ui);
+}
+.notifychain__ch { color: var(--tk-fg-2); letter-spacing: 0.06em; }
+.notifychain__to { color: var(--tk-fg-1); }
+.notifychain__st { font-weight: 700; letter-spacing: 0.06em; font-size: 10px; }
+.notifychain__st.is-ok { color: var(--tk-status-normal); }
+.notifychain__st.is-wait { color: var(--tk-status-warning); }
+.notifychain__st.is-bad { color: var(--tk-status-critical); }
+.notifychain__st.is-muted { color: var(--tk-fg-3); }
+.notifychain__lat, .notifychain__ts { margin-left: auto; color: var(--tk-fg-3); font-size: 10px; }
+.notifychain__sla { color: var(--tk-status-critical); font: 700 10px/1 var(--f-ui); letter-spacing: 0.06em; }
+.notifychain__err { flex-basis: 100%; color: var(--tk-status-critical); font-size: 10px; }
+
+/* [T-5.12] Clasificación de un incidente y su tasa. */
+.triage-clasif { display: flex; flex-direction: column; gap: 6px; }
+.triage-clasif__actual {
+  font: 700 12px/1 var(--f-ui); letter-spacing: 0.10em; color: var(--tk-fg-1);
+}
+.triage-clasif__btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.triage-clasif__btn {
+  padding: 5px 9px; border-radius: 3px; border: 1px solid var(--tk-border-strong);
+  background: transparent; color: var(--tk-fg-2);
+  font: 700 10px/1 var(--f-ui); letter-spacing: 0.08em; cursor: pointer;
+}
+.triage-clasif__hist {
+  margin: 0; padding-left: 14px; color: var(--tk-fg-3);
+  font: 400 10px/1.5 var(--f-ui);
+}
+.triage-tasa { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.triage-tasa__v { font: 700 20px/1 var(--tk-font-mono); color: var(--tk-fg-1); }
+.triage-tasa__sin { font: 700 10px/1 var(--f-ui); letter-spacing: 0.08em; color: var(--tk-status-warning); }
+.triage-tasa__nota { font: 400 10px/1.4 var(--f-ui); color: var(--tk-fg-3); }
+
+.soc-demo-mode__frame { margin-bottom: 8px; }
+
+.soc-demo-mode {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 7px 12px; border: 1px dashed var(--tk-cyan); border-radius: 4px;
+  background: var(--tk-cyan-08); color: var(--tk-cyan);
+}
+.soc-demo-mode__txt { font: 700 12px/1 var(--f-ui); letter-spacing: 0.10em; }
+.soc-demo-mode__meta { font: 700 11px/1 var(--f-ui); letter-spacing: 0.06em; }
+.soc-demo-mode__nota {
+  font: 400 11px/1 var(--f-ui); color: var(--tk-fg-2); letter-spacing: 0.02em;
+}
+.soc-demo-mode__off {
+  margin-left: auto; padding: 5px 10px; border-radius: 3px;
+  border: 1px solid var(--tk-cyan); background: transparent; color: var(--tk-cyan);
+  font: 700 10px/1 var(--f-ui); letter-spacing: 0.10em; cursor: pointer;
+}
+
+.fleet-card__demo {
+  padding: 2px 6px;
+  border: 1px dashed var(--tk-fg-3);
+  border-radius: 3px;
+  color: var(--tk-fg-3);
+  font: 700 9px/1 var(--f-ui);
+  letter-spacing: 0.14em;
+}
+
 .fleet-card__sid {
   font-family: var(--tk-font-mono);
   font-size: 10px;
@@ -1694,6 +1791,9 @@
   border-bottom: 1px solid var(--tk-border);
 }
 .timeline__ts { color: var(--tk-fg-3); font-size: 9px; }
+/* [T-5.15] El transcurrido, pegado al sello absoluto y en segundo plano: el
+   absoluto es lo citable en un peritaje y el relativo lo legible de un vistazo. */
+.timeline__elapsed { color: var(--tk-fg-3); font-size: 9px; opacity: 0.85; }
 .timeline__kind { color: var(--tk-fg-1); letter-spacing: 0.04em; }
 /* [T-2.75] Una notificación que nadie recibió no puede leerse igual que una
    entregada en la bitácora que un perito usa para reconstruir lo ocurrido.
@@ -2496,4 +2596,108 @@
   margin: 0;
   font-size: 12px;
   color: var(--tk-fg-1);
+}
+
+.cctv {
+  /* La caja hereda de `.soc-card`; esta regla existe para que el contrato
+     clase↔regla la vea declarada y no como un className huérfano. */
+  min-width: 0;
+}
+
+/* [T-3.12.c] Evacuación observada por CCTV — la ÚNICA superficie de vídeo de la consola.
+   Sigue las cajas del resto de EVALUACIÓN: sin sombras, sin color propio, y el único
+   acento reservado al hallazgo de seguridad. */
+.cctv__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.cctv__estado {
+  color: var(--tk-fg-3);
+  font-size: 12px;
+  margin: 0;
+}
+.cctv__cifras {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.cctv__cifras div {
+  border: 1px solid var(--tk-border);
+  padding: 8px 10px;
+}
+.cctv__cifras dt {
+  color: var(--tk-fg-3);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.cctv__cifras dd {
+  margin: 3px 0 0;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.cctv__correlacion {
+  margin: 0;
+  font-size: 12px;
+}
+.cctv__veredicto {
+  margin: 0;
+  font-size: 12px;
+  color: var(--tk-fg-3);
+}
+/* Que la gente reentrara ANTES del dictamen no es una línea más: el inmueble se reocupó
+   sin certificación de habitabilidad, y tiene que verse antes de leerse. */
+.cctv__veredicto--hallazgo {
+  color: var(--tk-status-critical);
+  border-left: 3px solid var(--tk-status-critical);
+  padding-left: 8px;
+  font-weight: 600;
+}
+.cctv__discrepancia {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  font-size: 11px;
+  color: var(--tk-fg-3);
+}
+.cctv__capturas {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 6px;
+}
+.cctv__capturas li {
+  border: 1px solid var(--tk-border);
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cctv__papel {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--tk-fg-3);
+}
+.cctv__estado-captura {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.cctv__clip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--tk-border);
+  padding-top: 8px;
+  font-size: 12px;
+}
+/* El objeto ya no está y la fila lo declara: el hecho sobrevive, la imagen no. */
+.cctv__purgado {
+  color: var(--tk-fg-3);
+  font-size: 11px;
+  letter-spacing: 0.04em;
 }

@@ -4,7 +4,7 @@ Es el ÚNICO tramo del sistema que la demo local sustituye. Todo lo demás
 —supervisor del edge, reglas, actuadores, `SqsConsumer`, handlers de ingesta,
 `IncidentEngine`, NOTIFY/WS, consola— es el código de producción.
 
-Dos mitades, ambas SOLO stdlib para que las importen los dos venv (edge y api):
+Tres piezas, todas SOLO stdlib para que las importen los dos venv (edge y api):
 
 - ``SpoolMqttTransport``: implementa el ``MqttTransport`` del edge. En vez de
   publicar por mTLS a IoT Core, escribe un archivo JSON por mensaje **enriquecido
@@ -16,6 +16,23 @@ Dos mitades, ambas SOLO stdlib para que las importen los dos venv (edge y api):
   (``receive_message`` / ``delete_message`` / ``delete_message_batch`` /
   ``send_message`` para la DLQ) leyendo esos archivos. Así el puente de la demo
   NO es un handler a mano: es el consumer REAL.
+
+- ``SpoolCommandPublisher``: [T-5.29] **la bajada**. Implementa el
+  ``CommandPublisher`` de la nube (``takab_api.commands.publisher``) y deja el
+  envelope FIRMADO en el buzón del thing; el transporte de arriba lo entrega a la
+  suscripción del edge, y ahí lo recibe el ``CommandDispatcher`` REAL, que
+  verifica HMAC + nonce + ventana antes de tocar nada.
+
+**Por qué la bajada faltaba y por qué importa.** Hasta `T-5.29` este arnés era
+SOLO edge→nube, así que la demo no podía guionizar nada comandado desde la nube:
+un simulacro son comandos firmados nube→gabinete, uno por sitio, y también lo son
+la actuación por quórum y la sincronización de config. La escena de simulacro de
+`T-5.08` se quedó a medias por esto.
+
+**Lo que NO se salta: la firma.** Un transporte de bajada que entregara el payload
+sin envelope, o que verificara él mismo, probaría lo contrario de lo que hay que
+probar. Aquí el archivo viaja tal cual lo firmó la nube y el único que decide si
+se ejecuta es el dispatcher del edge — el mismo código que corre en el Pi.
 
 Orden de entrega: los archivos se nombran con un contador monótono por gabinete,
 así que ordenar por nombre reproduce el orden de publicación (lo que el criterio
@@ -38,6 +55,15 @@ from typing import Any
 META_PRINCIPAL = "meta_principal"
 META_TOPIC = "meta_topic"
 META_TS_IOT = "meta_ts_iot"
+
+
+#: [T-5.29] Nombre del buzón de bajada de un thing dentro del directorio raíz.
+#: Un directorio por thing, igual que un topic por thing en IoT Core.
+def downlink_dir(root: str | Path, thing: str) -> Path:
+    """Buzón de bajada de ese gabinete. Lo crean los dos lados, sin coordinarse."""
+    d = Path(root) / thing
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 def _atomic_write(path: Path, body: str) -> None:
@@ -63,6 +89,8 @@ class SpoolMqttTransport:
         online: bool = True,
         archive_dir: str | Path | None = None,
         archive_topics: tuple[str, ...] = (),
+        downlink_root: str | Path | None = None,
+        poll_s: float = 0.05,
     ) -> None:
         self.dir = Path(spool_dir)
         self.dir.mkdir(parents=True, exist_ok=True)
@@ -72,6 +100,16 @@ class SpoolMqttTransport:
         self._seq = 0
         self._lock = threading.Lock()
         self.subscriptions: dict[str, Callable[[str, bytes], None]] = {}
+        # [T-5.29] Bajada. `None` = gabinete sin buzón: la demo de Fase 1 no lo
+        # necesitaba y el arnés sigue funcionando exactamente igual sin él.
+        self.downlink = downlink_dir(downlink_root, thing) if downlink_root else None
+        self._poll_s = poll_s
+        self._poller: threading.Thread | None = None
+        self._stop = threading.Event()
+        #: Cuántos mensajes de bajada se han ENTREGADO a una suscripción. Lo lee
+        #: la guarda de no-vacuidad del guion: sin este número, una escena en la
+        #: que no llegara ningún comando pasaría en verde sin haber probado nada.
+        self.delivered = 0
         # Copia inmutable de lo publicado en ciertos topics, para RE-ENTREGAR el
         # mensaje byte-idéntico y probar la idempotencia del pipeline (ON CONFLICT).
         self.archive_dir = Path(archive_dir) if archive_dir else None
@@ -84,6 +122,7 @@ class SpoolMqttTransport:
         if not self._online:
             raise ConnectionError("WAN offline (demo)")
         self._connected = True
+        self._arrancar_bajada()
 
     def disconnect(self) -> None:
         self._connected = False
@@ -114,9 +153,82 @@ class SpoolMqttTransport:
     def connected(self) -> bool:
         return self._connected
 
-    # --- palanca de la demo: corte y restauración de la WAN ----------------
+    # --- [T-5.29] bajada nube→gabinete -------------------------------------
+    def _arrancar_bajada(self) -> None:
+        """Hilo que vacía el buzón. Idempotente: reconectar no duplica hilos."""
+        if self.downlink is None or (self._poller is not None and self._poller.is_alive()):
+            return
+        self._stop.clear()
+        self._poller = threading.Thread(target=self._bajada, daemon=True, name="spool-downlink")
+        self._poller.start()
+
+    def _bajada(self) -> None:
+        while not self._stop.is_set():
+            if self._connected:
+                self.entregar_pendientes()
+            self._stop.wait(self._poll_s)
+
+    def entregar_pendientes(self) -> int:
+        """Entrega lo que haya en el buzón a la suscripción de su topic.
+
+        Devuelve cuántos entregó. Se expone además del hilo porque en un test
+        —donde no hay reloj que esperar— pedirlo explícitamente es determinista.
+
+        **Entregar es consumir**, igual que un mensaje QoS1 que el cliente
+        confirma: el archivo se borra ANTES de invocar el callback, para que un
+        despacho que tarde no se convierta en una segunda entrega. Y el
+        dispatcher del edge es idempotente por nonce de todas formas: un replay
+        lo rechazaría, que es lo que debe pasar.
+
+        Sin suscripción para ese topic el archivo se QUEDA: el gabinete todavía
+        no ha llegado a suscribirse, y tirarlo sería perder un comando por una
+        carrera de arranque.
+        """
+        if self.downlink is None or not self._connected:
+            return 0
+        entregados = 0
+        for path in sorted(self.downlink.glob("*.json")):
+            # Se re-comprueba POR ARCHIVO, no solo al entrar. El enlace puede
+            # caerse a mitad del lote, y con la comprobación únicamente en el
+            # bucle del hilo había una carrera real: el hilo entraba con la WAN
+            # arriba, `go_offline()` corría en medio y el comando bajaba igual.
+            # Salió en la suite completa, no en el módulo aislado.
+            if not self._connected:
+                break
+            try:
+                sobre = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue  # escritura a medias: el siguiente barrido lo verá entero
+            topic = sobre.get(META_TOPIC, "")
+            callback = self.subscriptions.get(topic)
+            if callback is None:
+                continue
+            path.unlink(missing_ok=True)
+            entregados += 1
+            with self._lock:
+                self.delivered += 1
+            # El callback del edge JAMÁS lanza (lo garantiza `on_command`), pero
+            # este hilo tampoco puede morir por sorpresa: se queda sin bajada el
+            # gabinete entero y en silencio.
+            try:
+                callback(topic, json.dumps(sobre["payload"]).encode())
+            except Exception:  # noqa: BLE001
+                pass
+        return entregados
+
+    @property
+    def pendientes_de_bajada(self) -> int:
+        """Comandos en el buzón sin entregar (p. ej. con la WAN caída)."""
+        return 0 if self.downlink is None else len(list(self.downlink.glob("*.json")))
+
+    # --- palanca de la demo: corte y restauración a WAN --------------------
     def go_offline(self) -> None:
-        """Caída de WAN: se desconecta y el próximo ``connect()`` falla."""
+        """Caída de WAN: se desconecta y el próximo ``connect()`` falla.
+
+        La bajada cae con ella —es el mismo enlace—, así que un comando emitido
+        durante el corte se queda en el buzón y se entrega al reconectar. Es lo
+        que hace la sesión persistente de IoT Core con QoS1.
+        """
         self._connected = False
         self._online = False
 
@@ -236,3 +348,41 @@ class SpoolSqsClient:
     def pending_count(self) -> int:
         """Mensajes que quedan en la cola (visibles o en vuelo). 0 = todo procesado."""
         return sum(len(list(d.glob("*.json"))) for d in self.dirs)
+
+
+class SpoolCommandPublisher:
+    """[T-5.29] ``CommandPublisher`` de la nube que escribe en el buzón del thing.
+
+    Es el reflejo exacto de ``IotDataPublisher``: recibe ``(topic, payload)`` con
+    el envelope **ya firmado** por ``commands.service.issue_signed_command`` y lo
+    deja donde el gabinete lo va a leer. **No firma, no verifica y no interpreta**
+    — si lo hiciera, la demo estaría probando este archivo en vez del dispatcher
+    real del edge, que es justo lo que hay que probar.
+
+    El thing sale del topic (``takab/cmd/<thing>``, ``takab/cfg/<thing>``), igual
+    que en IoT Core: ahí el topic ES la dirección.
+    """
+
+    def __init__(self, downlink_root: str | Path) -> None:
+        self.root = Path(downlink_root)
+        self.root.mkdir(parents=True, exist_ok=True)
+        self._seq = 0
+        self._lock = threading.Lock()
+        #: Cuántos comandos se han PUBLICADO. La otra mitad del conteo de la
+        #: guarda de no-vacuidad: publicados aquí, entregados allá.
+        self.published: list[tuple[str, str]] = []  # (topic, command_id | "")
+
+    def publish(self, topic: str, payload: bytes) -> None:
+        thing = topic.rsplit("/", 1)[-1]
+        sobre = json.loads(payload)
+        with self._lock:
+            self._seq += 1
+            name = f"{self._seq:012d}-{uuid.uuid4().hex[:8]}.json"
+            self.published.append((topic, str(sobre.get("command_id", ""))))
+        # El envelope viaja INTACTO dentro de `payload`; el `meta_topic` de fuera
+        # es solo la dirección, como el topic en IoT Core, y el transporte lo usa
+        # para elegir a qué suscripción entregarlo.
+        _atomic_write(
+            downlink_dir(self.root, thing) / name,
+            json.dumps({META_TOPIC: topic, "payload": sobre}),
+        )

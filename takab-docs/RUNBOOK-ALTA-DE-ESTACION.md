@@ -109,7 +109,41 @@ Esto crea el *thing* IoT, su certificado mTLS y su clave HMAC de comandos, y baj
 ## 5. Parte 4 — Completar el `edge.env` del gabinete
 
 `provision` dejó los secretos. Ahora **agrega** (append) los bloques restantes a
-`/etc/takab/edge.env` en el Pi. Todas las variables llevan prefijo `TAKAB_EDGE_`; los campos
+`/etc/takab/edge.env` en el Pi.
+
+> ### ⚠️ La identidad son CÓDIGOS, no UUIDs — y el gateway ya está puesto
+>
+> Lo que el gabinete manda en cada payload es lo que la ingesta compara contra el registro, y
+> **compara códigos y seriales legibles, no UUIDs**
+> (`api/src/takab_api/ingest/handlers.py:8-16`):
+>
+> | Lo que viaja en el payload | Contra qué se compara | Ejemplo |
+> |---|---|---|
+> | `payload.tenant_id`  | `tenants.code`     | `hospital-central` |
+> | `payload.site_id`    | `sites.code`       | `hospital-central-torre-a` |
+> | `payload.gateway_id` | `gateways.serial` (= `iot_thing`) | `gw-hospital-0001` |
+>
+> Si no coinciden, `_identity_reject` (`handlers.py:118-131`) devuelve
+> `gateway mismatch: payload=… registro=…` y **el mensaje se va a la cola de descarte**. El
+> gabinete queda aprovisionado, con su certificado, conectado por mTLS… y **mudo en la nube**,
+> sin que ninguna pantalla explique por qué.
+>
+> **`TAKAB_EDGE_GATEWAY_ID` ya lo dejó bien `provision_gateway.sh:163`**, que escribe ahí el
+> *thing name*. **No lo sobrescribas**: hasta el 2026-09-04 este runbook mandaba pisarlo con un
+> UUID, que es exactamente lo que rompe la ingesta. Si lo has hecho, bórralo del `edge.env` y
+> vuelve a correr `provision_gateway.sh` (es idempotente y `merge_env.py` conserva lo demás).
+>
+> **Por qué el aprovisionador ya lo deja bien y no hay que tocarlo:** `provision_gateway.sh`
+> recibe el *thing name* como primer argumento —el mismo que Terraform creó y el mismo que va en
+> `iot_thing`— y lo escribe tal cual en su **bloque gestionado**
+> (`printf 'TAKAB_EDGE_GATEWAY_ID=%s…' "$THING" … >"$TMP/edge.env.managed"`). No hay conversión,
+> ni UUID, ni un paso intermedio donde perderlo: **es la misma cadena que la ingesta espera**.
+> Ese bloque se reescribe en cada corrida y `merge_env.py` conserva lo que tú añadiste, así que
+> re-aprovisionar es seguro y **corrige** el `edge.env` si alguien lo pisó.
+>
+> Que estas tres fuentes —runbook, aprovisionador e ingesta— sigan diciendo lo mismo lo comprueba
+> `api/tests/test_runbook_alta_de_estacion.py`, y si dejan de coincidir el build se pone rojo
+> nombrando las tres. Todas las variables llevan prefijo `TAKAB_EDGE_`; los campos
 anidados usan doble guion bajo `__` (`edge/takab_edge/config/settings.py`).
 
 ```dotenv
@@ -118,10 +152,10 @@ anidados usan doble guion bajo `__` (`edge/takab_edge/config/settings.py`).
 # TAKAB_EDGE_MQTT_ENDPOINT=...
 # TAKAB_EDGE_LOCAL_API_PIN=...
 
-# --- Identidad (multi-tenant) --- deben COINCIDIR con lo que registres en la nube (§6)
-TAKAB_EDGE_TENANT_ID=<uuid del tenant/cliente>
-TAKAB_EDGE_SITE_ID=<uuid del sitio>
-TAKAB_EDGE_GATEWAY_ID=<uuid del gateway>
+# --- Identidad (multi-tenant) --- CÓDIGOS LEGIBLES, NUNCA UUIDs (ver el aviso de abajo)
+TAKAB_EDGE_TENANT_ID=hospital-central         # = tenants.code
+TAKAB_EDGE_SITE_ID=hospital-central-torre-a   # = sites.code
+# TAKAB_EDGE_GATEWAY_ID=gw-hospital-0001      # YA LO ESCRIBIÓ provision_gateway.sh — NO LO TOQUES
 TAKAB_EDGE_IOT_THING=gw-hospital-0001        # = el thing de Terraform (client_id MQTT)
 TAKAB_EDGE_STATION=R4F74                       # código de estación del Shake
 TAKAB_EDGE_SITE_NAME=Hospital Central Puebla   # rótulo del panel LAN
@@ -163,22 +197,82 @@ sudo systemctl restart takab-edge.service && systemctl status takab-edge.service
 
 ---
 
+## 5.bis Parte 4.5 — Instalar el software del edge
+
+**Este paso faltaba en el runbook** (hasta el 2026-09-04): `provision_gateway.sh` deja
+identidad, certificados y secretos, pero **no copia el código**. Un gabinete aprovisionado sin
+esto no tiene nada que arrancar.
+
+```bash
+deploy/edge/deploy.sh <ssh_host>            # p.ej. takab-pi5
+```
+
+Qué hace (`deploy/edge/deploy.sh`): rsync a una **release nueva** que nadie apunta todavía →
+pre-vuelo `compileall` → `uv sync` con los extras dentro de esa release → **gate de imports**
+(`takab_edge.supervisor` + `takab_edge.gpio.__main__`, con `lgpio` y `awsiot`) → unidades
+systemd → repunte del symlink. Si algo falla antes del repunte, **el gabinete no se toca**.
+
+- La primera vez migra el layout a A/B y exige `--ventana-de-mantenimiento` (ver
+  `RUNBOOK-sesion-de-vida.md`; `G-01` gatea esa ventana).
+- Escribe el `FW_VERSION` de la release. Ese valor es el que el gabinete **declara** en su
+  heartbeat y el que hay que publicar en el paso siguiente — **por igualdad**.
+
+---
+
+## 5.ter Parte 4.6 — Publicar la versión en el registro de releases
+
+**También faltaba.** Sin este paso la flota entera sale **`SIN REFERENCIA`**: se sabe qué corre
+cada gabinete, no si eso es lo actual (`api/src/takab_api/routers/fleet.py:372-386`).
+
+```bash
+POST /fleet/releases   { "version": "<el FW_VERSION exacto que escribió deploy.sh>" }
+```
+
+- **Solo `takab_superadmin`** (`_PUBLISH_RELEASE_ROLES`). No tiene acción de matriz propia a
+  propósito: no hay botón, es superficie de herramienta/CI.
+- La comparación con lo que declara el aparato es **por igualdad**, así que un espacio de más
+  deja `DESCONOCIDA` a toda la flota que corra ese código.
+- Republicar la misma versión da **409**: la tabla es append-only.
+
+---
+
 ## 6. Parte 5 — Registrar la estación en la nube (API)
 
 Una "estación" en la nube = **un sitio (`site`) + un gateway + uno o más sensores**. Se crean en
 **este orden** (cada uno hereda el `tenant_id` del anterior):
 
-1. **`POST /sites`** — el edificio/ubicación.
-   Campos: `code`, `name`, `lat`, `lon`, `timezone`, `criticality`, `address`, `building_type`.
+> Los tres cuerpos rechazan claves desconocidas (`extra="forbid"`), así que un campo de más da
+> **422** y no un aviso: las listas de abajo son EXACTAS y las ancla
+> `api/tests/test_runbook_alta_de_estacion.py` contra los esquemas.
+
+1. **`POST /sites`** — el edificio/ubicación (`api/src/takab_api/schemas/sites.py::SiteCreate`).
+   Campos: `tenant_id`, `code`, `name`, `lat`, `lon`, `timezone`, `criticality`, `address`,
+   `building_type`.
    - Un rol **interno** (superadmin/support) **debe nombrar `tenant_id`** explícitamente; un
      `tenant_admin` queda forzado a su propio tenant (`api/src/takab_api/routers/_common.py`).
    - `lat/lon` importan: la nube calcula el quórum por **distancia real** entre sitios (§8).
-2. **`POST /fleet/gateways`** — el Pi. Campos: `site_id`, `serial`, `fw_version`,
-   **`iot_thing`** (= el thing de Terraform; ponlo aquí para que deje de estar "PENDIENTE DE
-   APROVISIONAR"), `has_wr1`, `installed_at`. **No** lleva `tenant_id` (lo hereda del sitio).
-3. **`POST /sensors`** — el RS4D. Campos: `site_id`, `gateway_id`, `kind` (`ground`/`structural`),
-   `model`, `serial`, `channels` (default `{EHZ,ENZ,ENN,ENE}`), `sample_rate` (100), `mount`,
-   `lat/lon`, y **`calibration_source`** (déjalo vacío hasta §7).
+   - `building_type` **sugiere** umbrales por tipología, no los impone (`T-5.16`, `D-28`).
+2. **`POST /fleet/gateways`** — el Pi (`schemas/fleet.py::GatewayCreate`).
+   Campos: `site_id`, `serial`, `iot_thing`, `has_wr1`, `equipment`, `installed_at`.
+   - **`iot_thing`** = el thing de Terraform. Ponlo aquí para que el gabinete deje de estar
+     "PENDIENTE DE APROVISIONAR".
+   - **No lleva `tenant_id`**: lo hereda del sitio, y la RLS lo valida.
+   - **No lleva `fw_version`, y mandarlo da 422.** Es deliberado: la versión la **DECLARA el
+     gabinete** en su heartbeat (`T-1.74`), no el formulario. Este runbook lo mandaba hasta el
+     2026-09-04.
+   - **`equipment`** son los cinco actuadores REALMENTE instalados
+     (`siren`/`strobe`/`gas_valve`/`elevator`/`door_retainer`, `schemas/fleet.py::
+     EquipmentProfile`). El default es **todo `true`**, así que omitirlo hace que la consola
+     pinte cinco actuadores en un gabinete que quizá tiene dos. Decláralo siempre:
+     `"equipment": {"siren": true, "strobe": true, "gas_valve": false, "elevator": false,
+     "door_retainer": false}`.
+3. **`POST /sensors`** — el RS4D (`schemas/sensors.py::SensorCreate`). Campos: `site_id`,
+   `gateway_id`, `zone_id`, `kind` (`ground`/`structural`), `model`, `serial`, `channels`
+   (default `{EHZ,ENZ,ENN,ENE}`), `sample_rate` (100), `mount`, `lat`, `lon`, y
+   **`calibration_source`** (déjalo vacío hasta §7).
+   - El `serial` del sensor es el **código de estación** (`R4F74`): la ingesta compara
+     `Feature1s.station` contra `sensors.serial` (`handlers.py:8-16`). Si no cuadra, las
+     features del gabinete se descartan aunque todo lo demás esté bien.
 
 Puedes hacerlo desde la **consola web** (Flota → alta de sitio/gateway/sensor,
 `web/src/features/fleet/`) o por API directa.
@@ -196,6 +290,28 @@ La acción se llama **`manage_fleet`** y la tienen **solo**:
 
 Fuente: `api/src/takab_api/auth/matrix.py` (`ROLE_ACTION_MATRIX[...]["manage_fleet"]`), reforzado
 por RLS en `db/schema.sql`.
+
+---
+
+## 6.bis Parte 5.5 — Conjunto de reglas: sin esto la estación no se sincroniza
+
+**Faltaba en el runbook.** Un gabinete sin `rule_set` aplicable **nunca entra al sincronizado
+firmado**: no recibe umbrales, ni equipamiento, ni catálogo — el doc firmado que el edge espera
+sencillamente no se produce para él.
+
+```bash
+PUT  /rule-sets                       # crea la versión activa del alcance (version+1)
+POST /rule-sets/{rule_set_id}/publish # 202: marca la intención de sincronizar al edge
+```
+
+- **Alcance**: `scope_type` `tenant` o `site`. Un `rule_set` de **tenant** cubre a toda estación
+  nueva de ese cliente — si el cliente ya tiene uno, **esta estación ya está cubierta y no hace
+  falta crear otro**. Uno de **sitio** manda sobre el de tenant.
+- **El `config` DEBE traer la clave `edge`.** Un `rule_set` sin ella no se sincroniza, y es a
+  propósito (`T-1.7`): lo que viaja al gabinete es ese subárbol, firmado.
+- El alcance tiene que pertenecer al tenant del token, o 403/404
+  (`api/src/takab_api/routers/rule_sets.py:64-78`).
+- Verifica en el panel LAN del gabinete que `config_version` deja de ser `v0 · defaults`.
 
 ---
 
@@ -271,17 +387,19 @@ que quedó registrada: *"sensibilidad plana @5 Hz, sin deconvolución de respues
 
 ## 9. Multi-tenant HOY — crear clientes y asignarles estaciones
 
-> **Estado actual (antes de T-1.72):** **no hay** endpoint ni botón para crear clientes. Se hace
-> por **SQL** en la DB. T-1.72 traerá el alta de clientes desde la consola (superadmin).
+> **Corregido el 2026-09-04.** Este párrafo decía que «no hay endpoint ni botón para crear
+> clientes» y mandaba hacerlo por SQL a mano. `T-1.72` cerró el **2026-07-15**: el alta de
+> clientes es API y consola desde entonces.
 
-**Crear un cliente (tenant) hoy** — vía seed/migración SQL (patrón `db/seeds/prod_fleet.sql`),
-aplicada como superusuario/`takab_migrator`:
-```sql
-INSERT INTO tenants (code, name, vertical, plan_code, isolation_mode, status)
-VALUES ('hospital-central', 'Hospital Central Puebla', 'salud', 'mvp', 'logical', 'active');
-```
-Campos (`db/schema.sql:68-78`): `code` (único), `name`, `vertical`, `plan_code`,
+**Crear un cliente (tenant)** — `POST /tenants`, acción `manage_tenants`, **solo
+`takab_superadmin`** (`api/src/takab_api/routers/tenants.py:53`). También desde la consola.
+
+Campos (`db/schema.sql`, tabla `tenants`): `code` (único), `name`, `vertical`, `plan_code`,
 `isolation_mode` (`logical`/`dedicated`), `visibility` (`private`/`gov_shared`), `status`.
+
+> **El SQL a mano ya no es el camino** y tiene un precio que no se ve: saltarse el endpoint
+> también se salta la fila de `audit_log` que deja el alta, y con ella la evidencia de quién dio
+> de alta a ese cliente y cuándo.
 
 **Asignarle estaciones** = crear sus `sites`/`gateways`/`sensores` **bajo ese `tenant_id`** (§6).
 Todo hereda el tenant del sitio; el superadmin **nombra el `tenant_id`** al crear el sitio. Una
@@ -291,9 +409,13 @@ estación **no se puede mover** a otro tenant (los routers bloquean el cruce con
 
 ## 10. Visibilidad ACTUAL — quién ve qué
 
-> **Estado actual (antes de T-1.73):** la visibilidad es **fija por rol**, no configurable. T-1.73
-> traerá la visibilidad **configurable** por el superadmin (ver que existen / ver datos, de un
-> cliente o de todos).
+> **Corregido el 2026-09-04.** Este párrafo decía que la visibilidad era «fija por rol, no
+> configurable». `T-1.73` cerró el **2026-07-15**: hay concesiones explícitas desde entonces —
+> `POST /visibility-grants` y `DELETE /visibility-grants/{id}`, acción `manage_visibility`, solo
+> `takab_superadmin` (`api/src/takab_api/routers/visibility.py:45-84`).
+>
+> La tabla de abajo sigue describiendo el **default por rol**, que es lo que rige mientras no
+> haya una concesión; una concesión lo AMPLÍA, nunca lo recorta.
 
 | Quién | Ve qué (metadatos **y** datos) | ¿Configurable? |
 |---|---|---|
@@ -310,12 +432,19 @@ de tenant** que los metadatos, aislados por las vistas `*_secure` (por el confli
 
 ## Apéndice — checklist rápido de alta
 
+0. [ ] (Cliente nuevo) `POST /tenants` — superadmin, acción `manage_tenants` (§9).
 1. [ ] Shake en red; anota IP y código de estación `AM.Rxxxx` (no tocar Shake OS).
 2. [ ] Terraform: agrega el thing a `gateway_fleet` → `apply`.
 3. [ ] `provision_gateway.sh <thing> <ssh_host>` → certs + secretos en el Pi; guarda el PIN.
 4. [ ] **Agrega** identidad + SeedLink + rutas de cert al `edge.env` (append; no re-provisiones).
-5. [ ] Nube: `POST /sites` → `POST /fleet/gateways` (con `iot_thing`) → `POST /sensors`
-       (rol `manage_fleet`).
-6. [ ] Calibra: sensibilidades al `edge.env` (append) **+** `PUT /sensors` `calibration_source`.
-7. [ ] Reinicia `takab-edge.service`; verifica flota, heartbeat, reposo 0.6–1.1 mg, unidades `g`.
-8. [ ] (Cliente nuevo) crea el tenant por SQL y cuelga sus sitios/gateways/sensores del `tenant_id`.
+       **La identidad son CÓDIGOS, no UUIDs**, y `TAKAB_EDGE_GATEWAY_ID` ya está puesto: **no lo
+       toques** (§5).
+5. [ ] `deploy/edge/deploy.sh <ssh_host>` — instala el software del edge (§5.bis).
+6. [ ] `POST /fleet/releases` con el `FW_VERSION` EXACTO que escribió el paso anterior (§5.ter).
+7. [ ] Nube: `POST /sites` → `POST /fleet/gateways` (con `iot_thing` y **`equipment`**, **sin
+       `fw_version`**) → `POST /sensors` (rol `manage_fleet`, §6).
+8. [ ] `rule_set` aplicable al sitio o a su tenant, con clave `edge`, y **publicado** (§6.bis).
+       Sin esto la estación no entra al sincronizado firmado.
+9. [ ] Calibra: sensibilidades al `edge.env` (append) **+** `PUT /sensors` `calibration_source`.
+10. [ ] Reinicia `takab-edge.service`; verifica flota, heartbeat, reposo 0.6–1.1 mg, unidades `g`,
+        y que el panel LAN deje de decir `v0 · defaults`.

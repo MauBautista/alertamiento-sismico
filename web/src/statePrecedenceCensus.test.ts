@@ -181,17 +181,29 @@ describe("censo · ningún panel de la pantalla de firma clava su frescura (T-2.
     ).toBe(true);
   });
 
-  it("la lista vacía NO lo está por vacuidad: los ocho marcos siguen ahí", () => {
+  it("la lista vacía NO lo está por vacuidad: los doce marcos siguen ahí", () => {
     // El agujero que abre pagar la deuda. Mientras la lista tenía siete
     // entradas, un analizador que se quedara ciego se delataba solo; con la
     // lista vacía, encontrar CERO marcos también «cuadra». Este test cierra esa
     // puerta: la población se sigue DERIVANDO del árbol —no se enumera para
-    // vigilar—, y lo que se fija es que la derivación siga viendo los ocho
+    // vigilar—, y lo que se fija es que la derivación siga viendo los DOCE
     // paneles que el inspector tiene delante al firmar.
     const enLaPagina = MARCOS.filter((m) => ARBOL.includes(m.fichero)).map((m) => m.clave);
     expect(enLaPagina).toEqual([
+      // [T-3.12.c] El noveno. Cablea `staleSince` de verdad desde `useCctv`, con el
+      // mismo reloj y el mismo umbral que el resto de la pantalla.
+      "features/triage/CctvPanel.tsx#EVACUACIÓN OBSERVADA",
+      // [T-5.12] Los dos de la clasificación. El de la TASA es el que más
+      // importa aquí: un porcentaje de falsos positivos congelado, pintado como
+      // vivo, es una cifra que alguien lleva a una junta.
+      "features/triage/ClassificationPanel.tsx#CLASIFICACIÓN",
+      "features/triage/ClassificationPanel.tsx#FALSOS POSITIVOS",
       "features/triage/ComplianceDeclared.tsx#MARCO DECLARADO",
       "features/triage/IncidentTimeline.tsx#BITÁCORA",
+      // [T-5.15] La cadena de aviso. Su `staleSince` importa tanto como el de
+      // la bitácora: «1 DE 3 ENTREGADOS» de hace veinte minutos, pintado como
+      // vivo, contesta que sí llegó lo que quizá nunca llegó.
+      "features/triage/NotifyChain.tsx#CADENA DE AVISO",
       "features/triage/PostEventSummary.tsx#RESUMEN POST-EVENTO",
       "features/triage/QuorumNodes.tsx#QUÓRUM",
       "features/triage/QuorumNodes.tsx#QUÓRUM~2",

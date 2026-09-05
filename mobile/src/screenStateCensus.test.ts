@@ -120,6 +120,102 @@ describe("censo móvil · el barrido encuentra el árbol", () => {
 });
 
 /* =====================================================================
+   C-0b · [T-5.21] LA FRESCURA NO SE DECIDE CON UNA SEÑAL DE FALLO
+   ===================================================================== */
+
+/**
+ * **Vacía, y así se queda.** `staleSinceMs` contesta «¿de cuándo es este dato?».
+ * Una expresión que dependa de `isError` o de `failureCount` contesta otra:
+ * «¿está fallando el refetch?». Con red sana y un dato de hace diez minutos,
+ * todas las señales de fallo valen `false` y la pantalla **afirma frescura** —
+ * y el cableado de C-1 pasa, porque el `staleSinceMs` está puesto.
+ *
+ * Es el defecto que `T-5.21` encontró y que era **más grande de lo que su ficha
+ * decía**: no era una pantalla, eran nueve, y siete de ellas por un `stale`
+ * compartido en `useAlertState` que valía `isError && data !== undefined`.
+ *
+ * Si algún día un marco necesita legítimamente decidir su frescura con una señal
+ * de fallo, se declara aquí CON SU RAZÓN. Lo que no vale es el silencio.
+ */
+const FRESCURA_DECIDIDA_POR_ERROR: string[] = [];
+
+/** Igual que la anterior, un salto más arriba: quien la CALCULA. Vacía. */
+const FRESCURA_PRODUCIDA_POR_ERROR: string[] = [];
+
+describe("censo móvil · la frescura sale del RELOJ, no de que algo falle", () => {
+  it("ningún marco decide su edad con una señal de fallo", () => {
+    const medido = CENSO.frescuraPorError.map((f) => f.clave).sort();
+    const detalle = CENSO.frescuraPorError
+      .map((f) => `  ${f.fichero}:${f.linea} → ${f.expresion}  [${f.senales.join(", ")}]`)
+      .join("\n");
+    exigirIgual(
+      medido,
+      FRESCURA_DECIDIDA_POR_ERROR,
+      "MARCOS QUE DECIDEN SU FRESCURA CON UNA SEÑAL DE FALLO. `staleSinceMs` " +
+        "contesta «¿de cuándo es este dato?», no «¿está fallando el refetch?». " +
+        "Con red sana y datos de hace diez minutos, un dato viejo se pinta como " +
+        "fresco. Derívalo del RELOJ con `staleSinceOf(dataUpdatedAt, ahora, poll)`:" +
+        `\n${detalle}`,
+    );
+  });
+
+  it("ningún hook DEVUELVE una frescura decidida por un fallo", () => {
+    // Un salto más arriba, y es donde estaba el defecto de verdad: siete
+    // pantallas heredaban `stale = isError && data !== undefined` sin mencionar
+    // ningún error en su propio marcado, así que el censo del marco las veía
+    // limpias. La regla tiene que estar donde se CALCULA.
+    const medido = CENSO.frescuraProducidaPorError.map((f) => f.clave).sort();
+    const detalle = CENSO.frescuraProducidaPorError
+      .map((f) => `  ${f.fichero}:${f.linea} → ${f.clave.split("::")[1]} = ${f.expresion}`)
+      .join("\n");
+    exigirIgual(
+      medido,
+      FRESCURA_PRODUCIDA_POR_ERROR,
+      "HOOKS QUE PRODUCEN UNA FRESCURA DECIDIDA POR UN FALLO. Quien consuma esto " +
+        "pinta un dato de hace diez minutos como fresco mientras la red esté sana, " +
+        `y su propio marcado no menciona ningún error:\n${detalle}`,
+    );
+  });
+
+  it("declara CUÁNTOS marcos inspecciona: cero no vale", () => {
+    // Guarda anti-vacuidad de esta regla, con el número escrito. Las dos veces
+    // que este censo se quedó ciego mientras se escribía, la lista salió vacía
+    // y el bloque pasó en verde: primero por mirar solo `src/app` —el marco de
+    // `AccountScreen` vive en `features/`— y antes por no leer el SQL… (ese fue
+    // el censo hermano de la API, y la lección es la misma).
+    const conMarco = PRODUCCION.filter(
+      (f) => f.text.includes("<StateFrame") && !f.path.includes("/test-utils/"),
+    ).map((f) => f.path.slice(SRC.length + 1));
+    expect(conMarco.length).toBeGreaterThanOrEqual(15);
+    // Y al menos uno FUERA de `src/app`: es la mitad de la regla que la primera
+    // versión se dejó, y donde estaba el defecto de `AccountScreen`.
+    expect(conMarco.some((r) => r.startsWith("features/"))).toBe(true);
+  });
+
+  it("el censo SABE mirar la expresión (no pasa por no encontrar nada)", () => {
+    // Guarda anti-vacuidad del propio analizador: si dejara de leer el
+    // `initializer` del atributo, la lista saldría vacía y este bloque pasaría
+    // en verde para siempre. Aquí se comprueba contra fuente sintética.
+    const sintetica = fuente(
+      "app/mentirosa.tsx",
+      "export default function P(){ return <StateFrame loading={false} error={null} " +
+        "empty={false} staleSinceMs={q.isError ? q.dataUpdatedAt : null} />; }",
+    );
+    const censoSintetico = censar([sintetica], SRC_FALSO);
+    expect(censoSintetico.frescuraPorError.map((f) => f.senales)).toEqual([["isError"]]);
+
+    // …y la misma guarda para la regla del productor.
+    const productor = fuente(
+      "features/x/useAlgo.ts",
+      "export function useAlgo(){ const q = usar(); return { stale: q.isError && q.data }; }",
+    );
+    expect(
+      censar([productor], SRC_FALSO).frescuraProducidaPorError.map((f) => f.senales),
+    ).toEqual([["isError"]]);
+  });
+});
+
+/* =====================================================================
    C-1 · CABLEADO — todo `<StateFrame>` declara sus cuatro entradas
    ===================================================================== */
 

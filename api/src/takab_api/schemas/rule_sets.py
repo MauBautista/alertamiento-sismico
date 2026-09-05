@@ -24,6 +24,9 @@ class RuleSetOut(BaseModel):
     config: dict[str, Any]
     created_by: UUID | None
     created_at: datetime
+    #: [T-5.16] Versión a la que esta VUELVE, o `None`. Solo la traen las que
+    #: nacen de un rollback: el histórico no se reescribe, se le añade encima.
+    rolled_back_to: UUID | None = None
 
 
 class RuleSetList(BaseModel):
@@ -93,6 +96,18 @@ def merge_secrets(incoming: dict[str, Any], current: dict[str, Any] | None) -> d
         else:
             merged[channel] = dest
     return {**incoming, "notifications": merged}
+
+
+class RuleSetRollbackIn(BaseModel):
+    """Cuerpo de POST /rule-sets/{id}/rollback (T-5.16).
+
+    ``base_version`` es la versión ACTIVA que el operador tenía delante cuando
+    pulsó. Es el mismo control de concurrencia optimista que el PUT y por la
+    misma razón: dos operadores mirando la misma pantalla, y el segundo no puede
+    revertir a ciegas lo que el primero acaba de guardar.
+    """
+
+    base_version: int
 
 
 class RuleSetPublishOut(BaseModel):

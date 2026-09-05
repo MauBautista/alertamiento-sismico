@@ -315,23 +315,64 @@ describe("epicenterOf / magnitudeOf", () => {
     expect(epicenterOf(null)).toBe("—");
   });
 
-  // [T-2.39] Un guion para TODO se leía como "el dato falló". Son dos ausencias
-  // distintas —no hay evento, o lo hay y el catálogo no lo enriqueció— y el operador
-  // tiene que poder distinguirlas.
-  it("distingue SIN EVENTO de S/CATÁLOGO en vez de devolver guion para todo", () => {
+  // [T-2.39] Un guion para TODO se leía como "el dato falló". Son ausencias
+  // distintas y el operador tiene que poder distinguirlas.
+  // [T-5.10] Y desde esta ficha son CINCO estados con nombre, no dos: el rótulo
+  // sale del glosario compartido `shared/glossary/procedencia.json`.
+  const CON_PROCEDENCIA = {
+    procedencia: "confirmado",
+    procedencia_fuente: "SSN",
+    procedencia_consultada_en: "2026-09-04T12:00:00Z",
+  };
+
+  it("distingue SIN EVENTO de la ausencia de dato externo", () => {
     expect(magnitudeOf(null)).toMatchObject({ kind: "no-event", label: "SIN EVENTO" });
     expect(magnitudeOf(anEvent({ magnitude: null }))).toMatchObject({
       kind: "absent",
-      label: "S/CATÁLOGO",
+      label: "SIN DATO EXTERNO",
     });
-    expect(magnitudeOf(anEvent({ magnitude: 5 }))).toMatchObject({
+    expect(magnitudeOf(anEvent({ magnitude: 5, ...CON_PROCEDENCIA }))).toMatchObject({
       kind: "catalog",
       label: "M 5.0",
     });
   });
 
   it("la magnitud ausente explica POR QUÉ falta, no solo que falta", () => {
-    expect(magnitudeOf(anEvent({ magnitude: null })).title).toMatch(/catálogo/i);
+    expect(magnitudeOf(anEvent({ magnitude: null })).title).toMatch(/fuente oficial/i);
+  });
+
+  // [T-5.10] **Con procedencia, o no se pinta.** El caso peligroso: hay número y
+  // no consta de dónde salió. En la misma pantalla que la sacudida medida por el
+  // sensor del inmueble, esa cifra se lee como NUESTRA.
+  it("una magnitud SIN fuente ni hora de consulta NO se pinta", () => {
+    expect(magnitudeOf(anEvent({ magnitude: 7.1 }))).toMatchObject({
+      kind: "absent",
+      label: "SIN DATO EXTERNO",
+    });
+  });
+
+  it("con fuente pero SIN hora de consulta tampoco se pinta", () => {
+    const parcial = anEvent({
+      magnitude: 7.1,
+      procedencia: "confirmado",
+      procedencia_fuente: "SSN",
+    });
+    expect(magnitudeOf(parcial).kind).toBe("absent");
+  });
+
+  it("cuando se pinta, la cita de procedencia VIAJA con la cifra", () => {
+    const vista = magnitudeOf(anEvent({ magnitude: 7.1, ...CON_PROCEDENCIA }));
+    expect(vista.kind).toBe("catalog");
+    expect(vista.cita).toMatch(/SSN/);
+    expect(vista.cita).toMatch(/consultado/);
+    expect(vista.title).toMatch(/SSN/);
+  });
+
+  it("«sin correlación» tiene su propio texto: no es un hueco", () => {
+    // El estado que más falta hacía: se consultó y NINGÚN evento del catálogo
+    // corresponde a éste. Sin él, un «no sé» se lee como «no pasó nada».
+    const sinCorrelacion = anEvent({ magnitude: null, procedencia: "sin_correlacion" });
+    expect(magnitudeOf(sinCorrelacion).label).toMatch(/SIN CORRELACIÓN/i);
   });
 });
 

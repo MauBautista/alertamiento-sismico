@@ -8,6 +8,8 @@ import type {
   SiteOut,
 } from "@takab/sdk";
 
+import { citaDeProcedencia, pintaCifra, rotuloProcedencia } from "./procedencia";
+
 /** Estados del CHECK de ``dictamens.status`` (db/schema.sql), de menor a mayor gravedad. */
 export type DictamenStatus =
   | "normal_operation"
@@ -328,6 +330,8 @@ export interface MagnitudeView {
   label: string;
   /** Por qué falta, para el `title` del elemento. */
   title: string;
+  /** [T-5.10] Fuente y hora de consulta. Presente sólo cuando se pinta la cifra. */
+  cita?: string;
 }
 
 /**
@@ -347,19 +351,35 @@ export function magnitudeOf(event: SeismicEventOut | null): MagnitudeView {
       title: "El incidente no está asociado a un evento sísmico de red.",
     };
   }
-  if (event.magnitude === null || event.magnitude === undefined) {
+  // [T-5.10] **Con procedencia, o no se pinta.** La condición dejó de ser «hay
+  // número» para ser «hay número Y consta de dónde salió y cuándo se preguntó».
+  //
+  // No es más estricto por gusto: hasta esta ficha la rama del catálogo era
+  // inalcanzable en producción —`seismic_events.magnitude` se inserta SIEMPRE en
+  // NULL— y el día que alguien escribiera un número, éste habría aparecido en la
+  // consola **sin fuente ni hora**, indistinguible de una cifra medida por
+  // nosotros. Ahora esa rama es alcanzable sólo con procedencia completa.
+  const estado = event.procedencia ?? "sin_dato_externo";
+  const cita = citaDeProcedencia(event.procedencia_fuente, event.procedencia_consultada_en);
+  if (
+    event.magnitude === null ||
+    event.magnitude === undefined ||
+    !pintaCifra(estado) ||
+    cita === null
+  ) {
     return {
       kind: "absent",
-      label: "S/CATÁLOGO",
+      label: rotuloProcedencia(estado),
       title:
-        "La magnitud es un dato POST-HOC del catálogo sísmico; TAKAB no la calcula " +
-        "(blueprint §14) y este evento aún no fue enriquecido.",
+        "La magnitud la publica una fuente oficial; TAKAB no la calcula " +
+        "(blueprint §14). Sin fuente y hora de consulta, no se muestra.",
     };
   }
   return {
     kind: "catalog",
     label: `M ${event.magnitude.toFixed(1)}`,
-    title: "Magnitud del catálogo sísmico.",
+    title: `Magnitud publicada por la fuente. ${cita}.`,
+    cita,
   };
 }
 

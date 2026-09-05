@@ -12,7 +12,9 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from takab_api.sites.tipologia import TIPOS
 
 # Espejo de los CHECK del DDL (db/schema.sql): la UI deriva sus opciones de aquí.
 CRITICALITY = ("low", "medium", "high", "critical")
@@ -20,6 +22,23 @@ SITE_STATUS = ("active", "retired")
 
 Criticality = Literal["low", "medium", "high", "critical"]
 SiteStatus = Literal["active", "retired"]
+
+# [T-5.16 · D-28] La tipología NO se enumera aquí: sale de
+# `shared/schemas/tipologia_umbral.json`, que es el mismo fichero del que salen el
+# CHECK de la base y el desplegable de la consola. Un `Literal` habría sido una
+# cuarta copia a mano — y el espejo de la matriz RBAC (`T-5.28`) ya enseñó cómo
+# acaba eso. Se valida con un validador porque un `Literal` necesita las cadenas
+# en tiempo de definición y estas se leen de un fichero.
+BUILDING_TYPES: tuple[str, ...] = TIPOS
+
+
+def _valida_tipologia(v: str | None) -> str | None:
+    """Rechaza lo que no esté en el catálogo. `None` sigue valiendo: un sitio
+    puede no estar clasificado todavía, y meterlo en `otro` afirmaría que
+    alguien lo miró."""
+    if v is not None and v not in BUILDING_TYPES:
+        raise ValueError(f"building_type fuera del catálogo (D-28): {sorted(BUILDING_TYPES)}")
+    return v
 
 
 class ZoneOut(BaseModel):
@@ -66,8 +85,10 @@ class SiteCreate(BaseModel):
     timezone: str = "America/Mexico_City"
     criticality: Criticality = "medium"
     address: str | None = Field(default=None, max_length=500)
-    building_type: str | None = Field(default=None, max_length=100)
+    building_type: str | None = None
     tenant_id: UUID | None = None
+
+    _tipologia = field_validator("building_type")(_valida_tipologia)
 
 
 class SiteUpdate(BaseModel):
@@ -87,6 +108,8 @@ class SiteUpdate(BaseModel):
     timezone: str = "America/Mexico_City"
     criticality: Criticality = "medium"
     address: str | None = Field(default=None, max_length=500)
-    building_type: str | None = Field(default=None, max_length=100)
+    building_type: str | None = None
     status: SiteStatus = "active"
     base_row_version: str | None = None
+
+    _tipologia = field_validator("building_type")(_valida_tipologia)

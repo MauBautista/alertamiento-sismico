@@ -291,3 +291,132 @@ def test_el_manual_no_conserva_el_vocabulario_viejo_de_los_banners():
     assert not huerfanos, "el manual nombra letreros que el panel ya no pinta:\n" + "\n".join(
         f"  · {e} {t}" for e, t in huerfanos
     )
+
+
+# ===================================================================== T-5.03
+#
+# TITULARES DE ALERTA — el mismo evento, tres pantallas, una sola historia.
+#
+# Este bloque nace de un defecto que ocurrió DOS VECES. En T-2.104 la app titulaba
+# «ALERTA SÍSMICA SASMEX» para las cuatro fuentes; se corrigió derivando el titular
+# del `trigger`. La auditoría V1-COMERCIAL del 2026-09-02 lo encontró INTACTO al
+# otro lado: la consola elegía el banner sólo por `severity` y llevaba sus dos
+# textos escritos a fuego, así que un quórum de pánico —`trigger='manual'`,
+# severidad crítica por D-11— salía en el videowall como «ALERTA SÍSMICA ·
+# PROTÉJASE · EDGE · RS4D · REGLAS LOCALES EJECUTADAS» mientras la app, para ESE
+# MISMO incidente, decía «NO ES UNA ALERTA SÍSMICA».
+#
+# Por qué el censo y no tres pruebas sueltas: cada superficie ya tenía la suya y
+# las tres pasaban. Lo que no tenía prueba era la RELACIÓN entre ellas — y es donde
+# vivía la mentira. Aquí se cruza el conjunto completo de triggers que la base
+# admite contra lo que declara el glosario, y lo que declara el glosario contra lo
+# que cada superficie escribe de verdad.
+
+_SCHEMA = _RAIZ / "db" / "schema.sql"
+_SUPERFICIES = {
+    "consola": _RAIZ / "web" / "src" / "features" / "console" / "alertHeadline.ts",
+    "movil": _RAIZ / "mobile" / "src" / "features" / "alert" / "source.ts",
+    "panel": _INDEX,
+}
+
+
+def _titulares() -> dict:
+    return _glosario()["titulares_de_alerta"]
+
+
+def _triggers_de_la_base() -> set[str]:
+    """El CHECK de `incidents.trigger`, leído del DDL — no de una lista a mano."""
+    ddl = _SCHEMA.read_text("utf-8")
+    m = re.search(r"trigger\s+text\s+NOT NULL\s+CHECK \(trigger IN \(([^)]*)\)\)", ddl)
+    assert m, "`incidents.trigger` ya no declara su CHECK como se esperaba en db/schema.sql"
+    return set(re.findall(r"'([a-z_]+)'", m.group(1)))
+
+
+def test_el_glosario_cubre_exactamente_los_triggers_que_admite_la_base():
+    """Ni uno de más, ni uno de menos. Por IGUALDAD, que es lo que hace que dure.
+
+    Un quinto valor en el CHECK entra solo en este censo y sale rojo con su
+    nombre hasta que alguien decida cómo se titula en las tres pantallas. Es la
+    única forma de que el caso «trigger que nadie mapeó» no llegue a producción.
+    """
+    de_la_base = _triggers_de_la_base()
+    assert len(de_la_base) >= 4, f"el CHECK se leyó corto: {de_la_base}"
+    assert set(_titulares()["por_trigger"]) == de_la_base
+
+
+@pytest.mark.parametrize("trigger", sorted(_titulares()["por_trigger"]))
+def test_cada_superficie_escribe_de_verdad_el_titular_que_le_asigna_el_glosario(trigger):
+    """El glosario no vale nada si nadie lo obedece: se comprueba en el fuente.
+
+    `panel: null` es legítimo y no se salta en silencio — exige su razón escrita,
+    igual que los ejes que sólo existen en una de las dos pantallas.
+    """
+    decl = _titulares()["por_trigger"][trigger]
+    for superficie, ruta in _SUPERFICIES.items():
+        termino = decl.get(superficie)
+        if termino is None:
+            assert decl.get("sin_termino_en_el_panel_porque"), (
+                f"{trigger}/{superficie} no declara término y tampoco por qué no lo tiene"
+            )
+            continue
+        assert termino in ruta.read_text("utf-8"), (
+            f"el glosario le asigna a {superficie} el titular {termino!r} para "
+            f"`trigger={trigger}` y {ruta.relative_to(_RAIZ)} no lo escribe"
+        )
+
+
+@pytest.mark.parametrize("trigger", sorted(_titulares()["por_trigger"]))
+def test_lo_que_no_es_un_sismo_no_se_titula_como_un_sismo_en_ninguna_pantalla(trigger):
+    """LA REGLA DURA, y la única que un test puede imponer sin discutir de estilo.
+
+    Los textos PUEDEN diferir entre pantallas —un operador y un ocupante no leen
+    lo mismo—; lo que no pueden es contradecirse sobre qué clase de cosa está
+    ocurriendo. Este es el caso `manual` exacto que rompía.
+    """
+    decl = _titulares()["por_trigger"][trigger]
+    if decl["es_sismica"]:
+        return
+    for superficie in _SUPERFICIES:
+        termino = decl.get(superficie)
+        if termino is None:
+            continue
+        for raiz in _titulares()["detecta_sismica"]:
+            assert raiz not in termino, (
+                f"`trigger={trigger}` no es sísmico y el titular de {superficie} "
+                f"({termino!r}) usa {raiz!r}"
+            )
+
+
+def test_solo_el_contacto_del_wr1_se_lleva_el_nombre_del_servicio_oficial():
+    """TAKAB **recibe** la alerta oficial, no la genera.
+
+    Atribuirle a SASMEX una detección propia invierte el deslinde del documento
+    de entrega: el día que el umbral local se dispare de más, el cliente culpa al
+    servicio oficial. Es la razón por la que existe T-2.104, escrita como censo.
+    """
+    por_trigger = _titulares()["por_trigger"]
+    oficiales = {t for t, d in por_trigger.items() if d["es_oficial"]}
+    assert oficiales == {"sasmex"}, oficiales
+    con_el_nombre = {
+        t for t, d in por_trigger.items() if any("SASMEX" in (d.get(s) or "") for s in _SUPERFICIES)
+    }
+    assert con_el_nombre <= oficiales, (
+        f"estos triggers se atribuyen a SASMEX sin serlo: {sorted(con_el_nombre - oficiales)}"
+    )
+
+
+def test_el_trigger_desconocido_no_cae_al_caso_sismico():
+    """El default es lo que convierte un olvido en una afirmación falsa.
+
+    Las dos superficies que pueden encontrarse un trigger no mapeado —la consola
+    y el móvil— tienen que rotularlo, no adivinarlo.
+    """
+    desc = _titulares()["desconocido"]
+    assert desc["es_sismica"] is False
+    for superficie in ("consola", "movil"):
+        termino = desc[superficie]
+        for raiz in _titulares()["detecta_sismica"]:
+            assert raiz not in termino, f"el default de {superficie} usa {raiz!r}: {termino!r}"
+        assert termino in _SUPERFICIES[superficie].read_text("utf-8"), (
+            f"{superficie} no escribe su titular de trigger desconocido"
+        )

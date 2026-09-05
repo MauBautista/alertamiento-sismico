@@ -230,6 +230,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "staleSince",
   ],
   "features/console/DrillBanner.tsx::DrillBanner": ["drill", "error", "pending"],
+  "features/console/DrillModal.tsx::DrillModal": ["plantillas"],
   "features/console/EpicenterModal.tsx::EpicenterModal": ["effective"],
   "features/fleet/FleetAdmin.tsx::FleetAdminPanel": ["codeConfigured", "gatewaysOf"],
   "features/fleet/FleetPage.tsx::FleetPage": [
@@ -250,6 +251,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
   ],
   "features/tenants/UsersCard.tsx::UsersCard": ["data"],
   "features/triage/TriagePage.tsx::TriagePage": [
+    "cctv",
     "current",
     "deepLinkMiss",
     "detail",
@@ -288,6 +290,16 @@ const RAZONES: Record<string, string> = {
     "cuando el operador más necesita el detalle del sitio. Cada hijo trae su propio marco " +
     "(DetailPanel tiene tres). Lo que SÍ queda pendiente es que `staleSince` sólo viaja a " +
     "DetailPanel dentro de `link`: los dos modales no reciben frescura ninguna.",
+  "features/console/DrillModal.tsx::DrillModal":
+    "(a) FORMULARIO DE GUARDADO. Lo único de `plantillas` que queda fuera del marco es el " +
+    "formulario de GUARDAR COMO PLANTILLA: `plantillas.pending` deshabilita el botón y " +
+    "`plantillas.mutationError` pinta el 409 del nombre repetido. Son estado de MUTACIÓN, no " +
+    "un dato de servidor presentado como hecho — el mismo caso que `error`/`pending` en " +
+    "DrillBanner. Y no puede ir dentro: el marco de la lista declara `empty` cuando no hay " +
+    "ninguna plantilla guardada, que es justo el momento en que hace falta crear la primera; " +
+    "meterlo dentro haría imposible dar de alta la primera plantilla del cliente. La LISTA y " +
+    "el aviso de plantilla degradada —lo que sí es dato de servidor— viven dentro del " +
+    "StateFrame con sus cuatro estados.",
   "features/console/DrillBanner.tsx::DrillBanner":
     "(a) TIRA DE ACCIÓN. `drill-idle` vive fuera del marco porque el e2e de T-1.62 mide que " +
     "no pase de 60 px y porque dentro desaparecería en `loading`, dejando al operador sin " +
@@ -339,7 +351,11 @@ const RAZONES: Record<string, string> = {
     "para que el panel del quórum pueda fechar lo que afirma cuando el incidente no " +
     "referencia evento — el dato de esa rama es la fila del incidente, que sale de esta " +
     "consulta. Contarla aquí es correcto (viaja fuera del marco) y es justo lo que hay que " +
-    "vigilar: el día que alguien la PINTE en vez de pasarla, sigue censada.",
+    "vigilar: el día que alguien la PINTE en vez de pasarla, sigue censada. " +
+    "[T-3.12.c] `cctv` está aquí por la MISMA razón que `forensics`: no se pinta, baja " +
+    "entero a `CctvPanel`, que sí tiene su marco con las cuatro entradas y su `staleSince` " +
+    "de verdad. Se cuenta igual, y eso es lo correcto: el día que alguien saque una cifra " +
+    "de evacuación a esta página sin marco, este censo lo dice.",
   "shell/OperatorMenu.tsx::OperatorMenu":
     '(c) DEUDA menor pero real. `label = profile.data?.display_name ?? me?.role ?? ""` se ' +
     "pinta en la topbar de TODAS las pantallas sin marco ni prueba de cuatro estados. El " +
@@ -486,7 +502,7 @@ describe("censo · todo componente con dato de servidor tiene su prueba", () => 
       conDato: CENSO.componentes.length,
       conPrueba: CENSO.componentes.filter((c) => CON_PRUEBA.has(c.fichero)).length,
       sinMarcoPropio: CENSO.componentes.filter((c) => !c.tieneMarco).length,
-    }).toEqual({ conDato: 21, conPrueba: 12, sinMarcoPropio: 2 });
+    }).toEqual({ conDato: 26, conPrueba: 17, sinMarcoPropio: 2 });
   });
 });
 

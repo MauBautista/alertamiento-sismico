@@ -15,8 +15,10 @@ from simulators.mqtt import FakeMqttTransport
 from simulators.quake import quake_packets
 from simulators.rs4d import RS4DSimulator
 from simulators.wr1 import WR1Simulator
+from takab_edge.contracts import ActuationCause, ActuatorAction, ActuatorChannel
 from takab_edge.supervisor import (
     ACKS_TOPIC,
+    AUDIT_TOPIC,
     EVENTS_TOPIC,
     FEATURES_TOPIC,
     HEALTH_TOPIC,
@@ -218,3 +220,107 @@ def test_no_certs_keeps_offline_behaviour(settings):
     sup.build()
     assert sup.cloud._transport is None
     assert sup.cloud.online is False
+
+
+# --------------------------------------------------------------------------
+# [T-2.86.a · criterio 2] La bitácora del gabinete SUBE al volver el enlace
+# --------------------------------------------------------------------------
+#
+# El criterio 1 dejó la constancia en disco; esto prueba el otro extremo. Hasta
+# que existieron el topic autorizado, la regla IoT, la tabla y la ingesta, el
+# `sink` iba a `None` a propósito: publicar en un topic no autorizado DESCONECTA
+# al gabinete en cada publish (producción, 2026-07-12).
+
+
+@pytest.fixture
+def gabinete_con_bitacora_aislada(settings, tmp_path):
+    """Supervisor con la bitácora en un directorio PROPIO de este test.
+
+    Sin esto los tests comparten la bitácora de la máquina, y no por descuido:
+    `ledger_dir_for` es DERIVADO Y ESTABLE a propósito (T-2.67.b) —jamás un
+    `mkdtemp`— porque un directorio nuevo en cada arranque haría que el Pi real
+    perdiera la cola pendiente en cada reinicio. La consecuencia en tests es que
+    `read_all()` devuelve lo acumulado por todas las corridas anteriores (aquí,
+    9.628 filas del 10 de agosto), así que cualquier aserción sobre cuentas
+    totales mide el historial de la máquina y no el test.
+    """
+    transport = FakeMqttTransport()
+    sup = EdgeSupervisor(
+        settings.model_copy(
+            update={"health_heartbeat_s": 0.05, "cloud_spool_dir": str(tmp_path / "spool")}
+        ),
+        seedlink_source=None,
+        mqtt_transport=transport,
+    )
+    sup.start()
+    assert _wait(lambda: sup.cloud.online)
+    try:
+        yield sup, transport
+    finally:
+        sup.stop()
+
+
+def _bitacora(transport: FakeMqttTransport) -> list[dict]:
+    return _payloads(transport, AUDIT_TOPIC)
+
+
+def test_la_bitacora_sube_por_su_topic_con_actor_y_causa(gabinete_con_bitacora_aislada):
+    sup, transport = gabinete_con_bitacora_aislada
+    sup.ledger.record(
+        cause=ActuationCause.SASMEX,
+        actor="wr-1",
+        channel=ActuatorChannel.GAS_VALVE,
+        action=ActuatorAction.ACTIVATE,
+        online=False,
+    )
+    assert sup.ledger.drain() == 1
+    filas = _bitacora(transport)
+    assert len(filas) == 1, "la constancia no salió por `takab/audit`"
+    fila = filas[0]
+    # Las dos mitades que `ActuatorAck` no lleva y que un perito pide primero.
+    assert fila["cause"] == "sasmex" and fila["actor"] == "wr-1"
+    assert fila["online"] is False, "la fila que responde a RO-4.e es la de sin enlace"
+    assert fila["record_id"], "sin `record_id` la nube no puede deduplicar la re-subida"
+
+
+def test_drenar_dos_veces_no_re_sube_lo_ya_confirmado(gabinete_con_bitacora_aislada):
+    """La otra mitad de la regla de oro 3, y la que no se ve sin probarla: lo local
+    NO se borra al subir —el perito lo lee meses después—, así que lo único que
+    impide duplicar es que la marca de agua avance."""
+    sup, transport = gabinete_con_bitacora_aislada
+    sup.ledger.record(cause=ActuationCause.MANUAL, actor="lan", channel="siren", action="silence")
+    assert sup.ledger.drain() == 1
+    assert sup.ledger.drain() == 0, "re-drenar volvió a subir lo ya confirmado"
+    assert len(_bitacora(transport)) == 1
+    # Y lo local sigue entero: subir no es borrar.
+    assert len(sup.ledger.read_all()) == 1
+
+
+def test_sin_enlace_la_bitacora_espera_y_sube_cuando_vuelve(gabinete_con_bitacora_aislada):
+    """El caso de la ficha, entero: se actúa a oscuras y la constancia sube después."""
+    sup, transport = gabinete_con_bitacora_aislada
+    sup.cloud.set_online(False)
+    sup.ledger.record(
+        cause=ActuationCause.SASMEX,
+        actor="wr-1",
+        channel=ActuatorChannel.SIREN,
+        action=ActuatorAction.ACTIVATE,
+    )
+    assert sup.ledger.drain() == 0, "sin enlace no puede darse por subida"
+    assert _bitacora(transport) == []
+    # Y no hace falta llamar a `drain()`: volver el enlace lo dispara solo
+    # (`cloud.on_online`), que es el enganche que la ficha pide.
+    sup.cloud.set_online(True)
+    assert _wait(lambda: len(_bitacora(transport)) == 1), "al volver el enlace no subió sola"
+
+
+def test_una_fila_rota_se_salta_y_no_ciega_a_las_siguientes(gabinete_con_bitacora_aislada):
+    """`drain()` corta al primer fallo —correcto para un enlace caído, donde el
+    orden importa—, pero una fila malformada NUNCA va a validar: bloquear
+    sacrificaría todo lo que venga detrás por una sola fila. Y saltarla no pierde
+    la evidencia, porque lo local no se borra jamás."""
+    sup, transport = gabinete_con_bitacora_aislada
+    assert sup._subir_fila_de_bitacora({"esto": "no es una fila"}) is True
+    sup.ledger.record(cause=ActuationCause.MANUAL, actor="lan", channel="siren", action="silence")
+    assert sup.ledger.drain() == 1
+    assert len(_bitacora(transport)) == 1, "la fila buena de detrás no llegó a subir"

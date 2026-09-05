@@ -336,6 +336,11 @@ async def list_gateways(
                 mqtt_rtt_ms=m["mqtt_rtt_ms"],
                 seedlink_lag_s=m["seedlink_lag_s"],
                 ntp_offset_ms=m["ntp_offset_ms"],
+                # [T-5.24] Viaja al SOC pero NO entra en `derive_fleet_state`:
+                # degradar arrastra la pill, el móvil y el reparto de alarmas, y
+                # ese umbral de servidor no lo ha elegido nadie. El razonamiento
+                # entero está en `schemas/fleet.py`, junto al campo.
+                packet_loss_pct=m["packet_loss_pct"],
                 version_state=drift.state,
                 releases_behind=drift.releases_behind,
                 release_age_s=drift.release_age_s,

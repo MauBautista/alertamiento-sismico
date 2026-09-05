@@ -40,6 +40,9 @@ export interface StartDrillInput {
   scheduledAt?: string | null;
   /** Ejecuta AHORA la agenda indicada y la consume. */
   fromScheduled?: string | null;
+  /** [T-5.13] Copia los valores de esa plantilla. Es procedencia, no
+   *  referencia: editarla después no reescribe este simulacro. */
+  fromTemplate?: string | null;
 }
 
 export interface ActiveDrillData {
@@ -112,6 +115,7 @@ export function useActiveDrill(enabled: boolean = true): ActiveDrillData {
           site_ids: input.siteIds ?? null,
           scheduled_at: input.scheduledAt ?? null,
           from_scheduled: input.fromScheduled ?? null,
+          from_template: input.fromTemplate ?? null,
         },
       });
       if (data === undefined) {

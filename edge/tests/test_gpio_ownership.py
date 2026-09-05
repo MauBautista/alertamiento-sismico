@@ -680,19 +680,42 @@ def test_make_edge_arranca_en_una_maquina_sin_var_lib_takab(sin_ruta_por_test) -
     assert ajustes.gpio_lock_path == "", "premisa: nadie configuró la ruta del cerrojo"
     assert ajustes.dev_mode is True, "premisa: `make edge` corre en modo dev"
 
-    ruta = Path(ajustes.gpio_lock_file)
-    assert ruta.parent.is_dir(), (
-        f"el cerrojo derivado para dev vive en {ruta.parent}, que no existe: el "
+    # LA REGRESIÓN, medida sobre la identidad POR DEFECTO: el cerrojo derivado tiene que
+    # caer en un directorio que exista. Es lo que dejaba de arrancar fuera del Pi.
+    ruta_por_defecto = Path(ajustes.gpio_lock_file)
+    assert ruta_por_defecto.parent.is_dir(), (
+        f"el cerrojo derivado para dev vive en {ruta_por_defecto.parent}, que no existe: el "
         "camino de vida no arrancaría en ninguna máquina de desarrollo"
     )
 
-    controlador = GpioController(ajustes)
+    # …y ahora el arranque de verdad, bajo una identidad PROPIA DE ESTA CORRIDA.
+    #
+    # No es una comodidad: arrancar con `gateway_id` por defecto haría que este test exigiera
+    # que NADIE más tenga un `gw-dev-0001` vivo en la máquina — y tener uno es lo normal,
+    # porque es lo que levanta `demo/gabinete.py`. Esa colisión **no es un defecto del código
+    # bajo prueba: es el cerrojo cumpliendo su promesa**, la que `gpio_lock_file` documenta
+    # como «dos procesos del MISMO gabinete siguen chocando». Fallar aquí por eso convertía un
+    # acierto del diseño en un rojo, y entrenaba a ignorar la suite.
+    #
+    # Lo que este test protege se conserva entero: sin ruta inyectada, en `dev_mode`, con la
+    # ruta DERIVADA de la identidad, en un directorio escribible, y arrancando de verdad. Lo
+    # único que se suelta es la exigencia de exclusividad, que ya tiene dueño propio: el
+    # `mismo.start()` de `test_tres_gabinetes_simulados_en_el_mismo_host_no_se_matan_entre_si`.
+    propia = ajustes.model_copy(update={"gateway_id": f"gw-test-{os.getpid()}"})
+    ruta = Path(propia.gpio_lock_file)
+    assert ruta.parent == ruta_por_defecto.parent, (
+        "la identidad de prueba tiene que derivar por el MISMO camino que la de producción, "
+        "o este test dejaría de medir la derivación real"
+    )
+
+    controlador = GpioController(propia)
     controlador.start()  # ← lo que tronaba
     try:
         assert len(controlador.relay_states()) == 5
         assert not _cerrojo_libre(ruta), "arrancó, así que el cerrojo tiene que estar tomado"
     finally:
         controlador.stop()
+        ruta.unlink(missing_ok=True)  # el cerrojo de esta corrida no sobrevive a la corrida
 
 
 def test_tres_gabinetes_simulados_en_el_mismo_host_no_se_matan_entre_si(sin_ruta_por_test) -> None:

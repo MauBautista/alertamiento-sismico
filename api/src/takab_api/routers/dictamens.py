@@ -18,6 +18,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles
 from takab_api.auth.matrix import ROLE_ROUTE_MATRIX, TRIAGE, roles_with_action
@@ -105,6 +106,32 @@ async def sign_dictamen(
         supersedes=supersedes,
     )
     created = (await conn.execute(ins_stmt, ins_params)).mappings().one()
+
+    # [T-5.20] Y VERBO EN LA BITÁCORA, el acto de mayor peso legal del sistema.
+    #
+    # Va ANTES del `if` de habitabilidad y no dentro, que es lo que hacía que un
+    # dictamen NO habitable firmado no dejara rastro en ninguno de los dos
+    # sitios donde se busca: ni en la bitácora (no escribía nunca) ni en el
+    # timeline (solo si era habitable). El hecho seguía en `dictamens`, que es
+    # append-only, pero el sitio donde un perito, un seguro o una auditoría
+    # miran «quién firmó qué y cuándo» es esto.
+    await audit_async(
+        conn,
+        tenant_id=tenant_id,
+        actor=f"user:{claims.sub}",
+        verb="dictamen_signed",
+        obj=f"incident:{incident_id}",
+        meta={
+            "dictamen_id": str(created["dictamen_id"]),
+            # El veredicto en el detalle: sin él la fila dice que alguien firmó y
+            # no qué firmó, que es la mitad de la pregunta.
+            "status": body.status,
+            "habitable": body.status in _HABITABLE,
+            # A quién sustituye: la cadena se reconstruye desde la bitácora sin
+            # tener que leer la tabla de dictámenes.
+            "supersedes": supersedes,
+        },
+    )
 
     # [T-2.12] Dictamen HABITABLE firmado ⇒ acción en el timeline: el
     # orchestrator la convierte en push OPS de cambio de fase que libera las

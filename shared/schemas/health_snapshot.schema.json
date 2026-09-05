@@ -87,9 +87,16 @@
       "type": "number"
     },
     "packet_loss_pct": {
-      "default": 0.0,
-      "title": "Packet Loss Pct",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Packet Loss Pct"
     },
     "mqtt_rtt_ms": {
       "anyOf": [
@@ -224,6 +231,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.12.0",
-  "version": "1.12.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.14.0",
+  "version": "1.14.0"
 }

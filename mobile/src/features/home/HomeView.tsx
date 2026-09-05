@@ -3,7 +3,14 @@
 // SIMULACRO es una franja ámbar sobre el contenido normal: un drill JAMÁS
 // dispara pantallas de crisis (no crea incidente — garantía server-side).
 import type { DirectoryEntryOut, MobileStateOut } from "@takab/sdk";
-import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  Linking,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 
 import { fontSize, palette, radius, space } from "@/ui/theme";
 
@@ -47,20 +54,45 @@ export function HomeView(props: {
       {data.phase === "reentry_approved" ? (
         <View style={styles.reentryBanner} testID="reentry-banner">
           <Text style={styles.reentryText}>
-            REINGRESO AUTORIZADO — el dictamen técnico del inspector aprobó el reingreso al
-            inmueble.
+            REINGRESO AUTORIZADO — el dictamen técnico del inspector aprobó el
+            reingreso al inmueble.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* [T-5.02 · D-27] MODO DEMOSTRACIÓN. Va ANTES del simulacro y con OTRO
+          color —borde discontinuo, no el ámbar sólido del simulacro— porque son
+          cosas distintas: el simulacro es un ensayo que SÍ suena; esto es que la
+          nube no está avisando a nadie. Si la app no lo dijera, el ocupante
+          vería una pantalla en calma sin saber que su canal de aviso está
+          suprimido. Y dice lo segundo que hay que decir: el gabinete sigue
+          armado — este modo no llega hasta él. */}
+      {data.demo_mode ? (
+        <View style={styles.demoBanner} testID="demo-mode-banner">
+          <Text style={styles.demoText}>
+            MODO DEMOSTRACIÓN — LA NUBE NO ESTÁ ENVIANDO AVISOS
+          </Text>
+          <Text style={styles.demoNota}>
+            La protección del gabinete de su edificio sigue armada
           </Text>
         </View>
       ) : null}
 
       {data.drill.active ? (
         <View style={styles.drillBanner} testID="drill-banner">
-          <Text style={styles.drillText}>SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL</Text>
+          <Text style={styles.drillText}>
+            SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL
+          </Text>
         </View>
       ) : null}
 
-      <View style={[styles.statusCard, { borderColor: TONE_COLOR[banner.tone] }]}>
-        <Text style={[styles.statusLabel, { color: TONE_COLOR[banner.tone] }]} testID="estado">
+      <View
+        style={[styles.statusCard, { borderColor: TONE_COLOR[banner.tone] }]}
+      >
+        <Text
+          style={[styles.statusLabel, { color: TONE_COLOR[banner.tone] }]}
+          testID="estado"
+        >
           {banner.label}
         </Text>
         <Text style={styles.statusDetail}>{banner.detail}</Text>
@@ -77,7 +109,8 @@ export function HomeView(props: {
           <Text style={styles.zoneName}>{data.my_zone.name}</Text>
           {data.my_zone.evac_policy ? (
             <Text style={styles.zonePolicy}>
-              {POLICY_LABEL[data.my_zone.evac_policy] ?? data.my_zone.evac_policy}
+              {POLICY_LABEL[data.my_zone.evac_policy] ??
+                data.my_zone.evac_policy}
             </Text>
           ) : (
             <Text style={styles.muted}>Sin política de zona definida.</Text>
@@ -86,7 +119,9 @@ export function HomeView(props: {
       ) : (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>SU ZONA</Text>
-          <Text style={styles.muted}>Sin zona asignada — vincúlese con su administrador.</Text>
+          <Text style={styles.muted}>
+            Sin zona asignada — vincúlese con su administrador.
+          </Text>
         </View>
       )}
 
@@ -95,7 +130,9 @@ export function HomeView(props: {
         <Text style={styles.rowText}>
           Próximo:{" "}
           {data.drill.next_scheduled_at ? (
-            <Text style={styles.rowStrong}>{fmtFecha(data.drill.next_scheduled_at)}</Text>
+            <Text style={styles.rowStrong}>
+              {fmtFecha(data.drill.next_scheduled_at)}
+            </Text>
           ) : (
             <Text style={styles.muted}>sin programar</Text>
           )}
@@ -116,7 +153,9 @@ export function HomeView(props: {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>BRIGADISTAS DE SU ZONA</Text>
         {props.brigadistas.length === 0 ? (
-          <Text style={styles.muted}>Sin brigadistas publicados para su zona.</Text>
+          <Text style={styles.muted}>
+            Sin brigadistas publicados para su zona.
+          </Text>
         ) : (
           props.brigadistas.map((b) => (
             <View key={b.user_id} style={styles.dirRow}>
@@ -142,8 +181,14 @@ export function HomeView(props: {
         </Pressable>
       </View>
 
-      <Pressable accessibilityRole="button" onPress={props.onOpenRutas} style={styles.routesBtn}>
-        <Text style={styles.routesText}>RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →</Text>
+      <Pressable
+        accessibilityRole="button"
+        onPress={props.onOpenRutas}
+        style={styles.routesBtn}
+      >
+        <Text style={styles.routesText}>
+          RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →
+        </Text>
       </Pressable>
 
       {props.onOpenPanic ? (
@@ -153,7 +198,9 @@ export function HomeView(props: {
           style={styles.panicBtn}
           testID="open-panic"
         >
-          <Text style={styles.panicText}>ALARMA DEL INMUEBLE (NO SÍSMICA) →</Text>
+          <Text style={styles.panicText}>
+            ALARMA DEL INMUEBLE (NO SÍSMICA) →
+          </Text>
         </Pressable>
       ) : null}
     </ScrollView>
@@ -170,14 +217,40 @@ const styles = StyleSheet.create({
     paddingVertical: space[2],
     paddingHorizontal: space[3],
   },
-  drillText: { color: palette.bg, fontSize: fontSize.sm, fontWeight: "800", letterSpacing: 1 },
+  drillText: {
+    color: palette.bg,
+    fontSize: fontSize.sm,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  demoBanner: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: palette.fg3,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+    gap: 2,
+  },
+  demoText: {
+    color: palette.fg2,
+    fontSize: fontSize.sm,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  demoNota: { color: palette.fg3, fontSize: fontSize.xs },
   reentryBanner: {
     backgroundColor: palette.ok,
     borderRadius: radius.md,
     paddingVertical: space[2],
     paddingHorizontal: space[3],
   },
-  reentryText: { color: palette.bg, fontSize: fontSize.sm, fontWeight: "800", lineHeight: 18 },
+  reentryText: {
+    color: palette.bg,
+    fontSize: fontSize.sm,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
   statusCard: {
     backgroundColor: palette.card,
     borderWidth: 1,
@@ -211,7 +284,11 @@ const styles = StyleSheet.create({
   rowText: { color: palette.fg2, fontSize: fontSize.sm },
   rowStrong: { color: palette.fg, fontWeight: "600" },
   muted: { color: palette.fg3, fontSize: fontSize.sm },
-  dirRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  dirRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   dirInfo: { gap: 2 },
   callBtn: {
     backgroundColor: palette.cyan,
@@ -219,7 +296,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
     paddingVertical: space[1],
   },
-  callText: { color: palette.bg, fontWeight: "700", fontSize: fontSize.xs, letterSpacing: 1 },
+  callText: {
+    color: palette.bg,
+    fontWeight: "700",
+    fontSize: fontSize.xs,
+    letterSpacing: 1,
+  },
   link: { color: palette.cyan, fontSize: fontSize.sm, marginTop: space[1] },
   routesBtn: {
     backgroundColor: palette.card,
@@ -228,12 +310,22 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     padding: space[4],
   },
-  routesText: { color: palette.cyan, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
+  routesText: {
+    color: palette.cyan,
+    fontWeight: "700",
+    fontSize: fontSize.sm,
+    letterSpacing: 1,
+  },
   panicBtn: {
     borderColor: palette.crit,
     borderWidth: 1,
     borderRadius: radius.lg,
     padding: space[4],
   },
-  panicText: { color: palette.crit, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
+  panicText: {
+    color: palette.crit,
+    fontWeight: "700",
+    fontSize: fontSize.sm,
+    letterSpacing: 1,
+  },
 });

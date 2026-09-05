@@ -23,7 +23,7 @@ import { StateFrame } from "@/ui/StateFrame";
 export default function Triage() {
   const router = useRouter();
   const siteId = useWatchedSiteId();
-  const { data, loading, error, stale, dataUpdatedAt } = useAlertState(siteId);
+  const { data, loading, error, staleSinceMs } = useAlertState(siteId);
   const incidentId = data?.incident?.incident_id ?? null;
   const evidenceIds = useDamageDraft((s) => s.evidenceIds);
   const resetDraft = useDamageDraft((s) => s.reset);
@@ -98,7 +98,7 @@ export default function Triage() {
       emptyText="Sin incidente activo en su sitio: no hay reporte de daños que levantar."
       error={data === null ? error : null}
       loading={loading}
-      staleSinceMs={stale && data !== null ? dataUpdatedAt : null}
+      staleSinceMs={staleSinceMs}
     >
       <DamageForm
         busy={busy}

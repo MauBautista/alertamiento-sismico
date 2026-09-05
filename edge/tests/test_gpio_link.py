@@ -358,10 +358,16 @@ def test_el_reflejo_sasmex_no_cruza_la_costura(supervisor) -> None:  # noqa: ANN
     costura SANA y exige los cinco canales; éste exige que los dos del reflejo no
     dependan de ella.
     """
+    import warnings
     from time import perf_counter
 
     from gpiozero import Device
     from takab_edge.gpio import active_energized, normal_energized
+
+    # El presupuesto y el número de intentos viven en UN solo sitio. Dos copias del
+    # 100 divergirían y un día este test declararía un umbral que no es el que se
+    # aplica en el gemelo — que es justo el defecto que T-2.170 dejó escrito.
+    from tests.test_e2e import INTENTOS_DE_MEDICION, PRESUPUESTO_S
 
     muerta = _CosturaMuerta()
     assert isinstance(muerta, GpioLink)
@@ -403,26 +409,87 @@ def test_el_reflejo_sasmex_no_cruza_la_costura(supervisor) -> None:  # noqa: ANN
     )
 
     contacto = Device.pin_factory.pin(s.pins.wr1_contact)
-    inicio = perf_counter()
-    contacto.drive_low()  # WR-1: contacto seco CERRADO = alerta SASMEX
-    transcurrido = perf_counter() - inicio
 
-    assert al_llamar and all(al_llamar), (
-        "sirena y estrobo NO estaban energizados cuando se invocó al primer "
-        "observador: el reflejo dejó de ir por delante de los callbacks y pasó a "
-        "depender de lo que corre después de él"
-    )
-    for canal in (ActuatorChannel.SIREN, ActuatorChannel.STROBE):
-        assert pines[canal].state is active_energized(s.failsafe[canal]), (
-            f"{canal.value} NO quedó en su nivel de protección con la costura muerta: "
-            "el reflejo del gate #6 depende de algo que cruza el futuro IPC"
+    # [T-2.170 · segunda instancia] Mejor de N, igual que el gemelo punta a punta.
+    #
+    # Este test medía UNA muestra de reloj de pared y la asertaba dura contra los
+    # 100 ms. Es el mismo instrumento que enrojeció `main` el 2026-08-26 y que esa
+    # ficha arregló… en `test_e2e.py` y sólo ahí. El 2026-08-30 le tocó a éste:
+    # **161.0 ms** en CI, contra los 165.8 ms que motivaron la ficha, y el mismo
+    # commit relanzado pasa. El presupuesto NO se mueve —sale de `blueprint §4.3`,
+    # no de lo que el runner consiga—; lo que se corrige es el instrumento.
+    #
+    # El rearme NO puede ser el de `test_e2e.py` (`local_api.reset_alert()`), y la
+    # razón es la premisa misma de este test: `_accion` es la única puerta del panel
+    # hacia el dueño de los pines y **cruza la costura**, que aquí está muerta a
+    # propósito. Se va al mismo destino sin el tramo roto: `gpio.reset()`.
+    #
+    # Y el contacto se abre ANTES de desenclavar, por lo que ya está escrito en el
+    # gemelo: con el contacto aún cerrado, el resembrado del contacto sostenido
+    # volvería a enclavar en el acto. Abrirlo no basta por sí solo —`active=False`
+    # NO desenclava, que es la semántica de latching del gate #3—, por eso hacen
+    # falta los dos pasos y en ese orden.
+    # Las afirmaciones ESTRUCTURALES —que es lo que de verdad acredita el gate #6—
+    # van DENTRO del bucle, no después, y por dos razones que costó una corrida
+    # descubrir: valen en todos y cada uno de los intentos, y sobre todo, después
+    # del bucle ya no habría nada que mirar. El rearme devuelve los cinco relés a
+    # reposo, así que un `assert ... is active_energized(...)` puesto detrás estaría
+    # interrogando a un gabinete desarmado. Lo cazó la mutación de degradación: el
+    # test enrojecía, sí, pero por el aserto equivocado.
+    intentos: list[float] = []
+    ultimo = INTENTOS_DE_MEDICION - 1
+    for intento in range(INTENTOS_DE_MEDICION):
+        # La premisa se re-comprueba en CADA intento: medir sobre un gabinete que ya
+        # estaba protegido cantaría 0 ms y sería el peor desenlace posible.
+        for canal, pin in pines.items():
+            assert pin.state is normal_energized(s.failsafe[canal]), (
+                f"premisa rota antes del intento {intento + 1}: {canal.value} no "
+                "está en reposo. Medir desde aquí daría una latencia falsamente baja."
+            )
+        inicio = perf_counter()
+        contacto.drive_low()  # WR-1: contacto seco CERRADO = alerta SASMEX
+        transcurrido = perf_counter() - inicio
+        intentos.append(transcurrido)
+
+        assert al_llamar and all(al_llamar), (
+            "sirena y estrobo NO estaban energizados cuando se invocó al primer "
+            "observador: el reflejo dejó de ir por delante de los callbacks y pasó a "
+            "depender de lo que corre después de él"
         )
-    assert transcurrido < 0.100, (
-        f"el reflejo tardó {transcurrido * 1000:.1f} ms con la costura muerta "
-        "(presupuesto §4.3: <100 ms)"
+        for canal in (ActuatorChannel.SIREN, ActuatorChannel.STROBE):
+            assert pines[canal].state is active_energized(s.failsafe[canal]), (
+                f"{canal.value} NO quedó en su nivel de protección con la costura "
+                "muerta: el reflejo del gate #6 depende de algo que cruza el futuro IPC"
+            )
+
+        if transcurrido < PRESUPUESTO_S or intento == ultimo:
+            # Tras el ÚLTIMO no se rearma: el gabinete tiene que quedar ALERTADO para
+            # que la comprobación de no-vacuidad de abajo mire un estado real.
+            break
+        contacto.drive_high()
+        supervisor.gpio.reset()
+
+    if len(intentos) > 1:
+        # Que hiciera falta reintentar es un dato SOBRE EL INSTRUMENTO, y callarlo es
+        # cómo se normaliza el ruido hasta que tapa una degradación de verdad.
+        warnings.warn(
+            f"[T-2.170] el reflejo del gate #6 necesitó {len(intentos)} intentos: "
+            f"{[f'{t * 1000:.1f} ms' for t in intentos]}. El veredicto es del mejor, "
+            "pero un instrumento que pide reintentos merece una mirada.",
+            stacklevel=1,
+        )
+    mejor = min(intentos)
+    assert mejor < PRESUPUESTO_S, (
+        f"el reflejo tardó {mejor * 1000:.1f} ms con la costura muerta en su MEJOR "
+        f"intento de {len(intentos)} (presupuesto §4.3: "
+        f"<{PRESUPUESTO_S * 1000:.0f} ms). Serie completa: "
+        f"{[f'{t * 1000:.1f} ms' for t in intentos]}. Que ni el mejor llegue descarta "
+        "el ruido del planificador: esto es el reflejo, no el runner.\n"
+        "NO subas el presupuesto para arreglar esto: el número sale de `blueprint "
+        "§4.3`, no de lo que el CI consiga."
     )
     assert supervisor.gpio.last_reflex_latency_s is not None
-    assert supervisor.gpio.last_reflex_latency_s < 0.100
+    assert supervisor.gpio.last_reflex_latency_s < PRESUPUESTO_S
 
     for canal in (
         ActuatorChannel.GAS_VALVE,

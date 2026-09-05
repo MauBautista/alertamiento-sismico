@@ -41,6 +41,7 @@ function site(over: Partial<MapSiteState> = {}): MapSiteState {
     site_id: "s-1",
     tenant_id: "t-1",
     name: "Planta Cholula",
+    code: "site-fixture",
     criticality: "high",
     lon: -98.3,
     lat: 19.06,

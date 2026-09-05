@@ -15,6 +15,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
 from takab_api.compliance import ComplianceDocument
+from takab_api.dictamen.duracion import Duracion
+from takab_api.dictamen.espectrograma import Espectrograma
 
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
@@ -68,6 +70,21 @@ NO_SPECTRUM = (
     "confirmados). Este incidente no tiene miniSEED archivado."
 )
 NO_GEOMETRY = "SIN GEOMETRÍA REGISTRADA · no se puede dibujar el croquis del evento."
+#: [T-3.12.c] Los tres estados del CCTV. Se distinguen porque significan cosas OPUESTAS y
+#: se leerían igual si el reporte solo dijera «sin datos».
+NO_CCTV = (
+    "SIN COBERTURA CCTV DECLARADA · este sitio no tiene cámara configurada. La ausencia "
+    "de análisis de evacuación en este documento no indica que nadie evacuara."
+)
+CCTV_SIN_CLIP = (
+    "CÁMARA DECLARADA · sin clip para este incidente. Grabó o no grabó, pero el vídeo no "
+    "llegó a la nube: revísese el gabinete antes de leer esto como «no hubo evacuación»."
+)
+CCTV_PENDIENTE = (
+    "CLIP DISPONIBLE · ANÁLISIS PENDIENTE. El vídeo está archivado y todavía no se ha "
+    "contado: las cifras de evacuación llegarán en una versión posterior del documento."
+)
+CCTV_PURGADO = "PURGADO (retención de vídeo)"
 CENTROID_NOTE = (
     "EPICENTRO = CENTROIDE DE LAS ESTACIONES QUE DETECTARON EL SISMO. No es una "
     "localización sísmica: está entre las estaciones, no en la falla."
@@ -77,9 +94,31 @@ ENVELOPE_NOTE = (
     "ENVOLVENTE DE PICO POR SEGUNDO (1 Hz). NO es la forma de onda cruda: el sistema "
     "muestrea a 100 sps y no transmite el crudo en continuo."
 )
+#: [T-5.07] Aviso de asistencia automatizada. Vivía como literal dentro de
+#: `pdf.py`, así que el censo de avisos impresos —que se DERIVA de este módulo— no
+#: podía verlo, y era justo el aviso con la regla más fácil de romper: **solo debe
+#: salir cuando la prosa NO la escribió el proveedor determinista**. El render le
+#: añade la versión del rule_set; lo que se fija aquí es la frase que un lector
+#: reconoce.
+NARRATIVE_AI_NOTE = (
+    "Las secciones en prosa se redactaron con asistencia automatizada. El "
+    "VEREDICTO y todos los valores medidos de este documento son deterministas"
+)
+
 NO_MMI = (
     "No se reporta intensidad macrosísmica (MMI) ni isosistas: TAKAB no las calcula. "
     "La banda que sigue es la sacudida MEDIDA por el sensor del propio inmueble."
+)
+
+#: [T-5.11] Lo que se imprime cuando NINGÚN sismo del catálogo es éste y no había
+#: siquiera candidatos en la ventana. Decía «SIN COINCIDENCIA EN CATÁLOGO», que
+#: sonaba a fallo de búsqueda; lo que afirma es un HECHO sobre el evento —el
+#: catálogo no tiene un sismo compatible, probablemente porque fue local y
+#: pequeño—, y es el mismo vocabulario que el estado `sin_correlacion` del
+#: glosario compartido (`shared/glossary/procedencia.json`, T-5.10).
+SIN_CORRELACION_EN_CATALOGO = (
+    "SIN CORRELACIÓN EN EL CATÁLOGO DE REFERENCIA: ningún sismo publicado "
+    "satisface el criterio de identidad con este incidente."
 )
 
 
@@ -137,6 +176,39 @@ class EvidenceRow:
 
 
 @dataclass
+class CctvObjectRow:
+    """Un clip o una captura, para la cadena de custodia.
+
+    Conserva `sha256` y fecha **aunque el objeto ya no exista**: es lo que permite que el
+    documento siga siendo verificable después de que la retención de vídeo haga su trabajo.
+    Por eso `estado` es un campo y no se deriva de la presencia de la fila.
+    """
+
+    tipo: str  # clip | captura
+    papel: str | None  # pre/egress/peak/reentry para capturas; None para clips
+    sha256: str | None
+    momento: datetime | None
+    estado: str  # "disponible" | CCTV_PURGADO
+
+
+@dataclass
+class CctvBlock:
+    """Lo que la sección de CCTV del reporte afirma. Sin métricas sigue siendo útil: la
+    cadena de custodia y el estado son parte del documento aunque nadie haya contado."""
+
+    estado: str = NO_CCTV
+    objetos: list[CctvObjectRow] = field(default_factory=list)
+    t50_s: float | None = None
+    t90_s: float | None = None
+    peak_n: int | None = None
+    correlacion: str | None = None
+    veredicto_reingreso: str | None = None
+    #: `True` ⇒ la sección lo dice en un recuadro, no en una celda de tabla.
+    reingreso_antes_del_dictamen: bool = False
+    discrepancia: str | None = None
+
+
+@dataclass
 class ReportModel:
     """Todo lo que el dictamen puede afirmar. Nada se calcula durante el render."""
 
@@ -188,6 +260,14 @@ class ReportModel:
     #: Espectro de amplitud del canal dominante: `(frecuencias_hz, amplitudes)`.
     spectrum: tuple[list[float], list[float]] | None = None
     spectrum_peak_hz: float | None = None
+    #: [T-5.23] Espectrograma del MISMO canal dominante: tiempo × frecuencia, con
+    #: escala RELATIVA. `None` cuando no hubo traza de la que calcularlo — y eso
+    #: se declara con el mismo texto de ausencia que la onda cruda, no con un hueco.
+    spectrogram: Espectrograma | None = None
+    #: [T-3.14] Duración instrumental **medida** de la sacudida: D5-95 sobre la Intensidad
+    #: de Arias del canal dominante. `None` cuando no se pudo medir — que NO es lo mismo
+    #: que cero, y el reporte lo dice con palabras.
+    shaking_duration: Duracion | None = None
     #: Por qué no hay onda cruda ni espectro, si es el caso.
     raw_unavailable_reason: str | None = None
     #: `basis` del dictamen vigente (T-2.42): qué umbral, con qué valor, de qué versión
@@ -203,6 +283,10 @@ class ReportModel:
     #: Entra en ``content_sha256``: cambiar lo que el dictamen afirma tiene que mover
     #: la huella, o la huella no sirve para comparar dos exportaciones.
     compliance: ComplianceDocument = field(default_factory=ComplianceDocument)
+    #: [T-3.12.c] CCTV: analítica de evacuación y cadena de custodia del vídeo. Entra en
+    #: ``content_sha256`` como todo lo demás — cambiar lo que el documento afirma sobre
+    #: cuánto tardó la gente en salir tiene que mover la huella.
+    cctv: CctvBlock = field(default_factory=CctvBlock)
 
     def content_sha256(self) -> str:
         """Huella del CONTENIDO (no del archivo): identifica qué se afirmó.
@@ -212,6 +296,25 @@ class ReportModel:
         """
         payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(payload.encode()).hexdigest()
+
+
+#: [T-5.26] Lo que se imprime donde va la huella de un objeto de evidencia.
+#:
+#: Existe como función —y no como un `or` en el sitio del render— porque la
+#: regla que encierra es la que estuvo rota: el sha256 se imprimía a **32 de 64**
+#: caracteres (y a 16 en la custodia del vídeo) mientras la portada del mismo
+#: documento instruye verificarlo con `sha256sum`. Con medio hash no se puede, y
+#: un dato inverificable presentado como verificable es peor que no imprimirlo:
+#: quien lo intente concluirá que la evidencia está corrupta.
+#:
+#: No había razón de espacio: 64 hex miden 108.7 mm de los 128 que deja la
+#: columna del PDF, así que caben en una sola línea.
+SIN_HASH = "sin hash"
+
+
+def huella_de_custodia(sha: str | None) -> str:
+    """El sha256 ENTERO, o la ausencia declarada. Nunca un trozo."""
+    return sha or SIN_HASH
 
 
 FELT_LABELS: dict[str, str] = {

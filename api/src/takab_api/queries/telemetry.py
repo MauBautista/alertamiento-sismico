@@ -112,7 +112,7 @@ def select_metrics(
 # por sitio, en UNA sola query. El LATERAL lee la vista ``*_secure`` (el filtro de
 # tenant por sites vive dentro de la vista); el cagg base no se nombra.
 _MAP_STATE_SQL = """
-SELECT s.site_id, s.tenant_id, s.name, s.criticality,
+SELECT s.site_id, s.tenant_id, s.name, s.code, s.criticality,
        ST_X(s.geom::geometry) AS lon, ST_Y(s.geom::geometry) AS lat,
        lm.bucket      AS last_bucket,
        lm.max_pga_g   AS max_pga_g,
@@ -124,6 +124,9 @@ SELECT s.site_id, s.tenant_id, s.name, s.criticality,
        li.felt_pga_g   AS inc_pga_g,
        li.felt_pgv_cms AS inc_pgv_cms,
        cal.calibrated AS calibrated,
+       cal.sensor_models AS sensor_models,
+       lk.serial          AS link_serial,
+       lk.fw_version      AS link_fw_version,
        lk.gateway_id       AS link_gateway_id,
        lk.health_ts        AS link_health_ts,
        lk.age_s            AS link_age_s,
@@ -184,7 +187,13 @@ LEFT JOIN LATERAL (
     -- Calibrado solo si TODOS los sensores activos declaran su fuente de
     -- respuesta. Sin sensores, bool_and da NULL ⇒ el router lo lee como NO
     -- calibrado (default-deny). Mismo criterio que `select_site_calibrated`.
-    SELECT bool_and(sn.calibration_source IS NOT NULL) AS calibrated
+    SELECT bool_and(sn.calibration_source IS NOT NULL) AS calibrated,
+           -- [T-5.26] El MODELO del sismógrafo, del mismo barrido de sensores
+           -- activos. `string_agg DISTINCT` porque una estación puede tener
+           -- varios: con uno sale su modelo; con dos distintos salen los dos,
+           -- que es la verdad. Inventar «el» modelo de un sitio mixto sería
+           -- peor que enseñar los dos.
+           string_agg(DISTINCT sn.model, ' · ' ORDER BY sn.model) AS sensor_models
     FROM sensors sn
     WHERE sn.site_id = s.site_id AND sn.status = 'active'
 ) cal ON true
@@ -203,6 +212,11 @@ LEFT JOIN LATERAL (
     -- el del latido MÁS FRESCO: es el que responde por el enlace de la estación.
     -- El diagnóstico gabinete a gabinete es la pantalla de Flota, no el mapa.
     SELECT g.gateway_id,
+           -- [T-5.26] La IDENTIDAD del hardware, no solo su salud. Estaba a un
+           -- JOIN de distancia y obligaba a abandonar el mapa e ir a Flota para
+           -- saber qué aparato es el que está hablando.
+           g.serial      AS serial,
+           g.fw_version  AS fw_version,
            h.ts AS health_ts,
            h.power_status,
            h.battery_pct::float8    AS battery_pct,

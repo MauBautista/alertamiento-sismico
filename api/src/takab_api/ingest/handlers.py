@@ -327,8 +327,8 @@ _HEALTH_SQL = """
 INSERT INTO device_health
   (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, mqtt_rtt_ms,
    cpu_temp_c, power_status, battery_pct, cert_days_remaining, battery_min_left,
-   relays_state)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+   relays_state, packet_loss_pct)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
 
@@ -455,10 +455,12 @@ def handle_health_snapshot(
     ('heartbeat' literal ⇒ heartbeat; cualquier otra razón ⇒ transition —
     default del contrato: 'heartbeat'). Desde T-1.40 el contrato es honesto:
     ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
-    persisten como NULL — la flota pinta S/D, no un invento. Sin columna
-    destino: packet_loss_pct, disk_used_pct (T-1.53, consumo local del panel
-    LAN). De ``relays`` no se persiste el censo canal a canal (sin consumidor en
-    la nube) sino **si el gabinete pudo obtenerlo**, en ``relays_state``
+    persisten como NULL — la flota pinta S/D, no un invento. Desde
+    T-5.24 `packet_loss_pct` SÍ aterriza: era la señal que se degrada antes de
+    que falten datos y el SOC no podía verla de ningún sitio. Sin columna
+    destino queda `disk_used_pct` (T-1.53, consumo local del panel LAN). De
+    ``relays`` no se persiste el censo canal a canal (sin consumidor en la nube)
+    sino **si el gabinete pudo obtenerlo**, en ``relays_state``
     (T-2.70.a·B1) — ver ``_relays_state`` para los tres hechos que ese campo
     separa y por qué. `ups_runtime_s` (T-2.22, segundos) aterriza en
     `battery_min_left` (minutos): la columna existía desde el schema inicial y
@@ -501,6 +503,12 @@ def handle_health_snapshot(
             # `(ts, gateway_id)`, un reenvío no pisa lo escrito y este valor no
             # puede borrar un censo bueno anterior — sólo añade su instante.
             _relays_state(payload),
+            # [T-5.24] La pérdida de paquetes del enlace sensor→Pi. El gabinete
+            # la publicaba desde siempre y aquí se tiraba: el SOC no podía verla
+            # de ningún sitio y había que ir al inmueble. `None` sigue siendo
+            # «el gabinete no opina» ⇒ S/D, nunca un cero — que aquí diría
+            # «enlace perfecto», que es la mentira cara.
+            payload.get("packet_loss_pct"),
         ),
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se
@@ -623,6 +631,75 @@ def handle_actuator_ack(
 
 
 # --------------------------------------------------------------------------
+# actuation_record → actuation_records (T-2.86.a: el hueco `RO-4.e`)
+# --------------------------------------------------------------------------
+
+# `ON CONFLICT DO NOTHING` sobre la PK que pone EL GABINETE. No es defensa contra
+# la re-entrega de SQS (que también): el edge NO borra su copia local al subir
+# —el perito la lee meses después—, avanza una marca de agua, y si esa marca se
+# pierde re-sube filas ya ingeridas. Regla de oro 3, y aquí la duplicación no
+# sería un renglón de más: sería una bitácora que un perito lee como dos
+# actuaciones donde hubo una.
+_ACTUATION_RECORD_SQL = """
+INSERT INTO actuation_records (
+  record_id, tenant_id, site_id, gateway_id, seq, occurred_at,
+  cause, actor, channel, action, success, detail, event_id, online
+) VALUES (
+  %(record_id)s, %(tenant_id)s, %(site_id)s, %(gateway_id)s, %(seq)s, %(occurred_at)s,
+  %(cause)s, %(actor)s, %(channel)s, %(action)s, %(success)s, %(detail)s,
+  %(event_id)s, %(online)s
+)
+ON CONFLICT (record_id) DO NOTHING
+"""
+
+
+def handle_actuation_record(
+    conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
+) -> HandlerResult:
+    """ActuationRecord → actuation_records. La constancia del gabinete, en la nube.
+
+    Las tres identidades se toman del REGISTRO (`ctx`) y no del payload, aunque el
+    payload las traiga: lo que trae sirve para `check_identity` —que rechaza y
+    audita el cruce de tenant— y ahí se queda. Escribir la identidad que declara
+    el mensaje sería dejar que un gabinete comprometido plantara evidencia en el
+    tenant de otro cliente, en la tabla que menos se puede permitir.
+    """
+    if (rej := _identity_reject(conn, payload, meta, ctx, "actuation_record")) is not None:
+        return rej
+    try:
+        record_id = uuid.UUID(payload["record_id"])
+    except (KeyError, ValueError, TypeError):
+        return reject(f"actuation_record: record_id inválido: {payload.get('record_id')!r}")
+    try:
+        occurred_at = _dt(payload["at"])
+    except (KeyError, ValueError, TypeError) as exc:
+        return reject(f"actuation_record: 'at' inválido ({exc})")
+    conn.execute(
+        _ACTUATION_RECORD_SQL,
+        {
+            "record_id": record_id,
+            "tenant_id": ctx.tenant_id,
+            "site_id": ctx.site_id,
+            "gateway_id": ctx.gateway_id,
+            "seq": payload["seq"],
+            "occurred_at": occurred_at,
+            "cause": payload["cause"],
+            "actor": payload["actor"],
+            "channel": payload["channel"],
+            "action": payload["action"],
+            "success": payload["success"],
+            "detail": payload.get("detail", ""),
+            "event_id": payload.get("event_id", ""),
+            # `online` NO lleva default: `None` significa «el gabinete no pudo
+            # saber si tenía enlace», y colapsarlo a `False` inventaría justo el
+            # dato que esta tabla existe para no inventar.
+            "online": payload.get("online"),
+        },
+    )
+    return OK
+
+
+# --------------------------------------------------------------------------
 # command_ack → commands.status (T-1.23: ACK de ejecución obligatorio)
 # --------------------------------------------------------------------------
 
@@ -631,9 +708,14 @@ SELECT command_id, tenant_id, gateway_id, status FROM commands WHERE nonce = %s
 """
 
 # Transición SOLO desde pending (re-entrega SQS = no-op idempotente).
+# [T-5.14] `acked_at` lo pone la BASE, con el mismo reloj que `issued_at`. El
+# `executed_at` que viaja dentro del `ack` lo manda el gabinete y su reloj es
+# justo lo que el sistema vigila (`ntp_offset_s`): restarle `issued_at` mezclaría
+# dos relojes y el «tardó 4 min 12 s» de un post-simulacro no significaría nada.
+# Los dos se conservan — el del gabinete dice cuándo ACTUÓ, éste cuándo se supo.
 _COMMAND_ACK_SQL = """
 UPDATE commands
-   SET status = %(status)s, ack = %(ack)s
+   SET status = %(status)s, ack = %(ack)s, acked_at = now()
  WHERE command_id = %(command_id)s AND status = 'pending'
 """
 
@@ -813,6 +895,7 @@ HANDLERS: dict[str, Handler] = {
     "local_event": handle_local_event,
     "health_snapshot": handle_health_snapshot,
     "actuator_ack": handle_actuator_ack,
+    "actuation_record": handle_actuation_record,  # T-2.86.a: hueco RO-4.e
     "command_ack": handle_command_ack,
     "status": handle_status,
 }

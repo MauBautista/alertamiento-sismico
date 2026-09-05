@@ -82,6 +82,7 @@ from __future__ import annotations
 import ast
 import importlib
 import pkgutil
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -129,6 +130,12 @@ _TOPICS_DECLARADOS: dict[str, str] = {
     ),
     "takab/acks": (
         "edge→nube · ActuatorAck/CommandAck. Uno por actuación; es evidencia de compliance"
+    ),
+    "takab/audit": (
+        "edge→nube · ActuationRecord (T-2.86.a): la bitácora del gabinete, UNA fila por "
+        "actuación, con actor y causa. No es caudal: sale del mismo hecho que ya produce "
+        "un ack, y solo drena cuando VUELVE el enlace (regla de oro 10). Fila plana sin "
+        "listas, así que el clasificador de la regla 9 la deja pasar por su esquema"
     ),
     "takab/features": (
         "edge→nube · Feature1s a 1 Hz y SOLO en tier watch+. Son AGREGADOS de 1 s "
@@ -642,4 +649,62 @@ def test_el_miniseed_crudo_solo_se_encola_en_tiers_que_comandan_actuacion(
     )
     assert len(encolados) == len(obtenido), (
         f"un mismo tier encoló evidencia más de una vez: {encolados}"
+    )
+
+
+# --- Un topic sin su línea en la política del fleet DESCONECTA al gabinete -----
+#
+# [T-2.86.a] La política IoT lista los topics **uno a uno, sin comodines**. Un
+# `publish` a uno que no esté ahí no falla solo: el broker **corta la sesión
+# MQTT**, y el gabinete entra en flapping cada 10 s — visto en producción el
+# 2026-07-12. O sea que añadir un topic al edge sin tocar Terraform no degrada
+# una función, deja MUDO al gabinete entero, camino de vida incluido.
+#
+# Ese acoplamiento vivía en la cabeza de quien lo había sufrido y en un comentario.
+# Aquí se vuelve un test: el censo de topics de arriba —que ya se deriva del
+# árbol— tiene que estar contenido en la política.
+
+_POLITICA_FLEET = (
+    Path(__file__).resolve().parents[2] / "infra" / "terraform" / "modules" / "iot-core" / "main.tf"
+)
+
+#: El censo escribe `<thing>` donde Terraform interpola el nombre del gabinete.
+_MARCA_DEL_THING = "${local.thing_name}"
+
+
+def _topics_publicables_del_terraform() -> set[str]:
+    """Los `iot:Publish` de la política del fleet, tal como los declara Terraform."""
+    # Los COMENTARIOS se quitan antes de nada, y no es celo: la primera versión de
+    # esto buscaba el `]` de cierre sobre el texto crudo y lo encontró dentro de
+    # `# [T-2.86.a] …` —el corchete de la propia ficha—, así que dio la lista por
+    # terminada tres topics antes y habría dejado pasar justo el que se estaba
+    # añadiendo. Un extractor que lee HCL a ojo tiene que ignorar lo que no es HCL.
+    crudo = _POLITICA_FLEET.read_text(encoding="utf-8")
+    texto = "\n".join(re.sub(r"#.*$", "", linea) for linea in crudo.splitlines())
+    i = texto.find('Action = "iot:Publish"')
+    assert i != -1, (
+        f"no se encontró el statement `iot:Publish` en {_POLITICA_FLEET.name}: "
+        "si la política cambió de forma, este test hay que reescribirlo, no borrarlo"
+    )
+    fin = texto.index("]", i)
+    return set(re.findall(r":topic/([^\"]+)\"", texto[i:fin]))
+
+
+def test_todo_topic_que_el_gabinete_publica_esta_en_la_politica_del_fleet() -> None:
+    autorizados = _topics_publicables_del_terraform()
+    assert autorizados, "la política del fleet no autoriza NINGÚN topic: algo se rompió al leerla"
+
+    del_edge = {
+        t.replace("<thing>", _MARCA_DEL_THING)
+        for t, razon in _TOPICS_DECLARADOS.items()
+        if razon.startswith("edge→nube")
+    }
+    sin_autorizar = del_edge - autorizados
+    assert not sin_autorizar, (
+        f"el gabinete publica en {sorted(sin_autorizar)} y la política del fleet NO lo "
+        f"autoriza (autorizados: {sorted(autorizados)}).\n"
+        "Esto no degrada una función: el broker CORTA la sesión MQTT en cada publish y el "
+        "gabinete se queda mudo, camino de vida incluido (producción, 2026-07-12).\n"
+        "Añade la línea en `infra/terraform/modules/iot-core/main.tf` — y recuerda que la "
+        "política no lleva comodines, así que un sub-topic necesita su propia línea."
     )

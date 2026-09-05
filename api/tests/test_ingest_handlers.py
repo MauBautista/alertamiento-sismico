@@ -22,6 +22,7 @@ from takab_api.ingest.handlers import (
     Outcome,
     SensorRef,
     check_identity,
+    handle_actuation_record,
     handle_actuator_ack,
     handle_feature_1s,
     handle_feature_batch,
@@ -943,3 +944,114 @@ def test_health_fw_running_absurdo_no_borra_lo_conocido(fleet, ctx, meta) -> Non
     malo["captured_at"] = "2026-07-06T10:02:03+00:00"
     assert handle_health_snapshot(fleet, malo, meta, ctx).is_ok
     assert _fw_run(fleet) == "aaaaaaa"
+
+
+# --------------------------------------------------------------------------
+# actuation_record → actuation_records (T-2.86.a · el hueco `RO-4.e`)
+# --------------------------------------------------------------------------
+#
+# El criterio 1 dejó la constancia EN EL GABINETE; esto es el otro extremo del
+# cable. La pregunta que responde la tabla es la de un perito: «¿quién ordenó
+# cerrar el gas, y había enlace cuando pasó?».
+
+RECORD_HEX = "9c1f7a2b4e6d48f0b3a5c7e9d1f30246"
+
+
+def _registro(**over: object) -> dict:
+    base = {
+        "seq": 7,
+        "record_id": RECORD_HEX,
+        "at": "2026-07-06T10:00:02.420000+00:00",
+        "gateway_id": "gw-dev-0001",
+        "tenant_id": "tenant-dev",
+        "site_id": "site-dev",
+        "cause": "sasmex",
+        "actor": "wr-1",
+        "channel": "gas_valve",
+        "action": "activate",
+        "success": True,
+        "detail": "relay",
+        "event_id": EVENT_HEX,
+        "online": False,
+    }
+    base.update(over)
+    return base
+
+
+def _registros(fleet: psycopg.Connection) -> int:
+    return _count(fleet, "SELECT count(*) FROM actuation_records")
+
+
+def test_la_actuacion_a_oscuras_queda_registrada_con_actor_y_causa(fleet, ctx, meta) -> None:
+    """El caso ENTERO de la ficha: el gas se cerró sin enlace y ahora consta."""
+    assert handle_actuation_record(fleet, _registro(), meta, ctx).is_ok
+    fila = fleet.execute(
+        "SELECT tenant_id, site_id, gateway_id, seq, occurred_at, cause, actor, "
+        "       channel, action, success, detail, event_id, online "
+        "  FROM actuation_records WHERE record_id = %s",
+        (uuid.UUID(RECORD_HEX),),
+    ).fetchone()
+    assert fila is not None, "la constancia del gabinete no llegó a la tabla"
+    assert str(fila[0]) == TENANT and str(fila[1]) == SITE and str(fila[2]) == GW
+    assert fila[3] == 7
+    assert fila[4] == datetime(2026, 7, 6, 10, 0, 2, 420000, tzinfo=UTC)
+    assert (fila[5], fila[6]) == ("sasmex", "wr-1")  # causa Y actor: las dos mitades
+    assert (fila[7], fila[8], fila[9]) == ("gas_valve", "activate", True)
+    assert fila[10] == "relay" and fila[11] == EVENT_HEX
+    assert fila[12] is False, "la fila que responde a RO-4.e es justo la de `online=False`"
+
+
+def test_re_subir_la_misma_fila_no_duplica_la_bitacora(fleet, ctx, meta) -> None:
+    """Regla de oro 3, y aquí no es un renglón de más.
+
+    El gabinete NO borra su copia local al subir —el perito la lee meses después—,
+    avanza una marca de agua; si esa marca se pierde re-sube lo ya ingerido. Sin el
+    `ON CONFLICT DO NOTHING`, un perito leería DOS actuaciones donde hubo una.
+    """
+    assert handle_actuation_record(fleet, _registro(), meta, ctx).is_ok
+    assert handle_actuation_record(fleet, _registro(), meta, ctx).is_ok
+    assert _registros(fleet) == 1
+    # Y la re-entrega no puede REESCRIBIR: la tabla es append-only, así que una
+    # segunda versión de la misma fila se ignora en vez de pisar la original.
+    assert handle_actuation_record(fleet, _registro(actor="alguien-mas"), meta, ctx).is_ok
+    actor = fleet.execute(
+        "SELECT actor FROM actuation_records WHERE record_id = %s", (uuid.UUID(RECORD_HEX),)
+    ).fetchone()[0]
+    assert actor == "wr-1"
+
+
+def test_online_desconocido_se_guarda_como_desconocido(fleet, ctx, meta) -> None:
+    """`None` = «el gabinete no pudo saber si tenía enlace». Colapsarlo a `False`
+    inventaría el dato en la tabla que existe precisamente para no inventarlo."""
+    assert handle_actuation_record(fleet, _registro(online=None), meta, ctx).is_ok
+    valor = fleet.execute(
+        "SELECT online FROM actuation_records WHERE record_id = %s", (uuid.UUID(RECORD_HEX),)
+    ).fetchone()[0]
+    assert valor is None
+
+
+def test_un_gabinete_no_puede_plantar_evidencia_en_otro_tenant(fleet, ctx, meta) -> None:
+    """Regla de oro 5, y en la tabla que menos se lo puede permitir: la identidad
+    se toma del REGISTRO, y un payload que declara otro tenant se rechaza Y se
+    audita en vez de escribirse."""
+    res = handle_actuation_record(fleet, _registro(tenant_id="tenant-ajeno"), meta, ctx)
+    assert res.outcome is Outcome.REJECT
+    assert "tenant" in res.reason
+    assert _registros(fleet) == 0
+    assert _audit_rejects(fleet) == 1
+
+
+def test_un_gabinete_no_puede_atribuir_su_bitacora_a_otro_gabinete(fleet, ctx, meta) -> None:
+    res = handle_actuation_record(fleet, _registro(gateway_id="gw-evil"), meta, ctx)
+    assert res.outcome is Outcome.REJECT
+    assert "gateway" in res.reason
+    assert _registros(fleet) == 0
+
+
+def test_una_fila_sin_record_id_valido_se_rechaza_y_no_reintenta(fleet, ctx, meta) -> None:
+    """REJECT y no RETRY: un `record_id` malformado no mejora reintentando, y
+    dejarlo dando vueltas en la cola taparía lo que viene detrás."""
+    res = handle_actuation_record(fleet, _registro(record_id="no-es-un-uuid"), meta, ctx)
+    assert res.outcome is Outcome.REJECT
+    assert "record_id" in res.reason
+    assert _registros(fleet) == 0

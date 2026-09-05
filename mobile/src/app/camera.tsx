@@ -81,7 +81,7 @@ const SIN_ESTADO =
 export default function Camera() {
   const router = useRouter();
   const siteId = useWatchedSiteId();
-  const { data, loading, error, stale, dataUpdatedAt, refetch } = useAlertState(siteId);
+  const { data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
   const me = useSessionStore((s) => s.me);
   const addEvidence = useDamageDraft((s) => s.addEvidence);
 
@@ -95,7 +95,11 @@ export default function Camera() {
   const incidentId = data?.incident?.incident_id ?? null;
   // La edad del snapshot con el que se SELLA. Misma expresión que usan las
   // pantallas que lo PINTAN — aquí, además, se hornea (ver cabecera).
-  const snapshotStaleSinceMs = stale && data !== null ? dataUpdatedAt : null;
+  // [T-5.21] Del RELOJ. Esta es la que acaba IMPRESA EN EL PÍXEL de una
+  // fotografía forense: un «METADATOS RETENIDOS» que solo aparecía cuando la
+  // consulta fallaba dejaba fotos con metadatos de hace diez minutos sin
+  // marca ninguna, y esa foto va a un dictamen.
+  const snapshotStaleSinceMs = data !== null ? staleSinceMs : null;
   const meta: ForensicMeta = {
     tsDevice: new Date().toISOString(),
     ntpOffsetMs: null, // el offset del último sync se adjunta en T-2.11

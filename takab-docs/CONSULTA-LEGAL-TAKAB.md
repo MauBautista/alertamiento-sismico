@@ -49,7 +49,8 @@ mensaje al ocupante es «ALERTA SÍSMICA · PROTÉJASE», sin cuenta regresiva n
 Del contacto de SASMEX al relé del edificio **no hay internet, no hay nube y no hay inteligencia
 artificial**. Es una cadena eléctrica y de software con reintento, dentro del propio gabinete.
 
-**Medido en el equipo real:** **6.65 ms** y **4.16 ms** de contacto SASMEX a relé, en dos pruebas
+**Medido en el equipo real** (fuente única y alcance: [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md)) **:** **6.65 ms** y **4.16 ms**
+de contacto SASMEX a relé, en dos pruebas
 independientes con hardware instalado.
 
 > **Lo que NO está acreditado todavía, y va aquí a propósito:** la latencia física completa

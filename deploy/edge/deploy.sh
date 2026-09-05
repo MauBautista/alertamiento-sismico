@@ -132,6 +132,13 @@ while [ $# -gt 0 ]; do
     VENTANA_MANTENIMIENTO=1
     shift
     ;;
+  --desde-esta-rama)
+    # [T-2.171] La escotilla de A-1. Aqui pesa mas que en la nube: lo que se
+    # despliega toca la sirena, asi que desplegar una rama tiene que ser una
+    # frase que alguien escribe, no el estado en que quedo el arbol.
+    export TAKAB_DEPLOY_RAMA_LIBRE=1
+    shift
+    ;;
   *)
     POSICIONALES+=("$1")
     shift
@@ -142,6 +149,15 @@ set -- ${POSICIONALES+"${POSICIONALES[@]}"}
 
 HOST="${1:-takab-pi5}"
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+
+# [T-2.171] Regla A-1, en codigo. Se pasa `si` a la tolerancia de arbol sucio
+# porque este script la DECLARA a proposito unas lineas mas abajo (`--dirty`, y
+# el aviso de que la version no es reproducible): depurar en sitio con el
+# gabinete delante es un caso real. Rama y limpieza son dos preguntas distintas
+# y aqui solo se anade la primera — la segunda ya tenia su respuesta escrita.
+# shellcheck source=../lib/guardas.sh
+. "${ROOT}/deploy/lib/guardas.sh"
+guarda_de_rama "edge" si
 
 # Raíz del gabinete. Es una VARIABLE y no un literal para que
 # edge/tests/test_deploy_sh.py pueda correr este script de verdad contra un
@@ -198,7 +214,12 @@ EDGE_EXTRAS=(hardware aws)
 # Declarados en pyproject pero NO instalados, cada uno con su razón:
 #   bacnet — driver BACnet/IP real (T-1.9); hoy se usa el simulador.
 #   lora   — módem ESP32 por USB-serial (T-2.33); hardware aún no instalado.
-EDGE_EXTRAS_OMITIDOS=(bacnet lora)
+#   cctv   — cliente ONVIF (T-3.11). NO va al gabinete y la razón es doble: el CCTV
+#            está apagado hasta G-04 + la medición de B.2 (D-25), y `takab-cctv` está
+#            escrito para poder correr en una caja APARTE del sitio, que es donde
+#            probablemente acabe. Instalarlo aquí sería meter una dependencia en el
+#            camino de vida para un proceso que quizá ni corra en esta máquina.
+EDGE_EXTRAS_OMITIDOS=(bacnet lora cctv)
 
 EDGE_EXTRA_FLAGS=""
 for _extra in "${EDGE_EXTRAS[@]}"; do
@@ -502,9 +523,13 @@ echo "→ GATE DEL CÓDIGO DESPLEGADO (antes de reiniciar)"
 if ! .venv/bin/python -c 'import lgpio, awsiot' 2>&1; then
   echo "✗ ABORTADO: el venv no puede importar lgpio y/o awsiot." >&2
   FALLO_GATE="dependencias del venv (revisa el 'uv sync': ¿red? ¿extras?)"
-elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main__, takab_edge.pinlink.cli' 2>&1; then
+elif ! .venv/bin/python -c 'import takab_edge.supervisor, takab_edge.gpio.__main__, takab_edge.pinlink.cli, takab_edge.cctv.__main__' 2>&1; then
   echo "✗ ABORTADO: el CÓDIGO DESPLEGADO no importa." >&2
   FALLO_GATE="el árbol recién copiado (los ExecStart de las unidades no arrancarían)"
+# [T-3.11] `takab-cctv` SÍ entra en el gate de importación de arriba —el import de
+# `onvif` es perezoso a propósito, así que el módulo importa sin el extra `cctv`— pero
+# NO se exige su ejecutable aquí, y la ausencia es decisión: su unidad no se habilita
+# hasta G-04 + la medición de B.2 (D-25), y el extra está en EDGE_EXTRAS_OMITIDOS.
 elif [ ! -x .venv/bin/takab-edge ] || [ ! -x .venv/bin/takab-gpio ] || [ ! -x .venv/bin/takab-gpioctl ]; then
   echo "✗ ABORTADO: faltan los ejecutables que lanzan las unidades systemd." >&2
   FALLO_GATE="los console scripts .venv/bin/takab-{edge,gpio,gpioctl}"

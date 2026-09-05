@@ -34,6 +34,13 @@ coverage/
 *.tfstate
 *.tfstate.*
 *.tfvars
+# Y cualquier DERIVADO suyo. `*.tfvars` exige que el nombre TERMINE en `.tfvars`, asi que
+# un `cp local.auto.tfvars local.auto.tfvars.bak` —el reflejo correcto antes de tocarlo—
+# dejaba el respaldo fuera del ignore, a un `git add -A` del repositorio. Y ese fichero
+# lleva el DSN de la base con su contrasena. Encontrado el 2026-08-30 haciendo justo ese
+# respaldo. La negacion del `.example` va DESPUES a proposito: en git gana la ultima regla
+# que casa, asi que invertir el orden volveria a ignorar el ejemplo.
+*.tfvars.*
 !*.tfvars.example
 .terraform.lock.hcl
 
@@ -87,3 +94,7 @@ cotizacion/
 # y el gabinete reportaría una versión que no corre — justo lo que este mecanismo
 # existe para impedir.
 edge/FW_VERSION
+
+# [T-3.10.b] Se GENERA en cada build (ci/check-licenses.sh). Commitearlo lo dejaría
+# envejecer en silencio, que es como envejecen todos los inventarios escritos a mano.
+THIRD_PARTY_NOTICES.txt

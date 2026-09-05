@@ -145,6 +145,229 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "BuildingTypeCatalog": {
+        "description": "El catálogo entero, y la declaración de que solo SUGIERE.\n\n`resuelve_umbrales` viaja en el cuerpo y no en un comentario porque la\nconsola tiene que poder escribirlo en pantalla: un catálogo que llegara\npelado invitaría a que la siguiente pantalla lo aplicara sola.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BuildingTypeOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "por_que_no_resuelve": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Por Que No Resuelve",
+            "type": "array"
+          },
+          "resuelve_umbrales": {
+            "title": "Resuelve Umbrales",
+            "type": "boolean"
+          },
+          "sin_referencia_de_pgv": {
+            "title": "Sin Referencia De Pgv",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resuelve_umbrales",
+          "por_que_no_resuelve",
+          "sin_referencia_de_pgv",
+          "items"
+        ],
+        "title": "BuildingTypeCatalog",
+        "type": "object"
+      },
+      "BuildingTypeOut": {
+        "description": "Un tipo del catálogo, con su banda de REFERENCIA o la razón de no tenerla.",
+        "properties": {
+          "banda": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Banda"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "sin_banda_por_que": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sin Banda Por Que"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "value",
+          "label",
+          "banda"
+        ],
+        "title": "BuildingTypeOut",
+        "type": "object"
+      },
+      "CapturaOut": {
+        "description": "Una de las cuatro capturas del reporte, o su ausencia con razón.",
+        "properties": {
+          "captured_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Captured At"
+          },
+          "disponible": {
+            "default": false,
+            "title": "Disponible",
+            "type": "boolean"
+          },
+          "papel": {
+            "title": "Papel",
+            "type": "string"
+          },
+          "purged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purged At"
+          },
+          "razon": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Razon"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "still_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Still Id"
+          }
+        },
+        "required": [
+          "papel"
+        ],
+        "title": "CapturaOut",
+        "type": "object"
+      },
+      "CatalogCorrelation": {
+        "description": "[T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado.",
+        "properties": {
+          "criterio": {
+            "$ref": "#/components/schemas/CatalogCriterion"
+          },
+          "descartes": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CatalogDiscard"
+            },
+            "title": "Descartes",
+            "type": "array"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "verificacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verificacion"
+          }
+        },
+        "required": [
+          "estado",
+          "criterio"
+        ],
+        "title": "CatalogCorrelation",
+        "type": "object"
+      },
+      "CatalogCriterion": {
+        "description": "[T-5.11] Los tres umbrales que se aplicaron, para poder leer el veredicto.\n\nViajan con la respuesta y se imprimen: un criterio que no se puede citar no\nes defendible ante quien firma el dictamen.",
+        "properties": {
+          "margen_s": {
+            "title": "Margen S",
+            "type": "number"
+          },
+          "pga_minima_g": {
+            "title": "Pga Minima G",
+            "type": "number"
+          },
+          "radio_km": {
+            "title": "Radio Km",
+            "type": "number"
+          },
+          "v_s_km_s": {
+            "title": "V S Km S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "v_s_km_s",
+          "margen_s",
+          "radio_km",
+          "pga_minima_g"
+        ],
+        "title": "CatalogCriterion",
+        "type": "object"
+      },
       "CatalogDelta": {
         "description": "Diferencia entre lo que estimó la red y lo que dice el catálogo.",
         "properties": {
@@ -190,6 +413,74 @@
           "dt_s"
         ],
         "title": "CatalogDelta",
+        "type": "object"
+      },
+      "CatalogDiscard": {
+        "description": "[T-5.11] Un sismo que estaba en la ventana y NO es el nuestro.\n\nExiste para que el sistema pueda decir «hay un evento en el catálogo pero no\nes el nuestro», que es justo lo que no sabía decir: sin esto un descarte se\nconvierte en una pantalla vacía que el operador lee como «no pasó nada».",
+        "properties": {
+          "catalog_key": {
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "detalle": {
+            "title": "Detalle",
+            "type": "string"
+          },
+          "km_al_sitio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km Al Sitio"
+          },
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pga_esperada_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Esperada G"
+          },
+          "retraso_admisible_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retraso Admisible S"
+          },
+          "retraso_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retraso S"
+          }
+        },
+        "required": [
+          "catalog_key",
+          "motivo",
+          "detalle"
+        ],
+        "title": "CatalogDiscard",
         "type": "object"
       },
       "CatalogEarthquakeList": {
@@ -290,7 +581,7 @@
         "type": "object"
       },
       "CatalogMatch": {
-        "description": "Sismo del catálogo de referencia más cercano en tiempo.\n\nEs el único contraste externo disponible. Sirve para declarar \"la red estimó\nesto, el catálogo dice aquello\", no para corregir el dato propio.",
+        "description": "Sismo del catálogo de referencia que el criterio de `T-5.11` declara NUESTRO.\n\nEs el único contraste externo disponible. Sirve para declarar \"la red estimó\nesto, el catálogo dice aquello\", no para corregir el dato propio.\n\n**No es ya \"el más cercano en el tiempo\".** Hasta `T-5.11` lo era, y por eso\nun sismo de otro continente ocurrido dentro de ±120 s se imprimía como el\nnuestro en un dictamen firmado. Ahora es el que pasó los tres criterios de\nidentidad, y los campos de abajo son las medidas que lo sostienen.",
         "properties": {
           "catalog_key": {
             "title": "Catalog Key",
@@ -310,6 +601,17 @@
           "dt_s": {
             "title": "Dt S",
             "type": "number"
+          },
+          "km_al_sitio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Km Al Sitio"
           },
           "lat": {
             "anyOf": [
@@ -349,6 +651,17 @@
             "title": "Origin Time",
             "type": "string"
           },
+          "pga_esperada_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Esperada G"
+          },
           "place": {
             "anyOf": [
               {
@@ -359,6 +672,17 @@
               }
             ],
             "title": "Place"
+          },
+          "rumbo_al_sitio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rumbo Al Sitio"
           },
           "source": {
             "title": "Source",
@@ -416,6 +740,67 @@
           "topic"
         ],
         "title": "CatalogPushOut",
+        "type": "object"
+      },
+      "CctvOut": {
+        "description": "Todo el CCTV de un incidente. **El mismo objeto va a la pantalla y al PDF.**\n\nDos rutas distintas para los mismos hechos acabarían discrepando, y un dictamen que no\ncoincide con lo que el operador vio en pantalla es peor que ninguno.",
+        "properties": {
+          "capturas": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/CapturaOut"
+            },
+            "title": "Capturas",
+            "type": "array"
+          },
+          "clips": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ClipOut"
+            },
+            "title": "Clips",
+            "type": "array"
+          },
+          "con_camara": {
+            "default": false,
+            "title": "Con Camara",
+            "type": "boolean"
+          },
+          "discrepancia": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DiscrepanciaOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estado": {
+            "default": "SIN COBERTURA CCTV DECLARADA · este sitio no tiene cámara configurada",
+            "title": "Estado",
+            "type": "string"
+          },
+          "evacuacion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvacuacionOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id"
+        ],
+        "title": "CctvOut",
         "type": "object"
       },
       "ChannelPeak": {
@@ -744,6 +1129,250 @@
           "created_at"
         ],
         "title": "CheckinOut",
+        "type": "object"
+      },
+      "ClassificationChainOut": {
+        "properties": {
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ClassificationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "incident_id",
+          "items"
+        ],
+        "title": "ClassificationChainOut",
+        "type": "object"
+      },
+      "ClassificationIn": {
+        "additionalProperties": false,
+        "description": "Clasificar. **Sin valor por defecto: se elige.**",
+        "properties": {
+          "classification": {
+            "pattern": "^(real|falso_positivo|prueba|indeterminado)$",
+            "title": "Classification",
+            "type": "string"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Note",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          }
+        },
+        "required": [
+          "classification"
+        ],
+        "title": "ClassificationIn",
+        "type": "object"
+      },
+      "ClassificationOut": {
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "classification_id": {
+            "format": "uuid",
+            "title": "Classification Id",
+            "type": "string"
+          },
+          "classified_at": {
+            "format": "date-time",
+            "title": "Classified At",
+            "type": "string"
+          },
+          "classified_by": {
+            "format": "uuid",
+            "title": "Classified By",
+            "type": "string"
+          },
+          "current": {
+            "title": "Current",
+            "type": "boolean"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "note": {
+            "title": "Note",
+            "type": "string"
+          },
+          "supersedes_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supersedes Id"
+          }
+        },
+        "required": [
+          "classification_id",
+          "incident_id",
+          "classification",
+          "note",
+          "classified_by",
+          "classified_at",
+          "supersedes_id",
+          "current"
+        ],
+        "title": "ClassificationOut",
+        "type": "object"
+      },
+      "ClassificationStatsOut": {
+        "description": "Desglose de una ventana, con los sin clasificar SIEMPRE a la vista.",
+        "properties": {
+          "by_classification": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Classification",
+            "type": "object"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          },
+          "since": {
+            "format": "date-time",
+            "title": "Since",
+            "type": "string"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unclassified": {
+            "title": "Unclassified",
+            "type": "integer"
+          },
+          "until": {
+            "format": "date-time",
+            "title": "Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "since",
+          "until",
+          "total",
+          "unclassified",
+          "by_classification",
+          "false_positive_rate"
+        ],
+        "title": "ClassificationStatsOut",
+        "type": "object"
+      },
+      "ClipOut": {
+        "description": "Un clip del incidente. `disponible=False` cuando la retención ya podó el objeto.",
+        "properties": {
+          "clip_id": {
+            "format": "uuid",
+            "title": "Clip Id",
+            "type": "string"
+          },
+          "coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          },
+          "disponible": {
+            "default": false,
+            "title": "Disponible",
+            "type": "boolean"
+          },
+          "ended_at": {
+            "format": "date-time",
+            "title": "Ended At",
+            "type": "string"
+          },
+          "purged_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purged At"
+          },
+          "sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sha256"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "started_at": {
+            "format": "date-time",
+            "title": "Started At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "clip_id",
+          "started_at",
+          "ended_at"
+        ],
+        "title": "ClipOut",
         "type": "object"
       },
       "CommandIn": {
@@ -1593,6 +2222,91 @@
         "title": "DamageReportOut",
         "type": "object"
       },
+      "DemoModeIn": {
+        "additionalProperties": false,
+        "description": "Encender. La ventana se pide en segundos y se acota al techo.",
+        "properties": {
+          "duration_s": {
+            "default": 7200,
+            "maximum": 28800.0,
+            "minimum": 60.0,
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "note": {
+            "default": "",
+            "maxLength": 200,
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "title": "DemoModeIn",
+        "type": "object"
+      },
+      "DemoModeOut": {
+        "description": "Estado del modo para un cliente. ``active=False`` es la respuesta normal.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "enabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled At"
+          },
+          "enabled_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled By"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          },
+          "remaining_s": {
+            "default": 0.0,
+            "title": "Remaining S",
+            "type": "number"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "active",
+          "tenant_id"
+        ],
+        "title": "DemoModeOut",
+        "type": "object"
+      },
       "DeviceKeyIn": {
         "description": "Llave pública respaldada por hardware (SPKI PEM, P-256). La verificación\ncriptográfica de intenciones llega en T-2.09; aquí solo se registra.",
         "properties": {
@@ -1854,6 +2568,53 @@
         "title": "DirectoryEntryOut",
         "type": "object"
       },
+      "DiscrepanciaOut": {
+        "description": "Aforo por cámara frente al pase de lista. **Nunca se promedian.**",
+        "properties": {
+          "aforo_camara": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aforo Camara"
+          },
+          "checkins": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checkins"
+          },
+          "diferencia": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diferencia"
+          },
+          "lectura": {
+            "title": "Lectura",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lectura"
+        ],
+        "title": "DiscrepanciaOut",
+        "type": "object"
+      },
       "DrillCreateIn": {
         "description": "Inicio de simulacro. Sin ``site_ids`` = todos los sitios del tenant con\ngateway comandable. La duración acota el banner (30 s..1 h, CHECK de DB).\n\n[T-2.03·D4c] Con ``scheduled_at`` (futuro) la fila es AGENDA informativa\n(\"próximo simulacro\" de la app): sin comandos y jamás ``active`` — ejecutar\na esa hora sigue siendo un acto del operador.",
         "properties": {
@@ -1875,6 +2636,18 @@
               }
             ],
             "title": "From Scheduled"
+          },
+          "from_template": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Template"
           },
           "note": {
             "anyOf": [
@@ -1961,6 +2734,18 @@
             "title": "Duration S",
             "type": "integer"
           },
+          "from_template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Template Id"
+          },
           "initiated_by": {
             "format": "uuid",
             "title": "Initiated By",
@@ -2046,6 +2831,75 @@
         "title": "DrillOut",
         "type": "object"
       },
+      "DrillReportOut": {
+        "description": "[T-5.14] El documento generado, con lo que hace falta para citarlo.\n\nLos tres conteos van SEPARADOS y no colapsados: «no tenía gabinete» es un\nproblema de inventario y «no acusó» uno de operación, y quien lee el número\nreacciona distinto a cada uno.",
+        "properties": {
+          "acked": {
+            "title": "Acked",
+            "type": "integer"
+          },
+          "evidence_id": {
+            "format": "uuid",
+            "title": "Evidence Id",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "max_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Latency S"
+          },
+          "median_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Median Latency S"
+          },
+          "no_gateway": {
+            "title": "No Gateway",
+            "type": "integer"
+          },
+          "not_acked": {
+            "title": "Not Acked",
+            "type": "integer"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "url": {
+            "title": "Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "evidence_id",
+          "sha256",
+          "url",
+          "expires_in",
+          "acked",
+          "not_acked",
+          "no_gateway",
+          "median_latency_s",
+          "max_latency_s"
+        ],
+        "title": "DrillReportOut",
+        "type": "object"
+      },
       "DrillSiteOut": {
         "description": "Participación de UN sitio: el acuse se DERIVA del comando firmado.",
         "properties": {
@@ -2060,6 +2914,41 @@
               }
             ],
             "title": "Ack"
+          },
+          "ack_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ack Latency S"
+          },
+          "acked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acked At"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio"
           },
           "command_id": {
             "anyOf": [
@@ -2114,6 +3003,143 @@
           "ack"
         ],
         "title": "DrillSiteOut",
+        "type": "object"
+      },
+      "DrillTemplateIn": {
+        "description": "Alta o edición de una plantilla.\n\n``site_ids`` vacío significa **todos los sitios comandables del tenant**, la\nmisma convención que ``DrillCreateIn.site_ids = None`` y que el rótulo del\nmodal. Dos convenciones distintas para lo mismo acabarían divergiendo.",
+        "properties": {
+          "duration_s": {
+            "default": 300,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "site_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Site Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DrillTemplateIn",
+        "type": "object"
+      },
+      "DrillTemplateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DrillTemplateOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DrillTemplateList",
+        "type": "object"
+      },
+      "DrillTemplateOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateSiteOut"
+            },
+            "title": "Sites",
+            "type": "array"
+          },
+          "sitios_no_usables": {
+            "default": 0,
+            "title": "Sitios No Usables",
+            "type": "integer"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "todos_los_sitios": {
+            "default": false,
+            "title": "Todos Los Sitios",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "tenant_id",
+          "name",
+          "duration_s",
+          "note",
+          "created_by",
+          "created_at",
+          "updated_at",
+          "sites"
+        ],
+        "title": "DrillTemplateOut",
         "type": "object"
       },
       "EnrollmentCodeIn": {
@@ -2740,6 +3766,139 @@
         "title": "ErrorFrame",
         "type": "object"
       },
+      "EvacuacionOut": {
+        "description": "Las métricas. `None` es «no medido»; la razón está en `notas`.",
+        "properties": {
+          "baseline_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Baseline N"
+          },
+          "correlacion": {
+            "title": "Correlacion",
+            "type": "string"
+          },
+          "dictamen_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dictamen Lag S"
+          },
+          "notas": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Notas",
+            "type": "array"
+          },
+          "peak_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak At"
+          },
+          "peak_n": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak N"
+          },
+          "provenance": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provenance"
+          },
+          "reentry_lag_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reentry Lag S"
+          },
+          "reentry_start_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reentry Start At"
+          },
+          "reingreso_antes_del_dictamen": {
+            "default": false,
+            "title": "Reingreso Antes Del Dictamen",
+            "type": "boolean"
+          },
+          "t50_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T50 S"
+          },
+          "t90_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T90 S"
+          },
+          "veredicto_reingreso": {
+            "title": "Veredicto Reingreso",
+            "type": "string"
+          }
+        },
+        "required": [
+          "veredicto_reingreso",
+          "correlacion"
+        ],
+        "title": "EvacuacionOut",
+        "type": "object"
+      },
       "EventDetailOut": {
         "description": "Detalle de evento: campos del evento + sus votos de quórum.",
         "properties": {
@@ -2800,6 +3959,34 @@
             "additionalProperties": true,
             "title": "Meta",
             "type": "object"
+          },
+          "procedencia": {
+            "default": "sin_dato_externo",
+            "title": "Procedencia",
+            "type": "string"
+          },
+          "procedencia_consultada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Consultada En"
+          },
+          "procedencia_fuente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Fuente"
           },
           "quorum_votes": {
             "items": {
@@ -3287,6 +4474,16 @@
               }
             ]
           },
+          "catalog_correlation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogCorrelation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "catalog_delta": {
             "anyOf": [
               {
@@ -3432,6 +4629,7 @@
           "peers",
           "catalog",
           "catalog_delta",
+          "catalog_correlation",
           "sensors",
           "calibrated",
           "compliance"
@@ -3746,6 +4944,17 @@
               }
             ],
             "title": "Ntp Offset Ms"
+          },
+          "packet_loss_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Packet Loss Pct"
           },
           "power_status": {
             "anyOf": [
@@ -4952,9 +6161,24 @@
       "MapSiteState": {
         "description": "Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.",
         "properties": {
+          "battery_pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Battery Pct"
+          },
           "calibrated": {
             "title": "Calibrated",
             "type": "boolean"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
           },
           "criticality": {
             "title": "Criticality",
@@ -4985,6 +6209,17 @@
               }
             ],
             "title": "Felt Pgv Cms"
+          },
+          "fw_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fw Version"
           },
           "last_bucket": {
             "anyOf": [
@@ -5078,6 +6313,17 @@
               }
             ]
           },
+          "power_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Power Status"
+          },
           "seedlink_lag_s": {
             "anyOf": [
               {
@@ -5088,6 +6334,28 @@
               }
             ],
             "title": "Seedlink Lag S"
+          },
+          "sensor_models": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Models"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Serial"
           },
           "site_id": {
             "format": "uuid",
@@ -5104,6 +6372,7 @@
           "site_id",
           "tenant_id",
           "name",
+          "code",
           "criticality",
           "lon",
           "lat",
@@ -5151,12 +6420,32 @@
             "title": "Ack Incident",
             "type": "boolean"
           },
+          "cctv_read": {
+            "title": "Cctv Read",
+            "type": "boolean"
+          },
+          "cctv_video": {
+            "title": "Cctv Video",
+            "type": "boolean"
+          },
           "checkin_submit": {
             "title": "Checkin Submit",
             "type": "boolean"
           },
+          "classify_incident": {
+            "title": "Classify Incident",
+            "type": "boolean"
+          },
           "damage_report_submit": {
             "title": "Damage Report Submit",
+            "type": "boolean"
+          },
+          "demo_mode_off": {
+            "title": "Demo Mode Off",
+            "type": "boolean"
+          },
+          "demo_mode_on": {
+            "title": "Demo Mode On",
             "type": "boolean"
           },
           "deploy_firmware": {
@@ -5278,6 +6567,9 @@
           "export",
           "generate_report",
           "edit_thresholds",
+          "demo_mode_on",
+          "demo_mode_off",
+          "classify_incident",
           "siren_test",
           "manage_fleet",
           "relocate_epicenter",
@@ -5303,6 +6595,8 @@
           "platform_maintenance_window",
           "manage_privacy_notice",
           "manage_privacy_erasure",
+          "cctv_read",
+          "cctv_video",
           "deploy_firmware"
         ],
         "title": "MeActions",
@@ -5902,6 +7196,11 @@
             "title": "Compliance Labels",
             "type": "object"
           },
+          "demo_mode": {
+            "default": false,
+            "title": "Demo Mode",
+            "type": "boolean"
+          },
           "drill": {
             "$ref": "#/components/schemas/MobileDrillOut"
           },
@@ -6235,6 +7534,226 @@
           "published_at"
         ],
         "title": "NoticePublishedOut",
+        "type": "object"
+      },
+      "NotificationJobOut": {
+        "description": "Un envío de la cadena, con su desenlace y su destinatario enmascarado.",
+        "properties": {
+          "action_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Id"
+          },
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deadline_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline At"
+          },
+          "deadline_met": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deadline Met"
+          },
+          "delivered": {
+            "title": "Delivered",
+            "type": "boolean"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "delivery_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Latency S"
+          },
+          "dispatch_latency_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dispatch Latency S"
+          },
+          "due_at": {
+            "format": "date-time",
+            "title": "Due At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "last_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status"
+          },
+          "last_status_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Status At"
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "position": {
+            "title": "Position",
+            "type": "integer"
+          },
+          "recipient": {
+            "$ref": "#/components/schemas/RecipientOut"
+          },
+          "sent_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sent At"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "channel",
+          "mode",
+          "position",
+          "status",
+          "delivered",
+          "created_at",
+          "due_at",
+          "deadline_at",
+          "sent_at",
+          "delivered_at",
+          "last_status",
+          "last_status_at",
+          "attempts",
+          "error",
+          "dispatch_latency_s",
+          "delivery_latency_s",
+          "deadline_met",
+          "recipient",
+          "action_id"
+        ],
+        "title": "NotificationJobOut",
+        "type": "object"
+      },
+      "NotifyChainOut": {
+        "description": "Los envíos de un incidente, en el orden en que se planificaron.",
+        "properties": {
+          "delivered_count": {
+            "title": "Delivered Count",
+            "type": "integer"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationJobOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "opened_at",
+          "items",
+          "delivered_count"
+        ],
+        "title": "NotifyChainOut",
         "type": "object"
       },
       "NotifyChannelOut": {
@@ -6988,6 +8507,42 @@
         "title": "ReadyFrame",
         "type": "object"
       },
+      "RecipientOut": {
+        "description": "Destinatario reducido al mínimo dato (ver ``notify/destino.py``).",
+        "properties": {
+          "count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Count"
+          },
+          "hint": {
+            "title": "Hint",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "unrecognised": {
+            "title": "Unrecognised",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "count",
+          "hint",
+          "unrecognised"
+        ],
+        "title": "RecipientOut",
+        "type": "object"
+      },
       "ReleaseCreate": {
         "additionalProperties": false,
         "description": "Publicar un release en el registro (``POST /fleet/releases``).\n\n``version`` es el valor que ``deploy/edge/deploy.sh`` escribirá en el\n``FW_VERSION`` del gabinete, y la comparación con lo que el aparato declara es\npor IGUALDAD EXACTA. Se recorta el espacio en blanco por la MISMA razón por la\nque lo recortan las dos puntas del otro camino —``edge/takab_edge/version.py``\nal leer el archivo y ``ingest/handlers.py`` al recibir el latido—: si aquí no\nse recortara, un ``\"62f3f1e \"` pegado desde una terminal quedaría en el\nregistro para siempre (la tabla no admite UPDATE) sin poder coincidir JAMÁS\ncon ningún gabinete, y toda la flota que corriera ese código saldría\n``DESCONOCIDA``. Dos normalizaciones que no coinciden son un fallo silencioso;\nel ``max_length`` también es el mismo (64) que el de la ingesta.\n\n``released_at`` se puede fijar para dar de alta releases ya desplegados sin\nfalsear su antigüedad (corregirla después sería imposible).",
@@ -7601,6 +9156,18 @@
             "title": "Is Active",
             "type": "boolean"
           },
+          "rolled_back_to": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolled Back To"
+          },
           "rule_set_id": {
             "format": "uuid",
             "title": "Rule Set Id",
@@ -7701,6 +9268,20 @@
         "title": "RuleSetPutIn",
         "type": "object"
       },
+      "RuleSetRollbackIn": {
+        "description": "Cuerpo de POST /rule-sets/{id}/rollback (T-5.16).\n\n``base_version`` es la versión ACTIVA que el operador tenía delante cuando\npulsó. Es el mismo control de concurrencia optimista que el PUT y por la\nmisma razón: dos operadores mirando la misma pantalla, y el segundo no puede\nrevertir a ciegas lo que el primero acaba de guardar.",
+        "properties": {
+          "base_version": {
+            "title": "Base Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "base_version"
+        ],
+        "title": "RuleSetRollbackIn",
+        "type": "object"
+      },
       "SeismicEventOut": {
         "description": "Fila de ``seismic_events`` (dato de red; epicentro aplanado a lon/lat).",
         "properties": {
@@ -7761,6 +9342,34 @@
             "additionalProperties": true,
             "title": "Meta",
             "type": "object"
+          },
+          "procedencia": {
+            "default": "sin_dato_externo",
+            "title": "Procedencia",
+            "type": "string"
+          },
+          "procedencia_consultada_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Consultada En"
+          },
+          "procedencia_fuente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Procedencia Fuente"
           },
           "source": {
             "title": "Source",
@@ -8479,7 +10088,6 @@
           "building_type": {
             "anyOf": [
               {
-                "maxLength": 100,
                 "type": "string"
               },
               {
@@ -9063,7 +10671,6 @@
           "building_type": {
             "anyOf": [
               {
-                "maxLength": 100,
                 "type": "string"
               },
               {
@@ -9149,6 +10756,59 @@
           "topic"
         ],
         "title": "SubscribeFrame",
+        "type": "object"
+      },
+      "TemplateSiteOut": {
+        "description": "Un sitio de la plantilla, con si HOY se puede usar y por qué no.",
+        "properties": {
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          }
+        },
+        "required": [
+          "site_id",
+          "estado"
+        ],
+        "title": "TemplateSiteOut",
         "type": "object"
       },
       "TenantCreate": {
@@ -10043,6 +11703,25 @@
         "summary": "List Audit"
       }
     },
+    "/building-types": {
+      "get": {
+        "description": "Catálogo cerrado de tipología, con su banda de umbral **de referencia**.\n\nSale con `resuelve_umbrales: false` en el cuerpo, y no como comentario: la\nconsola tiene que poder decir en pantalla que esto SUGIERE. Un catálogo que\nllegara pelado invitaría a que la siguiente pantalla lo aplicara sola, que es\njusto lo que `D-28` prohíbe.",
+        "operationId": "list_building_types_building_types_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildingTypeCatalog"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Building Types"
+      }
+    },
     "/catalog/earthquakes": {
       "get": {
         "description": "Sismos de referencia, más recientes primero.",
@@ -10060,6 +11739,361 @@
           }
         },
         "summary": "List Reference Earthquakes"
+      }
+    },
+    "/cctv/clips/{clip_id}/download": {
+      "post": {
+        "description": "URL pre-firmada del clip, 300 s, **con su huella en `audit_log`**.",
+        "operationId": "download_clip_cctv_clips__clip_id__download_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "clip_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Clip Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedDownload"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Download Clip"
+      }
+    },
+    "/classification-stats": {
+      "get": {
+        "description": "La tasa de falsos positivos del cliente de quien pregunta.\n\nEl aislamiento lo impone la RLS sobre ``incidents``: aquí no hay filtro por\ntenant y no debe haberlo — un filtro de aplicación encima de la RLS invita a\ncreer que la RLS es opcional.\n\n**Los sin clasificar salen aparte y no del denominador.** Un porcentaje\ncalculado sobre lo clasificado, con lo no clasificado escondido, es peor que\nno tener el número: se lee como una medición y es una muestra sesgada por\nquién tuvo tiempo de revisar.",
+        "operationId": "classification_stats_classification_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "since",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Since"
+            }
+          },
+          {
+            "in": "query",
+            "name": "until",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Until"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationStatsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Classification Stats"
+      }
+    },
+    "/demo-mode": {
+      "delete": {
+        "description": "Apaga la ventana. Idempotente: apagar lo ya apagado devuelve 200.\n\nDevolver 404 aquí sería castigar al que hace lo seguro. El estado final es el\nmismo y es el que interesa: este cliente vuelve a recibir sus avisos.",
+        "operationId": "apagar_demo_mode_demo_mode_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Apagar Demo Mode"
+      },
+      "get": {
+        "description": "El estado del cliente de quien pregunta. Sin acción: no hay secreto.\n\nLo consultan las superficies para poder declararlo, y quien no puede\nencenderlo tiene el mismo derecho a saber que está encendido — más, de hecho:\nes quien se va a preguntar por qué no le llegó un aviso.",
+        "operationId": "get_demo_mode_demo_mode_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Demo Mode"
+      },
+      "post": {
+        "description": "Enciende la ventana. Re-encender la PISA en vez de sumarse.\n\nDos ventanas del mismo cliente serían dos verdades sobre cuándo se apaga.",
+        "operationId": "encender_demo_mode_demo_mode_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DemoModeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DemoModeOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Encender Demo Mode"
+      }
+    },
+    "/drill-templates": {
+      "get": {
+        "description": "Las plantillas vivas del tenant, **con su estado de hoy**.\n\nEl conteo de sitios no usables viaja en la LISTA y no solo en el detalle: el\ncriterio de la ficha es que se sepa **al usarla**, y quien la elige está\nmirando la lista.",
+        "operationId": "list_templates_drill_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Templates"
+      },
+      "post": {
+        "operationId": "create_template_drill_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrillTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Template"
+      }
+    },
+    "/drill-templates/{template_id}": {
+      "delete": {
+        "description": "La archiva. Ver la cabecera: borrarla de verdad dejaría huérfana la\nprocedencia de los simulacros que salieron de ella.",
+        "operationId": "delete_template_drill_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Template"
+      },
+      "get": {
+        "operationId": "get_template_drill_templates__template_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Template"
+      },
+      "put": {
+        "description": "Edita la plantilla. **No toca los simulacros que ya salieron de ella**:\naquellos copiaron sus valores al lanzarse (criterio 2 de la ficha).",
+        "operationId": "update_template_drill_templates__template_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrillTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Template"
       }
     },
     "/drills": {
@@ -10235,6 +12269,47 @@
           }
         },
         "summary": "Cancel Drill"
+      }
+    },
+    "/drills/{drill_id}/report": {
+      "post": {
+        "description": "El documento que el cliente le enseña a Protección Civil.\n\nMismas propiedades que el dictamen —determinista, hasheado, registrado como\nevidencia inmutable y auditado—, y por la misma razón: es evidencia de\ncumplimiento, no una captura de pantalla.\n\nSolo de un simulacro EJECUTADO: una agenda no tiene acuses que reportar, y\nexportarla produciría un documento que afirma cero de cero.",
+        "operationId": "drill_report_drills__drill_id__report_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "drill_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Drill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Drill Report"
       }
     },
     "/drills/{drill_id}/stop": {
@@ -11447,6 +13522,47 @@
         "summary": "List Incident Actions"
       }
     },
+    "/incidents/{incident_id}/cctv": {
+      "get": {
+        "description": "Métricas de evacuación, las cuatro capturas y el inventario de clips.\n\nSirve el MISMO objeto que consume el PDF: dos rutas distintas para los mismos hechos\nacabarían discrepando, y un reporte que no coincide con lo que el operador vio en\npantalla es peor que ninguno.\n\n404 y no 403 cuando el incidente no es visible: un 403 confirmaría que existe.",
+        "operationId": "incident_cctv_incidents__incident_id__cctv_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CctvOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Cctv"
+      }
+    },
     "/incidents/{incident_id}/checkins": {
       "get": {
         "description": "Check-ins PROPIOS del portador en el incidente (reconstrucción de la\nmáquina de estados al abrir la app). El roster completo vive en /roster\n(gated aparte: es PII de terceros).",
@@ -11550,6 +13666,98 @@
           }
         },
         "summary": "Submit Checkin"
+      }
+    },
+    "/incidents/{incident_id}/classification": {
+      "post": {
+        "description": "Clasifica. Corregir es clasificar otra vez declarando a cuál sustituye.\n\nNo hay `PUT` ni `DELETE`, y la base tampoco los permitiría: la tabla es\nappend-only con sus dos capas. Quien clasificó mal a las 3 de la mañana no\npuede hacer desaparecer su clasificación — la corrige, y las dos quedan.",
+        "operationId": "classify_incident_incidents__incident_id__classification_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClassificationIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Classify Incident"
+      }
+    },
+    "/incidents/{incident_id}/classifications": {
+      "get": {
+        "description": "La cadena entera, más reciente primero. Vacía = **sin clasificar**.",
+        "operationId": "get_classifications_incidents__incident_id__classifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClassificationChainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Classifications"
       }
     },
     "/incidents/{incident_id}/damage-reports": {
@@ -12100,6 +14308,47 @@
           }
         },
         "summary": "Notify Unreported"
+      }
+    },
+    "/incidents/{incident_id}/notifications": {
+      "get": {
+        "description": "Los envíos de un incidente. 404 si el incidente no es visible.",
+        "operationId": "incident_notifications_incidents__incident_id__notifications_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotifyChainOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Notifications"
       }
     },
     "/incidents/{incident_id}/report": {
@@ -13397,6 +15646,57 @@
           }
         },
         "summary": "Publish Rule Set"
+      }
+    },
+    "/rule-sets/{rule_set_id}/rollback": {
+      "post": {
+        "description": "Vuelve a una versión anterior CREANDO una nueva que declara a cuál vuelve.\n\nEl histórico es evidencia (regla de oro 11) y no se reescribe: volver atrás\n**avanza** el contador. Hasta hoy la única forma de volver era teclear los\nvalores viejos, que además perdía la constancia de que aquello fue una\nreversión y no una edición cualquiera.\n\nLos secretos NO se restauran. Un `secret` de webhook puede haberse rotado\njustamente porque se filtró, y resucitarlo al revertir un umbral sería\ndevolver al aire una credencial retirada: se conservan los VIGENTES, que es\nla misma regla que ya aplica el PUT desde el otro lado.",
+        "operationId": "rollback_rule_set_rule_sets__rule_set_id__rollback_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "rule_set_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Rule Set Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleSetRollbackIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleSetOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Rollback Rule Set"
       }
     },
     "/sensors": {

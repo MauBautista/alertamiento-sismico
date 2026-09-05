@@ -156,3 +156,15 @@ variable "ops_ack_deadline_s" {
   type        = number
   default     = 900
 }
+
+# [T-5.24] Umbral del desfase de reloj. Es EL MISMO con el que la nube degrada al
+# sitio (`fleet_ntp_offset_max_ms`), el que pinta en ambar el panel del gabinete y
+# el del badge NTP OFFSET del SOC: cuatro superficies que discreparan sobre si un
+# reloj esta sano serian peor que una sola. Que no diverjan lo vigila
+# `api/tests/contracts/test_umbral_de_reloj.py`, que las deriva de sus tres
+# lenguajes. Sincronia sana es de pocos a decenas de ms.
+variable "clock_drift_max_ms" {
+  description = "Desfase de reloj (ms) por encima del cual se pagina."
+  type        = number
+  default     = 100
+}

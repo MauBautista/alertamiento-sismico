@@ -54,10 +54,40 @@ export function ageLabel(openedAtIso: string, nowMs: number): string {
   return seconds < 120 ? `T+${seconds}s` : `T+${Math.floor(seconds / 60)}min`;
 }
 
+/** [T-5.26] `S/D` explícito: un hueco mudo se lee como si el dato fuera bueno. */
+const SD = "S/D";
+
+/**
+ * Respaldo eléctrico legible, con el mismo criterio honesto que el medidor de la
+ * Flota: sin lectura no se pinta «línea», se dice que no se sabe. Un gabinete que
+ * no ha reportado no está enchufado a la red — es que no ha dicho nada.
+ */
+export function respaldoLegible(estado: string | null, bateria: number | null): string {
+  if (estado === null) return SD;
+  const etiqueta =
+    estado === "line" ? "LÍNEA" : estado === "battery" ? "EN BATERÍA" : estado.toUpperCase();
+  return bateria === null ? etiqueta : `${etiqueta} · ${Math.round(bateria)} %`;
+}
+
 export interface DetailSite {
   site_id: string;
   name: string;
   coords: string | null;
+  /**
+   * [T-5.26] Identidad del hardware de la estación. Vivía solo en Flota, así que
+   * saber qué aparato habla obligaba a abandonar la consola — un salto de
+   * pantalla en el peor momento de una demostración, y un cambio de contexto
+   * justo cuando no se debe durante un incidente.
+   *
+   * `null` = **no se sabe** (estación sin gabinete, o sin el dato reportado) y
+   * se pinta S/D, con el mismo criterio honesto del resto del panel: un hueco
+   * mudo se lee como si el dato fuera bueno (regla de oro 7).
+   */
+  serial: string | null;
+  fwVersion: string | null;
+  sensorModels: string | null;
+  powerStatus: string | null;
+  batteryPct: number | null;
 }
 
 /**
@@ -161,6 +191,18 @@ export default function DetailPanel({
           >
             <ExternalLink size={11} aria-hidden /> FICHA DEL EDIFICIO
           </Link>
+          {/* [T-5.26] Identidad del hardware: qué aparato es el que está
+              hablando, sin salir de la consola. Cada dato ausente se DECLARA. */}
+          <dl className="soc-detail__hw" data-testid="detail-hardware">
+            <dt>SERIAL</dt>
+            <dd>{site.serial ?? SD}</dd>
+            <dt>FIRMWARE</dt>
+            <dd>{site.fwVersion ?? SD}</dd>
+            <dt>SISMÓGRAFO</dt>
+            <dd>{site.sensorModels ?? SD}</dd>
+            <dt>RESPALDO</dt>
+            <dd>{respaldoLegible(site.powerStatus, site.batteryPct)}</dd>
+          </dl>
         </div>
         <button className="soc-icon-btn" onClick={onClose} aria-label="Cerrar">
           <X size={16} aria-hidden />
@@ -293,7 +335,14 @@ export default function DetailPanel({
               value={
                 soh?.ntp_offset_ms != null ? `±${Math.abs(soh.ntp_offset_ms).toFixed(0)} ms` : "S/D"
               }
-              ok={soh?.ntp_offset_ms != null && Math.abs(soh.ntp_offset_ms) < 50}
+              // [T-5.24] Espeja el umbral del servidor (`fleet_ntp_offset_max_ms`
+              // = 100 ms), igual que hace el badge de LAG SEEDLINK dos filas más
+              // abajo y por el mismo motivo: con 50 ms este badge se ponía rojo
+              // mientras la consola declaraba el sitio OPERATIVO y el panel del
+              // gabinete lo pintaba en ámbar. Cuatro superficies discrepando
+              // sobre si un reloj está sano es peor que tener una sola.
+              // Lo vigila `api/tests/contracts/test_umbral_de_reloj.py`.
+              ok={soh?.ntp_offset_ms != null && Math.abs(soh.ntp_offset_ms) < 100}
             />
             <SohBadge
               label="CLIPPING"

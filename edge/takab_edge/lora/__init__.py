@@ -155,14 +155,15 @@ class LoraLink(EdgeModule):
     def propagate(self, action: str, *, siren: bool = False, strobe: bool = False) -> None:
         """Encola la orden a TODOS los secundarios y regresa YA (jamás bloquea).
 
-        ``action``: ``activate`` | ``clear`` | ``test``. El hilo emisor repite
-        cada orden hasta su ACK (tope ``alarm_retry_max``); el estado de ack por
-        secundario queda visible en ``snapshot()``.
+        ``action``: ``activate`` | ``clear`` | ``test`` | ``silence``. El hilo
+        emisor repite cada orden hasta su ACK (tope ``alarm_retry_max``); el
+        estado de ack por secundario queda visible en ``snapshot()``.
         """
         kind = {
             "activate": fr.ALARM_ACT,
             "clear": fr.ALARM_CLEAR,
             "test": fr.TEST,
+            "silence": fr.SILENCE,
         }.get(action)
         if kind is None:
             raise ValueError(f"acción LoRa desconocida: {action}")
@@ -171,6 +172,13 @@ class LoraLink(EdgeModule):
             flags |= fr.FLAG_ALARM_ACTIVE
         if kind is fr.TEST:
             flags |= fr.FLAG_TEST
+        if kind is fr.SILENCE:
+            # [T-5.25] El silencio lleva su estado completo, no una diferencia:
+            # la alerta SIGUE viva y el estrobo SIGUE encendido — lo único que
+            # cae es lo audible. Los flags se fijan aquí y se ignora lo que pida
+            # el llamante: un `silence(siren=True)` no es una orden rara, es un
+            # error, y encenderla sería exactamente lo contrario de silenciar.
+            flags = fr.FLAG_ALARM_ACTIVE | fr.FLAG_STROBE
         now = _mono()
         with self._lock:
             for entry in self._reg.values():
@@ -211,6 +219,11 @@ class LoraLink(EdgeModule):
                     alarm_active=entry["alarm_active"],
                     link=entry["link"] if (age_s is None or age_s <= timeout_s) else "offline",
                     acked=None if pending is None else bool(pending["acked"]),
+                    # [T-5.25] QUÉ orden es la que espera (o tiene) su ACK.
+                    # «SIN ACK» a secas no distingue un silencio que no llegó
+                    # —el nodo SIGUE SONANDO— de un test que se perdió, y
+                    # silenciar cuatro de cinco no es silenciar.
+                    pending=None if pending is None else _kind_name(pending["type"]),
                 )
                 out.append(state.model_dump(mode="json"))
         return {"enabled": True, "heartbeat_s": self._cfg.heartbeat_s, "secondaries": out}
@@ -337,7 +350,12 @@ class LoraLink(EdgeModule):
 
 
 def _kind_name(kind: int) -> str:
-    return {fr.ALARM_ACT: "activate", fr.ALARM_CLEAR: "clear", fr.TEST: "test"}.get(kind, str(kind))
+    return {
+        fr.ALARM_ACT: "activate",
+        fr.ALARM_CLEAR: "clear",
+        fr.TEST: "test",
+        fr.SILENCE: "silence",
+    }.get(kind, str(kind))
 
 
 def _mono() -> float:

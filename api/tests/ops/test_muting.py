@@ -160,6 +160,16 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         # comen el transitorio del propio despliegue, así que un `make
         # cloud-deploy` normal no la enciende.
         "schema_drift",
+        # [T-5.24] El reloj a la deriva. Comparte publicador con `ghost_gateways`
+        # —la MISMA `put_metric_data`—, así que una ventana de plataforma que pare
+        # el worker de notificación manda DOS correos de INSUFFICIENT_DATA por una
+        # sola causa, y eso es un argumento real para callarla. No basta: durante
+        # esa ventana la alarma también puede sonar por su VALOR, y el reloj de un
+        # gabinete que se sale de rango mientras se mantiene la nube es un hallazgo
+        # AJENO al mantenimiento, que la ventana taparía. Se paga el correo
+        # duplicado a cambio de no cegar la única vigilancia de la hora — y sin
+        # hora confiable no vale ninguna evidencia que se selle en ese rato.
+        "clock_drift",
     }
     for kind in ALARM_CATALOG:
         if kind.scope == NEVER:

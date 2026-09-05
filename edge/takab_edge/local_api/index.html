@@ -77,6 +77,11 @@ canvas{display:block}
 .btn.primary:hover{background:var(--tk-cyan-hover)}
 .btn.primary:active{background:var(--tk-cyan-press)}
 .btn.danger{background:var(--tk-crit);border-color:var(--tk-crit);color:var(--tk-surface-0)}
+/* [T-5.01] Botón INERTE: solo en ?demo=. Se pinta —esconderlo haría que la demo
+   no se pareciera al panel real— pero se ve que no acciona: borde discontinuo,
+   sin realce al pasar por encima y con su razón en el subtítulo. */
+.btn.inert{opacity:0.5;border-style:dashed;cursor:not-allowed}
+.btn.inert:hover,.btn.inert:active{background:transparent}
 .chip{padding:6px 9px;border-radius:4px;border:1px solid var(--tk-border-strong);background:transparent;color:var(--tk-fg-2);font:700 10px/1 var(--f-ui);letter-spacing:0.08em}
 .chip.on{background:var(--tk-cyan);border-color:var(--tk-cyan);color:var(--tk-surface-0)}
 .kv{display:flex;align-items:baseline;gap:7px}
@@ -212,6 +217,10 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
   #map-wrap{min-height:180px}
   #cmp-drawer{height:clamp(140px,30vh,216px)}
 }
+/* [T-5.16] La banda que nadie eligió, en ámbar: no es una avería —el gabinete
+   opera igual (regla de oro 2)— pero tampoco es una decisión, y pintarla como
+   las demás era hacerla pasar por una. */
+.sin-resolver{color:var(--warn)}
 </style>
 </head>
 <body>
@@ -232,6 +241,14 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
   <div style="display:flex;flex-direction:column;gap:3px">
     <span style="font:600 10px/1 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3)">Sitio</span>
     <span id="hdr-site" style="font:500 14px/1 var(--f-ui)">—</span>
+  </div>
+  <div style="width:1px;height:28px;background:var(--tk-border)"></div>
+  <!-- [T-5.26] Identidad CORRELACIONABLE con la consola. Quien está de pie
+       delante del Pi no podía saber ni con qué nombre lo conoce la nube ni qué
+       código de estación firma sus trazas sin abrir el archivo de entorno. -->
+  <div style="display:flex;flex-direction:column;gap:3px">
+    <span style="font:600 10px/1 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3)">Identidad</span>
+    <span id="hdr-ident" class="mono" style="font-size:11px">—</span>
   </div>
   <div style="margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span class="pill" id="pill-live" aria-live="polite"><span class="dot" id="pill-live-dot"><span class="halo"></span></span><span id="pill-live-txt">CONECTANDO…</span></span>
@@ -592,6 +609,7 @@ const SIREN_REASON = { alert:'ALERTA', safe_state:'ESTADO SEGURO', test:'PRUEBA'
 /* ============================== estado ============================== */
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo');
+const DEMO_INHIBE = 'MODO DEMO · LAS ÓRDENES ESTÁN INHIBIDAS · quita ?demo= de la URL para operar';
 const S = {
   status: null,          // último /api/status recibido (crudo, §5.1)
   lastGoodAt: null,      // reloj local de la última respuesta buena
@@ -651,11 +669,12 @@ function pushSamples(c, mins, maxs, gapBefore){
 function baseStatus(){
   const now = new Date().toISOString();
   return {
-    gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', now, uptime_s: 14520, refresh_ms: 1000,
+    gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', iot_thing:'gw-demo-0000',
+    station_code:'AM.R4F74', now, uptime_s: 14520, refresh_ms: 1000,
     sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, network_alert:null, last_tier:'normal',
     lora:{enabled:true, heartbeat_s:90, secondaries:[
-      {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null},
-      {id:259, name:'PATIO-SUR', zone:'Patio', age_s:412, battery_mv:3610, rssi_dbm:-104, snr_db:2.1, alarm_active:false, link:'offline', acked:null}]},
+      {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null, pending:null},
+      {id:259, name:'PATIO-SUR', zone:'Patio', age_s:412, battery_mv:3610, rssi_dbm:-104, snr_db:2.1, alarm_active:false, link:'offline', acked:null, pending:null}]},
     rose_zero: null,
     relays: [
       {channel:'siren', energized:false, activated:false, fail_safe:'normally_open'},
@@ -675,8 +694,11 @@ function baseStatus(){
       {code:'AM.R9F02', lat:19.21, lon:-97.98, distance_km:29.5},
     ],
     config_version: 4,
-    thresholds: {pga_watch_g:0.040, pga_trip_g:0.060, pgv_watch_cms:2.0, pgv_trip_cms:4.0},
-    latencies: {reflex_s:0.00665, reflex_budget_s:0.100, rules_s:0.118, rules_budget_s:0.200},
+    thresholds: {pga_watch_g:0.040, pga_trip_g:0.060, pgv_watch_cms:2.0, pgv_trip_cms:4.0, origen:'sincronizado'},
+    latencies: {reflex_s:0.00665, reflex_budget_s:0.100, rules_s:0.118, rules_budget_s:0.200,
+      acta:{total:2, mejor_ms:4.16, peor_ms:6.65, ultima:{medido_en:'2026-07-31T17:12:04+00:00',
+        latencia_s:0.00416, latencia_ms:4.16, gateway_id:'gw-dev-0001', fw_version:'abc1234',
+        es_prueba:false, canales:{siren:true, strobe:true, gas_valve:false, elevator:false, door_retainer:false}}}},
     seedlink: {packets_seen:1284902, reconnects:2, duplicates:0, gaps:0},
     calibration: {calibrated:true, source:'StationXML FDSN AM.R4F74 2026-07-09',
       vel_sensitivity_ms_per_count:2.5021894e-9, accel_sensitivity_ms2_per_count:2.6007802e-6},
@@ -714,7 +736,8 @@ const SCENES = {
     s.signal.channels = sceneChannels(0.31);
     s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
     s.lora.secondaries[0].alarm_active = true; s.lora.secondaries[0].acked = true;
-    s.lora.secondaries[1].acked = false; /* enlace perdido ⇒ SIN ACK visible */
+    s.lora.secondaries[0].pending = 'activate';
+    s.lora.secondaries[1].acked = false; s.lora.secondaries[1].pending = 'activate'; /* enlace perdido ⇒ SIN ACK visible */
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
   /* [T-2.32] AVISO instrumental: tier elevado SIN actuación (política ratificada) —
      escena NUEVA (las 10 originales quedan intactas). */
@@ -759,6 +782,7 @@ const SCENES = {
       missing:['door_retainer','elevator','gas_valve','siren','strobe']};
     return s; },
   arranque_frio: () => ({ gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla',
+    iot_thing:'gw-demo-0000', station_code:'AM.R4F74',
     now:new Date().toISOString(), uptime_s:4, refresh_ms:1000, sasmex_active:false, siren_sounding:false,
     audible_silenced:false, last_tier:null, relays:[],
     /* [T-2.68] Esta escena se llama "arranque en frío" y ese estado NO existe en
@@ -766,7 +790,8 @@ const SCENES = {
        vacía aquí no tiene causa conocida, que es el peor caso. */
     relays_status:{reason:'unknown', installed:null, missing:[]},
     site_lat:null, site_lon:null, neighbors:[],
-    config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200},
+    config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200,
+      acta:{total:0, ultima:null, mejor_ms:null, peor_ms:null}},
     seedlink:null, calibration:{calibrated:false, source:null, vel_sensitivity_ms_per_count:null, accel_sensitivity_ms2_per_count:null},
     shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null, admin_state:'active'},
     evidence:null, /* [T-2.67] módulo de respaldo aún sin arrancar ⇒ S/D honesto */
@@ -935,6 +960,12 @@ function render(){
   /* cabecera e identidad */
   $('hdr-id').textContent = (st.gateway_id||'—') + ' · LAN del inmueble';
   $('hdr-site').textContent = st.site_name || st.gateway_id || '—';
+  /* [T-5.26] El nombre con el que la NUBE conoce a este gabinete y el código de
+     estación con el que el sismógrafo firma cada traza. Son los dos identificadores
+     que permiten casar lo que se ve aquí con lo que se ve en la consola; sin ellos
+     había que abrir `edge.env` de pie delante del gabinete. `S/D` explícito cuando
+     no están configurados: un hueco se lee como si el dato fuera bueno. */
+  $('hdr-ident').textContent = (st.iot_thing || 'S/D') + ' · ' + (st.station_code || 'S/D');
   $('hdr-meta').textContent = 'CADENCIA ' + (st.refresh_ms||1000) + ' ms · config ' +
     (st.config_version == null ? 'S/D' : (st.config_version === 0 ? 'v0 · defaults' : 'v'+st.config_version));
   const cloud = st.cloud || {online:false, queued:null};
@@ -1123,7 +1154,32 @@ function renderLanes(st, cal){
 function renderProximity(st, cal){
   const box = $('prox-bars'); box.textContent = '';
   const th = st.thresholds;
-  $('prox-profile').textContent = th ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g') : 'umbrales S/D (motor caído)';
+  // [T-5.16 · D-28] El origen va PEGADO a los números, no en otra sección: la
+  // banda de fábrica es la de HOSPITAL (0.040–0.060 g) y se pintaba idéntica a
+  // una elegida y publicada. Un industrial dado de alta hoy avisa dos veces por
+  // debajo de su banda, y hasta aquí la pantalla no lo decía.
+  // El origen se pinta SIEMPRE, no solo cuando es malo. Que la advertencia
+  // falte no puede ser la única señal de que la banda sí se eligió: quien mira
+  // esta pantalla a las 3 de la mañana no está comparando contra lo que
+  // recuerda de ayer. Además, un campo que solo pinta en una de sus ramas no
+  // tiene camino de render medible — lo cazó `test_panel_render_census`.
+  // TRES estados, no dos. La primera versión trataba «cualquier cosa que no sea
+  // sin_resolver» como banda publicada, así que un origen desconocido —un campo
+  // que llega vacío, un nombre nuevo del productor— se leía como decidido. Es la
+  // misma familia que un fallback pintado de `ok`, y aquí lo cazó el censo de
+  // render: mutar el campo no cambiaba un pixel porque todas las mutaciones
+  // caían en la misma rama.
+  const bandaSinResolver = th && th.origen === 'sin_resolver';
+  const procedencia = !th ? ''
+    : bandaSinResolver ? ' · BANDA DE FÁBRICA · NADIE LA ELIGIÓ'
+    : th.origen === 'sincronizado' ? ' · banda publicada'
+    : ' · ORIGEN DE LA BANDA SIN CLASIFICAR';
+  $('prox-profile').textContent = th
+    ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g'
+       + procedencia)
+    : 'umbrales S/D (motor caído)';
+  $('prox-profile').className =
+    (th && th.origen !== 'sincronizado') ? 'sin-resolver' : '';
   const enz = liveChannels(st).ENZ;
   [['PGA ENZ', enz ? enz.pga_g : null, th ? th.pga_watch_g : null, th ? th.pga_trip_g : null, (v)=>fmtG(v,cal)],
    ['PGV ENZ', enz ? enz.pgv_cms : null, th ? th.pgv_watch_cms : null, th ? th.pgv_trip_cms : null, (v)=>fmtV(v,cal)]]
@@ -1201,7 +1257,7 @@ function renderHistory(st, cal){
 }
 function renderLatencies(st, cloud){
   const box = $('lat-rows'); box.textContent = '';
-  const lat = st.latencies || {reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200};
+  const lat = st.latencies || {reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200, acta:null};
   const ms = (v) => v == null ? 'S/D' : (v*1000).toFixed(2)+' ms';
   const rows = [
     ['Reflejo SASMEX → relé', lat.reflex_s, lat.reflex_budget_s, 'p95 < ' + Math.round(lat.reflex_budget_s*1000) + ' ms'],
@@ -1227,6 +1283,50 @@ function renderLatencies(st, cloud){
     }
     wrap.append(head, bar); box.appendChild(wrap);
   });
+  renderActaReflejo(lat.acta, box);
+}
+/* [T-5.22] El ACTA del reflejo, debajo de las barras.
+ *
+ * `reflex_s` es un campo VIVO y vuelve a S/D en cuanto el proceso reinicia — ésa
+ * era la queja de la ficha: «la medición no está viva, es histórica». El acta
+ * sobrevive al reinicio, así que es lo único que se puede citar delante de un
+ * cliente, y aquí se lee SIN entrar por ssh.
+ *
+ * Los dos «no hay» significan cosas distintas y se pintan distinto:
+ *   · `acta == null`  ⇒ firmware SIN el módulo. Se arregla desplegando.
+ *   · `total === 0`   ⇒ desplegado y sin flancos. Se arregla pulsando el WR-1.
+ * Colapsarlos mandaría a una sesión presencial a un gabinete que no puede
+ * escribir ni una línea. */
+function renderActaReflejo(acta, box){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-top:2px';
+  const l = document.createElement('span');
+  l.style.cssText = 'font:500 11px/1 var(--f-ui);letter-spacing:0.04em;color:var(--tk-fg-2)';
+  l.textContent = 'Acta del reflejo (sobrevive al reinicio)';
+  const v = document.createElement('span'); v.className = 'meta';
+  if (acta == null){
+    v.textContent = 'SIN ACTA EN ESTE FIRMWARE — no puede registrar mediciones';
+    v.style.color = C.warn;
+  } else if (!acta.total){
+    v.textContent = 'SIN MEDICIONES TODAVÍA — ningún flanco del WR-1 registrado';
+    v.style.color = C.warn;
+  } else {
+    /* Mejor y PEOR. Publicar solo el mejor es cómo una cifra de venta deja de
+     * describir al producto: el peor caso es el que un perito mira. */
+    v.textContent = acta.total + ' medición(es) · mejor ' + acta.mejor_ms.toFixed(2)
+      + ' ms · peor ' + acta.peor_ms.toFixed(2) + ' ms';
+    v.style.color = C.fg3;
+    if (acta.ultima){
+      const u = document.createElement('span'); u.className = 'meta'; u.style.color = C.fg3;
+      const rele = Object.entries(acta.ultima.canales || {})
+        .filter(([, on]) => on).map(([c]) => c).join(' · ') || 'ningún relé activado';
+      u.textContent = 'última: ' + acta.ultima.medido_en + ' · ' + acta.ultima.latencia_ms
+        + ' ms · fw ' + (acta.ultima.fw_version || '—') + ' · ' + acta.ultima.gateway_id
+        + ' · relés: ' + rele;
+      wrap.append(l, v, u); box.appendChild(wrap); return;
+    }
+  }
+  wrap.append(l, v); box.appendChild(wrap);
 }
 function renderRoseInfo(st){
   $('rose-station').textContent = (st.gateway_id || '—');
@@ -1283,7 +1383,14 @@ function renderLora(st){
         + (sec.battery_mv != null ? ' · ' + (sec.battery_mv/1000).toFixed(2) + ' V' : '');
     const state = document.createElement('span');
     state.className = 'mono'; state.style.cssText = 'margin-left:auto;font-weight:700;font-size:10px';
-    if (sec.acked === false){ state.textContent = 'SIN ACK'; state.style.color = C.crit; }
+    /* [T-5.25] El rótulo dice QUÉ orden no se confirmó. «SIN ACK» a secas no
+       distingue un test perdido —da igual— de un SILENCIO perdido, que significa
+       que ESE nodo sigue sonando mientras el operador cree que calló el edificio.
+       Silenciar cuatro de cinco no es silenciar. */
+    if (sec.acked === false && sec.pending === 'silence'){
+      state.textContent = 'SIGUE SONANDO · SILENCIO SIN CONFIRMAR'; state.style.color = C.crit; }
+    else if (sec.acked === false){ state.textContent = 'SIN ACK'; state.style.color = C.crit; }
+    else if (sec.pending === 'silence' && sec.acked){ state.textContent = 'SILENCIADO'; state.style.color = C.warn; }
     else if (sec.alarm_active){ state.textContent = 'ALARMA PROPAGADA'; state.style.color = C.warn; }
     else { state.textContent = '—'; state.style.color = C.fg3; }
     row.append(dot, name, link, state);
@@ -1314,7 +1421,19 @@ function renderSalud(st){
     rows.push(['Contadores SeedLink', 'S/D · sin cliente', C.warn]);
   }
   if (h){
-    rows.push(['Desfase de reloj NTP', h.ntp_offset_s == null ? 'S/D' : (h.ntp_offset_s*1000).toFixed(1)+' ms', h.ntp_offset_s == null ? C.warn : C.ok]);
+    /* [T-5.24] El MISMO ayudante de umbrales que sus filas vecinas. Era el único
+       de la tabla con un ternario propio —`null ? warn : ok`—, así que un desfase
+       de CINCO SEGUNDOS se pintaba igual de verde que uno de tres milisegundos.
+       Y sin hora confiable ninguna evidencia sirve: el sello de un check-in, de un
+       dictamen y de un acuse salen todos de este reloj.
+
+       Los umbrales: ámbar en 100 ms, que es el mismo con el que la NUBE degrada al
+       sitio (`fleet_ntp_offset_max_ms`) — dos superficies que discreparan sobre si
+       un gabinete está sano serían peor que ninguna—; rojo en 1 s, que es donde el
+       sello deja de poder ordenar dos hechos del mismo segundo.
+       Se compara el VALOR ABSOLUTO: un reloj adelantado miente igual que uno
+       atrasado, y el ternario viejo ni siquiera miraba el signo. */
+    rows.push(['Desfase de reloj NTP', h.ntp_offset_s == null ? 'S/D' : (h.ntp_offset_s*1000).toFixed(1)+' ms', col(h.ntp_offset_s == null ? null : Math.abs(h.ntp_offset_s)*1000, 100, 1000)]);
     rows.push(['Temperatura del SoC', h.temperature_c == null ? 'S/D' : h.temperature_c.toFixed(1)+' °C', col(h.temperature_c, 70, 80)]);
     const ups = (h.ups_status || 'unknown') + (h.battery_pct != null ? ' · '+Math.round(h.battery_pct)+' %' : '') +
       (h.ups_runtime_s != null ? ' · ' + Math.round(h.ups_runtime_s/60) + ' min' : ' · autonomía S/D');
@@ -1670,6 +1789,12 @@ function renderCmp(){
   head.style.cssText = 'font-weight:700;font-size:13px;color:' + magColor(m.ev.m);
   head.textContent = 'M ' + m.ev.m.toFixed(1) + ' · ' + (m.ev.place || 'S/D');
   box.appendChild(head);
+  /* [T-5.10] CON PROCEDENCIA, O NO SE PINTA. Esta cifra NO la mide TAKAB: la
+     publica una fuente oficial, y aquí aparecía junto a la sacudida MEDIDA por
+     el sensor del inmueble sin nada que las separara — una cifra sin procedencia
+     se lee como propia. La fuente y la hora de captura salen del mismo catálogo
+     firmado (`/api/catalog`), no de un rótulo escrito a mano. */
+  meta(citaCatalogo(S.catalog), C.fg3);
   const kv = (lbl, val) => { const r = document.createElement('span'); r.className = 'cmp-kv';
     const a = document.createElement('span'); a.textContent = lbl;
     const v = document.createElement('span'); v.className = 'v mono'; v.textContent = val;
@@ -1701,6 +1826,17 @@ function catProv(cat){
   return { age, limit, label, unknown: age == null,
            stale: age == null || (limit != null && age > limit) };
 }
+/* [T-5.10] La cita de procedencia de una cifra del catálogo: fuente + captura.
+   Una sola función para las dos tarjetas que pintan `M x.x` (la comparativa y la
+   lista del SSN), porque dos rótulos escritos por separado acaban diciendo cosas
+   distintas del mismo dato. Sin fuente NO se calla: lo declara — que no conste de
+   dónde salió una cifra es justo lo que hay que enseñar. */
+function citaCatalogo(cat){
+  const fuente = (cat && cat.source) ? String(cat.source) : null;
+  const capt = String((cat && cat.captured_at) || '').slice(0,16).replace('T',' ');
+  if (!fuente) return 'CIFRA EXTERNA · FUENTE NO DECLARADA';
+  return 'FUENTE ' + fuente + (capt ? ' · CAPTURADO ' + capt : ' · SIN HORA DE CAPTURA');
+}
 function renderSsn(){
   const cat = S.catalog;
   const prov = catProv(cat);
@@ -1715,14 +1851,17 @@ function renderSsn(){
   if (!cat || !cat.available){
     metaTxt = 'CATÁLOGO NO DISPONIBLE · SIN DATOS EN CACHÉ'; metaColor = C.warn;
   } else if (prov.unknown){
-    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · EDAD DESCONOCIDA' + (capt ? ' · ' + capt : '') + org;
+    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · EDAD DESCONOCIDA' + (capt ? ' · ' + capt : '') + org
+              + ' · ' + citaCatalogo(cat);
     metaColor = C.warn;
   } else if (prov.stale){
     metaTxt = 'CATÁLOGO VIEJO · INSTANTÁNEA DE HACE ' + fmtAge(prov.age) +
-              ' · UMBRAL ' + fmtAge(prov.limit) + (capt ? ' · ' + capt : '') + org;
+              ' · UMBRAL ' + fmtAge(prov.limit) + (capt ? ' · ' + capt : '') + org
+              + ' · ' + citaCatalogo(cat);
     metaColor = C.warn;
   } else {
-    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · ' + capt + ' · HACE ' + fmtAge(prov.age) + org;
+    metaTxt = 'INSTANTÁNEA DEL CATÁLOGO · ' + capt + ' · HACE ' + fmtAge(prov.age) + org
+              + ' · ' + citaCatalogo(cat);
     metaColor = C.fg3;
   }
   ['ssn-meta','ssn-meta-big'].forEach(id => { $(id).textContent = metaTxt; $(id).style.color = metaColor; });
@@ -1816,6 +1955,19 @@ function shoutRejection(text){
 }
 function clearRejection(){ S.toast = null; $('action-toast').classList.add('hide'); }
 async function doAction(label, endpoint, twoStep){
+  /* [T-5.01] En ?demo= ninguna orden sale de aquí, y se dice.
+     Hasta la auditoría del 2026-09-02 este camino no miraba `DEMO`: el único
+     `if (!DEMO)` del flujo estaba abajo y solo se saltaba el refetch, así que
+     un clic en el panel abierto en modo demo —en el monitor de una exposición,
+     por ejemplo— sostenía la sirena y pulsaba gas, ascensores y retenedores del
+     edificio de verdad, mientras la cinta de arriba decía DEMO · NO ES ESTADO
+     REAL. La guarda va la PRIMERA: antes del armado de dos clics, para que el
+     botón tampoco se quede a medio armar. */
+  if (DEMO){
+    setPinMsg(DEMO_INHIBE, 'warn');
+    shoutRejection('MODO DEMO · ' + label + ' NO SE ENVIÓ');
+    return;
+  }
   if (twoStep && S.armed !== endpoint){
     S.armed = endpoint; S.armedAt = performance.now();
     setPinMsg('CLIC NUEVAMENTE PARA CONFIRMAR · Orden bajo verificación humana · 5 s para cancelar', 'warn');
@@ -1884,10 +2036,15 @@ function renderActions(st){
   defs.forEach(([label, sub, endpoint, twoStep, kind]) => {
     const armed = S.armed === endpoint;
     const b = document.createElement('button');
-    b.className = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : ''));
+    /* [T-5.01] En demo el botón se PINTA y se declara inerte. La otra opción
+       —no pintarlo— haría que el panel de la demo no se pareciera al real, que
+       es justo lo que ?demo= existe para enseñar. Esto es la mitad visible; la
+       que impone es la guarda de `doAction`. */
+    b.className = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : '')) + (DEMO ? ' inert' : '');
     const t = document.createElement('span'); t.textContent = armed ? 'CLIC NUEVAMENTE PARA CONFIRMAR' : label;
     const s = document.createElement('span'); s.className = 'sub';
-    s.textContent = armed ? ('Orden bajo verificación humana · ' + Math.max(0, 5 - Math.floor((performance.now()-S.armedAt)/1000)) + ' s para cancelar') : sub;
+    s.textContent = DEMO ? 'INERTE EN DEMO · no se manda ninguna orden al gabinete'
+      : (armed ? ('Orden bajo verificación humana · ' + Math.max(0, 5 - Math.floor((performance.now()-S.armedAt)/1000)) + ' s para cancelar') : sub);
     b.append(t, s);
     b.addEventListener('click', () => doAction(label, endpoint, twoStep));
     box.appendChild(b);

@@ -1583,3 +1583,208 @@ def test_push_de_accion_sin_dispositivos_no_martillea_la_nada(scenario: _Scenari
     assert len(del_job) == 1
     assert del_job[0]["payload"]["action_id"] == action
     assert counts["no_recipients"] == 2  # el del incidente + el del job de la acción
+
+
+# ══════════════════════════════════════════════════════════════════ [T-5.02]
+#
+# MODO DEMOSTRACIÓN (D-27) — el interruptor que impide que una exposición
+# despierte teléfonos reales.
+#
+# Lo que estos tests fijan, y en este orden de importancia:
+#   1. con el modo puesto NADIE recibe nada, por ningún canal;
+#   2. el bloqueo NO consulta el registro de proveedores, así que un canal nuevo
+#      queda bloqueado el día que nace, sin que nadie lo añada a una lista;
+#   3. **lo real gana**, y el ORDEN es la promesa: un incidente apaga el modo
+#      ANTES de que se planifique un solo aviso, así que la ventana en la que un
+#      sismo podría quedar suprimido no existe por construcción;
+#   4. con el modo apagado todo entrega igual — sin esto, `return` a secas en el
+#      despachador dejaría los tres primeros en verde.
+
+
+def _encender_demo(scenario: _Scenario, *, horas: float = 2.0) -> None:
+    """Enciende el modo COMO LO HACE LA CONSOLA, no como el worker.
+
+    El `RESET ROLE` no es un atajo: es el punto. `takab_ingest` —el rol del
+    worker— tiene SELECT y DELETE sobre `demo_mode` y **no INSERT**, a propósito:
+    encender es acto de la consola, con su sesión y su rol; el worker solo puede
+    apagar («lo real gana»). Si este arnés pudiera encender con el rol del worker,
+    estaría probando un privilegio que el diseño niega.
+    """
+    scenario.conn.execute("RESET ROLE")
+    scenario.conn.execute(
+        "INSERT INTO demo_mode (tenant_id, enabled_by, enabled_at, expires_at, note)"
+        " VALUES (%s, %s, %s, %s, 'prueba')"
+        " ON CONFLICT (tenant_id) DO UPDATE SET expires_at = EXCLUDED.expires_at",
+        (
+            scenario.tenant,
+            str(uuid.uuid4()),
+            BASE,
+            BASE + timedelta(hours=horas),
+        ),
+    )
+    scenario.conn.execute("SET ROLE takab_ingest")
+
+
+def _demo_vivo(scenario: _Scenario) -> bool:
+    row = scenario.conn.execute(
+        "SELECT 1 FROM demo_mode WHERE tenant_id = %s", (scenario.tenant,)
+    ).fetchone()
+    return row is not None
+
+
+def _rearmar_job_pendiente(scenario: _Scenario, iid, canal: str, *, due: datetime) -> None:
+    """Devuelve un job ya despachado a PENDIENTE, para alcanzar el respaldo.
+
+    Es la forma honesta de probar una guarda que —por diseño— no debería
+    dispararse: se construye a mano el estado que existe para atrapar, en vez de
+    fingir que se llega a él por el camino normal.
+    """
+    scenario.conn.execute(
+        "UPDATE notification_jobs SET status='pending', attempts=0, sent_at=NULL, due_at=%s"
+        " WHERE incident_id=%s AND channel=%s",
+        (due, iid, canal),
+    )
+
+
+def test_con_el_modo_demostracion_ningun_canal_entrega(scenario: _Scenario) -> None:
+    """Criterio 1: cero entregas, y el desenlace se distingue de un simulado.
+
+    **Montar este estado cuesta dos pasadas, y esa dificultad ES el hallazgo.**
+    Con «lo real gana» encendido, un incidente NUEVO apaga el modo antes de
+    planificar, así que el camino corto —encender y sembrar un incidente— nunca
+    llega a la puerta: el aviso sale, que es justo lo que tiene que pasar. La
+    puerta de notificación solo alcanza a un job que ya estaba en vuelo, y para
+    eso hace falta una primera pasada que lo deje pendiente.
+
+    O sea: esta guarda es un **respaldo que no debería dispararse nunca**, porque
+    `demo_mode.encender` además se niega con un incidente abierto. Se prueba
+    igual, porque un respaldo sin prueba es una suposición.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    # Primera pasada normal: el incidente deja de ser «nuevo» (ya tiene jobs) y
+    # por tanto la siguiente pasada NO volverá a apagar el modo.
+    _run(scenario, _providers(), now=BASE)
+    _rearmar_job_pendiente(scenario, iid, "webhook", due=BASE)
+
+    _encender_demo(scenario)
+    providers = _providers()
+    _run(scenario, providers, now=BASE + timedelta(minutes=5))
+
+    job = scenario.job(iid, "webhook")
+    assert job["status"] == "blocked_demo"
+    # `sent_at` NULL: cualquier consulta de entregados lo excluye sin saber que
+    # este estado existe.
+    assert job["sent_at"] is None
+    # Y nadie llamó al proveedor: no es que fallara, es que no se intentó.
+    assert providers["webhook"].sent == []
+
+
+def test_el_bloqueo_no_pregunta_por_el_proveedor_asi_que_cubre_un_canal_NUEVO(
+    scenario: _Scenario,
+) -> None:
+    """Criterio 5: derivado, no una lista de canales escrita a mano.
+
+    Se corre la pasada SIN un solo proveedor cableado. Si la guarda viviera
+    después de `providers.get(...)`, este job saldría 'failed' («provider no
+    configurado») en vez de bloqueado — y el día que alguien añada un canal
+    sexto, el modo demostración no lo cubriría hasta que se acordara.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _providers(), now=BASE)
+    _rearmar_job_pendiente(scenario, iid, "webhook", due=BASE)
+    _encender_demo(scenario)
+    _run(scenario, {}, now=BASE + timedelta(minutes=5))
+
+    assert scenario.job(iid, "webhook")["status"] == "blocked_demo"
+
+
+def test_el_bloqueo_deja_constancia_en_vez_de_callarse(scenario: _Scenario) -> None:
+    """Criterio 2: un modo que bloquea EN SILENCIO es otra superficie muda.
+
+    La pregunta del día siguiente —«¿por qué no llegó este aviso?»— tiene que
+    contestarse desde la bitácora, no leyendo código.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    _run(scenario, _providers(), now=BASE)
+    _rearmar_job_pendiente(scenario, iid, "webhook", due=BASE)
+    _encender_demo(scenario)
+    _run(scenario, _providers(), now=BASE + timedelta(minutes=5))
+
+    filas = scenario.conn.execute(
+        "SELECT verb, meta FROM audit_log WHERE tenant_id = %s AND verb = 'demo_mode_blocked'",
+        (scenario.tenant,),
+    ).fetchall()
+    assert filas, "el bloqueo no dejó rastro en audit_log"
+    assert filas[0]["meta"]["channel"] == "webhook"
+
+    acciones = scenario.conn.execute(
+        "SELECT kind FROM incident_actions WHERE incident_id = %s AND kind = 'notify_blocked_demo'",
+        (iid,),
+    ).fetchall()
+    assert len(acciones) == 1, "la evidencia del incidente no nombra el bloqueo"
+
+
+def test_LO_REAL_GANA_un_incidente_apaga_el_modo_ANTES_de_planificar(
+    scenario: _Scenario,
+) -> None:
+    """El criterio que gobierna toda la ficha, y el ORDEN es la promesa.
+
+    La lectura contraria —que el modo bloquee el evento real— se rechazó sin
+    discusión en `D-27`: sería un interruptor capaz de silenciar un sismo. Aquí
+    se comprueba lo que se construyó en su lugar: el incidente desarma el modo
+    **antes** de que se planifique un solo aviso, así que el aviso SALE.
+
+    Si el apagado ocurriera después de planificar, este test vería el job en
+    `blocked_demo` — que es exactamente el fallo que no puede existir.
+    """
+    scenario.seed_config()
+    _encender_demo(scenario)
+    assert _demo_vivo(scenario), "el arnés no encendió el modo: el test no probaría nada"
+
+    iid = scenario.seed_incident()
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+
+    assert not _demo_vivo(scenario), "un evento real NO apagó el modo demostración"
+    job = scenario.job(iid, "webhook")
+    assert job["status"] == "sent", f"el aviso del evento real quedó suprimido: {job['status']}"
+    assert providers["webhook"].sent, "nadie recibió el aviso de un evento REAL"
+
+
+def test_el_apagado_automatico_queda_auditado_nombrando_la_causa(
+    scenario: _Scenario,
+) -> None:
+    """«Lo apagó una persona» y «lo apagó un sismo» son hechos distintos.
+
+    El segundo es el que hay que poder buscar seis meses después, y por eso lleva
+    verbo propio y la causa dentro.
+    """
+    scenario.seed_config()
+    _encender_demo(scenario)
+    iid = scenario.seed_incident()
+    _run(scenario, _providers(), now=BASE)
+
+    filas = scenario.conn.execute(
+        "SELECT actor, meta FROM audit_log WHERE tenant_id = %s AND verb = 'demo_mode_auto_off'",
+        (scenario.tenant,),
+    ).fetchall()
+    assert len(filas) == 1, "el apagado automático no dejó su fila"
+    assert str(iid) in filas[0]["meta"]["causa"]
+
+
+def test_con_el_modo_APAGADO_los_mismos_canales_entregan(scenario: _Scenario) -> None:
+    """La mitad que hace útil a una prohibición.
+
+    Sin esto, un `return` a secas en el despachador dejaría verdes todos los
+    tests de arriba y el sistema no avisaría a nadie nunca.
+    """
+    scenario.seed_config()
+    iid = scenario.seed_incident()
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+
+    assert scenario.job(iid, "webhook")["status"] == "sent"
+    assert providers["webhook"].sent

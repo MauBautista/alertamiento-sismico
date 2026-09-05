@@ -15,6 +15,7 @@ vi.mock("@takab/sdk", () => sdk);
 
 import { resetSessionStoreForTests, useSessionStore } from "../../auth/session.store";
 import { ME_FIXTURES } from "../../test-utils/meFixtures";
+import { SIN_ENLACE } from "./estadoGlosario";
 import SiteCard from "./SiteCard";
 import type { FleetCabinet } from "./useFleet";
 
@@ -90,7 +91,9 @@ describe("SiteCard", () => {
   it("muestra lags crudos: MQTT ↔ ms y SeedLink lag s", () => {
     render(<SiteCard cabinet={cabinet()} />);
     expect(screen.getByText("↔ 42.5 ms")).toBeInTheDocument();
-    expect(screen.getByText("lag 0.40 s")).toBeInTheDocument();
+    // [T-5.24] La pill del enlace del sensor lleva ahora sus DOS cifras (el lag y
+    // la pérdida de paquetes), así que se busca el lag dentro de la línea.
+    expect(screen.getByText(/lag 0\.40 s/)).toBeInTheDocument();
   });
 
   it("SIN ENLACE ⇒ pill crit, pills de enlace en crit con — sin enlace — y relays S/D", () => {
@@ -399,5 +402,72 @@ describe("ventana de mantenimiento en la tarjeta", () => {
     expect(screen.getByTestId("maintenance-badge").getAttribute("title")).toContain(
       "cambio del cable de red del Shake",
     );
+  });
+});
+
+// [T-5.05] UN GABINETE SIMULADO SE VEÍA IGUAL QUE UNO REAL.
+//
+// La separación entre lo simulado y lo real vivía en el seed y en el despliegue,
+// no en la pantalla — que es justo donde se hace la demo. En `make soc-local` un
+// prospecto veía 21 sitios y 5 gabinetes con idéntico aspecto en el mapa y en la
+// flota, de los cuales 20 y 4 no existen.
+describe("SiteCard · lo de demostración se ve de demostración", () => {
+  it("un gabinete simulado sale marcado", () => {
+    render(<SiteCard cabinet={cabinet({ siteCode: "site-sim-003" }, { serial: "gw-sim-0002" })} />);
+    expect(screen.getByTestId("demo-badge")).toHaveTextContent("DEMO");
+  });
+
+  it("basta con que lo sea el SITIO, aunque el serial no lo delate", () => {
+    render(<SiteCard cabinet={cabinet({ siteCode: "site-sim-007" }, { serial: "gw-loquesea" })} />);
+    expect(screen.getByTestId("demo-badge")).toBeInTheDocument();
+  });
+
+  it("un gabinete REAL no se marca — y esta es la mitad que importa", () => {
+    // Rotular de demostración un edificio con gente dentro es peor que no
+    // rotular nada: el operador dejaría de creerse lo que ve en esa tarjeta.
+    render(<SiteCard cabinet={cabinet()} />);
+    expect(screen.queryByTestId("demo-badge")).toBeNull();
+  });
+
+  it("con cero sitios simulados la tarjeta es idéntica: el rótulo no reserva sitio", () => {
+    const { container } = render(<SiteCard cabinet={cabinet()} />);
+    expect(container.querySelectorAll(".fleet-card__demo")).toHaveLength(0);
+  });
+});
+
+// [T-5.24] La pérdida de paquetes en la consola.
+//
+// El gabinete la publicaba desde siempre y la ingesta la TIRABA, con la razón
+// escrita en el handler: no había columna donde ponerla. Consecuencia real: para
+// diagnosticar un enlace degradado había que ir al inmueble o abrir el panel por
+// red local — justo lo que el centro de operaciones existe para no tener que hacer.
+describe("[T-5.24] pérdida de paquetes del enlace sensor→Pi", () => {
+  it("se ve junto al lag, que es su compañero de diagnóstico", () => {
+    render(<SiteCard cabinet={cabinet({}, { seedlink_lag_s: 0.4, packet_loss_pct: 12.5 })} />);
+
+    // Un lag que sube con pérdida al 0 % es otro problema que uno que sube
+    // perdiendo el 12 %: por eso van en la misma pill y no en dos sitios.
+    expect(screen.getByText(/lag 0\.40 s · pérdida 12\.5 %/)).toBeInTheDocument();
+  });
+
+  it("sin medición declara s/d, no un cero tranquilizador", () => {
+    render(<SiteCard cabinet={cabinet({}, { seedlink_lag_s: 0.4, packet_loss_pct: null })} />);
+
+    // Regla de oro 7: un dato que no se pudo obtener no se pinta bueno. Un hueco
+    // donde va el porcentaje se lee como 0 %, que es la mentira exacta a evitar.
+    expect(screen.getByText(/pérdida s\/d/)).toBeInTheDocument();
+    expect(screen.queryByText(/pérdida 0/)).not.toBeInTheDocument();
+  });
+
+  it("sin enlace no publica una cifra del enlace", () => {
+    // El último valor conocido de un enlace que ya no existe es un dato
+    // congelado pintado como vivo: exactamente lo que la regla de oro 7 prohíbe.
+    // La pill ya lo resolvía para el lag; la pérdida entra por el mismo camino.
+    render(
+      <SiteCard cabinet={cabinet({}, { derived_state: SIN_ENLACE, packet_loss_pct: 12.5 })} />,
+    );
+
+    expect(screen.queryByText(/pérdida/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/— sin enlace —/).length).toBeGreaterThan(0);
   });
 });

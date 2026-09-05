@@ -440,7 +440,11 @@ def test_la_salud_de_la_bitacora_esta_disponible_para_quien_la_pinte(settings, t
         seccion = sup.local_api.audit_state()
         assert seccion["writable"] is False
         assert seccion["last_error"]
-        assert seccion["uploads_enabled"] is False  # la subida está declarada, no oculta
+        # [T-2.86.a·criterio 2] Ahora la subida está CONECTADA (`takab/audit` tiene
+        # política, regla, tabla e ingesta). El panel sigue declarándolo en vez de
+        # ocultarlo, que era el punto de esta aserción: lo que cambió es el valor,
+        # no que se muestre.
+        assert seccion["uploads_enabled"] is True
         assert "audit" not in sup.local_api.status(), (
             "la clave entró en status() sin tarjeta que la pinte: el kiosco la "
             "ignoraría en silencio (la clase de defecto de T-2.59)"

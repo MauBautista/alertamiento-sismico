@@ -1,5 +1,5 @@
 {
-  "description": "[T-2.33] Estado de un gabinete secundario LoRa (ESP32 + sirena/estrobo).\n\nEs lo que el panel del gabinete pinta por secundario (sección ``lora`` de\n``/api/status``); el JSON Schema espejo ancla el contrato para el firmware\nESP32 futuro. ``link``: ``never`` (jamás visto) · ``online`` · ``offline``\n(heartbeat ausente > factor×periodo). ``acked``: estado del último comando\npropagado (``None`` = sin comando pendiente).",
+  "description": "[T-2.33] Estado de un gabinete secundario LoRa (ESP32 + sirena/estrobo).\n\nEs lo que el panel del gabinete pinta por secundario (sección ``lora`` de\n``/api/status``); el JSON Schema espejo ancla el contrato para el firmware\nESP32 futuro. ``link``: ``never`` (jamás visto) · ``online`` · ``offline``\n(heartbeat ausente > factor×periodo). ``acked``: estado del último comando\npropagado (``None`` = sin comando pendiente) y ``pending``: CUÁL es ese\ncomando — los dos juntos, porque «sin acuse» sin decir de qué no es un dato\naccionable (T-5.25).",
   "properties": {
     "id": {
       "title": "Id",
@@ -88,6 +88,24 @@
       ],
       "default": null,
       "title": "Acked"
+    },
+    "pending": {
+      "anyOf": [
+        {
+          "enum": [
+            "activate",
+            "clear",
+            "test",
+            "silence"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pending"
     }
   },
   "required": [
@@ -97,6 +115,6 @@
   "title": "SecondaryCabinetState",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/lora_secondary_state/v1.12.0",
-  "version": "1.12.0"
+  "$id": "https://takab.mx/schemas/lora_secondary_state/v1.14.0",
+  "version": "1.14.0"
 }

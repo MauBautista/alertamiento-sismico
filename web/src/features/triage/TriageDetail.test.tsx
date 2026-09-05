@@ -13,6 +13,41 @@ import TriageDetail from "./TriageDetail";
 import type { TriageDetailProps } from "./TriageDetail";
 import type { TriageRow } from "./model";
 
+// [T-5.12] `ClassificationPanel` consulta al servidor y este arnés no monta
+// QueryClient: se mockea el hook, como hace `DrillBanner.test`. Este fichero
+// prueba que los hechos no dependen del dictamen, no la clasificación —que tiene
+// su propio test con sus cuatro estados.
+// [T-5.15] `useNotifyChain` monta react-query por el mismo motivo que `useCctv`,
+// y esta suite no lleva provider a propósito. Su semántica se prueba en
+// `NotifyChain.test.tsx`.
+vi.mock("./useNotifyChain", async () => ({
+  ...(await vi.importActual<typeof import("./useNotifyChain")>("./useNotifyChain")),
+  useNotifyChain: () => ({
+    items: [],
+    deliveredCount: 0,
+    loading: false,
+    readError: false,
+    staleSince: null,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("./useClassification", async () => {
+  const real = await vi.importActual<typeof import("./useClassification")>("./useClassification");
+  return {
+    ...real,
+    useClassification: () => ({
+      items: [],
+      current: null,
+      loading: false,
+      readError: false,
+      updatedAt: 0,
+      refetch: vi.fn(),
+      clasificar: vi.fn(),
+      pending: false,
+    }),
+  };
+});
+
 // StructuralTriage pide sus propios datos; aquí lo que se prueba es DÓNDE se monta.
 vi.mock("./StructuralTriage", () => ({
   default: ({ incidentId }: { incidentId: string }) => (
@@ -89,6 +124,16 @@ function resource<T>(
   };
 }
 
+/** [T-3.12.c] CCTV sin datos: el panel existe en todos los escenarios de este arnés. */
+const CCTV = {
+  data: undefined,
+  loading: false,
+  error: null,
+  refetch: () => {},
+  dataUpdatedAt: 0,
+  staleSince: null,
+};
+
 function arrange(
   over: Partial<TriageDetailProps["detail"]> = {},
   props: Partial<TriageDetailProps> = {},
@@ -115,6 +160,8 @@ function arrange(
       row={ROW}
       detail={detail}
       forensics={FORENSICS}
+      cctv={CCTV}
+      canDownloadClip={false}
       minNodes={3}
       incidentStaleSince={null}
       canSign={false}
@@ -181,6 +228,8 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
           } as unknown as TriageDetailProps["detail"]
         }
         forensics={FORENSICS}
+        cctv={CCTV}
+        canDownloadClip={false}
         minNodes={3}
         incidentStaleSince={null}
         canSign={false}
@@ -194,7 +243,9 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
   it("la magnitud baja a métrica rotulada como del catálogo", () => {
     arrange();
     expect(screen.getByText("MAGNITUD (CATÁLOGO)")).toBeInTheDocument();
-    expect(screen.getByText("S/CATÁLOGO")).toBeInTheDocument();
+    // [T-5.10] Sin fuente ni hora de consulta el estado es `sin_dato_externo`,
+    // y se pinta con su texto — no con un hueco ni con un número sin origen.
+    expect(screen.getByText("SIN DATO EXTERNO")).toBeInTheDocument();
   });
 
   it("el epicentro por quórum declara que es un centroide, no una localización", () => {

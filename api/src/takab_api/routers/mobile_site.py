@@ -30,6 +30,7 @@ from takab_api.auth.matrix import roles_with_action
 from takab_api.commands.alarma_inmueble import OrdenSirena, fase_del_sitio, suena_la_alarma
 from takab_api.commands.quorum_actuation import QUORUM_ACTOR_UUID
 from takab_api.compliance import mobile_projection, parse_document
+from takab_api.demo_mode import ventana_viva as demo_mode_vivo
 from takab_api.incident.autoridad import autoriza_evacuacion
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
@@ -270,6 +271,7 @@ async def mobile_state(
             dictamen_status=dictamen_status,
             dictamen_signed=dictamen_signed,
         ),
+        demo_mode=await demo_mode_vivo(conn, str(claims.tenant_id)) is not None,
         assembly_point=_asset_out(assembly_row, settings) if assembly_row else None,
         # [T-2.82] El contrato publicado sigue siendo `dict[str, str]` — no cambia—,
         # pero cada valor sale ya ENMARCADO: la pantalla 1.5 pinta el valor y descarta

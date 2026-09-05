@@ -7,9 +7,20 @@
 import { render, screen, within, fireEvent } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ useDrills: vi.fn() }));
-vi.mock("./useDrills", () => ({ useDrills: mocks.useDrills, DRILL_PAGE_SIZE: 25 }));
+const mocks = vi.hoisted(() => ({
+  useDrills: vi.fn(),
+  useDrillReport: vi.fn(),
+  openPendingDownload: vi.fn(),
+}));
+vi.mock("./useDrills", () => ({
+  useDrills: mocks.useDrills,
+  useDrillReport: mocks.useDrillReport,
+  DRILL_PAGE_SIZE: 25,
+}));
+vi.mock("../../lib/download", () => ({ openPendingDownload: mocks.openPendingDownload }));
 
+import { resetSessionStoreForTests, useSessionStore } from "../../auth/session.store";
+import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import { expectFourStates, type UiState } from "../../test-utils/states";
 import DrillHistory from "./DrillHistory";
 import type { DrillHistoryData } from "./useDrills";
@@ -36,6 +47,8 @@ function site(over: Record<string, unknown> = {}) {
     command_status: "acked",
     ack: { ok: true },
     commandable: true,
+    acked_at: "2026-08-04T18:01:12Z",
+    ack_latency_s: 72,
     ...over,
   };
 }
@@ -71,8 +84,20 @@ const RAN = {
   ],
 };
 
+function exportar(over: Record<string, unknown> = {}) {
+  return { exportar: vi.fn(), pendingId: null, error: null, ...over };
+}
+
 beforeEach(() => {
+  resetSessionStoreForTests();
+  useSessionStore.setState({ me: ME_FIXTURES.tenant_admin });
   vi.clearAllMocks();
+  mocks.useDrillReport.mockReturnValue(exportar());
+  mocks.openPendingDownload.mockReturnValue({
+    resolve: vi.fn(),
+    cancel: vi.fn(),
+    opened: true,
+  });
 });
 
 describe("DrillHistory", () => {
@@ -147,5 +172,98 @@ describe("DrillHistory", () => {
       mocks.useDrills.mockReturnValue(historyData(byState[state]));
       return <DrillHistory onClose={vi.fn()} />;
     });
+  });
+  // ── [T-5.14] El instante del acuse ────────────────────────────────────────
+
+  it("cada sitio que acusó enseña CUÁNDO y CUÁNTO tardó", () => {
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /DETALLE/ }));
+    const torreA = within(screen.getByTestId("drill-sites-d-1")).getByText("Torre A").closest("li");
+    expect(torreA).toHaveTextContent("+1:12");
+    // El sello absoluto va al minuto, como todos los de la consola. El segundo
+    // vive en la latencia (`+1:12`) y en el PDF, que es la evidencia citable:
+    // meter aquí un formato de reloj distinto al del resto de la pantalla
+    // costaría más de lo que da.
+    expect(torreA).toHaveTextContent("2026-08-04 · 18:01 UTC");
+  });
+
+  it("el que NO acusó no enseña un «+0:00» que diría lo contrario", () => {
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /DETALLE/ }));
+    const sites = within(screen.getByTestId("drill-sites-d-1"));
+    for (const nombre of ["Torre B", "Bodega"]) {
+      const li = sites.getByText(nombre).closest("li");
+      expect(li).not.toHaveTextContent("+0:00");
+      expect(li?.querySelector("[data-testid^='drill-lat-']")).toBeNull();
+    }
+  });
+
+  it("el resumen trae la mediana de los que acusaron", () => {
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    expect(screen.getByTestId("drill-row-d-1")).toHaveTextContent("MEDIANA +1:12");
+  });
+
+  it("sin un solo acuse la mediana dice S/D, jamás 0:00", () => {
+    const nadie = {
+      ...RAN,
+      drill_id: "d-9",
+      sites: [site({ command_status: "pending", ack: null, acked_at: null, ack_latency_s: null })],
+    };
+    mocks.useDrills.mockReturnValue(historyData({ items: [nadie] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    const row = screen.getByTestId("drill-row-d-9");
+    expect(row).toHaveTextContent("MEDIANA S/D");
+    expect(row).not.toHaveTextContent("+0:00");
+  });
+
+  // ── [T-5.14] La exportación ───────────────────────────────────────────────
+
+  it("EXPORTAR reserva la pestaña DENTRO del gesto y pide el reporte", () => {
+    const e = exportar();
+    mocks.useDrillReport.mockReturnValue(e);
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId("drill-export-d-1"));
+    // La pestaña se abre en el onClick, no en el onSuccess: pasada la activación
+    // transitoria el navegador la bloquea EN SILENCIO (ver lib/download.ts).
+    expect(mocks.openPendingDownload).toHaveBeenCalled();
+    expect(e.exportar).toHaveBeenCalledWith("d-1", expect.objectContaining({ opened: true }));
+  });
+
+  it("una AGENDA no se exporta: no hay acuses que reportar", () => {
+    const agenda = { ...RAN, drill_id: "ag-1", scheduled_at: "2026-08-09T18:00:00Z" };
+    mocks.useDrills.mockReturnValue(historyData({ items: [agenda] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    expect(screen.queryByTestId("drill-export-ag-1")).toBeNull();
+  });
+
+  it("quien no puede iniciar simulacros tampoco genera su evidencia", () => {
+    // Generar INSCRIBE una evidencia inmutable: es acto del dueño del tenant.
+    // `gov_operator` la descarga después por `export`, como el dictamen.
+    useSessionStore.setState({ me: ME_FIXTURES.gov_operator });
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    expect(screen.queryByTestId("drill-export-d-1")).toBeNull();
+  });
+
+  it("mientras genera lo dice y no deja pulsar dos veces", () => {
+    mocks.useDrillReport.mockReturnValue(exportar({ pendingId: "d-1" }));
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    const b = screen.getByTestId("drill-export-d-1");
+    expect(b).toBeDisabled();
+    expect(b).toHaveTextContent("GENERANDO");
+  });
+
+  it("si la generación falla lo dice en voz alta: la pestaña se quedó vacía", () => {
+    mocks.useDrillReport.mockReturnValue(
+      exportar({ error: "POST /drills/d-1/report falló (503)" }),
+    );
+    mocks.useDrills.mockReturnValue(historyData({ items: [RAN] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("503");
   });
 });

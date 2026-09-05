@@ -65,7 +65,12 @@ _TRUNCATE_WRITTEN = text(
     "compliance_labels, site_assets, rule_evaluations, "
     # [T-2.79] aviso + consentimiento: append-only por trigger, igual que arriba.
     # [T-2.80] la lápida de ARCO, por el mismo motivo.
-    "privacy_consents, privacy_notices, privacy_erasures CASCADE"
+    "privacy_consents, privacy_notices, privacy_erasures, "
+    # [T-3.12.c] CCTV. `cctv_clips`/`cctv_stills` caerían igual por el CASCADE de
+    # `incidents`, pero `cameras` cuelga de `sites` —que NO se trunca— así que una
+    # cámara sembrada en un test cambiaría el veredicto del siguiente: `con_camara`
+    # decide si el reporte dice «sin cobertura» o «sin clip», que son cosas distintas.
+    "cameras, cctv_clips, cctv_stills, cctv_occupancy, cctv_evacuation_metrics CASCADE"
 )
 
 

@@ -14,6 +14,11 @@ locals {
     events    = { visibility_timeout = 30 }
     telemetry = { visibility_timeout = 90 }
     backfill  = { visibility_timeout = 300 }
+    # [T-3.12.b] Analisis de CCTV. 900 s = el techo de un Lambda, y el timeout de
+    # visibilidad tiene que cubrirlo ENTERO: si expira antes de que el Lambda termine,
+    # SQS reentrega y dos ejecuciones analizan el mismo clip a la vez. El `ON CONFLICT`
+    # del handler lo hace inofensivo, pero paga la inferencia dos veces.
+    cctv = { visibility_timeout = 900 }
   }
 }
 

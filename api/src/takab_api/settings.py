@@ -350,6 +350,32 @@ class Settings(BaseSettings):
     quorum_margin_s: float = 3.0
     quorum_max_window_s: float = 30.0
 
+    # --- Correlación con el catálogo externo (T-5.11) ---
+    # Criterio de IDENTIDAD entre un sismo del catálogo y el que abrió el
+    # incidente. Hasta T-5.11 era SOLO temporal (±120 s fijos) y por eso casaba
+    # cualquier cosa: sin radio, sin magnitud mínima, sin filtro geográfico.
+    # La razón de cada número está escrita en `forensics/correlacion.py`; aquí
+    # va el resumen de una línea, que es lo que se lee al cambiarlos.
+    #
+    # v_S y no v_P: el disparo local lo produce la sacudida fuerte (onda S y
+    # superficiales), no el primer arribo. Con v_P la cota se queda corta justo
+    # en los sismos lejanos y grandes — el M8.2 de Chiapas llegó a 205 s.
+    correlation_v_s_km_s: float = 3.6
+    # Tolerancia de reloj y de revisión de la hora de origen. Es TAMBIÉN el
+    # único margen hacia atrás: un origen posterior a la detección no es
+    # tolerancia, es imposible.
+    correlation_margin_s: float = 30.0
+    # Radio máximo epicentro↔SITIO. Cubre la zona que de verdad sacude a un
+    # inmueble mexicano (Chiapas 2017 a 737 km del centro del país) y excluye
+    # de forma terminante Sudamérica y el Pacífico occidental (Chile, 6 389 km).
+    correlation_max_km: float = 1200.0
+    # Piso de PGA estimada por ATTEN-LAW v1 en el sitio. Un orden de magnitud
+    # POR DEBAJO del umbral de cautela del gabinete (0.040 g) a propósito: la
+    # pregunta no es «¿habría disparado?» sino «¿pudo notarse siquiera aquí?».
+    # Con el umbral de disparo se rechazarían las correlaciones de SASMEX, donde
+    # el edificio puede no haber sentido casi nada.
+    correlation_min_pga_g: float = 0.001
+
     # --- Dictamen automático preliminar (T-1.20 · B5) ---
     # Umbrales de PGA del dictamen (placeholders CALIBRABLES por ingeniería;
     # override por rule_sets.config.dictamen). settle_s retrasa la emisión para
@@ -496,6 +522,26 @@ class Settings(BaseSettings):
     command_ttl_s: float = 30.0  # espejo del edge (regla de oro 8: "JWT corto")
     command_rate_user_site_per_min: int = 6
     command_rate_site_per_min: int = 12
+
+    # ── [T-5.18] Tope de gasto de la IA y freno de la exportación ────────────
+    #: Tope mensual de gasto de redacción asistida, POR TENANT y en dólares.
+    #: 5 USD es deliberadamente conservador: con el modelo y el techo de tokens
+    #: de hoy son cientos de dictámenes al mes, y quien necesite más lo sube a
+    #: sabiendas. El defecto de una cuota no puede ser «la que no molesta».
+    #: `0` = SIN TOPE, y es la lectura del ajuste ausente, no «tope cero»: quien
+    #: quiera cortar del todo apaga `openrouter_enabled`, que ya existía.
+    ai_monthly_cap_usd: float = 5.0
+    #: Fracción del tope a la que se deja UNA fila de aviso en la bitácora.
+    #: `0` o `1` desactivan el aviso sin tocar el corte.
+    ai_warn_at: float = 0.8
+    #: Exportaciones de PDF por minuto y por USUARIO. Un usuario autenticado podía
+    #: reexportar el mismo incidente sin límite, y cada exportación renderiza un
+    #: PDF, lo sube a S3 y —con la IA encendida— sale a la red de pago.
+    report_rate_user_per_min: int = 6
+    #: …y por SITIO. Dos operadores coordinados agotan el presupuesto del
+    #: edificio sin que ninguno rebase el suyo: es el mismo par de techos que ya
+    #: usan los comandos, y por la misma razón (`RO-8.e`).
+    report_rate_site_per_min: int = 20
     # [T-2.09] Intención firmada del móvil (RBAC §4.3): secreto HMAC de los
     # nonces de intención (FAIL-CLOSED: vacío = la ruta táctica responde 503,
     # jamás comandos sin intención verificable) + TTL corto del nonce.

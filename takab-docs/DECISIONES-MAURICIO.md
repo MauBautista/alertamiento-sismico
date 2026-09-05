@@ -12,8 +12,23 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-22 · **23 decisiones** · 18 tomadas por Mauricio (6 el
-> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**), 3 delegadas el 2026-08-12.
+> **Última actualización:** 2026-09-02 · **28 decisiones** · 22 tomadas por Mauricio (6 el
+> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
+> 2026-08-30), 6 delegadas (3 el 2026-08-12, 3 el 2026-09-02).
+>
+> **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
+> 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
+> leyera solo el encabezado, en el documento cuya razón de existir es poder revocar con
+> conocimiento. Lo encontró la auditoría V1-COMERCIAL (`H-39`), y es exactamente lo que este
+> repositorio ya sabe de memoria: **un censo que enumera a mano acaba divergiendo.** `TASKS.md` no
+> diverge porque un test lo cuenta; esta cabecera no tenía ninguno.
+>
+> **Y volvió a diverger TRES DÍAS DESPUÉS**, que es la prueba que faltaba: `D-28` (`T-5.16`,
+> 2026-09-02) entró con su sección y **sin fila en el índice**, y la cabecera se quedó en 27. Se
+> corrigió a mano una vez y bastaron tres días para que pasara otra vez — porque corregir a mano
+> no es un mecanismo. Desde `T-5.09` lo cuenta
+> `api/tests/test_docs_consistency.py`: **cabecera, filas del índice y anclas de sección tienen
+> que cuadrar las tres**, y la fecha declarada no puede ser anterior a la última decisión.
 >
 > **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
 > cerrada, pero **quedaban diez decisiones enterradas dentro de puntos de acción** —el runbook de
@@ -57,6 +72,11 @@
 | [D-21](#d-21) | Sesión de vida: **se parte** — `G-01` esta semana, solo | 2026-08-17 | Mauricio |
 | [D-22](#d-22) | La consola **se abre al público**; Cognito con MFA queda como única capa | 2026-08-22 | Mauricio |
 | [D-23](#d-23) | ARCO por teléfono: **lo acredita el cliente institucional** | 2026-08-22 | Mauricio |
+| [D-24](#d-24) | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | 2026-08-29 | Mauricio |
+| [D-25](#d-25) | Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04` | 2026-08-29 | Mauricio |
+| [D-26](#d-26) | El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal | 2026-08-30 | Mauricio |
+| [D-27](#d-27) | Modo demostración: **por cliente, con vencimiento**, y **lo real lo apaga** | 2026-09-02 | delegada |
+| [D-28](#d-28) | La **tipología del inmueble sugiere** un umbral; no lo resuelve | 2026-09-02 | delegada |
 
 ---
 
@@ -612,6 +632,18 @@ clip de evento exige un consentimiento que un edificio con público no puede rec
 **solo aforo** — y el diseño debe permitir esa caída **por configuración de sitio**, no por
 reescritura. Fichar así en `T-3.10`.
 
+> ### ✏️ ENMENDADA el 2026-08-29 por [`D-24`](#d-24) — la mitad local se cae, el resto sigue en pie
+>
+> **El texto de arriba no se toca**, y conviene leerlo entero antes que la enmienda: era correcto
+> con lo que se sabía el 17 de agosto. Lo que cambió es un **número que entonces no existía**.
+>
+> - **Se cae:** «el aforo se calcula en el inmueble y a la nube sube **solo el número**». El
+>   conteo autoritativo pasa a la nube.
+> - **Sigue en pie, y es la mitad que gobierna:** clips **solo de evento confirmado**, nunca
+>   continuos; retención acotada y declarada; salida de vídeo **auditada** igual que un comando de
+>   actuador; y la caída a **solo aforo por configuración de sitio**, que ahora es exactamente el
+>   mecanismo con el que se vuelve atrás (`cameras.count_mode`).
+
 ---
 
 <a id="d-15"></a>
@@ -1083,3 +1115,295 @@ Si alguna pantalla resulta accesible en degradado y consulta la API, es un fallo
 **Lo que la decisión NO cambia:** `/me` sigue abriendo sesión de base, y debe seguir haciéndolo —
 volver a claims puros reabriría `T-2.114` y dejaría al ocupante móvil sin edificio. Lo que se
 arregla es **cómo reacciona el cliente cuando `/me` no contesta**.
+
+---
+
+<a id="d-24"></a>
+## D-24 · CCTV — el **conteo pasa a la nube**, y el clip se ve y se descarga
+
+**Fecha:** 2026-08-29 · **Decide:** Mauricio · **Enmienda:** [`D-14`](#d-14) ·
+**Fichas:** `T-3.10`, `T-3.11`, `T-3.12` · **Diseño:** [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B
+
+**La decisión.** El aforo lo calcula la **nube**, no el inmueble. El gabinete graba y sube; la nube
+cuenta. Concretamente:
+
+- **Un clip por evento confirmado**, de `T−60 s` a `T+600 s`.
+- **Un goteo de capturas JPEG** después del clip, hasta detectar reingreso o agotar un tope.
+- El **operador puede ver el vídeo y descargarlo** desde la consola.
+- Del clip y del goteo salen **cuatro capturas** para el reporte: antes de la señal, la gente
+  saliendo, el aforo máximo, y el reingreso.
+
+**Por qué cambia, y no es una preferencia: es un número que el 17 de agosto no existía.** El
+gabinete se midió el 2026-08-29 y es un **Pi 4 de 1 GB** — 905 MB totales, 654 MB disponibles, y
+sin ffmpeg. `D-14` se escribió suponiendo que «el inmueble» tenía holgura para un detector. No la
+tiene. Y la regla de decisión de `B.2` ya estaba escrita **antes** de ver el número precisamente
+para esto: *si se acerca al presupuesto, hardware separado, sin discusión*. Las opciones reales
+eran comprar una segunda caja por edificio o gastar nube. **Se gasta nube**, que es dinero, en vez
+de gastar el margen del camino de vida, que no se repone.
+
+**Y una segunda razón, que habría bastado sola.** Un número de aforo **no se puede auditar después**.
+«Había 40 personas» sin una imagen es infalsificable, y el reporte de un sismo es evidencia: si un
+perito o un seguro no puede revisarla, no es evidencia, es una afirmación.
+
+> ### ⚠️ Lo que esto cuesta, dicho sin adornos — y el goteo, que hay que declarar y no colar
+>
+> **La materia prima del conteo ahora sale del edificio.** Eso es exactamente lo que `D-14` había
+> comprado procesando en sitio, y se está gastando. La conversación de privacidad con un cliente
+> institucional **no desaparece: hay que ganarla.**
+>
+> Y dentro de esto va una pieza que es fácil no ver: el **goteo de capturas**. El clip dura 11
+> minutos y un dictamen tarda horas, así que la foto del reingreso —y la curva que dice cuándo
+> empezó— salen de un JPEG cada 30 s durante horas. Es poco peso y no es vídeo continuo, pero
+> **son imágenes de personas saliendo del inmueble**, y quedan escritas aquí para que nadie lea
+> «un clip» y crea que eso es todo lo que viaja.
+>
+> **Lo que acota el daño, y es la mitad que hace aceptable la decisión:** apagado por defecto por
+> sitio · retención acotada **con job propio de poda** (el vídeo no hereda la exención de la
+> evidencia) · RBAC más estrecho que el resto —ver vídeo no es ver telemetría— · y una fila en
+> `audit_log` **en la subida**, no solo en la descarga.
+
+**Cómo se revoca:** `cameras.count_mode = 'local'` por sitio. Es literalmente la caída «a solo
+aforo, **por configuración y no por reescritura**» que `D-14` exigió — sigue existiendo, y ahora es
+el interruptor de vuelta. Si el cliente que llegue no acepta que el vídeo salga, ese sitio cuenta
+en el borde y no sube nada.
+
+**Lo que NO cambia de `D-14`:** clips solo de evento confirmado, jamás continuos ni «por si
+acaso». Es la **regla de oro 9 aplicada al vídeo**, y sigue siendo la condición.
+
+> ### 🔧 CORRECCIÓN DE PREMISA, el mismo día (2026-08-29) — el 1 GB es el banco, no el destino
+>
+> El texto de arriba se queda como está, pero **una de sus dos razones estaba mal encuadrada** y
+> conviene arreglarlo antes de que alguien la cite: los 905 MB son del **gabinete de desarrollo**.
+> Mauricio confirma que el equipo real de campo será un **Raspberry Pi 5 de 8 GB o un Pi 4 de
+> 8 GB**, todavía **sin comprar**.
+>
+> **Con 8 GB, «no cabe un detector en el gabinete» deja de ser cierto.** Esa razón se cae.
+>
+> **La decisión NO se cae, pero su razón ahora es otra y es más simple:** el equipo que va a
+> correr esto **no existe todavía**, y `B.2` no se puede medir en una máquina que no es la que va
+> a ejecutar. Medir en el banco de 1 GB y extrapolar a 8 GB sería inventar el número, que es
+> justo lo que `B.2` prohíbe. Así que hasta que haya hardware real: **cuenta la nube, y el conteo
+> preliminar local se queda apagado.**
+>
+> **Lo que esto cambia en la práctica:** el conteo local pasa de «descartado por RAM» a
+> **«aplazado hasta que haya con qué medirlo»**. El adaptador `DetectorBackend` ya está pensado
+> para las dos orillas, así que encenderlo el día que llegue la caja es configuración, no
+> reescritura — que es la misma propiedad que `D-14` exigió para la caída a solo aforo.
+>
+> **Y la segunda razón de `D-24` sigue intacta**, que es la que de verdad sostiene la decisión: un
+> número de aforo sin imagen **no se puede auditar después**. Esa no dependía de la RAM.
+
+---
+
+<a id="d-25"></a>
+## D-25 · Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04`
+
+**Fecha:** 2026-08-29 · **Decide:** Mauricio · **Venía de:** el preámbulo del `BLOQUE IV` en
+`TASKS.md` · **Extiende:** [`D-08`](#d-08)
+
+**El texto que esta decisión toca.** El preámbulo del `BLOQUE IV` dice: *«No empieza antes de que
+el Bloque II esté cerrado y `G-04` acreditado. La razón no es de agenda: no se le añaden funciones
+a un sistema cuya cadena de vida todavía no se midió en hardware real.»* Es la **excepción 1** de
+la regla de ordenación. `G-04` sigue abierto.
+
+**La decisión, en dos mitades — y la segunda es la que importa.**
+
+1. **El software del CCTV se escribe ya.** `D-08` autorizó planificar; esto autoriza construir.
+2. **No se instala ni se enciende nada en el gabinete** hasta que `G-04` esté acreditado **y** la
+   medición de `B.2` esté hecha, con su número escrito.
+
+**Por qué el límite y no una anulación limpia.** La razón del preámbulo es literal y hay que leerla
+como está escrita: no se le añaden funciones **a un sistema**. Código que se entrega **apagado**, en
+un proceso que no existe en el Pi, con la unidad systemd sin instalar, **no le añade nada al sistema
+que protege el edificio**. Lo que el preámbulo prohíbe es exactamente lo que la mitad 2 sigue
+prohibiendo. Anular la regla entera habría sido más cómodo y habría borrado la garantía; partirla
+la conserva.
+
+**El coste aceptado, que es el mismo de `D-08`:** desvía esfuerzo de la ruta crítica hacia el primer
+cliente. Se asume otra vez, y a sabiendas.
+
+> **El gatillo que levanta la mitad 2** —escrito para no depender de acordarse—: `G-04` acreditado
+> **y** la latencia del reflejo SASMEX→relé medida bajo carga de CCTV contra su presupuesto de
+> 100 ms, con la conclusión escrita **con su número**, aplicando la regla de `B.2` **después** de
+> verlo. El sesgo del que hay que protegerse sigue siendo «va justo pero cabe».
+
+---
+
+## D-26 · El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal
+
+**Fecha:** 2026-08-30 · **Decide:** Mauricio · **Venía de:** un hallazgo del primer clip real ·
+**Extiende:** [`D-24`](#d-24) y [`D-25`](#d-25)
+
+**Lo que se encontró, y cómo.** Al cortar el primer clip de verdad —cámara real, ffmpeg LGPL
+real— el fichero salió **`h264 + aac`**. `cmd_anillo` usa `-c copy`, que **no copia el vídeo:
+copia lo que la cámara mande**, y la del sitio manda una pista de sonido. Nadie lo había
+decidido: ni `TASKS.md` ni el módulo mencionaban audio una sola vez —todas las apariciones de
+«audio» en el árbol son la sirena y el voceo, otro subsistema— y ninguna prueba podía verlo,
+porque el simulador escribe bytes, no vídeo.
+
+**La decisión.** El anillo lleva **`-an`**, antes del `-c copy` (después no aplica a la salida).
+El CCTV del gabinete **graba imagen y nada más**.
+
+**Por qué el default solo podía ser éste.**
+
+1. **Nadie lo pidió.** El conteo de aforo no usa sonido y el reporte no lo enseña. Un dato que
+   no alimenta ninguna decisión pero sí aumenta el daño de una fuga no se guarda.
+2. **No es «un poco más» de vigilancia: es otra cosa.** La imagen de una persona en un punto de
+   reunión y su conversación no están en el mismo plano — cambia el marco legal aplicable, de
+   datos personales a **comunicaciones privadas**, dentro de un objeto que va **firmado a S3 y de
+   ahí a un peritaje**. La regla de oro 11 obliga a tratar el compliance como restricción dura,
+   no como algo que se ajusta después.
+3. **La asimetría del error.** Grabar de menos se corrige mañana cambiando una bandera. Grabar
+   de más **no se corrige**: las conversaciones ya están en un bucket versionado, en una tabla
+   append-only, y el borrado no deshace el haberlas capturado.
+
+**Lo que esta decisión NO dice.** No dice que el audio sea inútil como evidencia; puede no
+serlo. Dice que **entrar por descuido no es una forma aceptable de tenerlo**.
+
+**Cómo se deroga** —y que exista el camino es la mitad de la decisión—: se quita el `-an`, se
+deroga esta ficha **por su nombre**, y se escribe **la base legal y el aviso a los ocupantes**
+del sitio donde se grabe. Sin esas dos cosas escritas, no se quita.
+
+> **La lección que sobrevive a esta decisión concreta:** `-c copy` sobre una fuente que no
+> controlas es una **declaración de intenciones, no una especificación**. Copia lo que venga. Lo
+> que se graba se comprueba con `ffprobe`, no se deduce del comando — y por eso el `ffprobe`
+> viaja al gabinete junto al `ffmpeg` aunque el gabinete no lo use.
+
+---
+
+<a id="d-27"></a>
+## D-27 · Modo demostración — **por cliente, con vencimiento, y lo real lo apaga**
+
+**Fecha:** 2026-09-02 · **Decide:** delegada (Mauricio: «decídelo tú, haz lo más recomendable») ·
+**Venía de:** `T-5.02`, la ficha más grande de la primera tanda de
+[`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) · **Gobierna:** el interruptor que impide que una
+exposición despierte teléfonos reales o cierre un relé.
+
+**El problema.** No existía ningún estado en el que el sistema no molestara a nadie. Lo único que
+se llamaba «demo» era el reproductor de escenas del panel del gabinete (`?demo=`, cuyos botones
+mandaban órdenes de verdad hasta `T-5.01`), y el `simulated` de las notificaciones, que **no es un
+modo**: es un estado derivado de la ausencia de credenciales, y por tanto **desaparece justo en el
+entorno donde se haría la demostración**. Con las altas de Twilio, Meta y APNs hechas —que es
+adónde va el proyecto— cada exposición pasa a ser un riesgo de despertar a gente real.
+
+**Las tres decisiones, y la tercera es la que importa.**
+
+### 1 · Alcance: **por cliente (tenant), y con vencimiento obligatorio**
+
+Las otras dos opciones se descartan por lo que hacen, no por gusto:
+
+- **Por despliegue** cegaría a **todos los clientes a la vez** para hacerle una demostración a
+  uno. Es la peor de las tres y no admite matices.
+- **Por sesión** no puede funcionar: quien bloquea no es la consola, son los **trabajadores de
+  fondo** (`notify`, `commands`), que no tienen sesión ninguna. Una perilla de sesión sería una
+  perilla que no llega a donde hay que apagar.
+
+**Y vence solo.** Máximo 8 h, por defecto 2 h. El fallo realista no es la malicia sino el olvido
+—el manual de operación ya avisa de no dejar un monitor de pared en modo demo—, y un interruptor
+de seguridad que depende de que alguien se acuerde de apagarlo no es un interruptor de seguridad.
+Vencer no necesita ningún proceso que lo vigile: el estado se lee siempre con su hora.
+
+### 2 · Quién: lo **enciende** `takab_superadmin`; lo **apaga** él o el `tenant_admin`
+
+**Asimétrico a propósito: difícil de volver inseguro, fácil de volver seguro.** La demostración
+la hace TAKAB, no el cliente, así que encenderlo es acto de plataforma. Pero si TAKAB se lo deja
+puesto, el cliente **no puede quedarse esperando a que alguien conteste el teléfono** para
+recuperar sus avisos: apagarlo lo puede hacer su propio administrador.
+
+### 3 · Un evento REAL lo apaga solo — **antes** de procesarlo
+
+La lectura contraria —«el modo bloquea el evento real y grita»— **se rechaza sin discusión**.
+Sería un interruptor capaz de silenciar un sismo, y un modo de demostración que puede suprimir
+una alerta real no es un dispositivo de seguridad: es el peor defecto que este sistema puede
+tener. No se construye, ni con confirmación, ni con aviso, ni con nada.
+
+**Gana «lo real gana»**, que es la misma doctrina que ya gobierna los simulacros (`T-2.94`, y el
+`on_sasmex` del `DrillController`). Y el ORDEN es la parte que hace la promesa verdadera: el modo
+se apaga **antes** de que el evento entre a la cascada, no después. Así la ventana en la que algo
+real podría quedar suprimido **no existe por construcción**, en vez de ser una ventana estrecha
+que alguien tiene que medir. Queda auditado con el evento como causa, y las dos superficies que
+lo declaran lo gritan: quien esté haciendo la demostración tiene que enterarse de que ya no está
+demostrando.
+
+### El límite duro, que es lo que hace aceptable todo lo anterior
+
+**El modo no existe en el gabinete.** No viaja por la config firmada, no toca el reflejo
+SASMEX→sirena, no puede desarmar un relé ni retrasar un cierre de gas. Es un **supresor de salida
+de la nube** y nada más: notificaciones y comandos firmados. El día que alguien haga una
+demostración y tiemble de verdad, el edificio lo protege un gabinete que **nunca oyó hablar del
+modo demostración** — y eso es exactamente la regla de oro 1, que dice que el camino crítico no
+depende de la nube.
+
+Corolario incómodo pero honesto: **el panel del gabinete no lo declara.** Se evaluó meterlo en el
+documento firmado del config sync —que ya transporta `cloud_admin_state` y que el edge **solo
+pinta, nunca obedece**— y se descartó por dos razones. La primera es de riesgo: cada dato nuevo
+que viaja hacia el gabinete es superficie nueva hacia el camino de vida, y éste no le hace falta
+para nada. La segunda es medida: el seed de producción deja el conjunto de reglas
+**deliberadamente sin clave `edge`**, así que hoy el config sync no empuja nada a `gw-dev-0001` —
+construirlo sería entorno preparado para un mensaje que nadie recibe, que es el defecto de
+`T-3.11.c` repetido a propósito. El panel no promete entrega de notificaciones, así que su
+silencio no es una mentira.
+
+**Cómo se revocaría.** Si algún día la demostración necesita mostrar el gabinete actuando en
+falso —relés que se mueven sin que sea real—, esta decisión no sirve y hay que rehacerla entera:
+eso ya no es un supresor de salida, es un simulador dentro del camino de vida, y necesita su
+propia conversación y su propio gate físico. Lo que **no** cambia en ninguna revocación es el
+punto 3: nada que pueda suprimir una alerta real entra en este sistema.
+
+---
+
+## D-28 · La tipología del inmueble **sugiere** un umbral, no lo resuelve
+
+**Fecha:** 2026-09-02 · **Ficha:** `T-5.16` · **Estado:** vigente
+
+### El problema
+
+`BLUEPRINT §4.5` declara tres bandas por tipo de instalación —hospitales 0.040–0.060 g,
+industriales 0.080–0.120 g, corporativos 0.100–0.150 g— y **ninguna estaba implementada**.
+`sites.building_type` era texto libre, sin catálogo y sin restricción, y **nadie lo consultaba**:
+los alcances de umbral son tenant, sitio y sensor, y el tipo de edificio no entra en ninguno.
+
+La consecuencia es física y está en el código: el default del gabinete está documentado como
+*«Default = hospital»*, así que **toda la flota corre la banda de hospital**. Un industrial dado
+de alta hoy avisa dos veces por debajo de su banda, y no hay pantalla que lo diga.
+
+La pregunta abierta era si la tipología debía **resolver** el umbral (elegir «industrial» pone
+0.080–0.120 g) o solo **sugerirlo**.
+
+### La decisión
+
+**Sugiere.** El catálogo es cerrado, cada tipo lleva su banda de referencia, y la consola la
+**enseña**; aplicarla exige escribir una versión nueva del conjunto de reglas y publicarla, como
+cualquier otro cambio de umbral.
+
+### Por qué, y es la parte que no conviene perder
+
+1. **El tipo se edita desde una pantalla de captura.** Quien abre el formulario de una estación
+   suele ir a corregir una dirección o un dato de alta. Si el tipo resolviera el umbral, ese
+   guardado —administrativo, sin firma, sin publicación— **re-armaría el edificio a otra
+   sensibilidad**. Eso es un cambio de actuación por un acto de captura, y choca de frente con la
+   regla de oro 1 (camino de activación determinista y auditable) y con la 8.
+2. **El propio blueprint las llama «de referencia» y manda calibrar.** Son un punto de partida,
+   no una respuesta: un hospital en suelo blando y otro en roca no comparten disparo. Un sistema
+   que las aplicara solo estaría afirmando una calibración que nadie hizo.
+3. **Lo barato es lo reversible.** Sugerir y que alguien publique cuesta un clic más; resolver y
+   equivocarse cuesta un edificio avisando tarde, y nadie se entera hasta el sismo.
+
+### Lo que se construyó encima
+
+- Catálogo **cerrado** en `shared/schemas/tipologia_umbral.json`, del que derivan por igualdad la
+  validación de la API, el `CHECK` de `sites.building_type` y el desplegable de la consola.
+- Los tipos que el producto atiende y para los que **nadie publicó banda** —universidad, gobierno,
+  otro— la llevan en `null` **con su razón escrita**, en vez de prestarles la de hospital. Prestar
+  una banda es exactamente el defecto que abre esta ficha.
+- El gabinete **declara** la procedencia de su banda: `BANDA DE FÁBRICA · NADIE LA ELIGIÓ` cuando
+  corre el default. No la apaga —el edificio opera sin nube, regla de oro 2—, deja de hacerla
+  pasar por una decisión.
+
+### Cómo se revocaría
+
+Si algún día se quiere que el tipo resuelva, hace falta que **cambiar el tipo sea un acto
+publicado y firmado**, no una edición de formulario: es decir, sacar `building_type` de la
+pantalla de alta y meterlo en el mismo camino que los umbrales. Mientras se edite donde se edita
+hoy, esta decisión se mantiene. Lo que **no** cambia en ninguna revocación: una banda que nadie
+eligió no puede pintarse como una banda elegida.

@@ -145,13 +145,103 @@
       "detecta": ["SIN CONEXIÓN CON EL GABINETE", "SIN CONEXIÓN AL GABINETE"]
     }
   },
+  "titulares_de_alerta": {
+    "que_es": [
+      "EL TITULAR DE UNA ALERTA ES UNA ATRIBUCIÓN, no un rótulo. Dice DE DÓNDE viene lo",
+      "que está pasando, y lo dice en las TRES superficies a la vez: la consola del SOC,",
+      "la app del ocupante y el panel del propio gabinete. Por eso vive aquí y no en cada",
+      "vista — es la misma decisión tomada tres veces.",
+      "",
+      "Existe porque el mismo defecto ya ocurrió DOS VECES. En T-2.104 la app titulaba",
+      "«ALERTA SÍSMICA SASMEX» para las cuatro fuentes; se corrigió derivando el titular",
+      "del `trigger`. La auditoría V1-COMERCIAL del 2026-09-02 lo encontró INTACTO en la",
+      "consola: el banner se elegía sólo por `severity` y sus dos textos estaban escritos",
+      "a fuego, así que un quórum de pánico —`trigger='manual'`, severidad crítica por",
+      "D-11— salía como «ALERTA SÍSMICA · PROTÉJASE» y «EDGE · RS4D · REGLAS LOCALES",
+      "EJECUTADAS» mientras la app, para ESE MISMO incidente, decía «NO ES UNA ALERTA",
+      "SÍSMICA». Dos pantallas del mismo evento, delante del mismo cliente.",
+      "",
+      "REGLA DURA, y es la única que un test puede imponer sin discutir de estilo: si un",
+      "trigger no es sísmico, NINGUNA superficie puede titularlo como sísmico; y si no es",
+      "del servicio oficial, ninguna puede atribuírselo. Los textos PUEDEN diferir entre",
+      "pantallas —un operador y un ocupante no leen lo mismo— pero no pueden",
+      "CONTRADECIRSE sobre qué clase de cosa está ocurriendo.",
+      "",
+      "El conjunto de triggers no se enumera aquí a mano: es el CHECK de",
+      "`incidents.trigger` en db/schema.sql, y un test compara los dos por igualdad."
+    ],
+    "detecta_sismica": ["ALERTA SÍSMICA", "SISMO", "SÍSMICO", "SÍSMICA"],
+    "por_trigger": {
+      "sasmex": {
+        "significa": "Contacto seco del receptor WR-1. Es la alerta oficial, y la ÚNICA fuente que puede llevarse ese nombre.",
+        "es_sismica": true,
+        "es_oficial": true,
+        "consola": "ALERTA SÍSMICA · PROTÉJASE",
+        "movil": "ALERTA SÍSMICA SASMEX",
+        "panel": "ALERTA SÍSMICA · PROTÉJASE",
+        "por_que_difieren": [
+          "La consola y el panel dicen la MISMA frase a propósito: son las dos pantallas",
+          "que mira el mismo operador, y es además el literal que el documento de entrega",
+          "cita como el mensaje íntegro al ocupante. La app añade el nombre del servicio",
+          "porque quien la lee no tiene delante ninguna otra pista de la procedencia."
+        ]
+      },
+      "local_threshold": {
+        "significa": "Umbral instrumental de UNA estación. Política ratificada en T-2.32: eleva un AVISO, no actúa.",
+        "es_sismica": true,
+        "es_oficial": false,
+        "consola": "AVISO SÍSMICO · UMBRAL INSTRUMENTAL",
+        "movil": "SISMO DETECTADO EN ESTE EDIFICIO",
+        "panel": "AVISO SÍSMICO · MOVIMIENTO FUERTE (UMBRAL INSTRUMENTAL)"
+      },
+      "quorum": {
+        "significa": "Tres o más inmuebles sacudiéndose dentro de la ventana de asociación. La nube comanda actuación firmada.",
+        "es_sismica": true,
+        "es_oficial": false,
+        "consola": "SISMO CONFIRMADO POR LA RED",
+        "movil": "SISMO CONFIRMADO POR LA RED",
+        "panel": null,
+        "sin_termino_en_el_panel_porque": [
+          "El gabinete no recibe la taxonomía de `trigger` de la nube: recibe un comando",
+          "de actuación firmado y lo ejecuta. Darle un titular propio sería inventarle un",
+          "dato que no tiene, que es justo lo que este glosario existe para impedir."
+        ]
+      },
+      "manual": {
+        "significa": "Alguien la activó: quórum de pánico de ocupantes (D-11) o activación desde la consola. NO es un sismo.",
+        "es_sismica": false,
+        "es_oficial": false,
+        "consola": "ALERTA ACTIVADA MANUALMENTE",
+        "movil": "ALERTA ACTIVADA MANUALMENTE",
+        "panel": null,
+        "sin_termino_en_el_panel_porque": [
+          "Misma razón que el quórum: el panel no distingue el origen en la nube. Lo que",
+          "sí hace, y es lo correcto, es no llamarlo sismo por su cuenta."
+        ]
+      }
+    },
+    "desconocido": {
+      "significa": "Un trigger que nadie mapeó. Puede pasar el día que se añada el quinto al CHECK y se olvide una superficie.",
+      "es_sismica": false,
+      "es_oficial": false,
+      "consola": "ALERTA ACTIVA · ORIGEN NO RECONOCIDO",
+      "movil": "ALERTA ACTIVA · ORIGEN NO RECONOCIDO",
+      "panel": null,
+      "por_que_no_cae_a_sismica": [
+        "Caer al caso sísmico es lo que convierte un olvido en una afirmación falsa, y en",
+        "la pantalla más grande. El default nombra el trigger crudo y no atribuye nada.",
+        "Además el build lo caza antes: el censo compara el conjunto mapeado contra el",
+        "CHECK de la base por IGUALDAD, así que un trigger nuevo sale rojo con su nombre."
+      ]
+    }
+  },
   "divergencias": [
     {
       "eje": "vejez",
       "panel": "DATO RETENIDO",
       "consola": "DATOS RETENIDOS",
-      "por_que_sigue_abierta": "MEDIDO el 2026-08-13 (T-2.137): el literal se RENDERIZA en un solo sitio —web/src/components/StateFrame.tsx— pero se ASSERTA en diez pruebas repartidas por ocho ficheros de cuatro superficies ajenas (console/DetailPanel, console/DrillBanner, privacy/PrivacyConsentBanner, triage/IncidentTimeline, triage/PostEventSummary, triage/QuorumNodes, triage/StructuralTriage, triage/TriageDetail). Cambiar la palabra sin tocarlas deja la suite web en 12 ficheros rojos. No es un cambio de una línea: es un cambio de una línea y diez aserciones que hay que mover a la vez, y por eso pide su propio lote.",
-      "arreglo": "En web/src/components/StateFrame.tsx, `DATOS RETENIDOS` → `DATO RETENIDO`, Y las diez aserciones listadas arriba en el MISMO cambio (medidas con `npx vitest --run` tras cambiar el literal).",
+      "por_que_sigue_abierta": "RE-MEDIDO el 2026-09-02 (T-5.03), y la cifra vieja se quedó corta. Sigue siendo cierto lo esencial —el literal se RENDERIZA en UN solo sitio, web/src/components/StateFrame.tsx:186— pero la deuda CRECIÓ mientras estaba declarada: donde en 2026-08-13 (T-2.137) se contaron DIEZ aserciones en OCHO ficheros, hoy son VEINTICUATRO en DOCE. Cambiar la palabra sin moverlas deja la suite web en doce ficheros rojos. Se re-declara en vez de cerrarse porque sigue siendo un lote propio y ahora se sabe que es MÁS grande, no menos; y se anota la lección, que vale más que la cifra: una divergencia declarada no se congela, se abarata o se encarece sola, y ésta se encarece a razón de una aserción nueva cada pocos días.",
+      "arreglo": "En web/src/components/StateFrame.tsx, `DATOS RETENIDOS` → `DATO RETENIDO`, Y las veinticuatro aserciones en el MISMO cambio. La lista NO se escribe aquí: se re-deriva antes de empezar con `grep -rn 'DATOS RETENIDOS' web/src --include=*.test.ts*`, porque cualquier lista escrita a mano ya nació desactualizada — es exactamente lo que le pasó a la anterior.",
       "dueno": "web/src/components/StateFrame.tsx"
     }
   ]

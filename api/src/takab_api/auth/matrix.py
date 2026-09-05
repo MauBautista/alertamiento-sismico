@@ -96,6 +96,18 @@ ACTIONS: tuple[str, ...] = (
     "edit_thresholds",
     "siren_test",
     "manage_fleet",
+    # [T-5.02 · D-27] Asimétrico A PROPÓSITO: difícil de volver inseguro, fácil de
+    # volver seguro. Encenderlo es acto de PLATAFORMA —la demostración la hace
+    # TAKAB, no el cliente—; apagarlo lo puede hacer también el administrador del
+    # cliente, porque si TAKAB se lo deja puesto no puede quedarse esperando a que
+    # alguien conteste el teléfono para recuperar sus avisos.
+    "demo_mode_on",
+    "demo_mode_off",
+    # [T-5.12] Clasificar un incidente al cerrarlo. Va con quien ya opera el
+    # incidente —el que lo acusa y lo cierra— y no con una acción nueva de
+    # administración: decir «esto fue una falsa alarma» es parte de operar,
+    # no de administrar el cliente.
+    "classify_incident",
     "relocate_epicenter",
     "request_dictamen",
     "read_audit",
@@ -238,6 +250,24 @@ ACTIONS: tuple[str, ...] = (
     # ajeno viola integridad referencial. Esta acción solo hace que el 403 llegue
     # limpio (regla de oro 7).
     "manage_privacy_erasure",
+    # [T-3.12.c] VÍDEO. Dos acciones y no una, porque no son el mismo permiso:
+    #
+    # · `cctv_read` — las métricas de evacuación y las CUATRO capturas del reporte. Es lo
+    #   que hace falta para leer un dictamen y entender cuánto tardó la gente en salir.
+    # · `cctv_video` — el CLIP entero, verlo y descargarlo. Once minutos de gente
+    #   identificable saliendo de un edificio. Más estrecha, y cada acceso deja fila en
+    #   `audit_log` igual que un comando de actuador (`D-14`).
+    #
+    # `B.4` del blueprint lo pide así con estas palabras: «acceso por rol, y más estrecho
+    # que el resto — ver vídeo NO es ver telemetría». Una sola acción habría atado la foto
+    # que va en el PDF al vídeo completo, y son cosas distintas.
+    #
+    # NINGUNA se concede a `gov_operator`, y la ausencia es la decisión: la RLS de las
+    # tablas de CCTV tampoco lleva rama `app_gov_can_see`, con el precedente exacto de
+    # `privacy_notices`. El aviso de privacidad de un cliente no es evidencia de protección
+    # civil, y las imágenes de las personas de su edificio, menos.
+    "cctv_read",
+    "cctv_video",
 )
 
 
@@ -248,6 +278,9 @@ def _actions(
     export: bool = False,
     generate_report: bool = False,
     edit_thresholds: bool = False,
+    demo_mode_on: bool = False,
+    demo_mode_off: bool = False,
+    classify_incident: bool = False,
     siren_test: bool = False,
     manage_fleet: bool = False,
     relocate_epicenter: bool = False,
@@ -274,6 +307,8 @@ def _actions(
     deploy_firmware: bool = False,
     manage_privacy_notice: bool = False,
     manage_privacy_erasure: bool = False,
+    cctv_read: bool = False,
+    cctv_video: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -281,6 +316,9 @@ def _actions(
         "export": export,
         "generate_report": generate_report,
         "edit_thresholds": edit_thresholds,
+        "demo_mode_on": demo_mode_on,
+        "demo_mode_off": demo_mode_off,
+        "classify_incident": classify_incident,
         "siren_test": siren_test,
         "manage_fleet": manage_fleet,
         "relocate_epicenter": relocate_epicenter,
@@ -307,11 +345,16 @@ def _actions(
         "deploy_firmware": deploy_firmware,
         "manage_privacy_notice": manage_privacy_notice,
         "manage_privacy_erasure": manage_privacy_erasure,
+        "cctv_read": cctv_read,
+        "cctv_video": cctv_video,
     }
 
 
 ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     "takab_superadmin": _actions(
+        classify_incident=True,
+        demo_mode_on=True,
+        demo_mode_off=True,
         ack_incident=True,
         export=True,
         generate_report=True,
@@ -346,9 +389,17 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # alcanza no lo decide esta celda: lo decide la CONSTANCIA, y su FK contra
         # el padrón del cliente.
         manage_privacy_erasure=True,
+        # [T-3.12.c] Vídeo. `takab_support` NO lo tiene y superadmin sí: el soporte de
+        # TAKAB no mira el edificio de un cliente por defecto, que es justo lo que `B.4`
+        # quiere estrecho. Cada acceso de aquí queda además en `audit_log`.
+        cctv_read=True,
+        cctv_video=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
+        classify_incident=True,
+        # Apagar SÍ, encender NO: ver la razón en el censo de acciones.
+        demo_mode_off=True,
         ack_incident=True,
         edit_thresholds=True,
         siren_test=True,
@@ -368,8 +419,22 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # [T-2.80.b] Y por lo mismo, la solicitud ARCO por escrito se la mandan A
         # ÉL: es quien tiene la obligación de ejecutarla.
         manage_privacy_erasure=True,
+        # [T-3.12.c] Las dos, por la misma razón que las dos de arriba: el vídeo es de
+        # las personas de SU inmueble y el responsable de esos datos es él.
+        cctv_read=True,
+        cctv_video=True,
     ),
-    "soc_operator": _actions(ack_incident=True, relocate_epicenter=True, request_dictamen=True),
+    # [T-3.12.c] El SOC opera el incidente: necesita las métricas Y el clip, porque la
+    # pregunta que el vídeo contesta —«¿están saliendo o están atrapados?»— es suya y es
+    # el escenario entero para el que existe este módulo (`D-14`).
+    "soc_operator": _actions(
+        classify_incident=True,
+        ack_incident=True,
+        relocate_epicenter=True,
+        request_dictamen=True,
+        cctv_read=True,
+        cctv_video=True,
+    ),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),
     # [T-2.03] inspector en móvil (RBAC §3, celda a celda): forense (cámara +
@@ -385,10 +450,15 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manual_activate=True,
         dictamen_read=True,
         panel_read=True,
+        # [T-3.12.c] Métricas y las cuatro capturas, que es lo que sostiene un dictamen.
+        # El CLIP no: un perito estructural no necesita once minutos de caras para decir
+        # si el edificio es habitable, y `B.4` pide el acceso lo más estrecho posible.
+        cctv_read=True,
     ),
     # [T-2.03] building_admin (RBAC §3): headcount y silenciar SÍ; forense NO
     # (§3 da "—" en cámara/formulario — administra el inmueble, no lo peritea).
     "building_admin": _actions(
+        classify_incident=True,
         siren_test=True,
         self_test=True,
         checkin_submit=True,
@@ -398,6 +468,9 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         enrollment_manage=True,
         dictamen_read=True,
         panel_read=True,
+        # [T-3.12.c] Las dos: administra el inmueble y la evacuación es de su gente.
+        cctv_read=True,
+        cctv_video=True,
     ),
     # [T-2.03] Tácticos de campo (RBAC §4): deslizar-para-activar individual,
     # silenciar = retirada de demanda, forense y headcount.

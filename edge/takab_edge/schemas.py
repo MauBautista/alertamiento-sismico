@@ -17,6 +17,7 @@ from pathlib import Path
 from pydantic import BaseModel
 
 from takab_edge.contracts import (
+    ActuationRecord,
     ActuatorAck,
     BackfillRequest,
     CommandAck,
@@ -88,7 +89,20 @@ from takab_edge.contracts import (
 #: ampliado, un payload 1.11.0 sigue validando, y un gabinete viejo que reciba
 #: uno de los dos lo rechaza con ack —`ActuatorAction(payload["action"])` truena
 #: y el dispatcher descarta— en vez de hacer algo a medias.
-SCHEMA_VERSION = "1.12.0"
+#: 1.13.0 (T-2.86.a): + actuation_record (bitácora de actuación del gabinete,
+#: topic takab/audit). ADITIVO: familia NUEVA, ningún contrato existente cambia y
+#: todo payload 1.12.0 sigue validando. Un gabinete ≤1.12.0 simplemente no publica
+#: en ese topic — su bitácora se queda en disco, que es donde estaba antes de esta
+#: ficha, y la nube no le atribuye un vacío que no declaró.
+#: 1.14.0 (T-3.11.b): `backfill_request.mode` gana `cctv_clip` y `cctv_still`. ADITIVO:
+#: enum ampliado, un payload 1.13.0 sigue validando, y un gabinete viejo no emite ninguno
+#: de los dos. Va por el contrato y el topic que YA existen a propósito: un topic MQTT
+#: nuevo obliga a tocar la política fleet de AWS IoT, y un topic no autorizado desconecta
+#: al gabinete en cada publish (medido el 2026-07-12). Ampliar un enum no toca terraform.
+#: Ojo al lado de la nube: `canonical_key` DEBE crecer con el enum — un `mode` que el
+#: esquema acepta y la nube no sabe convertir en key devuelve «payload inválido» y el
+#: gabinete se queda esperando un grant que no llega.
+SCHEMA_VERSION = "1.14.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -102,6 +116,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "backfill_request": BackfillRequest,  # T-1.25: solicitud de URL pre-firmada
     "evidence_object": EvidenceObject,
     "lora_secondary_state": SecondaryCabinetState,  # T-2.33: gabinete secundario LoRa
+    "actuation_record": ActuationRecord,  # T-2.86.a: bitácora del gabinete (takab/audit)
 }
 
 

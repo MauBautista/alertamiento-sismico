@@ -9,7 +9,25 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-08-17 · **21 puntos** (§2: 9 · §3: 4 · §4: 5 · §5: 3)
+> **Última actualización:** 2026-09-01 · **26 puntos abiertos** (§2: 12 · §3: 5 · §4: 6 · §5: 3),
+> más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
+> lo demás.
+>
+> **El conteo se puede rehacer, y por eso se dice cómo:** cuenta un `###` salvo que su título
+> esté tachado o lleve ✅. Única excepción, el **§4.3** — su ✅ dice que la compra está
+> *autorizada*, no hecha. (La tabla de decisiones de la §1 también lleva ✅ y no son puntos.)
+>
+> ## Lo que cambió el 2026-09-01
+>
+> Entraron **dos**, las dos del bloque de CCTV, y son de familias distintas: el
+> [**§2.11**](#211--redesplegar-la-nube-con-el-worker-de-backfill--hoy-esa-cola-no-la-consume-nadie)
+> es un servicio que **nunca estuvo** en el compose de la nube y que rompe la cadena del vídeo
+> antes de que empiece; el [**§3.3.d**](#33d--encender-el-cctv--el-bloque-está-entero-y-no-ha-visto-un-solo-clip-real)
+> junta en un sitio todo lo que le falta al CCTV para existir fuera de los tests. Y salieron
+> tres —**§3.3.a**, **§3.3.b** y **§3.3.c**—, hechas el 2026-08-30.
+>
+> Más tarde ese mismo día entró el **§2.12**, que lo trajo construir la poda de vídeo: el rol de
+> la instancia **no puede borrar en S3**, y sin eso el job corre y no destruye nada.
 >
 > ## ⚠️ Lo que cambió el 2026-08-17, y corrige lo que esta cabecera decía
 >
@@ -50,7 +68,7 @@ antes se arranquen, antes dejan de ser el cuello de botella**: el alta de WhatsA
 ## 1 · DECISIONES — ✅ **sección cerrada** (re-verificada el 2026-08-17)
 
 **No queda ninguna** — pero esta frase ya fue falsa una vez, así que ahora viene con la lista
-completa. Las **veintiuna** decisiones tomadas, cada una con su razón escrita y su condición de
+completa. Las **veinticinco** decisiones tomadas, cada una con su razón escrita y su condición de
 revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 
 | ID | Decisión | Fecha |
@@ -76,12 +94,18 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 | **`D-19`** | Tono de la app: **propio**, no el oficial de CIRES | **2026-08-17** |
 | **`D-20`** | Consulta legal: **espera a que un cliente la pida** | **2026-08-17** |
 | **`D-21`** | Sesión de vida: **se parte** — `G-01` esta semana, solo | **2026-08-17** |
+| **`D-22`** | La consola **se abre al público**; Cognito con MFA, única capa | **2026-08-22** |
+| **`D-23`** | ARCO por teléfono: **lo acredita el cliente institucional** | **2026-08-22** |
+| **`D-24`** | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | **2026-08-29** |
+| **`D-25`** | Bloque IV **arranca ya en software**; encenderlo espera a `G-04` | **2026-08-29** |
+| **`D-26`** | El CCTV **no graba audio** — vídeo mudo; derogarlo exige base legal | **2026-08-30** |
 
 > **Las que generan trabajo de software se fichan en `TASKS.md` y NO vuelven a esta lista** —`D-05`
 > (cablear `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta
 > + fecha declarada + alarma por ausencia), `D-07` (**hecho**: `T-2.150`, mergeado el 2026-08-17),
 > `D-08` (diseño de `T-3.09`/`T-3.10`), `D-14` (aforo local + clips, con caída a *solo aforo* **por
-> configuración de sitio**), `D-18` (invertir dos tests HTTP) y `D-19` (grabar el tono propio).
+> configuración de sitio**), `D-18` (invertir dos tests HTTP), `D-19` (grabar el tono propio) y `D-24`/`D-25`
+> (el módulo CCTV entero: `T-3.10`…`T-3.12`).
 > **Ese trabajo es de la máquina.**
 >
 > ### ⚠️ Las que sí te dejan una acción tuya — y son las únicas que importan de esta sección
@@ -92,6 +116,9 @@ revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
 > | `D-13` + `D-16` | **Abrir cuenta Twilio** y comprar el número mexicano | §4.3 |
 > | `D-15` | **Encender la sirena por jack** (un comando) | §3.4 |
 > | `D-21` | **Acreditar `G-01`** esta semana, 20 min | §3.1 |
+> | `D-25` | **Acreditar `G-04`** y medir `B.2` — es lo que destraba **encender** el CCTV en el gabinete; hasta entonces el software se entrega apagado | §3.1 |
+> | `D-24` | **Ventana AWS** para el Lambda de conteo (ECR + IAM) | §2 |
+> | ~~`D-24`~~ | ~~**Un clic en GitHub**: añadir el check **`licenses`** a la protección de `main`~~ · ✅ **HECHO el 2026-08-30**, y con él se cazó el mismo defecto en **`analyzer`**: los dos jobs nuevos del bloque de CCTV estaban verdes y **ninguno bloqueaba**. La rama exige checks por nombre literal (`D-09`) y ahora son **nueve**. Queda **uno** sin exigir a propósito: `landing`, que se añade cuando aterrice la PR #93 | §2 |
 >
 > `D-04` dejaba una cuarta —el traspaso del dueño de los pines— y **ya está hecha** (§3.5).
 
@@ -325,6 +352,75 @@ corrido**. El occupant necesita código de enrolamiento.
 > **Trampa ya pagada que aplica aquí:** jamás subas `index.html` a mano antes del apply — el
 > etag del objeto histórico haría que un apply posterior lo REVIRTIERA al bootstrap.
 
+### 2.11 · Redesplegar la nube con el **worker de backfill** — hoy esa cola no la consume nadie
+
+> **Hallazgo del 2026-09-01, y es el que rompe el CCTV de punta a punta.** El
+> `docker-compose.yml` de la nube levanta siete servicios y **ninguno corre
+> `python -m takab_api.backfill`**. Nunca lo tuvo — `git log -S backfill` sobre ese fichero
+> sale vacío. Ficha: [`T-3.11.c`](TASKS.md).
+
+**Va después del código, no antes.** Esta línea existe para que el redespliegue no se pierda
+cuando el servicio esté escrito; el trabajo previo es software y no te bloquea a ti.
+
+Lo que la cola `takab-dev-q-backfill` deja de recibir **dos veces**, y por eso duele el doble:
+
+1. **El grant de subida** que pide el gabinete por MQTT. Sin consumidor, el clip **no llega ni
+   a empezar a subir**.
+2. **La notificación de S3** del prefijo `evidence/` — la única que ve la key, y por tanto la
+   única fuente de la ventana del clip.
+
+> ### Y esto no va a avisarte por su cuenta
+> Los mensajes **no caen a la DLQ**: nadie los recibe, así que no hay `maxReceiveCount` que
+> agotar. Envejecen y expiran en la cola principal. La alarma `dlq_depth` mira la DLQ, y la
+> DLQ está vacía **porque el camino se corta antes de llegar a ella**. Es el mismo patrón que
+> el gabinete fantasma y que `iot-rule-errors`: lo que no ocurre no dispara nada.
+
+**Lo que hay que mirar para darlo por bueno** —y no es que el `apply` salga en verde—:
+`ApproximateNumberOfMessages` de `takab-dev-q-backfill` **bajando**, y una fila nueva en
+`evidence_objects`. Que el contenedor aparezca en `docker compose ps` demuestra que arrancó,
+no que consuma.
+
+> **Lo que NO se está afirmando aquí:** que el backfill de evidencia no haya funcionado nunca
+> en la nube. Eso no se puede saber sin credenciales, y el token SSO estaba caducado al
+> escribir esto. Lo que sí se lee en el repo es que **no hay quién lo corra**.
+
+### 2.12 · El rol de la instancia **no puede borrar en S3**, y la poda de vídeo lo necesita
+
+> El job existe desde el 2026-09-01 ([`T-3.10`](TASKS.md), `ops/prune_cctv.py`). Corre, censa y
+> en la nube **fallaría en todos los objetos** — a propósito: sin permiso no destruye bytes, y
+> sin bytes destruidos **no anula ni una referencia**. Nada queda declarado cumplido en falso.
+
+**Lo que hay que conceder, y hasta dónde exactamente:** `s3:DeleteObject` **y**
+`s3:DeleteObjectVersion` al rol de la instancia, **sobre el bucket de evidencia y bajo el
+prefijo `evidence/` únicamente**.
+
+Las dos acciones, no una: el bucket está **versionado**, y sin `DeleteObjectVersion` el borrado
+solo puede poner un delete marker — que es justo el fallo que la poda existe para no cometer.
+
+> ### ⚠️ Y hay una decisión vigente que esto NO deroga
+> `modules/database` dice, con todas sus letras: *«NO HAY `s3:DeleteObject` EN NINGUNA PARTE, y
+> es una decisión de diseño»*. Su razón es la **cadena PITR**: un solo podador, el lifecycle de
+> S3, porque dos podadores a ciegas sobre los mismos objetos son una carrera cuyo perdedor es el
+> restore.
+>
+> **Esa razón es sobre el bucket de RESPALDOS y sigue intacta.** Lo que se abre aquí es el de
+> **evidencia**, donde el lifecycle **no puede** hacer el trabajo: podar un vídeo son dos mitades
+> y una de ellas está en Postgres (`s3_key → NULL` + `purged_at`), que ninguna regla de S3
+> alcanza. Una poda solo por lifecycle dejaría filas apuntando a objetos muertos — el fallo
+> espejo del que la ficha prohíbe.
+>
+> Si el `Resource` se escribe sobre el bucket entero en vez de sobre `evidence/*`, la decisión
+> del PITR **sí** quedaría derogada sin que nadie lo dijera. El prefijo es la mitad que importa.
+
+**Y el orden es el de siempre en esta lista:** primero un simulacro (`python -m
+takab_api.ops.prune_cctv`, sin `--apply`) para ver el censo con los ojos, y solo después el
+`--apply`. La poda **destruye todas las versiones del objeto y es irreversible**.
+
+> **Antes hay que decidir los plazos, que son de negocio y no de programador.**
+> `TAKAB_API_RETENTION_CCTV_CLIPS_DAYS` y `TAKAB_API_RETENTION_CCTV_STILLS_DAYS`. Sin ellos cada
+> tabla queda **deshabilitada** y el job no toca un byte, así que se puede desplegar antes de
+> decidir — igual que el de PII.
+
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
 > `G-04` (relés reales, latencia <100 ms acreditada) sigue abierto **desde el hito de la Fase 1**.
@@ -350,7 +446,8 @@ corrido**. El occupant necesita código de enrolamiento.
 >
 > **Lo que la ficha dice y ya NO es cierto:** «los relés siguen en MOCK». El gabinete corre
 > `LGPIOFactory (lgpio)` real con `DEV_MODE=false`, y la mitad eléctrica de `G-04` **ya pasa** con
-> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms). Lo que le
+> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms; las dos
+> son observaciones únicas — [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md)). Lo que le
 > falta a ese gate no es velocidad: es **que haya una sirena al final del cable**.
 >
 > **Variante de la ruta de hardware: DECIDIDA** — (B), fallback con watchdog
@@ -396,6 +493,226 @@ suite **lo declara en voz alta** en vez de callarlo.
 ### 3.3 · [`T-2.94`](TASKS.md) · Sesión de sitio — `G-06`, `G-08`
 > **Única dependencia declarada del Bloque III sobre el II:** necesita `T-2.78`, porque un
 > simulacro con **cascada de notificación real** no se acredita con canales simulados.
+
+### 3.3.a · ~~Desplegar el ffmpeg **LGPL arm64** en el Pi~~ — ✅ **HECHO el 2026-08-30**
+
+`/opt/takab/bin/ffmpeg` **no existe** y `takab-cctv` no arranca sin él: la guarda de licencia
+es *fail-closed* por `D-24`. Comprobado en el Pi el 2026-08-30 (`aarch64`, Pi 4 Model B Rev
+1.5, 17 GB libres) y **`/opt/takab/bin` es de `ailert`**, así que no hace falta `sudo`.
+
+```bash
+ssh takab-pi5 'set -e
+  cd /tmp
+  curl -fsSL -o ff.tar.xz \
+    https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-lgpl.tar.xz
+  tar xf ff.tar.xz
+  install -m 0755 ffmpeg-master-latest-linuxarm64-lgpl/bin/ffmpeg  /opt/takab/bin/ffmpeg
+  install -m 0755 ffmpeg-master-latest-linuxarm64-lgpl/bin/ffprobe /opt/takab/bin/ffprobe
+  rm -rf ff.tar.xz ffmpeg-master-latest-linuxarm64-lgpl
+  /opt/takab/bin/ffmpeg -version | head -1
+  cfg=$(/opt/takab/bin/ffmpeg -version | grep -m1 "^ *configuration:")
+  if   echo "$cfg" | grep -q -- --enable-gpl;      then echo "RECHAZADO: trae --enable-gpl"; exit 1
+  elif echo "$cfg" | grep -q -- --enable-version3; then echo "OK: LGPL (version3, sin gpl)"
+  else echo "DUDOSO: no declara version3"; exit 1; fi'
+```
+
+> **La variante importa más que la versión, y son dos trampas distintas:** `linux64` es x86-64 y
+> **no ejecuta** en el Pi; `gpl` **lo rechaza el guard**. El bloque termina imprimiendo el
+> veredicto con la misma regla que aplica `takab_edge.cctv.ffmpeg.clasificar()`, así que si
+> sale `OK` es que el CCTV va a arrancar. Probado contra el `linux64-lgpl` equivalente:
+> `OK: LGPL (version3, sin gpl)`.
+>
+> `ffprobe` va de propina: no lo usa el gabinete, pero es lo que permite mirar en sitio qué
+> pistas trae un clip — que es exactamente como se descubrió que el anillo grababa audio.
+
+> ### ✅ HECHO el 2026-08-30 — y una corrección de lo que esta ficha decía
+>
+> El binario está puesto (`N-126335-gb32f8d1c23-20260830`, ELF ARM aarch64) y **el guard lo
+> acepta desde el propio gabinete**: `verificar()` devuelve `licencia=lgpl`. Eso es lo que no
+> se podía afirmar hasta hoy.
+>
+> **Lo que esta ficha decía de más:** que con el ffmpeg puesto se cerraba «lo último» que le
+> falta a `T-3.11`. No era cierto, y se vio al intentarlo: el release que corría el Pi era del
+> 28-ago y **no traía el módulo `cctv`** (`ModuleNotFoundError`), así que el binario solo era un
+> prerrequisito por adelantado. Hizo falta **redesplegar el edge** —hecho el mismo día, release
+> `20260830T205027Z-e461dd0`— para poder siquiera correr el guard.
+>
+> **Y sigue faltando lo de verdad:** el recorte del clip y el `concat` sobre once minutos de
+> anillo **no se han ejercido en el Pi**. Medidos están, pero en x86-64. Para ejercerlos ahí
+> hace falta encender el CCTV, que espera a `G-04` por `D-25` — y el extra `cctv` ni siquiera
+> se instala (`EDGE_EXTRAS_OMITIDOS`).
+
+### 3.3.b · ~~Poner en hora la cámara del CCTV~~ — ✅ **HECHA el 2026-08-30**, menos el NTP
+
+Se le escribió el huso del sitio por ONVIF. **Verificado contra el sello, no contra la
+pantalla de configuración** — que es la única comprobación que vale:
+
+| | antes | después |
+|---|---|---|
+| huso | `GMT+08:00` (de fábrica) | `GMT-06:00` |
+| lo que decía la foto | `2026-08-31 01:57` | **`2026-08-30 14:03:53`** |
+| hora real del sitio | `2026-08-30 11:57` | `2026-08-30 14:03:53` |
+
+Exacto al segundo. El error de catorce horas **y un día** está cerrado, y la quinta
+comprobación de `takab-cctv` ya no lo reporta.
+
+> #### Lo que queda, y no se puede hacer ni por ONVIF ni por web
+>
+> `DateTimeType` sigue en **`Manual`**: sin NTP el reloj deriva y el sello se vuelve a alejar.
+> Y no hay por dónde arreglarlo desde aquí:
+>
+> * **`SetNTP`/`GetNTP` no están implementados** — la cámara contesta literalmente *«This
+>   optional method is not implemented»*;
+> * **no tiene interfaz web**: `/`, `/index.html`, `/doc/page/login.asp`, `/web/` y `/cgi-bin/`
+>   devuelven todos `000`. El servidor del 80 solo sirve ONVIF y la instantánea. Es una Imou de
+>   consumo: se administra **desde su app**.
+>
+> Quedan dos caminos, y los dos son decisión tuya:
+>
+> 1. **La app de Imou**, si expone el ajuste de NTP.
+> 2. **Que el gabinete le ponga la hora.** `takab-cctv` ya le lee el reloj al arrancar y tiene
+>    credencial de escritura ONVIF; corregirlo en vez de solo avisar es poco código. **No se ha
+>    hecho a propósito**: escribirle a la cámara es una capacidad nueva del gabinete, no un
+>    arreglo, y merece decidirse en vez de aparecer.
+>
+> Mientras tanto el desfase es **de segundos, no de horas**, y la quinta comprobación lo canta
+> en cada arranque.
+
+### 3.3.c · ~~El dueño de los pines corre código anterior~~ — ✅ **CERRADO el 2026-08-30**
+
+El redespliegue del 2026-08-30 (`e461dd0`) activó la release nueva y el canary la sostuvo 120 s,
+pero **`takab-gpio` no se reinició** — sin `--ventana-de-mantenimiento` no se reinicia nunca, y
+eso es deliberado. El propio despliegue lo declaró y se negó a darse por verificado:
+
+```
+✗ DESPLIEGUE NO VERIFICADO: el DUEÑO DE LOS PINES corre CÓDIGO ANTERIOR.
+  Los pines los tiene 'takab-gpio' (pid 739) … cuyo código SÍ cambió:
+    takab_edge/config/settings.py takab_edge/contracts.py
+```
+
+**Lo que cambió en esos dos ficheros es inerte para el reflejo** —`CctvConfig` en `settings.py`
+y dos valores nuevos del enum `mode` en `contracts.py`, ninguno en el camino SASMEX→relé— pero
+el despliegue no puede saber semántica: sabe que el dueño arrancó antes del swap y su código
+cambió, y eso es lo honesto que puede decir.
+
+> **Y NO se revierte.** Revertir también es reiniciar, cuesta el mismo ciclo de `GAS_VALVE` y
+> `DOOR_RETAINER`, y deja el gabinete más atrás. Lo dice el propio script.
+
+Estado verificado tras el despliegue: `relays_status.reason = ok`, sirena y estrobo instalados y
+**en reposo**, `alert_latched=false`, cero avisos en el journal. **El gabinete protege ahora
+mismo**; simplemente lo hace con el dueño de ayer.
+
+> ### ✅ Hecho el mismo día, y verificado en los cuatro puntos
+>
+> Se corrió la ventana de mantenimiento (release `20260830T222850Z-71ac7df`). El dueño se
+> reinició, reclamó los pines, y el estado de versión quedó **`AL DÍA`** —`fw_version` =
+> `fw_running` = `71ac7df`— que es lo único que demuestra que el gabinete corre lo desplegado.
+> Panel en reposo y `relays_status: ok`.
+>
+> **El traceback de la ventana no era un fallo.** Durante los ~3 s del reinicio, `takab-edge`
+> no podía leerle el estado al dueño y el fail-open del modo prueba se registró 24 veces
+> avisando de que «se PUBLICA a la nube». **Comprobado en la nube: cero incidentes.** El ruido
+> quedó fichado como [`T-2.172`](TASKS.md); el comportamiento era correcto.
+
+Se resolvió con:
+
+```bash
+deploy/edge/deploy.sh takab-pi5 --ventana-de-mantenimiento
+```
+
+**Es una ACTUACIÓN FÍSICA** —2 transiciones por pin en gas y retenedores, más una ventana sin
+sirena—, así que va **con el edificio avisado**. Encaja de forma natural en la sesión de `G-04`
+(§3.1), que ya exige tener el edificio sobre aviso.
+
+### 3.3.d · Encender el CCTV — el bloque está entero y **no ha visto un solo clip real**
+
+El 2026-08-30 cerraron seis fichas seguidas: la guarda de licencias, el cliente ONVIF y el
+grabador del gabinete, el esquema y la costura de subida, el motor de conteo, el Lambda
+—desplegado y verificado arrancando— y la sección del reporte con su panel. De la cámara al
+dictamen **el camino existe entero**.
+
+**Lo que no ha ocurrido nunca es que pase un vídeo por él.** Y lo que falta para eso no es
+código: es un edificio, una carga medida y gente.
+
+| Qué falta | Bloqueado en | Ficha |
+|---|---|---|
+| El extra `cctv` **ni se instala** en el Pi (`EDGE_EXTRAS_OMITIDOS`) | `G-04` + la medición de `B.2` (`D-25`) | [`T-3.11`](TASKS.md) |
+| El recorte del clip y el `concat` sobre once minutos de anillo, **en el Pi** | lo anterior | [`T-3.11`](TASKS.md) |
+| La medición de `B.2` — reflejo SASMEX→relé **bajo carga de CCTV** | el Pi con la carga puesta | [`T-3.10`](TASKS.md) |
+| La cámara apunta a un escritorio, **no al punto de reunión** | el edificio | [`T-3.12.d`](TASKS.md) |
+| Recall y falsos positivos **con varias personas** | gente | [`T-3.12.d`](TASKS.md) |
+| El NTP de la cámara | una decisión tuya (ver §3.3.b) | — |
+
+#### `B.2` va primero, y decide si el CCTV puede siquiera compartir el Pi
+
+Es lo único de esta lista que puede **cancelar** el resto. Su regla de decisión ya está escrita
+—a propósito **antes** de ver el número, para que no se acomode al resultado— y no se reabre:
+lo único que decide es la latencia del reflejo SASMEX→relé bajo carga de vídeo contra su
+presupuesto. Si se acerca, **hardware separado, sin discusión**. El sesgo del que hay que
+protegerse es «va justo pero cabe»: hoy el margen es de dos órdenes de magnitud, y gastarlo en
+vídeo lo cambia por lo único que este sistema no puede permitirse.
+
+#### Lo medido hasta hoy, y contra qué se midió
+
+Conviene que quede escrito, porque las cifras del detector se leen mucho mejor de lo que valen:
+se midieron **en x86-64**, contra una cámara que apunta a un escritorio, con **una** persona
+caminando. Once de doce fotogramas correctos; y **dos de doce con un fantasma** —una sudadera
+colgada de una silla, `0.36` contra un umbral de `0.35`—. Nada de eso es el edificio, y el modo
+de fallo que enseña —tela con forma de persona— es exactamente lo que sobra en un punto de
+reunión: mochilas, chamarras, sillas.
+
+#### El runbook es **por gabinete**, no una vez
+
+[`runbooks/RUNBOOK-alta-de-camara-cctv.md`](runbooks/RUNBOOK-alta-de-camara-cctv.md) se corre
+**cada vez que se habilita una cámara**, en el primer gabinete y en todos los siguientes. Su
+regla de oro es la que hace que sirva: *ninguna casilla se marca por haber hecho el ajuste; se
+marca por haber visto el efecto.*
+
+Dos pasos suyos valen por el resto:
+
+* **Paso 1 — el ángulo, que es la única mitigación que tenemos.** Va en **picado de 20° a 40°**,
+  no cenital. No es estética: los modelos COCO aprendieron «persona» de fotos a la altura de los
+  ojos, y como **no vamos a entrenar por sitio**, el cenital es su peor caso y no se arregla con
+  configuración.
+* **Paso 7.b — el control negativo.** Encuadre sin nadie, y el conteo tiene que dar cero. Es el
+  paso que habría cazado la sudadera, y el que ningún instalador hace si no se lo piden por
+  escrito.
+
+#### Lo único que no se puede pedir prestado: gente
+
+El recall con varias personas —cuánto baja el conteo cuando unas tapan a otras— **no tiene
+sustituto simulado**. Inventar la cifra sería peor que no tenerla, así que queda aquí, sin
+número, hasta que haya a quién contar.
+
+### 3.3.e · [`T-5.22`](TASKS.md) · **El acta del reflejo no está desplegada** — sin ella, la sesión de vida vuelve sin evidencia
+
+**Medido el 2026-09-04 contra el Pi real**, no supuesto:
+
+```
+$ edge/scripts/acta_reflejo.sh --check
+  gabinete: takab-pi5 · unidad: takab-edge
+  EL ACTA NO ESTÁ DESPLEGADA en takab-pi5.
+```
+
+`takab-pi5` corre la release **`20260830T222850Z-71ac7df`** (2026-08-30) y el módulo del acta
+(`takab_edge/audit/reflejo.py`) entró con `T-5.22` el **2026-09-03**. O sea que hoy el gabinete
+**no puede escribir ni una línea de acta**.
+
+**Por qué está aquí y no en la lista de software.** La cifra `contacto → relé` es la más citada
+del producto y su evidencia son nueve documentos con el número a mano. `T-5.22` construyó el
+acta que la convierte en artefacto, y su último criterio —`GATE-HW`— es una **sesión presencial**
+que vuelve a medir y se trae el `reflejo.jsonl`. Si el gabinete no tiene el módulo, **esa sesión
+se hace y vuelve con las manos vacías**: el fichero no existiría y el síntoma sería
+indistinguible de «no hubo flancos».
+
+**Qué hay que hacer, y es barato:** desplegar el edge (`deploy.sh`, el procedimiento de siempre)
+**antes** de la sesión de vida de §3.1. No hace falta ventana de mantenimiento por esto: el acta
+la escribe el **supervisor**, no el dueño de los pines, así que `takab-gpio` puede seguir con su
+código y el acta funciona igual — es la misma separación que `T-5.22` eligió a propósito para no
+meterle un fichero al proceso del camino de vida (regla de oro 4).
+
+> **Y se comprueba desde el escritorio**, no delante del gabinete:
+> `edge/scripts/acta_reflejo.sh --check`. Sale `0` cuando la precondición está lista.
 
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
@@ -523,6 +840,24 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > **El gatillo que la revive** (los tres, escritos para no depender de acordarse): un cliente
 > pregunta por el marco o la privacidad · aparece un ARCO real sobre un `subject_ref` por teléfono ·
 > el sistema empieza a **afirmar** un marco propio en vez de citar el del cliente.
+>
+> ### ➕ HECHO NUEVO PARA LA MISMA CONSULTA — `T-5.19` (2026-09-03)
+>
+> **`D-23` y `D-07` descansan LAS DOS sobre la misma calificación**: que TAKAB es **encargado** y
+> no **responsable** del tratamiento. Y esa calificación **solo está afirmada en el aviso
+> provisional**, que se declara a sí mismo sin revisar. No es una decisión nueva ni reabre esta
+> espera — es una pregunta que **ya tiene que ir en la lista** el día que la consulta se active,
+> porque si la calificación no se sostiene, las dos decisiones cambian de dueño y no de detalle.
+>
+> **Lo que sí se hizo mientras tanto, y no cuesta dinero:** el inventario de encargados existe y
+> está **derivado del código**, no tecleado ([`ENCARGADOS-TAKAB.md`](ENCARGADOS-TAKAB.md)). Un
+> proveedor nuevo o un servicio de AWS sin clasificar ponen el build en rojo nombrándolo. Y el
+> aviso provisional ganó los dos párrafos que le faltaban —quién más trata los datos, y que se
+> tratan **fuera de México**— como **marcadores de posición declarados**, dentro del texto y por
+> tanto dentro de la huella que sella el consentimiento.
+>
+> **Lo que eso cambia para el abogado:** ya no llega a una hoja en blanco. Llega a una lista de
+> siete terceros con qué dato alcanza cada uno, y a un aviso que dice dónde están sus huecos.
 
 ### 4.2 · [`T-2.77.a`](TASKS.md) · Alta del WhatsApp Business Account + aprobación de plantilla
 > **Plazo externo: lo aprueba Meta.** El código está completo y probado (53 tests); la plantilla

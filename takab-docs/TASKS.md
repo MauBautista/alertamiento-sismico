@@ -9,9 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-## Estado actual (2026-08-12)
+## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **307** · `[x]` **257** · `[~]` **9** · `[ ]` **41**
+**Conteo de tareas:** total **345** · `[x]` **295** · `[~]` **10** · `[ ]` **40**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -56,6 +56,19 @@ OIDC: código listo, falta `terraform apply`) — ambas esperan a un humano, no 
 > bloqueada dejó de tumbar a las que no tocaban esa tabla**.
 **Qué corre en producción se le pregunta al sistema, no a este archivo** (`/api/health` para la
 nube, `FW_VERSION` para el gabinete — ver README §"¿Qué está desplegado?").
+
+> **Lo que entró el 2026-09-02, y por qué el conteo salta 27 de golpe.** La auditoría
+> V1-COMERCIAL abrió el **Bloque VI**, que ordena una ruta distinta de la de los cinco
+> anteriores: no la del primer cliente, sino la de **poder enseñar el producto sin que una
+> pantalla afirme lo que nadie acreditó**. Sus 27 fichas salen de 52 ítems auditados —10 verdes,
+> 23 amarillos, 19 rojos— y **23 de ellas son `SOFTWARE` puro**.
+>
+> **El hallazgo de planificación, que merece leerse antes que la lista:** lo que hoy impide
+> enseñar el producto **no está bloqueado en nadie**. La ruta crítica de V1-DEMO son cinco fichas
+> y ninguna espera a un humano con agenda — al contrario que la ruta al primer cliente, donde el
+> software controla uno y medio de seis. Ver
+> [`INFORME-V1-COMERCIAL.md`](INFORME-V1-COMERCIAL.md) y
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md).
 
 **Lo que falta hacia un cliente real NO es mayormente código.** Los relés siguen en MOCK y
 `G-04` (latencia contacto→relé→sirena en hardware real) **lleva abierto desde el hito de Fase 1
@@ -5779,6 +5792,150 @@ colisionando», que es **falso** — `takab-edge` lleva `PrivateTmp` y `takab-gp
 *Corrección factual al informe de implementación, sin consecuencia:* `_unidad_de_este_proceso()`
 no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_proceso_vivo()`.
 
+### [x] T-2.170 · El guardián del presupuesto del camino de vida es intermitente en CI — `SOFTWARE` · COMPLETA (2026-08-26) · **REABIERTA Y CERRADA DEL TODO (2026-08-30)**
+
+> ### ⚠️ Estuvo marcada COMPLETA cuatro días y le faltaba la mitad
+>
+> El 2026-08-30 enrojeció **`test_gpio_link.py::test_el_reflejo_sasmex_no_cruza_la_costura`**
+> con **161.0 ms** — contra los 165.8 ms que habían motivado esta ficha. El gemelo del gate
+> #6 tenía **exactamente el mismo defecto** que se arregló aquí: una sola muestra de reloj de
+> pared asertada dura contra los 100 ms. Se arregló `test_e2e.py`, se dio la ficha por
+> cerrada, y nadie buscó el segundo sitio donde vivía el mismo patrón.
+>
+> **Y el coste ya se pagó**: el rojo se diagnosticó y se **relanzó el CI**, que es palabra por
+> palabra el reflejo que esta ficha declara inaceptable («enseña a re-lanzar el CI rojo del
+> camino de vida»). El diagnóstico era correcto —el mismo commit había pasado en la corrida
+> anterior y el commit acusado solo añadía una bandera a una lista de argumentos, lejos del
+> GPIO— pero eso es justo lo que se va a poder decir siempre.
+>
+> **La lección, que es más general que este test:** una ficha que arregla un patrón tiene que
+> declarar **dónde más vive ese patrón**, o se cierra sobre la primera instancia. Aquí bastaba
+> con buscar el otro `< 0.100`.
+>
+> **Lo corregido (misma receta, sin tocar el presupuesto):** mejor de `INTENTOS_DE_MEDICION`,
+> premisa re-comprobada en cada intento, aviso cuando hiciera falta reintentar. Con dos
+> diferencias que impone la premisa de ESE test y quedan escritas en él:
+>
+> * **el rearme no puede ser `local_api.reset_alert()`**, porque `_accion` es la única puerta
+>   del panel hacia los pines y **cruza la costura**, que ahí está muerta a propósito. Se va al
+>   mismo destino sin el tramo roto: `gpio.reset()`;
+> * **las afirmaciones estructurales se mudan DENTRO del bucle.** Detrás no habría nada que
+>   mirar: el rearme devuelve los cinco relés a reposo, así que un `assert ... is
+>   active_energized(...)` puesto después interrogaría a un gabinete desarmado.
+>
+> **El presupuesto y el número de intentos se IMPORTAN de `tests/test_e2e.py`**, no se
+> teclean: dos copias del 100 divergirían, que es el defecto que esta misma ficha ya dejó
+> escrito para el conftest.
+>
+> **Test del test, otra vez por mutación en las dos direcciones:**
+>
+> | mutación | serie medida | veredicto |
+> |---|---|---|
+> | *degradación real* (60 ms por canal en `_apply`) | `143.2 / 128.3 / 127.8 / 128.5 / 128.5 ms` | **enrojece** |
+> | *pico único* (150 ms una sola vez en `_dispatch_sasmex`) | `163.9 / 4.2 ms` | pasa **con aviso** |
+>
+> La **serie plana** es la firma de la regresión; el pico aislado, la del ruido. Y los 163.9 ms
+> del pico simulado caen casi exactos sobre los **161.0 ms** que enrojecieron CI de verdad.
+>
+> **La segunda mutación pagó por sí sola:** la de degradación destapó un fallo *en el propio
+> arreglo* — al rearmar también tras el último intento, el test enrojecía por el aserto
+> equivocado (`siren NO quedó en su nivel de protección`) en vez de por la latencia. Un
+> arreglo del instrumento que no se mutara habría entrado con ese defecto dentro.
+
+- **Componente:** edge (`tests/test_e2e.py` **y `tests/test_gpio_link.py`**) + CI · **Sale de:** `main` en rojo el 2026-08-26 (run `32937425976`) por un commit que solo tocaba documentación.
+- **Lo medido, no lo supuesto:** `test_latencia_contacto_wr1_a_los_cinco_reles_bajo_presupuesto` declaró **165.8 ms** contra un presupuesto de <100 ms. **El mismo commit, relanzado sin tocar una línea, pasa.** Uno de cada ocho runs recientes. Y el propio mensaje del test dice dónde estuvo el tiempo: **«0.0 ms ocurrieron DESPUÉS de que `drive_low()` retornara»** — o sea que el retraso no está en la cadena, está en el planificador del runner compartido.
+- **Por qué no es un test flaky más.** Éste guarda la **regla de oro 1**: el camino SASMEX→actuador. Un guardián intermitente sobre el camino de la sirena no solo falla: **enseña a re-lanzar el CI rojo del camino de vida**, que es exactamente el reflejo que no puede existir en este proyecto. El día que la latencia se rompa de verdad, el rojo va a parecer «el de siempre».
+- **⚠️ LA CORRECCIÓN PROHIBIDA:** subir el presupuesto de 100 ms. El número no sale de lo que el CI consigue, sale de `blueprint §4.3`. Un presupuesto que se ajusta al instrumento deja de ser un presupuesto. Tampoco vale saltar el test en CI: entonces nadie vigila la latencia hasta la siguiente visita al gabinete.
+- **El diagnóstico del instrumento:** el reloj de pared sobre un runner compartido mide *código + planificación*, y el ruido de planificación **solo suma**. Por eso una sola medición alta no distingue «el código se degradó» de «el runner estaba ocupado», mientras que la **mejor de N** sí: si el código se degradó, ni la mejor llega.
+- [x] La medición se repite hasta **`INTENTOS_DE_MEDICION = 5`** y el veredicto se da sobre el **mejor**, con `PRESUPUESTO_S = 0.100` **INTACTO**. El rearme entre intentos usa el camino que `test_manual_reset_closes_alert_end_to_end` ya acredita, y **la premisa se re-comprueba en cada intento**: si el rearme no devolvió los cinco relés a reposo, el test falla ahí en vez de medir un gabinete ya protegido y cantar 0 ms.
+- [x] **La serie se imprime siempre**, también en verde, por el `pytest_terminal_summary` que ya rotula el gate #3: `CAMINO DE VIDA (§4.3, <100 ms): mejor 1.7 ms de 1 intento(s)`. El umbral **viaja con la serie** en vez de teclearse en el conftest — dos copias del 100 divergirían y el resumen acabaría declarando un umbral que no se aplicó.
+- [x] Con más de un intento el test **avisa aunque pase** (`UserWarning`, visible en el resumen de CI). Un instrumento que pide reintentos es un dato sobre el instrumento.
+- [x] **Test del test, por mutación en las DOS direcciones** —que es lo único que separa esto de aflojar el umbral:
+  - *Degradación real* (30 ms por canal inyectados en `GpioController._apply`): los 5 intentos salen **226.9 / 219.3 / 219.0 / 219.1 / 219.0 ms** y el test **enrojece**. La serie plana es la firma de una regresión; el ruido no se repite igual.
+  - *Pico único* (150 ms una sola vez en `_on_contact_closed`): **165.9 ms → 5.9 ms**, pasa con el aviso. El pico simulado cayó casi exacto sobre los **165.8 ms** que enrojecieron `main`.
+- **No sustituye a la acreditación física.** La medida que vale sigue siendo la del gabinete con el WR-1 real —**6.65 ms y 4.16 ms**, dos órdenes de magnitud de margen—; esto solo evita que el guardián de CI se corroa entre visitas.
+
+### [ ] T-2.172 · El fail-open del modo prueba **grita 24 veces** en cada ventana de mantenimiento — `SOFTWARE`
+- **Componente:** edge (`supervisor.py:_modo_prueba_activo`) · **Sale de:** el despliegue con
+  `--ventana-de-mantenimiento` del 2026-08-30 (release `20260830T222850Z-71ac7df`), medido en el
+  gabinete real.
+- **Lo medido.** Mientras `takab-gpio` se reinicia —unos 3 s— `gpio_link.snapshot()` lanza
+  `GpioLinkUnavailable` y `_modo_prueba_activo` toma su camino *fail-open*. Se registró **24
+  veces**, cada una con este texto y un `event_id` distinto:
+  > `no se pudo leer el modo prueba del WR-1; se PUBLICA a la nube. Fail-open DELIBERADO: esto
+  > puede abrir incidente y disparar la push CRISIS a los teléfonos del sitio…`
+- **Y no publicó nada.** Verificado en la nube, no inferido: **`0` incidentes** abiertos en la
+  ventana. La razón está tres líneas más abajo en el mismo método —`if decision.tier is
+  Tier.NORMAL: return`— y el gabinete estaba en reposo, así que todas las decisiones eran
+  `NORMAL` y ninguna llegó a `EVENTS_TOPIC`.
+- **Por qué esto importa y no es cosmética.** El mensaje describe **el peor caso** como si
+  fuera lo ocurrido, en `ERROR`, veinticuatro veces seguidas, **en cada ventana de
+  mantenimiento** —que es justo cuando alguien está mirando el journal—. Es la misma patología
+  que [`T-2.170`](TASKS.md) señaló para el CI: **una señal que da el grito máximo en la
+  situación más rutinaria enseña a ignorarla**, y el día que el fail-open sí publique un
+  evento real, esas líneas van a parecer «las de siempre».
+- **⚠️ La corrección prohibida:** bajar el nivel del log o quitar el aviso. El fail-open es
+  correcto —callar un sismo real es peor que un incidente de más— y **tiene que verse**.
+- **Criterios de aceptación:**
+  - [ ] El mensaje distingue **lo que va a pasar de verdad** de lo que podría pasar: con
+        `Tier.NORMAL` no se publica nada y el texto no puede decir que sí.
+  - [ ] El reinicio del dueño **no produce 24 líneas**: o se agrupan mientras dura la
+        indisponibilidad, o se registra una al entrar y una al salir con el conteo.
+  - [ ] **No se resuelve esperando al dueño**: `_modo_prueba_activo` no puede bloquear la
+        actuación, y esa es la razón de que falle abierto en primer lugar.
+  - [ ] Un test que ejerza la ventana: costura caída durante N ticks con tier `NORMAL` ⇒
+        **cero publicaciones** y **una sola** línea de aviso.
+
+### [x] T-2.171 · Nada comprueba que lo que se despliega sea lo que está en `main` — `SOFTWARE` · COMPLETA (2026-08-27)
+- **Componente:** deploy (`cloud` + `edge`) + Makefile · **Sale de:** dos despliegues del 2026-08-27, medidos, no supuestos.
+- **Lo que pasó, dos veces el mismo día y por la misma causa.** El árbol estaba en `feat/landing-v2-telemetria` y de ahí salieron:
+  1. un `terraform apply` que **no aplicó** el topic `takab/audit` ni su regla IoT — la rama no los tenía;
+  2. un `make cloud-deploy` que puso en la nube el build `abf4490` con esquema `0051`, cuando `main` estaba en `a60bc10` con la migración `0052`. La tabla no se creó y el handler no llegó.
+- **Lo peor no es que pasara: es que TODO salió en verde.** Cada guardia hizo bien su trabajo y ninguna podía verlo:
+  - El **gate de despliegue** (`T-2.153`) comprueba que la API conteste, que corra **el commit que se desplegó** y que su esquema esté al día. Las tres eran ciertas — del commit equivocado.
+  - La **alarma de deriva de esquema** compara lo que la imagen espera contra lo que la base tiene. También coincidían: `0051` y `0051`.
+  - El **plan de Terraform** compara el código contra el estado. Sin el cambio en el código, «sin cambios» es la respuesta correcta.
+  - Un gate puede verificar que desplegaste **lo que pediste**; ninguno de estos puede saber que **querías otra cosa**.
+- **El precedente ya está en el repo, sin aplicar donde más cuesta.** `deploy/landing/deploy.sh:37,39` ya se niega con árbol sucio y con `main` sin pushear. La landing —que sirve HTML— tiene la guardia; la nube y **el gabinete** no.
+- **Criterios de aceptación:**
+  - [x] **`HEAD` tiene que estar EN `main`.** ⚠️ **Corregido respecto de lo que pedía esta
+        ficha**, que decía «contenido en `origin/main`, no igual» para no prohibir el rollback.
+        Al implementarlo resultó que **el rollback no necesita mover `HEAD`**: se hace con
+        `CLOUD_TAG=<sha-anterior>` desde `main`, porque la etiqueta es sobreescribible (`?=`) y el
+        gate del despliegue compara contra ella. Así que la contención sobraba, y con ella la
+        superficie de «estoy en un commit suelto que casualmente es de main». Se implementa la
+        letra de A-1 —`rama == main`— que además es lo que ya hacía la landing: una regla, una
+        forma.
+  - [x] **`fetch` antes de juzgar**, y si falla la guardia **se niega** en vez de dar por bueno lo
+        que no pudo comprobar. Y lo mismo con la mitad del CI: sin `gh` no se puede mirar, así que
+        se sigue —negarse dejaría sin desplegar a una máquina sin `gh`, decisión más grande que
+        esta ficha— pero **se declara en voz alta que A-1 se aplicó A MEDIAS**. Un fallback que se
+        hace pasar por un OK es el defecto, no la falta de red.
+  - [x] **Escotilla explícita** `--desde-esta-rama` (o `TAKAB_DEPLOY_RAMA_LIBRE=1`), que imprime
+        la rama y el sha y dice que **no es un despliegue reproducible**.
+  - [x] **El rechazo enumera lo que el despliegue se dejaría fuera** (`git log HEAD..origin/main`),
+        no un «no estás en main». Probado contra el escenario real: la rama del 27-ago produce una
+        lista que empieza por `T-2.86.a` — exactamente lo que se quedó fuera aquel día.
+  - [x] **También el gabinete**, con `guarda_de_rama "edge" si`: el `si` conserva su tolerancia
+        DECLARADA al árbol sucio (`--dirty`, para depurar en sitio). Rama y limpieza son dos
+        preguntas distintas y solo se añadió la primera.
+  - [x] **`make cloud-apply`**, con la misma guardia **y** el rechazo si falta
+        `local.auto.tfvars` — el fichero gitignored sin el cual todo lo que lleva `count` evalúa a
+        cero y el plan propone destruir los tres DKIM, DMARC, MAIL FROM y la consola.
+  - [x] **12 tests de CONDUCTA**, no de lectura: la guardia se corre contra repos de mentira con
+        su `origin`, y lo único que se juzga es su código de salida. Cubren main limpia, rama de
+        trabajo, `main` sin pushear, CI en rojo, árbol sucio con y sin tolerancia, la escotilla y
+        el aviso de «A MEDIAS» sin `gh`. Más un **censo**: todo `deploy/*/deploy.sh` del árbol
+        tiene que pasar por la guardia — enumerar los tres a mano dejaría fuera al cuarto.
+        Verificado por mutación: quitar la guardia del gabinete enrojece el censo, y aceptar
+        cualquier rama enrojece dos tests de conducta.
+        **Trampa medida al escribirlos:** el arnés filtraba `gh` del `PATH` quitando su
+        directorio… que en esta máquina es el mismo de `bash`. Los tests morían con
+        `FileNotFoundError: 'bash'`. Se construye un **PATH mínimo** con enlaces a lo que la
+        guardia usa, y un `gh` de mentira cuyo veredicto decide el test.
+- **Lo que NO arregla, y sigue siendo verdad:** con la escotilla puesta, equivocarse de rama sigue siendo posible. Lo que cambia es que ya no se puede hacer **sin decirlo**.
+- **Y lo que se llevó por delante de paso:** la regla A-1 tenía UNA implementación en todo el repo —la de la landing, que sirve HTML— y ahora es un helper compartido (`deploy/lib/guardas.sh`) que usan los tres despliegues y el `apply`. Tres copias de la misma regla acaban divergiendo, y la que divergiría sin ruido es la que nadie mira.
+
 ### [~] T-2.71 · Ventanas de mantenimiento — `SOFTWARE` · núcleo COMPLETO, gates AWS abiertos
 - **Componente:** api + web + edge · **Depende de:** T-2.70
 - **Criterios de aceptación:**
@@ -8325,7 +8482,7 @@ sería documentar intenciones.
 > Y **«el gabinete corre el proceso mínimo y auditable» quedó como HUECO, no como capacidad**:
 > el valor de fábrica es el contrario.
 
-### [~] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE`
+### [x] T-2.86.a · Una actuación con el enlace caído no deja rastro auditable en ninguna parte — `SOFTWARE` · COMPLETA (2026-08-26)
 - **Componente:** edge + api · **Depende de:** — · **Hueco `RO-4.e` de la matriz** · **El de más
   peso contractual de los 18, y no tenía ficha** (2026-08-08)
 - **Verificado de primera mano:** `ActuatorAck` (`edge/takab_edge/contracts.py:196`) lleva canal,
@@ -8341,11 +8498,35 @@ sería documentar intenciones.
   - [x] Toda actuación deja constancia **local**, con actor y causa, sobreviva o no el enlace.
         El embudo es `ActuatorManager._record` —por donde pasan `execute` y `execute_sequence`—,
         así que es estructural y no disciplinario.
-  - [ ] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3). **Lo
-        único que sigue abierto**, y no por el edge: la subida está construida y probada, pero su
-        `sink` va a `None` a propósito — publicar en un topic no autorizado **desconecta al
-        gabinete en cada publish** (visto en producción el 2026-07-12). Espera las cuatro piezas
-        de nube (topic + regla IoT en Terraform).
+  - [x] Esa constancia **sube** cuando el enlace vuelve, sin duplicarse (regla de oro 3).
+        **Cerrado el 2026-08-26 con las cuatro piezas de nube que faltaban**, por `takab/audit`:
+        - **Topic autorizado** en la política del fleet. Era la pieza que bloqueaba a las otras
+          tres: la política lista los topics uno a uno **sin comodines**, y publicar en uno no
+          autorizado no degrada nada — el broker **corta la sesión MQTT en cada publish** y deja
+          al gabinete mudo, camino de vida incluido (producción, 2026-07-12, flapping cada 10 s).
+        - **Regla IoT** `takab_dev_audit` → la cola de eventos (el SQL de IoT no admite varios
+          topics en `FROM`: una regla por topic).
+        - **Tabla** `actuation_records` (migración `0052`), con `record_id` **del gabinete** como
+          PK. Es lo que hace idempotente la re-subida: lo local **no se borra al subir** —el
+          perito lo lee meses después—, se avanza una marca de agua, y si esa marca se pierde el
+          `ON CONFLICT DO NOTHING` absorbe lo repetido. **Append-only por trigger**, como
+          `audit_log`: es prueba, no un registro editable. Y `takab_app` **no tiene INSERT** — una
+          bitácora que la API pudiera escribir dejaría de probar lo que hizo el gabinete.
+        - **Ingesta** `handle_actuation_record`, que toma las tres identidades del **registro** y
+          no del payload: escribir la identidad que declara el mensaje dejaría a un gabinete
+          comprometido plantar evidencia en el tenant de otro cliente.
+        - El `sink` publica **directo, sin spool**, y eso hace honesta la marca de agua: `drain()`
+          solo la avanza sobre entrega CONFIRMADA. Por el spool avanzaría al encolar, o sea sobre
+          un «ya lo mandaré» — justo la mentira que esta bitácora existe para no contar.
+        - Una fila **malformada se salta en vez de bloquear**: `drain()` corta al primer fallo
+          (correcto con el enlace caído, donde el orden importa), pero una fila que nunca va a
+          validar sacrificaría la subida de todo lo que venga detrás. Saltarla no pierde nada —
+          lo local no se borra jamás.
+  - [x] **El acoplamiento que costó un despliegue ya es un test**: `takab/audit` cierra el círculo
+        entre el censo de topics del edge y la política del Terraform
+        (`test_todo_topic_que_el_gabinete_publica_esta_en_la_politica_del_fleet`). Vivía en un
+        comentario y en la cabeza de quien lo había sufrido. Verificado por mutación: quitar la
+        línea de la política enrojece.
   - [x] Test: actuar con la nube caída y demostrar que el registro existe y **nombra la causa**
         (`edge/tests/test_actuation_ledger.py`, tres tests).
   - [x] La matriz pasa `RO-4.e` a `CUBIERTO` sola — y lo hizo, con su reserva declarada.
@@ -10338,6 +10519,12 @@ sería documentar intenciones.
 ### [x] T-2.169 · Rediseño v2 «Telemetría»: la landing en la identidad real, cinemática — `SOFTWARE` · COMPLETA (2026-08-26)
 - **Componente:** landing · **Sale de:** petición de Mauricio (2026-08-25): «más tecnológico, moderno, con animaciones, llamativo; fuera la formalidad; gráficas, imágenes, mapas; colores apegados a la identidad» — 4 decisiones confirmadas por preguntas estructuradas (mundo navy+cian de la consola; SIN cifras — sigue; capturas reales de consola con datos demo; mapa de la física de la alerta).
 - **Reemplaza al mundo Swiss Print de `T-2.166`** (que queda como anti-referencia de registro, no de calidad). El perímetro de claims NO cambió: la suite bloqueante sigue idéntica.
+- **Al integrarse (2026-09-05) el perímetro SÍ había cambiado:** `T-5.04` cerró después de
+  escribirse esta ficha y prohíbe afirmar en presente lo que depende de un gate abierto. El
+  rediseño salía de una base anterior y devolvía las cuatro frases vetadas por `G-04`, así que
+  se reformuló su copy en cinco sitios con la fórmula ya ratificada —el gabinete **gobierna**
+  los canales; cuáles quedan conectados y acreditados lo fija la puesta en marcha—. Los diez
+  tests de `landing` en verde, incluido el que vigila **no prohibir de más**.
 - [x] Mundo «Telemetría»: navy #071322/#0E2336 + cian #00BFFF de la consola (glow de señal como material), semáforo solo semántico, crisis #160808 de la app; Saira/Archivo/JetBrains se conservan. Contrastes recalculados y declarados (texto-1 16.64:1 · cian 8.79:1 · botón navy-sobre-cian 7.54:1).
 - [x] Sismograma del hero: canvas rAF determinista (misma semilla que su fallback SVG estático; se pausa fuera de viewport; reduced-motion = SVG), rotulado «traza ilustrativa · no es un evento real».
 - [x] Mapa «la señal le gana a las ondas»: México en matriz de puntos generada EN BUILD por point-in-polygon sobre contorno simplificado; epicentro ilustrativo, haz de alerta instantáneo vs anillos de ondas (transform puro, `vector-effect: non-scaling-stroke`); rotulado sin sitios ni cobertura.
@@ -10463,35 +10650,611 @@ sirena.
 > **Si no cabe en el Pi 4, la respuesta correcta es hardware separado — nunca optimizar el
 > proceso que toca la sirena** (regla de oro 4).
 
-### [ ] T-3.10 · Escribir la arquitectura en el blueprint — `SOFTWARE` + `DECISIÓN`
-- **Decisión:** [`D-14`](DECISIONES-MAURICIO.md#d-14) — CCTV **híbrido**: aforo en el sitio,
-  clips solo de evento. Es la que fija qué arquitectura hay que escribir.
+> ### 📌 Estado de las decisiones (2026-08-29) — léelo antes de abrir cualquiera de estas fichas
+>
+> - [`D-24`](DECISIONES-MAURICIO.md#d-24) **enmienda** a [`D-14`](DECISIONES-MAURICIO.md#d-14): el
+>   conteo autoritativo lo hace **la nube**. Sube **un clip** (`T−60 s`→`T+600 s`) y un **goteo de
+>   capturas** hasta el reingreso; el operador ve y descarga. Sigue en pie de `D-14`: clips **solo
+>   de evento confirmado**, retención acotada, salida de vídeo **auditada**, y la caída a **solo
+>   aforo por configuración de sitio** (`cameras.count_mode`).
+> - [`D-25`](DECISIONES-MAURICIO.md#d-25): el software se construye **ya**; **encenderlo en el
+>   gabinete espera a `G-04` acreditado + la medición de `B.2`**. Las fichas se cierran con el
+>   módulo apagado; el gatillo de encendido vive en `D-25`.
+> - **Dos máquinas, y no hay que confundirlas.** El **banco** es un Pi 4 de **1 GB** (905 MB
+>   totales, 654 disponibles, sin ffmpeg — medido el 2026-08-29); el **equipo de campo** será un
+>   **Pi 5 de 8 GB o un Pi 4 de 8 GB**, y **está sin comprar**. Con 8 GB el detector cabe: lo que
+>   mantiene el conteo en la nube no es la RAM, es que `B.2` **no se puede medir en una máquina
+>   que no es la que va a ejecutar**. El conteo preliminar local está **aplazado, no descartado**
+>   ([`D-24` · corrección de premisa](DECISIONES-MAURICIO.md#d-24)).
+
+### [~] T-3.10 · Arquitectura al blueprint y política de retención de vídeo — `SOFTWARE` + `DECISIÓN`
+> **Escrito el 2026-08-29** (blueprint §4.8, `D-24`, `D-25`). Sigue abierta por **dos mitades
+> muy distintas**, y confundirlas es lo que la deja parada:
+>
+> * **El job de poda está CONSTRUIDO** (2026-09-01): `api/src/takab_api/ops/prune_cctv.py`,
+>   con 26 tests y las dos mitades separadas por nombre en el informe. Ver más abajo.
+> * **La medición de `B.2` sí espera**, y a algo concreto: el Pi con carga real de CCTV, que
+>   llega con `G-04` por `D-25`. Fichada en
+>   [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md).
 - **Diseño escrito (`D-08`, 2026-08-16):**
   [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte B. Lo que queda es
-  llevarlo al blueprint **con el número de la medición dentro**, que es lo único que falta.
-- [ ] Sección nueva del blueprint: topología, dónde vive el proceso, y **presupuesto de CPU**.
-- [ ] Tratamiento de PII de video: retención, acceso por rol, y su encaje con la Fase 2.8.
-- [ ] Decisión escrita: mismo Pi o hardware separado, con la medición que la sostiene.
+  llevarlo al blueprint **con la enmienda de `D-24` dentro**.
+- [x] Sección nueva del blueprint: topología, dónde vive el proceso, y **presupuesto de CPU**.
+      **`§14` NO se toca**: el CCTV no es invariante ni diferido, es hardware opcional de la
+      topología (`§3`, `§4.1`). Tocarlo obliga a mover el número clavado en
+      `api/tests/test_matriz_trazabilidad.py:2042-2059` y a citar un test real por nombre.
+- [x] Tratamiento de PII de video: retención, acceso por rol, y su encaje con la Fase 2.8.
+- [x] **El vídeo NO hereda la exención de poda de la evidencia** (regla de oro 11): esa exención es
+      para auditoría y dictámenes, no para imágenes de personas. Retención mínima y declarada.
+- [x] La poda del vídeo va en **job propio** (`api/src/takab_api/ops/prune_cctv.py`), **no** como
+      `RetentionRule`.
+      > **Por qué, y es la trampa cara de esta ficha:** `retention._validar_plan()` corre en el
+      > import y exige que toda columna de una regla esté en `PII_INVENTORY` con `action=="erase"`;
+      > eso arrastra `test_privacy_erasure.py:171-181`, que compara **por igualdad** contra
+      > `ERASED_TABLES` — o sea que ARCO pasaría a tener que tocar `cctv_clips` y cambiarían las
+      > claves `affected` de la constancia. Radio de explosión enorme y en la dirección equivocada.
+- [x] **Las dos mitades de la poda, y las dos se reportan:** un `s3_key` en `NULL` **no borra los
+      bytes**. Hace falta el `UPDATE` en Postgres **y** el borrado del objeto. Un plan que anula la
+      referencia y deja la imagen es peor que ninguno, porque **se declara cumplido**.
+      > ### El ORDEN resultó ser la ficha entera
+      > Se borra en S3 **primero** y se anula la fila **después**. Al revés, un fallo de S3 deja la
+      > base diciendo `PURGADO` con la imagen viva — el fallo literal de esta viñeta. En este
+      > orden, un fallo deja **bytes muertos sin referencia**: molesto, visible, y no miente.
+      > El informe separa los tres desenlaces por nombre —`completo`, `huérfano`, `fallido`—
+      > porque un total único confundiría «la imagen ya no existe» con «la imagen sigue ahí».
+      >
+      > Y por eso la transacción es **por objeto** y no una por corrida, al revés que
+      > `prune_pii`: con una sola, un fallo en el objeto 40 revertiría las 39 filas ya anuladas
+      > cuyos bytes están destruidos de verdad — convertiría 39 podas correctas en 39 huérfanos.
+      > Ninguna transacción de Postgres deshace un `DeleteObject`.
+- [x] **La trampa que ninguna prueba habría cazado sin ejercerla: el bucket de evidencia está
+      VERSIONADO.** Un `delete_object` sin `VersionId` **no borra un byte** — pone un delete
+      marker y deja el cuerpo como *noncurrent*, facturándose. El objeto desaparece de un `GET`,
+      así que un test de «ya no se puede leer» **pasa**, y la imagen de las personas sigue ahí.
+      Es el fallo de la viñeta anterior disfrazado de éxito.
+      > No es una hipótesis: ya mordió en este árbol con las reglas `Expiration` de los buckets de
+      > respaldo y de transferencia, que parecían retención y eran un cambio de etiqueta
+      > (`modules/storage/main.tf`). Se resuelve en `routers/_s3.delete_all_versions`, que lista
+      > las versiones de ESA key —filtrando por igualdad, porque `Prefix` casaría también con
+      > `clip.mp4.bak`— y borra cada una por `VersionId`, delete markers incluidos. **El control
+      > negativo está en la suite**: un test comprueba que el borrado ingenuo deja el cuerpo vivo,
+      > y si algún día dejara de dejarlo, `delete_all_versions` sería complejidad sin motivo.
+- [x] **La precondición específica del vídeo, y es la que convierte la promesa en hecho.** El job
+      comprueba en CADA corrida que `cctv_purge_guard` sigue activo en `UPDATE` (`tgenabled <>
+      'D'`, porque un trigger apagado sigue en el catálogo y no para nada). Mientras lo esté, este
+      job **no puede** hacerle a `cctv_clips` nada que no sea podar, aunque el código se lo
+      proponga. Sin él, aborta. Es el análogo exacto del suelo de `COMPLIANCE_ANCHOR`, y se apoya
+      en el mismo `harden_session` de `prune_pii` —importado, no copiado: dos comprobaciones de
+      compliance que se creen la una a la otra acaban divergiendo.
+- [x] **El reloj cuenta desde la GRABACIÓN, no desde el registro** (`ended_at` / `captured_at`,
+      nunca `created_at`). La fila nace cuando S3 avisa, que puede ser días después: un gabinete
+      sin enlace sube su clip al reconectar, y contar desde el registro le regalaría a esa imagen
+      un plazo que nadie autorizó. Consecuencia incómoda, dicha en voz alta: **un clip puede
+      llegar ya vencido y podarse sin que nadie lo haya visto**. Es la política funcionando.
+- [ ] **La retención es GLOBAL y el blueprint la pide POR SITIO.** Hoy no hay dónde escribirla —ni
+      `sites` ni `cameras` tienen columna de plazo—, así que se implementó lo expresable: una
+      ventana por tabla (`TAKAB_API_RETENTION_CCTV_CLIPS_DAYS` / `..._STILLS_DAYS`), deshabilitada
+      por defecto. **El hueco se declara en vez de fingir que la variable global es «por sitio».**
+- [ ] **El cron y su constancia**, con el patrón de `T-2.81.a`: documento SSM diario y una fila por
+      corrida de la que salga una métrica. Hoy el job existe y **hay que invocarlo a mano**; una
+      poda que depende de que alguien se acuerde no es una política de retención.
+- [ ] La medición de `B.2` sigue pendiente y su regla de decisión **no se reabre**:
   > **La regla de decisión ya está escrita, y a propósito ANTES de ver el número** para que no se
   > acomode al resultado: lo único que decide es la **latencia del reflejo SASMEX→relé bajo carga
   > de CCTV** contra su presupuesto de 100 ms. Si se acerca, **hardware separado, sin discusión**.
   > El sesgo del que hay que protegerse es «va justo pero cabe»: el margen actual es de **dos
   > órdenes de magnitud** (6.65 ms / 4.16 ms) y gastarlo en vídeo lo cambia por lo único que el
   > sistema no puede permitirse.
-- [ ] **El vídeo NO hereda la exención de poda de la evidencia** (regla de oro 11): esa exención es
-      para auditoría y dictámenes, no para imágenes de personas. Retención mínima y declarada.
-- [ ] **Decidir ANTES de `T-3.11`** si el aforo (`T-3.12`) viaja como **número** o como **imagen**.
-      Procesar en el sitio y subir solo el conteo elimina casi toda la superficie de PII de vídeo —
-      es lo que el diseño recomienda.
+- [x] La pregunta «¿el aforo viaja como número o como imagen?» **queda respondida por `D-24`**:
+      como imagen, con todo lo que eso obliga a acotar. Escrito, no implícito.
 
-### [ ] T-3.11 · Cliente ONVIF — `SOFTWARE`
-- [ ] Proceso **separado**, con límite de CPU explícito, que no puede degradar `takab-gpio`.
-- [ ] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
+### [x] T-3.10.b · Guarda de licencias — cero AGPL/GPL en el árbol — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> `ci/licencias.py` + `ci/check-licenses.sh` + job `licenses` en CI, con 15 tests de los que
+> la mitad son **negativos**: una guarda que nunca ha fallado es una función que nadie ha
+> ejercido.
+>
+> El falso positivo que decidió el diseño, medido en este árbol: **matplotlib y scipy**
+> vuelcan el TEXTO COMPLETO de su licencia en el metadato `License`, y ese texto menciona la
+> GPL —para hablar de compatibilidad—. Un `grep GPL` marcaba las dos. Se clasifica por
+> **classifiers Trove** (vocabulario controlado) y solo se cae al campo libre cuando no hay
+> ninguno, con SPDX y frontera de palabra para que `LGPL-3.0` no cuente como `GPL-3.0`.
+>
+> **Falta un clic de Mauricio** para que el check bloquee el merge (fichado en
+> `PENDIENTES-MAURICIO §1`): hasta entonces avisa, no impide.
+- [x] `ci/check-licenses.sh` falla el build si aparece cualquier **prohibido**: `ultralytics`
+      (AGPL-3.0 — incluye YOLOv8, YOLO11 y su RT-DETR), `deep-sort-realtime` / DeepSORT de nwojke
+      (GPL-3.0), YOLOv6, YOLOv7 (GPL-3.0), YOLO-NAS (pesos no comerciales).
+- [x] GPL/AGPL en el árbol **transitivo** de `api/` y `edge/`. No basta la lista de nombres: la
+      deuda llega por dependencia indirecta, y por eso se revisa además el `uv.lock` de cada
+      proyecto —que lista la resolución completa— sin necesidad de instalar nada.
+      > **Se implementó con `importlib.metadata`, no con `pip-licenses`.** Lee los mismos
+      > metadatos, es de la biblioteca estándar y no añade **una dependencia más que auditar
+      > dentro de la guarda que audita dependencias**. El criterio se cumple igual.
+- [x] Los `.onnx` se validan: fallar si `metadata_props` menciona AGPL/GPL. Un peso no lleva
+      `setup.py`, así que ningún escáner de paquetes lo ve.
+- [x] `THIRD_PARTY_NOTICES.txt` **generado** en el build, no escrito a mano.
+- [x] Job `licenses` en `.github/workflows/ci.yml`, y **prueba negativa**: la guarda tiene que
+      poder fallar (instalar un prohibido a propósito la pone roja).
+- [x] **Un job nuevo no bloquea el merge solo.** La protección de `main` exige siete checks por
+      nombre literal (`D-09`); que `licenses` bloquee es un clic de Mauricio, y va fichado en
+      `PENDIENTES-MAURICIO`. Una guarda que no guarda es peor que ninguna: da confianza falsa.
 
-### [ ] T-3.12 · Aforo + cruce con el check-in móvil — `SOFTWARE`
-- [ ] El aforo por cámara y el check-in de vida se **cruzan**, no se suman: son dos
+### [x] T-3.11 · Cliente ONVIF y grabador en el gabinete — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> `takab_edge/cctv/`, unidad `takab-cctv.service`, simulador de cámara y **93 tests**.
+>
+> **El E2E encontró un fallo que los ocho tests unitarios no podían ver:** la poda del
+> anillo se comía el material del propio clip antes de cortarlo. El clip abarca 660 s y el
+> anillo dura 180, así que al llegar el momento de recortar ya faltaban los primeros ocho
+> minutos — el clip salía con un **27 % de cobertura**, lo declaraba honestamente, y era un
+> 27 % que nadie había pedido. Cada test unitario cortaba en un tick que aún no había
+> podado tan atrás, así que los ocho pasaban. Ahora la ventana de la sesión abierta es
+> intocable; subir el suelo de `ring_s` habría obligado a mantener once minutos de anillo
+> las veinticuatro horas para un caso que ocurre unas veces al año.
+>
+> ### ⚠️ COMPLETA en software, y **no ha grabado un solo clip en el Pi**
+> El extra `cctv` está en `EDGE_EXTRAS_OMITIDOS` de `deploy/edge/deploy.sh`: el gabinete real
+> ni siquiera lo instala, porque encenderlo espera a `G-04` y a la medición de `B.2` (`D-25`).
+> El recorte del clip y el `concat` sobre once minutos de anillo están medidos **en x86-64**,
+> que es otra máquina y otro decodificador. Lo que falta para ejercerlo donde importa va en
+> [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md).
+- [x] Proceso **separado** (`takab-cctv`), con límite de CPU explícito, que no puede degradar
+      `takab-gpio`.
+- [x] Falla del cliente ONVIF ⇒ el resto del gabinete no se entera.
+      > **La dirección es lo que da la garantía, no la disciplina.** `takab-cctv` es **cliente**:
+      > sondea `GET /api/status` a 1 Hz. El edge es servidor y **estructuralmente no puede**
+      > depender de él. El anillo de pre-grabación hace irrelevante el ~1 s de latencia del sondeo.
+- [x] **No graba si el WR-1 está en modo prueba.**
+      > La trampa que esto evita, y no es teórica: el embudo del edge suprime lo que va a la nube
+      > en `_modo_prueba_activo` (`edge/takab_edge/supervisor.py:630-635`). Un CCTV que no mire ese
+      > flag sube a S3 **vídeo real de un edificio real** durante una prueba de banco — sin
+      > incidente al que atarlo, sin base legal y con factura.
+- [x] No graba en `Tier.NORMAL`; **sí graba** aunque la alerta sea `visual_only` (T-2.32), igual
+      que `queue_evidence`, que está deliberadamente fuera de esa puerta.
+- [x] Anillo `ffmpeg -c copy` autopurgado; **cuota de disco dura** por bytes y por clips
+      pendientes. La microSD es de la que arranca el camino de vida: un clip atascado no puede
+      llenarla.
+- [x] **ffmpeg LGPL, como subproceso, verificado al arrancar.** El de Debian trae `--enable-gpl`;
+      el guard lo rechaza **fail-closed** y dice de dónde sacar uno válido.
+- [x] Unidad `takab-cctv.service` con los límites de `B.3` —`CPUQuota=`, `MemoryMax=`, `Nice=`,
+      `Restart=` propio— y su test de artefacto, como `takab-gpio`.
+- [x] El extra `cctv` nuevo obliga a declararlo en `deploy/edge/deploy.sh`
+      (`EDGE_EXTRAS`/`EDGE_EXTRAS_OMITIDOS`): `uv sync` **poda**, así que no decidir es desinstalar.
+- [x] **Acreditada contra la cámara real** (2026-08-30, `192.168.3.132`) — ver el bloque de abajo.
+- [x] Simulador de cámara en `edge/simulators/`, para que el E2E corra sin hardware ni AWS.
+      Modela la cámara **y la frontera de ffmpeg**, porque por separado no sirven: reconoce
+      los tres comandos por su forma y escribe los ficheros que habrían salido.
+      > **Lo que NO acredita, y va escrito en el propio módulo:** los segmentos no son vídeo
+      > decodificable, así que nada de lo que solo un ffmpeg real puede fallar se prueba
+      > aquí —keyframes del substream, recorte que empieza en gris, `concat` que rechaza la
+      > lista—. Eso es `GATE-HW`. Las capturas **sí** son JPEG válidos, pero no son fotos de
+      > personas: por eso la «historia» de cuánta gente hay va en un guion explícito y no
+      > escondida en los píxeles.
+
+> #### La cámara real, medida (2026-08-30) — y el fallo que solo ella podía enseñar
+>
+> Cámara del sitio: **LC / Dahua `IPC-S41FE`**, firmware `2.800.0000000.15.R`, ONVIF en el
+> puerto **80** (`/onvif/device_service`), RTSP en el 554. Dos perfiles Profile S:
+>
+> | perfil | codec | resolución | fps | bitrate |
+> |---|---|---|---|---|
+> | `Profile000` (main, `subtype=0`) | H264 | **2560×1440** | 25 | 1536 kbps |
+> | `Profile001` (sub, `subtype=1`) | H264 | **640×480** | 15 | 512 kbps |
+>
+> **Ofrece `GetSnapshotUri`**, que es la rama barata: el goteo es un `GET` de un JPEG ya
+> codificado y no decodifica un solo fotograma.
+>
+> **El fallo: `descubrir()` entregaba URLs que la cámara no servía.** El módulo daba por
+> hecho que una cámara ONVIF devuelve la URL con la credencial dentro. Ésta devuelve las
+> tres URIs **peladas** y luego exige **Digest** en las tres (con Basic contesta `401`
+> igual). Medido a mano, que es como se cerró:
+>
+> ```
+> DESCRIBE con la URL que devolvía descubrir()  ->  RTSP/1.0 401 Unauthorized
+> DESCRIBE con la credencial inyectada          ->  RTSP/1.0 200 OK  (+ pista H264)
+> ```
+>
+> Por el camino de descubrimiento —el que se usa cuando no hay `rtsp_url` declarada— el
+> gabinete no habría grabado **ni un clip ni una captura**. Y las ocho pruebas del módulo
+> pasaban porque **el simulador devolvía la URL con credencial**: la misma suposición
+> escrita dos veces, comprobándose a sí misma. Arreglado en `fix/cctv-camara-real`, con las
+> URIs medidas fijadas en `edge/tests/test_cctv_onvif_credencial.py`.
+>
+> **El segundo hallazgo, y éste no lo veía ninguna prueba porque no está en el código:
+> la cámara MIENTE en los píxeles.** Llegó con el huso de fábrica del fabricante
+> —`GMT+08:00`— y el UTC correcto, así que rotula la imagen catorce horas por delante de la
+> hora del sitio. Medido: el gabinete fechaba las **11:57 del 30 de agosto** y el fotograma
+> decía **01:57 del 31**. Ese sello va quemado dentro del clip y dentro de cada captura, y
+> **cuatro de esas capturas son pruebas del dictamen** (§11 del reporte, con su `sha256` y su
+> cadena de custodia). Un paquete de evidencia que se contradice a sí mismo en la fecha no
+> hay que impugnarlo: se impugna solo. Y `DateTimeType` viene en `Manual` —sin NTP—, así que
+> el desfase solo puede crecer.
+>
+> De ahí la **quinta comprobación** de `takab-cctv`, que **avisa y deja grabar**: el vídeo
+> está bien y nuestras horas también —salen del gabinete—; lo torcido es el rótulo, y
+> negarse a grabar por eso cambiaría un rótulo torcido por un incidente sin vídeo.
+- [ ] **El hallazgo del reloj todavía muere en el journal.** Hoy sale por `log.warning` al
+      arrancar, y eso lo lee quien va a buscarlo. Lo que corresponde es que viaje con la
+      evidencia: si el sello de una captura contradice la fecha del incidente, **el reporte
+      tiene que decirlo al lado de la imagen**, que es donde alguien lo va a leer. Mismo
+      argumento que el `410` del clip podado — el hecho sobrevive a la imagen.
+- [x] **Poner en hora la cámara del sitio.** HECHO el 2026-08-30: huso escrito por ONVIF y
+      verificado **contra el sello**, no contra la pantalla de configuración — la foto pasó de
+      decir `2026-08-31 01:57` a `2026-08-30 14:03:53`, exacta al segundo.
+- [ ] **El NTP de la cámara sigue abierto, y no se puede cerrar desde aquí.** `SetNTP` no
+      está implementado en ella y **no tiene interfaz web** (todo el árbol HTTP devuelve
+      `000`; el puerto 80 solo sirve ONVIF y la instantánea). O se hace desde su app, o **lo
+      hace el gabinete** —que ya le lee el reloj y tiene credencial de escritura—, y eso
+      último es una **capacidad nueva**, no un arreglo: se decide, no aparece. Mientras tanto
+      el desfase es de segundos y la quinta comprobación lo canta en cada arranque.
+
+> #### El camino de vídeo, ejercido con ffmpeg LGPL de verdad
+>
+> Se bajó el build que el propio guard recomienda (`BtbN/FFmpeg-Builds`, variante `lgpl`) y
+> con él se cerraron tres cosas que hasta hoy solo se probaban con dobles inyectados:
+>
+> 1. **`verificar()` acepta un binario LGPL real.** Nunca se había ejecutado contra uno: los
+>    ocho tests del guard inyectan la salida de `-version`.
+> 2. **El anillo graba.** `cmd_anillo` contra el substream escribió 3 segmentos MP4 en 25 s
+>    (~580 kB cada uno), con `-c copy` y sin decodificar.
+> 3. **`cmd_captura` funciona contra RTSP** —substream y principal, `rc=0`—, **y falla contra
+>    la instantánea HTTP con `401`**. Ese es el segundo hallazgo, y estaba escondido detrás
+>    del primero.
+>
+> **La instantánea por ffmpeg da 401, y la causa no es la que parece.** ffmpeg sí hace
+> Digest y manda una cabecera bien formada; lo que ocurre es que el analizador de la cámara
+> **depende del orden de los parámetros**. Aislado en cruz sobre `opaque`, `algorithm` y el
+> entrecomillado de `qop`, el orden resultó ser el único factor que decide:
+>
+> | orden | resultado |
+> |---|---|
+> | `nc=…` antes de `cnonce=…` (lo que manda urllib) | **200** |
+> | `cnonce=…` antes de `nc=…` (lo que manda ffmpeg) | **401** |
+>
+> La RFC 7616 dice que esa lista **no** tiene orden, así que quien está mal es la cámara. Da
+> igual: es la que hay. Y lo que significaba en producción es lo que lo hace grave —
+> `_gotear` **prefiere** la instantánea, así que habrían fallado **todas** las capturas del
+> goteo: el clip perfecto y el **reingreso sin fechar jamás**, que es lo único que solo el
+> goteo puede fechar. Arreglado bajando la instantánea con `urllib`
+> (`takab_edge/cctv/instantanea.py`), con caída al RTSP **anunciada**; verificado contra la
+> cámara real, 5/5 capturas a ~350 ms.
+>
+> #### Y al cortar el clip apareció el tercero: **el anillo estaba grabando AUDIO**
+>
+> El clip salió `h264 + **aac**`. `cmd_anillo` usa `-c copy`, que copia lo que la cámara
+> mande, y esta manda una pista de sonido junto al vídeo. **Nadie lo decidió**: no hay una
+> línea del diseño que pida audio, el conteo no lo usa y el reporte no lo enseña. Entró
+> porque nadie miró los streams que traía el `-c copy`.
+>
+> Y no es «un poco más» de lo mismo. Grabar las conversaciones de la gente en el punto de
+> reunión es **distinto en especie** de grabar su imagen: cambia el marco legal aplicable
+> —comunicaciones privadas, no solo datos personales— dentro de un objeto que va firmado a
+> S3 y de ahí a un peritaje. Con la regla de oro 11 delante, el default solo puede ser el
+> conservador. `-an` en el anillo, con la razón escrita en el propio comando y su test.
+> Verificado contra la cámara real: los tres segmentos salen `h264,video` y nada más (y de
+> paso pesan ~15 % menos).
+- [x] **Ratificado como [`D-26`](DECISIONES-MAURICIO.md#d-26)** el 2026-08-30: el CCTV graba
+      imagen y nada más. Ya no es un default elegido por la máquina ante un hallazgo, es una
+      decisión con su razón escrita — y con su camino de derogación, que exige **base legal y
+      aviso a los ocupantes**, no solo quitar la bandera.
+
+> **Lo que sigue sin acreditar:** el Pi **no tiene** `/opt/takab/bin/ffmpeg` —hace falta la
+> variante `linuxarm64-lgpl`—, así que el recorte del clip y el `concat` sobre once minutos
+> de anillo siguen sin ejercerse **en la máquina que va a ejecutarlos**. Lo de arriba se
+> midió en x86-64. Sigue siendo `GATE-HW`, pero por bastante menos de lo que era esta
+> mañana.
+
+### [x] T-3.11.b · Esquema de CCTV y la costura de subida — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> Migración `0053_cctv`, espejo en `db/schema.sql` **generado** desde ella y aplicado sobre
+> base fresca sin un error, grant por el contrato existente, subida directa a S3 y egreso
+> auditado. El guard de poda se verificó **contra Postgres**, no se razonó.
+>
+> Tres fallos los encontraron los tests, no la revisión, y los tres eran de producción:
+> el worker corre como `takab_ingest` y la migración solo concedía a `takab_app`;
+> `analysis_state` era una columna **mutable sobre una tabla append-only** —el analizador
+> jamás habría podido moverla— y ahora el estado se **deriva**; y la unicidad iba por
+> `(incident_id, started_at, camera_id)` con `camera_id` nullable, así que **los NULL no
+> colisionan** y el `ON CONFLICT` no hacía nada: una reentrega de SQS escribía dos filas y
+> dos egresos. Va por contenido, con el precedente de `uq_evidence_incident_sha256`.
+- [x] Tablas `cameras`, `cctv_clips`, `cctv_stills`, `cctv_occupancy`,
+      `cctv_evacuation_metrics` con `tenant_id` y RLS. **Sin rama `app_gov_can_see`**: ver vídeo no
+      es ver telemetría (`B.4`); precedente de omitirla, `privacy_notices`.
+- [x] Los clips **no van en `evidence_objects`**: su `CHECK` de `kind` no los admite, y esa tabla
+      es `COMPLIANCE_ANCHOR` — heredarían la exención de poda que `B.4` prohíbe.
+- [x] `cctv_clips` con el patrón de **dos triggers** de `life_checkins`: `forbid_update_delete()`
+      solo en `DELETE`, y un `cctv_clip_purge_guard()` solo en `UPDATE` que abre una rendija
+      (`s3_key → NULL` + `purged_at`).
+      > **La rendija exige la TRANSICIÓN REAL**, no solo que el resto de la fila no cambie:
+      > `restore_check._updatable_column` ejerce un `UPDATE ... SET c = c` y espera que el guard lo
+      > **rechace**. Comparar `to_jsonb` menos dos columnas acepta ese no-op y el verificador lee
+      > «ACEPTADO (la guarda no existe o está desactivada)».
+- [x] `REVOKE DELETE ON cctv_clips FROM takab_app` — `test_append_only_dos_capas.py` lo exige por
+      derivación, no por gusto.
+- [x] **Las credenciales de la cámara NO viven en la tabla.** La URL RTSP/ONVIF lleva usuario y
+      contraseña embebidos y el detector de PII **no la reconoce**: es una fuga que ningún censo
+      puede ver. `cameras` guarda host, puerto y perfil; la credencial va por entorno.
+- [x] La key es `evidence/{tenant_id}/{event_uuid}/cctv-{desde}_{hasta}-{sha256}.mp4` —con la
+      **ventana dentro**, porque quien registra el objeto es la notificación de S3 y solo ve la
+      key— y el prefijo `evidence/` **es una restricción,
+      no estética**: el bucket solo notifica el prefijo `evidence/`; una key bajo `cctv/…` aterriza
+      y no la ingesta nadie.
+- [x] Subida por el grant que ya existe (`mode` nuevo en `BackfillRequest`), **sin topic MQTT
+      nuevo**: un topic no autorizado en la política fleet desconecta al gabinete en cada publish.
+- [x] El vídeo **nunca por MQTT** (el clasificador de la regla de oro 9 rechaza binario sin tope) y
+      **nunca a través de `takab-edge`**: PUT presignado directo desde `takab-cctv`.
+- [x] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
+      (`D-14`: auditada igual que un comando de actuador).
+
+### [ ] T-3.11.c · El worker de backfill **no está en la nube desplegada** — `SOFTWARE` + `GATE-AWS`
+> **Descubierto el 2026-09-01**, revisando qué le falta al CCTV para existir fuera de los tests.
+> `deploy/cloud/docker-compose.yml` levanta siete servicios —`api`, `ingest-events`,
+> `ingest-telemetry`, `incident-engine`, `notify`, `commands`, `console`— y **ninguno corre
+> `python -m takab_api.backfill`**. `git log -S backfill` sobre ese fichero no devuelve nada:
+> no es que se quitara, es que **nunca estuvo**. El propio módulo dice de sí mismo que «corre
+> CO-LOCADO con los demás workers desde la MISMA imagen», y `deploy.sh` le exporta sus dos
+> variables (`TAKAB_API_QUEUE_URL_BACKFILL`, `TAKAB_API_DLQ_URL_BACKFILL`) — o sea que hay
+> **entorno preparado para un proceso que nadie arranca**, que es justo lo que hace creíble
+> lo contrario.
+>
+> ### Lo que rompe, y es más que el CCTV
+> La cola `takab-dev-q-backfill` recibe **dos** cosas distintas, y ninguna tiene consumidor:
+>
+> 1. **Las peticiones de grant del gabinete** (`takab/backfill/request/+` → regla IoT → cola),
+>    o sea el permiso de subida. Sin él el clip no llega ni a empezar.
+> 2. **La notificación de S3** del prefijo `evidence/`, que es la única que ve la key y por
+>    tanto la única fuente de la ventana del clip (`T-3.11.b`).
+>
+> ### Y no falla: se queda quieto
+> Los mensajes **no acaban en la DLQ** —nadie los recibe, así que no hay `maxReceiveCount` que
+> agotar—: envejecen y expiran. La alarma `dlq_depth` vigila la DLQ, y la DLQ está vacía
+> porque el camino se corta antes de llegar a ella. Es la misma familia de la alarma
+> `iot-rule-errors` y del gabinete fantasma: **la ausencia no dispara nada**.
+>
+> ### Lo que este hallazgo NO afirma
+> No dice que el backfill de evidencia nunca haya funcionado en la nube: eso no se puede saber
+> sin credenciales y sin mirar la cola, y el token SSO estaba caducado al escribirlo. Dice lo
+> que sí se lee en el repo — **no hay quién lo corra**, y el `docker compose up
+> --remove-orphans` de `takab-cloud.service` mataría cualquier contenedor lanzado a mano.
+- [ ] Servicio `backfill` en `deploy/cloud/docker-compose.yml` con
+      `entrypoint: ["python", "-m", "takab_api.backfill"]` y **`db-ingest.env`, no `db-app.env`**:
+      escribe filas de todos los tenants y con el DSN de `takab_app` la RLS forzada se lo negaría
+      (el invariante de tenancy que el propio compose declara en su cabecera).
+- [ ] **Un test que cuente consumidores, no que lea este YAML.** La regla a defender es *toda
+      cola que `deploy.sh` exporta como `TAKAB_API_QUEUE_URL_*` tiene un servicio que la
+      consume*. Escrita así caza también la próxima cola que se añada — que es exactamente cómo
+      llegó ésta, y cómo estuvo a punto de llegar la del CCTV.
+- [ ] Verificar **en la nube, no en el YAML**: `ApproximateNumberOfMessages` bajando y una fila
+      nueva en `evidence_objects`. Un `docker compose ps` con el servicio arriba demuestra que
+      arrancó, no que consuma.
+- [ ] El redespliegue va con la ventana AWS — fichado en
+      [`PENDIENTES-MAURICIO §2.11`](PENDIENTES-MAURICIO.md).
+
+### [x] T-3.12 · Motor de conteo y analítica de evacuación — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> **Construido el 2026-08-30** (`analyzer/`, 48 tests, cero pesos descargados). El motor de
+> métricas es aritmética pura sobre la serie de aforo y está entero.
+>
+> **El E2E del simulador corrigió una premisa del CLI:** `--clip` y `--stills` no son
+> alternativas, **se suman**. El clip cubre la salida (`t50`/`t90`) y el goteo el reingreso,
+> y cada uno por su cuenta daba cifras que *parecían* correctas — medido: con solo el goteo
+> `t90` salía **600 s**, y fusionando las dos series, **180 s**. Un número que describía una
+> evacuación de diez minutos cuando fue de tres.
+>
+> Abierta por dos cosas, y las dos a propósito: el **pre/post-proceso del backend ONNX**
+> (letterbox y decodificado de salida) se fija con el modelo que gane `T-3.12.d` —fijarlo
+> antes sería elegir por opinión, que es lo que la ficha prohíbe— y la **descarga desde
+> MinIO** está cableada pero no ejercida: hace falta un clip y un ffmpeg LGPL, que esta
+> máquina no tiene.
+>
+> **La curva es la medida; el cruce de línea no.** Todo lo que el reporte necesita sale del
+> conteo por fotograma en la zona, que no exige seguir a nadie entre fotogramas. El conteo
+> direccional daría entradas y salidas por separado y es mucho más frágil: exige un tracker
+> calibrado contra ESA escena, que es exactamente lo que mide `T-3.12.d`.
+- [x] El aforo por cámara y el check-in de vida se **cruzan**, no se suman: son dos
       estimaciones distintas de la misma cosa y la diferencia es la información útil.
-- [ ] La discrepancia se muestra como discrepancia, nunca promediada en un número único.
+- [x] La discrepancia se muestra como discrepancia, nunca promediada en un número único.
+- [x] Métricas: `t50`/`t90` desde la señal (**`t90` es «cuánto tardó en salir la mayor parte»**),
+      aforo pico, inicio del reingreso con histéresis, latencia hasta el dictamen firmado y
+      latencia del reingreso.
+- [x] **Una `latencia_reingreso` negativa significa que la gente reentró ANTES del dictamen.** Eso
+      no es un número: es un hallazgo de seguridad, y el reporte lo dice con palabras.
+- [x] «Cuánto se movió el inmueble» sale del **sismómetro** (`incidents.max_pga_g`/`max_pgv_cms`),
+      no de la cámara, y se presenta al lado de `t90`.
+- [x] Detector tras un adaptador `DetectorBackend`; **solo licencias permisivas** (YOLOX / D-FINE
+      Apache-2.0, ByteTrack de Megvii MIT, `onnxruntime` MIT). Mismo pre/post-proceso en borde y
+      nube para que los números sean comparables.
+      > **Cerrado con `T-3.12.d`** (2026-08-30): el letterbox y el decodificado de la rejilla
+      > viven en el adaptador COMPARTIDO, no dentro de cada backend, que es lo que hace que los
+      > números del borde y de la nube sean comparables el día que el borde cuente.
+- [x] **El motor vive fuera de `api/src/takab_api/`** (paquete `analyzer/`): `test_runtime_deps.py`
+      obliga a que todo import de terceros bajo ese árbol entre en `[project] dependencies`, y un
+      `import onnxruntime` ahí metería el runtime ONNX en la imagen de la API.
+- [x] Corre en local con un backend falso y **cero descargas de pesos en CI** — por
+      `--stills`, que lee el goteo del gabinete y **no necesita ffmpeg**. Ese modo no es una
+      comodidad de prueba: el clip cubre once minutos y **el reingreso ocurre horas después**,
+      en el goteo, así que un analizador que solo leyera vídeo no podría fecharlo nunca.
+      > ### La descarga desde MinIO, EJERCIDA por primera vez el 2026-08-30 — y estaba rota
+      >
+      > Esta viñeta llevaba meses diciendo «cableada y **sin ejercer**: falta un clip y un
+      > ffmpeg LGPL». Con las dos cosas ya en la mano —un clip real cosido de tres segmentos
+      > de la cámara del sitio y el ffmpeg LGPL— se ejerció, y no estaba solo sin ejercer:
+      > **estaba rota**. `boto3` **no estaba declarado en ninguna dependencia del analizador**.
+      >
+      > No se veía porque `capturas.descargar` lo importa de forma perezosa, así que el fallo
+      > solo aparece en el único camino que nadie había recorrido. Y el Lambda no lo notaba
+      > porque su Dockerfile instalaba `boto3` a mano — o sea que la imagen tapaba un hueco del
+      > paquete. Ahora es el extra `s3` y el Dockerfile pide los extras **por nombre**.
+      >
+      > Verificado de punta a punta: `--clip s3://…` contra MinIO, 11 fotogramas decodificados,
+      > YOLOX-nano real, y las métricas saliendo con sus literales de ausencia.
+
+### [x] T-3.12.b · Lambda contenedor del conteo — `SOFTWARE` + `GATE-AWS` · **COMPLETA (2026-08-30)**
+> **DESPLEGADA Y VERIFICADA EN LA NUBE el 2026-08-30.** La API corre `1e7bf0f` con esquema
+> `0053_cctv`, el Lambda arranca en **477 ms** y el worker tiene la URL de `takab-dev-q-cctv`.
+>
+> **Verificado invocándolo, no mirando que exista:** con un `clip_id` inventado devuelve
+> `AnalisisImposible: no hay clip … en la base`. Ese error —y no `UndefinedTable`, ni un
+> timeout— es la prueba de que la imagen arranca, los imports cargan, la VPC y el SG dejan
+> hablar con Postgres, y la consulta encuentra la tabla. Solo le falta un clip de verdad.
+>
+> **El default es YOLOX-nano, y es PROVISIONAL con esa palabra escrita.** No sale de una
+> opinión: sale de lo medido contra la cámara real —**8–13 ms** por fotograma contra 24–38
+> del `tiny`, y **11 de 12** fotogramas correctos— pero **no contra la escena definitiva**.
+> `T-3.12.d` lo confirma o lo sustituye, y sustituirlo es cambiar una variable de entorno
+> más la imagen; la arquitectura no depende de cuál gane.
+>
+> **Tres decisiones que quedan escritas porque costaron pensarlas:**
+>
+> 1. **El disparo NO es una notificación de S3.** El prefijo `evidence/` ya tiene una hacia
+>    la cola de backfill, y S3 **rechaza filtros solapados**: colgar el Lambda de
+>    `evidence/*.mp4` habría roto la ingesta del miniSEED. Dispara el worker, en el mismo
+>    punto donde audita el egreso —cuando su `INSERT … RETURNING` dice que la fila es
+>    NUEVA—, y así hereda gratis la idempotencia frente a las reentregas de SQS.
+> 2. **El modelo y el ffmpeg van HORNEADOS en la imagen.** Un número que acaba en un
+>    dictamen tiene que poder atribuirse a una versión exacta del modelo, y un peso que se
+>    baja al vuelo no permite decir cuál era. El coste aceptado: imagen más pesada y
+>    redesplegar para cambiar de modelo — que es justo lo que debe ser un acto deliberado.
+> 3. **El Lambda va DENTRO de la VPC**, porque Postgres solo acepta al SG de workers. Al
+>    entrar pierde la salida a internet, y no la necesita: S3 entra por el VPC endpoint que
+>    ya existe y el modelo viaja horneado.
+>
+> ### ⚠️ CORRECCIÓN (2026-09-01) — «el worker tiene la URL» era verdad, y no bastaba
+>
+> `TAKAB_API_CCTV_QUEUE_URL` sí está en `cloud.env`, y lo lee todo servicio que lo cargue. Lo
+> que no se comprobó es **quién ejecuta el código que la usa**: `_encolar_analisis` vive en
+> `backfill/objects.py`, y **el worker de backfill no existe en el compose de la nube**
+> (`T-3.11.c`). El Lambda está desplegado, arranca y contesta — y **nadie va a invocarlo**
+> hasta que ese servicio exista.
+>
+> **Comprobé la variable, no el proceso.** Una variable presente en un contenedor que nunca
+> entra en esa rama es exactamente tan útil como no tenerla, y se lee igual de verde.
+- [x] Imagen ECR, rol IAM y acceso a la base. **El `terraform validate` pasa**; el `apply` es
+      la ventana AWS de Mauricio. El módulo va detrás de `cctv_analyzer_enabled` (default
+      `false`) porque la imagen tiene que existir antes: primer apply crea el repo, se
+      empuja la imagen, segundo apply enciende el Lambda con un tag **inmutable**.
+- [x] El bloqueo es **solo el ejecutor**: la notificación S3 ya existe y ya enruta, así que el
+      camino hasta «clip subido y registrado» funciona sin tocar AWS. Un gabinete con cámara
+      deja evidencia descargable antes de que exista el Lambda.
+- [x] Con el análisis pendiente el reporte dice **«CLIP DISPONIBLE · ANÁLISIS PENDIENTE»**
+      (ya lo traía `T-3.12.c`). **Un fallback no puede ser `ok`**, y un cero inventado es peor
+      que un hueco declarado. El handler es coherente con eso: **si falta algo, LANZA** y el
+      mensaje acaba en la DLQ, en vez de escribir métricas a medias que nadie podría
+      distinguir de las buenas.
+- [x] El peso se descarga con **`sha256` verificado** (`make cctv-modelo`) antes de entrar al
+      contexto de build. Probado en las dos direcciones: acepta el peso real y **rechaza uno
+      alterado en un byte**.
+- [ ] **El `apply` y la primera ejecución real.** Sin ellas no hay medición de arranque en
+      frío ni de coste — y esas dos cifras no se estiman aquí, se miden cuando exista.
+
+### [x] T-3.12.c · API, sección del reporte y panel de la consola — `SOFTWARE` + `FRONTEND` · **COMPLETA (2026-08-30)**
+> Endpoint, dos permisos de vídeo, sección 11 del dictamen y panel en EVALUACIÓN. Hasta hoy
+> las métricas se calculaban y no las veía nadie.
+>
+> El `410` de un clip podado es el detalle que más se pensó: un `404` diría «nunca hubo
+> nada», que es falso y **borra la cadena de custodia**. Y la guarda del bucket va DESPUÉS
+> de esa comprobación, o «la retención se lo llevó» se leería como «el servicio no está
+> disponible» — que manda a mirar la infraestructura en vez de la política.
+- [x] Dos acciones RBAC: `cctv_read` (métricas y capturas) y `cctv_video` (**ver y descargar el
+      clip**, más estrecha y auditada en cada acceso). El CRUD de cámaras reutiliza `manage_fleet`.
+      Espejar en `RBAC-TAKAB.md`: el test de paridad compara **celda a celda**, y `DENY_ALL` se
+      compara por igualdad.
+- [x] Endpoint de lectura que sirve **el mismo objeto** a la pantalla y al PDF (disciplina de
+      `routers/forensics.py`); 404 y nunca 403 fuera de alcance.
+- [x] Sección nueva del reporte técnico con las **cuatro capturas** —antes de la señal, saliendo,
+      aforo máximo, reingresando— y las métricas. Literal de ausencia propio: sin cámara declarada
+      el reporte lo dice, no pinta un cero.
+- [x] Las capturas se proyectan en la cadena de custodia conservando `sha256` y fecha **después**
+      de que el objeto se pode: la fila dice `PURGADO (retención de vídeo)`. El hecho sobrevive, la
+      imagen no.
+- [x] **Una sola superficie de CCTV, y es la de triage.** El card de la consola
+      (`DetailPanel.tsx`) es *verificación visual en vivo* y **no se toca** en esta ficha: su línea
+      de deuda en `serverDataCensus` sigue siendo verdad mientras no exista vista en vivo.
+- [x] El panel nuevo cablea las cuatro entradas de `StateFrame` **incluida `staleSince` de verdad**
+      (`FRESCURA_CLAVADA` está vacía por igualdad) y entra en la lista de marcos de la página de
+      triage, que está escrita a mano y comparada por igualdad.
+
+### [ ] T-3.12.d · Comparativa de detectores contra la cámara real — `SOFTWARE` + `GATE-HW`
+> **La cámara ya está en la red** (`192.168.3.132`, LC/Dahua `IPC-S41FE`) y su interrogatorio
+> ONVIF dejó dos cifras que cambian **qué** hay que medir aquí, no solo cuándo:
+>
+> 1. **El conteo va a ocurrir sobre 640×480, no sobre 4 MP.** `CctvConfig.perfil` es
+>    `substream` de fábrica, y el substream de esta cámara es **640×480 @ 15 fps**. El
+>    razonamiento escrito en el campo —«grabar el principal multiplica por ocho el disco sin
+>    mejorar un conteo que ni siquiera ocurre aquí»— da por supuesto que a 640×480 se cuenta
+>    igual de bien. **Eso es precisamente lo que esta ficha tiene que medir**, y hasta que lo
+>    mida es una opinión. (De paso: el múltiplo medido en esta cámara es **3×** por bitrate
+>    —1536 contra 512 kbps—, no ocho.)
+> 2. **El goteo está clavado a 640×480 pase lo que pase.** El endpoint de instantánea
+>    devuelve 640×480 **también con `subtype=0`**: pedirle el perfil principal no sube la
+>    resolución. Y el goteo no es un extra — es lo único que fecha el **reingreso**, que
+>    ocurre horas después del clip. Así que la resolución del goteo **no es negociable
+>    subiendo `perfil`**: si a 640×480 no se cuenta, hace falta otra vía (sacar el fotograma
+>    del RTSP principal y decodificar) y eso tiene un coste que hay que medir aquí.
+>
+> Consecuencia práctica: la comparativa necesita **dos** columnas de resolución, 640×480 y
+> 2560×1440, o su conclusión no se puede aplicar al goteo.
+> ### El pipeline ya está construido y ejercido contra la cámara real (2026-08-30)
+>
+> Lo que estaba en `NotImplementedError` esperando a esta ficha —`_preparar` y `_a_cajas`— ya
+> existe, con `imagen.py` para decodificar el JPEG **con ffmpeg por subproceso** en vez de
+> añadir Pillow u OpenCV (que además empaqueta su propio FFmpeg, sin auditar por `D-24`).
+>
+> **La trampa que costó la tarde, y que ninguna prueba habría cazado:** el export oficial de
+> YOLOX **no decodifica dentro del grafo**. Sus `xywh` salen como offsets crudos —medido, en
+> rango `-2…3`— y hay que aplicar `xy=(crudo+centro)·paso`, `wh=exp(crudo)·paso`.
+> Interpretarlos directamente da **cero detecciones sin un solo error**, y un cero se lee como
+> un punto de reunión vacío. Por eso `numpy` se movió al **núcleo** del paquete: estas cuentas
+> tienen que probarse en CI, y detrás del extra no se probaban. La frontera del job sigue
+> diciendo lo mismo —sin runtime de inferencia y sin un solo peso.
+>
+> **Verificado de extremo a extremo** contra 12 fotogramas reales con una persona caminando:
+> 11 de 12 dan exactamente 1, el `nms()` del árbol colapsa ~1100–1600 cajas crudas a una, y
+> el CLI completo produce el JSON del reporte degradando con honestidad.
+>
+> **Y el ángulo resultó ser código, no solo instalación.** `Caja.pies` —el borde inferior—
+> supone cámara frontal. Con cámara **cenital** ese borde es el hombro más lejano del centro
+> óptico, no los pies, y usarlo empuja a todo el mundo hacia un lado del encuadre: un error
+> **sistemático**, que es el que parece una medición. De ahí `Montaje` y `Caja.ancla()`.
+- [ ] Candidatos **solo permisivos**: YOLOX-nano, YOLOX-tiny, RF-DETR nano, EfficientDet-Lite0.
+      **Sin línea base de Ultralytics** en ningún entorno — tampoco «solo para comparar».
+      > **Bajados y ejercidos: YOLOX-nano y YOLOX-tiny** (Apache-2.0). Los dos comen `416×416`
+      > y emiten `[1,3549,85]`, así que **comparten decodificador**. Faltan RF-DETR nano y
+      > EfficientDet-Lite0, que sí traen post-proceso propio.
+- [x] **El coste medido, y desmiente el enunciado anterior de esta ficha.** En x86-64:
+      `yolox_nano` **8–13 ms/fotograma**, `yolox_tiny` **24–38 ms**. La resolución de la
+      cámara **casi no mueve el coste** porque los dos modelos comen `416×416` pase lo que
+      pase. O sea que la columna de coste es **plana**: lo que cambia con la resolución no es
+      el precio, es **cuántos píxeles le tocan a una persona lejana**. Las dos columnas de
+      resolución siguen haciendo falta, pero para medir **precisión**.
+- [x] **El primer dato de precisión, y es un falso positivo.** Con una persona caminando,
+      **2 de 12 fotogramas** trajeron un fantasma: una **sudadera colgada de una silla**, con
+      `0.36` contra un `CONFIANZA_MINIMA` de `0.35`. En un punto de reunión hay mochilas,
+      chamarras y sillas — **ese es el modo de fallo**, no una rareza. Queda como la medición
+      que tiene que repetirse en la escena real.
+- [ ] **PENDIENTE MEDIR: el recall y la tasa de falsos positivos con varias personas.**
+      Hoy solo hay una medición con **una** persona: 11 de 12 fotogramas correctos y **2 de 12
+      con un fantasma** (una sudadera colgada de una silla, `0.36` contra un umbral de `0.35`).
+      Falta lo que solo sale con gente: **cuánto baja el conteo cuando unas personas tapan a
+      otras**, y si el umbral de `0.35` aguanta en una escena con mochilas y chamarras. **No
+      hay forma de conseguir más personas para la prueba ahora mismo** — por eso queda
+      fichado y no simulado: inventar la cifra sería peor que no tenerla. Va también a
+      [`PENDIENTES-MAURICIO §3.3.d`](PENDIENTES-MAURICIO.md): lo que falta es **gente**, no
+      código, y un pendiente que solo vive en el backlog de software no lo lee quien puede
+      resolverlo.
+- [ ] **Lo que NO se puede cerrar sin el sitio**, y por eso va al runbook de alta y no aquí:
+      la precisión contra el punto de reunión, con gente y con el montaje definitivo. Ver
+      [`runbooks/RUNBOOK-alta-de-camara-cctv.md`](runbooks/RUNBOOK-alta-de-camara-cctv.md),
+      que es **por gabinete** y no una sola vez.
+      > **Y una advertencia que sale de la decisión de producto de no entrenar por sitio:** los
+      > modelos COCO aprendieron «persona» de fotos a la altura de los ojos. **El cenital es el
+      > peor caso** para ellos y no se arregla con configuración. La mitigación es el montaje
+      > —picado de 20°–40°—, y está escrita en el paso 1 del runbook.
+- [ ] **La medición fija el default, no la opinión.** Precisión de conteo y coste, contra la cámara
+      real y su escena real; una comparativa contra vídeo de internet no dice nada de este edificio.
+- [ ] Medir a **640×480** (el substream y el goteo) **y** a **2560×1440** (el principal). Si el
+      default `perfil=substream` no sostiene el conteo, esta ficha es la que lo deroga con la
+      cifra delante — y arrastra la resolución del goteo, que no se arregla cambiando `perfil`.
+- [ ] **La escena tiene que ser la del punto de reunión.** Hoy la cámara está en el banco, no
+      apuntando al punto: una comparativa hecha desde donde está ahora mide el detector, no el
+      edificio, y esta ficha existe para medir el edificio.
 
 ## Fase 3.3 · Feeds y superficie de datos
 
@@ -10500,8 +11263,43 @@ sirena.
       bloquea").
 - [ ] Caída del feed ⇒ degradación visible, no silenciosa.
 
-### [ ] T-3.14 · Duración instrumental de la sacudida — `SOFTWARE`
-- [ ] Medida, no estimada; con su definición escrita.
+### [x] T-3.14 · Duración instrumental de la sacudida — `SOFTWARE` · **COMPLETA (2026-08-30)**
+> **La definición no se eligió por gusto: la eligieron los datos.** Hay dos familias y una
+> queda descartada de raíz:
+>
+> * La **«bracketed»** —tiempo entre el primer y el último cruce de un umbral, típicamente
+>   0.05 g— es la que la gente espera, y **no se puede calcular aquí**: exige unidades
+>   absolutas, y lo que archivamos son **cuentas del ADC sin calibrar**. Convertirlas a `g`
+>   necesita la respuesta instrumental, que este servicio no tiene — lo dice el propio
+>   lector de miniSEED. Calcularla igualmente sería inventarse el umbral.
+> * La **significativa D5-95** (Trifunac & Brady, 1975) es el intervalo en el que se acumula
+>   del 5 % al 95 % de la **Intensidad de Arias** (`∫a²dt`). Y aquí está lo que decide:
+>   **es una FRACCIÓN, y una fracción es invariante de escala** — el factor de calibración
+>   se cancela al normalizar. O sea que D5-95 se mide **exacta sobre cuentas crudas**.
+>
+> No es el premio de consolación: es la definición estándar en ingeniería sísmica para
+> «cuánto duró la parte que importa», y además la única honesta con los datos que hay.
+>
+> **Y la trampa que la habría hecho inútil, medida:** el waveform del RS4D trae ~3.8 millones
+> de cuentas de continua. Con ese offset dentro, `∫a²dt` lo domina una constante y D5-95
+> devuelve **el 90 % de la ventana sea cual sea el sismo**. Verificado sobre una traza de
+> 95 s con 15 s de sacudida: **85.5 s sin quitar la media contra 13.5 s con ella**. El
+> número saldría, parecería razonable, y describiría la longitud del registro.
+- [x] Medida, no estimada: sale de la onda archivada del propio evento, no de una correlación
+      con la magnitud ni de una tabla.
+- [x] **Con su definición escrita, y pegada al número.** El reporte nunca dice «duración» a
+      secas: dice `D5-95` y declara que **no es comparable con una bracketed**. Un número sin
+      su definición invita a compararlo con otro medido de otra forma.
+- [x] Se mide sobre el **mismo canal que el espectro** — el dominante—, no sobre el que más
+      sacudió: dos figuras del mismo dictamen que describieran trazas distintas serían una
+      trampa para quien las compare.
+- [x] **Cuando no se puede medir devuelve ausencia, no cero.** Un `0.0 s` en un dictamen se
+      lee como «no tembló», y lo que pasó fue que no hubo traza. El PDF lo dice con palabras:
+      «SIN DATO · no se pudo medir sobre la onda archivada. No es cero».
+- [x] Vive en la nube y no en el gabinete: la nube **ya** se baja el miniSEED del evento y
+      **ya** tiene lector propio para el dictamen (`dictamen/mseed.py`, escrito para no
+      arrastrar ObsPy). Cero dependencias nuevas, cero carga añadida al edge, y resolución
+      completa de 100 sps en vez de la de 1 Hz de las features.
 
 ### [ ] T-3.15 · GraphQL subscriptions — `SOFTWARE` · **solo si un cliente lo pide**
 - [ ] El gate #5 se ratificó el 2026-07-06 a favor de REST + WS nativo (`T-1.22`). Esta tarea
@@ -10551,7 +11349,1883 @@ documento firmado que dice exactamente qué hace y qué no hace el sistema.
 
 ---
 
+## BLOQUE VI · V1-DEMO — lo que hace falta para poder enseñarlo
+
+**Por qué existe este bloque, y por qué no está en ninguno de los cinco anteriores.** Los Bloques
+I a V ordenan el camino hacia **un cliente con un edificio protegido y un documento firmado**.
+Este ordena otra cosa: el camino hacia **poder enseñar el producto sin que una pantalla afirme lo
+que nadie acreditó**. Son rutas distintas y conviene no confundirlas — una demo no necesita que la
+sirena suene con el gabinete apagado; necesita **no afirmar que lo hace**.
+
+Sale entero de la auditoría del **2026-09-02** ([`INFORME-V1-COMERCIAL.md`](INFORME-V1-COMERCIAL.md),
+plan en [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md)): 52 ítems, 10 verdes, 23 amarillos, 19
+rojos. Ocho de sus hallazgos **no llevan ficha nueva** porque caen sobre tareas ya abiertas; se
+citan en §4 de aquel plan y se quedan donde están.
+
+**Este bloque no espera a ningún gate para empezar**, y esa es su propiedad interesante: de sus 27
+fichas, **23 son `SOFTWARE` puro**. La ruta crítica de V1-DEMO son cinco —`T-5.01`, `T-5.02`,
+`T-5.03`, `T-5.04` y `T-5.05`— y **ninguna está bloqueada en una persona**.
+
+**El único cruce a otro bloque, escrito aquí para que se vea al planificar:** `T-5.23`
+(espectrograma en el dictamen pericial) **depende de `T-3.11.c`**, del Bloque IV — sin el worker
+que archiva la onda cruda desplegado en la nube no hay nada que transformar. Es la razón de que
+esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sale de él.
+
+## Fase 5.0 · V1-DEMO — que nada de lo que se enseña afirme lo que no se acreditó
+
+> **De dónde sale esta fase.** De la auditoría del **2026-09-02**
+> ([`INFORME-V1-COMERCIAL.md`](INFORME-V1-COMERCIAL.md), plan en
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md)). 52 ítems auditados: 10 verdes, 23 amarillos,
+> 19 rojos.
+>
+> **Qué NO es esta fase.** No es "terminar el producto". Es el conjunto mínimo para que TAKAB
+> Ailert se pueda **enseñar y vender** sin que una pantalla afirme algo que nadie acreditó. La
+> ruta al primer cliente sigue siendo la de §"RUTA CRÍTICA", y sigue estando en manos de humanos
+> con agenda. **Esta no**: de sus 27 fichas, 23 son `SOFTWARE` puro.
+>
+> **La ruta crítica de V1-DEMO son cinco fichas** —`T-5.01`, `T-5.02`, `T-5.03`, `T-5.04`,
+> `T-5.05`— y **ninguna espera a nadie**. Es la diferencia entre *acreditar* y *no mentir*: una
+> demo no necesita que la sirena suene con el gabinete apagado, necesita **no afirmar que lo
+> hace**.
+
+### [x] T-5.01 · En modo demo los botones **mandan órdenes de verdad** — `SOFTWARE` · **CERRADA 2026-09-02**
+> **Verificado abriendo el archivo, no leyendo una ficha.** `edge/takab_edge/local_api/index.html`
+> — `doAction()` ejecuta `fetch(endpoint, {method:'POST', headers})` **sin comprobar `DEMO`**. El
+> único `if (!DEMO)` del flujo se salta el refetch de estado, nada más. Y `renderActions()` pinta
+> `PROBAR ACTUADORES` —cuyo propio subtítulo dice *"sostiene sirena+estrobo · pulso en gas,
+> ascensores, puertas"*— **incondicionalmente**, además de decidir **qué** botones aparecen a
+> partir del estado FALSO de la escena: con `?demo=alerta` salen `SILENCIAR AUDIBLES` y
+> `CERRAR ALERTA` porque la escena sintética dice que la sirena suena.
+>
+> Mientras tanto, arriba, la cinta afirma `DEMO · NO ES ESTADO REAL`.
+>
+> **Es la familia de defecto que este proyecto ya conoce** —una superficie que dice "bien" cuando
+> quiere decir "no sé"— pero llevada un paso más lejos: aquí la superficie dice *"nada de lo que
+> ves es real"* al lado de un botón que sí lo es. El servidor tampoco defiende: `?demo=` es un
+> parámetro del navegador y los handlers no saben de él.
+>
+> **Y es el escenario exacto de una exposición comercial**, que es lo que lo pone el primero de
+> la lista.
+- **Componente:** edge (panel LAN) · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que con `?demo=` puesto ninguna acción alcance al gabinete, y que la pantalla lo
+  diga en el propio botón en vez de solo en la cinta.
+- **Criterios de aceptación:**
+  - [x] `doAction()` se niega con `DEMO` puesto: no emite `fetch`, y el mensaje de la caja del PIN
+        dice por qué (algo como `MODO DEMO · LAS ÓRDENES ESTÁN INHIBIDAS`).
+  - [x] `renderActions()` **no pinta** botones de actuación en demo, o los pinta visiblemente
+        inertes. La decisión de cuál de las dos se toma en la ficha, se escribe con su razón.
+  - [x] Un test que **cuente peticiones**, no que lea prosa: con cada escena de demo, pulsar cada
+        botón produce **cero** `fetch` a `api/*`. Que el conteo esperado sea cero se declara en
+        voz alta para que el test no pueda pasar por vacuidad.
+  - [x] El test cubre las cinco acciones alcanzables desde una escena de demo, enumeradas
+        **derivándolas de `renderActions`**, no a mano.
+  - [x] Sin `?demo=` nada cambia: los mismos botones siguen mandando sus mismas órdenes (guarda
+        anti-prohibir-de-más).
+- **Cómo se cerró (2026-09-02).** **Decisión: se PINTAN, inertes** — no se esconden. La razón:
+  `?demo=` existe para enseñar cómo se ve el panel en estados que no se pueden reproducir a
+  voluntad, y un panel sin sus botones no se parece al real; esconderlos sería mentir en la otra
+  dirección. La honestidad es que sigan ahí, con borde discontinuo y el subtítulo
+  `INERTE EN DEMO`, y que la orden no salga.
+  **Lo que midieron los tests al escribirlos primero, y agranda el hallazgo de la auditoría:**
+  el defecto no era un camino teórico — **las doce escenas de demo mandaban entre 2 y 4 órdenes
+  reales cada una** al gabinete que las pintaba.
+  **Y lo que apareció al arreglarlo:** `doAction` es el **único** camino del panel que hace
+  `POST`, en unas 2 400 líneas. Eso convierte la guarda en estructural en vez de disciplinaria,
+  y hay un test que lo exige por conteo: un segundo `POST` en otro sitio la esquivaría y sale
+  rojo con su número de línea.
+
+### [x] T-5.02 · **Modo demostración de sistema** — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-02**
+> Hoy no existe. Nada bloquea push, SMS, WhatsApp, correo, comandos firmados ni apertura de
+> incidentes, y ninguna pantalla del SOC ni de la app lo declararía si existiera. Lo que hay son
+> tres cosas parciales que no lo son: el `?demo=` del panel (que es un reproductor de escenas —
+> ver `T-5.01`), el modo demo del SOC que **se retiró a propósito**
+> (`web/src/styles/soc.css:787`: *"una consola de operación real no lleva controles de
+> demostración"*, y la razón sigue siendo buena), y el estado `simulated` de notificaciones, que
+> es **derivado de la ausencia de credenciales** y por tanto **desaparece justo en el entorno
+> donde se haría la demo**.
+>
+> **Sin esto, cada exposición es un riesgo de disparar algo real o de enseñar datos falsos sin
+> etiquetar.** Con las credenciales de notificación puestas —que es lo que se busca— el riesgo
+> deja de ser teórico.
+>
+> **Lo que hay que decidir antes de construir**, y por eso la ficha lleva `DECISIÓN`: (a) el
+> alcance del modo, ¿por tenant, por sesión o por despliegue?; (b) quién puede encenderlo y
+> apagarlo; (c) si un incidente **real** que entra con el modo puesto lo apaga solo —que es la
+> lectura coherente con *"lo real gana"* de los simulacros— o si el modo lo impide y grita.
+- **Componente:** api + web + mobile + edge · **Depende de:** T-5.01 · **Prioridad: MÁXIMA**
+- **Objetivo:** un estado explícito, visible y auditado, en el que el sistema no despierta a
+  nadie, no cierra un relé y lo anuncia en las tres superficies.
+- **Criterios de aceptación:**
+  - [x] Decisión escrita en `DECISIONES-MAURICIO.md` **con su razón** antes de la primera línea de
+        código, cubriendo los tres puntos de arriba.
+  - [x] Con el modo activo: cero entregas por cualquier canal, cero comandos firmados emitidos,
+        cero relés movidos. Cada intento **deja fila en `audit_log`** con el motivo — un modo que
+        bloquea en silencio es otra superficie muda.
+  - [x] Las tres superficies lo declaran de forma inconfundible y **distinta del simulacro**: el
+        ámbar ya significa "simulacro sonando" y los dos no pueden confundirse.
+  - [x] Encender y apagar el modo queda auditado con actor y hora.
+  - [x] El bloqueo se **deriva** del registro de proveedores y de la superficie única de comandos,
+        no de una lista de canales escrita a mano — un canal nuevo tiene que quedar bloqueado
+        solo.
+  - [x] Test de no-vacuidad: con el modo apagado, los mismos escenarios sí entregan y sí comandan.
+- **Cómo se cerró (2026-09-02), y DOS criterios cambiaron al construirlos.** Las tres decisiones
+  están en [`D-27`](DECISIONES-MAURICIO.md#d-27), escritas antes de la primera línea de código:
+  **por cliente y con vencimiento** (máx. 8 h, el techo en el CHECK de la tabla y no en el
+  código); **lo enciende el dueño de la plataforma, lo apaga él o el administrador del cliente**
+  —asimétrico: difícil de volver inseguro, fácil de volver seguro—; y **lo real lo apaga**, con la
+  lectura contraria rechazada sin discusión: un modo capaz de suprimir una alerta real no es un
+  dispositivo de seguridad.
+- **Lo que cambió (1): «cero entregas por cualquier canal» era más ancho de lo que puede ser.**
+  Lo destapó un test. Como *cualquier* incidente apaga el modo antes de planificar sus avisos, el
+  modo **no puede suprimir la cascada de un incidente nuevo** — y eso es correcto, no una
+  limitación: si pudiera, un quórum de pánico de ocupantes reales quedaría callado. Lo que el modo
+  sí suprime, y era lo importante, son los **comandos firmados** (simulacros, prueba de actuadores,
+  actuación por quórum): los actos del que demuestra. La puerta de notificación se queda como
+  **respaldo que no debería dispararse nunca**, y se refuerza con la otra mitad que ese mismo test
+  obligó a escribir: **con un incidente abierto no se entra en el modo**. Con las dos reglas
+  juntas, el modo y un evento vivo **no pueden coexistir**.
+- **Lo que cambió (2): son DOS superficies, no tres, y el panel queda fuera a propósito.** La
+  consola y la app lo declaran. El panel del gabinete **no**, y la razón está en `D-27`: meterlo
+  exigiría que el modo viajara al gabinete, y cada dato nuevo que viaja hacia allí es superficie
+  nueva hacia el camino de vida — que es justo lo que este modo no puede tocar. Además está
+  medido: el seed de producción deja el conjunto de reglas sin clave `edge`, así que hoy el config
+  sync no empuja nada al gabinete real; construirlo sería entorno preparado para un mensaje que
+  nadie recibe. El panel no promete entrega de notificaciones: su silencio no es una mentira.
+- **El bloqueo es derivado de verdad:** la puerta de notificación va **antes** de preguntar por el
+  proveedor, así que ni siquiera consulta el registro — cubre hasta un canal sin proveedor
+  cableado, y un canal sexto queda bloqueado el día que nazca. La de comandos vive en el embudo
+  único que firma, así que simulacros y quórum la heredan sin duplicar la superficie sensible.
+- **Y el color no es un detalle:** cian con borde discontinuo, **no ámbar**. En esa consola el
+  ámbar ya significa «simulacro en curso» y «dato retenido», y un tercer significado en el mismo
+  color vacía los tres. El discontinuo es el idioma compartido de las tres fichas de demostración
+  —`T-5.01` (botones inertes), `T-5.02` y `T-5.05` (datos de demo)—: «esto no es real».
+
+### [x] T-5.03 · El banner del SOC llama **alerta sísmica** a un botón de pánico — `SOFTWARE` · **CERRADA 2026-09-02**
+> `web/src/features/console/ConsolePage.tsx:129` elige el incidente a destacar **solo por
+> `severity === "critical"`**, y `AlertBanner.tsx` lleva **dos** textos escritos a fuego:
+> `ALERTA SÍSMICA · PROTÉJASE` (`:23`) y `EDGE · RS4D · REGLAS LOCALES EJECUTADAS · ● AUTO`
+> (`:39-41`). **Ninguno mira el `trigger`.**
+>
+> Ante un quórum de pánico —que abre incidente `trigger='manual'` con severidad crítica por
+> `D-11`— el SOC afirma dos cosas falsas a la vez: que hubo una alerta sísmica, y que la ejecutó
+> el sensor. La app móvil, para **el mismo incidente**, pinta `NO ES UNA ALERTA SÍSMICA`
+> (`mobile/src/features/alarm/BuildingAlarmView.tsx:66`) y el push dice `ALARMA DEL INMUEBLE`.
+> Lo mismo ocurre con el umbral instrumental, que la política de solo-aviso degradó y que el SOC
+> sigue pintando como alerta porque su tier mapea a severidad crítica.
+>
+> **Es el defecto que ya se corrigió en móvil, reintroducido en el SOC**, y la lección de
+> entonces vuelve a aplicar tal cual: *un componente presentacional puede llevar una mentira a
+> fuego que ninguna prueba de la lógica alcanza*. La corrección de móvil vive en
+> `mobile/src/features/alert/source.ts` y es el modelo a copiar: el titular **se deriva** de la
+> fuente.
+- **Componente:** web · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que el titular y la atribución del banner salgan del `trigger`, y que ninguna
+  superficie pueda volver a divergir sin que un test lo diga.
+- **Criterios de aceptación:**
+  - [x] El titular y la línea de atribución se derivan del `trigger` del incidente, con las cuatro
+        fuentes cubiertas por igualdad (no un `default` que absorba lo desconocido).
+  - [x] Un `trigger` nuevo que nadie mapeó **no cae a "alerta sísmica"**: sale rotulado como
+        desconocido y el build lo nombra.
+  - [x] **Un test cross-superficie**: para cada `trigger`, el titular del SOC, el de la app y el
+        del panel del gabinete son coherentes entre sí. Es el test que hoy no existe y que habría
+        cazado esto.
+  - [x] El glosario compartido de estados **incorpora el móvil** —hoy solo cubre panel y consola—
+        y el eje de titulares de alerta, no solo el vocabulario de estado.
+  - [x] La divergencia ya declarada en el glosario (`DATO RETENIDO` / `DATOS RETENIDOS`) se cierra
+        o se re-declara con su razón.
+- **Cómo se cerró (2026-09-02).** El titular y la atribución salen de
+  `web/src/features/console/alertHeadline.ts`, espejo consciente del módulo del móvil, y los
+  literales viven en `shared/glossary/estados.json` → `titulares_de_alerta`, con las tres
+  superficies. El censo cruzado de `edge/tests/test_glosario_de_estados.py` ata ese eje al
+  **CHECK de `incidents.trigger` por IGUALDAD**: el quinto trigger que alguien añada sale rojo
+  con su nombre hasta que se decida cómo se llama en las tres pantallas. Se saboteó a propósito
+  para comprobar que no pasa por vacuidad.
+  **Tres cosas aparecieron al hacerlo.** (1) La prueba del invariante estaba escrita ALREDEDOR
+  del defecto: su fixture traía `trigger: "local_threshold"` y aun así esperaba «PROTÉJASE»; se
+  le puso el trigger que le corresponde y se conservó el nombre del test, que es el ancla de
+  `INV-magnitud.a` en la matriz. (2) **El móvil tenía la misma grieta en su caso por defecto** —
+  un trigger no mapeado titulaba «ALERTA SÍSMICA»—, corregida en las dos superficies.
+  (3) **La divergencia se RE-DECLARA, no se cierra, y se encareció mientras estaba declarada:**
+  donde T-2.137 midió diez aserciones en ocho ficheros, hoy son **veinticuatro en doce**. Sigue
+  siendo un lote propio, y ahora se sabe que es más grande. Su `arreglo` ya no lista los ficheros:
+  manda re-derivarlos, porque la lista anterior nació desactualizada.
+
+### [x] T-5.04 · El perímetro de claims de la landing cubre **cifras**, no **capacidades** — `SOFTWARE` · **CERRADA 2026-09-02**
+> `landing/tests/contenido.test.mjs:58` defiende un perímetro real y bien pensado: prohíbe cifras
+> medidas y prohíbe citar normas. **No prohíbe afirmar una capacidad que nadie acreditó**, y por
+> eso pasó en verde lo siguiente, hoy publicado:
+>
+> - *"acciona sirena, estrobo, **gas, ascensores y puertas** del inmueble"* — ningún gabinete
+>   tiene esos tres canales cableados; el gabinete de referencia reporta **dos** relés. El
+>   controlador que los haría está en la lista de materiales marcado **"Opcional"**, y
+>   `ENTREGA-Y-ACEPTACION-TAKAB.md:214` dice que su driver es *"un extra no acreditado con
+>   equipo"*.
+> - *"**respaldo de energía**"* entre lo que se instala — el gabinete vivo reporta
+>   `ups_status: "unknown"` y `battery_pct: null`.
+>
+> **Es exactamente el fallo que el propio repositorio ya cazó una vez** —el checklist de gas y
+> puertas en verde sin gas ni puertas— reaparecido en la superficie más pública que tiene el
+> proyecto. La landing es por lo demás notablemente honesta (su columna "No hace" es mejor que la
+> de casi cualquier competidor), y eso hace más fácil, no más difícil, corregir la otra columna.
+- **Componente:** landing · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que el sitio público no afirme en presente una capacidad cuyo gate está abierto,
+  y que un test lo impida en adelante.
+- **Criterios de aceptación:**
+  - [x] Las dos afirmaciones se reformulan sin perder la venta: el alcance de diseño se dice como
+        alcance de diseño y la acreditación por inmueble se dice como tal. La columna "No hace"
+        **no se toca**: ya es correcta.
+  - [x] El perímetro del test gana una regla de **capacidades**: una lista de afirmaciones que
+        exigen un gate cerrado, **derivada** del censo de gates de
+        `MATRIZ-REQUISITO-TEST.md`, no tecleada. Con el gate abierto, la afirmación en presente
+        pone el test en rojo.
+  - [x] La regla nombra el gate concreto en el mensaje de fallo, para que quien la dispare sepa
+        qué haría falta para poder decirlo.
+  - [x] Guarda anti-prohibir-de-más: las afirmaciones que **sí** están acreditadas (operar sin
+        internet, evidencia inmutable, aislamiento entre clientes, sin cuenta atrás) siguen
+        pasando.
+- **Cómo se cerró (2026-09-02).** El perímetro gana **una regla de capacidades derivada del
+  registro §10 del runbook de auditoría** — que es donde los gates se marcan presencialmente— y
+  no de una lista de gates tecleada: `Object.keys(CAPACIDADES_GATEADAS)` se compara **por
+  igualdad** contra los diez del registro, así que un gate nuevo obliga a decidir qué
+  afirmaciones dependen de él antes de poder seguir. Lo editorial —qué frase cuelga de qué
+  gate— va escrito con su nombre; lo que no puede quedar a juicio es **olvidarse** de un gate.
+  **Detalle que costó una corrida:** el registro tiene una fila (`G-01`) con **una columna
+  menos** que las otras nueve, así que el parseo va por CONTENIDO y no por posición — un índice
+  fijo daría «abierto» a un gate acreditado, y equivocarse en esa dirección es lo caro.
+  **Y una corrección al propio informe:** «respaldo de energía» **se queda**. Está en la lista de
+  materiales y es lo que se instala; lo que faltaba no era quitarlo sino decir que también se
+  acredita en el inmueble, y ahora lo dice.
+
+### [x] T-5.05 · Un gabinete **simulado** se ve igual que uno real — `SOFTWARE` · **CERRADA 2026-09-02**
+> La separación entre lo simulado y lo real vive en el seed (`db/seeds/sim_fleet.sql`, con su
+> aviso en mayúsculas de que jamás se aplica al entorno desplegado) y en el despliegue
+> (`deploy/cloud/deploy.sh` solo siembra el de producción). **No vive en la pantalla**, que es
+> justo donde se hace la demo.
+>
+> No hay columna que marque lo simulado ni marca visual en el mapa ni en la flota: lo único que
+> delata a un sitio sim es que se llama *"Sitio Sim 001 Puebla"*. Misma píldora de estado, mismo
+> medidor de respaldo, mismo color. En `make soc-local` un prospecto ve 21 sitios y 5 gabinetes
+> con idéntico aspecto, de los cuales **20 y 4 no existen**.
+>
+> **El patrón visual ya está resuelto en el otro extremo del sistema:** el panel del gabinete
+> pinta su cinta `DEMO · NO ES ESTADO REAL` y el manual de operación advierte de no dejar un
+> monitor de pared así. La consola no tiene equivalente.
+- **Componente:** web + api · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que un sitio o gabinete de demostración sea inconfundible en el mapa y en la
+  flota, sin ensuciar la consola de producción.
+- **Criterios de aceptación:**
+  - [x] La marca se **deriva** de un hecho del dato (prefijo del código/serial, o columna
+        explícita), decidido y escrito en la ficha con su razón. Si es columna, migración
+        idempotente y con dueño correcto.
+  - [x] El mapa y la ficha de flota rotulan lo simulado de forma legible a distancia, y el rótulo
+        **no se confunde** con el ámbar de simulacro ni con el de dato viejo.
+  - [x] Test: con la flota mixta, todo lo sim sale marcado y **nada real sale marcado** — las dos
+        mitades, comparadas por igualdad.
+  - [x] Con cero sitios sim (el caso de producción) la interfaz es idéntica a hoy: la marca no
+        reserva espacio ni cambia el diseño.
+- **Cómo se cerró (2026-09-02).** **Decisión: la marca se deriva del PREFIJO del código/serial,
+  no de una columna nueva.** La razón: la convención ya existe, está documentada en la cabecera
+  del propio seed y ya la defiende un test; una columna sería una **segunda verdad** sobre el
+  mismo hecho, y las dos podrían divergir. Los patrones van **anclados** (`^site-sim-\d+$`) a
+  propósito: un `includes("sim")` marcaría de demostración un edificio real llamado
+  `site-simon-01`, y equivocarse en esa dirección —rotular de demo un inmueble con gente
+  dentro— es peor que no rotular nada. Hay un test para ese caso exacto.
+  **Lo que hizo falta en el servidor:** el contrato del mapa no publicaba el código, solo el
+  nombre, así que la consola no tenía con qué distinguir. Ahora publica `code` —un **hecho**—
+  y no un `demo: bool`: decidir qué se rotula es de la presentación, y meter la política del
+  seed en el contrato la duplicaría.
+  **El color, que no es un detalle:** el rótulo va **gris con borde discontinuo, no ámbar**. En
+  esta consola el ámbar ya significa «simulacro en curso» y «dato retenido»; un tercer
+  significado en el mismo color vacía los tres. El discontinuo es el mismo lenguaje que
+  `T-5.01` le dio a los botones inertes del panel: «esto no es real».
+
+### [x] T-5.06 · El runbook de alta de estación **rompe la ingesta** — `SOFTWARE` · **CERRADA 2026-09-04**
+> `RUNBOOK-ALTA-DE-ESTACION.md:122-124` manda escribir en el archivo de entorno del gabinete:
+> `TAKAB_EDGE_TENANT_ID=<uuid del tenant>`, `TAKAB_EDGE_SITE_ID=<uuid del sitio>`,
+> `TAKAB_EDGE_GATEWAY_ID=<uuid del gateway>`.
+>
+> **La ingesta espera lo contrario, y lo dice en su propia cabecera**
+> (`api/src/takab_api/ingest/handlers.py:9-13`): los identificadores que viajan en el payload son
+> los **códigos y seriales legibles**, no UUIDs. Y `:126` rechaza el resto:
+> `gateway mismatch: payload=… registro=…` → la cola de descarte.
+>
+> **Y lo peor del paso:** `infra/scripts/provision_gateway.sh:163` ya había escrito el valor
+> correcto (el nombre del dispositivo). El runbook, en el paso siguiente, manda **sobrescribirlo**.
+> Resultado: una estación aprovisionada, con su certificado, conectada por mTLS — y **muda en la
+> nube**, sin que ninguna pantalla explique por qué.
+>
+> **Hay seis divergencias más**, todas del mismo origen (el runbook lleva desde el 2026-07-30 sin
+> tocarse mientras el contrato de alta cambió tres veces): manda un campo que hoy da 422;
+> documenta como inexistentes el alta de clientes y los permisos de visibilidad, que llevan meses
+> en producción; **omite el paso de instalar el software del edge** y el de publicar la versión;
+> omite el equipamiento del sitio, con lo que la consola pinta cinco actuadores en un gabinete que
+> tiene dos; y omite el conjunto de reglas, con lo que la estación nueva nunca entra al
+> sincronizado firmado.
+- **Componente:** takab-docs + api (tests) · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que el runbook vuelva a describir lo que hace el código, y que dejar de hacerlo
+  ponga el build en rojo.
+- **Criterios de aceptación:**
+  - [x] Las siete divergencias corregidas, cada una citando el archivo y la línea del código que
+        manda.
+  - [x] Añadidos los pasos que faltan: instalación del software del edge, publicación de la
+        versión, equipamiento explícito del sitio y conjunto de reglas con la clave del edge.
+  - [x] **Un test que ancle el runbook al código**, no a otra prosa: las variables de identidad
+        que el runbook manda escribir se comparan contra las que el aprovisionador escribe y
+        contra las que la ingesta acepta. Si las tres dejan de coincidir, rojo con las tres
+        citadas.
+  - [x] El test cubre también el cuerpo del alta de gabinete: un campo que el esquema prohíbe y el
+        runbook manda, sale nombrado.
+  - [x] Nota en el runbook sobre por qué el aprovisionador ya lo deja bien y no hay que tocarlo.
+- **Cómo se cerró (2026-09-04).**
+  **Las siete divergencias se verificaron una a una contra el código antes de tocar nada**, y las
+  siete eran ciertas. La que costaba una estación muda: `handlers.py` compara `payload.tenant_id`
+  contra `tenants.code`, `payload.site_id` contra `sites.code` y `payload.gateway_id` contra
+  `gateways.serial`; el runbook mandaba escribir UUIDs, y encima **pisar** el
+  `TAKAB_EDGE_GATEWAY_ID` que `provision_gateway.sh:163` ya había dejado con el *thing name*
+  correcto. Ahora el bloque lleva códigos, la línea del gateway va **comentada** con un «no lo
+  toques», y encima una tabla de las tres correspondencias con la cita del rechazo
+  (`_identity_reject`, `handlers.py:118-131`) y de la cola de descarte.
+  **Las otras seis:** `fw_version` fuera del alta de gabinete (da **422**, `extra="forbid"`, y la
+  versión la DECLARA el aparato — `T-1.74`); `equipment` **dentro**, con sus cinco canales, porque
+  su default es todo-`true` y omitirlo pinta cinco actuadores en un gabinete que tiene dos;
+  `POST /tenants` y `POST /visibility-grants` documentados como lo que son desde el **2026-07-15**
+  (`T-1.72`/`T-1.73`) en vez de anunciados como futuro — con la nota de que el alta por SQL a mano
+  además **se salta la fila de `audit_log`**; y **tres pasos nuevos** que sencillamente no
+  estaban: instalar el software (`deploy/edge/deploy.sh` — el aprovisionador deja identidad y
+  certificados, **no copia el código**), publicar la versión (`POST /fleet/releases`, o la flota
+  entera sale `SIN REFERENCIA`) y crear el `rule_set` con su clave `edge` (sin uno aplicable la
+  estación **nunca entra al sincronizado firmado**). El checklist del apéndice pasó de 8 pasos a 11.
+  **El ancla es contra CÓDIGO, no contra prosa** (`api/tests/test_runbook_alta_de_estacion.py`,
+  13 tests): las variables de identidad del runbook se cruzan con las que el aprovisionador
+  escribe y con la regla de identidad de la ingesta —las tres citadas si divergen—, y los campos
+  de los tres `POST` se comparan **por igualdad** contra `SiteCreate`/`GatewayCreate`/
+  `SensorCreate`. Las tres mutaciones comprobadas: el UUID, el pisado del gateway y el
+  `fw_version`.
+  **Dos afinados que el propio test destapó, y el segundo es el patrón de siempre.** (1) Leer la
+  viñeta entera contaba como órdenes los campos que el runbook nombra **para advertir de ellos**
+  («`fw_version` da 422»), así que el parser se ancló a la frase `Campos:` y el aviso se movió a
+  su propio sub-guion. (2) El barrido del aprovisionador **casaba con el `printf` equivocado**
+  —la redirección va en la línea siguiente— y devolvía `{TAKAB_EDGE_GPIO_OWNER}`: un conjunto **no
+  vacío**, así que el `assert gestionadas` pasaba en verde sobre un censo que ya no vigilaba la
+  variable que importa. Se caza exigiendo el nombre concreto, no la no-vacuidad.
+### [x] T-5.07 · El test del **deslinde impreso** no comprueba nada — `SOFTWARE` · **CERRADA 2026-09-04**
+> `api/tests/dictamen/test_pdf.py:190-195`, entero:
+>
+>     assert DISCLAIMER.startswith("Dictamen operativo PRELIMINAR")
+>     for variant in ("technical", "executive"):
+>         assert render(model(), variant).startswith(b"%PDF")
+>
+> Comprueba (a) que una constante empiece por una cadena y (b) que el archivo sea un PDF.
+> **Borrar la llamada que imprime el deslinde dejaría el test en verde.** Y lo mismo vale para los
+> otros cinco avisos del documento —el de intensidad macrosísmica, el de sin calibración, el de la
+> envolvente, el del centroide y el del croquis—: ninguno tiene una prueba que verifique su
+> presencia en el documento.
+>
+> **El deslinde impreso es lo que protege al proyecto en una reunión comercial**, y es la única
+> pieza del PDF cuya desaparición nadie notaría hasta que hiciera falta.
+>
+> **El propio repositorio ya sabe hacerlo bien:**
+> `api/tests/dictamen/test_compliance_section.py::test_las_etiquetas_cambian_los_BYTES_del_pdf`
+> es exactamente el patrón que falta aquí.
+- **Componente:** api (tests) · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que quitar un deslinde del documento ponga la suite en rojo nombrándolo.
+- **Criterios de aceptación:**
+  - [x] Los seis avisos se verifican **sobre el documento generado**, no sobre la constante.
+  - [x] La lista de avisos a verificar se **deriva** del módulo que los declara, no se teclea: uno
+        nuevo entra solo al censo.
+  - [x] Guarda de no-vacuidad: el test declara en voz alta cuántos avisos espera, y cero no es un
+        número aceptable.
+  - [x] Cada aviso se comprueba en la variante o variantes donde debe salir, y se comprueba que
+        **no** sale donde no debe (el aviso de asistencia automatizada, sin prosa generada).
+- **Cómo se cerró (2026-09-04).**
+  **No eran seis avisos: son ONCE**, y salieron de derivarlos en vez de enumerarlos. La regla del
+  censo —constante de módulo, en mayúsculas, que es una **frase** (≥40 caracteres con espacios)—
+  separa los avisos de los rótulos cortos (`ABSENT`, `TS_FMT`, `CCTV_PURGADO`, `SIN_HASH`), que
+  son celdas de tabla. Los cinco que la ficha no había contado son los tres estados del CCTV
+  —significan cosas **opuestas** y se leerían igual si el documento dijera solo «sin datos»—, el
+  de croquis sin geometría y el de espectro no disponible.
+  **Y un duodécimo que el censo no podía ver:** el aviso de **asistencia automatizada** vivía como
+  literal dentro de `pdf.py`. Se extrajo a `NARRATIVE_AI_NOTE` para que entre al censo — era
+  justo el aviso con la regla más fácil de romper.
+  **Las dos formas obvias de probarlo no sirven, y una de ellas PASA EN VERDE SOBRE EL DEFECTO.**
+  Buscar el texto en los bytes no funciona (flujo comprimido **y** fuentes embebidas: el texto
+  viaja como índices de glifo). Y el patrón que la ficha señalaba como bueno —el de
+  `test_compliance_section.py`, cambiar el modelo y exigir que los bytes cambien— **no distingue
+  el aviso impreso del aviso ausente**, porque la portada imprime `content_sha256()` y ese hash se
+  mueve con cualquier cambio del modelo; además aquí no aplica siquiera, porque estos avisos son
+  constantes y no hay campo que los encienda. *(Ese test no se toca: es de otra ficha y lo suyo sí
+  depende del modelo. Pero conviene saber que mide menos de lo que parece.)*
+  **Lo que sí demuestra que el aviso llegó al papel** es espiar `TakabPDF.text_of`, el punto por el
+  que pasa todo el texto que se dibuja. Si el `callout` no se llama, la cadena no pasa y el test se
+  pone rojo **nombrando el aviso y la variante**.
+  **Cada aviso se comprueba donde debe salir y donde NO** —los cinco del pericial no pueden
+  aparecer en el resumen ejecutivo, y los tres del CCTV se excluyen entre sí—, y las variantes de
+  la tabla **se midieron ejecutando el render**, no se supusieron. El de asistencia automatizada
+  lleva sus tres lados: sale con proveedor externo, **no** sale con el determinista, **no** sale
+  sin prosa.
+  **La mutación que justifica la ficha entera:** borrando el `callout` del deslinde en el
+  documento ejecutivo, **el test viejo pasa en verde** y el nuevo falla nombrándolo. Segunda
+  mutación comprobada con `NO_MMI`.
+  **Y el test viejo se reescribió en vez de borrarse.** Se llamaba `test_ambos_llevan_el_deslinde`
+  y afirmaba cubrir las dos variantes; ahora se llama por lo único que sí comprobaba —qué DICE la
+  constante— y apunta a dónde vive la comprobación de verdad. Dejarlo con el nombre viejo habría
+  sido dejar puesta la señal que hizo creer durante meses que esto estaba cubierto.
+### [x] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE` · **CERRADA 2026-09-04**
+> `demo/` es sólido en lo que hace: se levanta desde cero con dos comandos, monta tres
+> supervisores reales, el consumidor real y el motor de incidentes real, y está **bien aislado de
+> producción** con tres guardias que se defienden solos (host real de la conexión, exclusividad de
+> la base, y un seed que declara que jamás se aplica a la nube).
+>
+> Pero está construido para **acreditar criterios**, no para contar una historia: imprime marcas
+> de verificación en terminal, trunca entre escenas y sale con código de error. Y le faltan tres
+> cosas para una exposición: **no ejercita simulacros** (cero coincidencias de la palabra en todo
+> `demo/*.py`), **no rotula los datos como simulados** —al contrario, el modo interactivo usa la
+> identidad de desarrollo a propósito para que *"la consola local se vea igual que la
+> desplegada"*—, y el aislamiento de notificaciones es **implícito**: descansa en que el script no
+> lanza el worker, no en un interruptor.
+- **Componente:** demo · **Depende de:** T-5.02, T-5.05 · **Prioridad: ALTA**
+- **Objetivo:** un guion recorrible de principio a fin delante de un cliente, con los datos
+  etiquetados y sin posibilidad de tocar nada real.
+- **Criterios de aceptación:**
+  - [x] Escena de **simulacro** completa *(desbloqueada por `T-5.29`)*: agenda, armado, disparo
+        humano, acuse por sitio y reporte. **Guionizada** de punta a punta en `demo/run.py` (C4,
+        con los tres gabinetes reales acusando el comando firmado); el recorrido por las **tres
+        superficies** es el de `demo/GUION.md` §Escena 5 sobre `make soc-local`, porque un guion
+        de terminal no puede pulsar una consola.
+  - [x] El guion corre con el modo demostración de `T-5.02` puesto, y **falla ruidosamente** si no
+        lo está.
+  - [x] Los datos del guion usan la identidad simulada y la marca visual de `T-5.05`.
+  - [x] Un documento corto de recorrido —qué se enseña, en qué orden, qué NO se toca— que cite
+        las frases de `INFORME-V1-COMERCIAL.md §3`.
+  - [x] El aislamiento de notificaciones deja de ser implícito: se **impone**, y hay un test que
+        lo comprueba.
+- **Cómo quedó (2026-09-04). PARCIAL: cuatro de cinco criterios, y el que falta está fichado.**
+  **Lo primero que apareció no estaba en la ficha: `make demo-fase1` llevaba UN MES EN ROJO.**
+  33 OK · 2 FALLOS, y nadie lo había visto porque `demo/run.py` **no entra en `make test`**. La
+  causa: hasta `T-2.32` una detección instrumental de UNA estación accionaba los relés, y el
+  criterio C3 lo daba por hecho; la política ratificada invirtió eso —una estación sola AVISA— así
+  que el guion llevaba desde el **2026-08-03** exigiendo una conducta que el producto abandonó a
+  propósito. Un guion que falla dos comprobaciones no es «no recorrible»: es que **falla delante
+  del cliente**.
+  **C3 ahora usa DOS estímulos, y el orden es la mitad del arreglo.** Primero el instrumental con
+  los relés en reposo —comprueba que **no acciona**, que es la política vigente— y después SASMEX,
+  que es la protección local determinista que el criterio promete de verdad (reglas de oro 1 y 2).
+  Al revés no funciona y se descubrió ejecutándolo: el enclave de SASMEX deja los cinco relés
+  encendidos y la comprobación no puede distinguir «actuó el umbral» de «sigue sonando lo
+  anterior». **38 OK · 0 FALLOS.**
+  **El aislamiento de notificaciones dejó de ser implícito** (`demo/aislamiento.py`). Descansaba en
+  que el guion no lanza el worker —una coincidencia de arranque, no un aislamiento: con un
+  `make soc-local` a medio apagar la cascada saldría hacia teléfonos reales—. Ahora la demo
+  **enciende el modo demostración** de `T-5.02`, **verifica** que la ventana quedó viva con la
+  misma función que consulta el worker, y **al final cuenta lo entregado**: `sent` y solo `sent`,
+  porque `simulated` es lo que produce un canal sin credenciales y desaparece justo en el entorno
+  donde se haría la demostración. Cinco tests, y uno fija que `enabled_by` es **uuid** — un
+  `"demo:run.py"` reventaba el INSERT en mitad del guion.
+  **El recorrido interactivo usa la identidad SIMULADA.** `soc_local.py` levantaba
+  `gw-dev-0001 / site-dev / R4F74` a propósito «para que la consola local se vea igual que la
+  desplegada», que delante de un cliente es exactamente lo que no se quiere. Con
+  `gw-sim-0001 / site-sim-001 / SIM001`, `T-5.05` lo rotula **DEMO** en el mapa y en la Flota.
+  **`demo/GUION.md`**: qué se enseña, en qué orden y qué no se toca, con las frases de
+  `INFORME-V1-COMERCIAL.md §3` **citadas literalmente** —las prohibidas tachadas y su sustituta al
+  lado—, incluida la que más sorprende (una estación sola no acciona) y la advertencia de que el
+  espectrograma se ve en local pero **en la nube sale vacío siempre** hasta que `T-3.11.c` se
+  despliegue.
+- **LO QUE FALTA, y por qué no se hizo:** la **escena de simulacro** (criterio 1). No es una
+  decisión de alcance: **el sustituto de IoT Core de la demo es solo edge→nube**. Un simulacro son
+  comandos firmados nube→gabinete, uno por sitio, y ese camino **no existe en el arnés**. Se
+  intentó, se midió y se fichó como **`T-5.29`**, con la mitad que sí se puede recorrer hoy
+  (`make soc-local`) escrita en el guion. Forzarlo habría exigido inventar un transporte de bajada
+  sin verificación de firma — que probaría lo contrario de lo que hay que probar.
+- **[T-5.29 · 2026-09-04] El quinto criterio, cerrado.** La escena de simulacro estaba bloqueada
+  porque el arnés de la demo era **solo edge→nube**: un simulacro son comandos firmados
+  nube→gabinete, uno por sitio, y no había por dónde bajar. `T-5.29` construyó la bajada y la
+  escena **C4** recorre el simulacro entero contra los tres `EdgeSupervisor` reales, con el comando
+  firmado verificado por el `CommandDispatcher` del gabinete y un comando **forjado** que se
+  rechaza. **55 OK · 0 FALLOS.** T-5.08 queda CERRADA.
+
+### [x] T-5.29 · La demo no tiene camino de BAJADA nube→gabinete — `SOFTWARE` · **CERRADA 2026-09-04**
+> **No sale de la auditoría: apareció ejecutándola** (al cerrar `T-5.08`, el 2026-09-04).
+>
+> El sustituto de IoT Core de la demo (`demo/spool.py`) es **solo edge→nube**. No hay ningún
+> transporte de bajada, y por eso `demo/run.py` no puede guionizar nada que se comande desde la
+> nube: **un simulacro son comandos firmados nube→gabinete, uno por sitio**, y también lo son la
+> actuación por quórum y la sincronización de config firmada.
+>
+> Consecuencia concreta, medida al intentarlo: la escena de simulacro de `T-5.08` se quedó a
+> medias. La mitad de nube (agenda, armado, disparo, acuse por sitio, reporte) se puede recorrer
+> a mano en `make soc-local`, donde la API y la consola están vivas; la mitad del **gabinete**
+> —que es donde se ve que el simulacro suena— no tiene por dónde llegar.
+>
+> **Lo que NO es esto:** un problema del producto. En producción el camino existe (AWS IoT Core,
+> `commands/`, el dispatcher del edge verifica firma antes de tocar nada). Es el arnés de la demo
+> el que solo tiene la mitad.
+- **Componente:** demo · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que la demo pueda guionizar lo que se comanda desde la nube, con la MISMA
+  verificación de firma que en producción.
+- **Criterios de aceptación:**
+  - [x] Camino de bajada en `demo/spool.py` (o su hermano) que entregue al gabinete el documento
+        **firmado**, y que el edge lo verifique con el dispatcher REAL — un transporte que se
+        salte la firma probaría lo contrario de lo que hay que probar.
+  - [x] Escena de simulacro completa en `demo/run.py`: agenda, armado, disparo humano, acuse por
+        sitio y reporte, con el gabinete acusando recibo.
+  - [x] Un comando con firma inválida se RECHAZA y queda en la bitácora, y el guion lo comprueba:
+        es la mitad que hace creíble la otra.
+  - [x] Guarda de no-vacuidad: el guion declara cuántos comandos espera entregar.
+- **Cómo se cerró (2026-09-04).**
+  **`demo/spool.py` tiene ya las dos direcciones.** `SpoolCommandPublisher` implementa el
+  `CommandPublisher` de la nube y deja el envelope en el buzón del thing; el transporte del edge
+  lo entrega a la suscripción real. **La pieza que hace válida la prueba es lo que la bajada NO
+  hace:** no firma, no verifica y no interpreta — entrega el envelope **intacto** y decide el
+  `CommandDispatcher` del gabinete, que es el mismo código que corre en el Pi (HMAC + nonce +
+  ventana). Un transporte que entregara el payload pelado probaría lo contrario de lo que hay que
+  probar, y hay un test que lo caza.
+- **Escena C4 completa**, con los tres `EdgeSupervisor` reales: agenda → armado → disparo humano →
+  tres comandos firmados bajando → verificación en el gabinete → acuse por sitio subiendo por el
+  consumer real → reporte con su `sha256` inscrito como evidencia. **55 comprobaciones en verde.**
+- **La clave HMAC la genera el guion, una por gabinete, y solo vive en memoria.** Es lo que
+  permite que la nube firme algo que el edge acepte. No va a git ni a disco (regla de oro 6):
+  nace con la demo, viaja al hijo por entorno y muere con el proceso. Y el gabinete **declara en
+  su línea de arranque** si la clave es fija o efímera: con la efímera todo comando se rechazaría
+  por firma inválida y el síntoma —«no llegó nada»— apunta al transporte, que es el diagnóstico
+  equivocado. Se comprueba al arrancar, no al fallar.
+- **El comando FORJADO, que es la mitad que hace creíble la otra.** La escena deja en el buzón un
+  envelope con la firma cambiada: el gabinete lo rechaza, **no acusa** —a un emisor no autenticado
+  no se le responde— y lo deja en su bitácora. Para poder comprobarlo hubo que dejar de tirar el
+  `stderr` de los gabinetes a `/dev/null`: es la ÚNICA evidencia de un rechazo, porque sin ack
+  «rechazado» y «no llegó» son indistinguibles desde la nube.
+- **Guarda de no-vacuidad:** el transporte cuenta los comandos que ENTREGA y el guion exige
+  `≥ 4` (los tres del simulacro más el forjado). Sin ese número, una escena en la que no bajara
+  nada pasaría en verde: todos los `wait_for` comparan contra cero cuando no hay nada que contar.
+- **Y el hallazgo que salió al ejecutarla, que no estaba en la ficha.** `D-27` dice que el modo
+  demostración es «un supresor de salida de la nube: notificaciones y **comandos firmados**», y un
+  simulacro **es** un comando firmado. Consecuencia operativa que no estaba escrita en ninguna
+  parte: **con el modo puesto no se puede enseñar un simulacro delante de un cliente.** No se
+  cambió la regla —eso sería revocar `D-27` de refilón—; la escena la ENSEÑA: primero comprueba la
+  supresión con su fila de auditoría, después levanta la ventana explícitamente y al terminar la
+  vuelve a poner. El recuento final de entregas reales cubre también ese tramo, así que la prueba
+  del aislamiento de `T-5.08` sale **reforzada**, no debilitada.
+- **Un segundo hallazgo, más incómodo:** con el modo puesto el simulacro **se registra igual**
+  —201, sus tres sitios, cero comandos—, porque `start_drill` es best-effort por sitio (un
+  gabinete sin clave no puede dejar sin simulacro a los demás). Que no sonó en ninguna parte se ve
+  **después**, en el reporte (`no acusaron`), no al dispararlo. Queda escrito en `demo/GUION.md`
+  y comprobado por la escena; corregirlo cambiaría la semántica best-effort, que existe por una
+  razón buena, así que es una decisión de producto y no un apéndice de esta ficha.
+- **La ejecución de comandos remotos viene APAGADA de fábrica por gateway** (regla de oro 8) y la
+  demo la enciende **explícitamente**, declarándolo. Se descubrió al ejecutar: con el default los
+  tres gabinetes verificaban la firma y acusaban `rejected` — correcto, y no lo que la escena
+  tiene que enseñar. El guion comprueba además que ese default sigue siendo `False`, y se lo
+  pregunta al gabinete porque la clase vive en el venv del edge.
+- **`make demo-fase1` levanta ahora también MinIO** (`make objetos`): el reporte del simulacro es
+  evidencia con `sha256` y `put_object` necesita un bucket. El compose ya traía el servicio y su
+  `minio-init`.
+- **Siete mutaciones comprobadas:** tres contra la demo entera (bajada que pela el envelope, clave
+  del gabinete distinta de la de la nube, gabinete sin buzón) y cuatro contra los contratos del
+  transporte (pelar el envelope, tirar lo que no tiene suscripción, dejar que una excepción del
+  callback se lleve al resto, y dejar de consumir lo entregado).
+
+### [x] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE` · **CERRADA 2026-09-04**
+> `TASKS.md` tiene el suyo desde T-2.61, y por eso su cabecera es fiable. Los otros dos censos del
+> proyecto no lo tienen, y **los dos ya divergieron**:
+>
+> - `DECISIONES-MAURICIO.md:15` declara **23 decisiones** y última actualización **2026-08-22**.
+>   El archivo tiene **26** y la última es del **2026-08-30**. Tres decisiones son invisibles para
+>   quien lea la cabecera — y la bitácora existe precisamente para poder revocar con conocimiento.
+> - `TRASPASO-SESION.md §0` abre con un bloque en negrita que fija la deriva de despliegue en
+>   **"tres commits"** sobre un commit que hoy está **103 por detrás** de `main`. La deriva real es
+>   de 13 (nube) y 25 (gabinete). Es el archivo que se manda leer al empezar una sesión.
+>
+> Ninguno de los 28 tests de consistencia documental los mira. **Es la doctrina que el propio
+> repositorio predica, sin aplicar a dos de sus tres censos:** *un censo que enumera a mano acaba
+> divergiendo*.
+- **Componente:** api (tests) + takab-docs · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que ninguna cabecera de un documento de gobierno pueda declarar un número que el
+  archivo desmiente.
+- **Criterios de aceptación:**
+  - [x] Test que cuenta las decisiones de la bitácora (filas del índice y anclas de sección, que
+        además tienen que coincidir entre sí) y exige que cuadren con su cabecera.
+  - [x] Test que comprueba que la fecha de última actualización declarada **no es anterior** a la
+        fecha de la última decisión del archivo.
+  - [x] El bloque de deriva de despliegue del traspaso deja de fijar un número: **se le pregunta
+        al sistema** (o se declara con la fecha de la medición y un test que exija que el commit
+        citado exista y esté a la distancia declarada).
+  - [x] Las dos cabeceras corregidas en el mismo commit que sus tests.
+  - [x] El mensaje de fallo dice **cómo** rehacer el conteo, como ya hace el de `TASKS.md`.
+- **Cómo se cerró (2026-09-04).**
+  **La bitácora ya había sido corregida a mano… y volvió a diverger en TRES DÍAS.** Ésa es la
+  prueba que le faltaba a la ficha: al abrirla, la cabecera decía **27** con **28** secciones
+  dentro, y `D-28` —que entró con `T-5.16` el 2026-09-02— **tenía sección y no tenía fila en el
+  índice**. Corregir a mano no es un mecanismo: se corrige una vez y basta un par de días.
+  **El test cuenta por TRES caminos y los cruza:** cabecera, filas del índice y anclas de sección.
+  Comparar solo dos habría dejado pasar el caso real —`D-28` tenía sección y la cabecera estaba
+  desfasada, y cualquier par «cuadraba»—. Y se comparan además **por identificador**, no solo por
+  total: dos errores que se compensen dan la misma cuenta.
+  **La fecha lleva su propio test**, porque engaña más callada: un conteo correcto con una fecha
+  vieja hace creer que no hay nada nuevo desde entonces (pasó: «última 2026-08-22» con una decisión
+  del 2026-08-30). Se exige que la declarada **no sea anterior** a la última `**Fecha:**` del
+  archivo.
+  **El §0 del traspaso deja de fijar un número.** Decía «tres commits por detrás» sobre un commit
+  que ya estaba **103 por detrás** de `main` — en el archivo que se manda leer al EMPEZAR una
+  sesión, donde un número fijo no envejece: **miente**. Ahora abre con el comando para
+  **preguntárselo al sistema** (`/api/health` declara el commit desplegado; `git rev-list --count`
+  da la distancia), y conserva la medición de aquel día **como hecho histórico fechado**.
+  **Y esa medición SÍ se comprueba**, que es lo que la hace distinta de una cifra suelta: el test
+  exige que los dos commits citados **existan** y que la distancia entre **ellos dos** —no contra
+  `main`, que se mueve— sea la declarada. Es estable por construcción: un hash mal tecleado o una
+  deriva inventada se ponen rojos, y el número no caduca nunca.
+  **Los mensajes de fallo dicen CÓMO rehacer el conteo**, con los dos `grep` exactos, igual que el
+  de `TASKS.md`.
+  **Cinco mutaciones comprobadas**, una por guarda: cabecera desfasada, fila ausente del índice,
+  fecha anterior a la última decisión, traspaso sin el comando y medición histórica falsa. Las
+  cinco rojas; verde al restaurar.
+- **Lo que este test NO exige, y se dice para que nadie lo añada:** que las secciones `D-nn` vayan
+  en orden numérico. El archivo **no lo está** (…`D-19`, `D-23`, `D-22`, `D-20`, `D-21`, `D-01`…) y
+  no es un defecto: están agrupadas como se escribieron. Exigirlo obligaría a reordenar 1 400
+  líneas de bitácora para satisfacer a un test.
+### [x] T-5.10 · **Procedencia del evento externo**: cinco estados, tres superficies — `SOFTWARE` · **CERRADA 2026-09-04**
+> Hoy no existe ninguna máquina de estados de procedencia. Lo que hay son dos enumeraciones de
+> presentación (`EpicenterKind`, la banda de magnitud) y un campo `source` con tres valores
+> efectivos. Y `reference_earthquakes` no lleva **ni hora de consulta, ni bandera de
+> preliminar/revisado, ni identificador estable del proveedor**: solo una clave que nos inventamos
+> nosotros, la fuente y una cita textual libre.
+>
+> Peor: `seismic_events.magnitude` **nunca se escribe con un valor**. El único INSERT del sistema
+> pone `NULL` literal, así que la rama del catálogo en la consola es **inalcanzable en
+> producción** y el SOC siempre ve "sin catálogo". El enriquecimiento post-hoc que documenta el
+> esquema **no existe como código**.
+>
+> **El estado que más falta es el de sin correlación**, y no es un adorno: su ausencia convierte
+> un "no sé" en una pantalla vacía que el operador lee como "no pasó nada".
+>
+> **Esto no roza el invariante de la cuenta atrás, lo cumple.** Lo que aquel prohíbe es una cifra
+> **derivada por nosotros** del contacto seco. Una cifra de fuente externa citada, con su hora de
+> consulta y su estado, es literalmente lo que el invariante contempla como *"fuente nueva y
+> citable"*. La regla que esta ficha impone es: **con procedencia, o no se pinta**.
+- **Componente:** api + web + mobile + edge · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que toda cifra sísmica que no midió nuestro instrumento se pinte con su fuente, su
+  hora de consulta y su estado de confirmación — o no se pinte.
+- **Criterios de aceptación:**
+  - [x] Cinco estados en el contrato compartido, **con el mismo nombre en las tres superficies**:
+        sin dato externo, consultando, preliminar, confirmado, sin correlación.
+  - [x] El texto de la consulta dice **"consultando"**, nunca *"estimando"*: nosotros no
+        estimamos, preguntamos. Anclado por test.
+  - [x] `reference_earthquakes` gana hora de consulta, estado de revisión e identificador del
+        proveedor; migración idempotente, con el dueño correcto.
+  - [x] Ninguna superficie pinta magnitud, epicentro, profundidad u hora de origen **sin** su
+        fuente y su hora de consulta al lado. Test por superficie que lo verifique sobre el árbol
+        renderizado.
+  - [x] El estado de sin correlación **se pinta**: hay un texto para él y un test que lo exige.
+  - [x] Se declara qué pasa hoy con la magnitud que nunca se escribe: o se escribe con su
+        procedencia, o el campo se retira y la interfaz deja de tener una rama inalcanzable.
+- **Cómo se cerró (2026-09-04).**
+  **La regla, en una línea: CON PROCEDENCIA, O NO SE PINTA.** Vive en
+  `shared/glossary/procedencia.json` —JSON, como `estados.json`, porque el panel del gabinete se
+  sirve como un archivo estático desde el Pi y **no puede importar nada**— y las tres superficies
+  la leen de ahí en vez de escribir cada una su vocabulario.
+  **Los cinco estados, con su razón:** `sin_dato_externo` (nadie preguntó), `consultando`,
+  `preliminar`, `confirmado` y `sin_correlacion` — el que más falta hacía, porque sin él un «no sé»
+  se convierte en una pantalla vacía que el operador lee como «no pasó nada».
+  **«Consultando», jamás «estimando»**, y no es estilo: «estimando» sugiere que el sistema CALCULA
+  una magnitud, que es justo lo que el blueprint §14 prohíbe. Nosotros preguntamos. Lo ancla un
+  test que barre el glosario entero y descuenta el bloque que las nombra para prohibirlas.
+  **La rama del catálogo dejó de ser inalcanzable-por-NULL para ser alcanzable-solo-con-
+  procedencia.** Era el punto delicado: `magnitudeOf` mostraba la cifra en cuanto hubiera número,
+  así que el día que alguien escribiera uno habría aparecido en la consola **sin fuente ni hora**,
+  indistinguible de una medición nuestra. Ahora exige estado que pinte, fuente y hora de consulta;
+  sin las tres, degrada al texto del glosario.
+  **Las tres superficies, cada una con su test sobre el árbol renderizado:**
+  · **Consola** — `magnitudeOf` obedece la regla y la cita viaja con la cifra. Cinco tests nuevos,
+    incluido el caso peligroso (hay número y no consta de dónde salió).
+  · **Panel del gabinete** — pintaba `M x.x` en DOS tarjetas. La lista traía hora de captura y
+    origen del feed (`T-2.66`) pero **no la fuente**; la **comparativa no decía nada**, y es la
+    tarjeta que pone la cifra ajena **al lado de la que midió el sensor del inmueble**. Las dos
+    citan ahora por la misma función, y sin fuente lo **declaran** en vez de callar.
+  · **Móvil** — no pinta ninguna cifra externa, y es una **decisión escrita** (`CrisisView`:
+    «PROHIBIDO … magnitud preliminar»; el WR-1 entrega un booleano). Lo que faltaba era la guarda:
+    un barrido que busca la FORMA de pintarla —no la palabra, que aparece en los comentarios que
+    la prohíben— para que nadie la añada sin decidirlo.
+  **`reference_earthquakes` gana las tres columnas que hacen citable una cifra ajena** (`0060`):
+  `consulted_at` —`created_at` es cuándo se insertó la FILA, no cuándo se preguntó—, `review_status`
+  con su CHECK, y `provider_event_id`, porque `catalog_key` es una clave **que nos inventamos
+  nosotros** y no sirve para volver a preguntarle a la fuente por ese evento. Nacen NULL y así
+  siguen: un default inventado sería la mentira que la ficha existe para impedir. Aplicada y
+  **re-aplicada dos veces** contra la DB real.
+- **Criterio 6, respondido: la magnitud SE CONSERVA.** `seismic_events.magnitude` se inserta
+  siempre en NULL —el único INSERT del sistema pone el literal— y hoy el estado de todo evento es
+  `sin_dato_externo`. Retirar el campo habría borrado el sitio donde va a aterrizar el dato cuando
+  `T-5.11` fije el criterio de correlación; lo que se retira es la posibilidad de pintarlo sin
+  procedencia. Está escrito en `procedencia.py`, en el glosario y con un test que exige que la
+  razón cite el hecho que la sostiene.
+- **Cinco mutaciones comprobadas:** la regla vieja en la consola (2 rojos), la cita de la
+  comparativa, la fuente de la lista, y las dos guardas del móvil.
+- **Y un gate del repo se ganó el sueldo:** `consoleImageCensus` vio que `console.Dockerfile` no
+  copiaba `shared/glossary/`, así que `make cloud-images` habría muerto con **TS2307 tras varios
+  minutos** de build. Mismo caso que `shared/fixtures` en su día: el `build` de esa imagen corre
+  `tsc --noEmit` y **solo ve lo que se copia**, mientras `make lint` y el job `web` typechequean el
+  checkout completo, donde el fichero existe.
+- **Y una que sobrevivió al primer intento, que es la que enseña:** los tests del panel pasaban
+  con la cita de la comparativa **borrada**, porque solo miraban la tarjeta de la lista. La
+  comparativa exige un clic para existir, y hasta que el test no la alcanzó por el camino real
+  —`#open-map` + `row:ssn-rows-big`— el barrido daba verde sobre la tarjeta que **no declaraba
+  nada**. Un test por superficie no basta si no llega a la tarjeta que tiene el defecto.
+### [x] T-5.11 · La correlación con el catálogo es **solo temporal** — `SOFTWARE` · **CERRADA 2026-09-04**
+> `api/src/takab_api/forensics/__init__.py:52` fija `CATALOG_WINDOW_S = 120.0` y la consulta toma
+> el evento más cercano en el tiempo dentro de esa ventana. **No hay distancia máxima. No hay
+> magnitud mínima. No hay filtro geográfico.** La distancia se calcula **después** del acierto,
+> solo para describirlo, y nunca para rechazar. En la ruta del receptor —que es la normal— no hay
+> epicentro propio que comparar, y el PDF imprime *"sin epicentro propio que comparar"*.
+>
+> Hoy el riesgo está acotado por accidente: son 13 filas mexicanas de 1985 a 2022. **Con el feed
+> vivo de `T-2.149` se vuelve grave**: un sismo de cualquier parte del mundo ocurrido dentro de
+> ±120 s del contacto se imprimirá en un dictamen firmado bajo el rótulo *"contraste con
+> catálogo"*, con su magnitud y su lugar. Y el sistema no tiene forma de decir *"hay un evento en
+> el catálogo pero no es el nuestro"*.
+- **Componente:** api · **Depende de:** T-5.10 · **Prioridad: ALTA**
+- **Objetivo:** que el criterio de identidad entre el evento del catálogo y el que disparó el
+  gabinete sea explícito, defendible y capaz de decir que no encontró nada compatible.
+- **Criterios de aceptación:**
+  - [x] Criterio explícito y configurable: ventana temporal, radio máximo epicentro↔sitio y
+        magnitud mínima coherente con la distancia, cada uno con su razón escrita.
+  - [x] En la ruta sin epicentro propio, el acierto **no se presenta como contraste**: se declara
+        no verificable, con su texto propio.
+  - [x] Un evento fuera de radio, o de magnitud incoherente con la distancia, **no casa** — y el
+        resultado es el estado de sin correlación de `T-5.10`, no un hueco.
+  - [x] Test con un caso realista de sismo lejano dentro de la ventana temporal: hoy casaría; con
+        la ficha, no.
+- **Cómo se cerró (2026-09-04).**
+  **El criterio de identidad vive en `api/src/takab_api/forensics/correlacion.py`**, módulo puro
+  —sin base ni red— con la razón de cada umbral escrita entera, y sus tres números en
+  `Settings.correlation_*`, junto a la familia del quórum de la que hereda la forma.
+  **1 · La ventana temporal ya no es fija, y escribir su razón fue lo que descubrió que estaba
+  mal en los DOS sentidos.** Un ±120 s se pasa de largo cerca —a 30 km caben dos sismos— y **se
+  queda corto lejos**: el M8.2 de Chiapas (2017) está a **737 km** del centro del país y su onda S
+  llegó unos **205 s** después del origen, así que **el sismo que vació la ciudad no habría casado
+  con su propia entrada del catálogo**. Es el mismo hallazgo que el blueprint §4.5 hizo para la
+  asociación del quórum, y se resuelve igual: `Δ ≤ dist/v + margen`. Con dos diferencias propias:
+  es **asimétrica** —un edificio no detecta un sismo antes de que ocurra, y hasta hoy casaba
+  porque el criterio comparaba valores ABSOLUTOS— y usa **v_S y no v_P**, porque el disparo local
+  lo produce la sacudida fuerte, no el primer arribo.
+  **2 · Radio máximo epicentro↔SITIO, 1 200 km.** Al edificio, no al epicentro propio: en la ruta
+  del receptor —la normal, y la única que existe hoy— **no hay epicentro propio**, así que un
+  criterio epicentro↔epicentro no se podría aplicar donde más falta hace. `sites.geom` es
+  `NOT NULL`, de modo que este criterio se puede exigir SIEMPRE. Medido desde la Ciudad de México
+  cubre lo que de verdad la sacude (Michoacán 1985 a 428 km, Puebla-Morelos 2017 a 122 km,
+  Chiapas 2017 a 737 km) y excluye lo que la ficha existe para excluir: Chile a 6 389 km, Japón a
+  10 945 km.
+  **3 · Magnitud coherente con la distancia, vía ATTEN-LAW v1** — no una magnitud mínima plana,
+  que no sería defendible: un M4.0 a 30 km abre un incidente (0.0044 g estimados) y el mismo M4.0
+  a 300 km predice 0.0005 g y no movió nada. **El piso es 0.001 g, un orden de magnitud POR DEBAJO
+  del umbral de cautela del gabinete**, y eso es deliberado: la pregunta no es «¿habría
+  disparado?» sino «¿pudo notarse siquiera aquí?». Con el umbral de disparo se rechazarían
+  justamente las correlaciones de SASMEX, donde el edificio puede no haber sentido casi nada.
+  Sin magnitud publicada **no se rechaza**: «desconocida» no es «incoherente».
+- **La ley de atenuación se mudó al paquete.** Vivía en `api/tools/quorum_ssn_validation.py` —una
+  herramienta—, así que `takab_api` no podía importarla y un tercer consumidor habría escrito un
+  tercer espejo. Ahora es `geo.pga_law_g` y la herramienta la importa; `_plausible_pga_g` queda
+  como envoltura porque es el **ancla que citan los espejos** de edge y web (grep `ATTEN-LAW`).
+- **La consulta dejó de elegir.** Traía UNA fila —la de menor Δt— y esa fila se imprimía. Ahora
+  trae candidatos y decide el criterio, en Python, porque necesita la ley de atenuación: meterla
+  en SQL habría creado ese tercer espejo. Y **las cotas del `WHERE` son un SUPERCONJUNTO de lo que
+  el criterio admite, nunca al revés** — si el SQL recortara un candidato que el criterio habría
+  rechazado, ese rechazo perdería su motivo y volvería a ser el hueco. Dos tests lo sostienen.
+- **«Hay un evento en el catálogo pero no es el nuestro»** ya se puede decir: cada descarte sale
+  con su motivo del vocabulario cerrado y su línea legible, y llega al PDF y a la consola. Sin eso
+  un descarte es indistinguible de un catálogo vacío, y una pantalla vacía se lee «no pasó nada».
+- **El acierto sin epicentro propio deja de presentarse como contraste.** El rótulo del PDF y el
+  de la consola dicen ahora **CORRELACIÓN**, y la línea declara `NO VERIFICABLE · sin epicentro
+  propio que contrastar` junto a la distancia al sitio que sí se midió. Contrastar exige tener
+  algo propio; anunciarlo sin tenerlo prometía una verificación que no ocurría.
+- **Y la magnitud del catálogo pasa por la regla de `T-5.10`**, también en el papel: casar no
+  concede procedencia. Hoy ninguna fila del seed tiene hora de consulta, así que el dictamen dice
+  que la cifra existe y **no es citable**, en vez de imprimirla bajo una firma.
+- **Siete mutaciones comprobadas**, y **tres sobrevivieron al primer intento** — las tres del
+  papel. La línea del dictamen **no tenía ninguna prueba**: se podía volver a presentar un acierto
+  como contraste, imprimir la magnitud sin procedencia o borrar los descartes, y las 155 pruebas
+  del dictamen seguían verdes. Es el hallazgo de `T-5.07` un nivel más abajo: allí faltaba probar
+  que el aviso **llega** al papel; aquí faltaba probar **qué dice**. Lo cierra
+  `api/tests/dictamen/test_catalog_line.py`.
+- **Y dos defectos que solo aparecieron contra la base:** `magnitude` es `numeric`, o sea `Decimal`
+  en Python, y la ley es `float` —explotaba al multiplicar, y solo con Postgres delante—; y el
+  test que esta suite ya tenía sembraba el sismo del catálogo con su origen **90 s DESPUÉS** de
+  nuestra detección, algo físicamente imposible que pasaba en verde porque el criterio usaba
+  `abs()`. El caso sigue en la suite, ahora exigiendo que **no** case.
+
+### [x] T-5.12 · **Contar falsos positivos** — `SOFTWARE` · **CERRADA 2026-09-02**
+> Hoy no hay forma de contarlos, ni siquiera a mano sobre la base. `incidents.state` admite
+> `open|acked|in_review|closed` y **nada más**: no hay columna de clasificación, ni de descarte,
+> ni de motivo de cierre. Cerrar un incidente **no pide ni admite una razón**, y el estado
+> intermedio de revisión no desemboca en ningún veredicto registrable. No existe endpoint de
+> agregados ni vista que los cuente.
+>
+> **Es la métrica que decide si el cliente renueva** — y la ironía está documentada en el propio
+> código: la app explica que el documento de entrega *"deslinda expresamente los falsos positivos
+> de SASMEX"*. El sistema **se deslinda de una tasa que no mide**.
+>
+> Lo único adyacente que ya está bien: los simulacros viven en tabla propia, así que al menos los
+> ensayos no contaminan el conteo.
+- **Componente:** api + web · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que cerrar un incidente registre **qué fue**, y que la tasa se pueda leer sin
+  abrir la base.
+- **Criterios de aceptación:**
+  - [x] Clasificación al cierre con un catálogo cerrado y corto, decidido en la ficha: real,
+        falso positivo, prueba/mantenimiento, indeterminado. **Indeterminado no es el default
+        silencioso**: se elige y se declara.
+  - [x] La clasificación queda auditada con actor y hora, y **no se puede reescribir**: una
+        corrección inserta, no sustituye, como ya hace la cadena de dictámenes.
+  - [x] Endpoint de agregados por tenant y ventana, con la tasa y el desglose, respetando el
+        aislamiento entre clientes.
+  - [x] La consola lo muestra, y **declara cuántos incidentes están sin clasificar** en vez de
+        excluirlos del denominador — un porcentaje calculado sobre lo clasificado, con lo no
+        clasificado escondido, es peor que no tener el número.
+  - [x] Los simulacros siguen fuera del conteo, con test.
+- **Cómo se cerró (2026-09-02).** Tabla propia `incident_classifications` (migración `0055`),
+  **append-only con las dos capas** que ya usa la cadena de dictámenes: `REVOKE UPDATE, DELETE`
+  **y** el trigger `forbid_update_delete()`. Corregir **INSERTA** una fila que apunta a la
+  anterior por `supersedes_id`; la vigente es la que nadie sustituye. `GET /classification-stats`
+  da la tasa por ventana, y `api/src/takab_api/incident/classification.py` fija el conjunto
+  `EN_LA_TASA` **excluyendo `prueba`** — los simulacros ya vivían en tabla aparte, pero un
+  incidente marcado a mano como prueba también tenía que salir del denominador.
+  **Dos decisiones que no estaban en la ficha y sí en el código.**
+  (1) **La tasa devuelve `null`, no `0`, cuando nadie ha clasificado nada.** Un cero afirmaría
+  que no hubo falsos positivos; lo que pasa es que nadie miró. La consola lo pinta `S/D` y dice
+  por qué, y hay test de que jamás sale `0.0 %` desde el vacío.
+  (2) **Los sin clasificar viajan junto al porcentaje, siempre** (`4 DE 10 SIN CLASIFICAR`): la
+  agregación los conserva en el total en vez de filtrarlos, porque un porcentaje sobre lo
+  clasificado, con lo no clasificado escondido, es una muestra sesgada por quién tuvo tiempo.
+  **Y una divergencia que apareció al hacerlo, ajena a esta ficha:** el espejo de la matriz RBAC
+  en `web/src/test-utils/meFixtures.ts` **lleva 16 celdas divergentes** de
+  `api/src/takab_api/auth/matrix.py` (cctv ×9, privacidad ×4, `read_audit`, `checkin_submit`,
+  `panic_vote`). Aquí se corrigieron **solo las dos de `classify_incident`**; las otras dieciséis
+  siguen abiertas y **nada las vigila** — el fichero pide a mano que se le actualice. Es el patrón
+  que `TRASPASO-SESION.md §4` ya nombró: *un censo que enumera a mano acaba divergiendo*. Se
+  deriva en tres líneas comparando los dos por igualdad; no se hizo aquí porque volver verde esas
+  dieciséis celdas cambia qué botones ven seis roles en las suites existentes, y eso es un lote
+  propio, no un apéndice de esta ficha. **Fichado como `T-5.28`**, con la tabla de las dieciséis
+  y con lo que de verdad hay que mirar al cerrarla: nueve de ellas apagan los paneles de CCTV en
+  toda la suite de web, así que la divergencia no relaja una aserción — **borra la población**.
+
+### [x] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE` · **CERRADA 2026-09-04**
+> No existen: ni tabla, ni campo en el cuerpo del alta, ni endpoint, ni interfaz. El alta de un
+> simulacro tiene exactamente cinco campos y ninguno es una plantilla. Lo más cercano —ejecutar
+> una agenda ya creada— **la consume**, así que no se puede reutilizar.
+>
+> Para el macrosimulacro de septiembre hay que teclear los sitios, la duración y la nota a mano,
+> cada vez. Es fricción operativa en el caso de uso más visible que tiene el producto.
+- **Componente:** api + web · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que un simulacro recurrente se defina una vez y se lance en dos clics.
+- **Criterios de aceptación:**
+  - [x] Plantilla con nombre, conjunto de sitios, duración y nota; CRUD completo con el mismo rol
+        que hoy puede disparar un simulacro.
+  - [x] Crear un simulacro desde una plantilla **copia** sus valores; editar la plantilla después
+        no reescribe simulacros ya ejecutados.
+  - [x] Una plantilla cuyos sitios ya no existen o están retirados **lo dice al usarla**, en vez
+        de lanzar contra un conjunto silenciosamente más pequeño.
+  - [x] Aislamiento entre clientes: una plantilla es de su tenant, con test de cruce.
+- **Cómo se cerró (2026-09-04).**
+  **Dos tablas, una columna y ningún rol nuevo** (migración `0061`). `drill_templates` con
+  nombre, duración y nota; `drill_template_sites` con el conjunto de sitios; y
+  `drills.from_template_id`, que es **procedencia, no dependencia**. El CRUD entero va con
+  `drill_start` —el permiso que ya autoriza a disparar— porque quien puede lanzar el simulacro
+  puede definir cómo se lanza, y un permiso nuevo habría movido la matriz RBAC y sus dos espejos
+  sin ganar nada.
+- **Criterio 2, que es el corazón de la ficha: se COPIA, no se referencia.** `POST /drills` con
+  `from_template` lee la plantilla una vez y copia sus valores en la fila del simulacro; el
+  simulacro no vuelve a mirarla nunca. Por eso `from_template_id` está y **nada del camino de
+  lectura la desreferencia** para pintar el nombre actual: un simulacro es evidencia de
+  cumplimiento, y si editar la plantilla cambiara lo que dice el registro de septiembre, esa
+  evidencia sería reescribible y no valdría nada.
+- **Criterio 3, en sus DOS formas — y son distintas.** El estado de cada sitio se evalúa **al
+  leer**, nunca se congela (misma decisión que `DrillSiteOut.commandable` de `T-2.48`, y por la
+  misma razón: una plantilla se define semanas antes y el inventario se mueve debajo). Y los tres
+  motivos van **separados** —dado de baja, sin gabinete, ya no visible— porque quien lee el número
+  llama a personas distintas: al de inventario, al de campo o al que administra los permisos.
+  · **Degradación PARCIAL ⇒ se lanza y se declara.** Un edificio que perdió el enlace no puede
+    dejar sin simulacro a los otros; queda en el registro sin comando y rotulado
+    `commandable=False`, que es lo que distingue «no había a quién mandarle» de «no acusó». El
+    conteo viaja además en la LISTA de plantillas, no solo en el detalle: quien la elige está
+    mirando la lista.
+  · **Degradación TOTAL ⇒ 409, y con el mensaje corregido.** Un simulacro que no suena en ninguna
+    parte no es un simulacro, es un registro falso de que se hizo uno. Lo que había que arreglar
+    era el TEXTO: el 409 existente culpaba al inventario del tenant («no tiene sitios con gateway
+    comandable»), y con una plantilla eso puede ser mentira —el cliente puede tener veinte
+    comandables y ninguno estar en la lista—, mandando a arreglar lo que no está roto.
+- **Se ARCHIVA, no se borra.** El `DELETE` marca `archived_at` (patrón de la casa:
+  `sites.status='retired'`). Borrarla de verdad dejaría huérfana la procedencia de cada simulacro
+  que salió de ella. Desde fuera se comporta como un borrado, y eso incluye lo que nadie recuerda
+  hasta que muerde: **el nombre vuelve a estar libre**, porque el índice único es parcial sobre
+  las vivas.
+- **Asimetría deliberada entre guardar y usar.** Al **guardar** una plantilla contra un sitio
+  inalcanzable se rechaza (404): sería crear la trampa de golpe. Al **usarla** no se rechaza, se
+  declara — porque el inventario cambia entre una cosa y la otra, y ése es justo el caso que la
+  ficha describe.
+- **La interfaz.** El modal de simulacro gana el bloque PLANTILLA: elegir una precarga sitios,
+  duración y nota para poder revisarlas —lo explícito sigue ganando sobre lo heredado, igual que
+  con una agenda armada—, guardar la definición actual con un nombre, y borrar. El aviso de
+  plantilla degradada se pinta **antes** de lanzar, con el motivo de cada sitio.
+- **Nueve mutaciones comprobadas** (cinco en api, cuatro en web), incluida una sobre la POLÍTICA
+  RLS aplicada contra la base real: abrirla a `USING (true)` pone en rojo el test de cruce entre
+  clientes, que es la única forma de saber que ese test tiene dientes.
+- **Y tres trampas que solo salen corriendo la suite entera**, ninguna de esta ficha pero todas
+  suyas ahora: el `TRUNCATE` del conftest es **por sesión, no por test**, y da igual en `drills`
+  —que no tiene unicidad— pero aquí el nombre es único por tenant y el arrastre daba rojos que
+  culpaban a la restricción; los tests que retiran un gabinete o un edificio **dejan el
+  inventario roto para los siguientes** (siete rojos «sin gateway comandable» ajenos a su caso);
+  y `gateways.status` **no admite `'active'`** —su dominio es `provisioned/online/degraded/
+  offline/retired`—, así que restaurarlo a ojo revienta el CHECK.
+- **Y un gate del repo se ganó el sueldo otra vez:** `serverDataCensus` cazó que el aviso de
+  plantilla degradada pintaba dato de servidor **fuera del `StateFrame`**. Se metió dentro; lo
+  único que queda fuera es el formulario de guardado —estado de mutación, mismo caso que
+  `DrillBanner`— y está declarado con su razón, porque el marco de la lista declara `empty`
+  cuando no hay ninguna plantilla y meterlo dentro haría imposible crear la primera.
+
+### [x] T-5.14 · El **post-simulacro** no tiene tiempos ni sale del navegador — `SOFTWARE` · **CERRADA 2026-09-02**
+> Lo que hay está bien hecho: el acuse por sitio se deriva por unión con la tabla de comandos, y
+> distingue honestamente *sin gabinete comandable* de *sin acuse* — dos cosas que colapsar sería
+> mentir. Faltan las dos que el cliente pide:
+>
+> - **El tiempo.** No existe latencia de acuse por sitio en ninguna capa: ni el esquema de salida
+>   ni la interfaz exponen el instante del acuse ni su diferencia contra el arranque. El dato
+>   clave de un post-simulacro —*"la torre B tardó 4 min 12 s"*— **no existe**.
+> - **La salida.** No hay PDF ni CSV: cero referencias a simulacros en los routers de exportación
+>   y de reportes. El propio código llama a esto *"la evidencia de cumplimiento que se le entrega
+>   a Protección Civil"*, y hoy se entrega **mirando una pantalla**.
+- **Componente:** api + web · **Depende de:** ~~T-5.13~~ **nada** · **Prioridad: MEDIA**
+  > **Corregido al ejecutarla.** La dependencia declarada era **editorial, no técnica**: se
+  > escribió porque las dos fichas hablan de simulacros y quedaban juntas en el plan. Nada del
+  > reporte toca las plantillas — el reporte lee `drills` + `commands`, que existen desde
+  > T-2.48, y T-5.13 crea una tabla nueva que el reporte no consulta. Se cerró **sin** T-5.13.
+- **Objetivo:** un documento que el cliente pueda enseñarle a Protección Civil.
+- **Criterios de aceptación:**
+  - [x] Instante del acuse por sitio persistido y expuesto, con su diferencia contra el arranque
+        del simulacro.
+  - [x] El tiempo se declara **por sitio y agregado**, y los sitios sin acuse no se cuentan como
+        cero: salen aparte.
+  - [x] Exportación del reporte con las mismas propiedades que el dictamen: determinista,
+        hasheada, registrada como evidencia y auditada.
+  - [x] El documento distingue las tres categorías (acusó / no acusó / no tenía gabinete) y dice
+        cuántos sitios hay en cada una.
+- **Cómo se cerró (2026-09-02).** `commands` gana `acked_at` (migración `0055`) y `DrillSiteOut`
+  lo expone junto a `ack_latency_s`; `POST /drills/{id}/report` renderiza el PDF con el mismo
+  camino que el dictamen —determinista, hasheado, inscrito en `evidence_objects` (que gana
+  `drill_id`) y auditado—. La consola pinta `+M:SS · sello UTC` por sitio y la `MEDIANA` en el
+  resumen.
+  **La decisión que gobierna la ficha entera: quien no acusó NO entra como cero.** `null` viaja
+  intacto del SQL al píxel, en las cuatro capas, y cada una tiene su test: la latencia del que no
+  acusó es `None`, la mediana de un simulacro sin acuses es `None`, el resumen dice `MEDIANA S/D`
+  y **la fila del que no acusó no pinta nada** —ni `+0:00` ni un guion—, porque los dos se leen
+  como *respondió al instante*, que es lo contrario del hecho. Un cero además arrastraría la
+  mediana hacia abajo justo en el simulacro que peor salió.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **El discriminador de agenda es `scheduled_at`, no `started_at`.** El guard que impide
+  exportar una agenda —un documento que afirmaría cero de cero— se escribió primero sobre
+  `started_at`, que la fila de agenda **también** lleva. Se caza con test.
+  (2) **`evidence_objects` se declara ANTES que `drills` en `db/schema.sql`**, así que la FK
+  inline reventaba una carga limpia; va como `ALTER TABLE` después del bloque de `drills`.
+  (3) **Generar va con `drill_start`, no con `export`**, copiando la separación que ya existe
+  entre `generate_report` y `export` en el dictamen: **generar inscribe una evidencia inmutable**
+  del tenant, y `gov_operator` —que existe para recogerla— la descarga después por la ruta de
+  evidencia de siempre. El reporte se registra con `drill_id`, así que le llega.
+
+### [x] T-5.15 · **Cadena de acuse**: cuánto tardó y quién recibió — `SOFTWARE` · **CERRADA 2026-09-02**
+> Tres de las cuatro preguntas se contestan hoy: quién acusó (con fila en el timeline y verbo en
+> la bitácora), quién no respondió (el pase de lista distingue *sin reporte* y ofrece notificar a
+> los que faltan), y en qué zona. Faltan dos, y las dos son de perito:
+>
+> - **"¿En cuánto tiempo?"** — el sistema **sí** calcula y almacena una latencia, pero es la de
+>   **despacho** de la notificación, no la del acuse. El acuse escribe su fila con el sello de la
+>   transacción y **nunca lee el instante de apertura**; la bitácora del SOC imprime sellos
+>   absolutos sin columna de transcurrido. El número es derivable restando a mano; nadie lo hace.
+> - **"¿Quién recibió la alerta?"** — la tabla donde vive el destinatario y la confirmación de
+>   entrega **no se lee desde ningún router de consulta**. Es contestable en la base y no por la
+>   API ni por ninguna pantalla.
+- **Componente:** api + web · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que una revisión post-incidente se pueda hacer sin abrir la base.
+- **Criterios de aceptación:**
+  - [x] Latencia de acuse calculada y expuesta, con la misma honestidad que la de despacho: quien
+        no acusó no tiene latencia, y eso **no es un cero**.
+  - [x] Endpoint de lectura de los envíos de un incidente: canal, destinatario (con el mismo
+        criterio de mínimo dato que el resto), estado y confirmación de entrega.
+  - [x] La bitácora del incidente muestra el transcurrido junto al sello absoluto.
+  - [x] Aislamiento entre clientes con test de cruce, y el envío simulado se distingue del
+        entregado, como ya hace la tabla.
+- **Cómo se cerró (2026-09-02).**
+  **La latencia del acuse** la escribe ahora la propia fila (`incidents_ack.py`), calculada **en
+  SQL y en el mismo statement que la inserta**: así el `now()` del que sale la cifra es
+  exactamente el `now()` del `ts` de la fila. Restarlo en Python daba un número plausible y falso
+  en cuanto los relojes difieren un segundo. Va con la misma clave (`latency_s`) y el mismo `t0`
+  (`incidents.opened_at`) que la de despacho de `notify_sent`, así que las dos se comparan sin
+  traducir nada.
+  **`GET /incidents/{id}/notifications`** lee lo que `notification_jobs` guardaba desde la `0040`
+  y no leía nadie. Devuelve **dos latencias separadas y NO sumadas**: `dispatch_latency_s` (de la
+  apertura a que el proveedor aceptó) y `delivery_latency_s` (de ahí a la confirmación). El
+  segundo tramo **no depende de TAKAB** —son los tres minutos del operador móvil—, y presentarlos
+  sumados se los cargaría a la plataforma. `delivered` sale de `delivered_at IS NOT NULL` **y de
+  nada más**: `sent` es «el proveedor lo aceptó» y `simulated` «no había proveedor», y ninguno de
+  los dos afirma que un humano lo tenga en la mano.
+  **El destinatario se reduce en `notify/destino.py`, con allowlist por FORMA** — la misma
+  doctrina de `narrative/redact.py`, y por el mismo motivo: con una denylist, el canal que se
+  añada mañana trae un `target` que nadie previó y sale entero, con el teléfono dentro. Lo que no
+  encaja **no sale y se declara** (`unrecognised`), porque un hueco se leería como «no había
+  destinatario».
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **La URL de un webhook ES la credencial.** Un `https://…/services/T0/B0/xoxb…` autoriza a
+  publicar a cualquiera que lo lea; devolver `target` en crudo habría sido una fuga de secreto por
+  una pantalla de consola. Sale **el host y nada más**, con test de que la ruta no aparece.
+  (2) **El prefijo de país no se deduce del largo.** La primera versión del enmascarado lo dedujo,
+  acertaba con México y mentía con `+1` y con `+351`. Un prefijo inventado en una pantalla de
+  evidencia es peor que un dígito menos: **se enmascara todo menos la cola**.
+  (3) **`gov_ack_incident` no dejaba fila en la bitácora** (migración `0056`). Escribía solo
+  `audit_log`, así que un incidente acusado por Protección Civil salía `acked` en la consola **con
+  la bitácora sin un solo acuse**: la pantalla que existe para reconstruir lo ocurrido contradecía
+  al estado que tenía al lado. No es un hueco, es una contradicción — y ninguna de las dos vías
+  del acuse tenía test de que su fila existiera.
+  (4) **El SLA no se cumple por no intentarlo.** El veredicto de plazo comparaba `sent_at <=
+  deadline_at`, así que el job encolado hace media hora con plazo de 60 s **y sin enviar** salía
+  sin veredicto y sin aviso: el incumplimiento más grave era el único silencioso. Se compara
+  contra `sent_at` si salió y contra **ahora** si no, y el `null` queda para lo único que lo
+  merece — el canal que no tenía plazo.
+
+### [x] T-5.16 · **Umbrales por tipo de inmueble**, con rollback — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-02**
+> `BLUEPRINT §4.5` declara tres bandas de referencia: hospitales 0.040–0.060 g, industriales
+> 0.080–0.120 g, corporativos 0.100–0.150 g. **Ninguna está implementada.** `building_type` es
+> texto libre sin catálogo ni restricción, y **nadie lo consulta** para resolver umbrales: los
+> alcances son tenant, sitio y sensor. El propio código lo declara en la consola.
+>
+> Consecuencia física: el default del edge está documentado como *"Default = hospital"*, así que
+> **toda la flota corre la banda de hospital**. Un industrial dado de alta hoy avisa dos veces por
+> debajo de su banda.
+>
+> Y falta el **rollback**, que el blueprint exige por nombre (*"versionada y reversible"*) y que
+> `G-05` pide explícitamente. El versionado y el conflicto por versión base están bien resueltos y
+> con test; el histórico está en la base. Lo que no hay es forma de volver a una versión: hay que
+> teclear los valores viejos y crear una nueva.
+>
+> **Lo que hay que decidir:** si la tipología es un catálogo cerrado con bandas por defecto, o una
+> etiqueta que solo sugiere. La primera opción cambia el comportamiento de una estación con solo
+> cambiarle el tipo, y eso **no puede pasar sin publicar y firmar**.
+- **Componente:** api + web + db + edge · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el umbral de un edificio corresponda a lo que ese edificio es, y que volver
+  atrás sea un clic, no un dictado.
+- **Criterios de aceptación:**
+  - [x] Decisión escrita **con su razón** sobre si la tipología resuelve umbrales o solo los
+        sugiere.
+  - [x] Catálogo cerrado de tipos, con las tres bandas del blueprint como valores de referencia
+        **derivados de un solo sitio**, no copiados en tres archivos.
+  - [x] Cambiar el tipo de un sitio **nunca** cambia por sí solo lo que corre en el gabinete: hace
+        falta publicar, y la publicación va firmada como hoy.
+  - [x] Rollback a una versión anterior del conjunto de reglas, como operación explícita que
+        **crea una versión nueva** declarando a cuál vuelve — nunca reescribiendo el histórico.
+  - [x] El rollback queda auditado y respeta el conflicto por versión base.
+  - [x] Test de que el default del edge deja de ser silenciosamente el de hospital: sin banda
+        resuelta, el gabinete **lo declara** en vez de suponerla.
+- **Cómo se cerró (2026-09-02).**
+  **La decisión es `D-28`: la tipología SUGIERE, no resuelve.** La razón que la sostiene, y que
+  conviene no perder: *el tipo se edita desde una pantalla de captura*. Quien abre el formulario
+  de una estación va normalmente a corregir una dirección; si el tipo resolviera el umbral, ese
+  guardado —administrativo, sin firma y sin publicación— **re-armaría el edificio a otra
+  sensibilidad**. Es un cambio de actuación por un acto de captura, y choca con las reglas de oro
+  1 y 8. Se prueba **midiendo**: `test_cambiar_el_TIPO_no_toca_el_rule_set_activo` compara el
+  rule_set activo antes y después de cambiar el tipo, en vez de fiarse de un comentario.
+  **El catálogo vive en `shared/schemas/tipologia_umbral.json`** y de ahí derivan, por igualdad y
+  en los dos sentidos, la validación de la API, el `CHECK` de `sites.building_type` y el
+  desplegable de la consola — y las tres bandas se leen **del propio blueprint** con una expresión
+  regular, así que retocar una cifra en un sitio y no en el otro sale rojo con el número que
+  cambió.
+  **El rollback** (`POST /rule-sets/{id}/rollback`) crea una versión **más**, nunca una menos:
+  `rolled_back_to` declara a cuál vuelve, queda auditado con las dos versiones y respeta el
+  conflicto por versión base igual que el PUT.
+  **Cinco cosas que aparecieron al hacerlo.**
+  (1) **Los tipos que el producto atiende y para los que NADIE publicó banda** —universidad,
+  gobierno, otro— la llevan en `null` **con su razón escrita**. Prestarles la de hospital habría
+  sido repetir el defecto que abre la ficha en vez de cerrarlo.
+  (2) **El rollback NO resucita un secreto rotado.** El `config` guarda el `secret` del webhook, y
+  una versión vieja lo trae; puede haberse rotado justamente porque se filtró. Se restauran los
+  valores de entonces con las credenciales de AHORA, reutilizando `redact_config` + `merge_secrets`
+  en vez de escribir una tercera regla de secretos.
+  (3) **El panel trataba «cualquier cosa que no sea `sin_resolver`» como banda publicada**, así
+  que un origen desconocido se leía como decidido — un fallback pintado de `ok`. Son **tres**
+  estados, y el tercero se declara. Lo cazó el censo de render del panel: mutar el campo no
+  cambiaba un pixel porque todas las mutaciones caían en la misma rama.
+  (4) **El origen se pinta SIEMPRE**, no solo cuando es malo: que la advertencia falte no puede
+  ser la única señal de que la banda sí se eligió.
+  (5) **`serverDataCensus` obligó a sacar el campo de tipología a componente propio.** Dentro del
+  formulario era dato de servidor sin los cuatro estados: con la consulta caída, un desplegable
+  con solo «SIN CLASIFICAR» se lee como «no hay tipos», que es lo contrario de «no se pudieron
+  leer».
+  **Lo que la migración `0057` hace con lo escrito antes:** `building_type` era texto libre. Se
+  normaliza lo reconocible y lo que no encaja pasa a `otro` **dejando el texto original en
+  `audit_log`** — perder la captura de alguien en silencio para que cuadre un `CHECK` es lo que
+  prohíbe la regla de oro 11.
+
+### [x] T-5.17 · El **sonido del simulacro** no se elige ni queda auditado — `SOFTWARE` · **CERRADA 2026-09-02**
+> El selector de audio que la nube empuja cubre **dos ranuras** —sirena y tono de prueba— y el
+> voceo de simulacro **no está entre ellas**: sale de un ajuste local cuyo valor por defecto es
+> vacío, configurable solo tocando el archivo de entorno de cada gabinete.
+>
+> Y la auditabilidad tiene un hueco: el sha256 se registra **al arrancar**, no al sonar. Al
+> reproducir solo se escribe la ruta en el journal local, y el botón del panel deja rastro en un
+> anillo **en memoria** que no pasa por el libro de actuaciones. Si alguien pregunta qué sonó el
+> 19 de septiembre en la torre B, la única respuesta está en el journal de ese gabinete.
+>
+> **La propiedad que hay que conservar al añadir el selector** ya está bien resuelta en el
+> catálogo y no se toca: la nube elige **por identificador de catálogo**, nunca por binario ni
+> ruta absoluta —ese canal va firmado a un aparato que toca gas y puertas—; un identificador
+> desconocido **conserva el tono anterior** en vez de caer a otro; y el tono oficial sigue
+> reservado y ausente por su gate legal.
+- **Componente:** edge + api · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que se pueda elegir el sonido del simulacro desde la nube y que quede constancia
+  de qué sonó exactamente.
+- **Criterios de aceptación:**
+  - [x] El perfil de audio gana la ranura del voceo de simulacro, con las mismas reglas que las
+        dos existentes.
+  - [x] El sha256 del asset **viaja en el acuse** del arranque del simulacro y queda persistido
+        junto al acuse por sitio, no solo en el journal.
+  - [x] El botón del panel deja constancia persistida, no en un anillo en memoria.
+  - [x] Un identificador desconocido conserva el tono anterior y **lo declara**; el tono oficial
+        sigue ausente del catálogo.
+  - [x] Test que recorra los tres caminos: identificador válido, desconocido y reservado.
+- **Cómo se cerró (2026-09-02).**
+  **La ranura** `audio.simulacro` sigue las tres reglas de las otras dos, y no por copia: el bucle
+  de `apply_audio_profile` recorre las tres con el mismo código, así que la cuarta que alguien
+  añada hereda las reglas o no entra. El voceo de simulacro deja además de leerse de `settings` en
+  cada reproducción y pasa a ser **estado del módulo**, que es lo que permite que la nube lo
+  elija; el valor inicial sigue siendo el asset local del sitio.
+  **El sha256 se calcula de lo que va a sonar, en el instante de sonar**, y no del asset que se
+  enumeró al arrancar. La diferencia no es teórica: entre el arranque y el simulacro puede haber
+  entrado una config firmada que cambió el tono, y el hash que se registraba hasta hoy podía no
+  ser el del sonido que salió por la bocina. Viaja en `results.audio` del acuse —campo que ya
+  existía en el contrato, así que **no se abre superficie nueva hacia el gabinete**—, se persiste
+  con el acuse por sitio, se expone en `DrillSiteOut.audio` y se cita en el PDF del reporte.
+  **El botón del panel** escribe en la bitácora local (`ActuationLedger`), con causa propia
+  `lan_drill_voice` y con el asset y su huella en el detalle: «se voceó» sin decir qué se voceó no
+  responde a un perito. Antes solo quedaba en la `deque` de `_actions`, que un reinicio borra.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **Un id RESERVADO y uno inventado acababan indistinguibles.** Los dos conservan el tono
+  anterior —eso está bien—, pero un tecleo y una infracción de licencia no son el mismo hecho. El
+  reporte de flota gana `reserved` con la razón, para poder decir «el tono oficial de SASMEX es de
+  CIRES» en vez de un «desconocido» opaco.
+  (2) **`audio: null` y «no había módulo de audio» eran lo mismo para quien lee el reporte al día
+  siguiente.** Ahora la evidencia **nunca es `None`**: declara la razón, porque el voceo es
+  advisory y un simulacro sin él es legítimo —el banner y el registro viven igual—.
+  (3) **Y un tercer estado en el documento: «NO REPORTADO».** Un gabinete con firmware anterior no
+  trae el campo, y colapsarlo con «SIN VOCEO» afirmaría un silencio que nadie midió.
+  **Lo que NO se cierra aquí, y conviene no leer de más:** el catálogo gana un **tono**
+  (`takab-simulacro-v1`), no el mensaje hablado. El voceo grabado sigue siendo un asset local y su
+  gate de hardware sigue abierto — `RUNBOOK-gate-hw-movil-y-voceo.md §C.2` pide dos grabaciones
+  **distinguibles a oído** y nadie las ha hecho. El tono está construido para no confundirse con
+  la sirena (carillón de tres pulsos con dos segundos de silencio: el patrón de la megafonía, no
+  el de una alarma), es reproducible con `edge/scripts/gen_simulacro.py` como los otros dos, y hay
+  test de que los tres binarios del catálogo son **distintos entre sí** — dos ids apuntando al
+  mismo WAV sonarían igual aunque el catálogo dijera lo contrario.
+
+### [x] T-5.18 · La IA **no tiene tope de gasto** — `SOFTWARE` · **CERRADA 2026-09-03**
+> Hay contabilidad por llamada (el coste se lee de la respuesta del proveedor y se escribe en la
+> bitácora) y techo de tokens por llamada. **No hay cuota, ni contador acumulado, ni corte, ni por
+> tenant ni por mes.** Y el endpoint que la invocaría **no tiene límite de frecuencia**: la única
+> puerta es de rol. Un usuario autenticado puede reexportar el mismo incidente sin límite.
+>
+> Es la categoría que OWASP llama consumo de recursos sin restricción, y está en el blueprint.
+> **Hoy el riesgo está acotado solo por que la perilla está apagada** — lo que significa que el
+> tope tiene que aterrizar **antes** del shadow-mode, no después.
+- **Componente:** api · **Depende de:** nada · **Prioridad: ALTA (precede a `T-3.01`)**
+- **Objetivo:** que encender la IA no pueda costar más de lo que alguien decidió.
+- **Criterios de aceptación:**
+  - [x] Tope por tenant y por mes, configurable, con valor por defecto conservador.
+  - [x] Contador acumulado persistido; alcanzado el tope, **el proveedor cae al determinista** y
+        lo declara — nunca falla la exportación, que es una superficie de vida.
+  - [x] El corte queda auditado, y el acercarse al tope también (una fila, no una por petición).
+  - [x] Límite de frecuencia en la exportación de reportes, por usuario y por sitio, con el mismo
+        patrón de dos techos que ya usan los comandos.
+  - [x] Test de que con la perilla apagada nada de esto cambia el comportamiento actual.
+- **Cómo se cerró (2026-09-03).**
+  **Tabla `ai_spend`** (migración `0058`), una fila por `(tenant, mes UTC)`. Es un **contador, no
+  evidencia**: por eso se actualiza en sitio y `takab_app` tiene UPDATE, al revés que casi todo lo
+  demás del esquema. Lo que sí es evidencia —cuánto costó cada llamada, cuándo se avisó y cuándo se
+  cortó— sigue en `audit_log`, que es append-only y exento de poda. El tope por defecto son **5 USD
+  al mes**, deliberadamente conservador: el defecto de una cuota no puede ser «el que no molesta».
+  **Agotada la cuota, la exportación SALE IGUAL** con texto determinista y lo declara en el PDF. Es
+  la decisión que gobierna la ficha: el dictamen es una superficie de vida —alguien lo usa para
+  decidir si un edificio se ocupa— y un 429 ahí convertiría un tope de gasto en una **negación de
+  evidencia**. La prosa de IA rodea al veredicto y el veredicto no la necesita.
+  **El freno de la exportación** son los dos techos de los comandos: el del usuario y el del
+  **edificio** (`RO-8.e`: dos operadores coordinados agotan el segundo sin que ninguno rebase el
+  suyo). Se cuenta desde `audit_log`, que ya registra cada exportación y no se poda nunca — sin
+  tabla nueva ni contador que se pueda perder —, y el rechazo llega **antes de renderizar**:
+  rechazar después de haber gastado el PDF y la llamada de IA no protegería de nada.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **La auditoría del corte no escribía nunca.** La primera versión auditaba desde el router
+  releyendo el estado, y `leer_estado` **consume** la transición al sellar `blocked_at`: la
+  segunda lectura ya la veía consumida. Quien sella el hecho tiene que escribirlo, así que la fila
+  se mudó al módulo de cuota. Lo cazó escribir el test, no leer el código.
+  (2) **`cap = 0` significa SIN TOPE, no «tope cero»**, y está declarado: es la lectura
+  conservadora del ajuste ausente. Quien quiera cortar del todo apaga `openrouter_enabled`, que es
+  el interruptor que ya existía.
+  (3) **El tope se puede rebasar por UNA llamada, y se declara en vez de disimularse.** El coste
+  solo se conoce al volver del proveedor, así que la secuencia honesta es leer → decidir → llamar →
+  sumar. Reservar un estimado antes habría sido cobrar por lo que no se sabe; el desbordamiento
+  máximo es una llamada, acotado a su vez por el techo de tokens que ya existía. Hay test de que
+  el gasto real queda escrito **sin recortarlo al tope**.
+  **Y el criterio que protege el estado de hoy:** con la perilla apagada no se cobra ni una
+  llamada. `build_narrative` no toca la cuota cuando el proveedor no sale a la red — cobrarle al
+  determinista llenaría el contador de ceros y el `calls` de mentiras sobre cuántas veces se salió
+  a la red. Apagar la perilla **no es una degradación** y sigue sin marcar el PDF.
+
+### [x] T-5.19 · El aviso de la plataforma no nombra a **un solo encargado** — `GATE-LEGAL` + `SOFTWARE` · **CERRADA 2026-09-03** *(la mitad de software; el texto revisado sigue esperando a `D-20`)*
+> Siete terceros tocan o tocarán datos personales: AWS, Twilio, Meta, el servicio de
+> notificaciones de Apple, el de Google, la cadena de compilación del móvil, y el webhook del
+> propio cliente. **Ninguno está declarado.** Y el aviso **no menciona la transferencia
+> internacional**: los datos viven en Ohio. El párrafo más cercano —*"SUS DATOS NO CRUZAN A OTRA
+> ORGANIZACIÓN"*— habla del aislamiento entre clientes y es fácil de leer como una negación de
+> ello.
+>
+> **El atenuante es real y hay que decirlo:** el aviso **se autodeclara provisional dentro del
+> propio texto**, ese párrafo entra en la huella que sella el consentimiento, y el motor re-pide
+> consentimiento al cambiar el texto. A nadie se le está diciendo algo falso; se le está diciendo
+> nada. El mecanismo es definitivo; el texto no.
+>
+> **Choca con `D-20` y gana `D-20`:** la consulta legal espera a que un cliente la pida. Esta
+> ficha **no la reabre**. Lo que sí hace es dejar el trabajo de costura listo para el día que
+> llegue el texto revisado, y anotar el hecho nuevo: `D-23` y `D-07` descansan **las dos** sobre
+> la calificación de que TAKAB es encargado y no responsable, y esa calificación solo está
+> afirmada en un texto que se declara sin revisar.
+- **Componente:** api + takab-docs · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el día que llegue el texto revisado no falte nada de software, y que mientras
+  tanto el inventario de encargados exista y esté al día.
+- **Criterios de aceptación:**
+  - [x] Inventario de encargados en un documento propio, **derivado** de los proveedores que el
+        código construye y de los recursos de infraestructura que tocan datos personales, no
+        tecleado. Un proveedor nuevo entra solo.
+  - [x] Test que compare el inventario contra los proveedores registrados: uno que no esté
+        declarado pone el build en rojo nombrándolo.
+  - [x] El aviso gana los dos huecos que hoy no tiene —encargados y transferencia— como
+        **marcadores de posición explícitos**, dentro del texto provisional y por tanto dentro de
+        la huella.
+  - [x] Anotado en `PENDIENTES-MAURICIO §4.1` que la calificación de encargado sostiene `D-23` y
+        `D-07`, para que la consulta legal la traiga en su lista.
+- **Cómo se cerró (2026-09-03).**
+  **Esta ficha NO reabre `D-20`**, y conviene leerlo así: la consulta jurídica sigue esperando a
+  que un cliente la pida. Lo que se cerró es el trabajo de costura, para que el día que llegue el
+  texto revisado no falte nada de software.
+  **`takab-docs/ENCARGADOS-TAKAB.md` se GENERA** de `privacy/encargados.py` — un documento
+  tecleado a mano dura hasta el primer proveedor nuevo, y el día que se queda corto **nadie se
+  entera**: no hay pantalla que falle. Dos censos lo comparan por igualdad contra el código:
+  (a) las **clases proveedoras** del paquete `notify` que salen a un tercero, derivadas del árbol
+  de sintaxis y no importando los módulos —`twilio`, `whatsapp` y `push` se importan tarde a
+  propósito, y un censo que exigiera importarlos sería un censo de lo que se pudo importar hoy—;
+  (b) los **servicios de AWS** que aparecen en `infra/terraform`, cada uno clasificado como
+  «guarda datos personales» o no, **con su razón en los dos casos**.
+  **El aviso gana los dos párrafos** que le faltaban, dentro del texto provisional y por tanto
+  dentro de la huella: eso significa que quien ya consintió **vuelve a ver el aviso**, porque el
+  motor re-pide consentimiento al cambiar el texto. Los dos se declaran como **MARCADOR DE
+  POSICIÓN**: afirmar una lista completa de encargados sobre un texto sin revisión jurídica sería
+  peor que el hueco que había.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **El censo encontró dos clases que yo no había declarado** —`WhatsAppTemplateProvider` y
+  `SimulatedPushProvider`—, y una de las dos era el proveedor REAL de WhatsApp: yo había declarado
+  un `WhatsAppProvider` que no existe. Es exactamente el defecto que el censo existe para cazar, y
+  lo cazó en su primera ejecución sobre su propio autor.
+  (2) **El párrafo «SUS DATOS NO CRUZAN A OTRA ORGANIZACIÓN» se retituló.** Hablaba del
+  aislamiento entre clientes, y junto a un aviso que callaba a siete encargados se leía como que
+  nadie más los toca. Ahora dice de qué habla y remite al párrafo siguiente. Hay test de que la
+  frase vieja no vuelve.
+  (3) **El webhook del cliente se declara igual, con su matiz escrito**: ahí el destino lo elige el
+  RESPONSABLE y no TAKAB, y su país es «desconocido: lo determina el cliente». Omitirlo por ese
+  matiz habría sido exactamente el hueco que abre la ficha.
+  **Y el hecho nuevo que se anotó para la consulta:** `D-23` y `D-07` descansan **las dos** sobre
+  la calificación de que TAKAB es *encargado* y no *responsable*, y esa calificación solo está
+  afirmada en un texto que se declara sin revisar. Si no se sostiene, las dos decisiones cambian
+  de dueño y no de detalle.
+
+### [x] T-5.20 · Firmar un dictamen **no entra en la bitácora de auditoría** — `SOFTWARE` · **CERRADA 2026-09-03**
+> Firmar escribe la fila del dictamen —con quién firmó, en una tabla que no admite reescritura— y,
+> **solo si el veredicto es habitable**, una acción en el timeline del incidente. **No escribe en
+> `audit_log`.** El censo tiene 72 verbos, incluidos leer un dictamen y solicitarlo; no el de
+> firmarlo.
+>
+> El hecho no se pierde. Pero el sitio donde un perito, un seguro o una auditoría van a buscar
+> *"quién firmó qué y cuándo"* es la bitácora, y **el acto de mayor peso legal del sistema no está
+> ahí**. Si además el veredicto firmado no es habitable, tampoco deja acción en el timeline.
+- **Componente:** api · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el acto más importante del sistema aparezca donde se busca.
+- **Criterios de aceptación:**
+  - [x] Verbo propio en la bitácora al firmar, con el incidente como objeto y el veredicto en el
+        detalle.
+  - [x] La fila se escribe **también** cuando el veredicto no es habitable.
+  - [x] Un test de censo que exija que **toda transición de estado con peso legal** deje verbo:
+        derivado, no una lista a mano, para que el siguiente entre solo.
+  - [x] La bitácora sigue siendo escritor único: la fila entra por el módulo de auditoría, como el
+        contract-test existente exige.
+- **Cómo se cerró (2026-09-03).**
+  `dictamen_signed`, con el incidente como objeto y en el `meta` el veredicto, si es habitable, el
+  identificador del dictamen y **a quién sustituye** — la cadena se reconstruye desde la bitácora
+  sin tener que leer la tabla de dictámenes. La llamada va **antes** del `if` de habitabilidad y no
+  dentro, que es lo que dejaba al peor caso sin rastro en ninguno de los dos sitios: ni bitácora
+  (no escribía nunca) ni timeline (solo si era habitable). Y es justo el veredicto que más pesa:
+  `no_inhabit_inspect` deja a gente fuera de su casa hasta que alguien inspeccione.
+  **El censo es el entregable, no el arreglo.** Arreglar la firma habría tardado diez minutos y
+  habría dejado el hueco abierto para el siguiente acto, así que
+  `tests/contracts/test_evidencia_deja_verbo.py` deriva **las dos poblaciones**: las tablas
+  append-only salen de `db/schema.sql` contando los triggers cuya función es
+  `forbid_update_delete()` —es el propio esquema el que declara qué es evidencia— y los
+  manejadores salen del árbol de sintaxis de `routers/`. La exigencia se comprueba **dentro de la
+  función**: un `audit_async` en el manejador de al lado no audita este acto.
+  **Y la lista de excepciones quedó VACÍA**, que era el mejor resultado posible: de los doce
+  manejadores que escriben evidencia, once ya dejaban verbo y el que no se arregló en vez de
+  declararse excepción. El vacío tiene su propio test — una lista de excepciones que puede crecer
+  sola no es una excepción.
+  **Lo que costó y conviene no repetir: este censo se quedó CIEGO DOS VECES mientras se
+  escribía**, y las dos veces pasó en verde justo sobre el defecto que venía a cazar. La primera,
+  por leer solo las asignaciones `NOMBRE = "INSERT INTO …"` y no el SQL que los módulos de
+  `queries` construyen **dentro de funciones**: veía cuatro manejadores de los doce. La segunda,
+  por buscar `alias.nombre` cuando los módulos de `queries` se importan con alias
+  (`from … import dictamens as q`): con la primera corregida seguía sin ver `sign_dictamen`. Un
+  censo se prueba **contra el defecto que ya sabes que existe**; si no lo encuentra, el censo está
+  roto, no el código.
+
+### [x] T-5.21 · No hay **censo de dato viejo** en la app móvil — `SOFTWARE` · **CERRADA 2026-09-03**
+> La consola está resuelta y bien: un censo derivado del árbol obliga al componente siguiente a
+> tener su prueba de los cuatro estados o a aparecer en una lista de deuda comparada **por
+> igualdad**. Fuera de la consola es muestreo.
+>
+> En móvil el componente de marco existe y está probado, pero **no hay censo**: tres archivos usan
+> el envoltorio que conoce la frescura y **seis consultan al servidor sin él**. Y hay un caso
+> concreto: la lista del pase de vida solo declara el dato viejo **si el refetch está fallando**,
+> así que un pase de lista de hace diez minutos con red sana **se pinta como fresco**.
+>
+> Es justo la pantalla que se enseña en una demo, y justo el fallo que la regla de oro 7 existe
+> para impedir.
+- **Componente:** mobile · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que en el teléfono ningún número se pinte como vivo sin poder demostrarlo.
+- **Criterios de aceptación:**
+  - [x] Censo derivado equivalente al de la consola: quién posee dato de servidor se deriva de los
+        transportes, y se cruza contra quién tiene la prueba de los cuatro estados.
+        **Ya existía** (`T-2.111`); lo que faltaba, y es lo que se hizo, es el censo sobre la
+        SEMÁNTICA de la frescura.
+  - [x] Comparación **por igualdad** contra la deuda declarada: la pantalla siguiente escribe su
+        prueba o entra en una lista a la vista.
+  - [x] El caso del pase de vida corregido: la edad se declara siempre, no solo cuando falla el
+        refetch.
+  - [x] Guarda anti-vacuidad: el censo declara cuántas pantallas espera y cero no vale.
+- **PRIMERO, LA CORRECCIÓN DE LA FICHA.** Su premisa era **falsa**: «en móvil no hay censo» — y
+  sí lo había, `mobile/src/screenStateCensus.test.ts`, de `T-2.111`, derivado del sistema de
+  ficheros de `expo-router` y con sus cuatro listas de deuda vacías. Existía en el commit sobre el
+  que se hizo la auditoría (`df13599`), así que el hallazgo estaba mal. Lo mismo el conteo «tres
+  usan el envoltorio y seis consultan sin él»: los seis que consultan y **renderizan** usan el
+  marco; los otros son hooks y observadores, que no pintan nada.
+- **Y AHORA LO QUE SÍ ERA CIERTO, que resultó ser mucho peor.** La tercera viñeta —«el pase de
+  vida solo declara el dato viejo si el refetch está fallando»— era exacta, y no era un caso: era
+  **el significado de `stale` en toda la app**. `useAlertState` lo calculaba como
+  `isError && data !== undefined` y **siete pantallas lo heredaban**; `lista.tsx` y `dictamen.tsx`
+  hacían lo propio con `failureCount > 0`; `AccountScreen` y `camera.tsx`, con `isError`. **Nueve
+  superficies**: con red sana y un `mobile_state` de hace diez minutos, todas esas señales valen
+  `false` y la pantalla afirma frescura.
+  La peor de las nueve no es el pase de lista: es `camera.tsx`. Su frescura acaba **horneada en el
+  píxel** de una fotografía forense y entra en el sha256, así que un «METADATOS RETENIDOS» que
+  solo aparecía al fallar la consulta dejaba fotos con metadatos de hace diez minutos **sin marca
+  ninguna** — y esa foto va a un dictamen.
+- **Cómo se cerró (2026-09-03).**
+  `src/ui/useStaleSince.ts`: la edad sale del **reloj**, y el umbral **del intervalo de poll de
+  cada pantalla** — «viejo» no es una cantidad de segundos, es «ya deberíamos haber refrescado y
+  no lo hicimos». Tres pollos perdidos: uno es jitter, tres son un patrón. Una pantalla que
+  consulta cada 5 s y otra cada 30 envejecen a ritmos distintos, y un umbral fijo mentiría en una
+  de las dos. El hook trae reloj propio: sin el tic, un dato fresco al montar seguiría pintándose
+  fresco para siempre.
+  **El censo gana TRES reglas nuevas**, y las tres salieron de encontrarse el defecto en tres
+  formas distintas: la expresión del marco, la propiedad que un hook DEVUELVE, y una **constante
+  local** con nombre de frescura (`camera.tsx` pasaba el nombre de la constante al marco y la
+  señal de fallo quedaba un salto más atrás). Las dos primeras nacieron ciegas y hubo que
+  corregirlas: la del productor iba dentro del bucle de rutas y el defecto vivía en `features/`;
+  la del marco, lo mismo, y por eso `AccountScreen` lo encontré leyendo y no el censo.
+  **Y once fixtures pasaron de un epoch clavado en 2027 a contar desde `Date.now()`.** Desde que
+  la frescura sale del reloj, un `dataUpdatedAt` en el futuro sale «fresco» y el estado `stale`
+  dejaba de materializarse. La razón por la que un instante futuro **sí** debe salir fresco está
+  escrita en el módulo: `dataUpdatedAt` lo pone react-query con el reloj del propio dispositivo,
+  el mismo que da el «ahora», así que en campo no puede haber desfase — un valor futuro solo
+  aparece en un test que clava un epoch. Con él, ocho tests que simulaban «viejo» **haciendo
+  fallar la consulta** estaban probando el defecto; ahora prueban el tiempo.
+
+### [~] T-5.22 · La latencia del reflejo **solo existe como prosa** — `SOFTWARE` + `GATE-HW` · **SOFTWARE CERRADO 2026-09-03 · espera `GATE-HW`**
+> Es la cifra de venta más citada del producto, medida dos veces con hardware real: **6.65 ms el
+> 2026-07-14** y **4.16 ms en frío el 2026-07-31**. Y su evidencia primaria son **ocho documentos
+> con el número escrito a mano**. No hay journal, ni acta, ni captura del estado del gabinete, ni
+> fixture. Un cliente que pida la evidencia recibe un archivo de texto.
+>
+> Además el guardián de esa latencia **reporta el mejor de cinco intentos**, no un percentil, tras
+> haber fallado aproximadamente una de cada ocho corridas en integración continua. Y en el
+> gabinete vivo el campo de latencia del reflejo está en nulo: la medición no está viva, es
+> histórica.
+>
+> **El p95 del tramo hacia la consola tampoco se midió nunca**: lo que se vende como *"medido 214
+> ms"* es una sola observación, y una cita de percentil del tablero apunta a una línea que no lo
+> contiene.
+- **Componente:** edge + takab-docs · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que la cifra que se vende tenga detrás un artefacto y no una frase.
+- **Criterios de aceptación:**
+  - [x] La medición del reflejo se persiste como artefacto reproducible en el gabinete (captura
+        fechada del estado, o registro dedicado), no solo como línea de journal.
+  - [x] Los ~~ocho~~ **nueve** documentos citan **una fuente**, no nueve copias del número.
+  - [x] Donde se declara un percentil, o se mide o se dice que es una observación única. La cita
+        rota del tablero se corrige o se retira.
+  - [ ] `GATE-HW`: la siguiente sesión presencial captura la evidencia con el procedimiento nuevo.
+        **Es lo único que queda, y no lo cierra el software** — ver
+        [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md) §2 y el runbook §B.1.bis.
+        **[2026-09-04] Lo que el software SÍ pudo hacer, hecho:** el procedimiento estaba roto en
+        sus tres pasos y ahora es un script probado, el panel publica el acta, y la precondición
+        que hoy NO se cumple —el acta no está desplegada en `takab-pi5`— está medida y fichada en
+        [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) §3.3.e.
+- **Cómo se cerró la mitad de software (2026-09-03).**
+  **El acta** (`edge/takab_edge/audit/reflejo.py`): cada flanco del WR-1 deja una línea fechada
+  con la latencia que midió el dueño de los pines **y el estado de los cinco canales en ese
+  instante**. Eso es lo que convierte el número en evidencia: no «tardó 4 ms», sino «tardó 4 ms
+  **y estos relés quedaron así**», que es algo que alguien puede discutir.
+  **La escribe el SUPERVISOR, no el dueño de los pines**, y no es un detalle: el reflejo vive
+  entero dentro de un proceso que es mínimo y auditable a propósito (regla de oro 4), y meterle
+  un fichero dentro sería pagar el acta con el camino de vida. El módulo de auditoría ya dejaba
+  escrito que registrar el reflejo «es tarea aparte»; **esta era esa tarea**. El acta es advisory
+  de punta a punta: si el disco falla se cuenta y se sigue.
+  **`MEDICIONES-TAKAB.md` es la fuente única**, y `api/tests/test_mediciones.py` la sostiene con
+  una regla que no es «prohibido repetir la cifra» —hay documentos que **deben** citarla— sino
+  **«quien la cite tiene que enlazar aquí»**. El día que el número cambie, un `git grep` del
+  enlace da la lista exacta de quién hay que revisar; hoy esa lista no existía.
+  **Tres cosas que aparecieron al hacerlo.**
+  (1) **No eran ocho documentos: eran NUEVE.** El barrido encontró uno más que el informe
+  (`PLAN-MAESTRO-TAKAB.md`, con el `214 ms`). Es la diferencia entre contar a mano y derivar.
+  (2) **El `214 ms` se vendía como medición y se citaba como si fuera el percentil.** No lo es:
+  es **una observación**, y el `p95 < 2 s` que el blueprint declara **nunca se ha medido**. Las
+  tres cifras quedan rotuladas como observaciones únicas allí donde se citan.
+  (3) **Y las dos cifras del reflejo se tomaron ANTES de que el acta existiera**, así que **no
+  tienen artefacto** — y la tabla lo dice con todas las letras en su columna «Artefacto:
+  ninguno». Cerrar la ficha entera habría exigido borrar esa fila; dejarla es lo que hace que
+  `GATE-HW` siga significando algo.
+  **Lo que NO se tocó, y por qué:** el guardián de CI (`test_e2e.py`) sigue reportando el mejor de
+  cinco intentos. El informe lo listaba como defecto y **no lo es**: `T-2.170` lo razona como
+  tolerancia **al instrumento** —un runner compartido mide código + planificación, y el ruido
+  solo suma—, publica la serie completa también en verde y avisa cuando hizo falta reintentar.
+  Además mide **pines simulados**: no acredita nada del hardware y ahora el documento lo dice.
+
+- **[2026-09-04] Segunda pasada de software: el procedimiento de la sesión ESTABA ROTO.**
+  El criterio que queda es una sesión presencial, y el software no la puede hacer. Lo que sí podía
+  hacer —y no estaba hecho— es que esa sesión **no se pierda**. Comprobado contra el Pi real, no
+  razonado:
+  · **Los tres pasos del runbook fallaban.** La ruta se derivaba con
+    `systemctl show -p Environment takab-edge`, que muestra solo las directivas `Environment=` y
+    **no** el contenido del `EnvironmentFile=` donde el gabinete tiene la variable: el comando
+    devolvía vacío y el `dirname` moría con «missing operand». El paso siguiente ignoraba esa ruta
+    y leía `~/reflejo.jsonl`, que no existe. Y el `scp` final llevaba un literal `...` sin
+    rellenar. **La sesión habría llegado al gabinete, pulsado el WR-1 y vuelto sin evidencia.**
+  · **Ahora es un script** (`edge/scripts/acta_reflejo.sh`) con su test contra un gabinete de
+    mentira (`edge/tests/test_acta_reflejo_script.sh`, 9 comprobaciones), en `make test` **y** en
+    CI. Un procedimiento que se ejecuta una vez cada varios meses y que nadie prueba entre medias
+    no puede descubrirse roto delante del gabinete.
+  · **`--check` es la mitad que ahorra el viaje**, y lo primero que encontró: **el acta NO está
+    desplegada.** `takab-pi5` corre la release `20260830T222850Z-71ac7df` (2026-08-30) y el módulo
+    entró el 2026-09-03. Sin él el gabinete no escribe ni una línea, y el síntoma sería
+    indistinguible de «no hubo flancos». Fichado en `PENDIENTES-MAURICIO.md` §3.3.e.
+  · **El panel publica el acta** (`latencies.acta`), que cierra la queja original de la ficha —«en
+    el gabinete vivo el campo de latencia está en nulo: la medición no está viva, es histórica»—:
+    `reflex_s` sigue siendo volátil y al lado va ahora el resumen durable con **mejor y peor**.
+    `resumen()` existía desde `T-5.22` con un docstring que decía «lo que el panel publica» y
+    **nadie la llamaba**. Y `acta: null` (firmware sin el módulo) se distingue de `total: 0`
+    (desplegado y sin flancos): el primero se arregla desplegando y el segundo pulsando el WR-1.
+  · **Cinco mutaciones comprobadas**, y **dos sobrevivieron al primer intento** — publicar solo el
+    mejor caso y contar los pulsos de prueba como evidencia. La causa: el `ssh` de mentira
+    **reimplementaba** el resumidor en vez de ejecutar la orden que el script manda. Un arnés que
+    reimplementa lo que prueba no prueba nada; ahora ejecuta el código real y las cinco caen.
+
+### [x] T-5.23 · No existe **espectrograma** en el dictamen técnico — `SOFTWARE` · **CERRADA 2026-09-03**
+> Confirmado abriendo el código: lo que hay es **un solo espectro de amplitud** de la ventana
+> entera, con resta de continua y ventana de Hann. Cero coincidencias de transformada por ventanas
+> en todo el árbol.
+>
+> **Para un cliente no técnico no aporta**: es una figura que exige formación y compite con el
+> croquis y el semáforo, que son lo que decide. **Para el pericial sí**: separar la llegada de las
+> dos ondas y ver si el edificio respondió en su periodo fundamental es exactamente lo que un
+> espectro global promedia y esconde.
+>
+> Por eso va en la tanda tres, y **detrás** de que la onda cruda llegue a existir en la nube
+> (`T-3.11.c`): sin registro archivado no hay nada que transformar.
+- **Componente:** api · **Depende de:** T-3.11.c *(para el DATO, no para el código — ver abajo)* ·
+  **Prioridad: BAJA**
+- **Objetivo:** una figura tiempo-frecuencia en el documento pericial, con la misma honestidad que
+  el resto.
+- **Criterios de aceptación:**
+  - [x] Espectrograma del canal dominante, con sus ejes rotulados y su ventana declarada.
+  - [x] Sin registro archivado, **el mismo texto de ausencia** que ya usa la sección de onda cruda:
+        no un hueco.
+  - [x] El PDF sigue siendo determinista: mismo modelo, mismos bytes.
+  - [x] La figura **no promete** una escala que no existe, como ya vigila la guarda del mapa.
+- **La dependencia SE VERIFICÓ, y es real — pero no bloquea el código.** `T-3.11.c` se lee como
+  «el worker de CCTV», y suena a que no tiene nada que ver. Sí lo tiene:
+  `api/src/takab_api/backfill/objects.py` es **el único productor** de la fila de evidencia
+  `kind='miniseed'`, y ése es el worker que no está en el compose de la nube. O sea que en
+  producción **hoy no hay miniSEED archivado que transformar**, y la figura tomará siempre el
+  camino de la ausencia hasta que `T-3.11.c` se despliegue. La ficha ya lo anticipaba en su
+  criterio 2, y por eso el código se puede cerrar: está construido para declarar el hueco.
+- **Cómo se cerró (2026-09-03).**
+  `dictamen/espectrograma.py`: transformada por ventanas de Hann con solape del 50 % sobre el
+  **mismo canal dominante** que el espectro y la duración — dos figuras del mismo dictamen que
+  describieran trazas distintas serían una trampa para quien las compare, que es la razón que ya
+  dejó escrita `T-3.14`.
+  **La prueba que justifica la figura entera** es `test_SEPARA_en_el_tiempo_dos_frecuencias_que_el
+  _espectro_global_promedia`: media traza a 5 Hz y media a 20 Hz. El espectro global las vería a
+  las dos y no diría cuándo; el espectrograma tiene que enseñar 5 Hz al principio y 20 al final.
+  Si eso falla, la figura no aporta nada y sobra.
+  **Cuatro decisiones que llevan su razón escrita.**
+  (1) **La escala es RELATIVA y la leyenda lo dice.** El crudo llega en cuentas del ADC y la
+  calibración instrumental sigue pendiente: una barra con unidades prometería una calibración que
+  nadie hizo. Es la misma guarda que vigila el mapa de sacudida.
+  (2) **La continua se resta POR VENTANA.** El crudo del RS4D trae millones de cuentas de DC —el
+  hallazgo de `T-2.25`—, y sin restarla cada ventana sale aplanada. Hay test con 3.77 M de cuentas
+  encima.
+  (3) **Una traza muerta devuelve ceros, no una figura encendida.** Normalizar dividiendo por cero
+  pintaría ruido como si fuera señal: de las dos mentiras posibles, es la cara.
+  (4) **Un registro largo se diezma tomando columnas equiespaciadas, no truncando.** Truncar
+  dejaría fuera la coda, que es media pregunta de un peritaje.
+  **Y la leyenda se extrajo a función pura** para poder probarla: el flujo de contenido de un PDF
+  va comprimido, así que un test que buscara el rótulo en los bytes acabaría probando `fpdf2` en
+  vez del enunciado. Junto a ella, una guarda anti-vacuidad que compara el MISMO documento con y
+  sin figura — «el ejecutivo pesa menos que el técnico» habría pasado en verde aunque no se
+  dibujara nada.
+
+### [x] T-5.24 · El reloj y la pérdida de paquetes **callan cuando deberían gritar** — `SOFTWARE` · **CERRADA 2026-09-03**
+> Dos huecos de la misma familia, los dos en el eje de "salud del sistema":
+>
+> - **El reloj.** El desfase se mide de verdad con el demonio de reloj, viaja, se persiste y
+>   degrada el estado del sitio en la consola. Pero el panel del gabinete **lo pinta siempre en
+>   verde**: no usa el ayudante de umbrales que todas las filas vecinas sí usan, así que un desfase
+>   de cinco segundos se ve igual que uno de tres milisegundos. Y **ninguna de las 13 alarmas de la
+>   nube es de reloj**: se ve solo si alguien está mirando la pantalla. Sin hora confiable, ninguna
+>   evidencia sirve.
+> - **La pérdida de paquetes.** Viaja a la nube y **se descarta a propósito** en la ingesta, con la
+>   razón escrita. Consecuencia: el centro de operaciones **no puede ver la pérdida de paquetes de
+>   ningún gabinete**; para diagnosticar un enlace degradado hay que ir al sitio o abrir el panel
+>   por red local.
+- **Componente:** edge + api + infra · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que las dos señales que dicen si la evidencia vale se puedan ver y despierten a
+  alguien.
+- **Criterios de aceptación:**
+  - [x] El panel usa el mismo ayudante de umbrales que sus filas vecinas para el desfase de reloj.
+  - [x] Alarma de desfase en la nube, con el mismo criterio que las demás: vigila la **ausencia**
+        además del valor, y publica su cero para no quedarse muda.
+  - [x] La pérdida de paquetes gana columna y llega al centro de operaciones, o se declara por
+        escrito **por qué** sigue siendo local — pero no las dos cosas a la vez.
+  - [x] Test de que el gabinete sin dato de reloj **lo declara** en vez de pintarse en verde.
+- **Cómo se cerró (2026-09-03).**
+  **El reloj, en las cuatro superficies que hablan de él.** La fila del panel del gabinete usaba
+  el único ternario propio de la tabla (`null ? ámbar : verde`), así que un desfase de **cinco
+  segundos** se pintaba tan verde como uno de tres milisegundos; ahora usa el mismo `col()` que
+  sus vecinas, sobre el **valor absoluto** —un reloj adelantado miente igual que uno atrasado, y
+  el ternario viejo ni miraba el signo—, con ámbar en 100 ms y rojo en 1 s, que es donde el sello
+  deja de poder ordenar dos hechos del mismo segundo.
+  **Y apareció un cuarto espejo que nadie había contado:** el badge `NTP OFFSET` del SOC estaba en
+  **50 ms**, o sea que se ponía rojo mientras la misma consola declaraba el sitio OPERATIVO y el
+  panel del Pi lo pintaba en ámbar. Los cuatro (`Settings.fleet_ntp_offset_max_ms`, el panel, el
+  badge y la alarma) los compara ahora por igualdad `api/tests/contracts/test_umbral_de_reloj.py`,
+  derivándolos de sus tres lenguajes en vez de confiar en que alguien recuerde moverlos juntos.
+  El censo se comprobó **contra el defecto que ya existía**: devolviendo el badge a 50 se pone
+  rojo y nombra los cuatro valores.
+  **La alarma de la nube: `missing`, no `breaching`, y la razón es un hecho del código.**
+  `MaxClockDriftMs` sale de la **misma llamada** que `GhostGatewaysAlive` —`GhostGauge` arma las
+  tres cifras bajo un solo `try` y las manda en un único `put_metric_data`—, así que las dos
+  alarmas se quedan sin datos a la vez y por la misma causa. Con `breaching`, el correo afirmaría
+  que un reloj se salió de rango sin que nadie haya leído un solo latido, que es exactamente la
+  mentira que este módulo ya rechazó para su gemela. Va con `insufficient_data_actions`, y eso sí
+  manda dos correos por una causa: es deliberado y no es el defecto de `ec2_cpu` —allí el segundo
+  correo nombraba la causa **equivocada**—, sino dos que dicen la misma verdad, «no sé nada»,
+  sobre dos cosas distintas. El reparto de `sensor_mute` (delegar la ausencia en otra alarma) no
+  sirve aquí: el correo de fantasmas no menciona el reloj.
+  **Y el repo cazó al autor:** una alarma nueva no basta con escribirla. El censo
+  `test_muting.py` deriva las alarmas del Terraform y exige que cada una esté clasificada como
+  silenciable o no en `ops/muting.ALARM_CATALOG` — `clock_drift` entró como **intocable**, y no
+  por el default: comparte publicador con `ghost_gateways`, así que una ventana de plataforma
+  mandará **dos correos de INSUFFICIENT_DATA por una sola causa**, que es un argumento real para
+  callarla. No basta, porque en esa misma ventana la alarma también puede sonar **por su valor**,
+  y un reloj que se sale de rango mientras se mantiene la nube es un hallazgo ajeno que la
+  ventana taparía. La lista de intocables se enumera a mano **a propósito** —esa fricción es la
+  decisión—, así que la razón queda escrita en los dos sitios.
+  **El cero se publica**, que es lo que hace que el silencio signifique una sola cosa. La consulta
+  toma el **último** latido de cada gabinete —un desfase ya corregido no puede seguir alarmando—,
+  excluye al retirado (de ése habla la otra métrica) y al que lleva más que `SIN ENLACE` sin latir
+  (de ése habla `gateway_offline`), y **excluye el `NULL`**: no saber la hora no es tenerla bien,
+  y contarlo como cero fabricaría la buena noticia.
+  **La pérdida de paquetes: se eligió el camino de exponerla, no el de justificar el hueco.** La
+  ingesta la tiraba con la razón escrita —no había columna—, así que ahora la hay (`0059`), el
+  handler la persiste y llega a `/fleet` y a la tarjeta de la consola, pegada al lag porque es el
+  **mismo enlace** y se diagnostican juntos: un lag que sube con pérdida al 0 % es otro problema
+  que uno que sube perdiendo el 12 %.
+  **Y al exponerla apareció una mentira que hasta hoy moría en el gabinete:** el edge devolvía
+  `0.0` tanto cuando no tenía cliente SeedLink como cuando aún no había visto un solo paquete —y
+  un cero en un porcentaje de pérdida se lee «enlace perfecto», dicho por quien no ha mirado.
+  Mientras la cifra se quedaba en el Pi era casi inocuo; desde que **viaja y pinta una tarjeta**,
+  no. Ahora los dos casos son `None` ⇒ `s/d`, con su prueba, su esquema publicado relajado a
+  `null` y el `%.1f%%` del log de transición convertido en `%s` — que es literalmente el tropiezo
+  que ya dio `relays` al ganar su «no pude preguntar», y por el mismo camino. Un firmware viejo
+  que siga mandando su número entra igual.
+  **Lo que deliberadamente NO hace es degradar el estado del sitio.** Y la razón hay que decirla
+  con precisión, porque un umbral SÍ existe: el panel del gabinete pinta ámbar al 1 % y rojo al
+  10 %. Pero ése es consejo para quien está de pie delante del Pi. Degradar `derived_state`
+  arrastra la pill del SOC, la app móvil y el reparto de alarmas — ese umbral de **servidor** no
+  lo ha elegido nadie. Por lo mismo la pill de la consola no se tiñe: `LinkPill` ya llevaba
+  escrita la regla («el semáforo fino por métrica NO existe aquí, los umbrales viven solo en el
+  servidor») y es buena. El día que se decida, entra en `fleet_degrade_reasons` con su ajuste,
+  como las demás.
+### [x] T-5.25 · El silencio **no alcanza a los gabinetes secundarios** — `SOFTWARE` · **CERRADA 2026-09-03**
+> El silencio del operador está bien resuelto en el gabinete que lo recibe: corta la sirena, corta
+> el voceo, deja el estrobo, no toca gas ni puertas, y una alarma nueva vuelve a sonar. Doce tests
+> lo defienden.
+>
+> Pero en un sitio con varios gabinetes, el principal propaga la activación a los secundarios por
+> radio y **solo el cierre de alerta propaga la orden inversa**. El silencio no. El operador calla
+> el suyo y **el edificio sigue sonando**.
+>
+> Es el mismo riesgo de credibilidad que motivó la decisión de la ruta de hardware: una sirena que
+> nadie puede callar durante una falsa alarma quema la obediencia a la siguiente alerta.
+- **Componente:** edge · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que silenciar signifique lo mismo en todo el inmueble.
+- **Criterios de aceptación:**
+  - [x] El silencio se propaga a los nodos secundarios, y **solo** el silencio: la protección no
+        audible de cada nodo no se toca.
+  - [x] Un nodo que no confirma **se declara** en el panel: silenciar cuatro de cinco no es
+        silenciar.
+  - [x] Una alarma nueva vuelve a sonar en todos, como ya ocurre en el principal.
+  - [x] Test con dos nodos que mida el estado eléctrico de ambos, no la orden enviada.
+- **Cómo se cerró (2026-09-03).**
+  **La premisa se verificó y era exacta:** `reset_alert()` propagaba `clear` y la prueba local
+  propagaba `test`; `silence()` no propagaba nada.
+  **Pero el enganche correcto no era el botón del panel.** `silence_audibles()` la disparan DOS
+  orígenes —el panel LAN y el **pulsador físico** del gabinete— y el pulsador es el que aprieta de
+  verdad quien está delante de una falsa alarma. Colgarlo del panel habría dejado el edificio
+  sonando **por el camino más probable**, con un test en verde. Va por la costura de eventos
+  (`gpio_link.subscribe("silence", …)`), que cubre los dos y cualquier origen futuro.
+  **`SILENCE` es un tipo de mensaje propio, no un `ALARM_ACT` sin el bit de sirena**, y las dos
+  razones apuntaban al mismo sitio —el peor—: (1) el contrato publicado dice que `ALARM_ACT`
+  **enciende**, así que un firmware escrito contra esa frase engancha la sirena y no la suelta con
+  otro `ALARM_ACT`; (2) en el emisor, dos `ALARM_ACT` seguidos **SUMAN** flags a propósito (los
+  comandos de red llegan por canal separado), de modo que un silencio disfrazado de activación se
+  lo tragaría el `merged |= pending["flags"]`. La ambigüedad caía del lado de «la sirena sigue
+  sonando». Es **aditivo sobre v1** —el layout no cambia, `ver` sigue en `0x01`— y un firmware que
+  no conozca el tipo 6 lo rechaza y **no ackea**, que es la verdad y no un silencio fingido.
+  **Solo el silencio:** la orden lleva `alarm_active` y el estrobo puestos, así que la alerta sigue
+  viva en cada nodo y su protección no audible no se toca. Apagar el estrobo convertiría «callar la
+  sirena» en **borrar la alerta** para quien está dentro, que es peor que no poder callarla.
+  **El re-armado también viaja, y solo si hay algo que re-armar.** El observador recibe un simple
+  booleano; propagar una activación sin consultar el enclave encendería sirenas en otra nave a
+  partir de un botón que solo dice «ya no silencio». Tiene su propio test.
+  **El panel dejó de decir `SIN ACK` a secas.** Ese rótulo no distingue un test perdido —da igual—
+  de un **silencio** perdido, que significa que ese nodo sigue sonando mientras el operador cree
+  que calló el edificio: ahora dice `SIGUE SONANDO · SILENCIO SIN CONFIRMAR`, y `SILENCIADO` en el
+  que sí confirmó. Silenciar cuatro de cinco no es silenciar.
+  **El criterio 4 obligó a construir lo que faltaba.** El ESP32 simulado guardaba `flags_seen` —la
+  última **orden**—, que no es el estado eléctrico: un test posterior la pisa, y una orden que
+  llegó no dice qué quedó encendido. Ahora modela sus dos relés con las cuatro reglas del firmware
+  (`ALARM_ACT` suma · `SILENCE` apaga lo audible · `CLEAR` apaga todo · `TEST` no toca nada), así
+  que es a la vez el banco de pruebas de esta ficha y la **especificación ejecutable** del firmware
+  en C. El test de dos nodos mide `siren_on` de ambos; con el enganche desactivado falla diciendo
+  `SIGUE SONANDO (sirenas: True, True)`, que es el defecto textual de la ficha.
+  **Y el vector dorado del silencio quedó atado al documento:** los bytes viven en
+  `LORA-SECUNDARIOS.md §3` (lo que lee quien escriba el firmware) y en el test (lo que corre CI),
+  y un test nuevo comprueba que son los mismos — un vector correcto en un solo sitio es peor que
+  no tenerlo.
+### [x] T-5.26 · La huella del PDF se imprime **a la mitad**, y la ficha de estación está partida — `SOFTWARE` · **CERRADA 2026-09-03**
+> Dos defectos de superficie que se arreglan juntos porque los dos son "el dato está y no se ve":
+>
+> - **La huella.** La cadena de custodia imprime el sha256 truncado a **32 de 64** caracteres,
+>   mientras la portada del mismo documento instruye verificarlo con la herramienta estándar. Con
+>   medio hash no se puede. (El hash de contenido de la portada sí va entero; es el de cada objeto
+>   de evidencia el que se corta.) Además el documento ejecutivo **no lleva huella de contenido**:
+>   el que lee quien decide no trae con qué verificarse.
+> - **La ficha de estación.** Modelo, versión de firmware, serial y estado del respaldo eléctrico
+>   **no están en el contrato del mapa**; para verlos hay que abandonar la consola e ir a Flota,
+>   que en una demo es un salto de pantalla en el peor momento. Y el panel del propio gabinete no
+>   muestra su serial ni el código de estación del sensor, así que quien está de pie delante no
+>   puede correlacionarlo con la consola sin abrir el archivo de entorno.
+- **Componente:** api + web + edge · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que un dato que el sistema ya tiene no se pierda en el último centímetro.
+- **Criterios de aceptación:**
+  - [x] La cadena de custodia imprime el hash completo, o la portada deja de instruir verificarlo
+        — no las dos cosas.
+  - [x] El documento ejecutivo lleva su huella de contenido.
+  - [x] La ficha del mapa gana los campos de identidad de hardware, con el mismo criterio honesto
+        que ya usa el medidor de respaldo: sin dato, lo dice.
+  - [x] El panel del gabinete declara su serial y el código de estación del sensor.
+  - [x] Los PDF siguen siendo deterministas.
+- **Cómo se cerró (2026-09-03).**
+  **La huella, y una tercera que el informe no había visto.** El sha256 de cada objeto de
+  evidencia salía a **32 de 64** caracteres, y la custodia del **vídeo** a **16 de 64** con puntos
+  suspensivos — honesta sobre estar cortada e igual de inútil para verificar, y son custodia
+  igual que el miniSEED: lo dice esa misma sección del documento cuatro líneas más arriba. Las
+  dos van enteras. No había razón de espacio: 64 hex miden **108.7 mm de los 128** que deja la
+  columna, así que caben en una línea.
+  **La forma obvia de probarlo PASA EN VERDE SOBRE EL DEFECTO, y se descubrió por mutación.** El
+  atajo era «cambio la cola del hash y exijo que el PDF cambie»; pero cualquier cambio del modelo
+  mueve el `content_sha256` que la **portada sí imprime**, así que los dos documentos salen
+  distintos aunque la custodia siga cortada. Y la vía directa tampoco existe: el flujo del PDF va
+  comprimido **y** con fuentes embebidas, o sea que el texto viaja como índices de glifo y el hash
+  no aparece en los bytes ni entero ni cortado (comprobado). Se cierra donde se decide: la regla
+  vive en una función pura (`huella_de_custodia`) y un **barrido del render** prohíbe volver a
+  recortar un hash en el sitio donde se imprime, con su guarda anti-vacuidad —son DOS llamadas—
+  para que el barrido no siga en verde sobre un módulo que dejó de usarla. Las dos mutaciones
+  comprobadas.
+  **El ejecutivo ya lleva su huella.** Es el documento que lee **quien decide** y era el único de
+  los dos sin con qué verificarse. Es la MISMA huella en ambos —sale del contenido, no del
+  archivo—, y eso es justo lo que permite comprobar que el resumen y el pericial hablan del mismo
+  incidente sin abrirlos a la vez; el texto lo dice para que nadie la confunda con el hash del
+  fichero.
+  **La ficha del mapa gana la identidad del hardware:** serial, versión de firmware, modelo del
+  sismógrafo y respaldo eléctrico. Dos de esos campos **ya viajaban** en la consulta del mapa
+  —`power_status` y `battery_pct`, que usa `derive_fleet_state`— y se tiraban al construir la
+  respuesta: el dato estaba y no se veía. El modelo sale del mismo lateral que ya barría los
+  sensores activos, con `string_agg DISTINCT`: con uno sale su modelo y con dos distintos salen
+  los dos, porque inventar «el» modelo de un sitio mixto sería peor que enseñar ambos. Sin dato,
+  `null` ⇒ **S/D** en el panel, y `respaldoLegible(null, …)` devuelve `S/D` en vez de «LÍNEA»: un
+  gabinete que no ha reportado no está enchufado a la red, es que no ha dicho nada.
+  **El panel del gabinete declara su identidad correlacionable:** el nombre con el que la **nube**
+  lo conoce y el **código de estación** del sismógrafo. Salen de `thing_name` y de
+  `seedlink_station_code` —que ya resuelven sus propios fallbacks— y no de dos cadenas escritas
+  aquí, que acabarían divergiendo. Sin configurar dice `S/D`, no un hueco.
+  **Y el censo del panel cazó al autor otra vez:** añadir dos campos a `status()` sin tocar el
+  fixture del render puso en rojo `test_el_fixture_del_censo_es_el_status_real_hasta_el_ultimo_
+  anidado`, que compara los dos **recursivamente**. Es la guarda que impide que el panel se pruebe
+  contra un contrato que ya no existe.
+### [x] T-5.27 · Las **dos guardas que faltan** — `SOFTWARE` · **CERRADA 2026-09-03**
+> Dos propiedades que hoy se cumplen **por construcción** y que nada impediría romper mañana:
+>
+> - **La cifra externa fuera del veredicto.** El desacoplamiento es genuino y estructural: el tipo
+>   de entrada del veredicto tiene siete campos y **ninguno admite** magnitud ni catálogo, y el
+>   módulo no importa nada de forense. Pero los catorce tests del motor afirman lo que la regla
+>   **sí** hace; **ninguno afirma que el catálogo no la mueve**. Añadir el campo mañana no pondría
+>   nada en rojo. Con `T-5.10` y `T-5.11` entrando, esta guarda deja de ser opcional.
+> - **El folio fuera del prompt.** La lista blanca de lo que sale hacia el proveedor de prosa es
+>   real y no deja pasar **ni un dato personal**: ni notas de ocupantes, ni coordenadas, ni
+>   firmante, ni identificador de dispositivo. Pero el folio —que viaja entero— contiene el código
+>   del sitio y los ocho primeros hex del identificador del incidente, y el docstring del módulo
+>   afirma que ese identificador **nunca sale**. Y el test que lo defendería **borra el folio antes
+>   de afirmar**. Es un identificador estable y correlacionable entre dictámenes, no un dato
+>   personal — pero la lista blanca dice una cosa y hace otra.
+- **Componente:** api (tests) · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que las dos propiedades dejen de depender de que nadie las rompa.
+- **Criterios de aceptación:**
+  - [x] Contract-test que fije por **igualdad** los campos de la entrada del veredicto, y que
+        prohíba por barrido del árbol de sintaxis que el motor de reglas o el del dictamen importen
+        el módulo forense o el esquema del catálogo.
+  - [x] Se decide y se escribe qué hacer con el folio: o el prompt recibe un folio recortado, o el
+        docstring deja de afirmar lo que no cumple. **Lo que no puede quedarse es el test que
+        esquiva el caso.**
+  - [x] El test del identificador deja de borrar el folio antes de afirmar.
+  - [x] Guarda de no-vacuidad en ambos: cada uno declara cuántos elementos espera.
+- **Cómo se cerró (2026-09-03).**
+  **La cifra externa: por igualdad Y por barrido, porque cada mitad tapa un agujero distinto.**
+  `set(campos de EvalInput) == LOS_SIETE` se pone rojo al **añadir** un campo — un
+  `assert "magnitude" not in campos` solo cazaría ese nombre exacto y dejaría pasar
+  `catalog_magnitude` o `mag_ssn`. Y un campo no es la única puerta: el motor podría importarse
+  la cifra y consultarla por su cuenta, así que el barrido del AST prohíbe los cinco módulos de
+  fuente externa en los **dos** ficheros que producen el veredicto.
+  **Los dos son `dictamen/rules.py` y `dictamen/service.py`, y `builder.py` NO está** — no es un
+  olvido y hay que decirlo, porque el enunciado se lee como si fueran otros. `builder.py` arma el
+  **documento** y sí importa forense **a propósito**: el informe enseña los hechos medidos junto
+  al dictamen. Lo que no puede pasar es que esos hechos entren en la **decisión**, y la decisión se
+  toma en esos dos ficheros — `service.py` es además el **único** sitio del repo que construye un
+  `EvalInput`. Ese import real de `builder.py` se usa como **contraprueba del barrido**: si el
+  lector de imports no lo viera, tampoco vería uno nuevo en el motor.
+  **El folio: se decidió DEJARLO entero y arreglar la afirmación, no recortarlo.** Un folio es
+  `TKB-<código>-<fecha>-<8 hex del incident_id>-<E|T>`, y es el **nombre público del documento**
+  —`folio_of` lo dice: «se imprime y se cita por teléfono»—. Recortarlo haría que la prosa nombrara
+  un documento que no existe, y quien lo teclee no encontraría nada. Lo que viaja no es un dato
+  personal: es un identificador de documento, estable y correlacionable entre dictámenes del mismo
+  incidente, que es justo para lo que se diseñó. Lo que sigue sin salir por ninguna vía es el
+  `incident_id` **completo** ni el `event_id`. El docstring de la allowlist ya lo dice así, con las
+  dos razones.
+  **Y el test dejó de esquivar el caso.** Borraba el folio antes de mirar (`.replace(folio, "")`),
+  o sea que quitaba de en medio **la única vía** por la que el identificador salía; encima el
+  fixture traía un folio literal cuyos hex no tenían nada que ver con su `incident_id`, así que el
+  caso peligroso ni siquiera estaba representado. Ahora el folio se **deriva con `folio_of`**, como
+  en producción, y se afirma en positivo: el UUID entero no viaja, los 8 hex sí, y **solo dentro
+  del folio** — si aparecieran por otra vía, el test lo dice.
+  **No-vacuidad en los dos, con su número escrito.** El del veredicto declara 7 campos, 2
+  productores y 5 fuentes prohibidas, y comprueba que el lector de imports no devuelve vacío. El
+  del folio declara los 29 campos de `NarrativeFacts` —lo que cierra el hueco que el docstring no
+  cubría: un campo nuevo del `ReportModel` queda fuera por omisión, pero uno **cableado en
+  `facts_from`** saldría a la red en silencio— y exige que el payload serializado no esté vacío,
+  porque sobre un payload vacío todos los `not in` pasan en verde.
+  **Las cuatro mutaciones comprobadas:** añadir `magnitude` a `EvalInput` y colar el import del
+  catálogo en `rules.py` (2 rojos); filtrar el `incident_id` completo (3 rojos) y recortar el folio
+  en silencio (2 rojos).
+### [x] T-5.28 · El **espejo de la matriz RBAC** en web lleva 16 celdas divergentes — `SOFTWARE` · **CERRADA 2026-09-03**
+> **No sale de la auditoría: apareció ejecutándola** (al cerrar `T-5.12`, el 2026-09-02).
+>
+> `web/src/test-utils/meFixtures.ts` se declara a sí mismo *"espejo SOLO PARA TESTS de
+> `api/src/takab_api/auth/matrix.py`"* y añade: *"Si la matriz cambia en el backend, este archivo
+> debe cambiar con ella"*. **Nada lo comprueba.** Es exactamente el patrón que
+> `TRASPASO-SESION.md §4` ya nombró — *un censo que enumera a mano acaba divergiendo* — y ya
+> divergió **dieciséis veces**:
+>
+> | Acción | Roles a los que la matriz REAL se la da y el espejo no |
+> |---|---|
+> | `cctv_read` | superadmin, tenant_admin, soc_operator, inspector, building_admin |
+> | `cctv_video` | superadmin, tenant_admin, soc_operator, building_admin |
+> | `manage_privacy_notice` / `manage_privacy_erasure` | superadmin, tenant_admin |
+> | ~~`read_audit`~~ | ~~takab_support~~ · **FALSA, ver el cierre** |
+> | ~~`checkin_submit` / `panic_vote`~~ | ~~occupant~~ · **FALSA, ver el cierre** |
+>
+> **⚠️ La tabla de arriba se midió mal al ficharla: eran TRECE celdas, no dieciséis.** Se deja
+> intacta —con las tres filas falsas tachadas— porque es el registro de lo que se creyó; el
+> recuento correcto y cómo se obtuvo están en el cierre.
+>
+> **Por qué importa, y no es cosmético:** un permiso que en el espejo está en `false` hace que el
+> componente que lo gatea **no se monte** en los tests. Nueve de esas celdas apagan los paneles de
+> CCTV en toda la suite de web: pasan en verde porque **nadie los renderiza**. La divergencia no
+> relaja una aserción, **borra la población**. Se descubrió porque `soc_operator` —el rol
+> principal de la consola— no tenía el permiso que `T-5.12` necesitaba, y el panel salía vacío.
+- **Componente:** web · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el espejo no pueda divergir en silencio, y que las dieciséis celdas se
+  reconcilien de una vez.
+- **Criterios de aceptación:**
+  - [x] Guarda que compare el espejo contra `ROLE_ACTION_MATRIX` y `ROLE_ROUTE_MATRIX` **por
+        igualdad**, no por contención — como ya hacen `serverDataCensus` y `designTokens`. Vale
+        derivar el fichero en vez de vigilarlo; lo que no vale es un espejo escrito a mano sin
+        gate, que es lo que hay.
+  - [x] Las 16 celdas se ponen al día, **y se mira qué tests cambian de veredicto al hacerlo**:
+        montar nueve paneles de CCTV que hoy nadie renderiza puede destapar aserciones que nunca
+        se han ejecutado. Ese es el valor de la ficha, no la sincronización en sí.
+  - [x] Guarda de no-vacuidad: declara en voz alta cuántos roles y cuántas acciones compara, o un
+        analizador que se quede ciego pasará en verde comparando cero contra cero.
+- **Cómo se cerró (2026-09-03).**
+  **Se derivó el fichero en vez de vigilarlo**, que es la opción que la propia ficha permitía y la
+  única que hace la deriva *imposible* en vez de *detectable*: la tabla escrita a mano **ya no
+  existe**. `api/scripts/export_rbac_matrix.py` vuelca la matriz a
+  `shared/fixtures/rbac-matrix.json` —mismo patrón que `notify-channels.json`, que ya cruzaba un
+  hecho de Python a los tests de la web—, `meFixtures.ts` lo consume y no enumera nada, y el
+  fichero queda atado a su fuente por **dos** vías: un test que compara **celda a celda por
+  igualdad** (360 celdas) y un paso de `make drift` + CI que regenera y exige `git diff --exit-code`.
+  También se derivan el reparto web/móvil y la superficie, que eran otras dos listas a mano.
+  **⚠️ Y hay que corregir esta ficha: eran TRECE celdas, no dieciséis.** Se midieron parseando el
+  fichero viejo de git contra la matriz real, y la tabla de arriba tenía **tres filas falsas**: el
+  espejo **sí** le daba `read_audit` a `takab_support` y `checkin_submit`/`panic_vote` a
+  `occupant`. Las trece reales van todas en la misma dirección —la matriz concede, el espejo no— y
+  son: **9 de CCTV** (`cctv_read` en superadmin, tenant_admin, soc_operator, inspector y
+  building_admin; `cctv_video` en los cuatro primeros menos inspector) y **4 de privacidad**
+  (`manage_privacy_notice` y `manage_privacy_erasure` en superadmin y tenant_admin).
+  **El criterio 2 pedía mirar qué tests cambian de veredicto. Ninguno: los 1985 de web siguen en
+  verde — y la razón importa más que el hecho.** Doce de las trece acciones **no tienen ningún
+  consumidor en la web**: gatean endpoints de la API, y la consola nunca les pregunta. La
+  decimotercera, `cctv_video`, gatea **un botón** dentro de `CctvPanel` — y a nivel de página
+  `useCctv` está mockeado a `data: undefined` **a propósito y con la razón escrita**, así que ese
+  botón no se renderizaba de todos modos; sus dos ramas ya las cubre `CctvPanel.test.tsx`
+  directamente por props.
+  **O sea que la alarma de esta ficha estaba mal fundada.** Decía que nueve celdas «apagan los
+  paneles de CCTV en toda la suite… porque nadie los renderiza»: el panel **sí se monta siempre**
+  (`TriageDetail` lo pinta sin gate), lo que estaba apagado era el botón de descarga. La
+  divergencia era real y el arreglo vale —el próximo permiso que se desincronice puede gatear algo
+  que sí se pinte, y ya no podrá—, pero el daño concreto que se le atribuyó **no existía**.
+---
+
 ## RUTA CRÍTICA
+
+> **Desde el 2026-09-02 hay DOS rutas, y confundirlas es un error de planificación con precio.**
+> Esta sección describe la ruta hacia **un cliente real**, y sigue vigente sin cambios. La ruta
+> hacia **poder enseñar el producto** es otra —el Bloque VI—, es más corta, y **no está bloqueada
+> en nadie**: sus cinco ítems críticos son software. Una demo no necesita `G-04`; necesita no
+> afirmar lo que `G-04` todavía no acreditó. Ver
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) §1.
 
 **Hacia "producción con un cliente real", la ruta crítica es:**
 

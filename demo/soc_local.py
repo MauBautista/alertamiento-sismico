@@ -1,9 +1,8 @@
 """SOC local INTERACTIVO: un gabinete real simulado + bridge + DB local.
 
 A diferencia de `demo/run.py` (el guion del hito: 3 gabinetes, criterios
-scripted, TRUNCATE entre escenas), esto levanta UN gabinete con la identidad
-REAL de la flota (gw-dev-0001 / site-dev / R4F74) y deja el pipeline corriendo
-para que la consola web se pueda RECORRER a mano antes de desplegar:
+scripted, TRUNCATE entre escenas), esto levanta UN gabinete y deja el pipeline
+corriendo para que la consola web se pueda RECORRER a mano:
 
     gabinete (EdgeSupervisor real, panel LAN en :8080)
         └─ spool (≡ IoT Core+SQS, demo/spool.py)
@@ -40,9 +39,21 @@ EDGE_PY = _ROOT / "edge" / ".venv" / "bin" / "python"
 
 # Identidad REAL de la flota (db/seeds/prod_fleet.sql): la consola local se ve
 # igual que la desplegada — "Sitio Dev Puebla", no un sitio sim.
-THING = "gw-dev-0001"
-SITE = "site-dev"
-STATION = "R4F74"
+# [T-5.08] Identidad SIMULADA, no la de desarrollo.
+#
+# Esto usaba `gw-dev-0001 / site-dev / R4F74` a propósito, «para que la consola
+# local se vea igual que la desplegada». Delante de un cliente eso es justo lo que
+# no se quiere: un gabinete que se ve REAL y no existe. Con la identidad simulada,
+# `T-5.05` lo rotula **DEMO** en el mapa y en la Flota —el rótulo se deriva del
+# prefijo del código (`site-sim-…`/`gw-sim-…`/`SIM…`), que es un hecho del dato—,
+# así que nadie puede confundir el recorrido con una estación en producción.
+#
+# Sigue siendo el MISMO gabinete real (un `EdgeSupervisor` de verdad) por el mismo
+# pipeline: lo único que cambia es a nombre de quién habla. Los sitios los siembra
+# `db/seeds/sim_fleet.sql`, que declara en su cabecera que jamás se aplica a la nube.
+THING = "gw-sim-0001"
+SITE = "site-sim-001"
+STATION = "SIM001"
 
 
 def main() -> int:

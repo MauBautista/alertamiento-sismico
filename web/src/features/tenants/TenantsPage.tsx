@@ -31,6 +31,7 @@ import {
 } from "./model";
 import type { ChannelDraft, ThresholdBand, ThresholdKey } from "./model";
 import { useNotifyChannels } from "./useNotifyChannels";
+import RuleSetHistory from "./RuleSetHistory";
 import { useRuleSetPublish } from "./useRuleSetPublish";
 import {
   TENANTS_STALE_MS,
@@ -178,6 +179,16 @@ export default function TenantsPage() {
 
   const ruleSet = useMemo(
     () => activeTenantRuleSet(data.ruleSets, tenantId),
+    [data.ruleSets, tenantId],
+  );
+
+  /** Todas las versiones del alcance TENANT, de la más nueva a la más vieja. */
+  const versionesDelTenant = useMemo(
+    () =>
+      (data.ruleSets ?? [])
+        .filter((r) => r.scope_type === "tenant" && r.scope_id === tenantId)
+        .slice()
+        .sort((a, b) => b.version - a.version),
     [data.ruleSets, tenantId],
   );
 
@@ -566,6 +577,11 @@ export default function TenantsPage() {
                     tenant (el servidor los escribe con el tenant del token)
                   </p>
                 )}
+
+                {/* [T-5.16] El histórico VA DENTRO del marco: si la consulta de
+                    rule_sets falló, una lista vacía diría «este tenant nunca
+                    tocó sus umbrales», que es lo contrario de «no lo sabemos». */}
+                <RuleSetHistory versions={versionesDelTenant} canEdit={canEdit} />
 
                 <SyncFooter
                   status={syncStatusOf(syncStates)}

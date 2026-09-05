@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "ActuationCause": {
+      "description": "[T-2.86.a · hueco `RO-4.e`] POR QUÉ se movió un relé. No es cosmético: es la\nmitad de la bitácora que responde a un perito o a un seguro.\n\n`ActuatorAck` lleva canal, acción, `event_id`, éxito y latencia — y **no lleva\nactor**; el `audit_log` vivía sólo en la nube. O sea que el caso exacto para el\nque existe el gabinete (regla de oro 2: el edge opera sin nube) era el único que\nno dejaba constancia de quién ordenó cerrar el gas.\n\n**CAUSA y ACTOR no son lo mismo, y en el edge casi nunca hay una persona.** La\ncausa es este enum, cerrado; el actor es una cadena que nombra a quien lo pidió\n(`wr-1`, `edge:rules`, `cloud:<command_id>`, `lan`). El mapeo de cada origen a su\ncausa vive en :mod:`takab_edge.audit` y se **deriva** de dos conjuntos que ya\nexistían en el código (`AlertSource` y `GPIO_ACTIONS`), no de una lista escrita\na mano: un origen nuevo entra solo en la comprobación.",
+      "enum": [
+        "sasmex",
+        "local_threshold",
+        "manual",
+        "cloud_command",
+        "network_quorum",
+        "cabinet_self_test",
+        "lan_silence",
+        "lan_siren_test",
+        "lan_actuation_test",
+        "lan_test_mode",
+        "lan_reset",
+        "lan_drill_voice",
+        "undeclared"
+      ],
+      "title": "ActuationCause",
+      "type": "string"
+    }
+  },
+  "description": "[T-2.86.a] UNA fila de la bitácora local de actuación, subiendo a la nube.\n\nEs el otro extremo del cable de `RO-4.e`. El gabinete ya anotaba en disco\nquién movió cada relé y por qué —también sin enlace, que es el caso entero—;\nesto es lo que sube cuando el enlace vuelve.\n\n**`record_id` lo pone el gabinete y es la clave de idempotencia** (regla de\noro 3). Lo local NO se borra al subir —el perito lo lee meses después—, así\nque en vez de vaciar un directorio se avanza una marca de agua; si esa marca\nse pierde, el gabinete re-sube filas que la nube ya tiene y el `ON CONFLICT\nDO NOTHING` de la ingesta las absorbe.\n\n**`channel` y `action` son `str`, no enums, y es deliberado.** El panel del\ngabinete registra su propio vocabulario (`silence`, `siren_test`,\n`arm_test_mode`… de `GPIO_ACTIONS`) además de los canales de relé, y los dos\nconjuntos crecen por su cuenta. En un canal de EVIDENCIA, un enum estrecho no\nprotege: convierte una fila que no supimos anticipar en un descarte a DLQ —\no sea, en la pérdida del registro justo del incidente raro, que es el que\nalguien va a peritar. La causa sí es un enum cerrado porque es la\nclasificación, y esa la controla el edge entero.\n\n**`online` es tri-estado.** `true` había enlace, `false` no lo había —la fila\nque responde a la pregunta de la ficha—, y `None` «no se pudo saber».\nColapsar el `None` a `false` sería inventar el dato en el contrato que existe\npara no inventarlo.",
+  "properties": {
+    "seq": {
+      "title": "Seq",
+      "type": "integer"
+    },
+    "record_id": {
+      "title": "Record Id",
+      "type": "string"
+    },
+    "at": {
+      "format": "date-time",
+      "title": "At",
+      "type": "string"
+    },
+    "gateway_id": {
+      "title": "Gateway Id",
+      "type": "string"
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "site_id": {
+      "title": "Site Id",
+      "type": "string"
+    },
+    "cause": {
+      "$ref": "#/$defs/ActuationCause"
+    },
+    "actor": {
+      "title": "Actor",
+      "type": "string"
+    },
+    "channel": {
+      "title": "Channel",
+      "type": "string"
+    },
+    "action": {
+      "title": "Action",
+      "type": "string"
+    },
+    "success": {
+      "title": "Success",
+      "type": "boolean"
+    },
+    "detail": {
+      "default": "",
+      "title": "Detail",
+      "type": "string"
+    },
+    "event_id": {
+      "default": "",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "online": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Online"
+    }
+  },
+  "required": [
+    "seq",
+    "record_id",
+    "at",
+    "gateway_id",
+    "tenant_id",
+    "site_id",
+    "cause",
+    "actor",
+    "channel",
+    "action",
+    "success"
+  ],
+  "title": "ActuationRecord",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/actuation_record/v1.14.0",
+  "version": "1.14.0"
+}

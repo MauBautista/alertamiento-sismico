@@ -13,6 +13,7 @@
 import StateFrame from "../../components/StateFrame";
 import type { ForensicsOut } from "@takab/sdk";
 import type { ForensicsState } from "./useForensics";
+import { pintaCifra } from "./procedencia";
 
 const LEAD_REASON: Record<string, string> = {
   not_sasmex: "NO APLICA · el incidente no vino de SASMEX",
@@ -55,26 +56,67 @@ export function leadTimeView(f: ForensicsOut): {
   return { value: `${f.lead_time_s.toFixed(1)} s`, tone: "ok" };
 }
 
+/**
+ * La correlación con el catálogo de referencia.
+ *
+ * [T-5.11] Antes decía `SIN COINCIDENCIA · Ningún sismo del catálogo dentro de
+ * ±120 s`, y ese ±120 s era **todo** el criterio: bastaba caer en la ventana
+ * para que un sismo de otro continente se presentara como el nuestro. Ahora hay
+ * un criterio de identidad (ventana consciente de la distancia, radio al sitio y
+ * coherencia magnitud/distancia) y esta vista tiene que distinguir **tres cosas
+ * que antes se pintaban igual**:
+ *
+ * 1. Casó y hay epicentro propio ⇒ es un CONTRASTE de verdad.
+ * 2. Casó y no hay epicentro propio —la ruta del receptor, la normal⇒ la
+ *    identidad se estableció pero **no hay nada nuestro que contrastar**, y
+ *    llamarlo contraste prometería una verificación que no ocurrió.
+ * 3. No casó **habiendo candidatos** ⇒ «hay un evento en el catálogo pero no es
+ *    el nuestro», que es lo que el sistema no sabía decir. Un hueco aquí se lee
+ *    como «no pasó nada», que es justo lo contrario.
+ */
 export function catalogView(f: ForensicsOut): { value: string; note?: string } {
+  const corr = f.catalog_correlation;
   if (!f.catalog || !f.catalog_delta) {
+    const descartes = corr?.descartes ?? [];
+    if (descartes.length > 0) {
+      return {
+        value: "SIN CORRELACIÓN",
+        note:
+          `${descartes.length} sismo(s) del catálogo en la ventana y ninguno es éste: ` +
+          descartes
+            .slice(0, 2)
+            .map((d) => `${d.catalog_key} — ${d.detalle}`)
+            .join(" · "),
+      };
+    }
     return {
-      value: "SIN COINCIDENCIA",
-      note: "Ningún sismo del catálogo de referencia dentro de ±120 s.",
+      value: "SIN CORRELACIÓN",
+      note: "Ningún sismo del catálogo de referencia satisface el criterio de identidad.",
     };
   }
   const d = f.catalog_delta;
-  const dist =
-    d.km === null || d.km === undefined
-      ? "SIN EPICENTRO PROPIO"
-      : `${Math.round(d.km)} km ${d.bearing ?? ""}`.trim();
-  return {
-    value: dist,
-    note: `${f.catalog.source} ${f.catalog.catalog_key}${
-      f.catalog.magnitude !== null && f.catalog.magnitude !== undefined
-        ? ` · M ${f.catalog.magnitude.toFixed(1)}`
-        : ""
-    } · Δt ${d.dt_s.toFixed(0)} s`,
-  };
+  // [T-5.10] La cifra externa solo se pinta con procedencia. Casar no la concede.
+  const mag =
+    f.catalog.magnitude !== null &&
+    f.catalog.magnitude !== undefined &&
+    corr !== null &&
+    corr !== undefined &&
+    pintaCifra(corr.estado)
+      ? ` · M ${f.catalog.magnitude.toFixed(1)}`
+      : "";
+  const cita = `${f.catalog.source} ${f.catalog.catalog_key}${mag} · Δt ${d.dt_s.toFixed(0)} s`;
+
+  if (d.km === null || d.km === undefined) {
+    const alSitio =
+      f.catalog.km_al_sitio !== null && f.catalog.km_al_sitio !== undefined
+        ? `${Math.round(f.catalog.km_al_sitio)} km del sitio`
+        : "distancia al sitio no calculable";
+    return {
+      value: "NO VERIFICABLE",
+      note: `${cita} · ${alSitio} · sin epicentro propio que contrastar.`,
+    };
+  }
+  return { value: `${Math.round(d.km)} km ${d.bearing ?? ""}`.trim(), note: cita };
 }
 
 export default function PostEventSummary({ forensics }: { forensics: ForensicsState }) {
@@ -85,7 +127,7 @@ export default function PostEventSummary({ forensics }: { forensics: ForensicsSt
         <div>
           <div>Resumen post-evento</div>
           <div className="soc-card__sub">
-            DESEMPEÑO DE LA RED · CONTRASTE CON EL CATÁLOGO DE REFERENCIA
+            DESEMPEÑO DE LA RED · CORRELACIÓN CON EL CATÁLOGO DE REFERENCIA
           </div>
         </div>
       </div>
@@ -117,7 +159,11 @@ export default function PostEventSummary({ forensics }: { forensics: ForensicsSt
               note={(f.station_count ?? 0) === 0 ? "Sin corroboración multi-estación" : undefined}
               tone={(f.station_count ?? 0) >= 3 ? "ok" : "idle"}
             />
-            <Tile label="Δ VS CATÁLOGO" value={catalogView(f).value} note={catalogView(f).note} />
+            <Tile
+              label="CORRELACIÓN CON CATÁLOGO"
+              value={catalogView(f).value}
+              note={catalogView(f).note}
+            />
             <Tile
               label="PICO MEDIDO"
               value={

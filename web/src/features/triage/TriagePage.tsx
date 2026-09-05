@@ -6,10 +6,12 @@ import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import CatalogPanel from "./CatalogPanel";
+import { FalsePositiveRate } from "./ClassificationPanel";
 import InspectionMatrix from "./InspectionMatrix";
 import TriageDetail from "./TriageDetail";
 import TriageTable from "./TriageTable";
 import { inspectionMatrix } from "./priority";
+import { useCctv } from "./useCctv";
 import { useForensics } from "./useForensics";
 import { TRIAGE_STALE_MS, useTriage } from "./useTriage";
 import { useIncidentDetail } from "./useIncidentDetail";
@@ -81,6 +83,8 @@ export default function TriagePage() {
     current?.incident.event_id ?? null,
   );
   const forensics = useForensics(current?.incident.incident_id ?? null);
+  // [T-3.12.c] CCTV: misma cadencia y mismo reloj de frescura que forensics.
+  const cctv = useCctv(current?.incident.incident_id ?? null);
 
   // [T-2.40] Sitios del MISMO evento, ordenados por prioridad. Se derivan de las
   // filas YA cargadas —incidentes del propio tenant, ya filtrados por RLS—: un
@@ -203,6 +207,9 @@ export default function TriagePage() {
               if (row) setSelected(row);
             }}
           />
+          {/* [T-5.12] La métrica que decide si el cliente renueva, y que hasta
+              hoy no era calculable ni a mano sobre la base. */}
+          <FalsePositiveRate />
           <CatalogPanel />
         </div>
 
@@ -211,6 +218,7 @@ export default function TriagePage() {
             row={current}
             detail={detail}
             forensics={forensics}
+            cctv={cctv}
             minNodes={triage.minNodesFor(current.incident.site_id)}
             // [T-2.82.a] La misma edad que fecha el HISTORIAL: la fila del
             // incidente sale de esa consulta y de ninguna otra, así que el panel
@@ -219,6 +227,7 @@ export default function TriagePage() {
             incidentStaleSince={staleSince}
             canSign={me?.allowed_actions.sign_dictamen === true}
             canExport={me?.allowed_actions.export === true}
+            canDownloadClip={me?.allowed_actions.cctv_video === true}
             canGenerateReport={me?.allowed_actions.generate_report === true}
           />
         )}

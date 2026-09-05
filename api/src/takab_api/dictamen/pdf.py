@@ -20,21 +20,26 @@ from fpdf.enums import XPos, YPos
 
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
+from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
 from takab_api.dictamen.layout import CONTENT_W, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
+    ABSENT,
     CENTROID_NOTE,
     DISCLAIMER,
     ENVELOPE_NOTE,
     FELT_LABELS,
+    NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
     NO_GEOMETRY,
     NO_MMI,
     NO_SPECTRUM,
+    SIN_CORRELACION_EN_CATALOGO,
     SKETCH_NOTE,
     STATUS_ACTIONS,
     STATUS_LABELS,
     TS_FMT,
     ReportModel,
+    huella_de_custodia,
     lead_time_text,
     num,
 )
@@ -69,6 +74,7 @@ def _render_technical(m: ReportModel) -> bytes:
     _sensors_section(pdf, m)
     _chain_section(pdf, m)
     _custody_section(pdf, m)
+    _cctv_section(pdf, m)  # 11
     _narrative_section(pdf, m)
     _compliance_section(pdf, m)
     _closing(pdf, m)
@@ -226,9 +232,53 @@ def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
         thinned: list[float | None] = [float(v) for v in samples[::step]]
         _trace(pdf, channel, thinned, [False] * len(thinned), unit="cuentas")
 
+    _duracion(pdf, m)
+
     if m.spectrum:
         freqs, amps = m.spectrum
         _spectrum(pdf, freqs, amps, m.spectrum_peak_hz)
+    if m.spectrogram is not None:
+        _spectrogram(pdf, m.spectrogram)
+
+
+def _duracion(pdf: TakabPDF, m) -> None:
+    """[T-3.14] La duración instrumental, con su definición pegada al número.
+
+    **Nunca dice «duración» a secas.** Existen varias definiciones —la bracketed es la que
+    la gente espera— y dan números distintos para el mismo sismo; un número sin su
+    definición invita a compararlo con otro que se midió de otra forma.
+
+    Y cuando no se pudo medir, lo dice. Un `0.0 s` aquí se leería como «no tembló», que es
+    lo contrario de lo que pasó: lo que faltó fue la onda, no la sacudida.
+    """
+    if pdf.get_y() > 240:
+        pdf.add_page()
+    pdf.ln(2)
+    pdf.set_font(pdf.body_font, "B", 8)
+    pdf.cell(0, 4, "DURACIÓN INSTRUMENTAL DE LA SACUDIDA", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font(pdf.body_font, "", 7)
+    d = m.shaking_duration
+    if d is None:
+        pdf.multi_cell(
+            0,
+            3.4,
+            "SIN DATO · no se pudo medir sobre la onda archivada. No es cero: es que no "
+            "hubo traza suficiente de la que medirla.",
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
+        return
+    pdf.multi_cell(
+        0,
+        3.4,
+        f"{d.etiqueta} — intervalo en el que se acumula del 5 % al 95 % de la Intensidad "
+        f"de Arias, medido sobre el canal {d.canal} del miniSEED archivado "
+        f"({d.muestras} muestras, de t+{d.desde_s:.1f} s a t+{d.hasta_s:.1f} s desde el "
+        "inicio de la traza). Definición de Trifunac & Brady (1975); NO es comparable con "
+        "una duración «bracketed», que se mide entre cruces de un umbral de aceleración.",
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
 
 
 def _spectrum(pdf: TakabPDF, freqs: list[float], amps: list[float], peak_hz: float | None) -> None:
@@ -254,6 +304,81 @@ def _spectrum(pdf: TakabPDF, freqs: list[float], amps: list[float], peak_hz: flo
         0,
         4,
         pdf.text_of(f"0 – {top_hz:.1f} Hz · {peak}"),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+    pdf.set_text_color(20, 24, 30)
+
+
+#: [T-5.23] Rampa de la figura, de frío a caliente. Se declara aquí y no se
+#: interpola en el trazado: una rampa continua sugiere una resolución que estas
+#: celdas no tienen, y un espectrograma de papel se lee por bandas.
+_RAMPA: tuple[tuple[int, int, int], ...] = (
+    (14, 20, 28),  # fondo: casi el negro del documento
+    (23, 55, 92),
+    (30, 110, 140),
+    (70, 165, 130),
+    (190, 180, 70),
+    (220, 120, 45),
+    (200, 55, 45),  # máximo de la ventana
+)
+
+
+def _spectrogram(pdf: TakabPDF, esp) -> None:  # noqa: ANN001 - Espectrograma
+    """[T-5.23] Tiempo × frecuencia del canal dominante.
+
+    LO QUE ESTA FIGURA NO PROMETE, y por eso se dibuja así: **la escala es
+    RELATIVA**. El crudo del RS4D llega en cuentas del ADC y la calibración
+    instrumental sigue pendiente (`blueprint §4.4`), así que no hay dB
+    referenciados a nada físico. Pintar una barra con unidades sería prometer una
+    calibración que no existe — la misma guarda que ya vigila el mapa de sacudida.
+
+    Por eso la leyenda dice «relativo al máximo de esta ventana» y no lleva
+    números: el color contesta *dónde y cuándo hubo más energía*, que es lo que
+    un perito busca, y no *cuánta* — que nadie ha medido.
+    """
+    filas, columnas = len(esp.frecuencias_hz), len(esp.celdas)
+    if filas == 0 or columnas == 0:
+        return
+    if pdf.get_y() > 200:
+        pdf.add_page()
+    pdf.ln(2)
+    pdf.set_font(pdf.body_font, "B", 8)
+    pdf.cell(
+        0,
+        5,
+        pdf.text_of(f"ESPECTROGRAMA · CANAL {esp.canal}"),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+
+    top = pdf.get_y()
+    alto = 32.0
+    box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, alto)
+    dx, dy = box.w / columnas, box.h / filas
+
+    # Se dibuja celda a celda con el relleno apagado: `fpdf2` no tiene mapa de
+    # bits sin traer una dependencia de imagen, y 120 × 48 rectángulos son
+    # deterministas y pesan poco. La frecuencia CRECE hacia arriba, como se lee.
+    for i, columna in enumerate(esp.celdas):
+        for j, valor in enumerate(columna):
+            pdf.set_fill_color(*_RAMPA[min(len(_RAMPA) - 1, int(valor * len(_RAMPA)))])
+            pdf.rect(box.x + i * dx, box.y + box.h - (j + 1) * dy, dx + 0.05, dy + 0.05, style="F")
+
+    pdf.set_draw_color(*RULE)
+    pdf.rect(box.x, box.y, box.w, box.h)
+    pdf.set_draw_color(20, 24, 30)
+
+    # Los ejes, con su magnitud: sin ellas la figura es una mancha bonita.
+    pdf.set_font(pdf.body_font, "", 6.0)
+    pdf.set_text_color(*MUTED)
+    pdf.text(MARGIN, box.y + 2.5, pdf.text_of(f"{esp.frecuencias_hz[-1]:.0f} Hz"))
+    pdf.text(MARGIN, box.y + box.h, pdf.text_of(f"{esp.frecuencias_hz[0]:.1f} Hz"))
+    pdf.set_y(top + alto + 1)
+    pdf.cell(
+        0,
+        4,
+        pdf.text_of(leyenda_espectrograma(esp)),
         new_x=XPos.LMARGIN,
         new_y=YPos.NEXT,
     )
@@ -319,7 +444,10 @@ def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("7", "DESEMPEÑO DE LA RED")
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("ESTACIONES QUE CONTRIBUYERON", str(m.station_count))
-    pdf.field("CONTRASTE CON CATÁLOGO", m.catalog_line or "SIN COINCIDENCIA EN CATÁLOGO")
+    # [T-5.11] El rótulo dice CORRELACIÓN y no «contraste»: contrastar exige un
+    # epicentro propio, y en la ruta del receptor —la normal— no lo hay. Es la
+    # línea la que declara si hubo contraste de verdad o no fue verificable.
+    pdf.field("CORRELACIÓN CON CATÁLOGO", m.catalog_line or SIN_CORRELACION_EN_CATALOGO)
 
 
 def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -380,25 +508,80 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
     if m.evidence:
         pdf.set_font(pdf.body_font, "", 7.5)
         for e in m.evidence:
-            pdf.field(e.kind.upper(), (e.sha256 or "sin hash")[:32])
+            # [T-5.26] El sha256 ENTERO. Se imprimía a 32 de 64 caracteres
+            # mientras la portada de este mismo documento instruye verificarlo
+            # con `sha256sum`: con medio hash no se puede, y un dato inverificable
+            # presentado como verificable es peor que no imprimirlo.
+            # No había razón de espacio — 64 hex miden 108.7 mm de los 128 que
+            # deja la columna, así que entran en una sola línea.
+            pdf.field(e.kind.upper(), huella_de_custodia(e.sha256))
     else:
         pdf.para("Sin objetos de evidencia archivados.", size=7.5, muted=True)
+
+
+def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-3.12.c] Analítica de evacuación y custodia del vídeo.
+
+    Va DESPUÉS de la cadena de custodia y no antes: sus objetos son custodia también, y
+    leerlos seguidos deja claro que el clip y el miniSEED son el mismo tipo de evidencia
+    con distinta política de retención.
+
+    **Sin cámara la sección existe igual.** Omitirla dejaría al lector sin saber si este
+    inmueble no tiene CCTV o si el generador se lo saltó, que es exactamente la ambigüedad
+    que `NO_CCTV` está escrito para cerrar.
+    """
+    pdf.section("11", "EVACUACIÓN OBSERVADA (CCTV)")
+    bloque = m.cctv
+
+    if bloque.t90_s is None:
+        pdf.callout(bloque.estado)
+    else:
+        pdf.field("Aforo máximo observado", num(bloque.peak_n))
+        pdf.field(
+            "Mitad del aforo alcanzada",
+            f"{bloque.t50_s:.0f} s tras la señal" if bloque.t50_s is not None else ABSENT,
+        )
+        pdf.field("La mayor parte fuera", f"{bloque.t90_s:.0f} s tras la señal")
+        if bloque.correlacion:
+            pdf.para(bloque.correlacion)
+        if bloque.discrepancia:
+            # El cruce con el pase de lista se muestra como DISCREPANCIA, jamás promediado
+            # en un número único: la diferencia ES la información (T-3.12).
+            pdf.field("Cruce con el pase de lista", bloque.discrepancia)
+        if bloque.veredicto_reingreso:
+            if bloque.reingreso_antes_del_dictamen:
+                # Recuadro y no celda: que la gente reentrara antes del dictamen no es un
+                # número negativo en una tabla, es un hallazgo que alguien tiene que leer.
+                pdf.callout(bloque.veredicto_reingreso)
+            else:
+                pdf.field("Reingreso", bloque.veredicto_reingreso)
+
+    if not bloque.objetos:
+        return
+    pdf.para("Custodia del material de vídeo:", size=9, muted=True)
+    for obj in bloque.objetos:
+        etiqueta = obj.papel or obj.tipo
+        cuando = obj.momento.strftime(TS_FMT) if obj.momento else ABSENT
+        pdf.field(f"{etiqueta} · {cuando}", obj.estado)
+        # [T-5.26] Entero y en su propia línea. Iba a 16 de 64 con puntos
+        # suspensivos: honesto sobre estar cortado, e igual de inútil para
+        # verificar. Y son custodia igual que el miniSEED —lo dice esta misma
+        # sección cuatro líneas más arriba—, así que se imprimen igual.
+        pdf.field("", huella_de_custodia(obj.sha256))
 
 
 def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
     """Prosa opcional (T-2.42). Rodea al veredicto; nunca lo produce."""
     if not m.narrative:
         return
-    pdf.section("11", "ANÁLISIS")
+    pdf.section("12", "ANÁLISIS")
     for title, body in m.narrative:
         pdf.set_font(pdf.body_font, "B", 8)
         pdf.cell(0, 5, pdf.text_of(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         pdf.para(body)
     if m.narrative_provider and m.narrative_provider != "deterministic":
         pdf.callout(
-            "Las secciones en prosa se redactaron con asistencia automatizada. El "
-            "VEREDICTO y todos los valores medidos de este documento son deterministas "
-            f"({m.rule_set_version or 'sin versión'}) y no dependen de ella."
+            f"{NARRATIVE_AI_NOTE} ({m.rule_set_version or 'sin versión'}) y no dependen de ella."
         )
     if m.narrative_degraded:
         pdf.para(f"NARRATIVA DEGRADADA · {m.narrative_degraded}", size=7, muted=True)
@@ -412,7 +595,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
     apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
     que no haga falta llegar a la nota para saber de quién son.
     """
-    pdf.section("12", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    pdf.section("13", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
     block = compliance_block(m.compliance)
     for label, value in block.rows:
         pdf.field(label, value)
@@ -423,7 +606,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("13", "FIRMA Y DESLINDE")
+    pdf.section("14", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)
@@ -475,6 +658,18 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.field("ESTACIONES QUE CORROBORARON", str(m.station_count))
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("FOLIO", m.folio)
+    # [T-5.26] La huella también aquí. Este es el documento que lee QUIEN DECIDE,
+    # y era el único de los dos que no traía con qué verificarse: el técnico la
+    # imprime en portada desde siempre. Es la MISMA huella en los dos —sale del
+    # contenido, no del archivo—, que es justo lo que permite comprobar que el
+    # resumen y el pericial hablan del mismo incidente sin abrirlos a la vez.
+    pdf.field("HASH DE CONTENIDO", m.content_sha256())
+    pdf.para(
+        "Esta huella identifica el CONTENIDO del dictamen, no este archivo. Es la "
+        "misma que imprime la variante técnica del mismo incidente.",
+        size=7,
+        muted=True,
+    )
 
     # [T-2.82] También en el ejecutivo: es el documento que lee quien DECIDE, y quien
     # decide es justo el que más fácilmente confundiría una declaración del cliente

@@ -1,0 +1,82 @@
+# TAKAB Ailert — cliente CCTV: anillo, clip del evento y goteo de capturas (T-3.11).
+#
+# ESTA UNIDAD EXISTE PARA CONTENER, NO PARA ORGANIZAR.
+# El CCTV es el único proceso del gabinete que decodifica vídeo, y el blueprint §4.8/B.3
+# lo dice sin rodeos: los límites de aquí abajo "no son recomendaciones, son la condición".
+# Un `subprocess.Popen` dentro de `takab-edge` NO podría cumplirlos —un `MemoryMax=` sobre
+# esa unidad haría que un OOM del decodificador matase el gabinete entero, que es
+# exactamente lo que B.3 prohíbe—. Separado, el OOM mata a este proceso y a nadie más.
+#
+# NO SE HABILITA TODAVÍA (`D-25`): el software se construye ya, encenderlo en el gabinete
+# espera a `G-04` acreditado y a la medición de `B.2` —la latencia del reflejo SASMEX→relé
+# bajo carga de CCTV contra su presupuesto de 100 ms—. Instalar el archivo no lo enciende;
+# lo enciende `systemctl enable --now`, y eso tiene dueño y fecha en PENDIENTES-MAURICIO.
+[Unit]
+Description=TAKAB Ailert — cliente CCTV (anillo, clip de evento, capturas)
+Documentation=file:///opt/takab/takab-docs/BLUEPRINT-TECNICO-TAKAB.md
+After=network-online.target time-sync.target
+Wants=network-online.target
+# NO lleva `Requires=takab-edge.service`, y la ausencia ES la decisión (invariante B.1).
+# El CCTV es CLIENTE del panel LAN: si el edge no está, sondea, falla, y sigue grabando el
+# anillo. Un `Requires=` invertiría la dependencia y ataría el gabinete a este proceso.
+# Sin límite de arranques: quien espacia los reintentos es RestartSteps=, no una ventana
+# que deje la unidad en `failed` para siempre tras cinco intentos con la cámara desenchufada.
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+# Mismo archivo de identidad que las otras dos unidades: es donde vive el gateway_id y,
+# para esta, el host de la cámara. Las credenciales de la cámara van también ahí y NUNCA
+# en la config sincronizada — la URL RTSP lleva usuario y clave dentro y ningún detector
+# de PII del proyecto la reconoce.
+EnvironmentFile=/etc/takab/edge.env
+WorkingDirectory=/var/lib/takab
+ExecStart=/opt/takab/edge/.venv/bin/takab-cctv
+
+# --- Los límites de B.3. No son higiene: son la condición de que esto viva aquí. -------
+# CPU: el anillo remuxea con `-c copy` y no decodifica nada, así que el techo sobra de
+# largo en operación normal. Está para el caso patológico —una cámara que reconecta en
+# bucle, un ffmpeg que se atasca— donde sin techo se comería los núcleos que necesita el
+# resto del gabinete.
+CPUQuota=40%
+# Memoria: dimensionada para el GRABADOR, no para un detector. El conteo preliminar local
+# está aplazado (D-24) y `takab-cctv` se niega a arrancar con él encendido; el día que se
+# active habrá que subir esto Y medir B.2 en el equipo real, no una cosa sin la otra.
+MemoryMax=256M
+# Prioridad: el CCTV CEDE. Ante contención, primero el camino de vida.
+Nice=10
+# Y cede también en disco, que es la mitad que se olvida: el anillo escribe sin parar y
+# compite con el ring buffer miniSEED del sismómetro. B.3 pide que el vídeo no comparta
+# cola con la telemetría del gabinete; ésta es esa exigencia en el planificador de E/S.
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+
+# Aislamiento de fallo: su caída no toca a nadie, y se reintenta ESPACIADO. Una cámara
+# desenchufada con RestartSec=1 y sin techo llena el journal y calienta la CPU sin
+# arreglar nada. Interpolación geométrica hasta 300 s, igual que las otras dos unidades.
+# Par indivisible: sin RestartMaxDelaySec=, systemd IGNORA RestartSteps= sin decir nada.
+Restart=always
+RestartSec=5
+RestartSteps=5
+RestartMaxDelaySec=300
+TimeoutStopSec=30
+# Ventana de arranque DECLARADA, no heredada del default de systemd. Con `Type=simple`
+# este plazo es casi inerte —systemd da la unidad por arrancada en el fork— pero se
+# escribe igual por dos razones: que sea revisable el día que esto pase a `notify`, y
+# porque las cuatro comprobaciones de arranque incluyen interrogar a la cámara por ONVIF,
+# que es red y puede tardar. 60 s da margen a una cámara lenta sin dejar colgado para
+# siempre un arranque que no va a completar.
+TimeoutStartSec=60
+
+# Endurecimiento. `ReadWritePaths` incluye el directorio de trabajo del CCTV: bajo
+# ProtectSystem=strict el resto del sistema es de solo lectura, y ahí es donde vive el
+# anillo que se autopoda.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/takab /var/lib/takab/cctv
+
+[Install]
+WantedBy=multi-user.target

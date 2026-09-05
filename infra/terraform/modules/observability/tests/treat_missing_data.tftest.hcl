@@ -502,3 +502,86 @@ run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
     error_message = "Cambio el nombre de una alarma silenciable: ALARM_CATALOG (api/src/takab_api/ops/muting.py) quedaria huerfano y la ventana silenciaria un nombre inexistente."
   }
 }
+
+
+# --- [T-5.24] El reloj a la deriva -------------------------------------------
+#
+# Misma pregunta de siempre —¿que significa el SILENCIO de esta metrica?— y aqui la
+# respuesta la fija un hecho del codigo: `MaxClockDriftMs` sale de la MISMA llamada que
+# `GhostGatewaysAlive`. Literalmente la misma: `GhostGauge.maybe_publish` arma las tres
+# cifras bajo un solo `try` y las manda en un unico `put_metric_data`, a proposito, para
+# que un hueco donde va una cifra no pueda leerse como flota sana.
+#
+# Consecuencia: las dos alarmas se quedan sin datos EXACTAMENTE a la vez y por la misma
+# causa. Asi que su `treat_missing_data` tiene que ser el mismo, y por el mismo argumento:
+#   notBreaching -> el silencio se declara OK. Con el worker caido, "todo bien" con la hora
+#                   de la flota sin vigilar. Es la mentira de julio-2026 otra vez.
+#   breaching    -> el correo AFIRMARIA que un reloj se salio de rango sin que nadie haya
+#                   leido un solo latido. Una alarma que afirma lo que no sabe se deja de
+#                   creer, y arrastra a las que si saben.
+#   ignore       -> congela el ultimo veredicto mientras el worker esta muerto.
+#   missing      -> INSUFFICIENT_DATA, que es lo unico honesto: "no se nada de esto".
+#
+# Y va con `insufficient_data_actions`, igual que su gemela. Esto SI manda dos correos por
+# una sola causa, y es deliberado: no es el defecto de `ec2_cpu` —dos correos donde el
+# segundo nombraba la causa EQUIVOCADA ("CPU sostenida" por una maquina apagada)—, sino dos
+# que dicen la misma verdad, "no se nada", sobre dos cosas distintas. Dos INSUFFICIENT_DATA
+# en el mismo minuto se leen como lo que son: el que mide esta callado. Y el reparto de
+# `sensor_mute` (delegar la ausencia en otra alarma) NO sirve aqui: el correo de fantasmas
+# no menciona el reloj, y quien esta de guardia no tiene por que saber que comparten worker.
+#
+# Lo que esta alarma NO protege es lo mismo que su gemela y esta razonado arriba: una
+# metrica que NUNCA arranca deja la alarma nacida en INSUFFICIENT_DATA, y sin transicion no
+# hay correo. La contramedida es la misma: mirar UNA vez, tras el apply, que salio de ahi.
+run "reloj_a_la_deriva_no_miente_cuando_no_sabe" {
+  command = plan
+
+  override_resource {
+    target          = aws_sns_topic.ops_alerts
+    override_during = plan
+    values = {
+      arn = "arn:aws:sns:us-east-2:000000000000:takab-test-ops-alerts"
+    }
+  }
+
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.clock_drift.treat_missing_data == "missing"
+    error_message = "clock_drift debe usar 'missing': su metrica sale de la MISMA llamada que GhostGatewaysAlive, asi que el silencio significa 'el worker que mide esta callado', no 'hay un reloj fuera de rango'. Con 'breaching' el correo afirmaria un desfase que nadie ha leido."
+  }
+
+  assert {
+    condition     = try(length(aws_cloudwatch_metric_alarm.clock_drift.insufficient_data_actions), 0) == 1
+    error_message = "clock_drift sin insufficient_data_actions: con 'missing' la alarma se queda MUDA en INSUFFICIENT_DATA justo cuando la vigilancia del reloj esta caida (es el fallo del 29-jul-2026, que duro 17 h)."
+  }
+
+  # El par namespace+metric_name es el otro extremo del cable con `ops/metrics.py`
+  # (`METRIC_NAME_CLOCK_DRIFT = "MaxClockDriftMs"`). Si divergen, la alarma vigila una
+  # metrica que nadie escribe y se queda en INSUFFICIENT_DATA para siempre sin que nada
+  # parezca roto. Terraform no puede leer Python; esto es lo que se puede blindar aqui.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.clock_drift.namespace == "Takab/Ops"
+      && aws_cloudwatch_metric_alarm.clock_drift.metric_name == "MaxClockDriftMs"
+    )
+    error_message = "clock_drift apunta a una metrica que `ops/metrics.py` no publica: quedaria en INSUFFICIENT_DATA para siempre pareciendo sana."
+  }
+
+  # `Maximum`, no `Average`: la cifra que llega ya es el peor gabinete de la flota en cada
+  # publicacion, y promediar los datapoints del periodo volveria a diluir el pico que es
+  # justo lo que se vigila. Un gabinete a la deriva 3 min de cada 10 tiene que paginar.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.clock_drift.statistic == "Maximum"
+    error_message = "clock_drift debe usar 'Maximum': con 'Average' un pico de desfase se diluye entre los datapoints sanos del periodo y la alarma no suena."
+  }
+
+  # El umbral no se escribe a mano: sale de `var.clock_drift_max_ms`, que es el MISMO 100 ms
+  # con el que la nube degrada al sitio y con el que el panel del gabinete pinta en ambar.
+  # Que los tres espejos no diverjan lo vigila `api/tests/contracts/test_umbral_de_reloj.py`.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.clock_drift.threshold == var.clock_drift_max_ms
+      && aws_cloudwatch_metric_alarm.clock_drift.comparison_operator == "GreaterThanThreshold"
+    )
+    error_message = "clock_drift debe alarmar por ENCIMA de var.clock_drift_max_ms: un umbral escrito a mano aqui diverge del que usan la consola y el panel."
+  }
+}

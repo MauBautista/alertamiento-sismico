@@ -382,6 +382,20 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     view: { state: 'NO ENTREGADA', kind: 'critical' },
     logLabel: 'NOTIFICACIÓN NO ENTREGADA',
   },
+  // [T-5.02] EL QUINTO desenlace: suprimido por el MODO DEMOSTRACIÓN del
+  // cliente. Rótulo propio y no `notify_simulated`, aunque los dos acaben en
+  // «nadie recibió nada»: uno significa «falta contratar el canal» y el otro
+  // «alguien puso el sistema en demostración», y la reacción del operador es
+  // distinta — el segundo se arregla con un clic.
+  //
+  // `warning` y no `critical`, misma doctrina que el simulado: no hay avería que
+  // atender. Pero JAMÁS `ok`: nadie recibió el aviso, y ésa es la mentira que
+  // T-2.75 cerró para los otros cuatro.
+  notify_blocked_demo: {
+    label: 'NOTIFICACIONES SUPRIMIDAS (MODO DEMOSTRACIÓN)',
+    view: { state: 'SUPRIMIDA EN DEMOSTRACIÓN', kind: 'warning' },
+    logLabel: 'NOTIFICACIÓN SUPRIMIDA · MODO DEMOSTRACIÓN ACTIVO',
+  },
   // [T-2.133] EL CUARTO VERBO, que faltaba. `T-2.109` lo añadió al orquestador
   // —el proveedor existe y entrega, pero en ese inmueble no hay UN SOLO teléfono
   // registrado al que despertar— y ninguna superficie lo rotulaba: el checklist

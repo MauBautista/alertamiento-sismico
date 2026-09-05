@@ -220,6 +220,11 @@ def _load_static_fonts() -> dict[str, tuple[str, bytes]]:
 # nube→edge. El panel solo LEE la instantánea viva del store.
 
 
+#: [T-3.11.b] Tope del cuerpo del grant de CCTV. Es un JSON de cinco campos; 4 KiB es
+#: holgura de sobra y evita que un cliente de la LAN haga reservar memoria al gabinete.
+_CCTV_GRANT_MAX_BYTES = 4096
+
+
 class _DashboardHandler(BaseHTTPRequestHandler):
     # keep-alive: un hilo por kiosco en vez de hilo por request (menos churn).
     protocol_version = "HTTP/1.1"
@@ -271,6 +276,14 @@ class _DashboardHandler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         dashboard = self.server.dashboard  # type: ignore[attr-defined]
+        # [T-3.11.b] El grant de CCTV va APARTE del diccionario de acciones, y no por
+        # orden: aquellas son acciones de una PERSONA de pie en el sitio —autorizadas por
+        # PIN, sin cuerpo y sin respuesta— y ésta es máquina a máquina: lleva cuerpo, la
+        # autoriza un HMAC y devuelve datos. Meterla en la misma tabla habría obligado a
+        # que el PIN del guardia valiera para pedir grants, o al revés.
+        if self.path == "/api/cctv/grant":
+            self._cctv_grant(dashboard)
+            return
         actions = {
             "/api/silence": dashboard.silence,
             "/api/siren-test": dashboard.run_siren_test,
@@ -323,6 +336,43 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         self._send(200, json.dumps({"ok": True}))
 
+    def _cctv_grant(self, dashboard) -> None:
+        """`POST /api/cctv/grant` — firma HMAC sobre el cuerpo, devuelve la URL."""
+        try:
+            largo = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            self._send(400, json.dumps({"error": "content-length"}))
+            return
+        # Tope duro: esto recibe un JSON de cinco campos. Sin él, un cliente de la LAN
+        # podría hacer que el gabinete reserve memoria arbitraria — y este proceso corre
+        # en la misma máquina que el resto del edge.
+        if largo <= 0 or largo > _CCTV_GRANT_MAX_BYTES:
+            self._send(413, json.dumps({"error": "cuerpo fuera de rango"}))
+            return
+        cuerpo = self.rfile.read(largo)
+        if not dashboard.verify_cctv_signature(cuerpo, self.headers.get("X-Takab-Cctv-Sig")):
+            self._send(401, json.dumps({"error": "firma"}))
+            return
+        try:
+            payload = json.loads(cuerpo)
+        except ValueError:
+            self._send(400, json.dumps({"error": "json"}))
+            return
+        if not isinstance(payload, dict):
+            self._send(400, json.dumps({"error": "json"}))
+            return
+        try:
+            grant = dashboard.request_cctv_grant(payload)
+        except ActionUnavailable as exc:
+            # 409: la peticion es valida, lo que falta es enlace. El CCTV reintenta.
+            self._send(409, json.dumps({"error": str(exc)}))
+            return
+        except Exception:  # noqa: BLE001
+            log.exception("grant de cctv no se pudo tramitar")
+            self._send(503, json.dumps({"error": "el gabinete no pudo pedir el grant"}))
+            return
+        self._send(200, json.dumps(grant))
+
     def log_message(self, *args: object) -> None:  # no spamear stdout del edge
         pass
 
@@ -362,6 +412,12 @@ class LocalDashboard(EdgeModule):
         rose_zero_path: str = "",
         gateway_id: str = "",
         site_name: str = "",
+        # [T-5.26] La identidad que permite CORRELACIONAR este gabinete con lo
+        # que ve la consola, sin abrir el archivo de entorno de pie delante del
+        # Pi: el nombre con el que la nube lo conoce y el código de estación con
+        # el que firma cada traza el sismógrafo.
+        iot_thing: str = "",
+        station_code: str = "",
         refresh_ms: int = 1000,
         audio: object | None = None,
         drill: object | None = None,
@@ -369,6 +425,13 @@ class LocalDashboard(EdgeModule):
         lora: object | None = None,
         backfill: object | None = None,
         ledger: object | None = None,
+        #: [T-5.22] Acta del reflejo. El panel la LEE (`resumen()`), jamás la
+        #: escribe: la escribe el supervisor, que es quien ve la latencia por la
+        #: costura y vive del lado que sí puede tocar disco.
+        acta_reflejo: object | None = None,
+        #: [T-3.11.b] Solo para verificar el HMAC del grant de CCTV. El panel NO
+        #: firma nada: verifica.
+        security: object | None = None,
         keepalive_enabled: bool = False,
     ) -> None:
         super().__init__()
@@ -382,6 +445,8 @@ class LocalDashboard(EdgeModule):
         # mueven relés de un edificio y hasta hoy sólo quedaban en una `deque` en
         # RAM (`_actions`), que un reinicio borra. Ver `_accion`.
         self._ledger = ledger
+        self._acta_reflejo = acta_reflejo
+        self._security = security
         self._rules = rules
         self._health = health
         self._signal = signal
@@ -401,6 +466,8 @@ class LocalDashboard(EdgeModule):
         self._backfill = backfill
         self._gateway_id = gateway_id
         self._site_name = site_name
+        self._iot_thing = iot_thing
+        self._station_code = station_code
         self._refresh_ms = refresh_ms
         self._host = host
         self._port = port
@@ -738,14 +805,27 @@ class LocalDashboard(EdgeModule):
 
         No son los de `EdgeSettings` estáticos: tras un `apply_signed_update` el
         panel debe pintar la línea de umbral que de verdad dispara.
+
+        [T-5.16 · D-28] Y ADEMÁS DE DÓNDE SALIERON. El default de fábrica es
+        0.040–0.060 g, que es la banda de HOSPITAL, y hasta aquí se pintaba
+        idéntica a una banda elegida y publicada: un industrial dado de alta hoy
+        avisa dos veces por debajo de su banda y la pantalla no lo decía. El
+        dato estaba —`config_version: 0`— pero en otra sección y para que la
+        correlación la hiciera un humano.
+
+        `sin_resolver` NO apaga nada: los números siguen ahí y el motor sigue
+        decidiendo con ellos, porque el gabinete opera sin nube (regla de oro 2).
+        Lo que cambia es que deja de hacerse pasar por una decisión.
         """
         try:
             band = self._rules.thresholds
+            version = self._config_version()
             return {
                 "pga_watch_g": band.pga_watch_g,
                 "pga_trip_g": band.pga_trip_g,
                 "pgv_watch_cms": band.pgv_watch_cms,
                 "pgv_trip_cms": band.pgv_trip_cms,
+                "origen": "sincronizado" if version else "sin_resolver",
             }
         except Exception:  # noqa: BLE001 — sección no-crítica
             log.warning("panel LAN: umbrales no disponibles", exc_info=True)
@@ -764,6 +844,14 @@ class LocalDashboard(EdgeModule):
 
         `null` = sin medición todavía (la UI pinta S/D). JAMÁS un 0.0 fabricado:
         un cero se leería como "instantáneo" y sería una mentira.
+
+        [T-5.22] `reflex_s` es **vivo y volátil**: vuelve a `null` en cuanto el
+        proceso reinicia, y ése es literalmente el defecto que la ficha nombra —
+        «en el gabinete vivo el campo de latencia está en nulo: la medición no
+        está viva, es histórica». Al lado va ahora `acta`, que **sobrevive al
+        reinicio** y trae mejor y **peor** caso con su conteo. Sin las dos, quien
+        mira el panel en una sesión presencial no tiene de dónde sacar la cifra
+        más citada del producto sin entrar por ssh.
         """
         reflex = snap.last_reflex_latency_s if snap is not None else None
         try:
@@ -776,7 +864,26 @@ class LocalDashboard(EdgeModule):
             "reflex_budget_s": _REFLEX_BUDGET_S,
             "rules_s": rules,
             "rules_budget_s": _RULES_BUDGET_S,
+            "acta": self._acta_section(),
         }
+
+    def _acta_section(self) -> dict | None:
+        """[T-5.22] Resumen del acta del reflejo, o ``None`` si no hay acta.
+
+        ``None`` significa **una cosa concreta y no dos**: este gabinete no tiene
+        el módulo del acta (firmware anterior a `T-5.22`). Un gabinete que SÍ lo
+        tiene y todavía no ha visto ningún flanco devuelve el resumen con
+        ``total: 0`` y sus cifras en `null` — que es un hecho distinto y hay que
+        poder distinguirlo, porque el primero se arregla desplegando y el segundo
+        pulsando el WR-1.
+        """
+        if self._acta_reflejo is None:
+            return None
+        try:
+            return dict(self._acta_reflejo.resumen())
+        except Exception:  # noqa: BLE001 — sección no-crítica, como las demás
+            log.warning("panel LAN: acta del reflejo no disponible", exc_info=True)
+            return None
 
     def _seedlink_section(self) -> dict | None:
         """[T-2.18] Contadores del flujo SeedLink, acumulados DESDE EL ARRANQUE.
@@ -991,6 +1098,53 @@ class LocalDashboard(EdgeModule):
         merged.sort(key=lambda item: item.get("at", ""), reverse=True)
         return merged[:_EVENTS_MAX]
 
+    # ------------------------------------------------------------- CCTV (T-3.11.b)
+
+    def request_cctv_grant(self, payload: dict) -> dict:
+        """Pide a la nube la URL pre-firmada de un clip o una captura, y la devuelve.
+
+        Es la ÚNICA puerta del CCTV hacia el gabinete, y es deliberadamente estrecha: entra
+        un JSON de cinco campos y sale una URL. **El vídeo no pasa por aquí** — `takab-cctv`
+        sube los bytes él mismo a S3 con esa URL. Si esto transportara el clip, un fichero
+        de 300 MB cruzaría el proceso que sostiene la telemetría del gabinete.
+
+        Lanza `ActionUnavailable` cuando la nube no contesta a tiempo, que es un 409 y no un
+        500: la petición es válida, lo que falta es enlace. El CCTV reintenta con su propio
+        ritmo y el clip sigue en `pendientes/` mientras tanto.
+        """
+        if self._backfill is None:
+            raise ActionUnavailable("este gabinete no tiene backfill: no puede pedir grants")
+        try:
+            mode = str(payload["mode"])
+            event_id = str(payload["event_id"])
+            sha256 = str(payload["sha256"])
+            ts_from = datetime.fromisoformat(str(payload["ts_from"]))
+            ts_to = datetime.fromisoformat(str(payload["ts_to"]))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ActionUnavailable(f"petición de grant malformada: {exc}") from exc
+
+        try:
+            grant = self._backfill.request_cctv_grant(
+                mode=mode, event_id=event_id, sha256=sha256, ts_from=ts_from, ts_to=ts_to
+            )
+        except ValueError as exc:  # modo desconocido
+            raise ActionUnavailable(str(exc)) from exc
+        if grant is None:
+            raise ActionUnavailable("la nube no otorgó grant a tiempo (¿sin enlace?)")
+        return grant
+
+    def verify_cctv_signature(self, cuerpo: bytes, firma: str | None) -> bool:
+        """¿Viene esta petición del CCTV de este sitio? **Fail-closed sin clave.**
+
+        Sin `SecurityManager` provisionado no se verifica nada y por tanto no se concede
+        nada: un gabinete sin clave de CCTV no es un gabinete que confía en cualquiera, es
+        un gabinete que todavía no tiene CCTV.
+        """
+        if self._security is None:
+            log.warning("grant de cctv rechazado: este gabinete no tiene clave de CCTV")
+            return False
+        return bool(self._security.verify_cctv(cuerpo, firma or ""))
+
     def _record_action(self, action: str) -> None:
         with self._actions_lock:
             self._actions.append({"at": utcnow().isoformat(), "action": action, "via": "lan"})
@@ -1053,6 +1207,10 @@ class LocalDashboard(EdgeModule):
             "gateway_id": self._gateway_id
             or (self._health.last_snapshot.gateway_id if self._health.last_snapshot else ""),
             "site_name": self._site_name,
+            # [T-5.26] Identidad correlacionable. Cadena vacía ⇒ no configurado;
+            # el panel lo declara S/D en vez de dejar el hueco (regla de oro 7).
+            "iot_thing": self._iot_thing,
+            "station_code": self._station_code,
             "now": now.isoformat(),
             "uptime_s": uptime,
             "refresh_ms": self._refresh_ms,
@@ -1326,13 +1484,57 @@ class LocalDashboard(EdgeModule):
         )
 
     def drill_audio(self) -> None:
-        """Voceo de SIMULACRO por LAN (A-6): mensaje de drill, SIN tocar relés."""
+        """Voceo de SIMULACRO por LAN (A-6): mensaje de drill, SIN tocar relés.
+
+        [T-5.17] Y deja fila en la BITÁCORA LOCAL, no solo en la `deque` de
+        `_actions`, que vive en RAM y la borra un reinicio. Esto sale por el
+        altavoz de un edificio con gente dentro; que la única constancia fuera un
+        anillo en memoria y una línea del journal significaba que «¿qué sonó el 19
+        de septiembre en la torre B?» solo se podía contestar con SSH y suerte.
+
+        La fila lleva el ASSET Y SU HASH, no solo el verbo: «se voceó» sin decir
+        qué se voceó no responde a un perito.
+        """
         if self._audio is None:
             log.warning("drill de voceo solicitado sin módulo de audio")
             return
+        evidencia = {}
+        try:
+            evidencia = dict(self._audio.simulacro_evidence())
+        except Exception:  # noqa: BLE001 — advisory: la evidencia no puede tumbar el voceo
+            log.exception("no se pudo resolver la evidencia de audio del voceo LAN (aislado)")
         self._audio.play_simulacro()
         self._record_action("drill_audio")
-        log.warning("voceo de SIMULACRO solicitado por LAN")
+        self._registrar_voceo(evidencia)
+        log.warning("voceo de SIMULACRO solicitado por LAN (%s)", evidencia.get("path"))
+
+    def _registrar_voceo(self, evidencia: dict) -> None:
+        """[T-5.17] La fila persistida del voceo. Aislada: jamás tumba el botón."""
+        if self._ledger is None:
+            return
+        from takab_edge.audit import ACTOR_LAN
+        from takab_edge.contracts import ActuationCause
+
+        sha = evidencia.get("sha256")
+        detalle = (
+            f"asset={evidencia.get('asset_id') or 'local'} "
+            f"sha256={sha[:16] if sha else 'S/D'} "
+            f"path={evidencia.get('path') or 'S/D'}"
+        )
+        try:
+            self._ledger.record(
+                cause=ActuationCause.LAN_DRILL_VOICE,
+                actor=ACTOR_LAN,
+                channel=ActuatorChannel.SYSTEM,
+                action="drill_audio",
+                # `will_sound=False` NO es un fallo: el voceo puede estar apagado
+                # por su gate de hardware y el simulacro corre igual. Se registra
+                # como intento no ejecutado para que la fila no afirme un sonido.
+                success=bool(evidencia.get("will_sound")),
+                detail=detalle,
+            )
+        except Exception:  # noqa: BLE001 — la bitácora jamás propaga
+            log.exception("no se pudo registrar el voceo de simulacro (aislado)")
 
     @property
     def address(self) -> tuple[str, int] | None:

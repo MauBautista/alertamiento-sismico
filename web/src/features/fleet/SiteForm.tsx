@@ -11,6 +11,7 @@ import { useState } from "react";
 import type { SiteOut } from "@takab/sdk";
 
 import MapPointPicker from "./MapPointPicker";
+import BuildingTypeField from "./BuildingTypeField";
 import { DEFAULT_PICK, isValidPoint, parseLatLonPair } from "./geo";
 import type { LonLat } from "./geo";
 
@@ -61,6 +62,7 @@ function initialValues(site: SiteOut | undefined): SiteFormValues {
 
 export default function SiteForm({ site, submitting, error, onSubmit, onCancel }: SiteFormProps) {
   const [values, setValues] = useState<SiteFormValues>(() => initialValues(site));
+
   const editing = site !== undefined;
   const complete = values.code.trim() !== "" && values.name.trim() !== "";
   const canSubmit = complete && isValidPoint(values.point) && !submitting;
@@ -125,13 +127,7 @@ export default function SiteForm({ site, submitting, error, onSubmit, onCancel }
         <input value={values.address} onChange={(e) => set("address", e.target.value)} />
       </label>
 
-      <label>
-        <span>TIPO DE INMUEBLE</span>
-        <input
-          value={values.building_type}
-          onChange={(e) => set("building_type", e.target.value)}
-        />
-      </label>
+      <BuildingTypeField value={values.building_type} onChange={(v) => set("building_type", v)} />
 
       <fieldset className="fleet__coords">
         <legend>UBICACIÓN FÍSICA</legend>

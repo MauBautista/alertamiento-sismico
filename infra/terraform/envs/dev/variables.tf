@@ -12,6 +12,46 @@ variable "instance_type" {
   default     = "t4g.medium"
 }
 
+variable "cctv_analyzer_enabled" {
+  description = <<-EOT
+    Crea el Lambda que cuenta personas en los clips de CCTV (T-3.12.b).
+
+    `false` es el default y NO es cautela: la imagen tiene que existir en ECR antes de que
+    este modulo pueda crearse, y el repositorio ECR lo crea este mismo apply. O sea que el
+    primer apply lo deja en `false`, se empuja la imagen, y un segundo apply lo enciende
+    con `cctv_analyzer_image_uri` apuntando a un tag INMUTABLE.
+
+    Con `false` tampoco se cobra nada: un Lambda que no existe no tiene coste, y la cola
+    acumula mensajes durante sus 4 dias de retencion — asi que encenderlo despues procesa
+    lo que se hubiera quedado esperando en vez de perderlo.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "cctv_analyzer_image_uri" {
+  description = <<-EOT
+    Imagen del Lambda, con tag INMUTABLE — nunca `latest`.
+
+    La razon es la misma que hornea el modelo dentro: un numero que acaba en un dictamen
+    tiene que poder atribuirse a una version exacta. Con `latest`, «que codigo calculo esto»
+    no tiene respuesta.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "cctv_analyzer_database_url" {
+  description = <<-EOT
+    DSN que usa el Lambda. Va por `local.auto.tfvars` —gitignored— como el resto de lo
+    sensible, y NUNCA en el repositorio (regla de oro 6). El rol del Lambda ademas puede
+    leer el secreto de Secrets Manager, que es el camino que conviene cuando esto crezca.
+  EOT
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "serve_enabled" {
   description = <<-EOT
     Publica la consola SOC en internet (IP elastica + SG web + TLS por Let's Encrypt).

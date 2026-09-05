@@ -54,7 +54,7 @@ Después avisa a la nube, guarda la evidencia y la sube. **Ese "después" no con
 lo anterior.**
 
 El tiempo medido entre que el WR-1 cierra su contacto y el relé de la sirena se mueve es de
-**milisegundos** — la medición con el hardware real dio **6.65 ms**
+**milisegundos** — la medición con el hardware real dio **6.65 ms** (fuente: [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md))
 (`takab-docs/design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md:85`). Es más rápido que un
 parpadeo.
 
