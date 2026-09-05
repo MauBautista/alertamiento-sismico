@@ -1,68 +1,473 @@
 ---
-// La consola SOC REAL, capturada del producto corriendo (scripts/
-// capturas-consola.mjs sobre `make soc-local`). Datos de DEMOSTRACIÓN y se
-// dice en el rótulo: la honestidad de la casa aplica también al marketing.
-import { Image } from "astro:assets";
-import livewall from "../assets/img/consola-livewall.png";
+// Representación editorial y responsive de la consola SOC. Sustituye la captura
+// anterior porque contenía estados de una flota de desarrollo y mediciones que no
+// deben publicarse. Los campos corresponden al producto; los datos son ilustrativos.
 ---
 
-<figure class="consola" data-rv>
-  <div class="consola__marco">
-    <div class="consola__barra" aria-hidden="true">
-      <span></span><span></span><span></span>
-      <span class="consola__url mono">soc.takab · monitoreo</span>
-    </div>
-    <Image
-      src={livewall}
-      alt="Consola SOC de TAKAB Ailert durante un incidente de demostración: banner ALERTA SÍSMICA · PROTÉJASE del Sitio Dev Puebla, mapa con las estaciones de la zona, tira de indicadores de flota y tabla de incidentes abiertos con severidad crítica."
-      widths={[720, 1200, 1600]}
-      sizes="(min-width: 1280px) 1120px, 100vw"
-    />
-  </div>
-  <figcaption class="mono humo consola__pie">
-    Consola SOC real · incidente de <strong>demostración</strong> (sitio y datos de
-    prueba)
+<figure class="consola" data-instrumento>
+  <p class="oculto" id="consola-desc">
+    Representación editorial de la sala de operaciones. Muestra un inmueble en
+    seguimiento, el estado de la señal, la conciliación de personas, la
+    evidencia recibida y una línea de recuperación hasta el dictamen.
+  </p>
+
+  <figcaption class="consola__aviso mono">
+    <span><i></i> Sala de operaciones</span>
+    <span>Campos reales · datos ilustrativos</span>
   </figcaption>
+
+  <div class="soc" role="img" aria-labelledby="consola-desc">
+    <header class="soc__barra">
+      <div class="soc__marca">
+        <span aria-hidden="true">K</span>
+        <div>
+          <strong>TAKAB AILERT</strong><small class="mono"
+            >Centro operativo</small
+          >
+        </div>
+      </div>
+      <div class="soc__estado mono"><i></i> Plataforma preparada</div>
+    </header>
+
+    <div class="soc__principal">
+      <section class="soc__mapa" aria-label="Vista territorial ilustrativa">
+        <div class="soc__rotulo mono">
+          <span>Vista de inmuebles</span><span>Seguimiento coordinado</span>
+        </div>
+        <svg viewBox="0 0 720 430" aria-hidden="true">
+          <g class="soc__reticula">
+            <path d="M0 86H720M0 172H720M0 258H720M0 344H720"></path>
+            <path d="M120 0V430M240 0V430M360 0V430M480 0V430M600 0V430"></path>
+          </g>
+          <g class="soc__territorio">
+            <path
+              d="M65 93 156 56l91 28 65-18 86 49 76-7 62 48 91 27-20 65-78 24-47 61-91 4-77 40-84-43-88-12-31-72-58-54Z"
+            ></path>
+            <path
+              d="M182 148 268 115 348 164 427 137 521 201 469 270 374 250 310 305 231 264 143 232Z"
+            ></path>
+          </g>
+          <g class="soc__enlaces">
+            <path
+              d="M184 148 343 207 478 170M343 207 530 279M343 207 258 306M343 207 418 326"
+            ></path>
+          </g>
+          <g class="soc__sitios">
+            <g transform="translate(184 148)"
+              ><circle r="17"></circle><circle r="5"></circle></g
+            >
+            <g transform="translate(478 170)"
+              ><circle r="17"></circle><circle r="5"></circle></g
+            >
+            <g transform="translate(530 279)"
+              ><circle r="17"></circle><circle r="5"></circle></g
+            >
+            <g transform="translate(258 306)"
+              ><circle r="17"></circle><circle r="5"></circle></g
+            >
+            <g transform="translate(418 326)"
+              ><circle r="17"></circle><circle r="5"></circle></g
+            >
+          </g>
+          <g class="soc__sitio-activo" transform="translate(343 207)">
+            <circle class="soc__signal" r="31"></circle>
+            <circle r="18"></circle><rect
+              x="-6"
+              y="-7"
+              width="12"
+              height="14"
+              rx="2"></rect>
+          </g>
+        </svg>
+        <div class="soc__leyenda mono">
+          <span><i></i> Inmueble preparado</span><span
+            ><i></i> Incidente en seguimiento</span
+          >
+        </div>
+      </section>
+
+      <aside
+        class="soc__incidente"
+        aria-label="Resumen del incidente ilustrativo"
+      >
+        <div class="incidente__top mono">
+          <span>Incidente en seguimiento</span><i>Activo</i>
+        </div>
+        <h3>Inmueble asignado</h3>
+        <p>
+          La operación reúne el estado físico y la información que llega desde
+          campo.
+        </p>
+        <dl class="incidente__datos">
+          <div><dt class="mono">Señal</dt><dd><i></i> Registrada</dd></div>
+          <div>
+            <dt class="mono">Actuación</dt><dd><i></i> Evento vinculado</dd>
+          </div>
+          <div>
+            <dt class="mono">Personas</dt><dd><i></i> Conciliación en curso</dd>
+          </div>
+          <div>
+            <dt class="mono">Evidencia</dt><dd>
+              <i></i> Disponible para revisión
+            </dd>
+          </div>
+        </dl>
+        <div class="incidente__prioridad">
+          <span class="mono">Próxima acción</span>
+          <strong>Revisar evidencia y estado de reingreso</strong>
+        </div>
+      </aside>
+    </div>
+
+    <ol class="soc__flujo" aria-label="Línea operativa del incidente">
+      <li>
+        <span class="mono">01</span><div>
+          <strong>Entrada</strong><small>Señal registrada</small>
+        </div>
+      </li>
+      <li>
+        <span class="mono">02</span><div>
+          <strong>Inmueble</strong><small>Actuación vinculada</small>
+        </div>
+      </li>
+      <li>
+        <span class="mono">03</span><div>
+          <strong>Campo</strong><small>Personas y evidencia</small>
+        </div>
+      </li>
+      <li>
+        <span class="mono">04</span><div>
+          <strong>Recuperación</strong><small>Evaluación y dictamen</small>
+        </div>
+      </li>
+    </ol>
+  </div>
 </figure>
 
 <style>
   .consola {
     margin: 0;
   }
-  .consola__marco {
+  .consola__aviso {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: var(--e-2) var(--e-5);
+    padding: 10px 14px;
     border: 1px solid var(--linea-fuerte);
-    border-radius: var(--radio);
-    overflow: hidden;
-    background: var(--fondo-1);
-    box-shadow:
-      var(--glow-cian-suave),
-      0 24px 64px -32px rgba(0, 0, 0, 0.8);
+    border-bottom: 0;
+    color: var(--texto-3);
   }
-  .consola__barra {
+  .consola__aviso span:first-child {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--texto-1);
+  }
+  .consola__aviso i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--verde);
+    box-shadow: 0 0 12px rgba(0, 230, 118, 0.58);
+  }
+  .soc {
+    overflow: hidden;
+    border: 1px solid var(--linea-fuerte);
+    border-radius: 0 0 var(--radio-lg) var(--radio-lg);
+    background: #08182d;
+    box-shadow: var(--glow-cian-suave);
+  }
+  .soc__barra {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--e-3) var(--e-5);
+    padding: 14px clamp(16px, 3vw, 30px);
+    border-bottom: 1px solid var(--linea);
+    background: #0d2844;
+  }
+  .soc__marca {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .soc__marca > span {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    color: var(--blanco);
+    font-family: var(--fuente-display);
+    font-size: 1.4rem;
+    transform: skewX(-10deg);
+    border-left: 4px solid var(--cian);
+  }
+  .soc__marca strong {
+    display: block;
+    font-family: var(--fuente-display);
+    font-size: 1.1rem;
+    letter-spacing: 0.04em;
+  }
+  .soc__marca small {
+    display: block;
+    color: var(--texto-3);
+    font-size: 0.52rem;
+  }
+  .soc__estado {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--texto-2);
+  }
+  .soc__estado i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--verde);
+    box-shadow: 0 0 12px rgba(0, 230, 118, 0.58);
+  }
+  .soc__principal {
+    display: grid;
+  }
+  .soc__mapa {
+    min-width: 0;
+    padding: clamp(14px, 3vw, 28px);
+    background: #06111f;
+  }
+  .soc__rotulo,
+  .soc__leyenda {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px 20px;
+    color: var(--texto-3);
+  }
+  .soc__rotulo span:first-child {
+    color: var(--cian);
+  }
+  .soc__mapa svg {
+    display: block;
+    width: 100%;
+    height: auto;
+    margin-block: 10px;
+  }
+  .soc__reticula path {
+    fill: none;
+    stroke: rgba(202, 218, 239, 0.07);
+  }
+  .soc__territorio path {
+    fill: rgba(18, 58, 122, 0.16);
+    stroke: rgba(106, 168, 255, 0.2);
+    stroke-width: 1.2;
+  }
+  .soc__enlaces path {
+    fill: none;
+    stroke: rgba(106, 168, 255, 0.42);
+    stroke-width: 1.4;
+    stroke-dasharray: 4 7;
+  }
+  .soc__sitios circle:first-child {
+    fill: rgba(106, 168, 255, 0.08);
+    stroke: rgba(106, 168, 255, 0.45);
+  }
+  .soc__sitios circle:last-child {
+    fill: var(--cian);
+  }
+  .soc__sitio-activo > circle:nth-child(2) {
+    fill: rgba(0, 230, 118, 0.12);
+    stroke: var(--verde);
+    stroke-width: 2;
+  }
+  .soc__sitio-activo rect {
+    fill: var(--verde);
+  }
+  .soc__signal {
+    fill: none;
+    stroke: var(--verde);
+    opacity: 0.5;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .soc__leyenda {
+    justify-content: flex-start;
+  }
+  .soc__leyenda span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .soc__leyenda i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--cian);
+  }
+  .soc__leyenda span:last-child i {
+    background: var(--verde);
+  }
+  .soc__incidente {
+    padding: clamp(22px, 4vw, 40px);
+    border-top: 1px solid var(--linea);
+    background: #0d2440;
+  }
+  .incidente__top {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--cian);
+  }
+  .incidente__top i {
+    padding: 3px 7px;
+    border: 1px solid rgba(0, 230, 118, 0.4);
+    color: var(--verde);
+    font-style: normal;
+  }
+  .soc__incidente h3 {
+    margin-top: var(--e-5);
+    font-family: var(--fuente-display);
+    font-size: clamp(2rem, 1.45rem + 1.5vw, 3.2rem);
+    line-height: 0.92;
+    text-transform: uppercase;
+  }
+  .soc__incidente > p {
+    max-width: 40ch;
+    margin-top: var(--e-3);
+    color: var(--texto-2);
+    font-size: 0.92rem;
+  }
+  .incidente__datos {
+    display: grid;
+    gap: 0;
+    margin-top: var(--e-6);
+  }
+  .incidente__datos div {
+    display: grid;
+    grid-template-columns: minmax(80px, 0.6fr) 1.4fr;
+    gap: 12px;
+    padding-block: 12px;
+    border-top: 1px solid var(--linea);
+  }
+  .incidente__datos dt {
+    color: var(--texto-3);
+  }
+  .incidente__datos dd {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--linea);
-    background: var(--fondo-2);
+    color: var(--texto-1);
+    font-size: 0.82rem;
   }
-  .consola__barra > span:not(.consola__url) {
-    width: 10px;
-    height: 10px;
+  .incidente__datos dd i {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
     border-radius: 50%;
-    background: var(--linea-fuerte);
+    background: var(--verde);
   }
-  .consola__url {
-    margin-left: var(--e-3);
+  .incidente__prioridad {
+    margin-top: var(--e-6);
+    padding: 16px;
+    border-left: 2px solid var(--cian);
+    background: rgba(5, 11, 20, 0.45);
+  }
+  .incidente__prioridad span {
+    display: block;
+    color: var(--cian);
+  }
+  .incidente__prioridad strong {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.88rem;
+  }
+  .soc__flujo {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--linea);
+    list-style: none;
+  }
+  .soc__flujo li {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 18px;
+    border-bottom: 1px solid var(--linea);
+  }
+  .soc__flujo li > span {
+    color: var(--cian);
+  }
+  .soc__flujo strong {
+    display: block;
+    font-family: var(--fuente-display);
+    font-size: 1rem;
+    text-transform: uppercase;
+  }
+  .soc__flujo small {
+    display: block;
+    margin-top: 2px;
     color: var(--texto-3);
-    letter-spacing: 0.06em;
+    font-size: 0.68rem;
   }
-  .consola__pie {
-    padding-top: var(--e-3);
-    letter-spacing: 0.05em;
-    text-transform: none;
+
+  @media (prefers-reduced-motion: no-preference) {
+    .soc__signal {
+      animation: soc-pulso 4.6s var(--ease-out) infinite;
+    }
+    .consola.pausado * {
+      animation-play-state: paused !important;
+    }
   }
-  .consola__pie strong {
-    color: var(--texto-2);
+  @keyframes soc-pulso {
+    0%,
+    52%,
+    100% {
+      opacity: 0;
+      transform: scale(0.45);
+    }
+    62% {
+      opacity: 0.65;
+    }
+    86% {
+      opacity: 0;
+      transform: scale(1.35);
+    }
+  }
+  @media (min-width: 720px) {
+    .soc__flujo {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .soc__flujo li {
+      border-right: 1px solid var(--linea);
+      border-bottom: 0;
+    }
+  }
+  @media (min-width: 980px) {
+    .soc__principal {
+      grid-template-columns: minmax(0, 1.35fr) minmax(320px, 0.65fr);
+    }
+    .soc__incidente {
+      border-top: 0;
+      border-left: 1px solid var(--linea);
+    }
+  }
+  @media (max-width: 520px) {
+    .consola__aviso {
+      font-size: 0.58rem;
+    }
+    .soc__rotulo span:last-child {
+      display: none;
+    }
+    .soc__mapa {
+      padding: 12px;
+    }
+    .soc__mapa svg {
+      margin-block: 4px;
+    }
+    .incidente__datos div {
+      grid-template-columns: 1fr;
+      gap: 4px;
+    }
   }
 </style>

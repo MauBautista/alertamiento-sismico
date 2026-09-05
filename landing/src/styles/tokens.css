@@ -1,15 +1,8 @@
 /* ============================================================
-   TAKAB AILERT · landing pública v2 — «Telemetría» (mundo oscuro)
-   Rediseño pedido por Mauricio (2026-08-25): identidad real del
-   producto — navy profundo y cian eléctrico de la consola SOC
-   (shared/design-tokens), degradado del logo para momentos de
-   marca, semáforo de estados como acentos semánticos.
-   Contrastes calculados (WCAG 2.1):
-   texto-1/fondo-0 16.64:1 · texto-2/fondo-0 10.35:1 ·
-   texto-3/fondo-0 6.64:1 (5.14:1 sobre panel) ·
-   cian/fondo-0 8.79:1 · navy-sobre-cian (botón) 7.54:1 ·
-   verde 11.18:1 · ámbar 11.45:1 · rojo 5.85:1 (4.52:1 en panel) ·
-   blanco/crisis 19.58:1.
+   TAKAB AILERT · landing pública v3 — «Comando cinematográfico»
+   La marca real ordena el mundo: negro azulado, navy y azul TAKAB;
+   rojo únicamente para alerta. El semáforo conserva su función
+   operativa y nunca se usa como decoración.
    ============================================================ */
 
 /* --- Fuentes (idénticas a v1: subsets woff2 auto-hosteados) --- */
@@ -59,30 +52,35 @@
 }
 
 :root {
-  /* Paleta — fuente: shared/design-tokens (consola SOC) + logo + app de crisis */
-  --fondo-0: #071322; /* suelo de página (navy de consola, profundizado) */
-  --fondo-1: #0e2336; /* --tk-surface-0 de la consola */
-  --fondo-2: #122b44; /* --tk-surface-1: paneles */
-  --fondo-3: #1a3e62; /* --tk-navy-700: superficie de marca */
-  --texto-1: #f0f2f5; /* --tk-fg-1 */
-  --texto-2: #b8c2ce; /* --tk-fg-2 */
-  --texto-3: #8a9cb1; /* --tk-fg-3 — AA sobre fondo-0 y paneles */
-  --cian: #00bfff; /* --tk-cyan: EL acento */
-  --cian-hover: #33ccff;
+  /* Paleta — marca entregada + superficies verificadas de la consola SOC */
+  --fondo-0: #050b14;
+  --fondo-1: #0b1d3a;
+  --fondo-2: #102846;
+  --fondo-3: #123a7a;
+  --texto-1: #f6f8fb;
+  --texto-2: #c0cad8;
+  --texto-3: #9baabd;
+  --azul-marca: #123a7a;
+  --cian: #6aa8ff; /* alias histórico: ahora es Azul Señal */
+  --cian-hover: #91c0ff;
   --verde: #00e676; /* estados: SOLO con significado, jamás decorativos */
   --ambar: #ffc107;
-  --rojo: #ff5252;
-  --crisis: #160808; /* fondo de la pantalla de crisis de la app */
-  --logo-a: #006989; /* degradado del logo (momentos de marca, no texto) */
-  --logo-b: #00215a;
-  --linea: rgba(240, 242, 245, 0.1);
-  --linea-fuerte: rgba(240, 242, 245, 0.2);
+  --rojo: #ff2d1a;
+  --rojo-texto: #ff5a47;
+  --crisis: #190908;
+  --logo-a: #123a7a;
+  --logo-b: #0b1d3a;
+  --linea: rgba(202, 218, 239, 0.12);
+  --linea-fuerte: rgba(202, 218, 239, 0.24);
   --blanco: #ffffff;
 
-  /* Glow: la única sombra permitida es luz de señal (cian/estados) */
-  --glow-cian: 0 0 24px -6px rgba(0, 191, 255, 0.5);
-  --glow-cian-suave: 0 0 40px -12px rgba(0, 191, 255, 0.35);
-  --glow-rojo: 0 0 24px -6px rgba(255, 82, 82, 0.45);
+  /* La profundidad viene de luz de señal, nunca de sombra gris. */
+  --glow-cian: 0 0 28px -7px rgba(106, 168, 255, 0.58);
+  --glow-cian-suave: 0 0 56px -18px rgba(106, 168, 255, 0.38);
+  --glow-rojo: 0 0 28px -7px rgba(255, 45, 26, 0.5);
+
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 
   /* Tipografía (familias idénticas a v1) */
   --fuente-display:
@@ -94,8 +92,8 @@
     "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas,
     "Liberation Mono", monospace;
 
-  --t-display: clamp(3rem, 1.1rem + 9vw, 10.5rem);
-  --t-h2: clamp(2rem, 1.3rem + 3.5vw, 4.25rem);
+  --t-display: clamp(3.75rem, 1.8rem + 6vw, 6.8rem);
+  --t-h2: clamp(2.75rem, 1.45rem + 4.2vw, 5.75rem);
   --t-h3: clamp(1.25rem, 1.1rem + 0.8vw, 1.625rem);
   --t-body: 1.0625rem;
   --t-mono: 0.875rem;
@@ -116,6 +114,7 @@
 
   --ancho-max: 1440px;
   --margen: clamp(16px, 4vw, 64px);
-  --radio: 8px; /* v2: esquinas suaves de consola (la consola usa 4-8px) */
+  --radio: 12px;
   --radio-sm: 4px;
+  --radio-lg: 24px;
 }

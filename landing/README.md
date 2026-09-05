@@ -1,8 +1,8 @@
 # Landing pública de TAKAB Ailert — takabailert.com
 
 Workspace **Astro estático** autocontenido (sin dependencia de `shared/design-tokens`:
-la identidad de la landing es propia — dirección industrial-brutalist / Swiss
-Industrial Print, ver `PRODUCT.md` y el contrato de dirección en
+la identidad de la landing es propia — dirección v3 «Comando cinematográfico»,
+ver `PRODUCT.md` y el contrato de dirección en
 `src/layouts/Base.astro`). Node 22 (`.nvmrc`).
 
 ## Comandos
@@ -19,7 +19,7 @@ Industrial Print, ver `PRODUCT.md` y el contrato de dirección en
 
 > Si `audit` dice «Chrome installation not found»: no hay Chrome del sistema; apúntalo al de
 > Playwright — `CHROME_PATH=$(find ~/.cache/ms-playwright -path '*chromium*/chrome-linux64/chrome' | sort | tail -1) npm run audit`.
-> Referencia medida (2026-08-25, preview local): LCP 1.06 s · CLS 0 · TBT 0 · Perf 100 · A11y 100.
+> Referencia medida V3 end-to-end (2026-09-05, 3 corridas locales): LCP máximo 1.28 s · CLS 0 · TBT máximo 24 ms · Perf 100 · A11y 100.
 
 Desde la raíz del repo: `make landing-preview` · `landing-e2e` · `landing-audit` ·
 `landing-deploy` (este último con guardas; runbook en `deploy/landing/README.md`).
@@ -41,10 +41,27 @@ para fonttools; descarga de github.com/google/fonts en build-time, jamás en run
 
 ## Tarjeta OG
 
-`public/og-v1.png` se genera con `npm run build && node scripts/make-og.mjs`
+`public/og-v3.png` se genera con `npm run build && node scripts/make-og.mjs`
 (captura `og.html` con el Chromium de Playwright) y se commitea. Si cambia el
-diseño de la tarjeta, súbele la versión al nombre (`og-v2.png`) y actualiza
+diseño de la tarjeta, súbele la versión al nombre (`og-v4.png`) y actualiza
 `Base.astro`: el fichero no es immutable pero los rastreadores cachean agresivo.
+`public/og-v2.png` se conserva únicamente para continuidad de caché y rollback de
+la versión anterior; ninguna página v3 lo referencia.
+
+## Consola pública
+
+La landing usa una representación editorial responsive de los campos de la sala
+de operaciones. La captura histórica `consola-livewall.png` no se sirve: contenía
+un sitio de desarrollo, estados degradados y cifras medidas fuera de contexto.
+Sólo se recapturará cuando exista una flota sana y el encuadre pueda publicarse sin
+contradecir el perímetro comercial.
+
+## Favicon
+
+`public/favicon.png` y `public/apple-touch-icon.png` son derivados optimizados del
+isotipo negativo entregado en `img/Logos Finales/isotipo_negativo.png`. Se generan
+con Sharp a 64 px y 180 px, respectivamente; no contienen redibujo ni alteración de
+marca.
 
 ## Contacto
 

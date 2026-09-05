@@ -33,10 +33,39 @@ test("existen las páginas y los ficheros públicos", () => {
     ...paginas,
     "robots.txt",
     "sitemap.xml",
-    "favicon.svg",
-    "og-v2.png",
+    "favicon.png",
+    "apple-touch-icon.png",
+    "og-v3.png",
   ]) {
     assert.ok(existsSync(join(dist, f)), `falta dist/${f}`);
+  }
+});
+
+test("v3 usa la identidad entregada y la tarjeta social vigente", () => {
+  const index = leer("index.html");
+  assert.ok(
+    index.includes('href="/favicon.png"'),
+    "la metadata no apunta al isotipo negativo usado como favicon",
+  );
+  assert.ok(
+    index.includes('alt="TAKAB Ailert"'),
+    "la navegación no contiene el imagotipo accesible de TAKAB Ailert",
+  );
+  assert.ok(
+    index.includes("imagotipo-takab-ailert-negativo"),
+    "el build no contiene una variante optimizada del imagotipo entregado",
+  );
+  assert.ok(
+    index.includes("https://takabailert.com/og-v3.png"),
+    "la metadata social no apunta a og-v3.png",
+  );
+  for (const metadata of [
+    'property="og:image:alt"',
+    'property="og:image:width" content="1200"',
+    'property="og:image:height" content="630"',
+    'type="application/ld+json"',
+  ]) {
+    assert.ok(index.includes(metadata), `falta metadata social: ${metadata}`);
   }
 });
 
@@ -81,6 +110,16 @@ test("cadenas prohibidas (cifras, normas, clichés, terceros)", () => {
     "App Store",
     "Google Play",
     "INAI",
+    "WR-1",
+    "Raspberry",
+    "quórum",
+    "180.1",
+    "0.085g",
+    "Sitio Dev Puebla",
+    "Mariana López",
+    "José Torres",
+    "Daniel Ruiz",
+    "En vivo",
   ];
   for (const p of paginas) {
     const html = leer(p);
@@ -88,6 +127,16 @@ test("cadenas prohibidas (cifras, normas, clichés, terceros)", () => {
       assert.ok(!html.includes(s), `${p} contiene la cadena prohibida: ${s}`);
     }
     assert.ok(!/family=(Inter|Roboto)/.test(html), `${p} carga Inter/Roboto`);
+  }
+});
+
+test("el texto público no insinúa actuadores no acreditados", () => {
+  const index = texto("index.html");
+  for (const termino of [/\bgas\b/i, /\bascensores?\b/i, /\bpuertas?\b/i]) {
+    assert.ok(
+      !termino.test(index),
+      `index.html nombra un actuador no acreditado: ${termino}`,
+    );
   }
 });
 
@@ -314,20 +363,17 @@ test("[T-5.04] el sitio no afirma en presente una capacidad con su gate abierto"
   );
 });
 
-test("[T-5.04] y NO prohíbe de más: lo acreditado se sigue pudiendo decir", () => {
+test("[T-5.04] el rediseño conserva las capacidades acreditadas", () => {
   // La mitad que hace útil a una prohibición. Sin esto, vaciar el sitio entero
   // dejaría los dos tests de arriba en verde.
   const index = texto("index.html");
   const acreditadas = [
-    // Opera sin nube: probado con la nube caída, cero pérdida y cero duplicados.
-    "sin depender de internet",
-    "PROTECCIÓN LOCAL ACTIVA",
-    // Evidencia inmutable: dos capas, y el trigger para hasta al superusuario.
-    "no se puede reescribir",
-    // Aislamiento entre clientes: lo impone la base, no el software.
-    "una lectura cruzada devuelve cero filas",
-    // Sin cuenta atrás ni magnitud: hay una prueba por superficie.
-    "No muestra cuenta regresiva ni magnitud",
+    // Autonomía local y continuidad, expresadas como capacidades positivas.
+    "Protección local activa",
+    "La ruta crítica permanece en el edificio",
+    // Evidencia y aislamiento de clientes, también en lenguaje de producto.
+    "Cada actualización conserva el historial del incidente",
+    "separación de datos por cliente",
     // El deslinde de SASMEX, que es lo que protege al proyecto.
     "no la genera ni la sustituye",
   ];
@@ -338,4 +384,58 @@ test("[T-5.04] y NO prohíbe de más: lo acreditado se sigue pudiendo decir", ()
         "  Corregir el perímetro no puede vaciar la venta: esto sí se puede decir.",
     );
   }
+});
+
+test("el flujo público cubre inmueble, móvil y recuperación", () => {
+  const index = texto("index.html");
+  for (const frase of [
+    "Gabinetes secundarios amplían el alcance",
+    "sirenas y estrobos se activan por zona",
+    "Puebla",
+    "Tlaxcala",
+    "Evacúe ahora",
+    "Estoy a salvo",
+    "Necesito ayuda",
+    "Pase de lista",
+    "fotografías",
+    "Dictamen técnico",
+    "Reingreso controlado",
+    "Sismograma",
+    "Espectrograma",
+    "Conteo y conciliación",
+    "T50",
+    "T90",
+    "Síntesis asistida por IA",
+    "Hechos explicados, trazabilidad intacta",
+    "Campos reales · datos ilustrativos",
+    "Vista táctica",
+  ]) {
+    assert.ok(index.includes(frase), `falta una etapa del flujo: ${frase}`);
+  }
+});
+
+test("hero y mapa conservan la secuencia visual solicitada", () => {
+  const index = leer("index.html");
+  assert.ok(
+    !index.includes("RECEPCIÓN DEDICADA"),
+    "regresó el receptor independiente que debía retirarse del hero",
+  );
+  assert.ok(
+    index.includes("c-main__activo"),
+    "el gabinete principal no contiene su capa de activación",
+  );
+  assert.equal(
+    [...index.matchAll(/class="m-ruta"/g)].length,
+    10,
+    "cada una de las diez estaciones debe recibir una ruta desde el epicentro",
+  );
+  assert.equal(
+    [...index.matchAll(/class="m-estacion m-estacion--/g)].length,
+    10,
+    "el mapa perdió estaciones fijas",
+  );
+  assert.ok(
+    !index.includes("m-haz__pulso"),
+    "regresó el bloque móvil de la animación anterior",
+  );
 });

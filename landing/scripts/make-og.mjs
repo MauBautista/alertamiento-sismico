@@ -1,4 +1,4 @@
-// Genera public/og-v2.png (1200×630) capturando la plantilla og.html del build
+// Genera public/og-v3.png (1200×630) capturando la plantilla og.html del build
 // con el Chromium de Playwright. Se corre a mano cuando cambia la tarjeta:
 //   npm run build && node scripts/make-og.mjs
 // El PNG se COMMITEA (public/) — el build de producción no lo regenera.
@@ -29,9 +29,12 @@ try {
   });
   await page.goto("http://127.0.0.1:4322/og.html");
   await page.waitForFunction(() => document.fonts.status === "loaded");
-  await page.screenshot({ path: "public/og-v2.png" });
+  await page.waitForFunction(() =>
+    Array.from(document.images).every((imagen) => imagen.complete),
+  );
+  await page.screenshot({ path: "public/og-v3.png" });
   await browser.close();
-  console.log("public/og-v2.png generado (1200×630)");
+  console.log("public/og-v3.png generado (1200×630)");
 } finally {
   preview.kill();
 }

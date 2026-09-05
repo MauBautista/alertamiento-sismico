@@ -42,7 +42,7 @@ const puntos = trazo(N, 20260825)
   .join(" ");
 ---
 
-<div class="onda" data-onda aria-hidden="true">
+<div class="onda" data-onda data-instrumento aria-hidden="true">
   <svg
     class="onda__svg"
     viewBox={`0 0 1120 ${ALTO}`}
@@ -93,7 +93,7 @@ const puntos = trazo(N, 20260825)
     fill: none;
     stroke: var(--cian);
     stroke-width: 1.6;
-    filter: drop-shadow(0 0 6px rgba(0, 191, 255, 0.55));
+    filter: drop-shadow(0 0 6px rgba(106, 168, 255, 0.55));
   }
   .onda__sello {
     text-transform: none;
@@ -156,18 +156,24 @@ const puntos = trazo(N, 20260825)
       window.addEventListener("resize", medir, { passive: true });
 
       const estilo = getComputedStyle(document.documentElement);
-      const cian = estilo.getPropertyValue("--cian").trim() || "#00bfff";
+      const cian = estilo.getPropertyValue("--cian").trim() || "#6aa8ff";
       const linea = "rgba(240,242,245,0.2)";
 
       let visible = true;
+      let manualPaused = false;
       new IntersectionObserver((es) => {
         visible = es[0]?.isIntersecting ?? true;
       }).observe(raiz);
+      window.addEventListener("takab:motion", (event) => {
+        manualPaused = Boolean(
+          (event as CustomEvent<{ paused: boolean }>).detail?.paused,
+        );
+      });
 
       let off = 0;
       const paso = 2.2; // px por muestra
       function frame() {
-        if (visible) {
+        if (visible && !manualPaused) {
           off = (off + 0.55) % MUESTRAS;
           ctx.clearRect(0, 0, ancho, ALTO);
           ctx.strokeStyle = linea;
@@ -179,7 +185,7 @@ const puntos = trazo(N, 20260825)
 
           ctx.strokeStyle = cian;
           ctx.lineWidth = 1.6;
-          ctx.shadowColor = "rgba(0,191,255,0.55)";
+          ctx.shadowColor = "rgba(106,168,255,0.55)";
           ctx.shadowBlur = 8;
           ctx.beginPath();
           const visibles = Math.ceil(ancho / paso) + 2;
