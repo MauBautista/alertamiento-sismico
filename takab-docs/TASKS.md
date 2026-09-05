@@ -9,9 +9,9 @@
 > - Si un criterio no pasa tras 3 iteraciones del loop: detente y reporta el bloqueo.
 > - Cada tarea referencia su Work Package (WP) del blueprint entre corchetes, ej. `[A2]`.
 
-## Estado actual (2026-08-12)
+## Estado actual (2026-09-02)
 
-****Conteo de tareas:** total **315** · `[x]` **266** · `[~]` **9** · `[ ]` **40**
+****Conteo de tareas:** total **342** · `[x]` **266** · `[~]` **9** · `[ ]` **67**
 > Esa línea de arriba **la verifica un test**:
 > `api/tests/test_docs_consistency.py::test_la_cabecera_de_tasks_declara_el_conteo_real`
 > cuenta los encabezados `^### [.]` del archivo y exige que cuadren.
@@ -54,6 +54,19 @@ OIDC: código listo, falta `terraform apply`) — ambas esperan a un humano, no 
 > bloqueada dejó de tumbar a las que no tocaban esa tabla**.
 **Qué corre en producción se le pregunta al sistema, no a este archivo** (`/api/health` para la
 nube, `FW_VERSION` para el gabinete — ver README §"¿Qué está desplegado?").
+
+> **Lo que entró el 2026-09-02, y por qué el conteo salta 27 de golpe.** La auditoría
+> V1-COMERCIAL abrió el **Bloque VI**, que ordena una ruta distinta de la de los cinco
+> anteriores: no la del primer cliente, sino la de **poder enseñar el producto sin que una
+> pantalla afirme lo que nadie acreditó**. Sus 27 fichas salen de 52 ítems auditados —10 verdes,
+> 23 amarillos, 19 rojos— y **23 de ellas son `SOFTWARE` puro**.
+>
+> **El hallazgo de planificación, que merece leerse antes que la lista:** lo que hoy impide
+> enseñar el producto **no está bloqueado en nadie**. La ruta crítica de V1-DEMO son cinco fichas
+> y ninguna espera a un humano con agenda — al contrario que la ruta al primer cliente, donde el
+> software controla uno y medio de seis. Ver
+> [`INFORME-V1-COMERCIAL.md`](INFORME-V1-COMERCIAL.md) y
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md).
 
 **Lo que falta hacia un cliente real NO es mayormente código.** Los relés siguen en MOCK y
 `G-04` (latencia contacto→relé→sirena en hardware real) **lleva abierto desde el hito de Fase 1
@@ -11318,7 +11331,797 @@ documento firmado que dice exactamente qué hace y qué no hace el sistema.
 
 ---
 
+## BLOQUE VI · V1-DEMO — lo que hace falta para poder enseñarlo
+
+**Por qué existe este bloque, y por qué no está en ninguno de los cinco anteriores.** Los Bloques
+I a V ordenan el camino hacia **un cliente con un edificio protegido y un documento firmado**.
+Este ordena otra cosa: el camino hacia **poder enseñar el producto sin que una pantalla afirme lo
+que nadie acreditó**. Son rutas distintas y conviene no confundirlas — una demo no necesita que la
+sirena suene con el gabinete apagado; necesita **no afirmar que lo hace**.
+
+Sale entero de la auditoría del **2026-09-02** ([`INFORME-V1-COMERCIAL.md`](INFORME-V1-COMERCIAL.md),
+plan en [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md)): 52 ítems, 10 verdes, 23 amarillos, 19
+rojos. Ocho de sus hallazgos **no llevan ficha nueva** porque caen sobre tareas ya abiertas; se
+citan en §4 de aquel plan y se quedan donde están.
+
+**Este bloque no espera a ningún gate para empezar**, y esa es su propiedad interesante: de sus 27
+fichas, **23 son `SOFTWARE` puro**. La ruta crítica de V1-DEMO son cinco —`T-5.01`, `T-5.02`,
+`T-5.03`, `T-5.04` y `T-5.05`— y **ninguna está bloqueada en una persona**.
+
+**El único cruce a otro bloque, escrito aquí para que se vea al planificar:** `T-5.23`
+(espectrograma en el dictamen pericial) **depende de `T-3.11.c`**, del Bloque IV — sin el worker
+que archiva la onda cruda desplegado en la nube no hay nada que transformar. Es la razón de que
+esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sale de él.
+
+## Fase 5.0 · V1-DEMO — que nada de lo que se enseña afirme lo que no se acreditó
+
+> **De dónde sale esta fase.** De la auditoría del **2026-09-02**
+> ([`INFORME-V1-COMERCIAL.md`](INFORME-V1-COMERCIAL.md), plan en
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md)). 52 ítems auditados: 10 verdes, 23 amarillos,
+> 19 rojos.
+>
+> **Qué NO es esta fase.** No es "terminar el producto". Es el conjunto mínimo para que TAKAB
+> Ailert se pueda **enseñar y vender** sin que una pantalla afirme algo que nadie acreditó. La
+> ruta al primer cliente sigue siendo la de §"RUTA CRÍTICA", y sigue estando en manos de humanos
+> con agenda. **Esta no**: de sus 27 fichas, 23 son `SOFTWARE` puro.
+>
+> **La ruta crítica de V1-DEMO son cinco fichas** —`T-5.01`, `T-5.02`, `T-5.03`, `T-5.04`,
+> `T-5.05`— y **ninguna espera a nadie**. Es la diferencia entre *acreditar* y *no mentir*: una
+> demo no necesita que la sirena suene con el gabinete apagado, necesita **no afirmar que lo
+> hace**.
+
+### [ ] T-5.01 · En modo demo los botones **mandan órdenes de verdad** — `SOFTWARE`
+> **Verificado abriendo el archivo, no leyendo una ficha.** `edge/takab_edge/local_api/index.html`
+> — `doAction()` ejecuta `fetch(endpoint, {method:'POST', headers})` **sin comprobar `DEMO`**. El
+> único `if (!DEMO)` del flujo se salta el refetch de estado, nada más. Y `renderActions()` pinta
+> `PROBAR ACTUADORES` —cuyo propio subtítulo dice *"sostiene sirena+estrobo · pulso en gas,
+> ascensores, puertas"*— **incondicionalmente**, además de decidir **qué** botones aparecen a
+> partir del estado FALSO de la escena: con `?demo=alerta` salen `SILENCIAR AUDIBLES` y
+> `CERRAR ALERTA` porque la escena sintética dice que la sirena suena.
+>
+> Mientras tanto, arriba, la cinta afirma `DEMO · NO ES ESTADO REAL`.
+>
+> **Es la familia de defecto que este proyecto ya conoce** —una superficie que dice "bien" cuando
+> quiere decir "no sé"— pero llevada un paso más lejos: aquí la superficie dice *"nada de lo que
+> ves es real"* al lado de un botón que sí lo es. El servidor tampoco defiende: `?demo=` es un
+> parámetro del navegador y los handlers no saben de él.
+>
+> **Y es el escenario exacto de una exposición comercial**, que es lo que lo pone el primero de
+> la lista.
+- **Componente:** edge (panel LAN) · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que con `?demo=` puesto ninguna acción alcance al gabinete, y que la pantalla lo
+  diga en el propio botón en vez de solo en la cinta.
+- **Criterios de aceptación:**
+  - [ ] `doAction()` se niega con `DEMO` puesto: no emite `fetch`, y el mensaje de la caja del PIN
+        dice por qué (algo como `MODO DEMO · LAS ÓRDENES ESTÁN INHIBIDAS`).
+  - [ ] `renderActions()` **no pinta** botones de actuación en demo, o los pinta visiblemente
+        inertes. La decisión de cuál de las dos se toma en la ficha, se escribe con su razón.
+  - [ ] Un test que **cuente peticiones**, no que lea prosa: con cada escena de demo, pulsar cada
+        botón produce **cero** `fetch` a `api/*`. Que el conteo esperado sea cero se declara en
+        voz alta para que el test no pueda pasar por vacuidad.
+  - [ ] El test cubre las cinco acciones alcanzables desde una escena de demo, enumeradas
+        **derivándolas de `renderActions`**, no a mano.
+  - [ ] Sin `?demo=` nada cambia: los mismos botones siguen mandando sus mismas órdenes (guarda
+        anti-prohibir-de-más).
+
+### [ ] T-5.02 · **Modo demostración de sistema** — `SOFTWARE` + `DECISIÓN`
+> Hoy no existe. Nada bloquea push, SMS, WhatsApp, correo, comandos firmados ni apertura de
+> incidentes, y ninguna pantalla del SOC ni de la app lo declararía si existiera. Lo que hay son
+> tres cosas parciales que no lo son: el `?demo=` del panel (que es un reproductor de escenas —
+> ver `T-5.01`), el modo demo del SOC que **se retiró a propósito**
+> (`web/src/styles/soc.css:787`: *"una consola de operación real no lleva controles de
+> demostración"*, y la razón sigue siendo buena), y el estado `simulated` de notificaciones, que
+> es **derivado de la ausencia de credenciales** y por tanto **desaparece justo en el entorno
+> donde se haría la demo**.
+>
+> **Sin esto, cada exposición es un riesgo de disparar algo real o de enseñar datos falsos sin
+> etiquetar.** Con las credenciales de notificación puestas —que es lo que se busca— el riesgo
+> deja de ser teórico.
+>
+> **Lo que hay que decidir antes de construir**, y por eso la ficha lleva `DECISIÓN`: (a) el
+> alcance del modo, ¿por tenant, por sesión o por despliegue?; (b) quién puede encenderlo y
+> apagarlo; (c) si un incidente **real** que entra con el modo puesto lo apaga solo —que es la
+> lectura coherente con *"lo real gana"* de los simulacros— o si el modo lo impide y grita.
+- **Componente:** api + web + mobile + edge · **Depende de:** T-5.01 · **Prioridad: MÁXIMA**
+- **Objetivo:** un estado explícito, visible y auditado, en el que el sistema no despierta a
+  nadie, no cierra un relé y lo anuncia en las tres superficies.
+- **Criterios de aceptación:**
+  - [ ] Decisión escrita en `DECISIONES-MAURICIO.md` **con su razón** antes de la primera línea de
+        código, cubriendo los tres puntos de arriba.
+  - [ ] Con el modo activo: cero entregas por cualquier canal, cero comandos firmados emitidos,
+        cero relés movidos. Cada intento **deja fila en `audit_log`** con el motivo — un modo que
+        bloquea en silencio es otra superficie muda.
+  - [ ] Las tres superficies lo declaran de forma inconfundible y **distinta del simulacro**: el
+        ámbar ya significa "simulacro sonando" y los dos no pueden confundirse.
+  - [ ] Encender y apagar el modo queda auditado con actor y hora.
+  - [ ] El bloqueo se **deriva** del registro de proveedores y de la superficie única de comandos,
+        no de una lista de canales escrita a mano — un canal nuevo tiene que quedar bloqueado
+        solo.
+  - [ ] Test de no-vacuidad: con el modo apagado, los mismos escenarios sí entregan y sí comandan.
+
+### [ ] T-5.03 · El banner del SOC llama **alerta sísmica** a un botón de pánico — `SOFTWARE`
+> `web/src/features/console/ConsolePage.tsx:129` elige el incidente a destacar **solo por
+> `severity === "critical"`**, y `AlertBanner.tsx` lleva **dos** textos escritos a fuego:
+> `ALERTA SÍSMICA · PROTÉJASE` (`:23`) y `EDGE · RS4D · REGLAS LOCALES EJECUTADAS · ● AUTO`
+> (`:39-41`). **Ninguno mira el `trigger`.**
+>
+> Ante un quórum de pánico —que abre incidente `trigger='manual'` con severidad crítica por
+> `D-11`— el SOC afirma dos cosas falsas a la vez: que hubo una alerta sísmica, y que la ejecutó
+> el sensor. La app móvil, para **el mismo incidente**, pinta `NO ES UNA ALERTA SÍSMICA`
+> (`mobile/src/features/alarm/BuildingAlarmView.tsx:66`) y el push dice `ALARMA DEL INMUEBLE`.
+> Lo mismo ocurre con el umbral instrumental, que la política de solo-aviso degradó y que el SOC
+> sigue pintando como alerta porque su tier mapea a severidad crítica.
+>
+> **Es el defecto que ya se corrigió en móvil, reintroducido en el SOC**, y la lección de
+> entonces vuelve a aplicar tal cual: *un componente presentacional puede llevar una mentira a
+> fuego que ninguna prueba de la lógica alcanza*. La corrección de móvil vive en
+> `mobile/src/features/alert/source.ts` y es el modelo a copiar: el titular **se deriva** de la
+> fuente.
+- **Componente:** web · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que el titular y la atribución del banner salgan del `trigger`, y que ninguna
+  superficie pueda volver a divergir sin que un test lo diga.
+- **Criterios de aceptación:**
+  - [ ] El titular y la línea de atribución se derivan del `trigger` del incidente, con las cuatro
+        fuentes cubiertas por igualdad (no un `default` que absorba lo desconocido).
+  - [ ] Un `trigger` nuevo que nadie mapeó **no cae a "alerta sísmica"**: sale rotulado como
+        desconocido y el build lo nombra.
+  - [ ] **Un test cross-superficie**: para cada `trigger`, el titular del SOC, el de la app y el
+        del panel del gabinete son coherentes entre sí. Es el test que hoy no existe y que habría
+        cazado esto.
+  - [ ] El glosario compartido de estados **incorpora el móvil** —hoy solo cubre panel y consola—
+        y el eje de titulares de alerta, no solo el vocabulario de estado.
+  - [ ] La divergencia ya declarada en el glosario (`DATO RETENIDO` / `DATOS RETENIDOS`) se cierra
+        o se re-declara con su razón.
+
+### [ ] T-5.04 · El perímetro de claims de la landing cubre **cifras**, no **capacidades** — `SOFTWARE`
+> `landing/tests/contenido.test.mjs:58` defiende un perímetro real y bien pensado: prohíbe cifras
+> medidas y prohíbe citar normas. **No prohíbe afirmar una capacidad que nadie acreditó**, y por
+> eso pasó en verde lo siguiente, hoy publicado:
+>
+> - *"acciona sirena, estrobo, **gas, ascensores y puertas** del inmueble"* — ningún gabinete
+>   tiene esos tres canales cableados; el gabinete de referencia reporta **dos** relés. El
+>   controlador que los haría está en la lista de materiales marcado **"Opcional"**, y
+>   `ENTREGA-Y-ACEPTACION-TAKAB.md:214` dice que su driver es *"un extra no acreditado con
+>   equipo"*.
+> - *"**respaldo de energía**"* entre lo que se instala — el gabinete vivo reporta
+>   `ups_status: "unknown"` y `battery_pct: null`.
+>
+> **Es exactamente el fallo que el propio repositorio ya cazó una vez** —el checklist de gas y
+> puertas en verde sin gas ni puertas— reaparecido en la superficie más pública que tiene el
+> proyecto. La landing es por lo demás notablemente honesta (su columna "No hace" es mejor que la
+> de casi cualquier competidor), y eso hace más fácil, no más difícil, corregir la otra columna.
+- **Componente:** landing · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que el sitio público no afirme en presente una capacidad cuyo gate está abierto,
+  y que un test lo impida en adelante.
+- **Criterios de aceptación:**
+  - [ ] Las dos afirmaciones se reformulan sin perder la venta: el alcance de diseño se dice como
+        alcance de diseño y la acreditación por inmueble se dice como tal. La columna "No hace"
+        **no se toca**: ya es correcta.
+  - [ ] El perímetro del test gana una regla de **capacidades**: una lista de afirmaciones que
+        exigen un gate cerrado, **derivada** del censo de gates de
+        `MATRIZ-REQUISITO-TEST.md`, no tecleada. Con el gate abierto, la afirmación en presente
+        pone el test en rojo.
+  - [ ] La regla nombra el gate concreto en el mensaje de fallo, para que quien la dispare sepa
+        qué haría falta para poder decirlo.
+  - [ ] Guarda anti-prohibir-de-más: las afirmaciones que **sí** están acreditadas (operar sin
+        internet, evidencia inmutable, aislamiento entre clientes, sin cuenta atrás) siguen
+        pasando.
+
+### [ ] T-5.05 · Un gabinete **simulado** se ve igual que uno real — `SOFTWARE`
+> La separación entre lo simulado y lo real vive en el seed (`db/seeds/sim_fleet.sql`, con su
+> aviso en mayúsculas de que jamás se aplica al entorno desplegado) y en el despliegue
+> (`deploy/cloud/deploy.sh` solo siembra el de producción). **No vive en la pantalla**, que es
+> justo donde se hace la demo.
+>
+> No hay columna que marque lo simulado ni marca visual en el mapa ni en la flota: lo único que
+> delata a un sitio sim es que se llama *"Sitio Sim 001 Puebla"*. Misma píldora de estado, mismo
+> medidor de respaldo, mismo color. En `make soc-local` un prospecto ve 21 sitios y 5 gabinetes
+> con idéntico aspecto, de los cuales **20 y 4 no existen**.
+>
+> **El patrón visual ya está resuelto en el otro extremo del sistema:** el panel del gabinete
+> pinta su cinta `DEMO · NO ES ESTADO REAL` y el manual de operación advierte de no dejar un
+> monitor de pared así. La consola no tiene equivalente.
+- **Componente:** web + api · **Depende de:** nada · **Prioridad: MÁXIMA**
+- **Objetivo:** que un sitio o gabinete de demostración sea inconfundible en el mapa y en la
+  flota, sin ensuciar la consola de producción.
+- **Criterios de aceptación:**
+  - [ ] La marca se **deriva** de un hecho del dato (prefijo del código/serial, o columna
+        explícita), decidido y escrito en la ficha con su razón. Si es columna, migración
+        idempotente y con dueño correcto.
+  - [ ] El mapa y la ficha de flota rotulan lo simulado de forma legible a distancia, y el rótulo
+        **no se confunde** con el ámbar de simulacro ni con el de dato viejo.
+  - [ ] Test: con la flota mixta, todo lo sim sale marcado y **nada real sale marcado** — las dos
+        mitades, comparadas por igualdad.
+  - [ ] Con cero sitios sim (el caso de producción) la interfaz es idéntica a hoy: la marca no
+        reserva espacio ni cambia el diseño.
+
+### [ ] T-5.06 · El runbook de alta de estación **rompe la ingesta** — `SOFTWARE`
+> `RUNBOOK-ALTA-DE-ESTACION.md:122-124` manda escribir en el archivo de entorno del gabinete:
+> `TAKAB_EDGE_TENANT_ID=<uuid del tenant>`, `TAKAB_EDGE_SITE_ID=<uuid del sitio>`,
+> `TAKAB_EDGE_GATEWAY_ID=<uuid del gateway>`.
+>
+> **La ingesta espera lo contrario, y lo dice en su propia cabecera**
+> (`api/src/takab_api/ingest/handlers.py:9-13`): los identificadores que viajan en el payload son
+> los **códigos y seriales legibles**, no UUIDs. Y `:126` rechaza el resto:
+> `gateway mismatch: payload=… registro=…` → la cola de descarte.
+>
+> **Y lo peor del paso:** `infra/scripts/provision_gateway.sh:163` ya había escrito el valor
+> correcto (el nombre del dispositivo). El runbook, en el paso siguiente, manda **sobrescribirlo**.
+> Resultado: una estación aprovisionada, con su certificado, conectada por mTLS — y **muda en la
+> nube**, sin que ninguna pantalla explique por qué.
+>
+> **Hay seis divergencias más**, todas del mismo origen (el runbook lleva desde el 2026-07-30 sin
+> tocarse mientras el contrato de alta cambió tres veces): manda un campo que hoy da 422;
+> documenta como inexistentes el alta de clientes y los permisos de visibilidad, que llevan meses
+> en producción; **omite el paso de instalar el software del edge** y el de publicar la versión;
+> omite el equipamiento del sitio, con lo que la consola pinta cinco actuadores en un gabinete que
+> tiene dos; y omite el conjunto de reglas, con lo que la estación nueva nunca entra al
+> sincronizado firmado.
+- **Componente:** takab-docs + api (tests) · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que el runbook vuelva a describir lo que hace el código, y que dejar de hacerlo
+  ponga el build en rojo.
+- **Criterios de aceptación:**
+  - [ ] Las siete divergencias corregidas, cada una citando el archivo y la línea del código que
+        manda.
+  - [ ] Añadidos los pasos que faltan: instalación del software del edge, publicación de la
+        versión, equipamiento explícito del sitio y conjunto de reglas con la clave del edge.
+  - [ ] **Un test que ancle el runbook al código**, no a otra prosa: las variables de identidad
+        que el runbook manda escribir se comparan contra las que el aprovisionador escribe y
+        contra las que la ingesta acepta. Si las tres dejan de coincidir, rojo con las tres
+        citadas.
+  - [ ] El test cubre también el cuerpo del alta de gabinete: un campo que el esquema prohíbe y el
+        runbook manda, sale nombrado.
+  - [ ] Nota en el runbook sobre por qué el aprovisionador ya lo deja bien y no hay que tocarlo.
+
+### [ ] T-5.07 · El test del **deslinde impreso** no comprueba nada — `SOFTWARE`
+> `api/tests/dictamen/test_pdf.py:190-195`, entero:
+>
+>     assert DISCLAIMER.startswith("Dictamen operativo PRELIMINAR")
+>     for variant in ("technical", "executive"):
+>         assert render(model(), variant).startswith(b"%PDF")
+>
+> Comprueba (a) que una constante empiece por una cadena y (b) que el archivo sea un PDF.
+> **Borrar la llamada que imprime el deslinde dejaría el test en verde.** Y lo mismo vale para los
+> otros cinco avisos del documento —el de intensidad macrosísmica, el de sin calibración, el de la
+> envolvente, el del centroide y el del croquis—: ninguno tiene una prueba que verifique su
+> presencia en el documento.
+>
+> **El deslinde impreso es lo que protege al proyecto en una reunión comercial**, y es la única
+> pieza del PDF cuya desaparición nadie notaría hasta que hiciera falta.
+>
+> **El propio repositorio ya sabe hacerlo bien:**
+> `api/tests/dictamen/test_compliance_section.py::test_las_etiquetas_cambian_los_BYTES_del_pdf`
+> es exactamente el patrón que falta aquí.
+- **Componente:** api (tests) · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que quitar un deslinde del documento ponga la suite en rojo nombrándolo.
+- **Criterios de aceptación:**
+  - [ ] Los seis avisos se verifican **sobre el documento generado**, no sobre la constante.
+  - [ ] La lista de avisos a verificar se **deriva** del módulo que los declara, no se teclea: uno
+        nuevo entra solo al censo.
+  - [ ] Guarda de no-vacuidad: el test declara en voz alta cuántos avisos espera, y cero no es un
+        número aceptable.
+  - [ ] Cada aviso se comprueba en la variante o variantes donde debe salir, y se comprueba que
+        **no** sale donde no debe (el aviso de asistencia automatizada, sin prosa generada).
+
+### [ ] T-5.08 · El guion de demo sirve para CI, **no para enseñar** — `SOFTWARE`
+> `demo/` es sólido en lo que hace: se levanta desde cero con dos comandos, monta tres
+> supervisores reales, el consumidor real y el motor de incidentes real, y está **bien aislado de
+> producción** con tres guardias que se defienden solos (host real de la conexión, exclusividad de
+> la base, y un seed que declara que jamás se aplica a la nube).
+>
+> Pero está construido para **acreditar criterios**, no para contar una historia: imprime marcas
+> de verificación en terminal, trunca entre escenas y sale con código de error. Y le faltan tres
+> cosas para una exposición: **no ejercita simulacros** (cero coincidencias de la palabra en todo
+> `demo/*.py`), **no rotula los datos como simulados** —al contrario, el modo interactivo usa la
+> identidad de desarrollo a propósito para que *"la consola local se vea igual que la
+> desplegada"*—, y el aislamiento de notificaciones es **implícito**: descansa en que el script no
+> lanza el worker, no en un interruptor.
+- **Componente:** demo · **Depende de:** T-5.02, T-5.05 · **Prioridad: ALTA**
+- **Objetivo:** un guion recorrible de principio a fin delante de un cliente, con los datos
+  etiquetados y sin posibilidad de tocar nada real.
+- **Criterios de aceptación:**
+  - [ ] Escena de **simulacro** completa: agenda, armado, disparo humano, acuse por sitio y
+        reporte, en las tres superficies.
+  - [ ] El guion corre con el modo demostración de `T-5.02` puesto, y **falla ruidosamente** si no
+        lo está.
+  - [ ] Los datos del guion usan la identidad simulada y la marca visual de `T-5.05`.
+  - [ ] Un documento corto de recorrido —qué se enseña, en qué orden, qué NO se toca— que cite
+        las frases de `INFORME-V1-COMERCIAL.md §3`.
+  - [ ] El aislamiento de notificaciones deja de ser implícito: se **impone**, y hay un test que
+        lo comprueba.
+
+### [ ] T-5.09 · Cabeceras que declaran un conteo **sin test que lo cuente** — `SOFTWARE`
+> `TASKS.md` tiene el suyo desde T-2.61, y por eso su cabecera es fiable. Los otros dos censos del
+> proyecto no lo tienen, y **los dos ya divergieron**:
+>
+> - `DECISIONES-MAURICIO.md:15` declara **23 decisiones** y última actualización **2026-08-22**.
+>   El archivo tiene **26** y la última es del **2026-08-30**. Tres decisiones son invisibles para
+>   quien lea la cabecera — y la bitácora existe precisamente para poder revocar con conocimiento.
+> - `TRASPASO-SESION.md §0` abre con un bloque en negrita que fija la deriva de despliegue en
+>   **"tres commits"** sobre un commit que hoy está **103 por detrás** de `main`. La deriva real es
+>   de 13 (nube) y 25 (gabinete). Es el archivo que se manda leer al empezar una sesión.
+>
+> Ninguno de los 28 tests de consistencia documental los mira. **Es la doctrina que el propio
+> repositorio predica, sin aplicar a dos de sus tres censos:** *un censo que enumera a mano acaba
+> divergiendo*.
+- **Componente:** api (tests) + takab-docs · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que ninguna cabecera de un documento de gobierno pueda declarar un número que el
+  archivo desmiente.
+- **Criterios de aceptación:**
+  - [ ] Test que cuenta las decisiones de la bitácora (filas del índice y anclas de sección, que
+        además tienen que coincidir entre sí) y exige que cuadren con su cabecera.
+  - [ ] Test que comprueba que la fecha de última actualización declarada **no es anterior** a la
+        fecha de la última decisión del archivo.
+  - [ ] El bloque de deriva de despliegue del traspaso deja de fijar un número: **se le pregunta
+        al sistema** (o se declara con la fecha de la medición y un test que exija que el commit
+        citado exista y esté a la distancia declarada).
+  - [ ] Las dos cabeceras corregidas en el mismo commit que sus tests.
+  - [ ] El mensaje de fallo dice **cómo** rehacer el conteo, como ya hace el de `TASKS.md`.
+
+### [ ] T-5.10 · **Procedencia del evento externo**: cinco estados, tres superficies — `SOFTWARE`
+> Hoy no existe ninguna máquina de estados de procedencia. Lo que hay son dos enumeraciones de
+> presentación (`EpicenterKind`, la banda de magnitud) y un campo `source` con tres valores
+> efectivos. Y `reference_earthquakes` no lleva **ni hora de consulta, ni bandera de
+> preliminar/revisado, ni identificador estable del proveedor**: solo una clave que nos inventamos
+> nosotros, la fuente y una cita textual libre.
+>
+> Peor: `seismic_events.magnitude` **nunca se escribe con un valor**. El único INSERT del sistema
+> pone `NULL` literal, así que la rama del catálogo en la consola es **inalcanzable en
+> producción** y el SOC siempre ve "sin catálogo". El enriquecimiento post-hoc que documenta el
+> esquema **no existe como código**.
+>
+> **El estado que más falta es el de sin correlación**, y no es un adorno: su ausencia convierte
+> un "no sé" en una pantalla vacía que el operador lee como "no pasó nada".
+>
+> **Esto no roza el invariante de la cuenta atrás, lo cumple.** Lo que aquel prohíbe es una cifra
+> **derivada por nosotros** del contacto seco. Una cifra de fuente externa citada, con su hora de
+> consulta y su estado, es literalmente lo que el invariante contempla como *"fuente nueva y
+> citable"*. La regla que esta ficha impone es: **con procedencia, o no se pinta**.
+- **Componente:** api + web + mobile + edge · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que toda cifra sísmica que no midió nuestro instrumento se pinte con su fuente, su
+  hora de consulta y su estado de confirmación — o no se pinte.
+- **Criterios de aceptación:**
+  - [ ] Cinco estados en el contrato compartido, **con el mismo nombre en las tres superficies**:
+        sin dato externo, consultando, preliminar, confirmado, sin correlación.
+  - [ ] El texto de la consulta dice **"consultando"**, nunca *"estimando"*: nosotros no
+        estimamos, preguntamos. Anclado por test.
+  - [ ] `reference_earthquakes` gana hora de consulta, estado de revisión e identificador del
+        proveedor; migración idempotente, con el dueño correcto.
+  - [ ] Ninguna superficie pinta magnitud, epicentro, profundidad u hora de origen **sin** su
+        fuente y su hora de consulta al lado. Test por superficie que lo verifique sobre el árbol
+        renderizado.
+  - [ ] El estado de sin correlación **se pinta**: hay un texto para él y un test que lo exige.
+  - [ ] Se declara qué pasa hoy con la magnitud que nunca se escribe: o se escribe con su
+        procedencia, o el campo se retira y la interfaz deja de tener una rama inalcanzable.
+
+### [ ] T-5.11 · La correlación con el catálogo es **solo temporal** — `SOFTWARE`
+> `api/src/takab_api/forensics/__init__.py:52` fija `CATALOG_WINDOW_S = 120.0` y la consulta toma
+> el evento más cercano en el tiempo dentro de esa ventana. **No hay distancia máxima. No hay
+> magnitud mínima. No hay filtro geográfico.** La distancia se calcula **después** del acierto,
+> solo para describirlo, y nunca para rechazar. En la ruta del receptor —que es la normal— no hay
+> epicentro propio que comparar, y el PDF imprime *"sin epicentro propio que comparar"*.
+>
+> Hoy el riesgo está acotado por accidente: son 13 filas mexicanas de 1985 a 2022. **Con el feed
+> vivo de `T-2.149` se vuelve grave**: un sismo de cualquier parte del mundo ocurrido dentro de
+> ±120 s del contacto se imprimirá en un dictamen firmado bajo el rótulo *"contraste con
+> catálogo"*, con su magnitud y su lugar. Y el sistema no tiene forma de decir *"hay un evento en
+> el catálogo pero no es el nuestro"*.
+- **Componente:** api · **Depende de:** T-5.10 · **Prioridad: ALTA**
+- **Objetivo:** que el criterio de identidad entre el evento del catálogo y el que disparó el
+  gabinete sea explícito, defendible y capaz de decir que no encontró nada compatible.
+- **Criterios de aceptación:**
+  - [ ] Criterio explícito y configurable: ventana temporal, radio máximo epicentro↔sitio y
+        magnitud mínima coherente con la distancia, cada uno con su razón escrita.
+  - [ ] En la ruta sin epicentro propio, el acierto **no se presenta como contraste**: se declara
+        no verificable, con su texto propio.
+  - [ ] Un evento fuera de radio, o de magnitud incoherente con la distancia, **no casa** — y el
+        resultado es el estado de sin correlación de `T-5.10`, no un hueco.
+  - [ ] Test con un caso realista de sismo lejano dentro de la ventana temporal: hoy casaría; con
+        la ficha, no.
+
+### [ ] T-5.12 · **Contar falsos positivos** — `SOFTWARE`
+> Hoy no hay forma de contarlos, ni siquiera a mano sobre la base. `incidents.state` admite
+> `open|acked|in_review|closed` y **nada más**: no hay columna de clasificación, ni de descarte,
+> ni de motivo de cierre. Cerrar un incidente **no pide ni admite una razón**, y el estado
+> intermedio de revisión no desemboca en ningún veredicto registrable. No existe endpoint de
+> agregados ni vista que los cuente.
+>
+> **Es la métrica que decide si el cliente renueva** — y la ironía está documentada en el propio
+> código: la app explica que el documento de entrega *"deslinda expresamente los falsos positivos
+> de SASMEX"*. El sistema **se deslinda de una tasa que no mide**.
+>
+> Lo único adyacente que ya está bien: los simulacros viven en tabla propia, así que al menos los
+> ensayos no contaminan el conteo.
+- **Componente:** api + web · **Depende de:** nada · **Prioridad: ALTA**
+- **Objetivo:** que cerrar un incidente registre **qué fue**, y que la tasa se pueda leer sin
+  abrir la base.
+- **Criterios de aceptación:**
+  - [ ] Clasificación al cierre con un catálogo cerrado y corto, decidido en la ficha: real,
+        falso positivo, prueba/mantenimiento, indeterminado. **Indeterminado no es el default
+        silencioso**: se elige y se declara.
+  - [ ] La clasificación queda auditada con actor y hora, y **no se puede reescribir**: una
+        corrección inserta, no sustituye, como ya hace la cadena de dictámenes.
+  - [ ] Endpoint de agregados por tenant y ventana, con la tasa y el desglose, respetando el
+        aislamiento entre clientes.
+  - [ ] La consola lo muestra, y **declara cuántos incidentes están sin clasificar** en vez de
+        excluirlos del denominador — un porcentaje calculado sobre lo clasificado, con lo no
+        clasificado escondido, es peor que no tener el número.
+  - [ ] Los simulacros siguen fuera del conteo, con test.
+
+### [ ] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE`
+> No existen: ni tabla, ni campo en el cuerpo del alta, ni endpoint, ni interfaz. El alta de un
+> simulacro tiene exactamente cinco campos y ninguno es una plantilla. Lo más cercano —ejecutar
+> una agenda ya creada— **la consume**, así que no se puede reutilizar.
+>
+> Para el macrosimulacro de septiembre hay que teclear los sitios, la duración y la nota a mano,
+> cada vez. Es fricción operativa en el caso de uso más visible que tiene el producto.
+- **Componente:** api + web · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que un simulacro recurrente se defina una vez y se lance en dos clics.
+- **Criterios de aceptación:**
+  - [ ] Plantilla con nombre, conjunto de sitios, duración y nota; CRUD completo con el mismo rol
+        que hoy puede disparar un simulacro.
+  - [ ] Crear un simulacro desde una plantilla **copia** sus valores; editar la plantilla después
+        no reescribe simulacros ya ejecutados.
+  - [ ] Una plantilla cuyos sitios ya no existen o están retirados **lo dice al usarla**, en vez
+        de lanzar contra un conjunto silenciosamente más pequeño.
+  - [ ] Aislamiento entre clientes: una plantilla es de su tenant, con test de cruce.
+
+### [ ] T-5.14 · El **post-simulacro** no tiene tiempos ni sale del navegador — `SOFTWARE`
+> Lo que hay está bien hecho: el acuse por sitio se deriva por unión con la tabla de comandos, y
+> distingue honestamente *sin gabinete comandable* de *sin acuse* — dos cosas que colapsar sería
+> mentir. Faltan las dos que el cliente pide:
+>
+> - **El tiempo.** No existe latencia de acuse por sitio en ninguna capa: ni el esquema de salida
+>   ni la interfaz exponen el instante del acuse ni su diferencia contra el arranque. El dato
+>   clave de un post-simulacro —*"la torre B tardó 4 min 12 s"*— **no existe**.
+> - **La salida.** No hay PDF ni CSV: cero referencias a simulacros en los routers de exportación
+>   y de reportes. El propio código llama a esto *"la evidencia de cumplimiento que se le entrega
+>   a Protección Civil"*, y hoy se entrega **mirando una pantalla**.
+- **Componente:** api + web · **Depende de:** T-5.13 · **Prioridad: MEDIA**
+- **Objetivo:** un documento que el cliente pueda enseñarle a Protección Civil.
+- **Criterios de aceptación:**
+  - [ ] Instante del acuse por sitio persistido y expuesto, con su diferencia contra el arranque
+        del simulacro.
+  - [ ] El tiempo se declara **por sitio y agregado**, y los sitios sin acuse no se cuentan como
+        cero: salen aparte.
+  - [ ] Exportación del reporte con las mismas propiedades que el dictamen: determinista,
+        hasheada, registrada como evidencia y auditada.
+  - [ ] El documento distingue las tres categorías (acusó / no acusó / no tenía gabinete) y dice
+        cuántos sitios hay en cada una.
+
+### [ ] T-5.15 · **Cadena de acuse**: cuánto tardó y quién recibió — `SOFTWARE`
+> Tres de las cuatro preguntas se contestan hoy: quién acusó (con fila en el timeline y verbo en
+> la bitácora), quién no respondió (el pase de lista distingue *sin reporte* y ofrece notificar a
+> los que faltan), y en qué zona. Faltan dos, y las dos son de perito:
+>
+> - **"¿En cuánto tiempo?"** — el sistema **sí** calcula y almacena una latencia, pero es la de
+>   **despacho** de la notificación, no la del acuse. El acuse escribe su fila con el sello de la
+>   transacción y **nunca lee el instante de apertura**; la bitácora del SOC imprime sellos
+>   absolutos sin columna de transcurrido. El número es derivable restando a mano; nadie lo hace.
+> - **"¿Quién recibió la alerta?"** — la tabla donde vive el destinatario y la confirmación de
+>   entrega **no se lee desde ningún router de consulta**. Es contestable en la base y no por la
+>   API ni por ninguna pantalla.
+- **Componente:** api + web · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que una revisión post-incidente se pueda hacer sin abrir la base.
+- **Criterios de aceptación:**
+  - [ ] Latencia de acuse calculada y expuesta, con la misma honestidad que la de despacho: quien
+        no acusó no tiene latencia, y eso **no es un cero**.
+  - [ ] Endpoint de lectura de los envíos de un incidente: canal, destinatario (con el mismo
+        criterio de mínimo dato que el resto), estado y confirmación de entrega.
+  - [ ] La bitácora del incidente muestra el transcurrido junto al sello absoluto.
+  - [ ] Aislamiento entre clientes con test de cruce, y el envío simulado se distingue del
+        entregado, como ya hace la tabla.
+
+### [ ] T-5.16 · **Umbrales por tipo de inmueble**, con rollback — `SOFTWARE` + `DECISIÓN`
+> `BLUEPRINT §4.5` declara tres bandas de referencia: hospitales 0.040–0.060 g, industriales
+> 0.080–0.120 g, corporativos 0.100–0.150 g. **Ninguna está implementada.** `building_type` es
+> texto libre sin catálogo ni restricción, y **nadie lo consulta** para resolver umbrales: los
+> alcances son tenant, sitio y sensor. El propio código lo declara en la consola.
+>
+> Consecuencia física: el default del edge está documentado como *"Default = hospital"*, así que
+> **toda la flota corre la banda de hospital**. Un industrial dado de alta hoy avisa dos veces por
+> debajo de su banda.
+>
+> Y falta el **rollback**, que el blueprint exige por nombre (*"versionada y reversible"*) y que
+> `G-05` pide explícitamente. El versionado y el conflicto por versión base están bien resueltos y
+> con test; el histórico está en la base. Lo que no hay es forma de volver a una versión: hay que
+> teclear los valores viejos y crear una nueva.
+>
+> **Lo que hay que decidir:** si la tipología es un catálogo cerrado con bandas por defecto, o una
+> etiqueta que solo sugiere. La primera opción cambia el comportamiento de una estación con solo
+> cambiarle el tipo, y eso **no puede pasar sin publicar y firmar**.
+- **Componente:** api + web + db + edge · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el umbral de un edificio corresponda a lo que ese edificio es, y que volver
+  atrás sea un clic, no un dictado.
+- **Criterios de aceptación:**
+  - [ ] Decisión escrita **con su razón** sobre si la tipología resuelve umbrales o solo los
+        sugiere.
+  - [ ] Catálogo cerrado de tipos, con las tres bandas del blueprint como valores de referencia
+        **derivados de un solo sitio**, no copiados en tres archivos.
+  - [ ] Cambiar el tipo de un sitio **nunca** cambia por sí solo lo que corre en el gabinete: hace
+        falta publicar, y la publicación va firmada como hoy.
+  - [ ] Rollback a una versión anterior del conjunto de reglas, como operación explícita que
+        **crea una versión nueva** declarando a cuál vuelve — nunca reescribiendo el histórico.
+  - [ ] El rollback queda auditado y respeta el conflicto por versión base.
+  - [ ] Test de que el default del edge deja de ser silenciosamente el de hospital: sin banda
+        resuelta, el gabinete **lo declara** en vez de suponerla.
+
+### [ ] T-5.17 · El **sonido del simulacro** no se elige ni queda auditado — `SOFTWARE`
+> El selector de audio que la nube empuja cubre **dos ranuras** —sirena y tono de prueba— y el
+> voceo de simulacro **no está entre ellas**: sale de un ajuste local cuyo valor por defecto es
+> vacío, configurable solo tocando el archivo de entorno de cada gabinete.
+>
+> Y la auditabilidad tiene un hueco: el sha256 se registra **al arrancar**, no al sonar. Al
+> reproducir solo se escribe la ruta en el journal local, y el botón del panel deja rastro en un
+> anillo **en memoria** que no pasa por el libro de actuaciones. Si alguien pregunta qué sonó el
+> 19 de septiembre en la torre B, la única respuesta está en el journal de ese gabinete.
+>
+> **La propiedad que hay que conservar al añadir el selector** ya está bien resuelta en el
+> catálogo y no se toca: la nube elige **por identificador de catálogo**, nunca por binario ni
+> ruta absoluta —ese canal va firmado a un aparato que toca gas y puertas—; un identificador
+> desconocido **conserva el tono anterior** en vez de caer a otro; y el tono oficial sigue
+> reservado y ausente por su gate legal.
+- **Componente:** edge + api · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que se pueda elegir el sonido del simulacro desde la nube y que quede constancia
+  de qué sonó exactamente.
+- **Criterios de aceptación:**
+  - [ ] El perfil de audio gana la ranura del voceo de simulacro, con las mismas reglas que las
+        dos existentes.
+  - [ ] El sha256 del asset **viaja en el acuse** del arranque del simulacro y queda persistido
+        junto al acuse por sitio, no solo en el journal.
+  - [ ] El botón del panel deja constancia persistida, no en un anillo en memoria.
+  - [ ] Un identificador desconocido conserva el tono anterior y **lo declara**; el tono oficial
+        sigue ausente del catálogo.
+  - [ ] Test que recorra los tres caminos: identificador válido, desconocido y reservado.
+
+### [ ] T-5.18 · La IA **no tiene tope de gasto** — `SOFTWARE`
+> Hay contabilidad por llamada (el coste se lee de la respuesta del proveedor y se escribe en la
+> bitácora) y techo de tokens por llamada. **No hay cuota, ni contador acumulado, ni corte, ni por
+> tenant ni por mes.** Y el endpoint que la invocaría **no tiene límite de frecuencia**: la única
+> puerta es de rol. Un usuario autenticado puede reexportar el mismo incidente sin límite.
+>
+> Es la categoría que OWASP llama consumo de recursos sin restricción, y está en el blueprint.
+> **Hoy el riesgo está acotado solo por que la perilla está apagada** — lo que significa que el
+> tope tiene que aterrizar **antes** del shadow-mode, no después.
+- **Componente:** api · **Depende de:** nada · **Prioridad: ALTA (precede a `T-3.01`)**
+- **Objetivo:** que encender la IA no pueda costar más de lo que alguien decidió.
+- **Criterios de aceptación:**
+  - [ ] Tope por tenant y por mes, configurable, con valor por defecto conservador.
+  - [ ] Contador acumulado persistido; alcanzado el tope, **el proveedor cae al determinista** y
+        lo declara — nunca falla la exportación, que es una superficie de vida.
+  - [ ] El corte queda auditado, y el acercarse al tope también (una fila, no una por petición).
+  - [ ] Límite de frecuencia en la exportación de reportes, por usuario y por sitio, con el mismo
+        patrón de dos techos que ya usan los comandos.
+  - [ ] Test de que con la perilla apagada nada de esto cambia el comportamiento actual.
+
+### [ ] T-5.19 · El aviso de la plataforma no nombra a **un solo encargado** — `GATE-LEGAL` + `SOFTWARE`
+> Siete terceros tocan o tocarán datos personales: AWS, Twilio, Meta, el servicio de
+> notificaciones de Apple, el de Google, la cadena de compilación del móvil, y el webhook del
+> propio cliente. **Ninguno está declarado.** Y el aviso **no menciona la transferencia
+> internacional**: los datos viven en Ohio. El párrafo más cercano —*"SUS DATOS NO CRUZAN A OTRA
+> ORGANIZACIÓN"*— habla del aislamiento entre clientes y es fácil de leer como una negación de
+> ello.
+>
+> **El atenuante es real y hay que decirlo:** el aviso **se autodeclara provisional dentro del
+> propio texto**, ese párrafo entra en la huella que sella el consentimiento, y el motor re-pide
+> consentimiento al cambiar el texto. A nadie se le está diciendo algo falso; se le está diciendo
+> nada. El mecanismo es definitivo; el texto no.
+>
+> **Choca con `D-20` y gana `D-20`:** la consulta legal espera a que un cliente la pida. Esta
+> ficha **no la reabre**. Lo que sí hace es dejar el trabajo de costura listo para el día que
+> llegue el texto revisado, y anotar el hecho nuevo: `D-23` y `D-07` descansan **las dos** sobre
+> la calificación de que TAKAB es encargado y no responsable, y esa calificación solo está
+> afirmada en un texto que se declara sin revisar.
+- **Componente:** api + takab-docs · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el día que llegue el texto revisado no falte nada de software, y que mientras
+  tanto el inventario de encargados exista y esté al día.
+- **Criterios de aceptación:**
+  - [ ] Inventario de encargados en un documento propio, **derivado** de los proveedores que el
+        código construye y de los recursos de infraestructura que tocan datos personales, no
+        tecleado. Un proveedor nuevo entra solo.
+  - [ ] Test que compare el inventario contra los proveedores registrados: uno que no esté
+        declarado pone el build en rojo nombrándolo.
+  - [ ] El aviso gana los dos huecos que hoy no tiene —encargados y transferencia— como
+        **marcadores de posición explícitos**, dentro del texto provisional y por tanto dentro de
+        la huella.
+  - [ ] Anotado en `PENDIENTES-MAURICIO §4.1` que la calificación de encargado sostiene `D-23` y
+        `D-07`, para que la consulta legal la traiga en su lista.
+
+### [ ] T-5.20 · Firmar un dictamen **no entra en la bitácora de auditoría** — `SOFTWARE`
+> Firmar escribe la fila del dictamen —con quién firmó, en una tabla que no admite reescritura— y,
+> **solo si el veredicto es habitable**, una acción en el timeline del incidente. **No escribe en
+> `audit_log`.** El censo tiene 72 verbos, incluidos leer un dictamen y solicitarlo; no el de
+> firmarlo.
+>
+> El hecho no se pierde. Pero el sitio donde un perito, un seguro o una auditoría van a buscar
+> *"quién firmó qué y cuándo"* es la bitácora, y **el acto de mayor peso legal del sistema no está
+> ahí**. Si además el veredicto firmado no es habitable, tampoco deja acción en el timeline.
+- **Componente:** api · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que el acto más importante del sistema aparezca donde se busca.
+- **Criterios de aceptación:**
+  - [ ] Verbo propio en la bitácora al firmar, con el incidente como objeto y el veredicto en el
+        detalle.
+  - [ ] La fila se escribe **también** cuando el veredicto no es habitable.
+  - [ ] Un test de censo que exija que **toda transición de estado con peso legal** deje verbo:
+        derivado, no una lista a mano, para que el siguiente entre solo.
+  - [ ] La bitácora sigue siendo escritor único: la fila entra por el módulo de auditoría, como el
+        contract-test existente exige.
+
+### [ ] T-5.21 · No hay **censo de dato viejo** en la app móvil — `SOFTWARE`
+> La consola está resuelta y bien: un censo derivado del árbol obliga al componente siguiente a
+> tener su prueba de los cuatro estados o a aparecer en una lista de deuda comparada **por
+> igualdad**. Fuera de la consola es muestreo.
+>
+> En móvil el componente de marco existe y está probado, pero **no hay censo**: tres archivos usan
+> el envoltorio que conoce la frescura y **seis consultan al servidor sin él**. Y hay un caso
+> concreto: la lista del pase de vida solo declara el dato viejo **si el refetch está fallando**,
+> así que un pase de lista de hace diez minutos con red sana **se pinta como fresco**.
+>
+> Es justo la pantalla que se enseña en una demo, y justo el fallo que la regla de oro 7 existe
+> para impedir.
+- **Componente:** mobile · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que en el teléfono ningún número se pinte como vivo sin poder demostrarlo.
+- **Criterios de aceptación:**
+  - [ ] Censo derivado equivalente al de la consola: quién posee dato de servidor se deriva de los
+        transportes, y se cruza contra quién tiene la prueba de los cuatro estados.
+  - [ ] Comparación **por igualdad** contra la deuda declarada: la pantalla siguiente escribe su
+        prueba o entra en una lista a la vista.
+  - [ ] El caso del pase de vida corregido: la edad se declara siempre, no solo cuando falla el
+        refetch.
+  - [ ] Guarda anti-vacuidad: el censo declara cuántas pantallas espera y cero no vale.
+
+### [ ] T-5.22 · La latencia del reflejo **solo existe como prosa** — `SOFTWARE` + `GATE-HW`
+> Es la cifra de venta más citada del producto, medida dos veces con hardware real: **6.65 ms el
+> 2026-07-14** y **4.16 ms en frío el 2026-07-31**. Y su evidencia primaria son **ocho documentos
+> con el número escrito a mano**. No hay journal, ni acta, ni captura del estado del gabinete, ni
+> fixture. Un cliente que pida la evidencia recibe un archivo de texto.
+>
+> Además el guardián de esa latencia **reporta el mejor de cinco intentos**, no un percentil, tras
+> haber fallado aproximadamente una de cada ocho corridas en integración continua. Y en el
+> gabinete vivo el campo de latencia del reflejo está en nulo: la medición no está viva, es
+> histórica.
+>
+> **El p95 del tramo hacia la consola tampoco se midió nunca**: lo que se vende como *"medido 214
+> ms"* es una sola observación, y una cita de percentil del tablero apunta a una línea que no lo
+> contiene.
+- **Componente:** edge + takab-docs · **Depende de:** nada · **Prioridad: MEDIA**
+- **Objetivo:** que la cifra que se vende tenga detrás un artefacto y no una frase.
+- **Criterios de aceptación:**
+  - [ ] La medición del reflejo se persiste como artefacto reproducible en el gabinete (captura
+        fechada del estado, o registro dedicado), no solo como línea de journal.
+  - [ ] Los ocho documentos citan **una fuente**, no ocho copias del número.
+  - [ ] Donde se declara un percentil, o se mide o se dice que es una observación única. La cita
+        rota del tablero se corrige o se retira.
+  - [ ] `GATE-HW`: la siguiente sesión presencial captura la evidencia con el procedimiento nuevo.
+
+### [ ] T-5.23 · No existe **espectrograma** en el dictamen técnico — `SOFTWARE`
+> Confirmado abriendo el código: lo que hay es **un solo espectro de amplitud** de la ventana
+> entera, con resta de continua y ventana de Hann. Cero coincidencias de transformada por ventanas
+> en todo el árbol.
+>
+> **Para un cliente no técnico no aporta**: es una figura que exige formación y compite con el
+> croquis y el semáforo, que son lo que decide. **Para el pericial sí**: separar la llegada de las
+> dos ondas y ver si el edificio respondió en su periodo fundamental es exactamente lo que un
+> espectro global promedia y esconde.
+>
+> Por eso va en la tanda tres, y **detrás** de que la onda cruda llegue a existir en la nube
+> (`T-3.11.c`): sin registro archivado no hay nada que transformar.
+- **Componente:** api · **Depende de:** T-3.11.c · **Prioridad: BAJA**
+- **Objetivo:** una figura tiempo-frecuencia en el documento pericial, con la misma honestidad que
+  el resto.
+- **Criterios de aceptación:**
+  - [ ] Espectrograma del canal dominante, con sus ejes rotulados y su ventana declarada.
+  - [ ] Sin registro archivado, **el mismo texto de ausencia** que ya usa la sección de onda cruda:
+        no un hueco.
+  - [ ] El PDF sigue siendo determinista: mismo modelo, mismos bytes.
+  - [ ] La figura **no promete** una escala que no existe, como ya vigila la guarda del mapa.
+
+### [ ] T-5.24 · El reloj y la pérdida de paquetes **callan cuando deberían gritar** — `SOFTWARE`
+> Dos huecos de la misma familia, los dos en el eje de "salud del sistema":
+>
+> - **El reloj.** El desfase se mide de verdad con el demonio de reloj, viaja, se persiste y
+>   degrada el estado del sitio en la consola. Pero el panel del gabinete **lo pinta siempre en
+>   verde**: no usa el ayudante de umbrales que todas las filas vecinas sí usan, así que un desfase
+>   de cinco segundos se ve igual que uno de tres milisegundos. Y **ninguna de las 13 alarmas de la
+>   nube es de reloj**: se ve solo si alguien está mirando la pantalla. Sin hora confiable, ninguna
+>   evidencia sirve.
+> - **La pérdida de paquetes.** Viaja a la nube y **se descarta a propósito** en la ingesta, con la
+>   razón escrita. Consecuencia: el centro de operaciones **no puede ver la pérdida de paquetes de
+>   ningún gabinete**; para diagnosticar un enlace degradado hay que ir al sitio o abrir el panel
+>   por red local.
+- **Componente:** edge + api + infra · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que las dos señales que dicen si la evidencia vale se puedan ver y despierten a
+  alguien.
+- **Criterios de aceptación:**
+  - [ ] El panel usa el mismo ayudante de umbrales que sus filas vecinas para el desfase de reloj.
+  - [ ] Alarma de desfase en la nube, con el mismo criterio que las demás: vigila la **ausencia**
+        además del valor, y publica su cero para no quedarse muda.
+  - [ ] La pérdida de paquetes gana columna y llega al centro de operaciones, o se declara por
+        escrito **por qué** sigue siendo local — pero no las dos cosas a la vez.
+  - [ ] Test de que el gabinete sin dato de reloj **lo declara** en vez de pintarse en verde.
+
+### [ ] T-5.25 · El silencio **no alcanza a los gabinetes secundarios** — `SOFTWARE`
+> El silencio del operador está bien resuelto en el gabinete que lo recibe: corta la sirena, corta
+> el voceo, deja el estrobo, no toca gas ni puertas, y una alarma nueva vuelve a sonar. Doce tests
+> lo defienden.
+>
+> Pero en un sitio con varios gabinetes, el principal propaga la activación a los secundarios por
+> radio y **solo el cierre de alerta propaga la orden inversa**. El silencio no. El operador calla
+> el suyo y **el edificio sigue sonando**.
+>
+> Es el mismo riesgo de credibilidad que motivó la decisión de la ruta de hardware: una sirena que
+> nadie puede callar durante una falsa alarma quema la obediencia a la siguiente alerta.
+- **Componente:** edge · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que silenciar signifique lo mismo en todo el inmueble.
+- **Criterios de aceptación:**
+  - [ ] El silencio se propaga a los nodos secundarios, y **solo** el silencio: la protección no
+        audible de cada nodo no se toca.
+  - [ ] Un nodo que no confirma **se declara** en el panel: silenciar cuatro de cinco no es
+        silenciar.
+  - [ ] Una alarma nueva vuelve a sonar en todos, como ya ocurre en el principal.
+  - [ ] Test con dos nodos que mida el estado eléctrico de ambos, no la orden enviada.
+
+### [ ] T-5.26 · La huella del PDF se imprime **a la mitad**, y la ficha de estación está partida — `SOFTWARE`
+> Dos defectos de superficie que se arreglan juntos porque los dos son "el dato está y no se ve":
+>
+> - **La huella.** La cadena de custodia imprime el sha256 truncado a **32 de 64** caracteres,
+>   mientras la portada del mismo documento instruye verificarlo con la herramienta estándar. Con
+>   medio hash no se puede. (El hash de contenido de la portada sí va entero; es el de cada objeto
+>   de evidencia el que se corta.) Además el documento ejecutivo **no lleva huella de contenido**:
+>   el que lee quien decide no trae con qué verificarse.
+> - **La ficha de estación.** Modelo, versión de firmware, serial y estado del respaldo eléctrico
+>   **no están en el contrato del mapa**; para verlos hay que abandonar la consola e ir a Flota,
+>   que en una demo es un salto de pantalla en el peor momento. Y el panel del propio gabinete no
+>   muestra su serial ni el código de estación del sensor, así que quien está de pie delante no
+>   puede correlacionarlo con la consola sin abrir el archivo de entorno.
+- **Componente:** api + web + edge · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que un dato que el sistema ya tiene no se pierda en el último centímetro.
+- **Criterios de aceptación:**
+  - [ ] La cadena de custodia imprime el hash completo, o la portada deja de instruir verificarlo
+        — no las dos cosas.
+  - [ ] El documento ejecutivo lleva su huella de contenido.
+  - [ ] La ficha del mapa gana los campos de identidad de hardware, con el mismo criterio honesto
+        que ya usa el medidor de respaldo: sin dato, lo dice.
+  - [ ] El panel del gabinete declara su serial y el código de estación del sensor.
+  - [ ] Los PDF siguen siendo deterministas.
+
+### [ ] T-5.27 · Las **dos guardas que faltan** — `SOFTWARE`
+> Dos propiedades que hoy se cumplen **por construcción** y que nada impediría romper mañana:
+>
+> - **La cifra externa fuera del veredicto.** El desacoplamiento es genuino y estructural: el tipo
+>   de entrada del veredicto tiene siete campos y **ninguno admite** magnitud ni catálogo, y el
+>   módulo no importa nada de forense. Pero los catorce tests del motor afirman lo que la regla
+>   **sí** hace; **ninguno afirma que el catálogo no la mueve**. Añadir el campo mañana no pondría
+>   nada en rojo. Con `T-5.10` y `T-5.11` entrando, esta guarda deja de ser opcional.
+> - **El folio fuera del prompt.** La lista blanca de lo que sale hacia el proveedor de prosa es
+>   real y no deja pasar **ni un dato personal**: ni notas de ocupantes, ni coordenadas, ni
+>   firmante, ni identificador de dispositivo. Pero el folio —que viaja entero— contiene el código
+>   del sitio y los ocho primeros hex del identificador del incidente, y el docstring del módulo
+>   afirma que ese identificador **nunca sale**. Y el test que lo defendería **borra el folio antes
+>   de afirmar**. Es un identificador estable y correlacionable entre dictámenes, no un dato
+>   personal — pero la lista blanca dice una cosa y hace otra.
+- **Componente:** api (tests) · **Depende de:** nada · **Prioridad: BAJA**
+- **Objetivo:** que las dos propiedades dejen de depender de que nadie las rompa.
+- **Criterios de aceptación:**
+  - [ ] Contract-test que fije por **igualdad** los campos de la entrada del veredicto, y que
+        prohíba por barrido del árbol de sintaxis que el motor de reglas o el del dictamen importen
+        el módulo forense o el esquema del catálogo.
+  - [ ] Se decide y se escribe qué hacer con el folio: o el prompt recibe un folio recortado, o el
+        docstring deja de afirmar lo que no cumple. **Lo que no puede quedarse es el test que
+        esquiva el caso.**
+  - [ ] El test del identificador deja de borrar el folio antes de afirmar.
+  - [ ] Guarda de no-vacuidad en ambos: cada uno declara cuántos elementos espera.
+
+---
+
 ## RUTA CRÍTICA
+
+> **Desde el 2026-09-02 hay DOS rutas, y confundirlas es un error de planificación con precio.**
+> Esta sección describe la ruta hacia **un cliente real**, y sigue vigente sin cambios. La ruta
+> hacia **poder enseñar el producto** es otra —el Bloque VI—, es más corta, y **no está bloqueada
+> en nadie**: sus cinco ítems críticos son software. Una demo no necesita `G-04`; necesita no
+> afirmar lo que `G-04` todavía no acreditó. Ver
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) §1.
 
 **Hacia "producción con un cliente real", la ruta crítica es:**
 
