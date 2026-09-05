@@ -667,6 +667,7 @@ export type DiscrepanciaOut = {
 export type DrillCreateIn = {
     duration_s?: number;
     from_scheduled?: string | null;
+    from_template?: string | null;
     note?: string | null;
     scheduled_at?: string | null;
     site_ids?: Array<string> | null;
@@ -681,6 +682,7 @@ export type DrillOut = {
     active: boolean;
     drill_id: string;
     duration_s: number;
+    from_template_id?: string | null;
     initiated_by: string;
     note: string | null;
     scheduled_at: string | null;
@@ -727,6 +729,38 @@ export type DrillSiteOut = {
     commandable?: boolean;
     site_id: string;
     site_name: string | null;
+};
+
+/**
+ * Alta o edición de una plantilla.
+ *
+ * ``site_ids`` vacío significa **todos los sitios comandables del tenant**, la
+ * misma convención que ``DrillCreateIn.site_ids = None`` y que el rótulo del
+ * modal. Dos convenciones distintas para lo mismo acabarían divergiendo.
+ */
+export type DrillTemplateIn = {
+    duration_s?: number;
+    name: string;
+    note?: string | null;
+    site_ids?: Array<string>;
+};
+
+export type DrillTemplateList = {
+    items: Array<DrillTemplateOut>;
+};
+
+export type DrillTemplateOut = {
+    created_at: string;
+    created_by: string;
+    duration_s: number;
+    name: string;
+    note: string | null;
+    sites: Array<TemplateSiteOut>;
+    sitios_no_usables?: number;
+    template_id: string;
+    tenant_id: string;
+    todos_los_sitios?: boolean;
+    updated_at: string;
 };
 
 /**
@@ -2601,6 +2635,17 @@ export type SubscribeFrame = {
 };
 
 /**
+ * Un sitio de la plantilla, con si HOY se puede usar y por qué no.
+ */
+export type TemplateSiteOut = {
+    estado: string;
+    motivo?: string | null;
+    site_code?: string | null;
+    site_id: string;
+    site_name?: string | null;
+};
+
+/**
  * Alta de un cliente (T-1.72). Solo ``takab_superadmin`` (acción ``manage_tenants``).
  *
  * ``visibility`` y ``status`` NO se aceptan aquí: nacen con los defaults del schema
@@ -2966,6 +3011,128 @@ export type EncenderDemoModeDemoModePostResponses = {
 };
 
 export type EncenderDemoModeDemoModePostResponse = EncenderDemoModeDemoModePostResponses[keyof EncenderDemoModeDemoModePostResponses];
+
+export type ListTemplatesDrillTemplatesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/drill-templates';
+};
+
+export type ListTemplatesDrillTemplatesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillTemplateList;
+};
+
+export type ListTemplatesDrillTemplatesGetResponse = ListTemplatesDrillTemplatesGetResponses[keyof ListTemplatesDrillTemplatesGetResponses];
+
+export type CreateTemplateDrillTemplatesPostData = {
+    body: DrillTemplateIn;
+    path?: never;
+    query?: never;
+    url: '/drill-templates';
+};
+
+export type CreateTemplateDrillTemplatesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateTemplateDrillTemplatesPostError = CreateTemplateDrillTemplatesPostErrors[keyof CreateTemplateDrillTemplatesPostErrors];
+
+export type CreateTemplateDrillTemplatesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DrillTemplateOut;
+};
+
+export type CreateTemplateDrillTemplatesPostResponse = CreateTemplateDrillTemplatesPostResponses[keyof CreateTemplateDrillTemplatesPostResponses];
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteData = {
+    body?: never;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/drill-templates/{template_id}';
+};
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteError = DeleteTemplateDrillTemplatesTemplateIdDeleteErrors[keyof DeleteTemplateDrillTemplatesTemplateIdDeleteErrors];
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteResponse = DeleteTemplateDrillTemplatesTemplateIdDeleteResponses[keyof DeleteTemplateDrillTemplatesTemplateIdDeleteResponses];
+
+export type GetTemplateDrillTemplatesTemplateIdGetData = {
+    body?: never;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/drill-templates/{template_id}';
+};
+
+export type GetTemplateDrillTemplatesTemplateIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTemplateDrillTemplatesTemplateIdGetError = GetTemplateDrillTemplatesTemplateIdGetErrors[keyof GetTemplateDrillTemplatesTemplateIdGetErrors];
+
+export type GetTemplateDrillTemplatesTemplateIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillTemplateOut;
+};
+
+export type GetTemplateDrillTemplatesTemplateIdGetResponse = GetTemplateDrillTemplatesTemplateIdGetResponses[keyof GetTemplateDrillTemplatesTemplateIdGetResponses];
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutData = {
+    body: DrillTemplateIn;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/drill-templates/{template_id}';
+};
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutError = UpdateTemplateDrillTemplatesTemplateIdPutErrors[keyof UpdateTemplateDrillTemplatesTemplateIdPutErrors];
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillTemplateOut;
+};
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutResponse = UpdateTemplateDrillTemplatesTemplateIdPutResponses[keyof UpdateTemplateDrillTemplatesTemplateIdPutResponses];
 
 export type ListDrillsDrillsGetData = {
     body?: never;

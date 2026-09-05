@@ -2637,6 +2637,18 @@
             ],
             "title": "From Scheduled"
           },
+          "from_template": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Template"
+          },
           "note": {
             "anyOf": [
               {
@@ -2721,6 +2733,18 @@
           "duration_s": {
             "title": "Duration S",
             "type": "integer"
+          },
+          "from_template_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Template Id"
           },
           "initiated_by": {
             "format": "uuid",
@@ -2979,6 +3003,143 @@
           "ack"
         ],
         "title": "DrillSiteOut",
+        "type": "object"
+      },
+      "DrillTemplateIn": {
+        "description": "Alta o edición de una plantilla.\n\n``site_ids`` vacío significa **todos los sitios comandables del tenant**, la\nmisma convención que ``DrillCreateIn.site_ids = None`` y que el rótulo del\nmodal. Dos convenciones distintas para lo mismo acabarían divergiendo.",
+        "properties": {
+          "duration_s": {
+            "default": 300,
+            "maximum": 3600.0,
+            "minimum": 30.0,
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "site_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Site Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "DrillTemplateIn",
+        "type": "object"
+      },
+      "DrillTemplateList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DrillTemplateOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "DrillTemplateList",
+        "type": "object"
+      },
+      "DrillTemplateOut": {
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "format": "uuid",
+            "title": "Created By",
+            "type": "string"
+          },
+          "duration_s": {
+            "title": "Duration S",
+            "type": "integer"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "sites": {
+            "items": {
+              "$ref": "#/components/schemas/TemplateSiteOut"
+            },
+            "title": "Sites",
+            "type": "array"
+          },
+          "sitios_no_usables": {
+            "default": 0,
+            "title": "Sitios No Usables",
+            "type": "integer"
+          },
+          "template_id": {
+            "format": "uuid",
+            "title": "Template Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "todos_los_sitios": {
+            "default": false,
+            "title": "Todos Los Sitios",
+            "type": "boolean"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "template_id",
+          "tenant_id",
+          "name",
+          "duration_s",
+          "note",
+          "created_by",
+          "created_at",
+          "updated_at",
+          "sites"
+        ],
+        "title": "DrillTemplateOut",
         "type": "object"
       },
       "EnrollmentCodeIn": {
@@ -10597,6 +10758,59 @@
         "title": "SubscribeFrame",
         "type": "object"
       },
+      "TemplateSiteOut": {
+        "description": "Un sitio de la plantilla, con si HOY se puede usar y por qué no.",
+        "properties": {
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
+          "site_id": {
+            "format": "uuid",
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Name"
+          }
+        },
+        "required": [
+          "site_id",
+          "estado"
+        ],
+        "title": "TemplateSiteOut",
+        "type": "object"
+      },
       "TenantCreate": {
         "additionalProperties": false,
         "description": "Alta de un cliente (T-1.72). Solo ``takab_superadmin`` (acción ``manage_tenants``).\n\n``visibility`` y ``status`` NO se aceptan aquí: nacen con los defaults del schema\n(``private``/``active``). Compartir con gobierno (``gov_shared``) es una decisión\naparte; la visibilidad configurable entre clientes vive en T-1.73.",
@@ -11704,6 +11918,182 @@
           }
         },
         "summary": "Encender Demo Mode"
+      }
+    },
+    "/drill-templates": {
+      "get": {
+        "description": "Las plantillas vivas del tenant, **con su estado de hoy**.\n\nEl conteo de sitios no usables viaja en la LISTA y no solo en el detalle: el\ncriterio de la ficha es que se sepa **al usarla**, y quien la elige está\nmirando la lista.",
+        "operationId": "list_templates_drill_templates_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Templates"
+      },
+      "post": {
+        "operationId": "create_template_drill_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrillTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Create Template"
+      }
+    },
+    "/drill-templates/{template_id}": {
+      "delete": {
+        "description": "La archiva. Ver la cabecera: borrarla de verdad dejaría huérfana la\nprocedencia de los simulacros que salieron de ella.",
+        "operationId": "delete_template_drill_templates__template_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Delete Template"
+      },
+      "get": {
+        "operationId": "get_template_drill_templates__template_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Template"
+      },
+      "put": {
+        "description": "Edita la plantilla. **No toca los simulacros que ya salieron de ella**:\naquellos copiaron sus valores al lanzarse (criterio 2 de la ficha).",
+        "operationId": "update_template_drill_templates__template_id__put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DrillTemplateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DrillTemplateOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Update Template"
       }
     },
     "/drills": {

@@ -1450,6 +1450,62 @@ body {
 .soc-drillform__sites .soc-meta {
   margin-left: auto;
 }
+/* [T-5.13] Plantillas. Misma disciplina que la lista de sitios: scrollea DENTRO
+   del modal en vez de empujarlo, y cada fila deja al botón de borrar a la
+   derecha sin desbordar — `minmax(0, 1fr)` y no `1fr` a secas, que es la regla
+   que este proyecto ya pagó una vez. */
+.soc-drillform__templates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 180px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.soc-drillform__templates > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.soc-drillform__templates > li > label {
+  min-width: 0;
+}
+.soc-drillform__templates .soc-meta {
+  margin-left: auto;
+}
+/* El aviso de la plantilla degradada. No decora: es lo que impide lanzar contra
+   un conjunto silenciosamente más pequeño, así que se lee antes que el botón. */
+.soc-drillform__warn {
+  color: var(--tk-status-warning);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  letter-spacing: 0.04em;
+}
+.soc-drillform__degradada {
+  padding: 8px 10px;
+  border-left: 3px solid var(--tk-status-warning);
+  background: var(--tk-status-warning-15);
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  letter-spacing: 0.04em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.soc-drillform__degradada ul {
+  margin: 6px 0 4px;
+  padding-left: 16px;
+}
+.soc-drillform__save {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
 .soc-drillform__actions {
   display: flex;
   justify-content: flex-end;

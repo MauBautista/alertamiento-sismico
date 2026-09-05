@@ -1494,6 +1494,65 @@ GRANT EXECUTE ON FUNCTION app_notify_delivery(text,text,text,text[],boolean,bool
 -- toca incidents. El acuse por sitio se DERIVA por JOIN a commands; el estado
 -- 'active' es derivado (stopped_at IS NULL AND now() < started_at + duration_s).
 -- Gov LEE (evidencia para Protección Civil) pero no escribe.
+-- [T-5.13] PLANTILLAS DE SIMULACRO. El alta de un simulacro tenía cinco campos y
+-- ninguno era una plantilla; lo más cercano —ejecutar una agenda armada— LA
+-- CONSUME, así que no se puede reutilizar. Para el macrosimulacro de septiembre
+-- había que teclear sitios, duración y nota a mano, cada vez.
+--
+-- SE ARCHIVA, NO SE BORRA (patrón de la casa: `sites.status='retired'`). Una
+-- plantilla borrada de verdad dejaría huérfana la procedencia de cada simulacro
+-- que salió de ella, y esos registros son evidencia de cumplimiento. Desde fuera
+-- se comporta como un borrado: desaparece de la lista y libera su nombre.
+CREATE TABLE drill_templates (
+  template_id  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  name         text NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 120),
+  -- Mismo rango que `drills.duration_s`: una plantilla que no se pudiera lanzar
+  -- sería una trampa que solo salta al usarla.
+  duration_s   integer NOT NULL CHECK (duration_s BETWEEN 30 AND 3600),
+  note         text,
+  created_by   uuid NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  archived_at  timestamptz
+);
+-- El nombre identifica DENTRO de un cliente. Parcial sobre las vivas: archivar
+-- libera el nombre, que es lo que espera quien «la borró».
+CREATE UNIQUE INDEX uq_drill_templates_tenant_name
+  ON drill_templates (tenant_id, lower(btrim(name))) WHERE archived_at IS NULL;
+CREATE INDEX idx_drill_templates_tenant ON drill_templates (tenant_id, created_at DESC);
+
+-- Conjunto de sitios. VACÍO = "todos los comandables", la misma convención que
+-- `DrillCreateIn.site_ids = None` y que el rótulo del modal. Dos convenciones
+-- distintas para lo mismo acabarían divergiendo.
+CREATE TABLE drill_template_sites (
+  template_id uuid NOT NULL REFERENCES drill_templates(template_id) ON DELETE CASCADE,
+  site_id     uuid NOT NULL REFERENCES sites(site_id),
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  PRIMARY KEY (template_id, site_id)
+);
+
+GRANT SELECT, INSERT, UPDATE ON drill_templates TO takab_app;
+GRANT SELECT, INSERT, DELETE ON drill_template_sites TO takab_app;
+
+-- Una plantilla es configuración operativa, NO evidencia: `gov_operator` lee el
+-- registro de simulacros y aquí no pinta nada.
+ALTER TABLE drill_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drill_templates FORCE  ROW LEVEL SECURITY;
+CREATE POLICY drill_templates_tenant ON drill_templates FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY drill_templates_admin ON drill_templates FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+ALTER TABLE drill_template_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drill_template_sites FORCE  ROW LEVEL SECURITY;
+CREATE POLICY drill_template_sites_tenant ON drill_template_sites FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY drill_template_sites_admin ON drill_template_sites FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
 CREATE TABLE drills (
   drill_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
@@ -1505,7 +1564,12 @@ CREATE TABLE drills (
   stop_reason  text,
   -- [T-2.03·D4c] AGENDA informativa ("próximo simulacro" de la app): una fila con
   -- scheduled_at es ANUNCIO, jamás deriva `active` ni emite comandos — LO REAL GANA.
-  scheduled_at timestamptz
+  scheduled_at timestamptz,
+  -- [T-5.13] De qué plantilla se COPIÓ este simulacro. Es PROCEDENCIA, no
+  -- dependencia: los valores de arriba son suyos y editar la plantilla después no
+  -- los reescribe. Nada del camino de lectura desreferencia esta columna para
+  -- pintar el nombre ACTUAL de la plantilla — eso sería la reescritura.
+  from_template_id uuid REFERENCES drill_templates(template_id) ON DELETE SET NULL
 );
 CREATE INDEX idx_drills_tenant ON drills (tenant_id, started_at DESC);
 

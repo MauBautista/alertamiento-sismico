@@ -15,6 +15,7 @@ from takab_api.routers.commands import router as commands_router
 from takab_api.routers.compliance import router as compliance_router
 from takab_api.routers.demo_mode import router as demo_mode_router
 from takab_api.routers.dictamens import router as dictamens_router
+from takab_api.routers.drill_templates import router as drill_templates_router
 from takab_api.routers.drills import router as drills_router
 from takab_api.routers.events import router as events_router
 from takab_api.routers.exports import router as exports_router
@@ -132,6 +133,9 @@ def create_app() -> FastAPI:
     app.include_router(notify_chain_router)
     app.include_router(demo_mode_router)
     app.include_router(drills_router)
+    # [T-5.13] Plantillas: se define una vez y se lanza en dos clics. Mismo
+    # permiso que disparar (`drill_start`), sin rol nuevo.
+    app.include_router(drill_templates_router)
 
     # Ventanas de mantenimiento: silencian alarmas de OPERACIÓN, jamás la
     # actuación (Fase 2.5 · T-2.71).

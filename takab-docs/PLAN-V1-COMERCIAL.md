@@ -888,7 +888,7 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
   y con lo que de verdad hay que mirar al cerrarla: nueve de ellas apagan los paneles de CCTV en
   toda la suite de web, así que la divergencia no relaja una aserción — **borra la población**.
 
-### [ ] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE`
+### [x] T-5.13 · **Plantillas de simulacro** guardadas y editables — `SOFTWARE` · **CERRADA 2026-09-04**
 > No existen: ni tabla, ni campo en el cuerpo del alta, ni endpoint, ni interfaz. El alta de un
 > simulacro tiene exactamente cinco campos y ninguno es una plantilla. Lo más cercano —ejecutar
 > una agenda ya creada— **la consume**, así que no se puede reutilizar.
@@ -898,13 +898,69 @@ Formato exacto de `TASKS.md`. Se insertan al final de ese archivo como **Fase 5.
 - **Componente:** api + web · **Depende de:** nada · **Prioridad: MEDIA**
 - **Objetivo:** que un simulacro recurrente se defina una vez y se lance en dos clics.
 - **Criterios de aceptación:**
-  - [ ] Plantilla con nombre, conjunto de sitios, duración y nota; CRUD completo con el mismo rol
+  - [x] Plantilla con nombre, conjunto de sitios, duración y nota; CRUD completo con el mismo rol
         que hoy puede disparar un simulacro.
-  - [ ] Crear un simulacro desde una plantilla **copia** sus valores; editar la plantilla después
+  - [x] Crear un simulacro desde una plantilla **copia** sus valores; editar la plantilla después
         no reescribe simulacros ya ejecutados.
-  - [ ] Una plantilla cuyos sitios ya no existen o están retirados **lo dice al usarla**, en vez
+  - [x] Una plantilla cuyos sitios ya no existen o están retirados **lo dice al usarla**, en vez
         de lanzar contra un conjunto silenciosamente más pequeño.
-  - [ ] Aislamiento entre clientes: una plantilla es de su tenant, con test de cruce.
+  - [x] Aislamiento entre clientes: una plantilla es de su tenant, con test de cruce.
+- **Cómo se cerró (2026-09-04).**
+  **Dos tablas, una columna y ningún rol nuevo** (migración `0061`). `drill_templates` con
+  nombre, duración y nota; `drill_template_sites` con el conjunto de sitios; y
+  `drills.from_template_id`, que es **procedencia, no dependencia**. El CRUD entero va con
+  `drill_start` —el permiso que ya autoriza a disparar— porque quien puede lanzar el simulacro
+  puede definir cómo se lanza, y un permiso nuevo habría movido la matriz RBAC y sus dos espejos
+  sin ganar nada.
+- **Criterio 2, que es el corazón de la ficha: se COPIA, no se referencia.** `POST /drills` con
+  `from_template` lee la plantilla una vez y copia sus valores en la fila del simulacro; el
+  simulacro no vuelve a mirarla nunca. Por eso `from_template_id` está y **nada del camino de
+  lectura la desreferencia** para pintar el nombre actual: un simulacro es evidencia de
+  cumplimiento, y si editar la plantilla cambiara lo que dice el registro de septiembre, esa
+  evidencia sería reescribible y no valdría nada.
+- **Criterio 3, en sus DOS formas — y son distintas.** El estado de cada sitio se evalúa **al
+  leer**, nunca se congela (misma decisión que `DrillSiteOut.commandable` de `T-2.48`, y por la
+  misma razón: una plantilla se define semanas antes y el inventario se mueve debajo). Y los tres
+  motivos van **separados** —dado de baja, sin gabinete, ya no visible— porque quien lee el número
+  llama a personas distintas: al de inventario, al de campo o al que administra los permisos.
+  · **Degradación PARCIAL ⇒ se lanza y se declara.** Un edificio que perdió el enlace no puede
+    dejar sin simulacro a los otros; queda en el registro sin comando y rotulado
+    `commandable=False`, que es lo que distingue «no había a quién mandarle» de «no acusó». El
+    conteo viaja además en la LISTA de plantillas, no solo en el detalle: quien la elige está
+    mirando la lista.
+  · **Degradación TOTAL ⇒ 409, y con el mensaje corregido.** Un simulacro que no suena en ninguna
+    parte no es un simulacro, es un registro falso de que se hizo uno. Lo que había que arreglar
+    era el TEXTO: el 409 existente culpaba al inventario del tenant («no tiene sitios con gateway
+    comandable»), y con una plantilla eso puede ser mentira —el cliente puede tener veinte
+    comandables y ninguno estar en la lista—, mandando a arreglar lo que no está roto.
+- **Se ARCHIVA, no se borra.** El `DELETE` marca `archived_at` (patrón de la casa:
+  `sites.status='retired'`). Borrarla de verdad dejaría huérfana la procedencia de cada simulacro
+  que salió de ella. Desde fuera se comporta como un borrado, y eso incluye lo que nadie recuerda
+  hasta que muerde: **el nombre vuelve a estar libre**, porque el índice único es parcial sobre
+  las vivas.
+- **Asimetría deliberada entre guardar y usar.** Al **guardar** una plantilla contra un sitio
+  inalcanzable se rechaza (404): sería crear la trampa de golpe. Al **usarla** no se rechaza, se
+  declara — porque el inventario cambia entre una cosa y la otra, y ése es justo el caso que la
+  ficha describe.
+- **La interfaz.** El modal de simulacro gana el bloque PLANTILLA: elegir una precarga sitios,
+  duración y nota para poder revisarlas —lo explícito sigue ganando sobre lo heredado, igual que
+  con una agenda armada—, guardar la definición actual con un nombre, y borrar. El aviso de
+  plantilla degradada se pinta **antes** de lanzar, con el motivo de cada sitio.
+- **Nueve mutaciones comprobadas** (cinco en api, cuatro en web), incluida una sobre la POLÍTICA
+  RLS aplicada contra la base real: abrirla a `USING (true)` pone en rojo el test de cruce entre
+  clientes, que es la única forma de saber que ese test tiene dientes.
+- **Y tres trampas que solo salen corriendo la suite entera**, ninguna de esta ficha pero todas
+  suyas ahora: el `TRUNCATE` del conftest es **por sesión, no por test**, y da igual en `drills`
+  —que no tiene unicidad— pero aquí el nombre es único por tenant y el arrastre daba rojos que
+  culpaban a la restricción; los tests que retiran un gabinete o un edificio **dejan el
+  inventario roto para los siguientes** (siete rojos «sin gateway comandable» ajenos a su caso);
+  y `gateways.status` **no admite `'active'`** —su dominio es `provisioned/online/degraded/
+  offline/retired`—, así que restaurarlo a ojo revienta el CHECK.
+- **Y un gate del repo se ganó el sueldo otra vez:** `serverDataCensus` cazó que el aviso de
+  plantilla degradada pintaba dato de servidor **fuera del `StateFrame`**. Se metió dentro; lo
+  único que queda fuera es el formulario de guardado —estado de mutación, mismo caso que
+  `DrillBanner`— y está declarado con su razón, porque el marco de la lista declara `empty`
+  cuando no hay ninguna plantilla y meterlo dentro haría imposible crear la primera.
 
 ### [x] T-5.14 · El **post-simulacro** no tiene tiempos ni sale del navegador — `SOFTWARE` · **CERRADA 2026-09-02**
 > Lo que hay está bien hecho: el acuse por sitio se deriva por unión con la tabla de comandos, y
