@@ -254,25 +254,37 @@ evidencia detrás.
 
 Desde `T-5.22` **cada flanco del WR-1 deja un acta fechada** con la latencia y **el estado de los
 cinco canales en ese instante**. Sobrevive al reinicio y distingue el pulso de prueba de CIRES
-del flanco real. Al terminar la sesión:
+del flanco real.
+
+> ⚠️ **ANTES DE IR — el paso que ahorra el viaje.** Desde el escritorio:
+>
+> ```bash
+> edge/scripts/acta_reflejo.sh --check
+> ```
+>
+> Si el gabinete **no tiene desplegado** el módulo del acta, la sesión no produce evidencia por
+> bien que salga la medición. **Medido el 2026-09-04: `takab-pi5` NO lo tiene** — corre la release
+> `20260830T222850Z-71ac7df`, anterior a `T-5.22`. Hay que desplegar antes de ir.
+
+**Al terminar la sesión**, un solo comando: localiza el acta (ruta derivada, no tecleada), publica
+**mejor y peor** caso separando los pulsos de prueba, y se trae el artefacto fechado.
 
 ```bash
-# 1 · dónde está (hermano del spool de la nube, ruta derivada y estable)
-ssh takab-pi5 'ls -l $(dirname $(systemctl show -p Environment takab-edge |
-  tr " " "\n" | grep CLOUD_SPOOL_DIR | cut -d= -f2))/actuation-ledger/reflejo.jsonl'
-
-# 2 · qué dice — mejor y PEOR caso, no solo el mejor
-ssh takab-pi5 'python3 -c "
-import json,sys
-a=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]
-r=[x for x in a if not x[\"es_prueba\"]]
-print(len(r),\"actas reales\"); print(\"mejor\",min(x[\"latencia_ms\"] for x in r),\"ms\")
-print(\"peor \",max(x[\"latencia_ms\"] for x in r),\"ms\")
-" ~/reflejo.jsonl'
-
-# 3 · TRAÉTELO. Es el artefacto; el número suelto no lo es.
-scp takab-pi5:.../reflejo.jsonl ./evidencia-G04-$(date +%Y%m%d).jsonl
+edge/scripts/acta_reflejo.sh          # HOST=otro-pi si no es takab-pi5
 ```
+
+> **Aquí vivían tres comandos escritos a mano, y los tres estaban rotos** (comprobado contra el Pi
+> real): la ruta se derivaba con `systemctl show -p Environment`, que **no muestra el
+> `EnvironmentFile`** donde el gabinete tiene la variable; el paso siguiente leía otra ruta; y el
+> `scp` final llevaba un literal `...` sin rellenar. La sesión habría vuelto sin evidencia. Ahora
+> es un script y lo cubre `edge/tests/test_acta_reflejo_script.sh`, que corre en `make test` **y**
+> en CI — un procedimiento que se ejecuta una vez cada varios meses no puede descubrirse roto
+> delante del gabinete.
+
+**Sin ssh:** el panel LAN del gabinete publica el resumen del acta junto a `reflex_s`
+(`latencies.acta`, con `mejor_ms`, `peor_ms` y su conteo). `acta: null` significa **firmware sin el
+módulo**; `total: 0` significa **desplegado y aún sin flancos** — dos hechos distintos y hay que
+poder distinguirlos, porque el primero se arregla desplegando y el segundo pulsando el WR-1.
 
 **Y actualiza [`MEDICIONES-TAKAB.md`](../MEDICIONES-TAKAB.md) §2** con las mediciones nuevas y la
 ruta del acta. Las dos cifras que hay hoy se tomaron **antes** de que el acta existiera, así que

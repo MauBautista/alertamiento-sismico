@@ -390,6 +390,12 @@ jobs:
       # bash + python3 del runner.
       - name: Test de paridad local ↔ CI (make cubre lo que exige el CI)
         run: bash infra/scripts/tests/test_ci_parity.sh
+      # [T-5.22] El recolector del acta del reflejo, contra un gabinete de mentira.
+      # Aquí y no sólo en `make test` por la razón de arriba: CI no corre `make
+      # test`, y un procedimiento de sesión presencial roto no se descubre hasta
+      # que cuesta un viaje. Sin dependencias: bash + python3 del runner.
+      - name: Recolector del acta del reflejo (T-5.22 · GATE-HW)
+        run: bash edge/tests/test_acta_reflejo_script.sh
       # TODO: paso opcional de plan-only con el rol OIDC takab-ci-plan (requiere
       # permissions: id-token: write). Se deja fuera para mantener el CI de PRs
       # hermético; ver infra/terraform/README.md.

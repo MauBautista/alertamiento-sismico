@@ -419,12 +419,48 @@ def test_thresholds_null_when_rules_broken(supervisor, monkeypatch):
 
 def test_latencies_budgets_declared_and_null_before_measurement(supervisor):
     """Sin medición ⇒ null (S/D). JAMÁS un 0.0 fabricado que se lea 'instantáneo'."""
-    assert supervisor.local_api.status()["latencies"] == {
+    lat = supervisor.local_api.status()["latencies"]
+    assert {k: lat[k] for k in ("reflex_s", "reflex_budget_s", "rules_s", "rules_budget_s")} == {
         "reflex_s": None,
         "reflex_budget_s": 0.100,
         "rules_s": None,
         "rules_budget_s": 0.200,
     }
+    # [T-5.22] El acta va AL LADO del campo vivo: `reflex_s` vuelve a `null` en
+    # cada reinicio y el acta no. Se comprueba la FORMA y no el total: la
+    # bitácora vive en una ruta DERIVADA y estable (`ledger_dir_for`, jamás un
+    # `mkdtemp` — eso es lo que hacía que la evidencia se evaporara en cada
+    # arranque del Pi), así que sobrevive también entre corridas de esta suite.
+    assert set(lat["acta"]) == {"total", "ultima", "mejor_ms", "peor_ms"}
+
+
+def test_el_acta_del_reflejo_SOBREVIVE_a_lo_que_reflex_s_pierde(supervisor):
+    """[T-5.22] El defecto que la ficha nombra: la medición «no está viva, es
+    histórica». `reflex_s` es volátil; el acta es el artefacto.
+
+    Se comprueba lo que un cliente puede pedir: cuántas mediciones hay, la mejor
+    y **la peor** — publicar solo la mejor es cómo una cifra de venta deja de
+    describir al producto.
+    """
+    antes = supervisor.local_api.status()["latencies"]["acta"]["total"]
+    supervisor.gpio.simulate_sasmex(active=True)
+    acta = supervisor.local_api.status()["latencies"]["acta"]
+
+    assert acta["total"] == antes + 1, "el flanco no dejó acta"
+    assert acta["mejor_ms"] is not None and acta["peor_ms"] is not None
+    assert acta["ultima"]["canales"], "el acta sin el estado de los relés no es evidencia"
+
+
+def test_sin_acta_el_panel_dice_NULL_y_no_un_resumen_vacio(supervisor):
+    """`acta: null` = firmware sin el módulo; `total: 0` = desplegado y sin flancos.
+
+    Son dos hechos distintos —el primero se arregla desplegando y el segundo
+    pulsando el WR-1— y colapsarlos mandaría a la sesión presencial a un gabinete
+    que no puede escribir ni una línea. Medido el 2026-09-04: `takab-pi5` estaba
+    en el primer caso.
+    """
+    supervisor.local_api._acta_reflejo = None
+    assert supervisor.local_api.status()["latencies"]["acta"] is None
 
 
 def test_latencies_after_measurement(supervisor):

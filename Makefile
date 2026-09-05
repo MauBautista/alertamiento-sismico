@@ -198,6 +198,10 @@ test: test-db
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 	bash infra/scripts/tests/test_secret_scan.sh
+	# [T-5.22] El recolector del acta del reflejo. Un procedimiento que se ejecuta
+	# una vez cada varios meses no puede descubrirse roto delante del gabinete: el
+	# que sustituye lo estaba en sus tres pasos.
+	bash edge/tests/test_acta_reflejo_script.sh
 	./ci/check-licenses.sh
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo

@@ -37,11 +37,26 @@ discutible. El acta sobrevive al reinicio, distingue el pulso de prueba de CIRES
 real, y publica **el peor caso además del mejor**: publicar solo el mejor es cómo una cifra de
 venta deja de describir al producto.
 
+**Y se puede leer sin entrar por ssh:** el panel LAN del gabinete publica el resumen del acta
+al lado del campo vivo (`latencies.acta` — `total`, `mejor_ms`, `peor_ms` y la última). Ese
+campo vivo, `reflex_s`, vuelve a `null` en cada reinicio, y ésa era literalmente la queja: *la
+medición no está viva, es histórica*. Ahora las dos cosas están, y **`acta: null` significa
+firmware sin el módulo** mientras que **`total: 0` significa desplegado y aún sin flancos** —
+dos hechos distintos, porque el primero se arregla desplegando y el segundo pulsando el WR-1.
+
 > **`GATE-HW` · lo que falta y no lo cierra el software.** Las dos cifras de arriba se tomaron
 > **antes** de que existiera el acta, así que no tienen artefacto. La siguiente sesión
 > presencial tiene que **volver a medir con el procedimiento nuevo** y adjuntar el
 > `reflejo.jsonl` resultante. Procedimiento en
-> [`runbooks/RUNBOOK-sesion-de-vida.md`](runbooks/RUNBOOK-sesion-de-vida.md).
+> [`runbooks/RUNBOOK-sesion-de-vida.md`](runbooks/RUNBOOK-sesion-de-vida.md) §B.1.bis, y se
+> recoge con un comando: `edge/scripts/acta_reflejo.sh`.
+>
+> ⚠️ **Y hay una precondición que hoy NO se cumple, medida el 2026-09-04 contra el Pi real:
+> `takab-pi5` no tiene desplegado el módulo del acta.** Corre la release
+> `20260830T222850Z-71ac7df`, del 2026-08-30, anterior a `T-5.22`. Mientras siga así, **la
+> sesión presencial no puede producir evidencia por bien que salga la medición**: el gabinete
+> no escribiría ni una línea. Se comprueba desde el escritorio con
+> `edge/scripts/acta_reflejo.sh --check` — que es exactamente el paso que ahorra el viaje.
 
 ## 3 · El camino de la consola — incidente escrito → pintado en pantalla
 

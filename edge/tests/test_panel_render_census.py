@@ -503,6 +503,22 @@ def _existe(obj: Any, ruta: str) -> bool:
 #: su línea; añadir un campo mudo obliga a escribir por qué. Una excepción que
 #: puede crecer sola no es una excepción, es un agujero.
 SIN_CAMINO_DE_RENDER: dict[str, str] = {
+    "latencies.acta.ultima.latencia_s": (
+        "[T-5.22] Es el MISMO número que `latencia_ms`, que sí se pinta, en otra "
+        "unidad. Se pinta la de milisegundos porque es la que se cita —«4.16 ms»— y "
+        "rotular las dos invitaría a leerlas como dos mediciones. Viaja porque el "
+        "acta se sirve tal cual la escribió el supervisor: el JSON del panel y el "
+        "fichero que se lleva la sesión presencial tienen que ser el mismo dato."
+    ),
+    "latencies.acta.ultima.es_prueba": (
+        "[T-5.22] Dentro del resumen SIEMPRE es `false`, así que pintarlo sería una "
+        "línea que no puede cambiar. `ActaDeReflejoStore.resumen()` descarta los "
+        "pulsos de prueba del WR-1 ANTES de calcular nada —no acreditan el camino "
+        "real y mezclarlos sería el defecto que la ficha corrige—, de modo que la "
+        "`ultima` que llega aquí es por construcción una medición real. El campo "
+        "viaja porque el acta entera se sirve tal cual la escribió el supervisor, y "
+        "recortarla en el servidor haría que el JSON y el fichero discreparan."
+    ),
     "keepalive.beating": (
         "[T-2.146] Es un INGREDIENTE de `keepalive.estado`, que sí se pinta. La regla "
         "de los tres estados —sin ruta / inhibida / habilitada— vive en el servidor "

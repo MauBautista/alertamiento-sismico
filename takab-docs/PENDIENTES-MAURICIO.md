@@ -684,6 +684,36 @@ El recall con varias personas —cuánto baja el conteo cuando unas tapan a otra
 sustituto simulado**. Inventar la cifra sería peor que no tenerla, así que queda aquí, sin
 número, hasta que haya a quién contar.
 
+### 3.3.e · [`T-5.22`](TASKS.md) · **El acta del reflejo no está desplegada** — sin ella, la sesión de vida vuelve sin evidencia
+
+**Medido el 2026-09-04 contra el Pi real**, no supuesto:
+
+```
+$ edge/scripts/acta_reflejo.sh --check
+  gabinete: takab-pi5 · unidad: takab-edge
+  EL ACTA NO ESTÁ DESPLEGADA en takab-pi5.
+```
+
+`takab-pi5` corre la release **`20260830T222850Z-71ac7df`** (2026-08-30) y el módulo del acta
+(`takab_edge/audit/reflejo.py`) entró con `T-5.22` el **2026-09-03**. O sea que hoy el gabinete
+**no puede escribir ni una línea de acta**.
+
+**Por qué está aquí y no en la lista de software.** La cifra `contacto → relé` es la más citada
+del producto y su evidencia son nueve documentos con el número a mano. `T-5.22` construyó el
+acta que la convierte en artefacto, y su último criterio —`GATE-HW`— es una **sesión presencial**
+que vuelve a medir y se trae el `reflejo.jsonl`. Si el gabinete no tiene el módulo, **esa sesión
+se hace y vuelve con las manos vacías**: el fichero no existiría y el síntoma sería
+indistinguible de «no hubo flancos».
+
+**Qué hay que hacer, y es barato:** desplegar el edge (`deploy.sh`, el procedimiento de siempre)
+**antes** de la sesión de vida de §3.1. No hace falta ventana de mantenimiento por esto: el acta
+la escribe el **supervisor**, no el dueño de los pines, así que `takab-gpio` puede seguir con su
+código y el acta funciona igual — es la misma separación que `T-5.22` eligió a propósito para no
+meterle un fichero al proceso del camino de vida (regla de oro 4).
+
+> **Y se comprueba desde el escritorio**, no delante del gabinete:
+> `edge/scripts/acta_reflejo.sh --check`. Sale `0` cuando la precondición está lista.
+
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 

@@ -403,6 +403,10 @@ class EdgeSupervisor:
             # T-2.67: evidencia pendiente y desenlace del respaldo (instantánea
             # EN MEMORIA del manager; el panel jamás recorre el directorio).
             backfill=self.backfill,
+            # [T-5.22] El acta del reflejo, para LEERLA. La cifra más citada del
+            # producto deja de existir solo en un campo volátil que el reinicio
+            # pone en `null`: el panel publica también mejor y peor de lo medido.
+            acta_reflejo=self.acta_reflejo,
             # T-2.146: si el `K_wd` está montado. Sin esto el panel no puede
             # distinguir «no hay ruta de hardware» de «la hay y no late», que
             # significan cosas opuestas.

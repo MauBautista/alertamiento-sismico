@@ -695,7 +695,10 @@ function baseStatus(){
     ],
     config_version: 4,
     thresholds: {pga_watch_g:0.040, pga_trip_g:0.060, pgv_watch_cms:2.0, pgv_trip_cms:4.0, origen:'sincronizado'},
-    latencies: {reflex_s:0.00665, reflex_budget_s:0.100, rules_s:0.118, rules_budget_s:0.200},
+    latencies: {reflex_s:0.00665, reflex_budget_s:0.100, rules_s:0.118, rules_budget_s:0.200,
+      acta:{total:2, mejor_ms:4.16, peor_ms:6.65, ultima:{medido_en:'2026-07-31T17:12:04+00:00',
+        latencia_s:0.00416, latencia_ms:4.16, gateway_id:'gw-dev-0001', fw_version:'abc1234',
+        es_prueba:false, canales:{siren:true, strobe:true, gas_valve:false, elevator:false, door_retainer:false}}}},
     seedlink: {packets_seen:1284902, reconnects:2, duplicates:0, gaps:0},
     calibration: {calibrated:true, source:'StationXML FDSN AM.R4F74 2026-07-09',
       vel_sensitivity_ms_per_count:2.5021894e-9, accel_sensitivity_ms2_per_count:2.6007802e-6},
@@ -787,7 +790,8 @@ const SCENES = {
        vacía aquí no tiene causa conocida, que es el peor caso. */
     relays_status:{reason:'unknown', installed:null, missing:[]},
     site_lat:null, site_lon:null, neighbors:[],
-    config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200},
+    config_version:0, thresholds:null, latencies:{reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200,
+      acta:{total:0, ultima:null, mejor_ms:null, peor_ms:null}},
     seedlink:null, calibration:{calibrated:false, source:null, vel_sensitivity_ms_per_count:null, accel_sensitivity_ms2_per_count:null},
     shake_history:null, signal:null, health:null, cloud:{online:false, mqtt_rtt_ms:null, queued:null, admin_state:'active'},
     evidence:null, /* [T-2.67] módulo de respaldo aún sin arrancar ⇒ S/D honesto */
@@ -1253,7 +1257,7 @@ function renderHistory(st, cal){
 }
 function renderLatencies(st, cloud){
   const box = $('lat-rows'); box.textContent = '';
-  const lat = st.latencies || {reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200};
+  const lat = st.latencies || {reflex_s:null, reflex_budget_s:0.100, rules_s:null, rules_budget_s:0.200, acta:null};
   const ms = (v) => v == null ? 'S/D' : (v*1000).toFixed(2)+' ms';
   const rows = [
     ['Reflejo SASMEX → relé', lat.reflex_s, lat.reflex_budget_s, 'p95 < ' + Math.round(lat.reflex_budget_s*1000) + ' ms'],
@@ -1279,6 +1283,50 @@ function renderLatencies(st, cloud){
     }
     wrap.append(head, bar); box.appendChild(wrap);
   });
+  renderActaReflejo(lat.acta, box);
+}
+/* [T-5.22] El ACTA del reflejo, debajo de las barras.
+ *
+ * `reflex_s` es un campo VIVO y vuelve a S/D en cuanto el proceso reinicia — ésa
+ * era la queja de la ficha: «la medición no está viva, es histórica». El acta
+ * sobrevive al reinicio, así que es lo único que se puede citar delante de un
+ * cliente, y aquí se lee SIN entrar por ssh.
+ *
+ * Los dos «no hay» significan cosas distintas y se pintan distinto:
+ *   · `acta == null`  ⇒ firmware SIN el módulo. Se arregla desplegando.
+ *   · `total === 0`   ⇒ desplegado y sin flancos. Se arregla pulsando el WR-1.
+ * Colapsarlos mandaría a una sesión presencial a un gabinete que no puede
+ * escribir ni una línea. */
+function renderActaReflejo(acta, box){
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-top:2px';
+  const l = document.createElement('span');
+  l.style.cssText = 'font:500 11px/1 var(--f-ui);letter-spacing:0.04em;color:var(--tk-fg-2)';
+  l.textContent = 'Acta del reflejo (sobrevive al reinicio)';
+  const v = document.createElement('span'); v.className = 'meta';
+  if (acta == null){
+    v.textContent = 'SIN ACTA EN ESTE FIRMWARE — no puede registrar mediciones';
+    v.style.color = C.warn;
+  } else if (!acta.total){
+    v.textContent = 'SIN MEDICIONES TODAVÍA — ningún flanco del WR-1 registrado';
+    v.style.color = C.warn;
+  } else {
+    /* Mejor y PEOR. Publicar solo el mejor es cómo una cifra de venta deja de
+     * describir al producto: el peor caso es el que un perito mira. */
+    v.textContent = acta.total + ' medición(es) · mejor ' + acta.mejor_ms.toFixed(2)
+      + ' ms · peor ' + acta.peor_ms.toFixed(2) + ' ms';
+    v.style.color = C.fg3;
+    if (acta.ultima){
+      const u = document.createElement('span'); u.className = 'meta'; u.style.color = C.fg3;
+      const rele = Object.entries(acta.ultima.canales || {})
+        .filter(([, on]) => on).map(([c]) => c).join(' · ') || 'ningún relé activado';
+      u.textContent = 'última: ' + acta.ultima.medido_en + ' · ' + acta.ultima.latencia_ms
+        + ' ms · fw ' + (acta.ultima.fw_version || '—') + ' · ' + acta.ultima.gateway_id
+        + ' · relés: ' + rele;
+      wrap.append(l, v, u); box.appendChild(wrap); return;
+    }
+  }
+  wrap.append(l, v); box.appendChild(wrap);
 }
 function renderRoseInfo(st){
   $('rose-station').textContent = (st.gateway_id || '—');

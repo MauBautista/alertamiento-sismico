@@ -425,6 +425,10 @@ class LocalDashboard(EdgeModule):
         lora: object | None = None,
         backfill: object | None = None,
         ledger: object | None = None,
+        #: [T-5.22] Acta del reflejo. El panel la LEE (`resumen()`), jamás la
+        #: escribe: la escribe el supervisor, que es quien ve la latencia por la
+        #: costura y vive del lado que sí puede tocar disco.
+        acta_reflejo: object | None = None,
         #: [T-3.11.b] Solo para verificar el HMAC del grant de CCTV. El panel NO
         #: firma nada: verifica.
         security: object | None = None,
@@ -441,6 +445,7 @@ class LocalDashboard(EdgeModule):
         # mueven relés de un edificio y hasta hoy sólo quedaban en una `deque` en
         # RAM (`_actions`), que un reinicio borra. Ver `_accion`.
         self._ledger = ledger
+        self._acta_reflejo = acta_reflejo
         self._security = security
         self._rules = rules
         self._health = health
@@ -839,6 +844,14 @@ class LocalDashboard(EdgeModule):
 
         `null` = sin medición todavía (la UI pinta S/D). JAMÁS un 0.0 fabricado:
         un cero se leería como "instantáneo" y sería una mentira.
+
+        [T-5.22] `reflex_s` es **vivo y volátil**: vuelve a `null` en cuanto el
+        proceso reinicia, y ése es literalmente el defecto que la ficha nombra —
+        «en el gabinete vivo el campo de latencia está en nulo: la medición no
+        está viva, es histórica». Al lado va ahora `acta`, que **sobrevive al
+        reinicio** y trae mejor y **peor** caso con su conteo. Sin las dos, quien
+        mira el panel en una sesión presencial no tiene de dónde sacar la cifra
+        más citada del producto sin entrar por ssh.
         """
         reflex = snap.last_reflex_latency_s if snap is not None else None
         try:
@@ -851,7 +864,26 @@ class LocalDashboard(EdgeModule):
             "reflex_budget_s": _REFLEX_BUDGET_S,
             "rules_s": rules,
             "rules_budget_s": _RULES_BUDGET_S,
+            "acta": self._acta_section(),
         }
+
+    def _acta_section(self) -> dict | None:
+        """[T-5.22] Resumen del acta del reflejo, o ``None`` si no hay acta.
+
+        ``None`` significa **una cosa concreta y no dos**: este gabinete no tiene
+        el módulo del acta (firmware anterior a `T-5.22`). Un gabinete que SÍ lo
+        tiene y todavía no ha visto ningún flanco devuelve el resumen con
+        ``total: 0`` y sus cifras en `null` — que es un hecho distinto y hay que
+        poder distinguirlo, porque el primero se arregla desplegando y el segundo
+        pulsando el WR-1.
+        """
+        if self._acta_reflejo is None:
+            return None
+        try:
+            return dict(self._acta_reflejo.resumen())
+        except Exception:  # noqa: BLE001 — sección no-crítica, como las demás
+            log.warning("panel LAN: acta del reflejo no disponible", exc_info=True)
+            return None
 
     def _seedlink_section(self) -> dict | None:
         """[T-2.18] Contadores del flujo SeedLink, acumulados DESDE EL ARRANQUE.

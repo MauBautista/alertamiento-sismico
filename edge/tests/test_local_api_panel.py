@@ -144,6 +144,29 @@ def _base() -> dict:
             "reflex_budget_s": 0.100,
             "rules_s": 0.118,
             "rules_budget_s": 0.200,
+            # [T-5.22] El acta, al lado del campo VIVO. `reflex_s` vuelve a `null`
+            # en cada reinicio y esto no: es el artefacto de la cifra más citada
+            # del producto. Mejor y PEOR, nunca solo el mejor.
+            "acta": {
+                "total": 2,
+                "mejor_ms": 4.16,
+                "peor_ms": 6.65,
+                "ultima": {
+                    "medido_en": "2026-07-31T17:12:04+00:00",
+                    "latencia_s": 0.00416,
+                    "latencia_ms": 4.16,
+                    "gateway_id": "gw-dev-0001",
+                    "fw_version": "abc1234",
+                    "es_prueba": False,
+                    "canales": {
+                        "siren": True,
+                        "strobe": True,
+                        "gas_valve": False,
+                        "elevator": False,
+                        "door_retainer": False,
+                    },
+                },
+            },
         },
         "seedlink": {"packets_seen": 1284902, "reconnects": 2, "duplicates": 0, "gaps": 0},
         "calibration": {
@@ -258,6 +281,9 @@ def _cold() -> dict:
                 "reflex_budget_s": 0.100,
                 "rules_s": None,
                 "rules_budget_s": 0.200,
+                # Gabinete sin un solo flanco: `total: 0` y las cifras en `null`.
+                # Jamás un 0.0, que se leería como la mejor latencia del catálogo.
+                "acta": {"total": 0, "ultima": None, "mejor_ms": None, "peor_ms": None},
             },
             "seedlink": None,
             "calibration": {
@@ -2431,3 +2457,54 @@ def test_la_COMPARATIVA_declara_la_procedencia_de_su_cifra(tmp_path: Path) -> No
         "la comparativa pone la magnitud del catálogo junto a la sacudida MEDIDA "
         f"por el sensor del inmueble y no dice de dónde sale: {hechos[:300]!r}"
     )
+
+
+# ── [T-5.22] El acta del reflejo, en la pantalla ────────────────────────────
+#
+# La ficha dice que en el gabinete vivo «el campo de latencia está en nulo: la
+# medición no está viva, es histórica». `reflex_s` es volátil y vuelve a S/D en
+# cada reinicio; el acta no. Si el acta viaja en el JSON y NO llega a la pantalla,
+# el runbook de la sesión presencial —que dice «sin ssh: míralo en el panel»—
+# estaría mintiendo.
+
+
+def test_el_ACTA_del_reflejo_llega_a_la_pantalla(tmp_path: Path) -> None:
+    """Con mediciones: cuántas, la mejor y **la peor**, y los relés de la última."""
+    texto = _txt(_render(tmp_path), "lat-rows")
+
+    assert "Acta del reflejo" in texto
+    assert "2 medición(es)" in texto
+    assert "mejor 4.16 ms" in texto
+    # Publicar solo la mejor es cómo una cifra de venta deja de describir al
+    # producto: el peor caso es el que un perito mira.
+    assert "peor 6.65 ms" in texto
+    # Y el estado de los relés, que es lo que convierte el número en evidencia.
+    assert "relés: siren · strobe" in texto
+    assert "gw-dev-0001" in texto
+
+
+def test_SIN_MEDICIONES_el_panel_lo_dice_y_no_pinta_un_cero(tmp_path: Path) -> None:
+    """Un `0.00 ms` sería la mejor latencia del catálogo y una mentira."""
+    st = _base()
+    st["latencies"]["acta"] = {"total": 0, "ultima": None, "mejor_ms": None, "peor_ms": None}
+    texto = _txt(_render(tmp_path, status=st), "lat-rows")
+
+    assert "SIN MEDICIONES TODAVÍA" in texto
+    assert "0.00 ms" not in texto
+
+
+def test_SIN_ACTA_EN_EL_FIRMWARE_es_un_mensaje_DISTINTO(tmp_path: Path) -> None:
+    """Los dos «no hay» mandan a arreglar cosas distintas.
+
+    `acta: null` = firmware sin el módulo, se arregla **desplegando**.
+    `total: 0` = desplegado y sin flancos, se arregla **pulsando el WR-1**.
+    Colapsarlos mandaría a una sesión presencial —que cuesta un viaje— a un
+    gabinete que no puede escribir ni una línea. Medido el 2026-09-04: el Pi de
+    desarrollo estaba justo en el primer caso.
+    """
+    st = _base()
+    st["latencies"]["acta"] = None
+    texto = _txt(_render(tmp_path, status=st), "lat-rows")
+
+    assert "SIN ACTA EN ESTE FIRMWARE" in texto
+    assert "SIN MEDICIONES TODAVÍA" not in texto

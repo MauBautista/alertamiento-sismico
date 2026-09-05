@@ -12750,6 +12750,10 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   - [ ] `GATE-HW`: la siguiente sesión presencial captura la evidencia con el procedimiento nuevo.
         **Es lo único que queda, y no lo cierra el software** — ver
         [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md) §2 y el runbook §B.1.bis.
+        **[2026-09-04] Lo que el software SÍ pudo hacer, hecho:** el procedimiento estaba roto en
+        sus tres pasos y ahora es un script probado, el panel publica el acta, y la precondición
+        que hoy NO se cumple —el acta no está desplegada en `takab-pi5`— está medida y fichada en
+        [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) §3.3.e.
 - **Cómo se cerró la mitad de software (2026-09-03).**
   **El acta** (`edge/takab_edge/audit/reflejo.py`): cada flanco del WR-1 deja una línea fechada
   con la latencia que midió el dueño de los pines **y el estado de los cinco canales en ese
@@ -12779,6 +12783,35 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   tolerancia **al instrumento** —un runner compartido mide código + planificación, y el ruido
   solo suma—, publica la serie completa también en verde y avisa cuando hizo falta reintentar.
   Además mide **pines simulados**: no acredita nada del hardware y ahora el documento lo dice.
+
+- **[2026-09-04] Segunda pasada de software: el procedimiento de la sesión ESTABA ROTO.**
+  El criterio que queda es una sesión presencial, y el software no la puede hacer. Lo que sí podía
+  hacer —y no estaba hecho— es que esa sesión **no se pierda**. Comprobado contra el Pi real, no
+  razonado:
+  · **Los tres pasos del runbook fallaban.** La ruta se derivaba con
+    `systemctl show -p Environment takab-edge`, que muestra solo las directivas `Environment=` y
+    **no** el contenido del `EnvironmentFile=` donde el gabinete tiene la variable: el comando
+    devolvía vacío y el `dirname` moría con «missing operand». El paso siguiente ignoraba esa ruta
+    y leía `~/reflejo.jsonl`, que no existe. Y el `scp` final llevaba un literal `...` sin
+    rellenar. **La sesión habría llegado al gabinete, pulsado el WR-1 y vuelto sin evidencia.**
+  · **Ahora es un script** (`edge/scripts/acta_reflejo.sh`) con su test contra un gabinete de
+    mentira (`edge/tests/test_acta_reflejo_script.sh`, 9 comprobaciones), en `make test` **y** en
+    CI. Un procedimiento que se ejecuta una vez cada varios meses y que nadie prueba entre medias
+    no puede descubrirse roto delante del gabinete.
+  · **`--check` es la mitad que ahorra el viaje**, y lo primero que encontró: **el acta NO está
+    desplegada.** `takab-pi5` corre la release `20260830T222850Z-71ac7df` (2026-08-30) y el módulo
+    entró el 2026-09-03. Sin él el gabinete no escribe ni una línea, y el síntoma sería
+    indistinguible de «no hubo flancos». Fichado en `PENDIENTES-MAURICIO.md` §3.3.e.
+  · **El panel publica el acta** (`latencies.acta`), que cierra la queja original de la ficha —«en
+    el gabinete vivo el campo de latencia está en nulo: la medición no está viva, es histórica»—:
+    `reflex_s` sigue siendo volátil y al lado va ahora el resumen durable con **mejor y peor**.
+    `resumen()` existía desde `T-5.22` con un docstring que decía «lo que el panel publica» y
+    **nadie la llamaba**. Y `acta: null` (firmware sin el módulo) se distingue de `total: 0`
+    (desplegado y sin flancos): el primero se arregla desplegando y el segundo pulsando el WR-1.
+  · **Cinco mutaciones comprobadas**, y **dos sobrevivieron al primer intento** — publicar solo el
+    mejor caso y contar los pulsos de prueba como evidencia. La causa: el `ssh` de mentira
+    **reimplementaba** el resumidor en vez de ejecutar la orden que el script manda. Un arnés que
+    reimplementa lo que prueba no prueba nada; ahora ejecuta el código real y las cinco caen.
 
 ### [x] T-5.23 · No existe **espectrograma** en el dictamen técnico — `SOFTWARE` · **CERRADA 2026-09-03**
 > Confirmado abriendo el código: lo que hay es **un solo espectro de amplitud** de la ventana
