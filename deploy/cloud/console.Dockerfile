@@ -48,6 +48,15 @@ COPY shared/design-tokens shared/design-tokens
 # verlo — y solo la construye `make cloud-images`. El gate que lo impide repetir
 # es `web/src/consoleImageCensus.test.ts`.
 COPY shared/fixtures shared/fixtures
+# [T-5.10] El vocabulario de PROCEDENCIA de la cifra sísmica externa, por la misma
+# razón exacta: `web/src/features/triage/procedencia.ts` lo importa, el `build`
+# corre `tsc --noEmit` y sin este COPY la imagen muere con TS2307 tras varios
+# minutos. Es JSON —y no un módulo— porque el panel del gabinete lo comparte y se
+# sirve como un archivo estático desde el Pi, sin build que pueda importar nada.
+#
+# Lo cazó `consoleImageCensus` antes de gastar el build, que es justo para lo que
+# se escribió.
+COPY shared/glossary shared/glossary
 COPY web web
 
 ARG VITE_COGNITO_AUTHORITY=""

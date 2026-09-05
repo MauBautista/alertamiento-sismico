@@ -11,6 +11,7 @@ function site(id: string, over: Partial<MapSiteState> = {}): MapSiteState {
     site_id: id,
     tenant_id: "t-1",
     name: `Sitio ${id}`,
+    code: "site-fixture",
     criticality: "high",
     lon: -98.3,
     lat: 19.06,

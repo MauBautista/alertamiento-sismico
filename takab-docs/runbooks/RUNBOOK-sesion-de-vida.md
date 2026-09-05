@@ -39,7 +39,7 @@ Medido contra el gabinete `gw-dev-0001` el 2026-08-16:
 | Dueño de los pines | `takab-gpio`, proceso dedicado (traspaso hecho, `D-04`) |
 | Relés declarados | `siren`, `strobe` — `reason: ok`, `missing: []` |
 | Presupuesto de reflejo | `reflex_budget_s = 0.100` — el umbral de `G-04`, ya cableado en el código |
-| Reflejo contacto → relé | **6.65 ms** y **4.16 ms**, medidos con el WR-1 real |
+| Reflejo contacto → relé | **6.65 ms** y **4.16 ms**, medidos con el WR-1 real — dos observaciones únicas; fuente: [`MEDICIONES-TAKAB.md`](../MEDICIONES-TAKAB.md) |
 
 **O sea: la mitad eléctrica de `G-04` ya está medida y pasa con dos órdenes de magnitud de margen.**
 Lo que falta de ese gate no es velocidad — es **que haya una sirena al final del cable** y que la
@@ -245,6 +245,51 @@ curl -s http://127.0.0.1:8080/api/status | python3 -c "import sys,json;print(jso
 
 > **Sale `null` si no ha habido disparo desde el último arranque del proceso.** No es un fallo: es
 > que no hay nada que medir todavía.
+
+#### B.1.bis · **Llévate el acta, no el número** *(nuevo en `T-5.22`)*
+
+`reflex_s` es un campo **vivo**: sale `null` en cuanto el proceso reinicia, así que copiarlo a
+mano a un documento es exactamente cómo esa cifra acabó replicada en nueve sitios sin ni una
+evidencia detrás.
+
+Desde `T-5.22` **cada flanco del WR-1 deja un acta fechada** con la latencia y **el estado de los
+cinco canales en ese instante**. Sobrevive al reinicio y distingue el pulso de prueba de CIRES
+del flanco real.
+
+> ⚠️ **ANTES DE IR — el paso que ahorra el viaje.** Desde el escritorio:
+>
+> ```bash
+> edge/scripts/acta_reflejo.sh --check
+> ```
+>
+> Si el gabinete **no tiene desplegado** el módulo del acta, la sesión no produce evidencia por
+> bien que salga la medición. **Medido el 2026-09-04: `takab-pi5` NO lo tiene** — corre la release
+> `20260830T222850Z-71ac7df`, anterior a `T-5.22`. Hay que desplegar antes de ir.
+
+**Al terminar la sesión**, un solo comando: localiza el acta (ruta derivada, no tecleada), publica
+**mejor y peor** caso separando los pulsos de prueba, y se trae el artefacto fechado.
+
+```bash
+edge/scripts/acta_reflejo.sh          # HOST=otro-pi si no es takab-pi5
+```
+
+> **Aquí vivían tres comandos escritos a mano, y los tres estaban rotos** (comprobado contra el Pi
+> real): la ruta se derivaba con `systemctl show -p Environment`, que **no muestra el
+> `EnvironmentFile`** donde el gabinete tiene la variable; el paso siguiente leía otra ruta; y el
+> `scp` final llevaba un literal `...` sin rellenar. La sesión habría vuelto sin evidencia. Ahora
+> es un script y lo cubre `edge/tests/test_acta_reflejo_script.sh`, que corre en `make test` **y**
+> en CI — un procedimiento que se ejecuta una vez cada varios meses no puede descubrirse roto
+> delante del gabinete.
+
+**Sin ssh:** el panel LAN del gabinete publica el resumen del acta junto a `reflex_s`
+(`latencies.acta`, con `mejor_ms`, `peor_ms` y su conteo). `acta: null` significa **firmware sin el
+módulo**; `total: 0` significa **desplegado y aún sin flancos** — dos hechos distintos y hay que
+poder distinguirlos, porque el primero se arregla desplegando y el segundo pulsando el WR-1.
+
+**Y actualiza [`MEDICIONES-TAKAB.md`](../MEDICIONES-TAKAB.md) §2** con las mediciones nuevas y la
+ruta del acta. Las dos cifras que hay hoy se tomaron **antes** de que el acta existiera, así que
+no tienen artefacto: **esta sesión es la que lo produce**, y hasta que lo haga la columna
+«Artefacto» de esa tabla sigue diciendo *ninguno* — que es la verdad.
 
 ### B.2 · **No** medible hoy — y son las dos mitades que faltan
 

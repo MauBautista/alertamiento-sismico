@@ -73,14 +73,53 @@ describe("leadTimeView · el tiempo de aviso ganado [T-2.40]", () => {
   });
 });
 
-describe("catalogView · contraste con el catálogo de referencia", () => {
-  it("sin coincidencia lo dice y acota la ventana", () => {
-    const view = catalogView(forensics());
-    expect(view.value).toBe("SIN COINCIDENCIA");
-    expect(view.note).toMatch(/±120 s/);
+describe("catalogView · correlación con el catálogo de referencia (T-5.11)", () => {
+  // El criterio de identidad, tal como lo devuelve la API. Se declara una vez
+  // porque los tres casos de abajo se distinguen SOLO por él.
+  const criterio = { v_s_km_s: 3.6, margen_s: 30, radio_km: 1200, pga_minima_g: 0.001 };
+
+  it("sin ningún candidato lo dice, y ya no cita una ventana fija", () => {
+    const view = catalogView(
+      forensics({
+        catalog_correlation: {
+          estado: "sin_correlacion",
+          criterio,
+          descartes: [],
+        } as ForensicsOut["catalog_correlation"],
+      }),
+    );
+    expect(view.value).toBe("SIN CORRELACIÓN");
+    expect(view.note).toMatch(/criterio de identidad/);
+    // El ±120 s era TODO el criterio, y citarlo lo presentaba como suficiente.
+    expect(view.note).not.toMatch(/120 s/);
   });
 
-  it("con coincidencia da distancia, rumbo y Δt", () => {
+  it("HAY UN EVENTO EN EL CATÁLOGO Y NO ES EL NUESTRO — y se puede decir", () => {
+    // Es lo que el sistema no sabía afirmar. Sin esto, un descarte se pinta
+    // igual que un catálogo vacío, y una pantalla vacía se lee «no pasó nada».
+    const view = catalogView(
+      forensics({
+        catalog_correlation: {
+          estado: "sin_correlacion",
+          criterio,
+          descartes: [
+            {
+              catalog_key: "SSN-CHILE",
+              motivo: "fuera_de_radio",
+              detalle: "el epicentro está fuera del radio máximo al sitio (6389 km)",
+              km_al_sitio: 6389,
+            },
+          ],
+        } as ForensicsOut["catalog_correlation"],
+      }),
+    );
+    expect(view.value).toBe("SIN CORRELACIÓN");
+    expect(view.note).toMatch(/ninguno es éste/);
+    expect(view.note).toMatch(/SSN-CHILE/);
+    expect(view.note).toMatch(/fuera del radio/);
+  });
+
+  it("con epicentro propio da distancia, rumbo y Δt: eso sí es un contraste", () => {
     const view = catalogView(
       forensics({
         catalog: {
@@ -91,13 +130,45 @@ describe("catalogView · contraste con el catálogo de referencia", () => {
           dt_s: 12,
         } as ForensicsOut["catalog"],
         catalog_delta: { km: 187.4, bearing: "SSO", dt_s: 12, magnitude: 7.1 },
+        catalog_correlation: {
+          estado: "confirmado",
+          verificacion: "contrastado",
+          criterio,
+          descartes: [],
+        } as ForensicsOut["catalog_correlation"],
       }),
     );
     expect(view.value).toBe("187 km SSO");
     expect(view.note).toMatch(/SSN SSN-2026-001 · M 7.1 · Δt 12 s/);
   });
 
-  it("sin epicentro propio no inventa una distancia", () => {
+  it("[T-5.10] sin procedencia NO pinta la magnitud del catálogo", () => {
+    // Casar no concede procedencia: una fila sin hora de consulta ni estado de
+    // revisión es un dato que existe y no es citable.
+    const view = catalogView(
+      forensics({
+        catalog: {
+          catalog_key: "SSN-2026-001",
+          origin_time: "2026-08-03T10:00:00Z",
+          magnitude: 7.1,
+          source: "SSN",
+          dt_s: 12,
+        } as ForensicsOut["catalog"],
+        catalog_delta: { km: 187.4, bearing: "SSO", dt_s: 12, magnitude: 7.1 },
+        catalog_correlation: {
+          estado: "sin_dato_externo",
+          verificacion: "contrastado",
+          criterio,
+          descartes: [],
+        } as ForensicsOut["catalog_correlation"],
+      }),
+    );
+    expect(view.note).not.toMatch(/M 7.1/);
+  });
+
+  it("sin epicentro propio el acierto NO se presenta como contraste", () => {
+    // Es la ruta del receptor, que es la normal. La identidad se estableció por
+    // ventana, radio y coherencia — una afirmación distinta y más modesta.
     const view = catalogView(
       forensics({
         catalog: {
@@ -105,11 +176,22 @@ describe("catalogView · contraste con el catálogo de referencia", () => {
           origin_time: "2026-08-03T10:00:00Z",
           source: "SSN",
           dt_s: 5,
+          km_al_sitio: 295.4,
         } as ForensicsOut["catalog"],
         catalog_delta: { km: null, bearing: null, dt_s: 5, magnitude: null },
+        catalog_correlation: {
+          estado: "sin_dato_externo",
+          verificacion: "no_verificable",
+          criterio,
+          descartes: [],
+        } as ForensicsOut["catalog_correlation"],
       }),
     );
-    expect(view.value).toBe("SIN EPICENTRO PROPIO");
+    expect(view.value).toBe("NO VERIFICABLE");
+    expect(view.note).toMatch(/295 km del sitio/);
+    expect(view.note).toMatch(/sin epicentro propio que contrastar/);
+    // Y no inventa una distancia epicentro↔epicentro que no existe.
+    expect(view.value).not.toMatch(/km [NSEO]/);
   });
 });
 

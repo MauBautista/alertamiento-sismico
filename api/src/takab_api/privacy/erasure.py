@@ -439,6 +439,11 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
     # Es el acto de operación más consecuente que registra esta base —una release
     # mala deja un edificio sin sirena— y por eso no se poda jamás.
     ("fleet_rollouts", "created_by"): PiiColumn(_RETAIN, _R_OPERADOR),
+    # [T-5.13] Quién definió la plantilla con la que se lanza un simulacro. Mismo
+    # trato que el resto de los `*_by` de operación: define a qué edificios y por
+    # cuánto tiempo suena la voceo de simulacro en un macrosimulacro, y el
+    # registro de ese simulacro es evidencia que se le entrega a Protección Civil.
+    ("drill_templates", "created_by"): PiiColumn(_RETAIN, _R_OPERADOR),
     ("fw_releases", "notes"): PiiColumn(
         _RETAIN, "Notas de una versión de firmware. No es dato de un ocupante."
     ),

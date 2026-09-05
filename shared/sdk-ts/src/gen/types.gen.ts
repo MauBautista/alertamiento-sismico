@@ -47,6 +47,32 @@ export type AuthFrame = {
 };
 
 /**
+ * El catálogo entero, y la declaración de que solo SUGIERE.
+ *
+ * `resuelve_umbrales` viaja en el cuerpo y no en un comentario porque la
+ * consola tiene que poder escribirlo en pantalla: un catálogo que llegara
+ * pelado invitaría a que la siguiente pantalla lo aplicara sola.
+ */
+export type BuildingTypeCatalog = {
+    items: Array<BuildingTypeOut>;
+    por_que_no_resuelve: Array<string>;
+    resuelve_umbrales: boolean;
+    sin_referencia_de_pgv: string;
+};
+
+/**
+ * Un tipo del catálogo, con su banda de REFERENCIA o la razón de no tenerla.
+ */
+export type BuildingTypeOut = {
+    banda: {
+        [key: string]: number;
+    } | null;
+    label: string;
+    sin_banda_por_que?: string | null;
+    value: string;
+};
+
+/**
  * Una de las cuatro capturas del reporte, o su ausencia con razón.
  */
 export type CapturaOut = {
@@ -60,6 +86,29 @@ export type CapturaOut = {
 };
 
 /**
+ * [T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado.
+ */
+export type CatalogCorrelation = {
+    criterio: CatalogCriterion;
+    descartes?: Array<CatalogDiscard>;
+    estado: string;
+    verificacion?: string | null;
+};
+
+/**
+ * [T-5.11] Los tres umbrales que se aplicaron, para poder leer el veredicto.
+ *
+ * Viajan con la respuesta y se imprimen: un criterio que no se puede citar no
+ * es defendible ante quien firma el dictamen.
+ */
+export type CatalogCriterion = {
+    margen_s: number;
+    pga_minima_g: number;
+    radio_km: number;
+    v_s_km_s: number;
+};
+
+/**
  * Diferencia entre lo que estimó la red y lo que dice el catálogo.
  */
 export type CatalogDelta = {
@@ -67,6 +116,23 @@ export type CatalogDelta = {
     dt_s: number;
     km?: number | null;
     magnitude?: number | null;
+};
+
+/**
+ * [T-5.11] Un sismo que estaba en la ventana y NO es el nuestro.
+ *
+ * Existe para que el sistema pueda decir «hay un evento en el catálogo pero no
+ * es el nuestro», que es justo lo que no sabía decir: sin esto un descarte se
+ * convierte en una pantalla vacía que el operador lee como «no pasó nada».
+ */
+export type CatalogDiscard = {
+    catalog_key: string;
+    detalle: string;
+    km_al_sitio?: number | null;
+    motivo: string;
+    pga_esperada_g?: number | null;
+    retraso_admisible_s?: number | null;
+    retraso_s?: number | null;
 };
 
 /**
@@ -94,20 +160,28 @@ export type CatalogEarthquakeOut = {
 };
 
 /**
- * Sismo del catálogo de referencia más cercano en tiempo.
+ * Sismo del catálogo de referencia que el criterio de `T-5.11` declara NUESTRO.
  *
  * Es el único contraste externo disponible. Sirve para declarar "la red estimó
  * esto, el catálogo dice aquello", no para corregir el dato propio.
+ *
+ * **No es ya "el más cercano en el tiempo".** Hasta `T-5.11` lo era, y por eso
+ * un sismo de otro continente ocurrido dentro de ±120 s se imprimía como el
+ * nuestro en un dictamen firmado. Ahora es el que pasó los tres criterios de
+ * identidad, y los campos de abajo son las medidas que lo sostienen.
  */
 export type CatalogMatch = {
     catalog_key: string;
     depth_km?: number | null;
     dt_s: number;
+    km_al_sitio?: number | null;
     lat?: number | null;
     lon?: number | null;
     magnitude?: number | null;
     origin_time: string;
+    pga_esperada_g?: number | null;
     place?: string | null;
+    rumbo_al_sitio?: string | null;
     source: string;
 };
 
@@ -203,6 +277,45 @@ export type CheckinOut = {
     user_id: string;
     verified_by: string | null;
     via: string;
+};
+
+export type ClassificationChainOut = {
+    incident_id: string;
+    items: Array<ClassificationOut>;
+};
+
+/**
+ * Clasificar. **Sin valor por defecto: se elige.**
+ */
+export type ClassificationIn = {
+    classification: string;
+    note?: string;
+    supersedes_id?: string | null;
+};
+
+export type ClassificationOut = {
+    classification: string;
+    classification_id: string;
+    classified_at: string;
+    classified_by: string;
+    current: boolean;
+    incident_id: string;
+    note: string;
+    supersedes_id: string | null;
+};
+
+/**
+ * Desglose de una ventana, con los sin clasificar SIEMPRE a la vista.
+ */
+export type ClassificationStatsOut = {
+    by_classification: {
+        [key: string]: number;
+    };
+    false_positive_rate: number | null;
+    since: string;
+    total: number;
+    unclassified: number;
+    until: string;
 };
 
 /**
@@ -443,6 +556,27 @@ export type DamageReportOut = {
 };
 
 /**
+ * Encender. La ventana se pide en segundos y se acota al techo.
+ */
+export type DemoModeIn = {
+    duration_s?: number;
+    note?: string;
+};
+
+/**
+ * Estado del modo para un cliente. ``active=False`` es la respuesta normal.
+ */
+export type DemoModeOut = {
+    active: boolean;
+    enabled_at?: string | null;
+    enabled_by?: string | null;
+    expires_at?: string | null;
+    note?: string;
+    remaining_s?: number;
+    tenant_id: string;
+};
+
+/**
  * Llave pública respaldada por hardware (SPKI PEM, P-256). La verificación
  * criptográfica de intenciones llega en T-2.09; aquí solo se registra.
  */
@@ -533,6 +667,7 @@ export type DiscrepanciaOut = {
 export type DrillCreateIn = {
     duration_s?: number;
     from_scheduled?: string | null;
+    from_template?: string | null;
     note?: string | null;
     scheduled_at?: string | null;
     site_ids?: Array<string> | null;
@@ -547,6 +682,7 @@ export type DrillOut = {
     active: boolean;
     drill_id: string;
     duration_s: number;
+    from_template_id?: string | null;
     initiated_by: string;
     note: string | null;
     scheduled_at: string | null;
@@ -558,10 +694,34 @@ export type DrillOut = {
 };
 
 /**
+ * [T-5.14] El documento generado, con lo que hace falta para citarlo.
+ *
+ * Los tres conteos van SEPARADOS y no colapsados: «no tenía gabinete» es un
+ * problema de inventario y «no acusó» uno de operación, y quien lee el número
+ * reacciona distinto a cada uno.
+ */
+export type DrillReportOut = {
+    acked: number;
+    evidence_id: string;
+    expires_in: number;
+    max_latency_s: number | null;
+    median_latency_s: number | null;
+    no_gateway: number;
+    not_acked: number;
+    sha256: string;
+    url: string;
+};
+
+/**
  * Participación de UN sitio: el acuse se DERIVA del comando firmado.
  */
 export type DrillSiteOut = {
     ack: {
+        [key: string]: unknown;
+    } | null;
+    ack_latency_s?: number | null;
+    acked_at?: string | null;
+    audio?: {
         [key: string]: unknown;
     } | null;
     command_id: string | null;
@@ -569,6 +729,38 @@ export type DrillSiteOut = {
     commandable?: boolean;
     site_id: string;
     site_name: string | null;
+};
+
+/**
+ * Alta o edición de una plantilla.
+ *
+ * ``site_ids`` vacío significa **todos los sitios comandables del tenant**, la
+ * misma convención que ``DrillCreateIn.site_ids = None`` y que el rótulo del
+ * modal. Dos convenciones distintas para lo mismo acabarían divergiendo.
+ */
+export type DrillTemplateIn = {
+    duration_s?: number;
+    name: string;
+    note?: string | null;
+    site_ids?: Array<string>;
+};
+
+export type DrillTemplateList = {
+    items: Array<DrillTemplateOut>;
+};
+
+export type DrillTemplateOut = {
+    created_at: string;
+    created_by: string;
+    duration_s: number;
+    name: string;
+    note: string | null;
+    sites: Array<TemplateSiteOut>;
+    sitios_no_usables?: number;
+    template_id: string;
+    tenant_id: string;
+    todos_los_sitios?: boolean;
+    updated_at: string;
 };
 
 /**
@@ -800,6 +992,9 @@ export type EventDetailOut = {
     meta: {
         [key: string]: unknown;
     };
+    procedencia?: string;
+    procedencia_consultada_en?: string | null;
+    procedencia_fuente?: string | null;
     quorum_votes: Array<QuorumVoteOut>;
     source: string;
 };
@@ -921,6 +1116,7 @@ export type FeaturesFrame = {
 export type ForensicsOut = {
     calibrated: boolean;
     catalog: CatalogMatch | null;
+    catalog_correlation: CatalogCorrelation | null;
     catalog_delta: CatalogDelta | null;
     channels: Array<ChannelPeak>;
     compliance: ComplianceDocOut;
@@ -1034,6 +1230,7 @@ export type GatewayOut = {
     last_heartbeat_ts?: string | null;
     mqtt_rtt_ms?: number | null;
     ntp_offset_ms?: number | null;
+    packet_loss_pct?: number | null;
     power_status?: string | null;
     relays_state?: string | null;
     release_age_s?: number | null;
@@ -1344,11 +1541,14 @@ export type MapIncident = {
  * Estado de un sitio en el mapa SOC: última métrica 1m + incidente abierto.
  */
 export type MapSiteState = {
+    battery_pct?: number | null;
     calibrated: boolean;
+    code: string;
     criticality: string;
     felt: string;
     felt_pga_g: number | null;
     felt_pgv_cms: number | null;
+    fw_version?: string | null;
     last_bucket: string | null;
     last_heartbeat_ts?: string | null;
     lat: number;
@@ -1360,7 +1560,10 @@ export type MapSiteState = {
     mqtt_rtt_ms?: number | null;
     name: string;
     open_incident: MapIncident | null;
+    power_status?: string | null;
     seedlink_lag_s?: number | null;
+    sensor_models?: string | null;
+    serial?: string | null;
     site_id: string;
     tenant_id: string;
 };
@@ -1384,7 +1587,10 @@ export type MeActions = {
     cctv_read: boolean;
     cctv_video: boolean;
     checkin_submit: boolean;
+    classify_incident: boolean;
     damage_report_submit: boolean;
+    demo_mode_off: boolean;
+    demo_mode_on: boolean;
     deploy_firmware: boolean;
     dictamen_read: boolean;
     drill_start: boolean;
@@ -1615,6 +1821,7 @@ export type MobileStateOut = {
     compliance_labels: {
         [key: string]: string;
     };
+    demo_mode?: boolean;
     drill: MobileDrillOut;
     incident: MobileIncidentOut | null;
     latest_tier: string | null;
@@ -1681,6 +1888,42 @@ export type NoticePublishedOut = {
     notice_id: string;
     published_at: string;
     version: string;
+};
+
+/**
+ * Un envío de la cadena, con su desenlace y su destinatario enmascarado.
+ */
+export type NotificationJobOut = {
+    action_id: string | null;
+    attempts: number;
+    channel: string;
+    created_at: string;
+    deadline_at: string | null;
+    deadline_met: boolean | null;
+    delivered: boolean;
+    delivered_at: string | null;
+    delivery_latency_s: number | null;
+    dispatch_latency_s: number | null;
+    due_at: string;
+    error: string | null;
+    job_id: string;
+    last_status: string | null;
+    last_status_at: string | null;
+    mode: string;
+    position: number;
+    recipient: RecipientOut;
+    sent_at: string | null;
+    status: string;
+};
+
+/**
+ * Los envíos de un incidente, en el orden en que se planificaron.
+ */
+export type NotifyChainOut = {
+    delivered_count: number;
+    incident_id: string;
+    items: Array<NotificationJobOut>;
+    opened_at: string;
 };
 
 /**
@@ -1911,6 +2154,16 @@ export type ReadyFrame = {
 };
 
 /**
+ * Destinatario reducido al mínimo dato (ver ``notify/destino.py``).
+ */
+export type RecipientOut = {
+    count: number | null;
+    hint: string;
+    kind: string;
+    unrecognised: boolean;
+};
+
+/**
  * Publicar un release en el registro (``POST /fleet/releases``).
  *
  * ``version`` es el valor que ``deploy/edge/deploy.sh`` escribirá en el
@@ -2077,6 +2330,7 @@ export type RuleSetOut = {
     created_at: string;
     created_by: string | null;
     is_active: boolean;
+    rolled_back_to?: string | null;
     rule_set_id: string;
     scope_id: string;
     scope_type: string;
@@ -2112,6 +2366,18 @@ export type RuleSetPutIn = {
 };
 
 /**
+ * Cuerpo de POST /rule-sets/{id}/rollback (T-5.16).
+ *
+ * ``base_version`` es la versión ACTIVA que el operador tenía delante cuando
+ * pulsó. Es el mismo control de concurrencia optimista que el PUT y por la
+ * misma razón: dos operadores mirando la misma pantalla, y el segundo no puede
+ * revertir a ciegas lo que el primero acaba de guardar.
+ */
+export type RuleSetRollbackIn = {
+    base_version: number;
+};
+
+/**
  * Fila de ``seismic_events`` (dato de red; epicentro aplanado a lon/lat).
  */
 export type SeismicEventOut = {
@@ -2124,6 +2390,9 @@ export type SeismicEventOut = {
     meta: {
         [key: string]: unknown;
     };
+    procedencia?: string;
+    procedencia_consultada_en?: string | null;
+    procedencia_fuente?: string | null;
     source: string;
 };
 
@@ -2366,6 +2635,17 @@ export type SubscribeFrame = {
 };
 
 /**
+ * Un sitio de la plantilla, con si HOY se puede usar y por qué no.
+ */
+export type TemplateSiteOut = {
+    estado: string;
+    motivo?: string | null;
+    site_code?: string | null;
+    site_id: string;
+    site_name?: string | null;
+};
+
+/**
  * Alta de un cliente (T-1.72). Solo ``takab_superadmin`` (acción ``manage_tenants``).
  *
  * ``visibility`` y ``status`` NO se aceptan aquí: nacen con los defaults del schema
@@ -2588,6 +2868,22 @@ export type ListAuditAuditGetResponses = {
 
 export type ListAuditAuditGetResponse = ListAuditAuditGetResponses[keyof ListAuditAuditGetResponses];
 
+export type ListBuildingTypesBuildingTypesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/building-types';
+};
+
+export type ListBuildingTypesBuildingTypesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: BuildingTypeCatalog;
+};
+
+export type ListBuildingTypesBuildingTypesGetResponse = ListBuildingTypesBuildingTypesGetResponses[keyof ListBuildingTypesBuildingTypesGetResponses];
+
 export type ListReferenceEarthquakesCatalogEarthquakesGetData = {
     body?: never;
     path?: never;
@@ -2630,6 +2926,213 @@ export type DownloadClipCctvClipsClipIdDownloadPostResponses = {
 };
 
 export type DownloadClipCctvClipsClipIdDownloadPostResponse = DownloadClipCctvClipsClipIdDownloadPostResponses[keyof DownloadClipCctvClipsClipIdDownloadPostResponses];
+
+export type ClassificationStatsClassificationStatsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        since?: string | null;
+        until?: string | null;
+    };
+    url: '/classification-stats';
+};
+
+export type ClassificationStatsClassificationStatsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassificationStatsClassificationStatsGetError = ClassificationStatsClassificationStatsGetErrors[keyof ClassificationStatsClassificationStatsGetErrors];
+
+export type ClassificationStatsClassificationStatsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassificationStatsOut;
+};
+
+export type ClassificationStatsClassificationStatsGetResponse = ClassificationStatsClassificationStatsGetResponses[keyof ClassificationStatsClassificationStatsGetResponses];
+
+export type ApagarDemoModeDemoModeDeleteData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/demo-mode';
+};
+
+export type ApagarDemoModeDemoModeDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: DemoModeOut;
+};
+
+export type ApagarDemoModeDemoModeDeleteResponse = ApagarDemoModeDemoModeDeleteResponses[keyof ApagarDemoModeDemoModeDeleteResponses];
+
+export type GetDemoModeDemoModeGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/demo-mode';
+};
+
+export type GetDemoModeDemoModeGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DemoModeOut;
+};
+
+export type GetDemoModeDemoModeGetResponse = GetDemoModeDemoModeGetResponses[keyof GetDemoModeDemoModeGetResponses];
+
+export type EncenderDemoModeDemoModePostData = {
+    body: DemoModeIn;
+    path?: never;
+    query?: never;
+    url: '/demo-mode';
+};
+
+export type EncenderDemoModeDemoModePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type EncenderDemoModeDemoModePostError = EncenderDemoModeDemoModePostErrors[keyof EncenderDemoModeDemoModePostErrors];
+
+export type EncenderDemoModeDemoModePostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DemoModeOut;
+};
+
+export type EncenderDemoModeDemoModePostResponse = EncenderDemoModeDemoModePostResponses[keyof EncenderDemoModeDemoModePostResponses];
+
+export type ListTemplatesDrillTemplatesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/drill-templates';
+};
+
+export type ListTemplatesDrillTemplatesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillTemplateList;
+};
+
+export type ListTemplatesDrillTemplatesGetResponse = ListTemplatesDrillTemplatesGetResponses[keyof ListTemplatesDrillTemplatesGetResponses];
+
+export type CreateTemplateDrillTemplatesPostData = {
+    body: DrillTemplateIn;
+    path?: never;
+    query?: never;
+    url: '/drill-templates';
+};
+
+export type CreateTemplateDrillTemplatesPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CreateTemplateDrillTemplatesPostError = CreateTemplateDrillTemplatesPostErrors[keyof CreateTemplateDrillTemplatesPostErrors];
+
+export type CreateTemplateDrillTemplatesPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DrillTemplateOut;
+};
+
+export type CreateTemplateDrillTemplatesPostResponse = CreateTemplateDrillTemplatesPostResponses[keyof CreateTemplateDrillTemplatesPostResponses];
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteData = {
+    body?: never;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/drill-templates/{template_id}';
+};
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteError = DeleteTemplateDrillTemplatesTemplateIdDeleteErrors[keyof DeleteTemplateDrillTemplatesTemplateIdDeleteErrors];
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteTemplateDrillTemplatesTemplateIdDeleteResponse = DeleteTemplateDrillTemplatesTemplateIdDeleteResponses[keyof DeleteTemplateDrillTemplatesTemplateIdDeleteResponses];
+
+export type GetTemplateDrillTemplatesTemplateIdGetData = {
+    body?: never;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/drill-templates/{template_id}';
+};
+
+export type GetTemplateDrillTemplatesTemplateIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTemplateDrillTemplatesTemplateIdGetError = GetTemplateDrillTemplatesTemplateIdGetErrors[keyof GetTemplateDrillTemplatesTemplateIdGetErrors];
+
+export type GetTemplateDrillTemplatesTemplateIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillTemplateOut;
+};
+
+export type GetTemplateDrillTemplatesTemplateIdGetResponse = GetTemplateDrillTemplatesTemplateIdGetResponses[keyof GetTemplateDrillTemplatesTemplateIdGetResponses];
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutData = {
+    body: DrillTemplateIn;
+    path: {
+        template_id: string;
+    };
+    query?: never;
+    url: '/drill-templates/{template_id}';
+};
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutError = UpdateTemplateDrillTemplatesTemplateIdPutErrors[keyof UpdateTemplateDrillTemplatesTemplateIdPutErrors];
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: DrillTemplateOut;
+};
+
+export type UpdateTemplateDrillTemplatesTemplateIdPutResponse = UpdateTemplateDrillTemplatesTemplateIdPutResponses[keyof UpdateTemplateDrillTemplatesTemplateIdPutResponses];
 
 export type ListDrillsDrillsGetData = {
     body?: never;
@@ -2727,6 +3230,33 @@ export type CancelDrillDrillsDrillIdCancelPostResponses = {
 };
 
 export type CancelDrillDrillsDrillIdCancelPostResponse = CancelDrillDrillsDrillIdCancelPostResponses[keyof CancelDrillDrillsDrillIdCancelPostResponses];
+
+export type DrillReportDrillsDrillIdReportPostData = {
+    body?: never;
+    path: {
+        drill_id: string;
+    };
+    query?: never;
+    url: '/drills/{drill_id}/report';
+};
+
+export type DrillReportDrillsDrillIdReportPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DrillReportDrillsDrillIdReportPostError = DrillReportDrillsDrillIdReportPostErrors[keyof DrillReportDrillsDrillIdReportPostErrors];
+
+export type DrillReportDrillsDrillIdReportPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DrillReportOut;
+};
+
+export type DrillReportDrillsDrillIdReportPostResponse = DrillReportDrillsDrillIdReportPostResponses[keyof DrillReportDrillsDrillIdReportPostResponses];
 
 export type StopDrillDrillsDrillIdStopPostData = {
     body?: never;
@@ -3465,6 +3995,60 @@ export type SubmitCheckinIncidentsIncidentIdCheckinsPostResponses = {
 
 export type SubmitCheckinIncidentsIncidentIdCheckinsPostResponse = SubmitCheckinIncidentsIncidentIdCheckinsPostResponses[keyof SubmitCheckinIncidentsIncidentIdCheckinsPostResponses];
 
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostData = {
+    body: ClassificationIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/classification';
+};
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostError = ClassifyIncidentIncidentsIncidentIdClassificationPostErrors[keyof ClassifyIncidentIncidentsIncidentIdClassificationPostErrors];
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ClassificationOut;
+};
+
+export type ClassifyIncidentIncidentsIncidentIdClassificationPostResponse = ClassifyIncidentIncidentsIncidentIdClassificationPostResponses[keyof ClassifyIncidentIncidentsIncidentIdClassificationPostResponses];
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/classifications';
+};
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetError = GetClassificationsIncidentsIncidentIdClassificationsGetErrors[keyof GetClassificationsIncidentsIncidentIdClassificationsGetErrors];
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ClassificationChainOut;
+};
+
+export type GetClassificationsIncidentsIncidentIdClassificationsGetResponse = GetClassificationsIncidentsIncidentIdClassificationsGetResponses[keyof GetClassificationsIncidentsIncidentIdClassificationsGetResponses];
+
 export type ListDamageReportsIncidentsIncidentIdDamageReportsGetData = {
     body?: never;
     path: {
@@ -3788,6 +4372,33 @@ export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResp
 };
 
 export type NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponse = NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses[keyof NotifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPostResponses];
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/notifications';
+};
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetError = IncidentNotificationsIncidentsIncidentIdNotificationsGetErrors[keyof IncidentNotificationsIncidentsIncidentIdNotificationsGetErrors];
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: NotifyChainOut;
+};
+
+export type IncidentNotificationsIncidentsIncidentIdNotificationsGetResponse = IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses[keyof IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses];
 
 export type GenerateReportIncidentsIncidentIdReportPostData = {
     body?: never;
@@ -4633,6 +5244,33 @@ export type PublishRuleSetRuleSetsRuleSetIdPublishPostResponses = {
 };
 
 export type PublishRuleSetRuleSetsRuleSetIdPublishPostResponse = PublishRuleSetRuleSetsRuleSetIdPublishPostResponses[keyof PublishRuleSetRuleSetsRuleSetIdPublishPostResponses];
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostData = {
+    body: RuleSetRollbackIn;
+    path: {
+        rule_set_id: string;
+    };
+    query?: never;
+    url: '/rule-sets/{rule_set_id}/rollback';
+};
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostError = RollbackRuleSetRuleSetsRuleSetIdRollbackPostErrors[keyof RollbackRuleSetRuleSetsRuleSetIdRollbackPostErrors];
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: RuleSetOut;
+};
+
+export type RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponse = RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponses[keyof RollbackRuleSetRuleSetsRuleSetIdRollbackPostResponses];
 
 export type ListSensorsSensorsGetData = {
     body?: never;

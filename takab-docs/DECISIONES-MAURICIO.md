@@ -12,8 +12,23 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-08-22 · **23 decisiones** · 18 tomadas por Mauricio (6 el
-> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**), 3 delegadas el 2026-08-12.
+> **Última actualización:** 2026-09-02 · **28 decisiones** · 22 tomadas por Mauricio (6 el
+> 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
+> 2026-08-30), 6 delegadas (3 el 2026-08-12, 3 el 2026-09-02).
+>
+> **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
+> 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
+> leyera solo el encabezado, en el documento cuya razón de existir es poder revocar con
+> conocimiento. Lo encontró la auditoría V1-COMERCIAL (`H-39`), y es exactamente lo que este
+> repositorio ya sabe de memoria: **un censo que enumera a mano acaba divergiendo.** `TASKS.md` no
+> diverge porque un test lo cuenta; esta cabecera no tenía ninguno.
+>
+> **Y volvió a diverger TRES DÍAS DESPUÉS**, que es la prueba que faltaba: `D-28` (`T-5.16`,
+> 2026-09-02) entró con su sección y **sin fila en el índice**, y la cabecera se quedó en 27. Se
+> corrigió a mano una vez y bastaron tres días para que pasara otra vez — porque corregir a mano
+> no es un mecanismo. Desde `T-5.09` lo cuenta
+> `api/tests/test_docs_consistency.py`: **cabecera, filas del índice y anclas de sección tienen
+> que cuadrar las tres**, y la fecha declarada no puede ser anterior a la última decisión.
 >
 > **Lo que cambió el 2026-08-17, y merece el titular:** `PENDIENTES-MAURICIO §1` llevaba dos días
 > cerrada, pero **quedaban diez decisiones enterradas dentro de puntos de acción** —el runbook de
@@ -60,6 +75,8 @@
 | [D-24](#d-24) | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | 2026-08-29 | Mauricio |
 | [D-25](#d-25) | Bloque IV **arranca ya en software**; encenderlo en el gabinete espera a `G-04` | 2026-08-29 | Mauricio |
 | [D-26](#d-26) | El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal | 2026-08-30 | Mauricio |
+| [D-27](#d-27) | Modo demostración: **por cliente, con vencimiento**, y **lo real lo apaga** | 2026-09-02 | delegada |
+| [D-28](#d-28) | La **tipología del inmueble sugiere** un umbral; no lo resuelve | 2026-09-02 | delegada |
 
 ---
 
@@ -1251,3 +1268,142 @@ del sitio donde se grabe. Sin esas dos cosas escritas, no se quita.
 > controlas es una **declaración de intenciones, no una especificación**. Copia lo que venga. Lo
 > que se graba se comprueba con `ffprobe`, no se deduce del comando — y por eso el `ffprobe`
 > viaja al gabinete junto al `ffmpeg` aunque el gabinete no lo use.
+
+---
+
+<a id="d-27"></a>
+## D-27 · Modo demostración — **por cliente, con vencimiento, y lo real lo apaga**
+
+**Fecha:** 2026-09-02 · **Decide:** delegada (Mauricio: «decídelo tú, haz lo más recomendable») ·
+**Venía de:** `T-5.02`, la ficha más grande de la primera tanda de
+[`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) · **Gobierna:** el interruptor que impide que una
+exposición despierte teléfonos reales o cierre un relé.
+
+**El problema.** No existía ningún estado en el que el sistema no molestara a nadie. Lo único que
+se llamaba «demo» era el reproductor de escenas del panel del gabinete (`?demo=`, cuyos botones
+mandaban órdenes de verdad hasta `T-5.01`), y el `simulated` de las notificaciones, que **no es un
+modo**: es un estado derivado de la ausencia de credenciales, y por tanto **desaparece justo en el
+entorno donde se haría la demostración**. Con las altas de Twilio, Meta y APNs hechas —que es
+adónde va el proyecto— cada exposición pasa a ser un riesgo de despertar a gente real.
+
+**Las tres decisiones, y la tercera es la que importa.**
+
+### 1 · Alcance: **por cliente (tenant), y con vencimiento obligatorio**
+
+Las otras dos opciones se descartan por lo que hacen, no por gusto:
+
+- **Por despliegue** cegaría a **todos los clientes a la vez** para hacerle una demostración a
+  uno. Es la peor de las tres y no admite matices.
+- **Por sesión** no puede funcionar: quien bloquea no es la consola, son los **trabajadores de
+  fondo** (`notify`, `commands`), que no tienen sesión ninguna. Una perilla de sesión sería una
+  perilla que no llega a donde hay que apagar.
+
+**Y vence solo.** Máximo 8 h, por defecto 2 h. El fallo realista no es la malicia sino el olvido
+—el manual de operación ya avisa de no dejar un monitor de pared en modo demo—, y un interruptor
+de seguridad que depende de que alguien se acuerde de apagarlo no es un interruptor de seguridad.
+Vencer no necesita ningún proceso que lo vigile: el estado se lee siempre con su hora.
+
+### 2 · Quién: lo **enciende** `takab_superadmin`; lo **apaga** él o el `tenant_admin`
+
+**Asimétrico a propósito: difícil de volver inseguro, fácil de volver seguro.** La demostración
+la hace TAKAB, no el cliente, así que encenderlo es acto de plataforma. Pero si TAKAB se lo deja
+puesto, el cliente **no puede quedarse esperando a que alguien conteste el teléfono** para
+recuperar sus avisos: apagarlo lo puede hacer su propio administrador.
+
+### 3 · Un evento REAL lo apaga solo — **antes** de procesarlo
+
+La lectura contraria —«el modo bloquea el evento real y grita»— **se rechaza sin discusión**.
+Sería un interruptor capaz de silenciar un sismo, y un modo de demostración que puede suprimir
+una alerta real no es un dispositivo de seguridad: es el peor defecto que este sistema puede
+tener. No se construye, ni con confirmación, ni con aviso, ni con nada.
+
+**Gana «lo real gana»**, que es la misma doctrina que ya gobierna los simulacros (`T-2.94`, y el
+`on_sasmex` del `DrillController`). Y el ORDEN es la parte que hace la promesa verdadera: el modo
+se apaga **antes** de que el evento entre a la cascada, no después. Así la ventana en la que algo
+real podría quedar suprimido **no existe por construcción**, en vez de ser una ventana estrecha
+que alguien tiene que medir. Queda auditado con el evento como causa, y las dos superficies que
+lo declaran lo gritan: quien esté haciendo la demostración tiene que enterarse de que ya no está
+demostrando.
+
+### El límite duro, que es lo que hace aceptable todo lo anterior
+
+**El modo no existe en el gabinete.** No viaja por la config firmada, no toca el reflejo
+SASMEX→sirena, no puede desarmar un relé ni retrasar un cierre de gas. Es un **supresor de salida
+de la nube** y nada más: notificaciones y comandos firmados. El día que alguien haga una
+demostración y tiemble de verdad, el edificio lo protege un gabinete que **nunca oyó hablar del
+modo demostración** — y eso es exactamente la regla de oro 1, que dice que el camino crítico no
+depende de la nube.
+
+Corolario incómodo pero honesto: **el panel del gabinete no lo declara.** Se evaluó meterlo en el
+documento firmado del config sync —que ya transporta `cloud_admin_state` y que el edge **solo
+pinta, nunca obedece**— y se descartó por dos razones. La primera es de riesgo: cada dato nuevo
+que viaja hacia el gabinete es superficie nueva hacia el camino de vida, y éste no le hace falta
+para nada. La segunda es medida: el seed de producción deja el conjunto de reglas
+**deliberadamente sin clave `edge`**, así que hoy el config sync no empuja nada a `gw-dev-0001` —
+construirlo sería entorno preparado para un mensaje que nadie recibe, que es el defecto de
+`T-3.11.c` repetido a propósito. El panel no promete entrega de notificaciones, así que su
+silencio no es una mentira.
+
+**Cómo se revocaría.** Si algún día la demostración necesita mostrar el gabinete actuando en
+falso —relés que se mueven sin que sea real—, esta decisión no sirve y hay que rehacerla entera:
+eso ya no es un supresor de salida, es un simulador dentro del camino de vida, y necesita su
+propia conversación y su propio gate físico. Lo que **no** cambia en ninguna revocación es el
+punto 3: nada que pueda suprimir una alerta real entra en este sistema.
+
+---
+
+## D-28 · La tipología del inmueble **sugiere** un umbral, no lo resuelve
+
+**Fecha:** 2026-09-02 · **Ficha:** `T-5.16` · **Estado:** vigente
+
+### El problema
+
+`BLUEPRINT §4.5` declara tres bandas por tipo de instalación —hospitales 0.040–0.060 g,
+industriales 0.080–0.120 g, corporativos 0.100–0.150 g— y **ninguna estaba implementada**.
+`sites.building_type` era texto libre, sin catálogo y sin restricción, y **nadie lo consultaba**:
+los alcances de umbral son tenant, sitio y sensor, y el tipo de edificio no entra en ninguno.
+
+La consecuencia es física y está en el código: el default del gabinete está documentado como
+*«Default = hospital»*, así que **toda la flota corre la banda de hospital**. Un industrial dado
+de alta hoy avisa dos veces por debajo de su banda, y no hay pantalla que lo diga.
+
+La pregunta abierta era si la tipología debía **resolver** el umbral (elegir «industrial» pone
+0.080–0.120 g) o solo **sugerirlo**.
+
+### La decisión
+
+**Sugiere.** El catálogo es cerrado, cada tipo lleva su banda de referencia, y la consola la
+**enseña**; aplicarla exige escribir una versión nueva del conjunto de reglas y publicarla, como
+cualquier otro cambio de umbral.
+
+### Por qué, y es la parte que no conviene perder
+
+1. **El tipo se edita desde una pantalla de captura.** Quien abre el formulario de una estación
+   suele ir a corregir una dirección o un dato de alta. Si el tipo resolviera el umbral, ese
+   guardado —administrativo, sin firma, sin publicación— **re-armaría el edificio a otra
+   sensibilidad**. Eso es un cambio de actuación por un acto de captura, y choca de frente con la
+   regla de oro 1 (camino de activación determinista y auditable) y con la 8.
+2. **El propio blueprint las llama «de referencia» y manda calibrar.** Son un punto de partida,
+   no una respuesta: un hospital en suelo blando y otro en roca no comparten disparo. Un sistema
+   que las aplicara solo estaría afirmando una calibración que nadie hizo.
+3. **Lo barato es lo reversible.** Sugerir y que alguien publique cuesta un clic más; resolver y
+   equivocarse cuesta un edificio avisando tarde, y nadie se entera hasta el sismo.
+
+### Lo que se construyó encima
+
+- Catálogo **cerrado** en `shared/schemas/tipologia_umbral.json`, del que derivan por igualdad la
+  validación de la API, el `CHECK` de `sites.building_type` y el desplegable de la consola.
+- Los tipos que el producto atiende y para los que **nadie publicó banda** —universidad, gobierno,
+  otro— la llevan en `null` **con su razón escrita**, en vez de prestarles la de hospital. Prestar
+  una banda es exactamente el defecto que abre esta ficha.
+- El gabinete **declara** la procedencia de su banda: `BANDA DE FÁBRICA · NADIE LA ELIGIÓ` cuando
+  corre el default. No la apaga —el edificio opera sin nube, regla de oro 2—, deja de hacerla
+  pasar por una decisión.
+
+### Cómo se revocaría
+
+Si algún día se quiere que el tipo resuelva, hace falta que **cambiar el tipo sea un acto
+publicado y firmado**, no una edición de formulario: es decir, sacar `building_type` de la
+pantalla de alta y meterlo en el mismo camino que los umbrales. Mientras se edite donde se edita
+hoy, esta decisión se mantiene. Lo que **no** cambia en ninguna revocación: una banda que nadie
+eligió no puede pintarse como una banda elegida.

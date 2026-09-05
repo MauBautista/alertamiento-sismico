@@ -43,6 +43,7 @@ import {
   isLinkDown,
   siteLink,
 } from "./link";
+import { esDeDemostracion, ROTULO_DEMO } from "../fleet/datosDeDemostracion";
 import { sitesInBounds, type ViewBounds } from "./stats";
 import {
   DASH_FRAMES,
@@ -157,6 +158,12 @@ export function sitesToFeatureCollection(sites: MapSiteState[]): FeatureCollecti
           link_glyph: LINK_GLYPH[link],
           link_opacity: coreOpacity(link),
           link_halo_opacity: haloOpacity(link),
+          // [T-5.05] Sitio de DEMOSTRACIÓN. Se deriva del código —un hecho del
+          // dato— y no de una columna nueva: la convención del seed ya existe y
+          // duplicarla sería una segunda verdad. Un prospecto veía 21 sitios
+          // idénticos en este mapa, de los cuales 20 no existen.
+          demo: esDeDemostracion(site.code),
+          demo_glyph: esDeDemostracion(site.code) ? ROTULO_DEMO : "",
         },
       };
     }),
@@ -570,6 +577,29 @@ export default function MapPanel({
         },
         paint: {
           "text-color": "#F0F2F5",
+          "text-halo-color": "#0d2034",
+          "text-halo-width": 1.6,
+        },
+      });
+
+      // [T-5.05] Rótulo DEMO. Va en gris neutro y NO en ámbar: el ámbar de esta
+      // consola ya significa simulacro en curso y dato retenido, y un tercer
+      // significado en el mismo color deja de significar nada. Vacío en los
+      // sitios reales, que es el caso de producción: cero ruido añadido.
+      map.addLayer({
+        id: "site-demo",
+        type: "symbol",
+        source: "sites",
+        layout: {
+          "text-field": ["get", "demo_glyph"],
+          "text-size": 9,
+          "text-letter-spacing": 0.14,
+          "text-offset": [0, 1.7],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#8A9CB1",
           "text-halo-color": "#0d2034",
           "text-halo-width": 1.6,
         },

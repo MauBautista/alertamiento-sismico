@@ -25,6 +25,18 @@ class FakeSecondaryCabinet:
         self.seq = 0
         self.alarm_active = False
         self.flags_seen = 0
+        # [T-5.25] El ESTADO ELÉCTRICO de sus dos relés, que es lo único que se
+        # puede medir de pie delante del nodo. `flags_seen` guarda la ÚLTIMA
+        # ORDEN, que no es lo mismo: un test posterior la pisa, y una orden que
+        # llegó no dice qué quedó encendido. La distinción importa porque el
+        # fallo que arregla T-5.25 —el edificio sigue sonando— solo se ve aquí.
+        #
+        # Esto es además la especificación EJECUTABLE del firmware ESP32 futuro:
+        # las cuatro reglas de abajo son las que tendrá que cumplir en C.
+        self.siren_on = False
+        self.strobe_on = False
+        #: Destellos de verificación (TEST): no tocan los relés enclavados.
+        self.test_pulses = 0
         self.received: list[fr.LoraFrame] = []
         self.guard = fr.ReplayGuard()
 
@@ -38,12 +50,27 @@ class FakeSecondaryCabinet:
             return None
         self.received.append(frame)
         if frame.msg_type == fr.ALARM_ACT:
+            # «ALARM_ACT ENCIENDE» (LORA-SECUNDARIOS §2): suma, no pisa. Por eso
+            # un silencio NO puede viajar como un ALARM_ACT sin el bit de sirena.
             self.alarm_active = True
             self.flags_seen = frame.flags
+            self.siren_on = self.siren_on or bool(frame.flags & fr.FLAG_SIREN)
+            self.strobe_on = self.strobe_on or bool(frame.flags & fr.FLAG_STROBE)
         elif frame.msg_type == fr.ALARM_CLEAR:
             self.alarm_active = False
-        elif frame.msg_type == fr.TEST:
+            self.siren_on = False
+            self.strobe_on = False
+        elif frame.msg_type == fr.SILENCE:
+            # [T-5.25] Cae lo AUDIBLE y solo lo audible: el estrobo sigue y la
+            # alerta sigue viva. Es el espejo de `gpio.silence_audibles()`.
+            self.siren_on = False
+            self.strobe_on = self.strobe_on or bool(frame.flags & fr.FLAG_STROBE)
             self.flags_seen = frame.flags
+        elif frame.msg_type == fr.TEST:
+            # Destella el estrobo SIN sirena y no cambia `alarm_active` — ni los
+            # relés enclavados: un test durante una alarma no puede apagar nada.
+            self.flags_seen = frame.flags
+            self.test_pulses += 1
         self.seq += 1
         return fr.LoraFrame(
             msg_type=fr.ACK,
@@ -78,6 +105,11 @@ class SimulatedLoraTransport:
         self.snr_db = snr_db
         self.opened = False
         self._drop_next = 0
+        # [T-5.25] Nodos que NO oyen nada (fuera de alcance, antena rota,
+        # jamming local). `drop_next` pierde las próximas N tramas de todos; esto
+        # pierde TODAS las de unos pocos, que es el caso que hace falta para
+        # medir «silenciar cuatro de cinco no es silenciar».
+        self.deaf: set[int] = set()
         self._on_receive: Callable[[bytes, float | None, float | None], None] | None = None
 
     # --- Protocol LoraTransport ---
@@ -94,6 +126,9 @@ class SimulatedLoraTransport:
         self.sent.append(raw)
         if self._drop_next > 0:
             self._drop_next -= 1  # el aire se comió la trama (determinista)
+            return
+        destino = int.from_bytes(raw[2:4], "big")  # el downlink es unicast
+        if destino in self.deaf:
             return
         for cabinet in self.cabinets:
             ack = cabinet.handle(raw)

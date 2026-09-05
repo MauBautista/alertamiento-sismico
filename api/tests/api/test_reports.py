@@ -9,6 +9,7 @@ del objeto) + huella en ``audit_log`` y responde con presigned URL.
 from __future__ import annotations
 
 import hashlib
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI
@@ -225,3 +226,87 @@ async def test_un_incidente_SIN_dictamen_ya_tiene_pdf(client, make_incident, mon
         iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
         resp = await client.post(f"/incidents/{iid}/report", headers=_token("inspector"))
     assert resp.status_code == 201, resp.text
+
+
+# ── [T-5.18] El freno de la exportación ────────────────────────────────────
+#
+# La única puerta de este endpoint era de rol: un usuario autenticado podía
+# reexportar el mismo incidente sin límite, y cada exportación renderiza un PDF,
+# lo sube a S3 y —con la IA encendida— sale a una red de pago. Es la categoría
+# que OWASP llama consumo de recursos sin restricción.
+#
+# DOS techos, el mismo par que los comandos: el del usuario y el del EDIFICIO.
+# Dos operadores coordinados agotan el segundo sin que ninguno rebase el suyo.
+
+
+async def test_el_freno_por_USUARIO_corta_la_reexportacion(
+    client, make_incident, monkeypatch
+) -> None:
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_USER_PER_MIN", "2")
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        tok = au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV))
+
+        codigos = [
+            (await client.post(f"/incidents/{iid}/report", headers=tok)).status_code
+            for _ in range(3)
+        ]
+    assert codigos == [201, 201, 429], codigos
+
+
+async def test_el_freno_del_EDIFICIO_no_lo_salva_cambiar_de_operador(
+    client, make_incident, monkeypatch
+) -> None:
+    """`RO-8.e`: dos operadores coordinados agotan el presupuesto del sitio."""
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_USER_PER_MIN", "50")
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_SITE_PER_MIN", "2")
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        uno = au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV, user_id=str(uuid4())))
+        dos = au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV, user_id=str(uuid4())))
+
+        primero = await client.post(f"/incidents/{iid}/report", headers=uno)
+        segundo = await client.post(f"/incidents/{iid}/report", headers=dos)
+        tercero = await client.post(f"/incidents/{iid}/report", headers=dos)
+    assert [primero.status_code, segundo.status_code] == [201, 201]
+    assert tercero.status_code == 429
+
+
+async def test_el_freno_NO_gasta_el_PDF_antes_de_rechazar(
+    client, make_incident, monkeypatch
+) -> None:
+    """Rechazar después de renderizar y subir no protegería de nada."""
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_USER_PER_MIN", "1")
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        tok = au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV))
+        await client.post(f"/incidents/{iid}/report", headers=tok)
+        rechazado = await client.post(f"/incidents/{iid}/report", headers=tok)
+
+        assert rechazado.status_code == 429
+        # Una sola evidencia: la segunda no llegó a escribir nada.
+        assert len(await _evidence_rows(iid)) == 1
+
+
+async def test_el_freno_de_un_sitio_no_frena_al_de_al_lado(
+    client, make_incident, monkeypatch
+) -> None:
+    """El techo es del edificio, no de la plataforma."""
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_SITE_PER_MIN", "1")
+    with mock_aws():
+        _make_bucket()
+        a = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        tok = au.bearer(au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV))
+        assert (await client.post(f"/incidents/{a}/report", headers=tok)).status_code == 201
+        assert (await client.post(f"/incidents/{a}/report", headers=tok)).status_code == 429
+
+        b = await make_incident(au.DB_TENANT_PRIV2, au.DB_SITE_PRIV2)
+        otro = au.bearer(au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV2))
+        assert (await client.post(f"/incidents/{b}/report", headers=otro)).status_code == 201

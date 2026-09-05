@@ -16,6 +16,7 @@ from takab_edge.lora.frame import (
     FLAG_STROBE,
     FRAME_LEN,
     HEARTBEAT,
+    SILENCE,
     FrameError,
     LoraFrame,
     ReplayGuard,
@@ -31,6 +32,9 @@ K258_HEX = "d6d04c86c73040548bb923c24d63251cd04892bb4499069f4fd8ba36faee71ea"
 HB_HEX = "01010102deadbeef00000007040f1e00000000695d15496a56fb0c166e"
 ACT_HEX = "010201020102030400000029030000000000006c664dc3f5fa446c1343"
 ACK_HEX = "01040102deadbeef0000000800000000000029e6134d8ef72a36d5a18b"
+# [T-5.25] El silencio del operador, con su estado COMPLETO: la alerta sigue viva
+# y el estrobo sigue encendido — lo único que cae es lo audible.
+SILENCE_HEX = "01060102010203040000002a06000000000000c1175ce1d77c84bbd9e7"
 
 
 def _key() -> bytes:
@@ -58,9 +62,17 @@ def test_golden_vectors_encode_byte_exact():
         flags=FLAG_SIREN | FLAG_STROBE,
     )
     ack = LoraFrame(msg_type=ACK, cabinet_id=CAB, session=0xDEADBEEF, seq=8, arg=41)
+    sil = LoraFrame(
+        msg_type=SILENCE,
+        cabinet_id=CAB,
+        session=0x01020304,
+        seq=42,
+        flags=FLAG_ALARM_ACTIVE | FLAG_STROBE,
+    )
     assert hb.encode(_key()).hex() == HB_HEX
     assert act.encode(_key()).hex() == ACT_HEX
     assert ack.encode(_key()).hex() == ACK_HEX
+    assert sil.encode(_key()).hex() == SILENCE_HEX
     assert len(bytes.fromhex(HB_HEX)) == FRAME_LEN == 29
 
 
@@ -135,3 +147,38 @@ def test_derive_key_rejects_out_of_range_ids():
         derive_key(SITE_KEY, 0)
     with pytest.raises(ValueError):
         derive_key(SITE_KEY, 70000)
+
+
+def test_el_vector_del_SILENCIO_no_lleva_el_bit_de_sirena():
+    """La comprobación que el firmware en C tiene que poder repetir byte a byte.
+
+    Si el vector dorado del silencio llevara `FLAG_SIREN`, el documento de
+    contrato estaría enseñando a encender justo donde manda callar — y esos bytes
+    son lo único que un implementador de firmware lee de verdad.
+    """
+    trama = decode(bytes.fromhex(SILENCE_HEX), _key())
+    assert trama.msg_type == SILENCE
+    assert not trama.flags & FLAG_SIREN, "el vector del silencio enciende la sirena"
+    assert trama.flags & FLAG_STROBE, "el silencio apaga el estrobo: eso es borrar la alerta"
+    assert trama.flags & FLAG_ALARM_ACTIVE, "el silencio baja la alerta: eso lo hace el CLEAR"
+
+
+def test_el_vector_del_documento_es_EL_MISMO_que_el_del_test():
+    """Anti-deriva: `LORA-SECUNDARIOS.md` §3 y este archivo, comparados.
+
+    Los vectores viven en dos sitios a propósito —el documento lo lee quien
+    escriba el firmware; el test lo corre CI— y por eso hay que atarlos: un
+    vector que solo esté bien en uno de los dos es peor que no tenerlo.
+    """
+    from pathlib import Path
+
+    doc = (Path(__file__).resolve().parents[2] / "takab-docs/design/LORA-SECUNDARIOS.md").read_text(
+        encoding="utf-8"
+    )
+    for nombre, hexa in (
+        ("HEARTBEAT", HB_HEX),
+        ("ALARM_ACT", ACT_HEX),
+        ("ACK", ACK_HEX),
+        ("SILENCE", SILENCE_HEX),
+    ):
+        assert hexa in doc, f"el vector dorado de {nombre} no está en LORA-SECUNDARIOS.md §3"

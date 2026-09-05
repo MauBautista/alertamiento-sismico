@@ -185,11 +185,19 @@ class AudioNotifier(EdgeModule):
         # barrido de la sirena. `None` si no existe ⇒ la prueba calla (ver `asset_for`).
         test_path = settings.audio_test_path or str(Path(__file__).parent / "assets" / "prueba.wav")
         self._test_path: str | None = test_path if Path(test_path).is_file() else None
+        # [T-5.17] El voceo de simulacro deja de leerse de `settings` en cada
+        # reproducción y pasa a ser ESTADO del módulo, como la sirena y el tono de
+        # prueba: es lo que permite que la nube lo elija por id de catálogo. El
+        # valor inicial sigue siendo el asset local (la grabación del sitio, si la
+        # hay); un id del catálogo lo sustituye.
+        self._simulacro_path: str | None = settings.audio_simulacro_path or None
         self._audio_profile: dict = {
             "applied": {},
             "rejected": {},
+            "reserved": {},
             "siren_path": self._siren_path,
             "test_path": self._test_path,
+            "simulacro_path": self._simulacro_path,
         }
         self._siren_stop = threading.Event()
         self._siren_thread: threading.Thread | None = None
@@ -224,7 +232,7 @@ class AudioNotifier(EdgeModule):
             return
         for kind, path in (
             ("sismo", self.settings.audio_sismo_path),
-            ("simulacro", self.settings.audio_simulacro_path),
+            ("simulacro", self.simulacro_path),
         ):
             p = Path(path) if path else None
             if p is None or not p.is_file():
@@ -290,22 +298,38 @@ class AudioNotifier(EdgeModule):
         """
         applied: dict[str, str] = {}
         rejected: dict[str, str] = {}
+        reserved: dict[str, str] = {}
         if isinstance(profile, dict):
-            for slot, attr in (("siren", "_siren_path"), ("test", "_test_path")):
+            for slot, attr in (
+                ("siren", "_siren_path"),
+                ("test", "_test_path"),
+                # [T-5.17] La tercera ranura, con LAS MISMAS reglas: por id de
+                # catálogo, y lo que no se puede servir conserva el tono anterior.
+                ("simulacro", "_simulacro_path"),
+            ):
                 asset_id = profile.get(slot)
                 if not isinstance(asset_id, str) or not asset_id:
                     continue
                 path = catalog.resolve(asset_id)
                 if path is None:
                     rejected[slot] = asset_id
+                    # [T-5.17] Un id RESERVADO y uno inventado acaban igual —se
+                    # conserva el tono— pero no son el mismo hecho: uno es un
+                    # tecleo y el otro una infracción de licencia. Sin esto, el
+                    # reporte de flota los daba por idénticos.
+                    razon = catalog.reason_reserved(asset_id)
+                    if razon is not None:
+                        reserved[slot] = razon
                     continue
                 setattr(self, attr, str(path))
                 applied[slot] = asset_id
         self._audio_profile = {
             "applied": applied,
             "rejected": rejected,
+            "reserved": reserved,
             "siren_path": self._siren_path,
             "test_path": self._test_path,
+            "simulacro_path": self._simulacro_path,
         }
         if rejected:
             log.warning("audio: perfil parcialmente aplicado; tonos conservados: %s", rejected)
@@ -430,9 +454,56 @@ class AudioNotifier(EdgeModule):
     def play_sismo(self) -> None:
         self._play("sismo", self.settings.audio_sismo_path)
 
+    @property
+    def simulacro_path(self) -> str:
+        """Lo que sonaría AHORA en un simulacro. Cadena vacía = no hay asset."""
+        return self._simulacro_path or ""
+
     def play_simulacro(self) -> None:
         """Drill del panel LAN (con PIN): mensaje de SIMULACRO, sin tocar relés."""
-        self._play("simulacro", self.settings.audio_simulacro_path)
+        self._play("simulacro", self.simulacro_path)
+
+    def simulacro_evidence(self) -> dict:
+        """[T-5.17] QUÉ va a sonar en el simulacro, con su sha256, AHORA MISMO.
+
+        Se calcula aquí y no al arrancar el módulo, y la diferencia importa:
+        entre el arranque y el simulacro puede haber entrado una config firmada
+        que cambió el tono. El sha256 que se registraba hasta hoy era el del
+        asset enumerado en el boot, así que podía no ser el del sonido que salió
+        por la bocina.
+
+        `sha256: None` NUNCA significa «sonó algo que no pudimos medir»: significa
+        que no hay asset, y `reason` lo dice. Un hash inventado en un documento de
+        cumplimiento es peor que un hueco declarado.
+        """
+        ruta = self.simulacro_path
+        if not ruta:
+            return {
+                "asset_id": None,
+                "path": None,
+                "sha256": None,
+                "will_sound": False,
+                "reason": "sin asset de voceo de simulacro configurado ni elegido por catálogo",
+            }
+        asset_id = self._audio_profile.get("applied", {}).get("simulacro")
+        p = Path(ruta)
+        if not p.is_file():
+            return {
+                "asset_id": asset_id,
+                "path": ruta,
+                "sha256": None,
+                "will_sound": False,
+                "reason": f"el asset de simulacro no existe en el disco del gabinete ({ruta})",
+            }
+        return {
+            "asset_id": asset_id,
+            "path": ruta,
+            "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
+            # El voceo puede estar apagado (gate de hardware A-6) y el asset
+            # existir igual: son dos hechos y se declaran por separado.
+            "will_sound": bool(self.enabled),
+            "reason": "" if self.enabled else "voceo por audio deshabilitado (audio_enabled=false)",
+        }
 
     def stop_playback(self) -> None:
         """Corta el voceo en curso. NO confundir con ``stop()`` (ciclo de vida

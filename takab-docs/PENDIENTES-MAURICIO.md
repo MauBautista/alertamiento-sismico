@@ -446,7 +446,8 @@ takab_api.ops.prune_cctv`, sin `--apply`) para ver el censo con los ojos, y solo
 >
 > **Lo que la ficha dice y ya NO es cierto:** «los relés siguen en MOCK». El gabinete corre
 > `LGPIOFactory (lgpio)` real con `DEV_MODE=false`, y la mitad eléctrica de `G-04` **ya pasa** con
-> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms). Lo que le
+> dos órdenes de magnitud de margen (6.65 ms / 4.16 ms contra un presupuesto de 100 ms; las dos
+> son observaciones únicas — [`MEDICIONES-TAKAB.md`](MEDICIONES-TAKAB.md)). Lo que le
 > falta a ese gate no es velocidad: es **que haya una sirena al final del cable**.
 >
 > **Variante de la ruta de hardware: DECIDIDA** — (B), fallback con watchdog
@@ -683,6 +684,36 @@ El recall con varias personas —cuánto baja el conteo cuando unas tapan a otra
 sustituto simulado**. Inventar la cifra sería peor que no tenerla, así que queda aquí, sin
 número, hasta que haya a quién contar.
 
+### 3.3.e · [`T-5.22`](TASKS.md) · **El acta del reflejo no está desplegada** — sin ella, la sesión de vida vuelve sin evidencia
+
+**Medido el 2026-09-04 contra el Pi real**, no supuesto:
+
+```
+$ edge/scripts/acta_reflejo.sh --check
+  gabinete: takab-pi5 · unidad: takab-edge
+  EL ACTA NO ESTÁ DESPLEGADA en takab-pi5.
+```
+
+`takab-pi5` corre la release **`20260830T222850Z-71ac7df`** (2026-08-30) y el módulo del acta
+(`takab_edge/audit/reflejo.py`) entró con `T-5.22` el **2026-09-03**. O sea que hoy el gabinete
+**no puede escribir ni una línea de acta**.
+
+**Por qué está aquí y no en la lista de software.** La cifra `contacto → relé` es la más citada
+del producto y su evidencia son nueve documentos con el número a mano. `T-5.22` construyó el
+acta que la convierte en artefacto, y su último criterio —`GATE-HW`— es una **sesión presencial**
+que vuelve a medir y se trae el `reflejo.jsonl`. Si el gabinete no tiene el módulo, **esa sesión
+se hace y vuelve con las manos vacías**: el fichero no existiría y el síntoma sería
+indistinguible de «no hubo flancos».
+
+**Qué hay que hacer, y es barato:** desplegar el edge (`deploy.sh`, el procedimiento de siempre)
+**antes** de la sesión de vida de §3.1. No hace falta ventana de mantenimiento por esto: el acta
+la escribe el **supervisor**, no el dueño de los pines, así que `takab-gpio` puede seguir con su
+código y el acta funciona igual — es la misma separación que `T-5.22` eligió a propósito para no
+meterle un fichero al proceso del camino de vida (regla de oro 4).
+
+> **Y se comprueba desde el escritorio**, no delante del gabinete:
+> `edge/scripts/acta_reflejo.sh --check`. Sale `0` cuando la precondición está lista.
+
 ### 3.4 · [`T-2.95`](TASKS.md) · `GATE-HW` móvil + voceo
 Entorno preparado y verde; **falta un dispositivo físico**.
 
@@ -808,6 +839,24 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > **El gatillo que la revive** (los tres, escritos para no depender de acordarse): un cliente
 > pregunta por el marco o la privacidad · aparece un ARCO real sobre un `subject_ref` por teléfono ·
 > el sistema empieza a **afirmar** un marco propio en vez de citar el del cliente.
+>
+> ### ➕ HECHO NUEVO PARA LA MISMA CONSULTA — `T-5.19` (2026-09-03)
+>
+> **`D-23` y `D-07` descansan LAS DOS sobre la misma calificación**: que TAKAB es **encargado** y
+> no **responsable** del tratamiento. Y esa calificación **solo está afirmada en el aviso
+> provisional**, que se declara a sí mismo sin revisar. No es una decisión nueva ni reabre esta
+> espera — es una pregunta que **ya tiene que ir en la lista** el día que la consulta se active,
+> porque si la calificación no se sostiene, las dos decisiones cambian de dueño y no de detalle.
+>
+> **Lo que sí se hizo mientras tanto, y no cuesta dinero:** el inventario de encargados existe y
+> está **derivado del código**, no tecleado ([`ENCARGADOS-TAKAB.md`](ENCARGADOS-TAKAB.md)). Un
+> proveedor nuevo o un servicio de AWS sin clasificar ponen el build en rojo nombrándolo. Y el
+> aviso provisional ganó los dos párrafos que le faltaban —quién más trata los datos, y que se
+> tratan **fuera de México**— como **marcadores de posición declarados**, dentro del texto y por
+> tanto dentro de la huella que sella el consentimiento.
+>
+> **Lo que eso cambia para el abogado:** ya no llega a una hoja en blanco. Llega a una lista de
+> siete terceros con qué dato alcanza cada uno, y a un aviso que dice dónde están sus huecos.
 
 ### 4.2 · [`T-2.77.a`](TASKS.md) · Alta del WhatsApp Business Account + aprobación de plantilla
 > **Plazo externo: lo aprueba Meta.** El código está completo y probado (53 tests); la plantilla

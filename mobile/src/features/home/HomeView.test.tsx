@@ -27,7 +27,12 @@ function state(over: Partial<MobileStateOut> = {}): MobileStateOut {
     reentry: { blocked: false, dictamen_status: null, dictamen_signed: false },
     assembly_point: null,
     compliance_labels: {},
-    drill: { active: false, next_scheduled_at: null, last_started_at: null, last_note: null },
+    drill: {
+      active: false,
+      next_scheduled_at: null,
+      last_started_at: null,
+      last_note: null,
+    },
     site_health: {
       status: "OPERATIVO",
       heartbeat_at: new Date(NOW - 30_000).toISOString(),
@@ -42,12 +47,46 @@ const NOOP = { onOpenRutas: jest.fn(), onOpenDirectorio: jest.fn() };
 
 describe("HomeView (1.1)", () => {
   it("reposo sano: SEGURO + chip WR-1 + zona con política", async () => {
-    const v = await render(<HomeView brigadistas={[]} data={state()} nowMs={NOW} {...NOOP} />);
+    const v = await render(
+      <HomeView brigadistas={[]} data={state()} nowMs={NOW} {...NOOP} />,
+    );
     expect(v.getByTestId("estado")).toHaveTextContent("SEGURO");
-    expect(v.getByTestId("wr1-chip")).toHaveTextContent("SASMEX WR-1 · GABINETE ENLAZADO");
+    expect(v.getByTestId("wr1-chip")).toHaveTextContent(
+      "SASMEX WR-1 · GABINETE ENLAZADO",
+    );
     expect(v.getByText("P10-A")).toBeTruthy();
     expect(v.getByText("ZONA DE REPLIEGUE")).toBeTruthy();
     expect(v.queryByTestId("drill-banner")).toBeNull();
+  });
+
+  it("[T-5.02] modo demostración: lo dice, y dice que el gabinete sigue armado", async () => {
+    // Sin esto el ocupante vería una pantalla en calma sin saber que su canal de
+    // aviso está suprimido. Y la segunda frase cierra la lectura peligrosa: que
+    // alguien crea que el edificio está desprotegido. No lo está.
+    const view = await render(
+      <HomeView
+        brigadistas={[]}
+        data={state({ demo_mode: true })}
+        nowMs={NOW}
+        {...NOOP}
+      />,
+    );
+    expect(view.getByTestId("demo-mode-banner")).toBeTruthy();
+    const texto = JSON.stringify(view.toJSON());
+    expect(texto).toContain("LA NUBE NO ESTÁ ENVIANDO AVISOS");
+    expect(texto).toContain("sigue armada");
+  });
+
+  it("[T-5.02] sin modo demostración no hay franja: cero ruido en el caso normal", async () => {
+    const view = await render(
+      <HomeView
+        brigadistas={[]}
+        data={state({ demo_mode: false })}
+        nowMs={NOW}
+        {...NOOP}
+      />,
+    );
+    expect(view.queryByTestId("demo-mode-banner")).toBeNull();
   });
 
   it("drill activo: franja ámbar SIMULACRO sobre contenido NORMAL (jamás crisis)", async () => {
@@ -75,7 +114,9 @@ describe("HomeView (1.1)", () => {
   });
 
   it("agenda: sin datos dice 'sin programar'/'sin registro', no inventa", async () => {
-    const v = await render(<HomeView brigadistas={[]} data={state()} nowMs={NOW} {...NOOP} />);
+    const v = await render(
+      <HomeView brigadistas={[]} data={state()} nowMs={NOW} {...NOOP} />,
+    );
     expect(v.getByText("sin programar")).toBeTruthy();
     expect(v.getByText("sin registro")).toBeTruthy();
   });
@@ -114,8 +155,13 @@ describe("health — mapeo puro del estado del servidor", () => {
   };
 
   it("OPERATIVO⇒SEGURO(ok) · DEGRADADO(warn) · SIN ENLACE(crit) con último contacto", () => {
-    expect(healthBanner({ ...base }, NOW)).toMatchObject({ label: "SEGURO", tone: "ok" });
-    expect(healthBanner({ ...base, status: "DEGRADADO" }, NOW).tone).toBe("warn");
+    expect(healthBanner({ ...base }, NOW)).toMatchObject({
+      label: "SEGURO",
+      tone: "ok",
+    });
+    expect(healthBanner({ ...base, status: "DEGRADADO" }, NOW).tone).toBe(
+      "warn",
+    );
     const sin = healthBanner({ ...base, status: "SIN ENLACE" }, NOW);
     expect(sin.tone).toBe("crit");
     expect(sin.detail).toMatch(/último contacto hace 10 min/);
@@ -123,8 +169,15 @@ describe("health — mapeo puro del estado del servidor", () => {
 
   it("sin gabinete jamás reportado: lo dice tal cual", () => {
     expect(
-      healthBanner({ status: "SIN ENLACE", heartbeat_at: null, age_s: null, has_wr1: false }, NOW)
-        .detail,
+      healthBanner(
+        {
+          status: "SIN ENLACE",
+          heartbeat_at: null,
+          age_s: null,
+          has_wr1: false,
+        },
+        NOW,
+      ).detail,
     ).toMatch(/Sin gabinete reportando/);
   });
 

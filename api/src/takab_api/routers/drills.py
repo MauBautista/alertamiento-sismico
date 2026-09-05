@@ -11,6 +11,7 @@ registra el fin (`stop`) o se deja vencer la ventana (estado derivado).
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -26,12 +27,15 @@ from takab_api.auth.matrix import roles_with_action
 from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher
 from takab_api.commands.service import issue_signed_command
+from takab_api.drill_report import ReporteSimulacro, SitioReporte
+from takab_api.drill_report import render as render_drill_report
 from takab_api.routers._common import (
     clamp_limit,
     decode_cursor,
     encode_cursor,
     http_error,
 )
+from takab_api.routers._s3 import PRESIGN_TTL_S, presign_get, put_object
 from takab_api.routers.commands import get_key_provider, get_publisher
 from takab_api.routers.incidents import CONSOLE_ROLES
 from takab_api.schemas.drills import (
@@ -39,6 +43,7 @@ from takab_api.schemas.drills import (
     DrillCreateIn,
     DrillList,
     DrillOut,
+    DrillReportOut,
     DrillSiteOut,
 )
 from takab_api.settings import Settings
@@ -81,21 +86,23 @@ _SELECT_AGENDA_SITES = text(
 )
 
 _INSERT_DRILL = text(
-    "INSERT INTO drills (tenant_id, initiated_by, note, duration_s) "
-    "VALUES (CAST(:tenant AS uuid), CAST(:user_id AS uuid), :note, :duration) "
+    "INSERT INTO drills (tenant_id, initiated_by, note, duration_s, from_template_id) "
+    "VALUES (CAST(:tenant AS uuid), CAST(:user_id AS uuid), :note, :duration, "
+    "CAST(:template AS uuid)) "
     "RETURNING drill_id, tenant_id, initiated_by, note, duration_s, started_at, "
-    "stopped_at, stop_reason, scheduled_at"
+    "stopped_at, stop_reason, scheduled_at, from_template_id"
 )
 
 # [T-2.03·D4c] Fila de AGENDA: anuncio del "próximo simulacro" para la app.
 # JAMÁS emite comandos ni deriva `active` — ejecutar el simulacro a esa hora
 # sigue siendo un acto del operador (LO REAL GANA queda intacto).
 _INSERT_DRILL_AGENDA = text(
-    "INSERT INTO drills (tenant_id, initiated_by, note, duration_s, scheduled_at) "
+    "INSERT INTO drills (tenant_id, initiated_by, note, duration_s, scheduled_at, "
+    " from_template_id) "
     "VALUES (CAST(:tenant AS uuid), CAST(:user_id AS uuid), :note, :duration, "
-    ":scheduled_at) "
+    ":scheduled_at, CAST(:template AS uuid)) "
     "RETURNING drill_id, tenant_id, initiated_by, note, duration_s, started_at, "
-    "stopped_at, stop_reason, scheduled_at"
+    "stopped_at, stop_reason, scheduled_at, from_template_id"
 )
 
 _INSERT_DRILL_SITE = text(
@@ -109,6 +116,7 @@ _INSERT_DRILL_SITE = text(
 _DRILL_COLS = (
     "d.drill_id, d.tenant_id, d.initiated_by, d.note, d.duration_s, "
     "d.started_at, d.stopped_at, d.stop_reason, d.scheduled_at, "
+    "d.from_template_id, "
     "(d.scheduled_at IS NULL AND d.stopped_at IS NULL "
     "AND now() < d.started_at + make_interval(secs => d.duration_s)) AS active"
 )
@@ -128,12 +136,27 @@ _SELECT_DRILL = text(f"SELECT {_DRILL_COLS} FROM drills d WHERE d.drill_id = CAS
 # pantalla NO puede colapsar (regla de oro 7).
 _SELECT_DRILL_SITES = text(
     "SELECT ds.drill_id, ds.site_id, s.name AS site_name, ds.command_id, "
-    "c.status AS command_status, c.ack, " + (_COMMANDABLE % {"alias": "ds"}) + " AS commandable "
+    "c.status AS command_status, c.ack, c.acked_at, c.issued_at, "
+    + (_COMMANDABLE % {"alias": "ds"})
+    + " AS commandable "
     "FROM drill_sites ds "
     "LEFT JOIN sites s ON s.site_id = ds.site_id "
     "LEFT JOIN commands c ON c.command_id = ds.command_id "
     "WHERE ds.drill_id = ANY(:drills) ORDER BY s.name NULLS LAST, ds.site_id"
 )
+
+
+def _latencia(issued_at, acked_at) -> float | None:
+    """Segundos entre la emisión y el acuse, o ``None`` si no acusó.
+
+    `None` y NO cero, que es la diferencia que hace útil el número: un cero se
+    leería como «acusó al instante», que es exactamente lo contrario de lo que
+    pasó. Misma disciplina que `commandable` (T-2.48): no colapsar dos hechos.
+    """
+    if issued_at is None or acked_at is None:
+        return None
+    return (acked_at - issued_at).total_seconds()
+
 
 _STOP_DRILL = text(
     "UPDATE drills SET stopped_at = :now, stop_reason = :reason "
@@ -186,6 +209,23 @@ def _select_drills_page(
     )
 
 
+def _audio_del_acuse(ack: Any) -> dict[str, Any] | None:
+    """[T-5.17] Lo que sonó, sacado del acuse del gabinete.
+
+    `None` cuando el acuse no lo trae — un gabinete con firmware anterior — y eso
+    NO es lo mismo que `sha256: null`, que significa «el gabinete lo resolvió y no
+    había asset». Colapsarlos haría imposible saber si falta el dato o faltó el
+    sonido.
+    """
+    if not isinstance(ack, dict):
+        return None
+    resultados = ack.get("results")
+    if not isinstance(resultados, dict):
+        return None
+    audio = resultados.get("audio")
+    return audio if isinstance(audio, dict) else None
+
+
 async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSiteOut]]:
     ids = [r["drill_id"] for r in rows]
     if not ids:
@@ -201,6 +241,9 @@ async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSi
                 command_status=r["command_status"],
                 ack=r["ack"],
                 commandable=bool(r["commandable"]),
+                acked_at=r["acked_at"],
+                ack_latency_s=_latencia(r["issued_at"], r["acked_at"]),
+                audio=_audio_del_acuse(r["ack"]),
             )
         )
     return out
@@ -220,7 +263,13 @@ def _require_scope(claims: Claims, site_ids: list[Any]) -> None:
         raise http_error(403, f"sitio(s) fuera del alcance del usuario: {outside}")
 
 
-async def _schedule_drill(body: DrillCreateIn, claims: Claims, conn: AsyncConnection) -> DrillOut:
+async def _schedule_drill(
+    body: DrillCreateIn,
+    claims: Claims,
+    conn: AsyncConnection,
+    plantilla: Any = None,
+    sitios_plantilla: list[Any] | None = None,
+) -> DrillOut:
     """[T-2.03·D4c + T-2.48] Fila de AGENDA: anuncio, jamás comandos.
 
     Desde T-2.48 deja constancia de **a qué sitios apunta** (``drill_sites`` con
@@ -236,11 +285,19 @@ async def _schedule_drill(body: DrillCreateIn, claims: Claims, conn: AsyncConnec
         raise http_error(422, "scheduled_at debe ser futuro")
     rows = (await conn.execute(_TENANT_SITES)).mappings().all()
     by_id = {row["site_id"]: row for row in rows}
+    duration, note = body.duration_s, body.note
+    if plantilla is not None:
+        duration, note = _heredado(body, plantilla)
     if body.site_ids is not None:
         missing = [str(s) for s in body.site_ids if s not in by_id]
         if missing:
             raise http_error(404, f"sitio(s) no visibles o retirados: {missing}")
         targets = [by_id[s] for s in body.site_ids]
+    elif sitios_plantilla:
+        # [T-5.13] Los sitios de la plantilla que HOY siguen siendo visibles. Los
+        # que no lo son NO desaparecen: se registran igual, más abajo, para que la
+        # agenda diga a quién se planeó avisar aunque el inventario haya cambiado.
+        targets = [by_id[s] for s in sitios_plantilla if s in by_id]
     else:
         # Sin lista explícita se apunta a lo comandable HOY (mismo default que la
         # ejecución). Puede quedar vacío: agendar antes de instalar es legítimo.
@@ -254,9 +311,10 @@ async def _schedule_drill(body: DrillCreateIn, claims: Claims, conn: AsyncConnec
                 {
                     "tenant": claims.tenant_id,
                     "user_id": claims.sub,
-                    "note": body.note,
-                    "duration": body.duration_s,
+                    "note": note,
+                    "duration": duration,
                     "scheduled_at": body.scheduled_at,
+                    "template": None if plantilla is None else str(plantilla["template_id"]),
                 },
             )
         )
@@ -279,7 +337,11 @@ async def _schedule_drill(body: DrillCreateIn, claims: Claims, conn: AsyncConnec
         actor=f"user:{claims.sub}",
         verb="drill_scheduled",
         obj=f"drill:{agenda['drill_id']}",
-        meta={"scheduled_at": body.scheduled_at.isoformat(), "sites": len(targets)},
+        meta={
+            "scheduled_at": body.scheduled_at.isoformat(),
+            "sites": len(targets),
+            **({} if plantilla is None else {"from_template": str(plantilla["template_id"])}),
+        },
     )
     return _drill_out(
         {**dict(agenda), "active": False},
@@ -295,6 +357,47 @@ async def _schedule_drill(body: DrillCreateIn, claims: Claims, conn: AsyncConnec
             for t in targets
         ],
     )
+
+
+# [T-5.13] La plantilla de la que se COPIA. Se lee entera y se copia; el
+# simulacro no vuelve a mirarla nunca, que es lo que hace que editarla después no
+# reescriba lo ya lanzado (criterio 2 de la ficha).
+_SELECT_TEMPLATE = text(
+    "SELECT template_id, name, duration_s, note FROM drill_templates "
+    "WHERE template_id = CAST(:template AS uuid) AND archived_at IS NULL"
+)
+
+_SELECT_TEMPLATE_SITES = text(
+    "SELECT site_id FROM drill_template_sites WHERE template_id = CAST(:template AS uuid) "
+    "ORDER BY site_id"
+)
+
+
+async def _template(template_id: UUID, conn: AsyncConnection) -> tuple[Any, list[Any]]:
+    """La plantilla y sus sitios, o 404. Una archivada es inexistente aquí."""
+    row = (await conn.execute(_SELECT_TEMPLATE, {"template": str(template_id)})).mappings().first()
+    if row is None:
+        raise http_error(404, "plantilla de simulacro no encontrada")
+    sites = [
+        r["site_id"]
+        for r in (await conn.execute(_SELECT_TEMPLATE_SITES, {"template": str(template_id)}))
+        .mappings()
+        .all()
+    ]
+    return row, sites
+
+
+def _heredado(body: DrillCreateIn, fuente: Any) -> tuple[int, str | None]:
+    """Duración y nota: lo explícito del cuerpo gana sobre lo de la fuente.
+
+    `model_fields_set` y no un `is None`: mandar `note: null` a propósito es
+    borrar la nota heredada, y tratarlo como "no dijo nada" devolvería la de la
+    plantilla — un texto que el operador acaba de quitar reapareciendo en el
+    banner de un simulacro real.
+    """
+    duration = body.duration_s if "duration_s" in body.model_fields_set else fuente["duration_s"]
+    note = body.note if "note" in body.model_fields_set else fuente["note"]
+    return duration, note
 
 
 async def _armed_drill(from_scheduled: UUID, conn: AsyncConnection) -> Any:
@@ -327,10 +430,21 @@ async def start_drill(
     humano en una sesión viva: aquí no hay temporizador que dispare nada — un
     actuador que se activa solo por reloj rompería la regla de oro 8.
     """
+    # [T-5.13] Excluyentes: la agenda armada YA trae sus propios valores
+    # heredados, y con dos orígenes para el mismo campo acabarían discrepando.
+    if body.from_template is not None and body.from_scheduled is not None:
+        raise http_error(422, "from_template y from_scheduled son excluyentes")
+    plantilla: Any = None
+    sitios_plantilla: list[Any] = []
+    if body.from_template is not None:
+        plantilla, sitios_plantilla = await _template(body.from_template, conn)
+
     if body.scheduled_at is not None:
         if body.from_scheduled is not None:
             raise http_error(422, "scheduled_at y from_scheduled son excluyentes")
-        return await _schedule_drill(body, claims, conn)
+        # Armar la agenda DESDE la plantilla es legítimo y es media ficha: se
+        # define en septiembre y se ejecuta el día 19 con un clic.
+        return await _schedule_drill(body, claims, conn, plantilla, sitios_plantilla)
 
     armed = None if body.from_scheduled is None else await _armed_drill(body.from_scheduled, conn)
 
@@ -342,6 +456,12 @@ async def start_drill(
     # que un edificio perdiera el enlace no puede dejar sin simulacro a los otros.
     unreachable: list[Any] = []
     planned: list[Any] | None = body.site_ids
+    # [T-5.13] La plantilla aporta la lista igual que la agenda armada, y por la
+    # MISMA vía: así sus sitios inalcanzables caen en `unreachable` y quedan en el
+    # registro con `commandable=False` en vez de desaparecer. Ése es el criterio
+    # de la ficha: nunca lanzar contra un conjunto silenciosamente más pequeño.
+    if planned is None and sitios_plantilla:
+        planned = list(sitios_plantilla)
     if planned is None and armed is not None:
         planned = [
             r["site_id"]
@@ -360,16 +480,26 @@ async def start_drill(
     else:
         targets = list(commandable)
     if not targets:
+        # [T-5.13] El mensaje tiene que decir la verdad de ESTE caso. Con una
+        # plantilla (o una agenda) cuyos sitios se quedaron todos sin gabinete, el
+        # tenant puede tener veinte comandables y ninguno estar en la lista: culpar
+        # al inventario del tenant mandaría a arreglar lo que no está roto.
+        if unreachable:
+            raise http_error(
+                409,
+                "ninguno de los "
+                f"{len(unreachable)} sitio(s) de la lista tiene hoy gateway comandable; "
+                "el simulacro no se lanza porque no sonaría en ninguna parte",
+            )
         raise http_error(409, "el tenant no tiene sitios con gateway comandable")
     _require_scope(claims, [t["site_id"] for t in targets] + unreachable)
 
     duration, note = body.duration_s, body.note
     if armed is not None:
         # "Precargado" de verdad: sin campos explícitos manda lo que se programó.
-        if "duration_s" not in body.model_fields_set:
-            duration = armed["duration_s"]
-        if "note" not in body.model_fields_set:
-            note = armed["note"]
+        duration, note = _heredado(body, armed)
+    elif plantilla is not None:
+        duration, note = _heredado(body, plantilla)
 
     drill = (
         (
@@ -380,6 +510,7 @@ async def start_drill(
                     "user_id": claims.sub,
                     "note": note,
                     "duration": duration,
+                    "template": None if plantilla is None else str(plantilla["template_id"]),
                 },
             )
         )
@@ -463,6 +594,7 @@ async def start_drill(
             "duration_s": duration,
             "unreachable": len(unreachable),
             **({} if armed is None else {"from_scheduled": str(armed["drill_id"])}),
+            **({} if plantilla is None else {"from_template": str(plantilla["template_id"])}),
         },
     )
     if armed is not None:
@@ -614,3 +746,98 @@ async def cancel_drill(
         row = (await conn.execute(_SELECT_DRILL, {"drill": str(drill_id)})).mappings().one()
     sites_map = await _sites_of([row], conn)
     return _drill_out(row, sites_map.get(row["drill_id"], []))
+
+
+# ─────────────────────────────────────────────────── [T-5.14] el reporte
+
+_INSERT_EVIDENCIA_DRILL = text(
+    "INSERT INTO evidence_objects (tenant_id, drill_id, kind, s3_key, sha256) "
+    "VALUES (CAST(:tenant AS uuid), CAST(:drill AS uuid), 'report_pdf', :key, :sha) "
+    "RETURNING evidence_id"
+)
+
+
+@router.post("/drills/{drill_id}/report", response_model=DrillReportOut, status_code=201)
+async def drill_report(
+    drill_id: UUID,
+    claims: Claims = Depends(_require_drill),
+    conn: AsyncConnection = Depends(get_session),
+) -> DrillReportOut:
+    """El documento que el cliente le enseña a Protección Civil.
+
+    Mismas propiedades que el dictamen —determinista, hasheado, registrado como
+    evidencia inmutable y auditado—, y por la misma razón: es evidencia de
+    cumplimiento, no una captura de pantalla.
+
+    Solo de un simulacro EJECUTADO: una agenda no tiene acuses que reportar, y
+    exportarla produciría un documento que afirma cero de cero.
+    """
+    row = (await conn.execute(_SELECT_DRILL, {"drill": str(drill_id)})).mappings().first()
+    if row is None:
+        raise http_error(404, "simulacro no encontrado")
+    # Una AGENDA se reconoce por `scheduled_at`, no por `started_at`: la fila de
+    # agenda lleva los dos, y `active` se deriva igual (`scheduled_at IS NULL`).
+    # Exportarla produciría un documento que afirma cero de cero.
+    if row["scheduled_at"] is not None:
+        raise http_error(409, "es una agenda, no un simulacro ejecutado: no hay acuses")
+
+    settings = Settings()
+
+    sitios = (await _sites_of([{"drill_id": drill_id}], conn)).get(drill_id, [])
+    rep = ReporteSimulacro(
+        folio=f"TKB-DRILL-{str(drill_id)[:8].upper()}",
+        tenant_name=str(row["tenant_id"]),
+        drill_id=str(drill_id),
+        started_at=row["started_at"],
+        stopped_at=row["stopped_at"],
+        duration_s=row["duration_s"],
+        note=row["note"] or "",
+        sitios=[
+            SitioReporte(
+                site_name=s.site_name or str(s.site_id)[:8],
+                commandable=s.commandable,
+                acked=s.command_status == "acked",
+                latency_s=s.ack_latency_s,
+                # [T-5.17] Lo que sonó, del acuse del propio gabinete.
+                audio=s.audio,
+            )
+            for s in sitios
+        ],
+    )
+
+    pdf = render_drill_report(rep)
+    sha256 = hashlib.sha256(pdf).hexdigest()
+    key = f"evidence/{row['tenant_id']}/drills/{drill_id}/reporte.pdf"
+    put_object(settings, key, pdf, content_type="application/pdf")
+
+    evidence_id = (
+        await conn.execute(
+            _INSERT_EVIDENCIA_DRILL,
+            {"tenant": str(row["tenant_id"]), "drill": str(drill_id), "key": key, "sha": sha256},
+        )
+    ).scalar_one()
+    await audit_async(
+        conn,
+        tenant_id=str(row["tenant_id"]),
+        actor=f"user:{claims.sub}",
+        verb="export_drill_report",
+        obj=f"evidence:{evidence_id}",
+        meta={
+            "drill_id": str(drill_id),
+            "sha256": sha256,
+            "acusaron": len(rep.acusaron),
+            "no_acusaron": len(rep.no_acusaron),
+            "sin_gabinete": len(rep.sin_gabinete),
+        },
+    )
+    return DrillReportOut(
+        evidence_id=evidence_id,
+        sha256=sha256,
+        url=presign_get(settings, key),
+        expires_in=PRESIGN_TTL_S,
+        acked=len(rep.acusaron),
+        not_acked=len(rep.no_acusaron),
+        no_gateway=len(rep.sin_gabinete),
+        median_latency_s=rep.latencia_mediana_s,
+        max_latency_s=rep.latencia_maxima_s,
+    )

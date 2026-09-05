@@ -67,6 +67,8 @@ function site(id: string, over: Partial<MapSiteState> = {}): MapSiteState {
     site_id: id,
     tenant_id: "t-1",
     name: `Sitio ${id}`,
+    // Por defecto un sitio REAL: la marca de demo es la excepción, no el caso base.
+    code: `site-${id}`,
     criticality: "high",
     lon: -98.3,
     lat: 19.06,
@@ -430,6 +432,21 @@ describe("MapPanel", () => {
     expect(glyph?.source).toBe("sites");
   });
 
+  it("[T-5.05] el rótulo DEMO es su propia capa sobre la fuente de sitios", () => {
+    // Sin capa, la propiedad `demo_glyph` no la pintaría nadie y el censo de
+    // arriba estaría comprobando un dato que no llega a ninguna pantalla.
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    const layers: Array<{ id: string; source: string; paint?: Record<string, unknown> }> =
+      mocks.map.addLayer.mock.calls.map((call) => call[0] as never);
+    const demo = layers.find((l) => l.id === "site-demo");
+    expect(demo?.source).toBe("sites");
+    // Gris, NO ámbar: el ámbar de esta consola ya es simulacro y dato retenido.
+    expect(demo?.paint?.["text-color"]).toBe("#8A9CB1");
+  });
+
   it("[T-2.47] recargar con un incidente VIEJO no arranca anillos fantasma", () => {
     const viejo = {
       event_id: "e-viejo",
@@ -626,5 +643,44 @@ describe("MapPanel", () => {
     } finally {
       rafSpy.mockRestore();
     }
+  });
+});
+
+// [T-5.05] EN EL MAPA, UN SITIO SIMULADO ERA INDISTINGUIBLE DE UNO REAL.
+//
+// El censo va por IGUALDAD y en las DOS mitades. La segunda —que nada real se
+// marque— es la que de verdad importa: rotular de demostración un edificio con
+// gente dentro es peor que no rotular ninguno, porque destruye la confianza en
+// todo lo demás que pinta la pantalla.
+describe("sitesToFeatureCollection · la marca de demostración", () => {
+  const MIXTA = [
+    site("site-sim-001"),
+    site("site-sim-020"),
+    site("site-dev"),
+    site("site-cholula-a"),
+    // El caso que un `includes("sim")` marcaría mal: un edificio real.
+    site("site-simon-01"),
+  ].map((s) => ({ ...s, code: s.site_id }));
+
+  it("marca EXACTAMENTE los simulados, ni uno más ni uno menos", () => {
+    const fc = sitesToFeatureCollection(MIXTA);
+    const marcados = fc.features
+      .filter((f) => f.properties.demo === true)
+      .map((f) => f.properties.site_id)
+      .sort();
+    expect(marcados).toEqual(["site-sim-001", "site-sim-020"]);
+  });
+
+  it("el rótulo va vacío en los reales: cero ruido en producción", () => {
+    const fc = sitesToFeatureCollection(MIXTA);
+    const glifos = fc.features.map((f) => f.properties.demo_glyph);
+    expect(glifos).toEqual(["DEMO", "DEMO", "", "", ""]);
+  });
+
+  it("con la flota real entera, ni una marca (el caso desplegado)", () => {
+    const fc = sitesToFeatureCollection(
+      [site("site-dev"), site("site-cholula-a")].map((s) => ({ ...s, code: s.site_id })),
+    );
+    expect(fc.features.filter((f) => f.properties.demo === true)).toEqual([]);
   });
 });

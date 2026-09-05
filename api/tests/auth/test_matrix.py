@@ -74,6 +74,11 @@ DENY_ALL = {
     "export": False,
     "generate_report": False,
     "edit_thresholds": False,
+    # [T-5.02] Un rol desconocido no enciende NI apaga el modo demostración: la
+    # negación por defecto vale también para el interruptor que suprime avisos.
+    "demo_mode_on": False,
+    "demo_mode_off": False,
+    "classify_incident": False,
     "siren_test": False,
     "manage_fleet": False,
     "relocate_epicenter": False,

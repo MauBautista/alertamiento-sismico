@@ -176,52 +176,193 @@ async def test_un_sensor_sin_procedencia_deja_el_sitio_no_calibrado(
     assert any(sn["calibration_source"] is None for sn in body["sensors"])
 
 
-# ---- catálogo ----------------------------------------------------------------
+# ---- catálogo · el criterio de IDENTIDAD (T-5.11) -----------------------------
+#
+# El sitio de estos tests está en la Ciudad de México (-99.13, 19.43): el conftest
+# lo siembra ahí, y aquí importa porque el criterio que decide es la distancia
+# del epicentro AL SITIO.
+
+
+async def _catalogo(clave: str, *, origin_time, magnitude, lat, lon, depth=20) -> None:
+    """Siembra una fila del catálogo de referencia."""
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO reference_earthquakes "
+                "(catalog_key, origin_time, magnitude, place, epicenter, depth_km, "
+                " source, source_ref) "
+                "VALUES (:k, :ts, :m, 'sismo de prueba', "
+                "ST_SetSRID(ST_MakePoint(:lon, :lat),4326)::geography, :d, 'SSN', 'test')"
+            ),
+            {"k": clave, "ts": origin_time, "m": magnitude, "lat": lat, "lon": lon, "d": depth},
+        )
 
 
 async def test_casa_con_el_catalogo_dentro_de_la_ventana(
     client, app, make_incident, make_event
 ) -> None:
+    """Costa de Guerrero: 295 km del sitio, sacudida a ~82 s del origen."""
     _app_with_forensics(app)
     eid = await make_event(detected_at=_OPENED)
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
-    async with get_engine().begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO reference_earthquakes "
-                "(catalog_key, origin_time, magnitude, place, epicenter, depth_km, "
-                " source, source_ref) "
-                "VALUES ('SSN-TEST-1', :ts, 7.1, 'Costa de Guerrero', "
-                "ST_SetSRID(ST_MakePoint(-99.5, 16.8),4326)::geography, 20, 'SSN', 'test')"
-            ),
-            {"ts": _OPENED + timedelta(seconds=90)},
-        )
+    await _catalogo(
+        "SSN-TEST-1",
+        origin_time=_OPENED - timedelta(seconds=82),
+        magnitude=7.1,
+        lat=16.8,
+        lon=-99.5,
+    )
 
     body = (await _get(client, iid)).json()
     assert body["catalog"]["catalog_key"] == "SSN-TEST-1"
-    assert body["catalog_delta"]["dt_s"] == 90.0
+    assert body["catalog_delta"]["dt_s"] == 82.0
+    # [T-5.11] La distancia AL SITIO es la que decidió, y viaja con el acierto.
+    assert body["catalog"]["km_al_sitio"] == pytest.approx(295, abs=5)
+    assert body["catalog_correlation"]["estado"] == "sin_dato_externo"
+    assert body["catalog_correlation"]["descartes"] == []
 
 
-async def test_un_sismo_lejano_en_el_tiempo_no_casa(client, app, make_incident, make_event) -> None:
-    """±120 s: holgado para el desfase real, estrecho para no casar dos sismos."""
+async def test_UN_SISMO_LEJANO_EN_LA_VENTANA_TEMPORAL_ya_no_casa(
+    client, app, make_incident, make_event
+) -> None:
+    """**El caso de la ficha T-5.11**, extremo a extremo y contra la base.
+
+    Un M8.3 en la costa de Chile, ocurrido 60 s antes de nuestra detección. HOY
+    casaba —el criterio era estar dentro de ±120 s y nada más— y se imprimía con
+    su magnitud y su lugar en un dictamen FIRMADO bajo el rótulo «contraste con
+    catálogo». Con la ficha no casa, y además el sistema puede DECIR por qué.
+    """
     _app_with_forensics(app)
     eid = await make_event(detected_at=_OPENED)
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
-    async with get_engine().begin() as conn:
-        await conn.execute(
-            text(
-                "INSERT INTO reference_earthquakes "
-                "(catalog_key, origin_time, magnitude, place, epicenter, depth_km, "
-                " source, source_ref) "
-                "VALUES ('SSN-TEST-FAR', :ts, 6.0, 'Otro sismo', "
-                "ST_SetSRID(ST_MakePoint(-99.5, 16.8),4326)::geography, 20, 'SSN', 'test')"
-            ),
-            {"ts": _OPENED + timedelta(seconds=600)},
-        )
+    await _catalogo(
+        "SSN-CHILE",
+        origin_time=_OPENED - timedelta(seconds=60),
+        magnitude=8.3,
+        lat=-31.57,
+        lon=-71.67,
+    )
 
     body = (await _get(client, iid)).json()
     assert body["catalog"] is None
     assert body["catalog_delta"] is None
+
+    # Y esto es lo que no se sabía decir: «hay un evento en el catálogo pero no
+    # es el nuestro». Sin ello el descarte es indistinguible de un catálogo vacío.
+    corr = body["catalog_correlation"]
+    assert corr["estado"] == "sin_correlacion"
+    assert [d["catalog_key"] for d in corr["descartes"]] == ["SSN-CHILE"]
+    assert corr["descartes"][0]["motivo"] == "fuera_de_radio"
+    assert corr["descartes"][0]["km_al_sitio"] > corr["criterio"]["radio_km"]
+
+
+async def test_gana_el_que_casa_y_no_el_mas_cercano_en_el_tiempo(
+    client, app, make_incident, make_event
+) -> None:
+    """La consulta ya no elige: trae candidatos y decide el criterio.
+
+    El intruso está MÁS cerca en el tiempo que el legítimo. Con el `LIMIT 1` por
+    Δt de antes era el único que llegaba a evaluarse.
+    """
+    _app_with_forensics(app)
+    eid = await make_event(detected_at=_OPENED)
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
+    await _catalogo(
+        "SSN-JAPON", origin_time=_OPENED - timedelta(seconds=5), magnitude=9.0, lat=38.3, lon=142.37
+    )
+    await _catalogo(
+        "SSN-BUENO", origin_time=_OPENED - timedelta(seconds=82), magnitude=7.1, lat=16.8, lon=-99.5
+    )
+
+    body = (await _get(client, iid)).json()
+    assert body["catalog"]["catalog_key"] == "SSN-BUENO"
+    assert [d["catalog_key"] for d in body["catalog_correlation"]["descartes"]] == ["SSN-JAPON"]
+
+
+async def test_un_sismo_PEQUENO_y_lejano_no_pudo_sacudir_este_edificio(
+    client, app, make_incident, make_event
+) -> None:
+    """Dentro del radio y de la ventana, y aun así imposible: M4.0 a 295 km."""
+    _app_with_forensics(app)
+    eid = await make_event(detected_at=_OPENED)
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
+    await _catalogo(
+        "SSN-CHICO", origin_time=_OPENED - timedelta(seconds=82), magnitude=4.0, lat=16.8, lon=-99.5
+    )
+
+    body = (await _get(client, iid)).json()
+    assert body["catalog"] is None
+    assert body["catalog_correlation"]["descartes"][0]["motivo"] == "magnitud_incoherente"
+
+
+async def test_un_origen_posterior_a_la_deteccion_no_casa(
+    client, app, make_incident, make_event
+) -> None:
+    """Un edificio no detecta un sismo antes de que ocurra.
+
+    Este caso —origen 90 s DESPUÉS de la detección— es el que sembraba el test
+    de esta suite antes de `T-5.11`, y casaba: el criterio comparaba el valor
+    ABSOLUTO del desfase.
+    """
+    _app_with_forensics(app)
+    eid = await make_event(detected_at=_OPENED)
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
+    await _catalogo(
+        "SSN-FUTURO",
+        origin_time=_OPENED + timedelta(seconds=90),
+        magnitude=7.1,
+        lat=16.8,
+        lon=-99.5,
+    )
+
+    body = (await _get(client, iid)).json()
+    assert body["catalog"] is None
+    assert body["catalog_correlation"]["descartes"][0]["motivo"] == "anterior_a_su_origen"
+
+
+async def test_sin_epicentro_propio_el_acierto_NO_se_presenta_como_contraste(
+    client, app, make_incident, make_event
+) -> None:
+    """La ruta del receptor —la normal— no tiene epicentro propio que comparar.
+
+    La identidad sí se estableció (ventana + radio + coherencia), pero llamar
+    «contraste» a eso prometería una verificación que no ocurrió.
+    """
+    _app_with_forensics(app)
+    eid = await make_event(detected_at=_OPENED)  # sin epicentro: es lo normal
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
+    await _catalogo(
+        "SSN-TEST-1",
+        origin_time=_OPENED - timedelta(seconds=82),
+        magnitude=7.1,
+        lat=16.8,
+        lon=-99.5,
+    )
+
+    body = (await _get(client, iid)).json()
+    assert body["catalog_correlation"]["verificacion"] == "no_verificable"
+    assert body["catalog_delta"]["km"] is None
+
+
+async def test_un_sismo_lejano_en_el_tiempo_no_casa(client, app, make_incident, make_event) -> None:
+    """A 295 km la sacudida llega a ~82 s: a los 600 s ya no puede ser el nuestro."""
+    _app_with_forensics(app)
+    eid = await make_event(detected_at=_OPENED)
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, event_id=eid)
+    await _catalogo(
+        "SSN-TEST-FAR",
+        origin_time=_OPENED - timedelta(seconds=600),
+        magnitude=6.0,
+        lat=16.8,
+        lon=-99.5,
+    )
+
+    body = (await _get(client, iid)).json()
+    assert body["catalog"] is None
+    assert body["catalog_delta"] is None
+    # Más allá de la cota de la consulta ni siquiera llega a evaluarse, y eso
+    # también es correcto: nada que a 600 s pueda ser un sismo de 295 km.
+    assert body["catalog_correlation"]["estado"] == "sin_correlacion"
 
 
 # ---- aislamiento (regla de oro 5) --------------------------------------------

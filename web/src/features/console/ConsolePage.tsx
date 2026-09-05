@@ -22,6 +22,7 @@ import AlertBanner from "./AlertBanner";
 import ComparePanel from "./ComparePanel";
 import DetailPanel from "./DetailPanel";
 import EpicenterModal from "./EpicenterModal";
+import DemoModeBanner from "./DemoModeBanner";
 import DrillBanner from "./DrillBanner";
 import MaintenanceBanner from "./MaintenanceBanner";
 import IncidentTable from "./IncidentTable";
@@ -188,6 +189,7 @@ function ConsoleWall() {
       <main className="soc-main">
         {/* T-1.60: banner NO-real del simulacro — FUERA del grid del wall; con
             incidente vivo se degrada a badge (lo real domina también visualmente). */}
+        <DemoModeBanner />
         <DrillBanner hasLiveIncident={critical !== null} />
         {/* [T-2.71] Ventana de mantenimiento: alarmas de OPERACIÓN mudas. A
             diferencia del simulacro NO se degrada con incidente vivo — el
@@ -303,6 +305,14 @@ function ConsoleWall() {
             site_id: focusSiteId,
             name: focusSite?.name ?? `SITIO ${focusSiteId.slice(0, 8)}`,
             coords: focusSite ? coordsLabel(focusSite.lat, focusSite.lon) : null,
+            // [T-5.26] Identidad del hardware. `?? null` y no `?? ""`: sin sitio
+            // enfocado en el snapshot no se sabe nada de su aparato, y una cadena
+            // vacía se pinta como un serial en blanco en vez de como S/D.
+            serial: focusSite?.serial ?? null,
+            fwVersion: focusSite?.fw_version ?? null,
+            sensorModels: focusSite?.sensor_models ?? null,
+            powerStatus: focusSite?.power_status ?? null,
+            batteryPct: focusSite?.battery_pct ?? null,
           }}
           features={features}
           soh={soh}

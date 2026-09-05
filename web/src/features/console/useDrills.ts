@@ -4,12 +4,13 @@
 // pagina de verdad (`next_cursor`) en vez de quedarse con los 50 más recientes:
 // un tenant con simulacros trimestrales por edificio los agota en un año.
 
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 
-import { listDrillsDrillsGet } from "@takab/sdk";
+import { drillReportDrillsDrillIdReportPost, listDrillsDrillsGet } from "@takab/sdk";
 import type { DrillList, DrillOut } from "@takab/sdk";
 
+import type { PendingDownload } from "../../lib/download";
 import { DRILL_LIST_KEY } from "./useActiveDrill";
 
 export const DRILL_PAGE_SIZE = 25;
@@ -67,5 +68,54 @@ export function useDrills(kind: DrillKind = "all"): DrillHistoryData {
     refetch: () => {
       void query.refetch();
     },
+  };
+}
+
+// ── [T-5.14] Generar el reporte del simulacro ───────────────────────────────
+//
+// Mismo patrón que el dictamen PDF (`useIncidentDetail`), y por el mismo motivo
+// medido: la URL presignada no existe hasta que el servidor renderiza, hashea y
+// sube el documento, así que la pestaña se RESERVA dentro del gesto del usuario
+// y se navega cuando llega la URL. Abrirla en el `onSuccess` la bloquea el
+// navegador en silencio pasados ~5 s de activación transitoria.
+
+export interface DrillReportData {
+  /** Pide el reporte del simulacro y navega la pestaña ya reservada. */
+  exportar: (drillId: string, pending: PendingDownload) => void;
+  /** `drill_id` en vuelo, o `null`: el botón de ESE simulacro se deshabilita. */
+  pendingId: string | null;
+  error: string | null;
+}
+
+export function useDrillReport(): DrillReportData {
+  const qc = useQueryClient();
+  const mutation = useMutation({
+    mutationFn: async (vars: { drillId: string; pending: PendingDownload }) => {
+      try {
+        const { data, response } = await drillReportDrillsDrillIdReportPost({
+          path: { drill_id: vars.drillId },
+        });
+        if (data === undefined) {
+          throw new Error(`POST /drills/${vars.drillId}/report falló (${response.status})`);
+        }
+        return data;
+      } catch (err) {
+        // Sin esto el operador se queda un `about:blank` huérfano delante y
+        // ningún mensaje: parecería que la exportación salió bien.
+        vars.pending.cancel();
+        throw err;
+      }
+    },
+    onSuccess: (data, vars) => {
+      vars.pending.resolve(data.url);
+      // El reporte queda inscrito como evidencia inmutable del tenant.
+      void qc.invalidateQueries({ queryKey: ["evidence"] });
+    },
+  });
+
+  return {
+    exportar: (drillId, pending) => mutation.mutate({ drillId, pending }),
+    pendingId: mutation.isPending ? mutation.variables.drillId : null,
+    error: mutation.error ? mutation.error.message : null,
   };
 }

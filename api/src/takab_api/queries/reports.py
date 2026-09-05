@@ -14,6 +14,9 @@ from sqlalchemy import TextClause, text
 # Incidente + sitio para el encabezado del reporte (RLS decide visibilidad).
 SELECT_INCIDENT = text(
     "SELECT i.incident_id, i.tenant_id, i.event_id, i.opened_at, i.closed_at, "
+    # [T-5.18] `site_id` para el techo por EDIFICIO de la exportación: el del
+    # usuario sale del actor, el del sitio necesita saber de qué sitio hablamos.
+    "i.site_id, "
     "i.severity, i.state, i.trigger, i.max_pga_g, i.max_pgv_cms, "
     "s.name AS site_name, s.code AS site_code "
     "FROM incidents i JOIN sites s ON s.site_id = i.site_id "

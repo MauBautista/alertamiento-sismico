@@ -43,7 +43,7 @@ const SIN_ALARMA = "El servidor no reporta ninguna alarma activa en su edificio.
 export default function AlarmaInmueble() {
   const status = useSessionStore((s) => s.status);
   const siteId = useWatchedSiteId();
-  const { state, data, loading, error, stale, dataUpdatedAt, refetch } = useAlertState(siteId);
+  const { state, data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
 
   // [T-2.147.b] Quién puede acusar lo dice el SERVIDOR, con la MISMA acción que usa
   // para elegir a quién despierta el push (`roles_with_action("manual_activate")`).
@@ -82,7 +82,7 @@ export default function AlarmaInmueble() {
       error={data === null ? error : null}
       loading={loading}
       onRetry={refetch}
-      staleSinceMs={stale && data !== null ? dataUpdatedAt : null}
+      staleSinceMs={staleSinceMs}
     >
       {alarma !== null && data !== null ? (
         <BuildingAlarmView

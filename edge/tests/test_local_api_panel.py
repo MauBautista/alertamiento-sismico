@@ -70,6 +70,9 @@ def _base() -> dict:
     return {
         "gateway_id": "gw-test-0001",
         "site_name": "Hospital de Prueba",
+        # [T-5.26] Identidad correlacionable con la consola.
+        "iot_thing": "gw-test-0001",
+        "station_code": "AM.R4F74",
         "now": _NOW,
         "uptime_s": 14520.0,
         "refresh_ms": 1000,
@@ -132,12 +135,38 @@ def _base() -> dict:
             "pga_trip_g": 0.060,
             "pgv_watch_cms": 2.0,
             "pgv_trip_cms": 4.0,
+            # [T-5.16] `config_version: 4` arriba ⇒ esta banda vino de la nube.
+            # `sin_resolver` es la otra mitad y la prueba `test_local_api.py`.
+            "origen": "sincronizado",
         },
         "latencies": {
             "reflex_s": 0.00665,
             "reflex_budget_s": 0.100,
             "rules_s": 0.118,
             "rules_budget_s": 0.200,
+            # [T-5.22] El acta, al lado del campo VIVO. `reflex_s` vuelve a `null`
+            # en cada reinicio y esto no: es el artefacto de la cifra más citada
+            # del producto. Mejor y PEOR, nunca solo el mejor.
+            "acta": {
+                "total": 2,
+                "mejor_ms": 4.16,
+                "peor_ms": 6.65,
+                "ultima": {
+                    "medido_en": "2026-07-31T17:12:04+00:00",
+                    "latencia_s": 0.00416,
+                    "latencia_ms": 4.16,
+                    "gateway_id": "gw-dev-0001",
+                    "fw_version": "abc1234",
+                    "es_prueba": False,
+                    "canales": {
+                        "siren": True,
+                        "strobe": True,
+                        "gas_valve": False,
+                        "elevator": False,
+                        "door_retainer": False,
+                    },
+                },
+            },
         },
         "seedlink": {"packets_seen": 1284902, "reconnects": 2, "duplicates": 0, "gaps": 0},
         "calibration": {
@@ -252,6 +281,9 @@ def _cold() -> dict:
                 "reflex_budget_s": 0.100,
                 "rules_s": None,
                 "rules_budget_s": 0.200,
+                # Gabinete sin un solo flanco: `total: 0` y las cifras en `null`.
+                # Jamás un 0.0, que se leería como la mejor latencia del catálogo.
+                "acta": {"total": 0, "ultima": None, "mejor_ms": None, "peor_ms": None},
             },
             "seedlink": None,
             "calibration": {
@@ -1779,6 +1811,174 @@ def test_cerrar_alerta_aparece_con_el_enclave_y_exige_dos_clics(tmp_path):
     assert _posts(dos, "api/reset")
 
 
+# --------------------------------------------------- [T-5.01] modo demo INERTE
+#
+# El defecto que estos tests vienen a cerrar, medido en la auditoría V1-COMERCIAL
+# (2026-09-02): con `?demo=` puesto, `doAction()` hacía el POST igual —el único
+# `if (!DEMO)` del flujo solo se saltaba el refetch de estado— y `PROBAR
+# ACTUADORES` («sostiene sirena+estrobo · pulso en gas, ascensores, puertas») se
+# pintaba incondicionalmente. O sea: abrir el panel en modo demo en el monitor de
+# una exposición y pulsar un botón **accionaba el edificio de verdad**, mientras
+# la cinta de arriba afirmaba `DEMO · NO ES ESTADO REAL`.
+#
+# Es la familia de defecto que este repositorio ya persigue —una superficie que
+# dice «bien» cuando quiere decir «no sé»— con un agravante: aquí la superficie
+# dice «nada de lo que ves es real» al lado de un botón que sí lo es.
+#
+# LOS TESTS CUENTAN PETICIONES, NO LEEN PROSA. Un test que comprobara el rótulo
+# `INERTE` habría pasado en verde con el POST intacto, que es exactamente cómo
+# `test_el_modo_demo_se_declara_siempre` —que sigue siendo correcto— convivió con
+# el defecto durante meses: verifica que la cinta se VEA, no que los botones
+# estén inertes.
+
+
+def _escenas_demo() -> list[str]:
+    """Los nombres de escena, DERIVADOS del propio `index.html`.
+
+    Escritos a mano, una escena nueva entraría sin prueba — y las escenas son
+    justo lo que puebla la pantalla de falsedades creíbles. El delimitador es el
+    literal del objeto, y que se haya delimitado de verdad lo comprueba el
+    `assert` de no-vacuidad de aquí abajo.
+    """
+    html = _INDEX.read_text("utf-8")
+    i = html.index("const SCENES = {")
+    bloque = html[i : html.index("\n};", i)]
+    escenas = re.findall(r"^  ([a-z_]+):", bloque, re.M)
+    assert len(escenas) >= 10, f"el barrido de escenas se quedó corto: {escenas}"
+    return escenas
+
+
+def _etiquetas_de_accion(out: dict) -> list[str]:
+    """Las etiquetas de los botones, DERIVADAS del DOM que pintó `renderActions`.
+
+    Enumerarlas a mano dejaría fuera al botón siguiente, que es el que va a tener
+    el defecto. Cada botón es `<button><span>ETIQUETA</span><span class=sub>…`,
+    así que la etiqueta es el texto del PRIMER hijo.
+    """
+    caja = _node(out["tree"], "action-btns")
+    return [
+        (b["kids"][0].get("txt") or "").strip()
+        for b in caja.get("kids", ())
+        if b.get("tag") == "BUTTON" and b.get("kids")
+    ]
+
+
+@pytest.mark.parametrize("escena", _escenas_demo())
+def test_en_modo_demo_ningun_boton_manda_una_orden_al_gabinete(tmp_path, escena):
+    """CERO peticiones al gabinete desde cualquier escena de demostración.
+
+    Se pulsan TODOS los botones que la escena ofrezca, derivados del DOM. El
+    conteo esperado es cero y se dice en voz alta: un test de conjunto vacío que
+    no declara su tamaño pasa por vacuidad, y aquí la vacuidad sería el propio
+    defecto (una escena que no pinta botones también da cero POST).
+    """
+    primera = _render(tmp_path, search=f"?demo={escena}", clicks=["frame"])
+    etiquetas = _etiquetas_de_accion(primera)
+
+    out = _render(
+        tmp_path,
+        search=f"?demo={escena}",
+        clicks=["frame"] + [f"action:{e}" for e in etiquetas] + ["frame"],
+    )
+    ordenes = [f for f in out["fetches"] if f["method"] == "POST"]
+    assert ordenes == [], (
+        f"la escena {escena!r} mandó {len(ordenes)} orden(es) al gabinete: "
+        f"{[o['url'] for o in ordenes]}\n"
+        "  La pantalla dice DEMO · NO ES ESTADO REAL mientras el botón acciona el edificio."
+    )
+
+
+def test_la_demo_pulsa_botones_de_verdad_y_no_una_lista_vacia(tmp_path):
+    """Guarda de no-vacuidad del test de arriba, con su cifra a la vista.
+
+    Sin esto, borrar `renderActions` entero dejaría el test anterior en verde:
+    cero botones también producen cero peticiones.
+    """
+    out = _render(tmp_path, search="?demo=alerta", clicks=["frame"])
+    etiquetas = _etiquetas_de_accion(out)
+    assert len(etiquetas) >= 5, f"la escena de alerta pinta {len(etiquetas)} botones: {etiquetas}"
+    assert "PROBAR ACTUADORES" in etiquetas, etiquetas
+    assert "CERRAR ALERTA" in etiquetas, etiquetas
+
+
+def test_en_modo_demo_los_botones_se_declaran_inertes(tmp_path):
+    """Se PINTAN, y se pintan inertes.
+
+    Esconderlos sería mentir en la otra dirección: `?demo=` existe para enseñar
+    cómo se ve el panel en estados que no se pueden reproducir a voluntad, y un
+    panel sin sus botones no se parece al real. La honestidad es que sigan ahí y
+    que digan que no hacen nada.
+    """
+    out = _render(tmp_path, search="?demo=alerta", clicks=["frame"])
+    caja = _node(out["tree"], "action-btns")
+    botones = [b for b in caja.get("kids", ()) if b.get("tag") == "BUTTON"]
+    assert botones, "sin botones no hay nada que declarar inerte"
+    for b in botones:
+        assert "inert" in b.get("cls", "").split(), f"botón sin marca de inerte: {_text(b)!r}"
+    assert "INERTE EN DEMO" in _txt(out, "action-btns")
+
+
+def test_en_modo_demo_el_clic_lo_dice_en_vez_de_callarse(tmp_path):
+    """Un botón que no hace nada y no explica por qué es una avería aparente.
+
+    El panel ya grita sus rechazos con el NOMBRE de la orden (UX post-incidente
+    del 2026-07-31); este camino usa el mismo canal.
+    """
+    out = _render(tmp_path, search="?demo=alerta", clicks=["frame", "action:PROBAR SIRENA"])
+    assert "MODO DEMO" in _txt(out, "pin-msg")
+    assert "PROBAR SIRENA" in _txt(out, "action-toast")
+
+
+def test_el_panel_manda_sus_ordenes_por_UN_SOLO_embudo_y_la_guarda_esta_en_el():
+    """Lo que hace estructural a la guarda de demo, en vez de disciplinaria.
+
+    Los tests de arriba pulsan los botones que `renderActions` pinta. Si mañana
+    alguien añade un `fetch(..., POST)` en otro sitio —un atajo de teclado, un
+    gesto, una acción desde una tarjeta— quedaría fuera de ese barrido y el
+    defecto volvería por la puerta de al lado.
+
+    Medido hoy: en las ~2 400 líneas del panel hay **un** POST, y su función
+    tiene la guarda la primera. Este test lo exige por conteo, no por revisión.
+    """
+    html = _INDEX.read_text("utf-8")
+    posts = [
+        n for n, ln in enumerate(html.splitlines(), 1) if re.search(r"method:\s*['\"]POST['\"]", ln)
+    ]
+    assert len(posts) == 1, (
+        f"el panel tiene {len(posts)} caminos que mandan órdenes (líneas {posts}).\n"
+        "  La guarda de `?demo=` vive en `doAction`; un POST fuera de ahí la esquiva.\n"
+        "  O se enruta por `doAction`, o este test crece con su razón escrita."
+    )
+    cuerpo = html[html.index("async function doAction(") : html.index("function renderActions(")]
+    assert cuerpo.index("if (DEMO){") < cuerpo.index("if (twoStep"), (
+        "la guarda de demo tiene que ir ANTES del armado de dos clics: si no, el "
+        "botón se queda armado y el operador cree que la orden salió."
+    )
+
+
+def test_sin_modo_demo_los_mismos_botones_siguen_mandando_su_orden(tmp_path):
+    """Guarda anti-prohibir-de-más: la mitad que hace inútil una prohibición.
+
+    Sin esto, `doAction(){ return; }` dejaría verdes todos los tests de arriba y
+    el panel del gabinete real se quedaría sin botones que funcionen.
+    """
+    st = _base()
+    st["siren_sounding"] = True
+    st["alert_latched"] = True
+    con_demo = _etiquetas_de_accion(
+        _render(tmp_path, status=st, search="?demo=alerta", clicks=["frame"])
+    )
+    sin_demo = _etiquetas_de_accion(_render(tmp_path, status=st, clicks=["frame"]))
+    assert sin_demo == con_demo, (
+        "la demo cambió QUÉ botones se ofrecen; solo puede cambiar si accionan.\n"
+        f"  con demo: {con_demo}\n  sin demo: {sin_demo}"
+    )
+
+    out = _render(tmp_path, status=st, clicks=["action:PROBAR SIRENA"])
+    assert _posts(out, "api/siren-test"), "sin demo, el botón tiene que seguir mandando su orden"
+    assert "INERTE EN DEMO" not in _txt(out, "action-btns")
+
+
 def test_sin_audio_no_se_ofrece_el_voceo_de_simulacro(tmp_path):
     st = _base()
     st["audio"] = None
@@ -2025,3 +2225,286 @@ def test_sin_enlace_el_aviso_de_baja_no_se_afirma_en_presente(tmp_path):
     meta = _txt(out, "baja-meta")
     assert "v41" in meta
     assert "SIN ENLACE" in meta
+
+
+# ── [T-5.24] El reloj deja de pintarse siempre en verde ────────────────────
+#
+# El desfase se mide de verdad, viaja, se persiste y DEGRADA el estado del sitio
+# en la consola. Pero esta fila era la única de la tabla con un ternario propio
+# —`null ? warn : ok`— en vez del ayudante de umbrales que usan sus vecinas, así
+# que un desfase de CINCO SEGUNDOS se veía igual de verde que uno de tres
+# milisegundos. Y sin hora confiable ninguna evidencia sirve: el sello de un
+# check-in, de un dictamen y de un acuse salen todos de este reloj.
+
+
+def _celda_de_la_fila(salida: dict, etiqueta: str) -> dict | None:
+    """La hoja del VALOR de esa fila de salud (texto y color).
+
+    Las filas se emiten como pares etiqueta/valor: se busca la hoja cuyo texto es
+    la etiqueta y se devuelve la siguiente que tenga color propio. Se resuelve la
+    fila ENTERA y no solo su color porque el `S/D` hay que leerlo en ESTA celda:
+    media tabla dice `S/D` en cuanto falta un sensor, así que buscarlo suelto por
+    todo el árbol pasaría en verde aunque el reloj se pintara con un número.
+    """
+    hojas = _leaves(salida["tree"])
+    for k, hoja in enumerate(hojas):
+        if etiqueta in (hoja.get("txt") or ""):
+            for siguiente in hojas[k + 1 : k + 3]:
+                if siguiente.get("color"):
+                    return siguiente
+    return None
+
+
+def _color_de_la_fila(salida: dict, etiqueta: str) -> str | None:
+    celda = _celda_de_la_fila(salida, etiqueta)
+    return celda.get("color") if celda else None
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_reloj_A_LA_DERIVA_ya_no_se_pinta_igual_que_uno_sano(tmp_path: Path) -> None:
+    sano = _base()
+    sano["health"]["ntp_offset_s"] = 0.0031  # 3.1 ms
+    a_la_deriva = _base()
+    a_la_deriva["health"]["ntp_offset_s"] = 5.0  # CINCO SEGUNDOS
+
+    c_sano = _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
+    c_deriva = _color_de_la_fila(_render(tmp_path, status=a_la_deriva), "Desfase de reloj NTP")
+
+    assert c_sano is not None and c_deriva is not None
+    assert c_sano != c_deriva, (
+        "cinco segundos de desfase se pintan igual que tres milisegundos: "
+        "la fila sigue sin usar el ayudante de umbrales"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_reloj_ADELANTADO_miente_igual_que_uno_atrasado(tmp_path: Path) -> None:
+    """El ternario viejo ni siquiera miraba el signo."""
+    adelantado = _base()
+    adelantado["health"]["ntp_offset_s"] = -5.0
+    sano = _base()
+    sano["health"]["ntp_offset_s"] = 0.0031
+
+    assert _color_de_la_fila(_render(tmp_path, status=adelantado), "Desfase de reloj NTP") != (
+        _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_SIN_dato_de_reloj_el_gabinete_lo_declara(tmp_path: Path) -> None:
+    """Criterio 4: `S/D`, y jamás verde. No saber la hora no es tenerla bien."""
+    sin_dato = _base()
+    sin_dato["health"]["ntp_offset_s"] = None
+    salida = _render(tmp_path, status=sin_dato)
+
+    celda = _celda_de_la_fila(salida, "Desfase de reloj NTP")
+    assert celda is not None, "desapareció la fila del reloj del panel"
+    assert "S/D" in (celda.get("txt") or ""), (
+        f"sin dato de reloj el panel no lo declara EN SU CELDA; puso: {celda.get('txt')!r}"
+    )
+    sano = _base()
+    sano["health"]["ntp_offset_s"] = 0.0031
+    assert _color_de_la_fila(salida, "Desfase de reloj NTP") != (
+        _color_de_la_fila(_render(tmp_path, status=sano), "Desfase de reloj NTP")
+    )
+
+
+# ── [T-5.25] El nodo que no confirma el silencio se DECLARA ──────────────────
+#
+# Silenciar cuatro de cinco no es silenciar. El rótulo viejo era `SIN ACK` a
+# secas, y ese texto no distingue un test perdido —da igual— de un SILENCIO
+# perdido, que significa que ESE nodo sigue sonando mientras el operador cree que
+# ya calló el edificio y se va a atender la falsa alarma.
+
+
+def _secundarios(salida: dict) -> str:
+    return _txt(salida, "lora-rows")
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_SILENCIO_sin_confirmar_no_se_lee_igual_que_un_SIN_ACK(tmp_path: Path) -> None:
+    st = _base()
+    nodo = st["lora"]["secondaries"][0]
+    nodo["acked"] = False
+    nodo["pending"] = "silence"
+    texto = _secundarios(_render(tmp_path, status=st))
+
+    assert "SIGUE SONANDO" in texto, (
+        "un silencio que NO llegó se pinta como un fallo de acuse cualquiera; "
+        f"quien mira el panel no puede saber que ese nodo sigue sonando: {texto!r}"
+    )
+
+    otro = _base()
+    otro["lora"]["secondaries"][0]["acked"] = False
+    otro["lora"]["secondaries"][0]["pending"] = "test"
+    assert "SIGUE SONANDO" not in _secundarios(_render(tmp_path, status=otro)), (
+        "un TEST perdido se anuncia como si el edificio siguiera sonando: gritar "
+        "por lo que da igual es cómo se deja de leer un panel"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_un_silencio_CONFIRMADO_se_declara_silenciado(tmp_path: Path) -> None:
+    """La otra mitad: el operador tiene que poder ver QUÉ nodos calló de verdad."""
+    st = _base()
+    nodo = st["lora"]["secondaries"][0]
+    nodo["acked"] = True
+    nodo["pending"] = "silence"
+    nodo["alarm_active"] = True
+    texto = _secundarios(_render(tmp_path, status=st))
+
+    assert "SILENCIADO" in texto, f"el nodo que sí confirmó el silencio no lo dice: {texto!r}"
+    assert "SIGUE SONANDO" not in texto
+
+
+# ── [T-5.26] La identidad que permite casar el panel con la consola ──────────
+#
+# Quien está de pie delante del Pi veía su `gateway_id` y el nombre del sitio, y
+# nada más: para saber con qué nombre lo conoce la nube —lo que la consola
+# muestra— o qué código de estación firma las trazas del sismógrafo había que
+# abrir el archivo de entorno del gabinete.
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_el_panel_declara_su_identidad_correlacionable(tmp_path: Path) -> None:
+    salida = _render(tmp_path, status=_base())
+    textos = " ".join(h.get("txt") or "" for h in _leaves(salida["tree"]))
+
+    assert "gw-test-0001" in textos, "el panel no dice con qué nombre lo conoce la nube"
+    assert "AM.R4F74" in textos, (
+        "el panel no dice el código de estación del sismógrafo: sin él, quien está "
+        "delante del gabinete no puede correlacionar una traza con la consola"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_sin_identidad_configurada_el_panel_lo_DECLARA(tmp_path: Path) -> None:
+    """Cadena vacía = no configurado, y eso se dice. Un hueco se lee como un dato
+    bueno, que es justo lo que prohíbe la regla de oro 7."""
+    st = _base()
+    st["iot_thing"] = ""
+    st["station_code"] = ""
+    salida = _render(tmp_path, status=st)
+
+    textos = [h.get("txt") or "" for h in _leaves(salida["tree"])]
+    ident = next((x for x in textos if x == "S/D · S/D"), None)
+    assert ident is not None, (
+        f"sin identidad configurada el panel deja el hueco en vez de declararlo: {textos[:40]}"
+    )
+
+
+# ── [T-5.10] Con procedencia, o no se pinta ──────────────────────────────────
+#
+# El panel pinta `M x.x` del catálogo del SSN en dos tarjetas —la lista de sismos
+# y la comparativa sismo↔estación— **al lado de la sacudida que midió el sensor de
+# este edificio**. Son dos cosas distintas: una la medimos nosotros, la otra la
+# publica una fuente oficial. Sin decir cuál es cuál, la cifra externa se lee como
+# propia, y de ahí a «TAKAB me dice la magnitud» hay un paso.
+#
+# La comparativa no decía NADA de su procedencia. La lista traía la hora de captura
+# y el origen del feed (T-2.66) pero **no la fuente**.
+#
+# Se reutiliza `_CATALOG` —el fixture que ya existe— en vez de fabricar otro: dos
+# catálogos de prueba acabarían describiendo sismos distintos.
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_la_lista_del_catalogo_declara_su_FUENTE(tmp_path: Path) -> None:
+    salida = _render(tmp_path, status=_base(), catalog=_CATALOG)
+    textos = " ".join(h.get("txt") or "" for h in _leaves(salida["tree"]))
+
+    assert "FUENTE SSN · UNAM" in textos, (
+        "el panel pinta magnitudes del catálogo sin decir de qué fuente salen. "
+        "Traía la hora de captura y el origen del feed, pero no la fuente."
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_sin_fuente_declarada_el_panel_LO_DICE(tmp_path: Path) -> None:
+    """No se calla: que no conste de dónde salió una cifra es lo que hay que enseñar.
+
+    Un catálogo sin `source` es un documento incompleto o un consumidor viejo. La
+    respuesta honesta no es ocultar la cifra —el operador la necesita— sino
+    declarar que su origen no consta.
+    """
+    sin_fuente = dict(_CATALOG, source=None)
+    salida = _render(tmp_path, status=_base(), catalog=sin_fuente)
+    textos = " ".join(h.get("txt") or "" for h in _leaves(salida["tree"]))
+
+    assert "FUENTE NO DECLARADA" in textos, (
+        "con un catálogo sin fuente el panel no dice nada: la cifra queda "
+        f"indistinguible de una medición propia. Textos: {textos[:300]!r}"
+    )
+
+
+@pytest.mark.skipif(_NODE is None, reason="node no está en el PATH")
+def test_la_COMPARATIVA_declara_la_procedencia_de_su_cifra(tmp_path: Path) -> None:
+    """La tarjeta que NO decía nada, y la que más lo necesita.
+
+    La comparativa pone la magnitud del catálogo **al lado de lo que midió el
+    sensor de este edificio**, para contrastarlas. Es exactamente el sitio donde
+    una cifra ajena sin procedencia se lee como propia — y era el único que no la
+    declaraba en absoluto.
+
+    Se llega por el mismo camino que los otros tests de esta tarjeta: abrir el
+    mapa y elegir un sismo de la lista.
+    """
+    salida = _render(tmp_path, catalog=_CATALOG, clicks=["#open-map", "row:ssn-rows-big", "frame"])
+    hechos = _txt(salida, "cmp-facts")
+
+    assert "M 5.4" in hechos, f"el guion no reproduce el caso: {hechos[:200]!r}"
+    assert "FUENTE SSN · UNAM" in hechos, (
+        "la comparativa pone la magnitud del catálogo junto a la sacudida MEDIDA "
+        f"por el sensor del inmueble y no dice de dónde sale: {hechos[:300]!r}"
+    )
+
+
+# ── [T-5.22] El acta del reflejo, en la pantalla ────────────────────────────
+#
+# La ficha dice que en el gabinete vivo «el campo de latencia está en nulo: la
+# medición no está viva, es histórica». `reflex_s` es volátil y vuelve a S/D en
+# cada reinicio; el acta no. Si el acta viaja en el JSON y NO llega a la pantalla,
+# el runbook de la sesión presencial —que dice «sin ssh: míralo en el panel»—
+# estaría mintiendo.
+
+
+def test_el_ACTA_del_reflejo_llega_a_la_pantalla(tmp_path: Path) -> None:
+    """Con mediciones: cuántas, la mejor y **la peor**, y los relés de la última."""
+    texto = _txt(_render(tmp_path), "lat-rows")
+
+    assert "Acta del reflejo" in texto
+    assert "2 medición(es)" in texto
+    assert "mejor 4.16 ms" in texto
+    # Publicar solo la mejor es cómo una cifra de venta deja de describir al
+    # producto: el peor caso es el que un perito mira.
+    assert "peor 6.65 ms" in texto
+    # Y el estado de los relés, que es lo que convierte el número en evidencia.
+    assert "relés: siren · strobe" in texto
+    assert "gw-dev-0001" in texto
+
+
+def test_SIN_MEDICIONES_el_panel_lo_dice_y_no_pinta_un_cero(tmp_path: Path) -> None:
+    """Un `0.00 ms` sería la mejor latencia del catálogo y una mentira."""
+    st = _base()
+    st["latencies"]["acta"] = {"total": 0, "ultima": None, "mejor_ms": None, "peor_ms": None}
+    texto = _txt(_render(tmp_path, status=st), "lat-rows")
+
+    assert "SIN MEDICIONES TODAVÍA" in texto
+    assert "0.00 ms" not in texto
+
+
+def test_SIN_ACTA_EN_EL_FIRMWARE_es_un_mensaje_DISTINTO(tmp_path: Path) -> None:
+    """Los dos «no hay» mandan a arreglar cosas distintas.
+
+    `acta: null` = firmware sin el módulo, se arregla **desplegando**.
+    `total: 0` = desplegado y sin flancos, se arregla **pulsando el WR-1**.
+    Colapsarlos mandaría a una sesión presencial —que cuesta un viaje— a un
+    gabinete que no puede escribir ni una línea. Medido el 2026-09-04: el Pi de
+    desarrollo estaba justo en el primer caso.
+    """
+    st = _base()
+    st["latencies"]["acta"] = None
+    texto = _txt(_render(tmp_path, status=st), "lat-rows")
+
+    assert "SIN ACTA EN ESTE FIRMWARE" in texto
+    assert "SIN MEDICIONES TODAVÍA" not in texto

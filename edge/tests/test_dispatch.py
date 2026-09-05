@@ -384,6 +384,14 @@ class _FakeDrill:
         self.ended: list[str] = []
         self.start_result: tuple[bool, str] = (True, "simulacro iniciado")
 
+    audio_evidence: dict = {
+        "asset_id": "takab-simulacro-v1",
+        "path": "/opt/takab/assets/simulacro.wav",
+        "sha256": "a" * 64,
+        "will_sound": True,
+        "reason": "",
+    }
+
     def start_drill(self, drill_id: str, duration_s: float) -> tuple[bool, str]:
         self.started.append((drill_id, duration_s))
         return self.start_result
@@ -391,6 +399,11 @@ class _FakeDrill:
     def end_drill(self, drill_id: str | None = None, reason: str = "") -> bool:
         self.ended.append(drill_id or "")
         return True
+
+    def status(self) -> dict:
+        """[T-5.17] El controlador real resuelve la evidencia de audio AL
+        ARRANCAR y la deja aquí; el dispatcher la copia al acuse."""
+        return {"active": True, "audio": self.audio_evidence}
 
 
 def _drill_dispatcher():
@@ -608,3 +621,34 @@ def test_una_actualizacion_sin_command_enabled_no_se_ejecuta(tmp_path, monkeypat
     assert _acks(cloud)[0]["success"] is False
     assert "command_enabled" in _acks(cloud)[0]["detail"]
     assert not rastro.exists()
+
+
+def test_el_acuse_del_drill_start_LLEVA_lo_que_va_a_sonar() -> None:
+    """[T-5.17] Sin esto, «qué sonó en la torre B» solo vivía en el journal de la torre B.
+
+    El acuse ya viajaba a la nube y ya se guardaba por sitio; lo que faltaba era
+    que dijera QUÉ. `results` existe en el contrato del acuse desde siempre, así
+    que esto no abre superficie nueva hacia el gabinete: solo la usa.
+    """
+    dispatcher, signer, cloud, _actuators, _drill = _drill_dispatcher()
+    payload = {"channel": "system", "action": "drill_start", "event_id": "DRILL-audio"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-dr-audio", NOW))
+
+    ack = _acks(cloud)[0]
+    assert ack["success"] is True
+    audio = (ack.get("results") or {}).get("audio")
+    assert audio is not None, "el acuse no dice qué sonó"
+    assert audio["asset_id"] == "takab-simulacro-v1"
+    assert len(audio["sha256"]) == 64
+
+
+def test_un_drill_RECHAZADO_no_afirma_que_sono_nada() -> None:
+    """Un `results.audio` en un rechazo diría que hubo voceo donde no hubo."""
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    drill.start_result = (False, "alerta SASMEX real en curso; simulacro rechazado")
+    payload = {"channel": "system", "action": "drill_start", "event_id": "DRILL-no"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-dr-no", NOW))
+
+    ack = _acks(cloud)[0]
+    assert ack["success"] is False
+    assert (ack.get("results") or {}).get("audio") is None

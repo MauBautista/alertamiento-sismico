@@ -131,7 +131,13 @@ CREATE TABLE sites (
   criticality   text NOT NULL DEFAULT 'medium' CHECK (criticality IN ('low','medium','high','critical')),
   geom          geography(Point,4326) NOT NULL,
   address       text,
-  building_type text,
+  -- [T-5.16 · D-28] Catálogo CERRADO, derivado de `shared/schemas/tipologia_umbral.json`
+  -- (`api/tests/test_tipologia_umbral.py` compara las dos listas por igualdad). El tipo
+  -- SUGIERE una banda de umbral, no la resuelve: cambiarlo no cambia por sí solo lo que
+  -- corre en el gabinete. NULL sigue permitido — un sitio puede no estar clasificado
+  -- todavía, y meterlo en `otro` afirmaría que alguien lo miró.
+  building_type text CHECK (building_type IN
+                ('hospital','industrial','corporativo','universidad','gobierno','otro')),
   -- [T-1.32] Retiro lógico: un sitio nunca se borra (evidencia y auditoría de sus
   -- incidentes lo referencian; regla de oro 11).
   status        text NOT NULL DEFAULT 'active' CHECK (status IN ('active','retired')),
@@ -244,6 +250,11 @@ CREATE TABLE rule_sets (
   config      jsonb NOT NULL,
   created_by  uuid,
   created_at  timestamptz NOT NULL DEFAULT now(),
+  -- [T-5.16] Volver atrás CREA una versión nueva que declara a cuál vuelve; el
+  -- histórico no se reescribe jamás. Va en columna y no dentro de `config` a
+  -- propósito: `config` es el blob que viaja al gabinete, y un metadato de
+  -- gestión ahí llegaría hasta el Pi.
+  rolled_back_to uuid REFERENCES rule_sets(rule_set_id),
   UNIQUE (scope_type, scope_id, version)
 );
 
@@ -313,6 +324,40 @@ CREATE TRIGGER trg_incident_actions_append_only
 
 -- [ANALISIS-00] Dictámenes INMUTABLES e versionados: firmar o corregir = INSERTAR una
 -- fila nueva que apunta a la anterior vía supersedes_dictamen_id. Nunca UPDATE/DELETE.
+-- ─────────────────────────────────────────────────────────────────────────────
+-- CLASIFICACIÓN DE INCIDENTES (T-5.12)
+--
+-- Cerrar un incidente no pedía ni admitía una razón, así que la tasa de FALSOS
+-- POSITIVOS —la métrica que decide si un cliente renueva— no era calculable ni a
+-- mano sobre la base. Y el documento de entrega se deslinda de una tasa que el
+-- sistema no medía.
+--
+-- Tabla propia y ENCADENADA, no una columna de `incidents`, por la misma razón
+-- que los dictámenes: corregir INSERTA y declara a cuál sustituye, nunca
+-- reescribe. La vigente es la que nadie sustituye.
+--
+-- SIN valor por defecto: `indeterminado` se ELIGE. Un default silencioso
+-- convertiría «nadie lo revisó» en «se revisó y no se supo», que son cosas
+-- distintas y solo la primera pide trabajo. Los no clasificados NO tienen fila.
+CREATE TABLE incident_classifications (
+  classification_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id      uuid NOT NULL REFERENCES tenants,
+  incident_id    uuid NOT NULL REFERENCES incidents,
+  classification text NOT NULL CHECK (classification IN
+                 ('real','falso_positivo','prueba','indeterminado')),
+  note           text NOT NULL DEFAULT '',
+  classified_by  uuid NOT NULL,
+  classified_at  timestamptz NOT NULL DEFAULT now(),
+  supersedes_id  uuid REFERENCES incident_classifications(classification_id)
+);
+CREATE INDEX idx_incident_classifications_incident
+  ON incident_classifications (incident_id, classified_at DESC);
+CREATE INDEX idx_incident_classifications_tenant_at
+  ON incident_classifications (tenant_id, classified_at DESC);
+CREATE TRIGGER trg_incident_classifications_append_only
+  BEFORE UPDATE OR DELETE ON incident_classifications
+  FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+
 CREATE TABLE dictamens (
   dictamen_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id   uuid NOT NULL REFERENCES tenants,      -- [ANALISIS-00] regla de oro 5
@@ -439,6 +484,13 @@ CREATE TABLE device_health (
   gateway_id uuid NOT NULL,
   reason     text NOT NULL CHECK (reason IN ('transition','heartbeat')),
   mqtt_rtt_ms real, seedlink_lag_s real, ntp_offset_ms real,
+  -- [T-5.24] Pérdida de paquetes del enlace sensor→Pi. El gabinete la publicaba
+  -- desde siempre y la ingesta la tiraba: el SOC no podía verla de ningún sitio y
+  -- había que ir al inmueble. Es la señal que se degrada ANTES de que falten
+  -- datos — cuando el hueco aparece en `seedlink_lag_s`, la ventana de evidencia
+  -- ya se perdió. NULL = el gabinete no opina ⇒ S/D, jamás un cero (que aquí
+  -- diría «enlace perfecto», la mentira cara).
+  packet_loss_pct real,
   cpu_temp_c real, power_status text, battery_pct real, battery_min_left int,
   cert_days_remaining int,
   -- [T-2.70.a·B1 · migración 0036] ¿Pudo el gabinete leer el censo de sus relés?
@@ -540,6 +592,12 @@ CREATE TABLE evidence_objects (
   tenant_id   uuid NOT NULL REFERENCES tenants,
   incident_id uuid REFERENCES incidents,
   sensor_id   uuid REFERENCES sensors,
+  -- [T-5.14] El cuarto dueño posible. NO se reutiliza `incident_id`: un simulacro
+  -- JAMÁS crea incidente, y colgarlo de uno sería inventar el vínculo que
+  -- `test_un_drill_jamas_crea_incidentes` existe para negar. La FK va MÁS ABAJO,
+  -- junto a `drills`: esta tabla se crea antes que aquélla y una referencia
+  -- adelantada no carga en una base nueva.
+  drill_id    uuid,
   kind        text NOT NULL CHECK (kind IN ('miniseed','photo','report_pdf','log')),
   s3_key      text NOT NULL,
   ts_from     timestamptz, ts_to timestamptz,
@@ -1026,6 +1084,11 @@ CREATE TABLE commands (
   status      text NOT NULL DEFAULT 'pending'
               CHECK (status IN ('pending','acked','rejected','expired')),
   ack         jsonb,
+  -- [T-5.14] El instante del acuse, puesto por el SERVIDOR. El `executed_at` del
+  -- `ack` lo manda el gabinete, y su reloj es justo lo que el sistema vigila
+  -- (`ntp_offset_s`): restarle `issued_at` mezclaría dos relojes. Éste comparte
+  -- reloj con `issued_at`, y por eso su diferencia significa algo.
+  acked_at    timestamptz,
   error       text
 );
 CREATE INDEX idx_commands_site    ON commands (site_id, issued_at DESC);
@@ -1188,6 +1251,37 @@ REVOKE ALL ON FUNCTION app_retire_code_state(uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app_verify_retire_code(uuid, text) TO takab_app;
 GRANT EXECUTE ON FUNCTION app_retire_code_state(uuid) TO takab_app;
 
+-- [T-5.18] Cuota de gasto de IA por tenant y mes. Había contabilidad POR LLAMADA
+-- y techo de tokens por llamada; no había cuota, contador acumulado ni corte.
+--
+-- ES UN CONTADOR, NO EVIDENCIA: por eso se actualiza en sitio y `takab_app` tiene
+-- UPDATE, al revés que casi todo lo demás. Lo que sí es evidencia —cuánto costó
+-- cada llamada, cuándo se avisó y cuándo se cortó— vive en `audit_log`, que es
+-- append-only y exento de poda (regla de oro 11).
+--
+-- `warned_at`/`blocked_at` son instantes de TRANSICIÓN y no banderas: son lo que
+-- hace que el aviso y el corte dejen UNA fila de auditoría por periodo en vez de
+-- una por petición (regla de oro 10).
+CREATE TABLE ai_spend (
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  -- Mes UTC 'YYYY-MM'. Texto y no `date`: la clave es un MES, y guardarlo como el
+  -- día 1 invita a comparar rangos y contar dos veces el borde.
+  period      text NOT NULL CHECK (period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  spent_usd   numeric(12,6) NOT NULL DEFAULT 0,
+  calls       integer NOT NULL DEFAULT 0,
+  warned_at   timestamptz,
+  blocked_at  timestamptz,
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tenant_id, period)
+);
+GRANT SELECT, INSERT, UPDATE ON ai_spend TO takab_app;
+
+ALTER TABLE ai_spend ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_spend FORCE  ROW LEVEL SECURITY;
+CREATE POLICY ai_spend_rw ON ai_spend FOR ALL
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal())
+  WITH CHECK (tenant_id = app_tenant_id() OR app_is_takab_internal());
+
 -- Cascada de notificación (T-1.21 · blueprint §5.6): un job por (incidente,
 -- canal, modo) — UNIQUE = idempotencia del orquestador ante re-entregas.
 CREATE TABLE notification_jobs (
@@ -1202,8 +1296,13 @@ CREATE TABLE notification_jobs (
   -- 'sent' (sería mentir) ni 'failed' (no hay proveedor que arreglar ni al que
   -- reintentar). Es TERMINAL y deja `sent_at` en NULL, de modo que cualquier
   -- consulta de entregados lo excluya sin tener que conocerlo.
+  -- `blocked_demo` (T-5.02) es un estado PROPIO y no `simulated` ni `skipped`,
+  -- aunque los tres acaben en «nadie recibió nada»: `simulated` significa «sin
+  -- proveedor real configurado» y `skipped` «la cascada ya estaba satisfecha».
+  -- Colapsarlos haría imposible responder a la pregunta del día siguiente: ¿por
+  -- qué no llegó este aviso? `sent_at` se queda NULL en los tres.
   status      text NOT NULL DEFAULT 'pending'
-              CHECK (status IN ('pending','sent','failed','skipped','simulated')),
+              CHECK (status IN ('pending','sent','failed','skipped','simulated','blocked_demo')),
   target      jsonb NOT NULL DEFAULT '{}',
   due_at      timestamptz NOT NULL,
   deadline_at timestamptz,
@@ -1395,6 +1494,65 @@ GRANT EXECUTE ON FUNCTION app_notify_delivery(text,text,text,text[],boolean,bool
 -- toca incidents. El acuse por sitio se DERIVA por JOIN a commands; el estado
 -- 'active' es derivado (stopped_at IS NULL AND now() < started_at + duration_s).
 -- Gov LEE (evidencia para Protección Civil) pero no escribe.
+-- [T-5.13] PLANTILLAS DE SIMULACRO. El alta de un simulacro tenía cinco campos y
+-- ninguno era una plantilla; lo más cercano —ejecutar una agenda armada— LA
+-- CONSUME, así que no se puede reutilizar. Para el macrosimulacro de septiembre
+-- había que teclear sitios, duración y nota a mano, cada vez.
+--
+-- SE ARCHIVA, NO SE BORRA (patrón de la casa: `sites.status='retired'`). Una
+-- plantilla borrada de verdad dejaría huérfana la procedencia de cada simulacro
+-- que salió de ella, y esos registros son evidencia de cumplimiento. Desde fuera
+-- se comporta como un borrado: desaparece de la lista y libera su nombre.
+CREATE TABLE drill_templates (
+  template_id  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  name         text NOT NULL CHECK (length(btrim(name)) BETWEEN 1 AND 120),
+  -- Mismo rango que `drills.duration_s`: una plantilla que no se pudiera lanzar
+  -- sería una trampa que solo salta al usarla.
+  duration_s   integer NOT NULL CHECK (duration_s BETWEEN 30 AND 3600),
+  note         text,
+  created_by   uuid NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  archived_at  timestamptz
+);
+-- El nombre identifica DENTRO de un cliente. Parcial sobre las vivas: archivar
+-- libera el nombre, que es lo que espera quien «la borró».
+CREATE UNIQUE INDEX uq_drill_templates_tenant_name
+  ON drill_templates (tenant_id, lower(btrim(name))) WHERE archived_at IS NULL;
+CREATE INDEX idx_drill_templates_tenant ON drill_templates (tenant_id, created_at DESC);
+
+-- Conjunto de sitios. VACÍO = "todos los comandables", la misma convención que
+-- `DrillCreateIn.site_ids = None` y que el rótulo del modal. Dos convenciones
+-- distintas para lo mismo acabarían divergiendo.
+CREATE TABLE drill_template_sites (
+  template_id uuid NOT NULL REFERENCES drill_templates(template_id) ON DELETE CASCADE,
+  site_id     uuid NOT NULL REFERENCES sites(site_id),
+  tenant_id   uuid NOT NULL REFERENCES tenants(tenant_id),
+  PRIMARY KEY (template_id, site_id)
+);
+
+GRANT SELECT, INSERT, UPDATE ON drill_templates TO takab_app;
+GRANT SELECT, INSERT, DELETE ON drill_template_sites TO takab_app;
+
+-- Una plantilla es configuración operativa, NO evidencia: `gov_operator` lee el
+-- registro de simulacros y aquí no pinta nada.
+ALTER TABLE drill_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drill_templates FORCE  ROW LEVEL SECURITY;
+CREATE POLICY drill_templates_tenant ON drill_templates FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY drill_templates_admin ON drill_templates FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+ALTER TABLE drill_template_sites ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drill_template_sites FORCE  ROW LEVEL SECURITY;
+CREATE POLICY drill_template_sites_tenant ON drill_template_sites FOR ALL
+  USING      (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator')
+  WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
+CREATE POLICY drill_template_sites_admin ON drill_template_sites FOR ALL
+  USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
 CREATE TABLE drills (
   drill_id     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
@@ -1406,7 +1564,12 @@ CREATE TABLE drills (
   stop_reason  text,
   -- [T-2.03·D4c] AGENDA informativa ("próximo simulacro" de la app): una fila con
   -- scheduled_at es ANUNCIO, jamás deriva `active` ni emite comandos — LO REAL GANA.
-  scheduled_at timestamptz
+  scheduled_at timestamptz,
+  -- [T-5.13] De qué plantilla se COPIÓ este simulacro. Es PROCEDENCIA, no
+  -- dependencia: los valores de arriba son suyos y editar la plantilla después no
+  -- los reescribe. Nada del camino de lectura desreferencia esta columna para
+  -- pintar el nombre ACTUAL de la plantilla — eso sería la reescritura.
+  from_template_id uuid REFERENCES drill_templates(template_id) ON DELETE SET NULL
 );
 CREATE INDEX idx_drills_tenant ON drills (tenant_id, started_at DESC);
 
@@ -1417,6 +1580,13 @@ CREATE TABLE drill_sites (
   command_id uuid REFERENCES commands(command_id),  -- NULL = sitio sin gateway comandable
   PRIMARY KEY (drill_id, site_id)
 );
+
+-- [T-5.14] La FK de `evidence_objects.drill_id`, aquí porque `drills` no existía
+-- cuando se declaró la columna. El reporte de un simulacro es evidencia como el
+-- dictamen de un incidente, y cuelga de su simulacro.
+ALTER TABLE evidence_objects
+  ADD CONSTRAINT evidence_objects_drill_id_fkey
+  FOREIGN KEY (drill_id) REFERENCES drills(drill_id);
 
 GRANT SELECT, INSERT, UPDATE ON drills TO takab_app;
 GRANT SELECT, INSERT ON drill_sites TO takab_app;
@@ -1806,7 +1976,15 @@ CREATE TABLE reference_earthquakes (
   source      text NOT NULL CHECK (source IN ('SSN','USGS')),
   source_ref  text NOT NULL,                         -- cita textual (reporte/consulta FDSN)
   notes       text,
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  -- [T-5.10] Lo que hace CITABLE a una cifra ajena. Los tres nacen NULL y así
+  -- siguen hasta que haya ingesta de catálogo: NULL = «no consta», y entonces la
+  -- UI pinta `sin_dato_externo` y NO pinta la cifra. Un default inventado aquí
+  -- —`now()`, `'confirmado'`— sería la mentira que esta ficha existe para impedir.
+  consulted_at      timestamptz,                    -- cuándo se preguntó A LA FUENTE
+  review_status     text CHECK (review_status IS NULL
+                                OR review_status IN ('preliminar','confirmado')),
+  provider_event_id text                            -- id del evento EN la fuente
 );
 CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
 GRANT SELECT ON reference_earthquakes TO takab_app;
@@ -1856,6 +2034,48 @@ GRANT SELECT, UPDATE ON incidents TO takab_ingest;
 -- de cliente y solo la ve/abre `takab_superadmin` (la rama `tenant_id =
 -- app_tenant_id()` da NULL para esas filas, así que la RLS ya las esconde —
 -- mismo mecanismo que las filas sin tenant de `audit_log`).
+-- ─────────────────────────────────────────────────────────────────────────────
+-- MODO DEMOSTRACIÓN (T-5.02 · D-27)
+--
+-- El interruptor que impide que una exposición despierte teléfonos reales o
+-- cierre un relé. Es un SUPRESOR DE SALIDA DE LA NUBE —notificaciones y comandos
+-- firmados— y nada más: no viaja al gabinete, no toca el reflejo SASMEX→sirena y
+-- no puede desarmar un relé (regla de oro 1). El día que alguien demuestre y
+-- tiemble de verdad, el edificio lo protege un gabinete que nunca oyó hablar de
+-- esto.
+--
+-- Activo = existe la fila Y `expires_at > now()`. Apagar = borrar la fila; por
+-- eso NO es append-only. El hecho que hay que conservar —quién lo encendió,
+-- quién lo apagó y cuándo— vive en `audit_log`, que sí lo es.
+CREATE TABLE demo_mode (
+  -- Uno por cliente como MUCHO: la PK es el alcance. Encender dos veces el mismo
+  -- cliente es la misma ventana, no dos.
+  tenant_id  uuid PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  enabled_by uuid NOT NULL,
+  enabled_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  note       text NOT NULL DEFAULT '',
+  -- El techo vive en la BASE y no en la aplicación: un tope de código se salta
+  -- con un INSERT a mano, y este modo silencia los avisos de un edificio entero.
+  -- Ocho horas — más que eso ya no es una demostración, es un cliente sin avisos.
+  CONSTRAINT demo_mode_ventana_acotada
+    CHECK (expires_at > enabled_at AND expires_at <= enabled_at + interval '8 hours')
+);
+
+ALTER TABLE demo_mode ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_mode FORCE ROW LEVEL SECURITY;
+CREATE POLICY demo_mode_tenant ON demo_mode
+  USING (tenant_id = current_setting('app.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+
+GRANT SELECT, INSERT, DELETE ON demo_mode TO takab_app;
+-- El worker de notificación NECESITA borrar: «lo real gana» lo ejecuta él, antes
+-- de planificar el primer aviso de un incidente. Sin el DELETE, un sismo no
+-- podría apagar el modo y la promesa de D-27 sería falsa — que es exactamente el
+-- fallo que este modo no puede permitirse. No se le da INSERT: encender es acto
+-- de la consola, con su sesión y su rol; el worker solo puede apagar.
+GRANT SELECT, DELETE ON demo_mode TO takab_ingest;
+
 CREATE TABLE maintenance_windows (
   window_id    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id    uuid REFERENCES tenants(tenant_id),

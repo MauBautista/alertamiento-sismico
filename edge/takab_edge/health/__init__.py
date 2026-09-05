@@ -389,13 +389,21 @@ class HealthMonitor(EdgeModule):
             return None
         return list(snap.relays) if snap.running else []
 
-    def _packet_loss_pct(self) -> float:
+    def _packet_loss_pct(self) -> float | None:
+        """Porcentaje perdido, o `None` si no hay NADA sobre lo que calcularlo.
+
+        [T-5.24] Devolvía `0.0` en los dos casos de abajo, y eso es «enlace
+        perfecto» dicho por quien no ha mirado. Sin consumidor remoto el engaño
+        moría en el gabinete; ahora la cifra llega al centro de operaciones.
+        """
         if self._seedlink is None:
-            return 0.0
+            return None
         seen = getattr(self._seedlink, "packets_seen", 0)
         gaps = getattr(self._seedlink, "gaps", 0)
         total = seen + gaps
-        return (gaps / total * 100.0) if total else 0.0
+        # Sin un solo paquete visto no hay denominador: es el arranque, no un
+        # enlace sano. Los dos duran poco y los dos se declaran igual: S/D.
+        return (gaps / total * 100.0) if total else None
 
     def _seedlink_lag_s(self) -> float:
         lag = getattr(self._seedlink, "last_lag_s", None) if self._seedlink else None
@@ -485,13 +493,17 @@ class HealthMonitor(EdgeModule):
                 f"{snap.cert_days_remaining}d" if snap.cert_days_remaining is not None else "s/d"
             )
             log.info(
-                "transición de salud (%s): %s · temp=%.1f°C · lag=%.2fs · cert=%s · loss=%.1f%%",
+                "transición de salud (%s): %s · temp=%.1f°C · lag=%.2fs · cert=%s · loss=%s",
                 reason,
                 ups_label(UpsReading(snap.ups_status, snap.battery_pct)),
                 snap.temperature_c,
                 snap.seedlink_lag_s,
                 cert_txt,
-                snap.packet_loss_pct,
+                # [T-5.24] `%s` y no `%.1f%%`: desde que la pérdida puede ser
+                # `None`, formatearla como número reventaría la línea — es
+                # literalmente el tropiezo que ya dio `relays` al ganar su
+                # «no pude preguntar».
+                (f"{snap.packet_loss_pct:.1f}%" if snap.packet_loss_pct is not None else "s/d"),
             )
             self._last_key = key
 

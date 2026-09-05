@@ -87,9 +87,16 @@
       "type": "number"
     },
     "packet_loss_pct": {
-      "default": 0.0,
-      "title": "Packet Loss Pct",
-      "type": "number"
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Packet Loss Pct"
     },
     "mqtt_rtt_ms": {
       "anyOf": [

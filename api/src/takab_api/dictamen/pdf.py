@@ -20,6 +20,7 @@ from fpdf.enums import XPos, YPos
 
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
+from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
 from takab_api.dictamen.layout import CONTENT_W, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
     ABSENT,
@@ -27,15 +28,18 @@ from takab_api.dictamen.model import (
     DISCLAIMER,
     ENVELOPE_NOTE,
     FELT_LABELS,
+    NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
     NO_GEOMETRY,
     NO_MMI,
     NO_SPECTRUM,
+    SIN_CORRELACION_EN_CATALOGO,
     SKETCH_NOTE,
     STATUS_ACTIONS,
     STATUS_LABELS,
     TS_FMT,
     ReportModel,
+    huella_de_custodia,
     lead_time_text,
     num,
 )
@@ -233,6 +237,8 @@ def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
     if m.spectrum:
         freqs, amps = m.spectrum
         _spectrum(pdf, freqs, amps, m.spectrum_peak_hz)
+    if m.spectrogram is not None:
+        _spectrogram(pdf, m.spectrogram)
 
 
 def _duracion(pdf: TakabPDF, m) -> None:
@@ -304,6 +310,81 @@ def _spectrum(pdf: TakabPDF, freqs: list[float], amps: list[float], peak_hz: flo
     pdf.set_text_color(20, 24, 30)
 
 
+#: [T-5.23] Rampa de la figura, de frío a caliente. Se declara aquí y no se
+#: interpola en el trazado: una rampa continua sugiere una resolución que estas
+#: celdas no tienen, y un espectrograma de papel se lee por bandas.
+_RAMPA: tuple[tuple[int, int, int], ...] = (
+    (14, 20, 28),  # fondo: casi el negro del documento
+    (23, 55, 92),
+    (30, 110, 140),
+    (70, 165, 130),
+    (190, 180, 70),
+    (220, 120, 45),
+    (200, 55, 45),  # máximo de la ventana
+)
+
+
+def _spectrogram(pdf: TakabPDF, esp) -> None:  # noqa: ANN001 - Espectrograma
+    """[T-5.23] Tiempo × frecuencia del canal dominante.
+
+    LO QUE ESTA FIGURA NO PROMETE, y por eso se dibuja así: **la escala es
+    RELATIVA**. El crudo del RS4D llega en cuentas del ADC y la calibración
+    instrumental sigue pendiente (`blueprint §4.4`), así que no hay dB
+    referenciados a nada físico. Pintar una barra con unidades sería prometer una
+    calibración que no existe — la misma guarda que ya vigila el mapa de sacudida.
+
+    Por eso la leyenda dice «relativo al máximo de esta ventana» y no lleva
+    números: el color contesta *dónde y cuándo hubo más energía*, que es lo que
+    un perito busca, y no *cuánta* — que nadie ha medido.
+    """
+    filas, columnas = len(esp.frecuencias_hz), len(esp.celdas)
+    if filas == 0 or columnas == 0:
+        return
+    if pdf.get_y() > 200:
+        pdf.add_page()
+    pdf.ln(2)
+    pdf.set_font(pdf.body_font, "B", 8)
+    pdf.cell(
+        0,
+        5,
+        pdf.text_of(f"ESPECTROGRAMA · CANAL {esp.canal}"),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+
+    top = pdf.get_y()
+    alto = 32.0
+    box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, alto)
+    dx, dy = box.w / columnas, box.h / filas
+
+    # Se dibuja celda a celda con el relleno apagado: `fpdf2` no tiene mapa de
+    # bits sin traer una dependencia de imagen, y 120 × 48 rectángulos son
+    # deterministas y pesan poco. La frecuencia CRECE hacia arriba, como se lee.
+    for i, columna in enumerate(esp.celdas):
+        for j, valor in enumerate(columna):
+            pdf.set_fill_color(*_RAMPA[min(len(_RAMPA) - 1, int(valor * len(_RAMPA)))])
+            pdf.rect(box.x + i * dx, box.y + box.h - (j + 1) * dy, dx + 0.05, dy + 0.05, style="F")
+
+    pdf.set_draw_color(*RULE)
+    pdf.rect(box.x, box.y, box.w, box.h)
+    pdf.set_draw_color(20, 24, 30)
+
+    # Los ejes, con su magnitud: sin ellas la figura es una mancha bonita.
+    pdf.set_font(pdf.body_font, "", 6.0)
+    pdf.set_text_color(*MUTED)
+    pdf.text(MARGIN, box.y + 2.5, pdf.text_of(f"{esp.frecuencias_hz[-1]:.0f} Hz"))
+    pdf.text(MARGIN, box.y + box.h, pdf.text_of(f"{esp.frecuencias_hz[0]:.1f} Hz"))
+    pdf.set_y(top + alto + 1)
+    pdf.cell(
+        0,
+        4,
+        pdf.text_of(leyenda_espectrograma(esp)),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
+    pdf.set_text_color(20, 24, 30)
+
+
 def _channels_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("4", "MÉTRICAS POR CANAL")
     if not m.channels:
@@ -363,7 +444,10 @@ def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("7", "DESEMPEÑO DE LA RED")
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("ESTACIONES QUE CONTRIBUYERON", str(m.station_count))
-    pdf.field("CONTRASTE CON CATÁLOGO", m.catalog_line or "SIN COINCIDENCIA EN CATÁLOGO")
+    # [T-5.11] El rótulo dice CORRELACIÓN y no «contraste»: contrastar exige un
+    # epicentro propio, y en la ruta del receptor —la normal— no lo hay. Es la
+    # línea la que declara si hubo contraste de verdad o no fue verificable.
+    pdf.field("CORRELACIÓN CON CATÁLOGO", m.catalog_line or SIN_CORRELACION_EN_CATALOGO)
 
 
 def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -424,7 +508,13 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
     if m.evidence:
         pdf.set_font(pdf.body_font, "", 7.5)
         for e in m.evidence:
-            pdf.field(e.kind.upper(), (e.sha256 or "sin hash")[:32])
+            # [T-5.26] El sha256 ENTERO. Se imprimía a 32 de 64 caracteres
+            # mientras la portada de este mismo documento instruye verificarlo
+            # con `sha256sum`: con medio hash no se puede, y un dato inverificable
+            # presentado como verificable es peor que no imprimirlo.
+            # No había razón de espacio — 64 hex miden 108.7 mm de los 128 que
+            # deja la columna, así que entran en una sola línea.
+            pdf.field(e.kind.upper(), huella_de_custodia(e.sha256))
     else:
         pdf.para("Sin objetos de evidencia archivados.", size=7.5, muted=True)
 
@@ -472,8 +562,12 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     for obj in bloque.objetos:
         etiqueta = obj.papel or obj.tipo
         cuando = obj.momento.strftime(TS_FMT) if obj.momento else ABSENT
-        huella = (obj.sha256 or ABSENT)[:16]
-        pdf.field(f"{etiqueta} · {cuando}", f"{obj.estado} · sha256 {huella}…")
+        pdf.field(f"{etiqueta} · {cuando}", obj.estado)
+        # [T-5.26] Entero y en su propia línea. Iba a 16 de 64 con puntos
+        # suspensivos: honesto sobre estar cortado, e igual de inútil para
+        # verificar. Y son custodia igual que el miniSEED —lo dice esta misma
+        # sección cuatro líneas más arriba—, así que se imprimen igual.
+        pdf.field("", huella_de_custodia(obj.sha256))
 
 
 def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -487,9 +581,7 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.para(body)
     if m.narrative_provider and m.narrative_provider != "deterministic":
         pdf.callout(
-            "Las secciones en prosa se redactaron con asistencia automatizada. El "
-            "VEREDICTO y todos los valores medidos de este documento son deterministas "
-            f"({m.rule_set_version or 'sin versión'}) y no dependen de ella."
+            f"{NARRATIVE_AI_NOTE} ({m.rule_set_version or 'sin versión'}) y no dependen de ella."
         )
     if m.narrative_degraded:
         pdf.para(f"NARRATIVA DEGRADADA · {m.narrative_degraded}", size=7, muted=True)
@@ -566,6 +658,18 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.field("ESTACIONES QUE CORROBORARON", str(m.station_count))
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("FOLIO", m.folio)
+    # [T-5.26] La huella también aquí. Este es el documento que lee QUIEN DECIDE,
+    # y era el único de los dos que no traía con qué verificarse: el técnico la
+    # imprime en portada desde siempre. Es la MISMA huella en los dos —sale del
+    # contenido, no del archivo—, que es justo lo que permite comprobar que el
+    # resumen y el pericial hablan del mismo incidente sin abrirlos a la vez.
+    pdf.field("HASH DE CONTENIDO", m.content_sha256())
+    pdf.para(
+        "Esta huella identifica el CONTENIDO del dictamen, no este archivo. Es la "
+        "misma que imprime la variante técnica del mismo incidente.",
+        size=7,
+        muted=True,
+    )
 
     # [T-2.82] También en el ejecutivo: es el documento que lee quien DECIDE, y quien
     # decide es justo el que más fácilmente confundiría una declaración del cliente

@@ -10,9 +10,12 @@ from takab_api.notify.providers import build_providers, channel_reality
 from takab_api.routers.audit import router as audit_router
 from takab_api.routers.catalog import router as catalog_router
 from takab_api.routers.cctv import router as cctv_router
+from takab_api.routers.classification import router as classification_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.compliance import router as compliance_router
+from takab_api.routers.demo_mode import router as demo_mode_router
 from takab_api.routers.dictamens import router as dictamens_router
+from takab_api.routers.drill_templates import router as drill_templates_router
 from takab_api.routers.drills import router as drills_router
 from takab_api.routers.events import router as events_router
 from takab_api.routers.exports import router as exports_router
@@ -29,6 +32,7 @@ from takab_api.routers.mobile_incident import router as mobile_incident_router
 from takab_api.routers.mobile_me import router as mobile_me_router
 from takab_api.routers.mobile_site import router as mobile_site_router
 from takab_api.routers.notify import router as notify_router
+from takab_api.routers.notify_chain import router as notify_chain_router
 from takab_api.routers.notify_webhooks import router as notify_webhooks_router
 from takab_api.routers.ops_alerts import router as ops_alerts_router
 from takab_api.routers.privacy import router as privacy_router
@@ -125,7 +129,13 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
 
     # Simulacro institucional (Fase 1.8 · T-1.60).
+    app.include_router(classification_router)
+    app.include_router(notify_chain_router)
+    app.include_router(demo_mode_router)
     app.include_router(drills_router)
+    # [T-5.13] Plantillas: se define una vez y se lanza en dos clics. Mismo
+    # permiso que disparar (`drill_start`), sin rol nuevo.
+    app.include_router(drill_templates_router)
 
     # Ventanas de mantenimiento: silencian alarmas de OPERACIÓN, jamás la
     # actuación (Fase 2.5 · T-2.71).

@@ -33,6 +33,14 @@ _ASSETS = Path(__file__).parent / "assets"
 CATALOG: dict[str, str] = {
     "takab-siren-v1": "siren.wav",
     "takab-prueba-v1": "prueba.wav",
+    # [T-5.17] Tono de SIMULACRO. **No es el mensaje hablado**: el voceo grabado
+    # (`audio_simulacro_path`) sigue siendo un asset local y su gate de hardware
+    # sigue abierto (`RUNBOOK-gate-hw-movil-y-voceo.md §C.2` pide dos grabaciones
+    # distinguibles a oído, y nadie las ha hecho). Esto es lo que la nube SÍ puede
+    # elegir mientras tanto, y está construido para no confundirse con la sirena:
+    # carillón de tres pulsos con dos segundos de silencio — el patrón de la
+    # megafonía, no el de una alarma. Ver `edge/scripts/gen_simulacro.py`.
+    "takab-simulacro-v1": "simulacro.wav",
 }
 
 #: IDs que existen como concepto pero NO se pueden servir. Se distinguen de un ID
@@ -43,6 +51,16 @@ RESERVED: dict[str, str] = {
         "licencia escrita (GATE-LEGAL)"
     ),
 }
+
+
+def reason_reserved(asset_id: str) -> str | None:
+    """Por qué un ID reservado no se puede servir, o ``None`` si no lo está.
+
+    [T-5.17] Existe para que el reporte pueda decir «reservado por licencia» en
+    vez de «desconocido». Los dos conservan el tono anterior, pero un descuido de
+    tecleo y una infracción legal no son el mismo hecho.
+    """
+    return RESERVED.get(asset_id)
 
 
 def resolve(asset_id: str) -> Path | None:

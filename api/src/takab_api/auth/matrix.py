@@ -96,6 +96,18 @@ ACTIONS: tuple[str, ...] = (
     "edit_thresholds",
     "siren_test",
     "manage_fleet",
+    # [T-5.02 · D-27] Asimétrico A PROPÓSITO: difícil de volver inseguro, fácil de
+    # volver seguro. Encenderlo es acto de PLATAFORMA —la demostración la hace
+    # TAKAB, no el cliente—; apagarlo lo puede hacer también el administrador del
+    # cliente, porque si TAKAB se lo deja puesto no puede quedarse esperando a que
+    # alguien conteste el teléfono para recuperar sus avisos.
+    "demo_mode_on",
+    "demo_mode_off",
+    # [T-5.12] Clasificar un incidente al cerrarlo. Va con quien ya opera el
+    # incidente —el que lo acusa y lo cierra— y no con una acción nueva de
+    # administración: decir «esto fue una falsa alarma» es parte de operar,
+    # no de administrar el cliente.
+    "classify_incident",
     "relocate_epicenter",
     "request_dictamen",
     "read_audit",
@@ -266,6 +278,9 @@ def _actions(
     export: bool = False,
     generate_report: bool = False,
     edit_thresholds: bool = False,
+    demo_mode_on: bool = False,
+    demo_mode_off: bool = False,
+    classify_incident: bool = False,
     siren_test: bool = False,
     manage_fleet: bool = False,
     relocate_epicenter: bool = False,
@@ -301,6 +316,9 @@ def _actions(
         "export": export,
         "generate_report": generate_report,
         "edit_thresholds": edit_thresholds,
+        "demo_mode_on": demo_mode_on,
+        "demo_mode_off": demo_mode_off,
+        "classify_incident": classify_incident,
         "siren_test": siren_test,
         "manage_fleet": manage_fleet,
         "relocate_epicenter": relocate_epicenter,
@@ -334,6 +352,9 @@ def _actions(
 
 ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     "takab_superadmin": _actions(
+        classify_incident=True,
+        demo_mode_on=True,
+        demo_mode_off=True,
         ack_incident=True,
         export=True,
         generate_report=True,
@@ -376,6 +397,9 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
+        classify_incident=True,
+        # Apagar SÍ, encender NO: ver la razón en el censo de acciones.
+        demo_mode_off=True,
         ack_incident=True,
         edit_thresholds=True,
         siren_test=True,
@@ -404,6 +428,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     # pregunta que el vídeo contesta —«¿están saliendo o están atrapados?»— es suya y es
     # el escenario entero para el que existe este módulo (`D-14`).
     "soc_operator": _actions(
+        classify_incident=True,
         ack_incident=True,
         relocate_epicenter=True,
         request_dictamen=True,
@@ -433,6 +458,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
     # [T-2.03] building_admin (RBAC §3): headcount y silenciar SÍ; forense NO
     # (§3 da "—" en cámara/formulario — administra el inmueble, no lo peritea).
     "building_admin": _actions(
+        classify_incident=True,
         siren_test=True,
         self_test=True,
         checkin_submit=True,

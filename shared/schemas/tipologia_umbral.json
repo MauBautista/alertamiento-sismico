@@ -1,0 +1,51 @@
+{
+  "$comment": "T-5.16 · Tipología de inmueble y su banda de umbral de REFERENCIA. Fuente única: api, web y el CHECK de la base derivan de aquí, y sus tests lo comparan por igualdad en los dos sentidos.",
+  "version": 1,
+  "decision": "D-28",
+  "resuelve_umbrales": false,
+  "por_que_no_resuelve": [
+    "El tipo de un inmueble se edita desde la pantalla de administración de flota, por alguien que corrige una dirección o un dato de alta. Si el tipo RESOLVIERA el umbral, esa edición administrativa re-armaría el edificio a otra sensibilidad sin publicar y sin firmar: un cambio de actuación hecho por un acto de captura. Choca con la regla de oro 1 (camino de activación determinista y auditable) y con la 8.",
+    "El propio blueprint §4.5 las llama umbrales DE REFERENCIA y manda 'calibrar por tipología/altura'. Son un punto de partida, no una respuesta: un hospital en suelo blando y otro en roca no comparten disparo.",
+    "Por eso la tipología SUGIERE: la consola ofrece la banda, y aplicarla escribe una versión nueva del rule_set que hay que publicar como cualquier otra."
+  ],
+  "unidades": { "pga": "g", "pgv": "cm/s" },
+  "sin_referencia_de_pgv": "El blueprint publica bandas de PGA por tipología y NO publica bandas de PGV. Aplicar la banda de un tipo toca PGA y deja PGV como estaba: inventar un PGV por tipo sería dar por medido lo que nadie midió.",
+  "tipos": [
+    {
+      "value": "hospital",
+      "label": "Hospital",
+      "banda": { "pga_watch_g": 0.04, "pga_trip_g": 0.06 },
+      "fuente": "BLUEPRINT-TECNICO-TAKAB.md §4.5"
+    },
+    {
+      "value": "industrial",
+      "label": "Industrial",
+      "banda": { "pga_watch_g": 0.08, "pga_trip_g": 0.12 },
+      "fuente": "BLUEPRINT-TECNICO-TAKAB.md §4.5"
+    },
+    {
+      "value": "corporativo",
+      "label": "Corporativo",
+      "banda": { "pga_watch_g": 0.1, "pga_trip_g": 0.15 },
+      "fuente": "BLUEPRINT-TECNICO-TAKAB.md §4.5"
+    },
+    {
+      "value": "universidad",
+      "label": "Universidad",
+      "banda": null,
+      "sin_banda_por_que": "El producto atiende universidades (CLAUDE.md §1) y el blueprint no publica banda para ellas. Prestarle la de otro tipo sería inventar una cifra: se calibra en sitio y se declara."
+    },
+    {
+      "value": "gobierno",
+      "label": "Edificio de gobierno",
+      "banda": null,
+      "sin_banda_por_que": "Mismo caso que universidad: es una tipología que el producto atiende y para la que nadie publicó banda."
+    },
+    {
+      "value": "otro",
+      "label": "Otro",
+      "banda": null,
+      "sin_banda_por_que": "Cajón declarado, no default silencioso. Existe para que un inmueble que no encaja NO tenga que disfrazarse de hospital para poder darse de alta."
+    }
+  ]
+}

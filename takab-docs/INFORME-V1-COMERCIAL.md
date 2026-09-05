@@ -4,6 +4,10 @@
 > **2026-09-02** sobre `main` en `df13599`. **No arregló nada**: cada hallazgo salió como ficha,
 > no como commit. El plan que las contiene es [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md).
 >
+> **El estado VIVO de cada hallazgo es su ficha en `TASKS.md`, no este documento.** Aquí se
+> congela lo que se encontró el 2026-09-02; lo que se ha cerrado desde entonces se lee en el
+> Bloque VI. Actualizar este informe a mano sería fabricar el tercer censo que diverge.
+>
 > **Alcance (V1-DEMO):** el sistema que se puede enseñar y vender **sin que ninguna pantalla
 > afirme algo que no se ha acreditado**. No es "el producto terminado".
 >

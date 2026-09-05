@@ -14,6 +14,7 @@
         "lan_actuation_test",
         "lan_test_mode",
         "lan_reset",
+        "lan_drill_voice",
         "undeclared"
       ],
       "title": "ActuationCause",

@@ -1,196 +1,82 @@
 import type { MeActions, MeResponse } from "../auth/me";
+import matriz from "../../../shared/fixtures/rbac-matrix.json";
 
-/** Espejo SOLO PARA TESTS de `api/src/takab_api/auth/matrix.py` (ROUTE_ORDER +
- * ROLE_ROUTE_MATRIX + ROLE_ACTION_MATRIX). La app real NUNCA consume esta tabla:
- * nav y guards leen `allowed_routes`/`allowed_actions` del servidor (/me).
- * Si la matriz cambia en el backend, este archivo debe cambiar con ella. */
+/**
+ * Fixtures de `/me` para los tests, **DERIVADAS** de la matriz real (T-5.28).
+ *
+ * Esto era una tabla escrita a mano que se declaraba «espejo SOLO PARA TESTS de
+ * `api/src/takab_api/auth/matrix.py`» y pedía por escrito que se moviera con
+ * ella. Nada lo comprobaba, y divergió en **trece celdas** (nueve de CCTV y
+ * cuatro de privacidad), todas en la misma dirección: la matriz concede y el
+ * espejo no.
+ *
+ * Lo que hay que recordar es el MODO de fallo: un permiso en `false` no relaja
+ * una aserción — hace que el componente que lo gatea **no se monte**, y el test
+ * pasa en verde sobre una población vacía. Esta vez no llegó a costar nada (esas
+ * trece acciones casi no tienen consumidor aquí), y se descubrió de casualidad:
+ * `soc_operator` —el rol principal de la consola— no tenía el permiso que
+ * `T-5.12` necesitaba.
+ *
+ * Ahora no hay tabla: `shared/fixtures/rbac-matrix.json` lo genera
+ * `api/scripts/export_rbac_matrix.py`, `api/tests/auth/test_rbac_fixture_es_la_
+ * matriz.py` lo ata a la matriz por igualdad y `make drift` lo caza en CI. El
+ * mismo patrón que `shared/fixtures/notify-channels.json`.
+ *
+ * La app real NUNCA consume esta tabla: nav y guards leen
+ * `allowed_routes`/`allowed_actions` del servidor (`/me`).
+ */
 
-export const ALL_ROUTES = [
-  "/console",
-  "/fleet",
-  "/triage",
-  "/tenants",
-  "/audit",
-  "/building",
-] as const;
+type MatrizRol = { routes: string[]; actions: Record<string, boolean> };
 
-export const ACTIONS_NONE: MeActions = {
-  ack_incident: false,
-  sign_dictamen: false,
-  export: false,
-  generate_report: false,
-  edit_thresholds: false,
-  siren_test: false,
-  manage_fleet: false,
-  relocate_epicenter: false,
-  request_dictamen: false,
-  read_audit: false,
-  self_test: false,
-  drill_start: false,
-  manage_tenants: false,
-  manage_visibility: false,
-  manage_retire_code: false,
-  // [T-2.54] gestión de usuarios (proxy del Admin API de Cognito)
-  manage_users: false,
-  // [T-2.03] superficie móvil (la consola no las usa; el espejo debe estar completo)
-  checkin_submit: false,
-  roster_read: false,
-  damage_report_submit: false,
-  evidence_upload: false,
-  siren_silence: false,
-  manual_activate: false,
-  enrollment_manage: false,
-  panic_vote: false,
-  dictamen_read: false,
-  panel_read: false,
-  maintenance_window: false,
-  platform_maintenance_window: false,
-  deploy_firmware: false,
-  manage_privacy_notice: false,
-  manage_privacy_erasure: false,
-  cctv_read: false,
-  cctv_video: false,
-};
+/** Rutas en su ORDEN estable: `landing.ts` toma la primera distinta de `/building`. */
+export const ALL_ROUTES = matriz.route_order as readonly string[];
+
+/** Todas las acciones en `false`. Se deriva del listado, no se enumera. */
+export const ACTIONS_NONE: MeActions = Object.fromEntries(
+  matriz.actions.map((a) => [a, false]),
+) as unknown as MeActions;
 
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
 
-export const WEB_ROLES = [
-  "takab_superadmin",
-  "takab_support",
-  "tenant_admin",
-  "soc_operator",
-  "gov_operator",
-  "inspector",
-  "building_admin",
-] as const;
+/**
+ * Roles con superficie WEB = los que la matriz deja entrar a alguna ruta, y
+ * `MOBILE_ONLY_ROLES` los que no. Se derivan del mismo sitio: repartirlos a mano
+ * era otra lista que podía quedarse atrás sin que nada lo dijera.
+ */
+const ROLES = Object.keys(matriz.roles).sort() as RoleName[];
 
-export const MOBILE_ONLY_ROLES = ["brigadista", "security_guard", "occupant"] as const;
+export type RoleName =
+  | "takab_superadmin"
+  | "takab_support"
+  | "tenant_admin"
+  | "soc_operator"
+  | "gov_operator"
+  | "inspector"
+  | "building_admin"
+  | "brigadista"
+  | "security_guard"
+  | "occupant";
 
-export type RoleName = (typeof WEB_ROLES)[number] | (typeof MOBILE_ONLY_ROLES)[number];
+const rolDe = (r: string): MatrizRol => (matriz.roles as Record<string, MatrizRol>)[r];
 
-function me(
-  role: RoleName,
-  routes: readonly string[],
-  actions: Partial<MeActions> = {},
-  surface = "web",
-): MeResponse {
+export const WEB_ROLES = ROLES.filter((r) => rolDe(r).routes.length > 0);
+export const MOBILE_ONLY_ROLES = ROLES.filter((r) => rolDe(r).routes.length === 0);
+
+function me(role: RoleName): MeResponse {
+  const fila = rolDe(role);
   return {
     sub: `sub-${role}`,
     tenant_id: TENANT_ID,
     role,
     site_scope: "*",
-    surface,
-    allowed_routes: [...routes],
-    allowed_actions: { ...ACTIONS_NONE, ...actions },
+    // La superficie sale de la matriz igual que todo lo demás: un rol sin ruta
+    // web es de campo. Escribirla aparte volvía a abrir la puerta a la deriva.
+    surface: fila.routes.length > 0 ? "web" : "mobile",
+    allowed_routes: [...fila.routes],
+    allowed_actions: { ...ACTIONS_NONE, ...(fila.actions as unknown as MeActions) },
   };
 }
 
-export const ME_FIXTURES: Record<RoleName, MeResponse> = {
-  takab_superadmin: me("takab_superadmin", ALL_ROUTES, {
-    ack_incident: true,
-    export: true,
-    generate_report: true,
-    edit_thresholds: true,
-    siren_test: true,
-    manage_fleet: true,
-    relocate_epicenter: true,
-    request_dictamen: true,
-    read_audit: true,
-    self_test: true,
-    drill_start: true,
-    manage_tenants: true,
-    manage_visibility: true,
-    manage_retire_code: true,
-    manage_users: true,
-    enrollment_manage: true,
-    maintenance_window: true,
-    platform_maintenance_window: true,
-    deploy_firmware: true,
-  }),
-  // Ve la Flota Edge pero no la administra: [DECISION 2026-07-09] en matrix.py.
-  takab_support: me("takab_support", ALL_ROUTES, { read_audit: true }),
-  tenant_admin: me("tenant_admin", ALL_ROUTES, {
-    ack_incident: true,
-    edit_thresholds: true,
-    siren_test: true,
-    manage_fleet: true,
-    relocate_epicenter: true,
-    request_dictamen: true,
-    read_audit: true,
-    self_test: true,
-    drill_start: true,
-    manage_users: true,
-    enrollment_manage: true,
-    // [T-2.71] La matriz real da `maintenance_window` a superadmin y tenant_admin
-    // (`roles_with_action("maintenance_window")`). Este espejo lo tenía en `false`
-    // para los dos, así que una superficie que dependiera del permiso salía
-    // «no visible» en los tests aunque el rol sí lo tuviera — un verde que mide
-    // el fixture y no la matriz.
-    maintenance_window: true,
-  }),
-  soc_operator: me("soc_operator", ["/console", "/fleet", "/triage", "/building"], {
-    ack_incident: true,
-    relocate_epicenter: true,
-    request_dictamen: true,
-  }),
-  gov_operator: me("gov_operator", ["/console", "/fleet", "/triage", "/audit", "/building"], {
-    ack_incident: true,
-    export: true,
-    read_audit: true,
-  }),
-  inspector: me("inspector", ["/console", "/triage", "/building"], {
-    sign_dictamen: true,
-    export: true,
-    generate_report: true,
-    checkin_submit: true,
-    damage_report_submit: true,
-    evidence_upload: true,
-    manual_activate: true,
-    dictamen_read: true,
-    panel_read: true,
-  }),
-  building_admin: me("building_admin", ["/console", "/triage", "/building"], {
-    siren_test: true,
-    self_test: true,
-    checkin_submit: true,
-    roster_read: true,
-    siren_silence: true,
-    manual_activate: true,
-    enrollment_manage: true,
-    dictamen_read: true,
-    panel_read: true,
-  }),
-  // [T-2.03] Roles móviles: acciones de CAMPO (la web los sigue mandando a
-  // MobileOnlyScreen; el espejo refleja matrix.py completo).
-  brigadista: me(
-    "brigadista",
-    [],
-    {
-      checkin_submit: true,
-      roster_read: true,
-      damage_report_submit: true,
-      evidence_upload: true,
-      siren_silence: true,
-      manual_activate: true,
-      dictamen_read: true,
-      panel_read: true,
-    },
-    "mobile",
-  ),
-  security_guard: me(
-    "security_guard",
-    [],
-    {
-      checkin_submit: true,
-      roster_read: true,
-      damage_report_submit: true,
-      evidence_upload: true,
-      siren_silence: true,
-      manual_activate: true,
-      dictamen_read: true,
-      panel_read: true,
-    },
-    "mobile",
-  ),
-  occupant: me("occupant", [], { checkin_submit: true, panic_vote: true }, "mobile"),
-};
+export const ME_FIXTURES: Record<RoleName, MeResponse> = Object.fromEntries(
+  ROLES.map((r) => [r, me(r)]),
+) as Record<RoleName, MeResponse>;

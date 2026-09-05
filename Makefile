@@ -1,6 +1,7 @@
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
+        objetos \
         cloud-images cloud-deploy cloud-apply cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
 
@@ -37,6 +38,12 @@ install:
 
 db:
 	docker compose up -d db
+
+# [T-5.29] Almacén de objetos local. La escena C4 de la demo genera el reporte
+# del simulacro —evidencia con sha256— y `put_object` necesita un bucket; el
+# servicio `minio-init` lo crea y termina.
+objetos:
+	docker compose up -d minio minio-init
 
 api:
 	cd $(API_DIR) && uvicorn takab_api.main:app --reload --host 0.0.0.0 --port 8000
@@ -80,7 +87,7 @@ test-db: db
 	  "select 1 from pg_database where datname='takab_test'" | grep -q 1 \
 	  || docker compose exec -T db createdb -U takab takab_test
 
-demo-db: db
+demo-db: db objetos
 	@until docker compose exec -T db pg_isready -U takab -q; do sleep 1; done
 	cd $(API_DIR) && DATABASE_URL="$(DEMO_DSN)" uv run python -m alembic upgrade head
 	PGPASSWORD=takab_dev psql -h 127.0.0.1 -p 5433 -U takab -d takab -q -f db/seeds/prod_fleet.sql
@@ -191,6 +198,10 @@ test: test-db
 	bash infra/scripts/tests/test_merge_env.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 	bash infra/scripts/tests/test_secret_scan.sh
+	# [T-5.22] El recolector del acta del reflejo. Un procedimiento que se ejecuta
+	# una vez cada varios meses no puede descubrirse roto delante del gabinete: el
+	# que sustituye lo estaba en sus tres pasos.
+	bash edge/tests/test_acta_reflejo_script.sh
 	./ci/check-licenses.sh
 
 # Gates de drift: el contrato y los tipos generados deben coincidir con lo
@@ -203,6 +214,13 @@ drift:
 	git diff --exit-code $(SDK_DIR)/src/gen
 	cd $(SDK_DIR) && npm run check
 	cd $(TOKENS_DIR) && npm run check
+	# [T-5.28] La matriz RBAC que consumen los tests de web. Era una tabla escrita
+	# a mano que se declaraba espejo de `auth/matrix.py` y divergió en 13 celdas;
+	# ahora se genera, y aquí es donde se caza que alguien mueva la matriz sin
+	# regenerarla. `api/tests/auth/test_rbac_fixture_es_la_matriz.py` lo ata además
+	# por igualdad, celda a celda.
+	cd $(API_DIR) && uv run python scripts/export_rbac_matrix.py
+	git diff --exit-code shared/fixtures/rbac-matrix.json
 
 # El bundler, en su propio target: `test` ya levanta Docker, corre terraform y 4
 # suites; meterle vite lo convertiría en otra cosa. Aquí vive el `vite build` que

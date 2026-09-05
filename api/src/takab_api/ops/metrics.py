@@ -1,4 +1,4 @@
-"""T-2.60.a · Métrica del gabinete retirado que sigue latiendo.
+"""T-2.60.a · Métricas de operación que no dependen de que alguien mire.
 
 La consola ya delata la contradicción en pantalla (PR #51), pero eso solo sirve
 si hay alguien mirando. El fallo del 2026-08-04 duró horas precisamente porque
@@ -35,6 +35,17 @@ Tres decisiones que este archivo defiende:
    permanente. Y "enterarse" NO puede leerse de ``gateway_config_state``, que
    registra lo que la nube publicó: ver ``_UNREACHED``, donde está escrito qué se
    aproxima, qué se pierde y cuál es el arreglo de raíz.
+
+5. **Y desde T-5.24, TRES** (``MaxClockDriftMs``). No es un gabinete, es la HORA:
+   el sello de un check-in, de un dictamen y de un acuse salen todos del reloj del
+   Pi, y sin hora confiable ninguna evidencia sirve. El desfase se medía, viajaba y
+   se persistía desde siempre — y aun así solo se veía si alguien tenía la pantalla
+   delante: ninguna de las 13 alarmas de la nube era de reloj.
+
+   Viaja en la MISMA ``put_metric_data`` que las otras dos, y eso decide el
+   ``treat_missing_data`` de su alarma: las tres se quedan sin datos a la vez y por
+   la misma causa, así que su silencio significa lo mismo. El razonamiento entero
+   está en ``tests/treat_missing_data.tftest.hcl``.
 """
 
 from __future__ import annotations
@@ -55,6 +66,19 @@ METRIC_NAME = "GhostGatewaysAlive"
 #: Es la que empata palabra por palabra con el `is_ghost` de la consola. No lleva
 #: alarma a propósito (ver la nota de las DOS condiciones, más abajo).
 METRIC_NAME_RETIRED_ALIVE = "RetiredGatewaysAlive"
+
+#: [T-5.24] Desfase de reloj máximo, en ms y en valor absoluto, sobre los
+#: gabinetes con latido vivo. **Sin hora confiable ninguna evidencia sirve**: el
+#: sello de un check-in, de un dictamen y de un acuse salen todos de ese reloj, y
+#: hasta ahora el desfase solo se veía si alguien estaba mirando una pantalla.
+#:
+#: Se publica el CERO cuando nadie va a la deriva —y también cuando no hay
+#: gabinetes vivos—, para que la métrica exista siempre que el publicador viva.
+#: Es lo que permite que su ALARMA vigile las dos cosas: el valor **y la
+#: ausencia**, que aquí significa «el worker que la publica se murió» — un fallo
+#: que `gateway_offline` NO ve, porque los gabinetes siguen latiendo contra otro
+#: worker mientras éste está muerto.
+METRIC_NAME_CLOCK_DRIFT = "MaxClockDriftMs"
 
 # Un gabinete cuenta como fantasma cuando él —o su sitio— está retirado y su
 # último heartbeat sigue siendo fresco. La frontera de "fresco" es la MISMA que
@@ -183,6 +207,37 @@ def count_ghosts(conn: Any, *, alive_s: float) -> int:
     return _count(conn, _COUNT_SQL, alive_s)
 
 
+#: `abs()` porque un reloj ADELANTADO miente igual que uno atrasado, y el
+#: `MAX(...)` sobre el último latido de cada gabinete vivo: la alarma tiene que
+#: sonar por el peor de la flota, no por su promedio — un gabinete a la deriva
+#: entre veinte sanos desaparece de una media.
+_MAX_DRIFT_SQL = """
+SELECT COALESCE(MAX(ABS(h.ntp_offset_ms)), 0)::float8 AS drift_ms
+FROM gateways g
+JOIN LATERAL (
+    SELECT dh.ntp_offset_ms, dh.ts
+    FROM device_health dh
+    WHERE dh.gateway_id = g.gateway_id
+    ORDER BY dh.ts DESC
+    LIMIT 1
+) h ON true
+WHERE g.status <> 'retired'
+  AND h.ts > now() - make_interval(secs => %(alive_s)s)
+  AND h.ntp_offset_ms IS NOT NULL
+"""
+
+
+def max_clock_drift_ms(conn: Any, *, alive_s: float) -> float:
+    """Desfase absoluto del PEOR gabinete vivo, en ms. `0.0` si nadie va a la deriva.
+
+    Un gabinete sin dato de reloj (`ntp_offset_ms IS NULL`) **no cuenta como
+    cero**: se excluye. No saber la hora no es tenerla bien — de esa ausencia
+    habla el `S/D` del panel, no esta métrica.
+    """
+    row = conn.execute(_MAX_DRIFT_SQL, {"alive_s": alive_s}).fetchone()
+    return float(row["drift_ms"]) if row else 0.0
+
+
 def count_retired_alive(conn: Any, *, alive_s: float) -> int:
     """TODOS los retirados que siguen latiendo, avisados o no (B3).
 
@@ -209,6 +264,7 @@ class GhostGauge:
         client: _MetricClient | None,
         counter: Callable[[Any], int],
         total_counter: Callable[[Any], int] | None = None,
+        drift_gauge: Callable[[Any], float] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._namespace = namespace
@@ -216,6 +272,7 @@ class GhostGauge:
         self._client = client
         self._counter = counter
         self._total_counter = total_counter
+        self._drift_gauge = drift_gauge
         self._clock = clock
         self._last: float | None = None
 
@@ -238,12 +295,23 @@ class GhostGauge:
             # lee como flota sana, que es justo la mentira que esta métrica existe
             # para no contar.
             total = self._total_counter(conn) if self._total_counter is not None else None
+            # [T-5.24] En la MISMA fotografía y bajo el mismo `try`: si la DB
+            # falla no sale ninguna de las tres, por la razón de arriba.
+            drift = self._drift_gauge(conn) if self._drift_gauge is not None else None
         except Exception:
             logger.warning("no se pudo contar los gabinetes fantasma", exc_info=True)
             return
         datos: list[dict[str, Any]] = [{"MetricName": METRIC_NAME, "Value": valor, "Unit": "Count"}]
         if total is not None:
             datos.append({"MetricName": METRIC_NAME_RETIRED_ALIVE, "Value": total, "Unit": "Count"})
+        if drift is not None:
+            datos.append(
+                {
+                    "MetricName": METRIC_NAME_CLOCK_DRIFT,
+                    "Value": drift,
+                    "Unit": "Milliseconds",
+                }
+            )
         try:
             self._client.put_metric_data(Namespace=self._namespace, MetricData=datos)
         except Exception:

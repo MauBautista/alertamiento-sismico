@@ -4,7 +4,8 @@ Trama FIJA de 29 bytes (cabe de sobra en un payload LoRa a SF10/125 kHz):
 
     off  len  campo
     0    1    ver         (0x01; cambiar el layout exige 0x02)
-    1    1    msg_type    (1=HEARTBEAT 2=ALARM_ACT 3=ALARM_CLEAR 4=ACK 5=TEST)
+    1    1    msg_type    (1=HEARTBEAT 2=ALARM_ACT 3=ALARM_CLEAR 4=ACK 5=TEST
+                             6=SILENCE)
     2    2    cabinet_id  u16 BE — emisor (uplink) / destino (downlink)
     4    4    session     u32 BE — aleatoria al boot del EMISOR
     8    4    seq         u32 BE — contador monótono dentro de la sesión
@@ -48,7 +49,26 @@ ALARM_ACT = 2
 ALARM_CLEAR = 3
 ACK = 4
 TEST = 5
-_TYPES = (HEARTBEAT, ALARM_ACT, ALARM_CLEAR, ACK, TEST)
+#: [T-5.25] Silencio del operador: **corta los audibles YA**, deja el estrobo y
+#: NO toca ``alarm_active``. Es el espejo exacto de ``gpio.silence_audibles()``
+#: en el gabinete principal.
+#:
+#: Va como tipo PROPIO y no como un ``ALARM_ACT`` sin el bit de sirena por dos
+#: razones que apuntan en la misma dirección —la peor—:
+#:
+#: 1. El contrato publicado dice que ``ALARM_ACT`` **enciende** (``LORA-
+#:    SECUNDARIOS.md §2``). Un firmware escrito contra esa frase engancha la
+#:    sirena y no la suelta con otro ``ALARM_ACT``; la ambigüedad cae del lado
+#:    de «la sirena sigue sonando», que es justo el fallo que esto arregla.
+#: 2. En el emisor, dos ``ALARM_ACT`` seguidos **SUMAN** flags a propósito (los
+#:    comandos de red llegan por canal separado), así que un silencio disfrazado
+#:    de activación se lo tragaría el ``merged |= pending["flags"]``.
+#:
+#: ADITIVO sobre v1: el layout no cambia, así que ``ver`` sigue en ``0x01``. Un
+#: firmware que no conozca el tipo 6 lo rechaza y NO ackea ⇒ el panel lo declara
+#: «SILENCIO SIN CONFIRMAR», que es la verdad y no un silencio fingido.
+SILENCE = 6
+_TYPES = (HEARTBEAT, ALARM_ACT, ALARM_CLEAR, ACK, TEST, SILENCE)
 
 # Flags
 FLAG_SIREN = 0x01

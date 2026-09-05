@@ -18,8 +18,10 @@ from datetime import datetime
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api import procedencia as pr
 from takab_api.cctv import build_cctv
 from takab_api.dictamen.duracion import significativa
+from takab_api.dictamen.espectrograma import calcular as calcular_espectrograma
 from takab_api.dictamen.model import (
     CCTV_PENDIENTE,
     CCTV_PURGADO,
@@ -193,7 +195,7 @@ async def build_model(
     ]
 
     series = await _series(conn, site_id=str(inc["site_id"]), f=forensics)
-    raw, rate, spectrum, peak_hz, duracion, reason = await _raw_waveform(
+    raw, rate, spectrum, peak_hz, espectrograma, duracion, reason = await _raw_waveform(
         evidence_rows, fetch_object, variant
     )
 
@@ -263,6 +265,7 @@ async def build_model(
         raw_sample_rate=rate,
         spectrum=spectrum,
         spectrum_peak_hz=peak_hz,
+        spectrogram=espectrograma,
         shaking_duration=duracion,
         raw_unavailable_reason=reason,
         verdict_basis=head_basis,
@@ -280,16 +283,51 @@ async def build_model(
 
 
 def _catalog_line(f: ForensicsOut) -> str | None:
+    """La correlación con el catálogo, tal como se imprime en un papel FIRMADO.
+
+    [T-5.11] Tres cosas cambian respecto de lo que se imprimía antes.
+
+    **(1) Un acierto sin epicentro propio ya no se presenta como contraste.** Era
+    la línea `"… · sin epicentro propio que comparar"` bajo el rótulo «contraste
+    con catálogo»: una verificación anunciada que no había ocurrido. En la ruta
+    del receptor —la normal— no hay nada nuestro que contrastar, y eso se dice.
+
+    **(2) «No casó» deja de ser un hueco.** Si hubo eventos en la ventana y
+    ninguno es éste, se imprime con su motivo: es la diferencia entre «el
+    catálogo no tiene nada» y «lo que tiene no es esto».
+
+    **(3) La magnitud del catálogo solo se imprime con procedencia** (regla de
+    `T-5.10`). Casar no la concede: una fila sin hora de consulta ni estado de
+    revisión es un dato que existe y no es citable, y el dictamen es justamente
+    el sitio donde una cifra ajena sin procedencia se lee como propia.
+    """
+    corr = f.catalog_correlation
     if not f.catalog or not f.catalog_delta:
+        if corr and corr.descartes:
+            motivos = " · ".join(f"{d.catalog_key}: {d.detalle}" for d in corr.descartes[:3])
+            return (
+                f"SIN CORRELACIÓN · {len(corr.descartes)} evento(s) del catálogo en la "
+                f"ventana y ninguno es éste — {motivos}"
+            )
         return None
+
     d = f.catalog_delta
-    dist = (
-        f"{d.km:.0f} km {d.bearing or ''}".strip()
-        if d.km is not None
-        else "sin epicentro propio que comparar"
-    )
-    mag = f" · M {f.catalog.magnitude:.1f}" if f.catalog.magnitude is not None else ""
-    return f"{f.catalog.source} {f.catalog.catalog_key}{mag} · Δt {d.dt_s:.0f} s · {dist}"
+    partes = [f"{f.catalog.source} {f.catalog.catalog_key}"]
+    if f.catalog.magnitude is not None and corr and pr.pinta_cifra(corr.estado):
+        partes.append(f"M {f.catalog.magnitude:.1f} ({pr.rotulo(corr.estado, 'consola')})")
+    elif f.catalog.magnitude is not None:
+        partes.append(f"magnitud no citable ({pr.rotulo(corr.estado, 'consola') if corr else '—'})")
+    partes.append(f"Δt {d.dt_s:.0f} s")
+    if d.km is not None:
+        partes.append(f"CONTRASTE {d.km:.0f} km {d.bearing or ''}".strip())
+    else:
+        sitio = (
+            f"{f.catalog.km_al_sitio:.0f} km del sitio"
+            if f.catalog.km_al_sitio is not None
+            else "distancia al sitio no calculable"
+        )
+        partes.append(f"{sitio} · NO VERIFICABLE: sin epicentro propio que contrastar")
+    return " · ".join(partes)
 
 
 async def _series(
@@ -304,28 +342,34 @@ async def _series(
 
 
 async def _raw_waveform(evidence_rows, fetch_object, variant: str):
-    """`(waveform, rate, spectrum, peak_hz, duracion, reason)` — best-effort y fail-soft."""
+    """`(waveform, rate, spectrum, peak_hz, espectrograma, duracion, reason)`.
+
+    Best-effort y fail-soft: cualquier fallo devuelve la razón escrita y el
+    documento sale igual. El espectrograma acompaña al espectro en todas las
+    salidas —incluidas las tempranas— porque un `None` suelto en una de ellas
+    sería un hueco donde hay una razón.
+    """
     if variant != "technical":
-        return {}, None, None, None, None, "El resumen ejecutivo no incluye análisis de onda."
+        return {}, None, None, None, None, None, "El resumen ejecutivo no incluye análisis de onda."
     if fetch_object is None:
-        return {}, None, None, None, None, None
+        return {}, None, None, None, None, None, None
 
     mseed = next((r for r in evidence_rows if r.kind == "miniseed"), None)
     if mseed is None:
-        return {}, None, None, None, None, None
+        return {}, None, None, None, None, None, None
 
     try:
         blob = fetch_object(mseed.s3_key)
         traces = read_traces(blob)
     except MseedError as exc:
         log.warning("dictamen: miniSEED ilegible (%s): %s", mseed.s3_key, exc)
-        return {}, None, None, None, None, f"MINISEED ARCHIVADO ILEGIBLE · {exc}"
+        return {}, None, None, None, None, None, f"MINISEED ARCHIVADO ILEGIBLE · {exc}"
     except Exception as exc:  # noqa: BLE001 - un fallo de S3 no puede tumbar la evidencia
         log.warning("dictamen: no se pudo leer el miniSEED (%s): %s", mseed.s3_key, exc)
-        return {}, None, None, None, None, "NO SE PUDO RECUPERAR EL MINISEED ARCHIVADO"
+        return {}, None, None, None, None, None, "NO SE PUDO RECUPERAR EL MINISEED ARCHIVADO"
 
     if not traces:
-        return {}, None, None, None, None, "EL MINISEED ARCHIVADO NO CONTIENE TRAZAS"
+        return {}, None, None, None, None, None, "EL MINISEED ARCHIVADO NO CONTIENE TRAZAS"
 
     waveform = {t.channel: t.samples for t in traces}
     rate = traces[0].sample_rate
@@ -334,8 +378,14 @@ async def _raw_waveform(evidence_rows, fetch_object, variant: str):
     # compare. Si algún día se mide por canal, se declaran los tres, no se cambia éste.
     dominante = max(traces, key=lambda t: len(t.samples))
     spectrum, peak_hz = _spectrum(dominante, rate)
+    # [T-5.23] El MISMO canal dominante que el espectro y que la duración. Dos
+    # figuras del mismo dictamen que describieran trazas distintas serían una
+    # trampa para quien las compare (es la razón que ya dejó escrita `T-3.14`).
+    espectrograma = calcular_espectrograma(
+        dominante.samples, rate, dominante.channel, max_muestras=MAX_FFT_SAMPLES
+    )
     duracion = significativa(dominante.samples, sample_rate=rate, canal=dominante.channel)
-    return waveform, rate, spectrum, peak_hz, duracion, None
+    return waveform, rate, spectrum, peak_hz, espectrograma, duracion, None
 
 
 def _spectrum(trace, rate: float):

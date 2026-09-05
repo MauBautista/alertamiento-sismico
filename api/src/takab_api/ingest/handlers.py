@@ -327,8 +327,8 @@ _HEALTH_SQL = """
 INSERT INTO device_health
   (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, mqtt_rtt_ms,
    cpu_temp_c, power_status, battery_pct, cert_days_remaining, battery_min_left,
-   relays_state)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+   relays_state, packet_loss_pct)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
 
@@ -455,10 +455,12 @@ def handle_health_snapshot(
     ('heartbeat' literal ⇒ heartbeat; cualquier otra razón ⇒ transition —
     default del contrato: 'heartbeat'). Desde T-1.40 el contrato es honesto:
     ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
-    persisten como NULL — la flota pinta S/D, no un invento. Sin columna
-    destino: packet_loss_pct, disk_used_pct (T-1.53, consumo local del panel
-    LAN). De ``relays`` no se persiste el censo canal a canal (sin consumidor en
-    la nube) sino **si el gabinete pudo obtenerlo**, en ``relays_state``
+    persisten como NULL — la flota pinta S/D, no un invento. Desde
+    T-5.24 `packet_loss_pct` SÍ aterriza: era la señal que se degrada antes de
+    que falten datos y el SOC no podía verla de ningún sitio. Sin columna
+    destino queda `disk_used_pct` (T-1.53, consumo local del panel LAN). De
+    ``relays`` no se persiste el censo canal a canal (sin consumidor en la nube)
+    sino **si el gabinete pudo obtenerlo**, en ``relays_state``
     (T-2.70.a·B1) — ver ``_relays_state`` para los tres hechos que ese campo
     separa y por qué. `ups_runtime_s` (T-2.22, segundos) aterriza en
     `battery_min_left` (minutos): la columna existía desde el schema inicial y
@@ -501,6 +503,12 @@ def handle_health_snapshot(
             # `(ts, gateway_id)`, un reenvío no pisa lo escrito y este valor no
             # puede borrar un censo bueno anterior — sólo añade su instante.
             _relays_state(payload),
+            # [T-5.24] La pérdida de paquetes del enlace sensor→Pi. El gabinete
+            # la publicaba desde siempre y aquí se tiraba: el SOC no podía verla
+            # de ningún sitio y había que ir al inmueble. `None` sigue siendo
+            # «el gabinete no opina» ⇒ S/D, nunca un cero — que aquí diría
+            # «enlace perfecto», que es la mentira cara.
+            payload.get("packet_loss_pct"),
         ),
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se
@@ -700,9 +708,14 @@ SELECT command_id, tenant_id, gateway_id, status FROM commands WHERE nonce = %s
 """
 
 # Transición SOLO desde pending (re-entrega SQS = no-op idempotente).
+# [T-5.14] `acked_at` lo pone la BASE, con el mismo reloj que `issued_at`. El
+# `executed_at` que viaja dentro del `ack` lo manda el gabinete y su reloj es
+# justo lo que el sistema vigila (`ntp_offset_s`): restarle `issued_at` mezclaría
+# dos relojes y el «tardó 4 min 12 s» de un post-simulacro no significaría nada.
+# Los dos se conservan — el del gabinete dice cuándo ACTUÓ, éste cuándo se supo.
 _COMMAND_ACK_SQL = """
 UPDATE commands
-   SET status = %(status)s, ack = %(ack)s
+   SET status = %(status)s, ack = %(ack)s, acked_at = now()
  WHERE command_id = %(command_id)s AND status = 'pending'
 """
 

@@ -17,7 +17,7 @@ import {
 } from "@takab/sdk";
 
 import StateFrame from "../../components/StateFrame";
-import { utcStamp } from "../../lib/time";
+import { latenciaLegible, utcStamp } from "../../lib/time";
 
 /**
  * [T-2.127] Rótulos de los kinds de ACTUADOR, derivados de `ACTUATOR_CHANNELS`
@@ -161,6 +161,16 @@ function isUndelivered(action: TimelineAction): boolean {
 }
 
 export interface IncidentTimelineProps {
+  /**
+   * [T-5.15] Instante en que se ABRIÓ el incidente: el `t0` contra el que se
+   * cuenta el transcurrido de cada línea. Es el mismo que usa el orquestador
+   * para su SLA de despacho, así que las dos cifras se comparan sin traducir.
+   *
+   * `null` = no se sabe (todavía cargando, o consulta fallida). Entonces **no
+   * se pinta ninguna columna**: un transcurrido calculado contra un instante
+   * inventado sería un número con la autoridad de un dato medido.
+   */
+  openedAt: string | null;
   actions: {
     data: TimelineAction[] | undefined;
     loading: boolean;
@@ -187,7 +197,23 @@ export function actorLabel(actor: string): string {
   return actor.toUpperCase();
 }
 
-export default function IncidentTimeline({ actions, onRetry }: IncidentTimelineProps) {
+/**
+ * [T-5.15] Segundos entre la apertura del incidente y la acción, o `null`.
+ *
+ * `null` también cuando sale NEGATIVO, que ocurre con relojes desfasados: un
+ * «-0:30» en una bitácora de evidencia afirma que la orden precedió al sismo.
+ * Callarlo es lo único cierto que se puede hacer con ese dato.
+ */
+export function transcurrido(openedAt: string | null, ts: string): number | null {
+  if (openedAt === null) return null;
+  const t0 = Date.parse(openedAt);
+  const t = Date.parse(ts);
+  if (Number.isNaN(t0) || Number.isNaN(t)) return null;
+  const s = (t - t0) / 1000;
+  return s < 0 ? null : s;
+}
+
+export default function IncidentTimeline({ actions, openedAt, onRetry }: IncidentTimelineProps) {
   return (
     <div className="soc-card timeline" data-testid="incident-timeline">
       <div className="soc-card__hd">
@@ -217,17 +243,31 @@ export default function IncidentTimeline({ actions, onRetry }: IncidentTimelineP
         staleSince={actions.staleSince}
       >
         <ol className="timeline__list">
-          {(actions.data ?? []).map((a) => (
-            <li key={a.action_id} className="timeline__item">
-              <span className="timeline__ts soc-mono">{utcStamp(Date.parse(a.ts))}</span>
-              <span
-                className={`timeline__kind${isUndelivered(a) ? " timeline__kind--undelivered" : ""}`}
-              >
-                {kindLabel(a)}
-              </span>
-              <span className="timeline__actor soc-mono">{actorLabel(a.actor)}</span>
-            </li>
-          ))}
+          {(actions.data ?? []).map((a) => {
+            const desde = latenciaLegible(transcurrido(openedAt, a.ts));
+            return (
+              <li key={a.action_id} className="timeline__item">
+                <span className="timeline__ts soc-mono">{utcStamp(Date.parse(a.ts))}</span>
+                {/* El transcurrido acompaña al sello absoluto, no lo sustituye:
+                  el absoluto es lo citable y el relativo lo legible. */}
+                {desde !== null && (
+                  <span
+                    className="timeline__elapsed soc-mono"
+                    data-testid={`timeline-elapsed-${a.action_id}`}
+                    title="desde que se abrió el incidente"
+                  >
+                    {desde}
+                  </span>
+                )}
+                <span
+                  className={`timeline__kind${isUndelivered(a) ? " timeline__kind--undelivered" : ""}`}
+                >
+                  {kindLabel(a)}
+                </span>
+                <span className="timeline__actor soc-mono">{actorLabel(a.actor)}</span>
+              </li>
+            );
+          })}
         </ol>
       </StateFrame>
     </div>

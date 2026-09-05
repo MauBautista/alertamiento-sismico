@@ -34,7 +34,7 @@ const SIN_INCIDENTE = "El servidor no reporta ninguna alerta activa en su edific
 export default function Crisis() {
   const status = useSessionStore((s) => s.status);
   const siteId = useWatchedSiteId();
-  const { state, data, loading, error, stale, dataUpdatedAt, refetch } = useAlertState(siteId);
+  const { state, data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   // T+ ascendente: tick de 1 s mientras la pantalla vive.
@@ -85,7 +85,7 @@ export default function Crisis() {
       error={data === null ? error : null}
       loading={loading}
       onRetry={refetch}
-      staleSinceMs={stale && data !== null ? dataUpdatedAt : null}
+      staleSinceMs={staleSinceMs}
     >
       {incident !== null && data !== null ? (
         <CrisisView

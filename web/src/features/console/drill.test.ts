@@ -12,6 +12,7 @@ import {
   armedPhase,
   drillAckReport,
   drillSiteAck,
+  medianaLatencia,
   nextArmedDrill,
 } from "./drill";
 
@@ -201,5 +202,62 @@ describe("armedPhase / nextArmedDrill", () => {
   it("con varias agendas gana la más próxima", () => {
     const later = { ...agenda, drill_id: "ag-2", scheduled_at: "2026-08-04T18:10:00Z" };
     expect(nextArmedDrill([later, agenda], at - 60_000)?.drill_id).toBe("ag-1");
+  });
+});
+
+// ── [T-5.14] Cuánto tardó cada quien ────────────────────────────────────────
+//
+// La regla que gobierna estos tres bloques: **quien NO acusó no entra como
+// cero**. Un cero en una latencia se lee «respondió al instante», que es lo
+// contrario de lo que pasó, y arrastraría la mediana hacia abajo justo en el
+// simulacro que peor salió. Por eso `null` viaja hasta la pantalla en vez de
+// colapsarse en un número.
+
+describe("medianaLatencia", () => {
+  const conLat = (id: string, lat: number | null, status = "acked") =>
+    ({
+      site_id: id,
+      site_name: id,
+      command_id: "c",
+      command_status: status,
+      ack: null,
+      commandable: true,
+      ack_latency_s: lat,
+    }) as unknown as DrillSiteOut;
+
+  const drill = (sites: DrillSiteOut[]) =>
+    ({
+      drill_id: "d",
+      tenant_id: "t",
+      initiated_by: "u",
+      note: null,
+      duration_s: 300,
+      started_at: "2026-08-04T18:00:00Z",
+      stopped_at: null,
+      stop_reason: null,
+      scheduled_at: null,
+      active: false,
+      sites,
+    }) as unknown as DrillOut;
+
+  it("sin nadie que acuse la mediana NO existe: null, no cero", () => {
+    expect(medianaLatencia(drill([conLat("a", null, "pending")]))).toBeNull();
+    expect(medianaLatencia(drill([]))).toBeNull();
+  });
+
+  it("los que no acusaron NO entran como cero al denominador", () => {
+    // Con [10, ninguno, ninguno] la mediana es 10, no 0 ni 3.33.
+    const d = drill([conLat("a", 10), conLat("b", null, "pending"), conLat("c", null, "not_sent")]);
+    expect(medianaLatencia(d)).toBe(10);
+  });
+
+  it("impares toma el de en medio; pares promedia los dos centrales", () => {
+    expect(medianaLatencia(drill([conLat("a", 5), conLat("b", 1), conLat("c", 9)]))).toBe(5);
+    expect(medianaLatencia(drill([conLat("a", 4), conLat("b", 2)]))).toBe(3);
+  });
+
+  it("un contrato viejo sin `ack_latency_s` no vale cero", () => {
+    const viejo = { ...conLat("a", 0), ack_latency_s: undefined } as unknown as DrillSiteOut;
+    expect(medianaLatencia(drill([viejo]))).toBeNull();
   });
 });

@@ -176,9 +176,58 @@ def test_ups_label_variants():
     assert ups_label(UpsReading()) == "UPS DESCONOCIDO"  # sin hardware: sin dato
 
 
-def test_packet_loss_zero_without_seedlink(settings):
+def test_packet_loss_SIN_seedlink_no_es_cero_es_SIN_DATO(settings):
+    """[T-5.24] Un fallback no puede ser `ok`.
+
+    Devolvía `0.0`, que en un porcentaje de pérdida se lee «enlace perfecto» —
+    dicho por quien no tiene cliente SeedLink con el que mirar. Mientras la cifra
+    se quedaba en el gabinete el engaño moría ahí; desde esta ficha VIAJA al
+    centro de operaciones y pinta una tarjeta.
+
+    Es el mismo camino que ya recorrió `relays` al ganar su «no pude preguntar».
+    """
     monitor = HealthMonitor(settings, probes=_FakeProbes())
-    assert monitor.snapshot().packet_loss_pct == 0.0
+    assert monitor.snapshot().packet_loss_pct is None
+
+
+def test_packet_loss_SIN_UN_SOLO_PAQUETE_visto_tampoco_es_cero(settings):
+    """El arranque: hay cliente, pero todavía no hay denominador.
+
+    `gaps / (seen + gaps)` con los dos en cero no es 0 %, es indefinido. El
+    `else 0.0` que había convertía los primeros segundos de vida del gabinete en
+    un enlace impecable.
+    """
+
+    class _Mudo:
+        packets_seen = 0
+        gaps = 0
+
+    monitor = HealthMonitor(settings, probes=_FakeProbes(), seedlink=_Mudo())
+    assert monitor.snapshot().packet_loss_pct is None
+
+
+def test_el_schema_publicado_admite_la_perdida_SIN_DATO():
+    """[T-5.24] El contrato que lee la nube tiene que aceptar el `null`.
+
+    Sin esto el edge diría la verdad y el esquema publicado la desmentiría — la
+    misma guarda que ya tiene `relays`.
+    """
+    import json
+    from pathlib import Path
+
+    raiz = Path(__file__).resolve().parents[2]
+    esquema = json.loads((raiz / "shared" / "schemas" / "health_snapshot.schema.json").read_text())
+    campo = esquema["properties"]["packet_loss_pct"]
+    tipos = {sub.get("type") for sub in campo.get("anyOf", [])}
+    assert "null" in tipos, f"el schema publicado no admite «sin dato» en la pérdida: {campo}"
+    assert "number" in tipos
+
+
+def test_un_payload_viejo_con_su_cero_sigue_validando():
+    """Compatibilidad hacia atrás: el firmware que manda `0.0` entra igual."""
+    from takab_edge.contracts import HealthSnapshot
+
+    assert HealthSnapshot(gateway_id="gw-dev-0001", packet_loss_pct=0.0).packet_loss_pct == 0.0
 
 
 # --- Logging por transición + heartbeat ---

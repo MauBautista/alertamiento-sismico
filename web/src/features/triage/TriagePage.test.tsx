@@ -50,6 +50,43 @@ vi.mock("./useCctv", () => ({
     staleSince: null,
   }),
 }));
+// [T-5.12] `useClassification` monta react-query por el mismo motivo que `useCctv`, y
+// esta suite no lleva provider a propósito. Su semántica se prueba en
+// `ClassificationPanel.test.tsx`.
+// [T-5.15] `useNotifyChain` monta react-query por el mismo motivo que `useCctv`,
+// y esta suite no lleva provider a propósito. Su semántica se prueba en
+// `NotifyChain.test.tsx`.
+vi.mock("./useNotifyChain", async () => ({
+  ...(await vi.importActual<typeof import("./useNotifyChain")>("./useNotifyChain")),
+  useNotifyChain: () => ({
+    items: [],
+    deliveredCount: 0,
+    loading: false,
+    readError: false,
+    staleSince: null,
+    refetch: vi.fn(),
+  }),
+}));
+vi.mock("./useClassification", async () => ({
+  ...(await vi.importActual<typeof import("./useClassification")>("./useClassification")),
+  useClassification: () => ({
+    items: [],
+    current: null,
+    loading: false,
+    readError: false,
+    updatedAt: 0,
+    refetch: vi.fn(),
+    clasificar: vi.fn(),
+    pending: false,
+  }),
+  useClassificationStats: () => ({
+    stats: null,
+    loading: false,
+    readError: false,
+    updatedAt: 0,
+    refetch: vi.fn(),
+  }),
+}));
 // CatalogPanel usa useCatalog (react-query): stub por defecto en este suite.
 vi.mock("./useCatalog", () => ({ useCatalog: mocks.useCatalog }));
 // [T-2.10] El Triage Estructural tiene su propio suite (StructuralTriage.test);

@@ -65,7 +65,10 @@ export function sourceLabel(input: SourceInput): SourceLabel {
         title: "SISMO DETECTADO EN ESTE EDIFICIO",
         eyebrow: SISMICA,
         label: "FUENTE · REGLAS LOCALES",
-        detail: input.max_pga_g != null ? `PGA ${formatPga(input.max_pga_g)} MEDIDO` : null,
+        detail:
+          input.max_pga_g != null
+            ? `PGA ${formatPga(input.max_pga_g)} MEDIDO`
+            : null,
       };
     case "quorum":
       return {
@@ -73,7 +76,9 @@ export function sourceLabel(input: SourceInput): SourceLabel {
         eyebrow: SISMICA,
         label: "FUENTE · CUÓRUM DE RED",
         detail:
-          input.node_count != null ? `CONFIRMADO · ${input.node_count} ESTACIONES` : null,
+          input.node_count != null
+            ? `CONFIRMADO · ${input.node_count} ESTACIONES`
+            : null,
       };
     case "manual":
       // NI sísmica ni oficial: alguien la activó. El antetítulo lo dice.
@@ -85,9 +90,16 @@ export function sourceLabel(input: SourceInput): SourceLabel {
       };
     default:
       // Fuente desconocida: se nombra el trigger crudo y NO se atribuye a nadie.
+      //
+      // [T-5.03] Y tampoco se titula como sismo. Hasta el 2026-09-02 este caso
+      // devolvía «ALERTA SÍSMICA» con el antetítulo sísmico: un trigger nuevo
+      // —el quinto que alguien añada al CHECK de `incidents.trigger`— habría
+      // salido en la pantalla más grande del teléfono afirmando que hubo un
+      // sismo, sin que nadie lo hubiera dicho. Caer al caso sísmico es lo que
+      // convierte un olvido en una afirmación falsa.
       return {
-        title: "ALERTA SÍSMICA",
-        eyebrow: SISMICA,
+        title: "ALERTA ACTIVA · ORIGEN NO RECONOCIDO",
+        eyebrow: "● ALERTA ACTIVA",
         label: `FUENTE · ${input.trigger.toUpperCase()}`,
         detail: null,
       };

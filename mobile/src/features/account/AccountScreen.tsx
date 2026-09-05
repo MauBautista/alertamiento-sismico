@@ -12,7 +12,12 @@ import { useSessionStore } from "@/auth/session.store";
 import { AccountView, type AccountProfile } from "@/features/account/AccountView";
 import { getGpsConsent, setGpsConsent } from "@/services/onboarding";
 import { StateFrame } from "@/ui/StateFrame";
+import { useStaleSince } from "@/ui/useStaleSince";
 import { palette, space } from "@/ui/theme";
+
+/** Cuánto se sigue afirmando que este perfil es el vigente. Sin poll: lo puede
+ *  cambiar un administrador desde la consola sin que el teléfono se entere. */
+const PERFIL_STALE_MS = 300_000;
 
 export function AccountScreen() {
   const router = useRouter();
@@ -30,6 +35,11 @@ export function AccountScreen() {
       return res.data;
     },
   });
+  // [T-5.21] Del RELOJ. El perfil no hace poll —cambia cuando la persona lo
+  // edita— pero puede cambiarlo un administrador desde la consola, y esta
+  // pantalla enseña el rol y el sitio asignado: un rol de hace media hora,
+  // pintado como vigente, es lo que hace que alguien crea que puede firmar.
+  const perfilStaleSinceMs = useStaleSince(remote.dataUpdatedAt, PERFIL_STALE_MS / 3);
 
   // Estado DERIVADO (lint v6: sin setState en effects): mientras el usuario no
   // edite, el formulario refleja el perfil del servidor; al teclear, manda lo
@@ -87,7 +97,7 @@ export function AccountScreen() {
       emptyText=""
       error={remote.isError && !remote.data ? "No se pudo cargar su perfil." : null}
       loading={remote.isLoading}
-      staleSinceMs={remote.isError && remote.data ? remote.dataUpdatedAt : null}
+      staleSinceMs={perfilStaleSinceMs}
     >
       <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
         <AccountView

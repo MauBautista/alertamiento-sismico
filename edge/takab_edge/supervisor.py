@@ -21,7 +21,8 @@ from pathlib import Path
 
 from takab_edge.actuators import ActuatorManager, BacnetActuator, RelayActuator
 from takab_edge.audio import AudioNotifier
-from takab_edge.audit import ActuationLedger
+from takab_edge.audit import ActuationLedger, ledger_dir_for
+from takab_edge.audit.reflejo import ActaDeReflejo, ActaDeReflejoStore
 from takab_edge.backfill import BackfillManager
 from takab_edge.buffer import RingBuffer
 from takab_edge.catalog import CatalogStore
@@ -41,7 +42,7 @@ from takab_edge.contracts import (
 )
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.drill import DrillController
-from takab_edge.gpio import GpioController, _proceso_vivo
+from takab_edge.gpio import LOCAL_RELAY_CHANNELS, GpioController, _proceso_vivo
 from takab_edge.gpio_link import build_gpio_link
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
@@ -51,6 +52,7 @@ from takab_edge.security import SecurityManager
 from takab_edge.seedlink import ObsPySeedLinkTransport, SeedLinkClient
 from takab_edge.signal import FeatureExtractor
 from takab_edge.telemetry import FEATURES_BATCH_TOPIC, FeatureBatcher
+from takab_edge.version import fw_version
 
 log = logging.getLogger("takab_edge.supervisor")
 
@@ -282,6 +284,11 @@ class EdgeSupervisor:
         self.ledger = ActuationLedger(
             s, online=lambda: self.cloud.online, sink=self._subir_fila_de_bitacora
         )
+        # [T-5.22] Acta del REFLEJO. Vive junto a la bitácora (mismo directorio
+        # derivado y estable) y la escribe el SUPERVISOR, no el dueño de los
+        # pines: el reflejo es mínimo y auditable a propósito (regla de oro 4) y
+        # meterle un fichero dentro sería pagar el acta con el camino de vida.
+        self.acta_reflejo = ActaDeReflejoStore(ledger_dir_for(s) / "reflejo.jsonl")
         self.actuators = ActuatorManager(
             RelayActuator(self.gpio_link),
             BacnetActuator(self.bacnet),
@@ -381,6 +388,13 @@ class EdgeSupervisor:
             rose_zero_path=s.rose_zero_path,  # T-2.29: punto 0 de la brújula
             gateway_id=s.gateway_id,
             site_name=s.site_name,
+            # [T-5.26] Quién es este gabinete para la nube y para el sismógrafo.
+            # `thing_name` cae al `gateway_id` cuando no hay IoT configurado —es
+            # la MISMA identidad que usa el transporte—, y el código de estación
+            # sale de `seedlink_station_code`, que ya resuelve el fallback a
+            # `station`: dos formas de escribirlo aquí acabarían divergiendo.
+            iot_thing=s.thing_name,
+            station_code=f"{s.seedlink_network}.{s.seedlink_station_code}",
             refresh_ms=s.local_api_refresh_ms,
             audio=self.audio,
             drill=self.drill,
@@ -389,6 +403,10 @@ class EdgeSupervisor:
             # T-2.67: evidencia pendiente y desenlace del respaldo (instantánea
             # EN MEMORIA del manager; el panel jamás recorre el directorio).
             backfill=self.backfill,
+            # [T-5.22] El acta del reflejo, para LEERLA. La cifra más citada del
+            # producto deja de existir solo en un campo volátil que el reinicio
+            # pone en `null`: el panel publica también mejor y peor de lo medido.
+            acta_reflejo=self.acta_reflejo,
             # T-2.146: si el `K_wd` está montado. Sin esto el panel no puede
             # distinguir «no hay ruta de hardware» de «la hay y no late», que
             # significan cosas opuestas.
@@ -484,6 +502,14 @@ class EdgeSupervisor:
         self.gpio_link.subscribe("sasmex", self._on_sasmex)
         # T-1.60: un SASMEX real aborta el simulacro (observador aislado en gpio).
         self.gpio_link.subscribe("sasmex", self.drill.on_sasmex)
+        # [T-5.25] El silencio del operador alcanza a TODO el inmueble.
+        #
+        # Va por la costura de eventos y no colgado del botón del panel a
+        # propósito: `silence_audibles()` la disparan DOS orígenes —el panel LAN
+        # y el PULSADOR FÍSICO del gabinete—, y el pulsador es el que aprieta de
+        # verdad quien está delante de una falsa alarma. Enganchar solo el panel
+        # dejaba el edificio sonando por el camino más probable.
+        self.gpio_link.subscribe("silence", self._al_silencio_de_los_secundarios)
         # Salud → nube: transición Y heartbeat (T-1.17 G6; sin event_id → sin dedup).
         self.health.on_snapshot(self._on_health_snapshot)
         # Comandos/config firmados nube→edge (T-1.23): el conector (re)suscribe
@@ -494,6 +520,39 @@ class EdgeSupervisor:
         # debe estar en Subscribe/Receive de la política de flota ANTES de
         # desplegar esto al Pi (terraform), o el broker rechaza la suscripción.
         self.cloud.subscribe(self.settings.catalog_topic, self.dispatch.on_catalog)
+
+    def _al_silencio_de_los_secundarios(self, silenciado: bool) -> None:
+        """[T-5.25] Espeja el silencio (y el re-armado) del operador en los secundarios.
+
+        El silencio estaba bien resuelto en el gabinete que lo recibe —corta la
+        sirena, corta el voceo, deja el estrobo, no toca gas ni puertas— y no
+        salía de ahí: el principal propagaba la ACTIVACIÓN por radio y solo el
+        CIERRE de alerta propagaba la orden inversa. El operador callaba el suyo
+        y el edificio seguía sonando, que es el mismo riesgo de credibilidad que
+        motivó la ruta de hardware: una sirena que nadie puede callar durante una
+        falsa alarma quema la obediencia a la siguiente alerta.
+
+        **Solo lo audible.** La orden lleva `alarm_active` y el estrobo puestos:
+        la alerta sigue viva en cada nodo y su protección no audible no se toca.
+
+        **El re-armado también viaja**, y solo si hay algo que re-armar: sin
+        alerta enclavada, volver a activar sería inventar una alarma en el otro
+        extremo del inmueble a partir de un botón que solo dice «ya no silencio».
+
+        Advisory de punta a punta: `propagate()` es fire-and-forget y esto corre
+        FUERA del lock de los pines (`gpio.on_silence` aísla cada observador), así
+        que ni el radio ni este método pueden tocar el camino de vida.
+        """
+        if self.lora is None:
+            return
+        try:
+            if silenciado:
+                self.lora.propagate("silence")
+                return
+            if self.gpio_link.snapshot().alert_latched:
+                self.lora.propagate("activate", siren=True, strobe=True)
+        except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+            log.exception("espejo del silencio a secundarios falló (aislado)")
 
     def _on_packet(self, packet: WaveformPacket) -> None:
         # Detección y actuación PRIMERO: el camino umbral→actuador (regla de oro 1/2)
@@ -517,6 +576,7 @@ class EdgeSupervisor:
         self.cloud.publish(HEALTH_TOPIC, snapshot)
 
     def _on_sasmex(self, signal: SasmexSignal) -> None:
+        self._levantar_acta_del_reflejo(signal)
         decision = self.rules.evaluate_sasmex(signal)
         if decision is not None:
             self._act_and_publish(decision, None)
@@ -524,6 +584,42 @@ class EdgeSupervisor:
             # acumulado YA para que el contexto pre-evento llegue antes que el 1 Hz.
             self.telemetry.notify_tier(decision.tier)
             self._observe_shake(decision)
+
+    def _levantar_acta_del_reflejo(self, signal: SasmexSignal) -> None:
+        """[T-5.22] La cifra más citada del producto, con fecha y con estado.
+
+        Se levanta ANTES de decidir y actuar porque el reflejo YA OCURRIÓ: el
+        dueño de los pines energizó sirena y estrobo y midió su propia latencia
+        antes de que este observador exista. Esperar a después mediría otra cosa.
+
+        Aislado de punta a punta: un acta que pudiera tumbar `_act_and_publish`
+        sería peor que no tener acta. El flanco solo se registra al ACTIVARSE —
+        la apertura del contacto no es un reflejo y su latencia no significa nada.
+        """
+        if not signal.active:
+            return
+        try:
+            snap = self.gpio_link.snapshot()
+            latencia = snap.last_reflex_latency_s
+            if latencia is None:
+                return
+            self.acta_reflejo.registrar(
+                ActaDeReflejo(
+                    medido_en=utcnow().isoformat(),
+                    latencia_s=float(latencia),
+                    gateway_id=self.settings.gateway_id,
+                    fw_version=fw_version(),
+                    es_prueba=bool(signal.is_test),
+                    # El estado de los canales EN ESE INSTANTE: es lo que
+                    # convierte el número en algo que alguien puede discutir.
+                    canales={
+                        canal.value: bool(self.gpio.relay_state(canal).energized)
+                        for canal in LOCAL_RELAY_CHANNELS
+                    },
+                )
+            )
+        except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+            log.exception("no se pudo levantar el acta del reflejo (aislado)")
 
     def _observe_shake(self, decision: TierDecision) -> None:
         """[T-2.19] Observador del agregado del panel: best-effort, DESPUÉS de actuar.

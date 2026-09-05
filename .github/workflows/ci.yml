@@ -40,6 +40,14 @@ jobs:
       DATABASE_URL: postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab
     steps:
       - uses: actions/checkout@v4
+        with:
+          # [T-5.09] Historia COMPLETA. `actions/checkout` clona con profundidad 1
+          # por defecto, y `test_docs_consistency` comprueba que los commits que
+          # `TRASPASO-SESION.md §0` cita como medición histórica EXISTEN y están a
+          # la distancia declarada — sin historia, `git cat-file` no los encuentra
+          # y el test falla en CI estando verde en local (pasó al abrir la ficha).
+          # Cuesta segundos: 639 commits, 80 MB, en el job que ya tarda ~10 min.
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -61,6 +69,14 @@ jobs:
         run: |
           python scripts/export_openapi.py
           git -C .. diff --exit-code shared/sdk-ts/openapi.json
+      - name: Drift gate · matriz RBAC (fixtures de web)
+        # [T-5.28] Los tests de web derivan sus fixtures de `/me` de este fichero.
+        # Era una tabla escrita a mano que se declaraba espejo de `auth/matrix.py`
+        # y divergió en 13 celdas: un permiso de menos no relaja una aserción,
+        # apaga el componente que lo gatea y el test pasaría en verde sobre nada.
+        run: |
+          python scripts/export_rbac_matrix.py
+          git -C .. diff --exit-code shared/fixtures/rbac-matrix.json
 
   sdk:
     name: sdk-ts · generate + tsc
@@ -374,6 +390,12 @@ jobs:
       # bash + python3 del runner.
       - name: Test de paridad local ↔ CI (make cubre lo que exige el CI)
         run: bash infra/scripts/tests/test_ci_parity.sh
+      # [T-5.22] El recolector del acta del reflejo, contra un gabinete de mentira.
+      # Aquí y no sólo en `make test` por la razón de arriba: CI no corre `make
+      # test`, y un procedimiento de sesión presencial roto no se descubre hasta
+      # que cuesta un viaje. Sin dependencias: bash + python3 del runner.
+      - name: Recolector del acta del reflejo (T-5.22 · GATE-HW)
+        run: bash edge/tests/test_acta_reflejo_script.sh
       # TODO: paso opcional de plan-only con el rol OIDC takab-ci-plan (requiere
       # permissions: id-token: write). Se deja fuera para mantener el CI de PRs
       # hermético; ver infra/terraform/README.md.

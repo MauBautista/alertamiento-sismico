@@ -14,7 +14,9 @@ import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
+import NotifyChain from "./NotifyChain";
 import CctvPanel from "./CctvPanel";
+import { ClassificationPanel } from "./ClassificationPanel";
 import PostEventSummary from "./PostEventSummary";
 import QuorumNodes from "./QuorumNodes";
 import StructuralTriage from "./StructuralTriage";
@@ -228,6 +230,10 @@ export default function TriageDetail({
           tras cada sismo relevante: tiempo de aviso, estaciones que contribuyeron y
           contraste con el catálogo. Convierte "el sistema funcionó" en algo
           verificable. */}
+      {/* [T-5.12] Qué FUE este incidente. Va junto al resumen post-evento porque
+          contesta la última pregunta del mismo bloque: el resumen dice cómo se
+          comportó el sistema, y esto dice si hacía falta que se comportara. */}
+      <ClassificationPanel incidentId={row.incident.incident_id} />
       <PostEventSummary forensics={forensics} />
       {/* [T-3.12.c] La ÚNICA superficie de CCTV de la consola. Va junto al resumen
           post-evento porque responde a la misma pregunta —cómo se comportó el
@@ -297,7 +303,10 @@ export default function TriageDetail({
 
       {/* [T-2.40] La bitácora existe para reconstruir lo ocurrido; contarla en un
           número desperdiciaba precisamente eso. */}
-      <IncidentTimeline actions={actions} onRetry={detail.refetch} />
+      <IncidentTimeline actions={actions} openedAt={inc.opened_at} onRetry={detail.refetch} />
+      {/* [T-5.15] Va DESPUÉS de la bitácora y no dentro: la bitácora es lo que
+          hizo TAKAB y esto es lo que hicieron los proveedores con ello. */}
+      <NotifyChain incidentId={inc.incident_id} />
 
       {detail.exportError && (
         <p className="soc-meta" role="alert">

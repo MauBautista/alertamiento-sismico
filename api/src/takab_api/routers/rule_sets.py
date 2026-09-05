@@ -25,9 +25,12 @@ from takab_api.schemas.rule_sets import (
     RuleSetOut,
     RuleSetPublishOut,
     RuleSetPutIn,
+    RuleSetRollbackIn,
     merge_secrets,
     redact_config,
 )
+from takab_api.schemas.tipologia import BuildingTypeCatalog, BuildingTypeOut
+from takab_api.sites import tipologia
 
 # Roles que administran umbrales (RBAC §2 vía la matriz de acciones).
 EDIT_THRESHOLDS_ROLES: tuple[str, ...] = tuple(
@@ -133,3 +136,111 @@ async def publish_rule_set(
     )
     response.status_code = 202
     return RuleSetPublishOut(rule_set_id=rule_set_id, version=row["version"])
+
+
+# ─────────────────────────────────────────── [T-5.16 · D-28] la tipología
+
+
+@router.get(
+    "/building-types",
+    response_model=BuildingTypeCatalog,
+    dependencies=[Depends(require_web_surface)],
+)
+async def list_building_types() -> BuildingTypeCatalog:
+    """Catálogo cerrado de tipología, con su banda de umbral **de referencia**.
+
+    Sale con `resuelve_umbrales: false` en el cuerpo, y no como comentario: la
+    consola tiene que poder decir en pantalla que esto SUGIERE. Un catálogo que
+    llegara pelado invitaría a que la siguiente pantalla lo aplicara sola, que es
+    justo lo que `D-28` prohíbe.
+    """
+    cat = tipologia.catalogo()
+    return BuildingTypeCatalog(
+        resuelve_umbrales=cat["resuelve_umbrales"],
+        por_que_no_resuelve=list(cat["por_que_no_resuelve"]),
+        sin_referencia_de_pgv=cat["sin_referencia_de_pgv"],
+        items=[
+            BuildingTypeOut(
+                value=t["value"],
+                label=t["label"],
+                banda=t["banda"],
+                sin_banda_por_que=t.get("sin_banda_por_que"),
+            )
+            for t in cat["tipos"]
+        ],
+    )
+
+
+# ───────────────────────────────────────────── [T-5.16] volver atrás
+
+
+@router.post("/rule-sets/{rule_set_id}/rollback", response_model=RuleSetOut, status_code=201)
+async def rollback_rule_set(
+    rule_set_id: UUID,
+    body: RuleSetRollbackIn,
+    claims: Claims = Depends(_require_edit),
+    conn: AsyncConnection = Depends(read_session),
+) -> RuleSetOut:
+    """Vuelve a una versión anterior CREANDO una nueva que declara a cuál vuelve.
+
+    El histórico es evidencia (regla de oro 11) y no se reescribe: volver atrás
+    **avanza** el contador. Hasta hoy la única forma de volver era teclear los
+    valores viejos, que además perdía la constancia de que aquello fue una
+    reversión y no una edición cualquiera.
+
+    Los secretos NO se restauran. Un `secret` de webhook puede haberse rotado
+    justamente porque se filtró, y resucitarlo al revertir un umbral sería
+    devolver al aire una credencial retirada: se conservan los VIGENTES, que es
+    la misma regla que ya aplica el PUT desde el otro lado.
+    """
+    stmt, params = q.select_rule_set(str(rule_set_id))
+    destino = (await conn.execute(stmt, params)).mappings().first()
+    if destino is None:
+        raise http_error(404, "rule_set no encontrado")
+    if str(destino["tenant_id"]) != claims.tenant_id:
+        raise http_error(403, "el rule_set pertenece a otro tenant")
+
+    scope_type, scope_id = destino["scope_type"], str(destino["scope_id"])
+
+    active_stmt, active_params = q.select_active_scope(scope_type, scope_id)
+    active = (await conn.execute(active_stmt, active_params)).mappings().first()
+    actual = active["version"] if active else None
+    if actual != body.base_version:
+        raise http_error(409, "el rule_set cambió en el servidor; recarga y reintenta")
+    if destino["version"] == actual:
+        raise http_error(409, "esa versión ya es la activa: no hay a dónde volver")
+
+    # `redact_config` quita los secretos de la versión vieja y `merge_secrets`
+    # reinyecta los vigentes: el resultado son los VALORES de entonces con las
+    # CREDENCIALES de ahora. Se reutilizan las dos funciones que ya gobiernan
+    # esto en el PUT en vez de escribir una tercera regla de secretos.
+    config = merge_secrets(redact_config(destino["config"]), active["config"] if active else None)
+
+    deact_stmt, deact_params = q.deactivate_scope(scope_type, scope_id, claims.tenant_id)
+    await conn.execute(deact_stmt, deact_params)
+
+    ins_stmt, ins_params = q.insert_new_version(
+        tenant_id=claims.tenant_id,
+        scope_type=scope_type,
+        scope_id=scope_id,
+        config=json.dumps(config),
+        created_by=claims.sub,
+        rolled_back_to=str(rule_set_id),
+    )
+    created = (await conn.execute(ins_stmt, ins_params)).mappings().one()
+
+    await audit_async(
+        conn,
+        tenant_id=destino["tenant_id"],
+        actor=f"user:{claims.sub}",
+        verb="rule_set_rollback",
+        obj=f"rule_set:{created['rule_set_id']}",
+        meta={
+            "desde_version": actual,
+            "a_version": destino["version"],
+            "nueva_version": created["version"],
+            "scope_type": scope_type,
+            "scope_id": scope_id,
+        },
+    )
+    return _out(dict(created))

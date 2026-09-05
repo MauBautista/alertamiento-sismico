@@ -6,7 +6,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { IncidentActionOut, SiteStateFrame } from "@takab/sdk";
 
 import { expectFourStates, UI_STATES, type UiState } from "../../test-utils/states";
-import DetailPanel, { FEATURES_STALE_MS, ageLabel, type SiteLinkData } from "./DetailPanel";
+import DetailPanel, {
+  FEATURES_STALE_MS,
+  ageLabel,
+  respaldoLegible,
+  type SiteLinkData,
+} from "./DetailPanel";
 import { LINK_DEGRADADO, LINK_OPERATIVO, LINK_SIN_ENLACE, LINK_SIN_GABINETE } from "./link";
 import type { LiveIncident } from "./useLiveIncidents";
 import type { IncidentActionsData } from "./useIncidentActions";
@@ -14,7 +19,17 @@ import type { FeaturePoint, SiteFeaturesData } from "./useSiteFeatures";
 import type { SiteRelaysData } from "./useSiteRelays";
 
 const NOW = Date.parse("2026-07-08T10:41:35Z");
-const SITE = { site_id: "s-1", name: "Planta Cholula", coords: "19.0633°N · 98.3014°W" };
+const SITE = {
+  site_id: "s-1",
+  name: "Planta Cholula",
+  coords: "19.0633°N · 98.3014°W",
+  // [T-5.26] Identidad del hardware: la estación de este fixture SÍ tiene aparato.
+  serial: "TKB-0001",
+  fwVersion: "62f3f1e",
+  sensorModels: "RS4D",
+  powerStatus: "line",
+  batteryPct: 100,
+};
 
 function point(ts: number, pga: number): FeaturePoint {
   return { ts, pga, pgv: 1.5, stalta: 1.0, clipping: false };
@@ -495,5 +510,61 @@ describe("ageLabel", () => {
   it("segundos bajo 2 min, minutos después", () => {
     expect(ageLabel("2026-07-08T10:41:00Z", Date.parse("2026-07-08T10:41:45Z"))).toBe("T+45s");
     expect(ageLabel("2026-07-08T10:00:00Z", Date.parse("2026-07-08T10:41:45Z"))).toBe("T+41min");
+  });
+});
+
+// [T-5.26] La identidad del hardware, sin salir de la consola.
+//
+// Modelo, firmware, serial y respaldo eléctrico vivían solo en Flota: saber qué
+// aparato está hablando obligaba a abandonar la consola. En una demostración eso
+// es un salto de pantalla en el peor momento; en un incidente real, un cambio de
+// contexto justo cuando no se debe.
+describe("[T-5.26] ficha de hardware de la estación", () => {
+  it("declara serial, firmware, sismógrafo y respaldo", () => {
+    renderPanel();
+
+    const ficha = screen.getByTestId("detail-hardware");
+    expect(ficha).toHaveTextContent("TKB-0001");
+    expect(ficha).toHaveTextContent("62f3f1e");
+    expect(ficha).toHaveTextContent("RS4D");
+    expect(ficha).toHaveTextContent(/LÍNEA · 100 %/);
+  });
+
+  it("sin dato lo DICE, en vez de dejar el hueco", () => {
+    // Regla de oro 7: un hueco mudo se lee como si el dato fuera bueno. Una
+    // estación sin gabinete no tiene serial ni firmware, y decirlo es el dato.
+    renderPanel({
+      site: {
+        ...SITE,
+        serial: null,
+        fwVersion: null,
+        sensorModels: null,
+        powerStatus: null,
+        batteryPct: null,
+      },
+    });
+
+    const ficha = screen.getByTestId("detail-hardware");
+    expect(ficha.textContent?.match(/S\/D/g) ?? []).toHaveLength(4);
+    expect(ficha).not.toHaveTextContent(/LÍNEA/);
+  });
+});
+
+describe("[T-5.26] respaldoLegible", () => {
+  it("sin lectura no pinta LÍNEA: dice que no se sabe", () => {
+    // El fallback peligroso sería asumir red eléctrica. Un gabinete que no ha
+    // reportado no está enchufado — es que no ha dicho nada.
+    expect(respaldoLegible(null, null)).toBe("S/D");
+    expect(respaldoLegible(null, 80)).toBe("S/D");
+  });
+
+  it("traduce los estados y añade la carga cuando la hay", () => {
+    expect(respaldoLegible("line", 100)).toBe("LÍNEA · 100 %");
+    expect(respaldoLegible("battery", 61.5)).toBe("EN BATERÍA · 62 %");
+    expect(respaldoLegible("battery", null)).toBe("EN BATERÍA");
+  });
+
+  it("un estado desconocido se muestra tal cual, no se traga", () => {
+    expect(respaldoLegible("frobnicating", null)).toBe("FROBNICATING");
   });
 });

@@ -15,6 +15,14 @@ real sólo ofrece silencio, self-test y reset, y jamás una inyección de SASMEX
 
     python demo/gabinete.py --thing gw-sim-0001 --site site-sim-001 \
         --station SIM001 --spool /tmp/demo/gw-sim-0001 --control-port 9101
+
+[T-5.29] Con ``--downlink`` el gabinete además ESCUCHA: el transporte entrega los
+comandos firmados que la nube deja en su buzón y los recibe el
+``CommandDispatcher`` real, que verifica HMAC + nonce + ventana. Para eso la clave
+tiene que ser la MISMA de los dos lados, así que quien lanza este proceso pone
+``TAKAB_EDGE_HMAC_KEY`` en su entorno; sin ella el supervisor genera una efímera
+(``dev_mode``) y **todo comando se rechazaría por firma inválida** — un fallo que
+se lee como «no llegó nada». La línea de arranque declara cuál de las dos tiene.
 """
 
 from __future__ import annotations
@@ -22,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import signal
 import sys
 import threading
@@ -73,6 +82,12 @@ class Gabinete:
             station=args.station,  # = sensors.serial
             iot_thing=args.thing,  # = meta_principal (identidad del certificado)
             local_api_port=args.dashboard_port,
+            # [T-5.29] La ejecución de comandos remotos viene APAGADA de fábrica
+            # por gateway (regla de oro 8: la superficie más sensible se habilita
+            # explícitamente). El guion la enciende a propósito y lo declara; sin
+            # esto el gabinete verifica la firma y acusa `rejected`, que es el
+            # comportamiento correcto y no lo que la escena quiere enseñar.
+            command_enabled=args.command_enabled,
             cloud_spool_dir=str(Path(args.workdir) / "spool_durable"),
             buffer={"root": str(buffer_root)},
         )
@@ -83,6 +98,8 @@ class Gabinete:
             thing=args.thing,
             archive_dir=str(Path(args.workdir) / "sent_events"),
             archive_topics=("takab/events",),
+            # [T-5.29] Buzón de bajada: comandos firmados nube→gabinete.
+            downlink_root=args.downlink,
         )
         # seedlink_source=None ⇒ ningún ruido de fondo: el sismo entra sólo cuando
         # la demo lo inyecta, y la evidencia es determinista.
@@ -126,6 +143,13 @@ class Gabinete:
             "reflex_latency_s": gpio.last_reflex_latency_s,
             "relays": {c.value: gpio.is_activated(c) for c in CHANNELS},
             "cloud": {"online": cloud.online, "queued": cloud.queued, "sent": cloud.sent},
+            # [T-5.29] Evidencia de la bajada: cuántos comandos entregó el
+            # transporte a la suscripción del dispatcher, y cuántos siguen en el
+            # buzón (con la WAN caída, todos).
+            "downlink": {
+                "delivered": self.transport.delivered,
+                "pending": self.transport.pendientes_de_bajada,
+            },
         }
 
     def stop(self) -> None:
@@ -177,6 +201,14 @@ def main() -> None:
     parser.add_argument("--station", required=True, help="serial del sensor (sensors.serial)")
     parser.add_argument("--tenant", default="tenant-dev")
     parser.add_argument("--spool", required=True, help="directorio ≡ cola de IoT Core")
+    parser.add_argument(
+        "--downlink", default=None, help="raíz de los buzones de bajada (≡ takab/cmd/<thing>)"
+    )
+    parser.add_argument(
+        "--command-enabled",
+        action="store_true",
+        help="ejecuta comandos remotos firmados (de fábrica va APAGADO por gateway)",
+    )
     parser.add_argument("--workdir", required=True, help="buffer + spool durable del gabinete")
     parser.add_argument("--control-port", type=int, required=True)
     parser.add_argument("--dashboard-port", type=int, default=0, help="0 = puerto efímero")
@@ -191,7 +223,26 @@ def main() -> None:
         signal.signal(sig, lambda *_: stop.set())
 
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    print(json.dumps({"ready": True, "thing": args.thing, "port": args.control_port}), flush=True)
+    # `hmac` NO es adorno: con la clave efímera todo comando de la nube se
+    # rechazaría por firma inválida y la escena de simulacro fallaría diciendo
+    # «no llegó nada», que es el diagnóstico equivocado. El guion lo comprueba.
+    print(
+        json.dumps(
+            {
+                "ready": True,
+                "thing": args.thing,
+                "port": args.control_port,
+                "hmac": "fijada" if os.environ.get("TAKAB_EDGE_HMAC_KEY") else "efimera",
+                "downlink": bool(args.downlink),
+                "command_enabled": bool(args.command_enabled),
+                # El DEFAULT de fábrica, leído de la clase en el venv donde vive
+                # (el guion corre en el de la api y no puede importarla). Que el
+                # guion pueda afirmar «viene apagada» exige preguntárselo aquí.
+                "command_default": EdgeSettings.model_fields["command_enabled"].default,
+            }
+        ),
+        flush=True,
+    )
     try:
         stop.wait()
     finally:

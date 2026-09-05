@@ -16,6 +16,7 @@ from datetime import datetime
 
 from takab_api.compliance import ComplianceDocument
 from takab_api.dictamen.duracion import Duracion
+from takab_api.dictamen.espectrograma import Espectrograma
 
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
@@ -93,9 +94,31 @@ ENVELOPE_NOTE = (
     "ENVOLVENTE DE PICO POR SEGUNDO (1 Hz). NO es la forma de onda cruda: el sistema "
     "muestrea a 100 sps y no transmite el crudo en continuo."
 )
+#: [T-5.07] Aviso de asistencia automatizada. Vivía como literal dentro de
+#: `pdf.py`, así que el censo de avisos impresos —que se DERIVA de este módulo— no
+#: podía verlo, y era justo el aviso con la regla más fácil de romper: **solo debe
+#: salir cuando la prosa NO la escribió el proveedor determinista**. El render le
+#: añade la versión del rule_set; lo que se fija aquí es la frase que un lector
+#: reconoce.
+NARRATIVE_AI_NOTE = (
+    "Las secciones en prosa se redactaron con asistencia automatizada. El "
+    "VEREDICTO y todos los valores medidos de este documento son deterministas"
+)
+
 NO_MMI = (
     "No se reporta intensidad macrosísmica (MMI) ni isosistas: TAKAB no las calcula. "
     "La banda que sigue es la sacudida MEDIDA por el sensor del propio inmueble."
+)
+
+#: [T-5.11] Lo que se imprime cuando NINGÚN sismo del catálogo es éste y no había
+#: siquiera candidatos en la ventana. Decía «SIN COINCIDENCIA EN CATÁLOGO», que
+#: sonaba a fallo de búsqueda; lo que afirma es un HECHO sobre el evento —el
+#: catálogo no tiene un sismo compatible, probablemente porque fue local y
+#: pequeño—, y es el mismo vocabulario que el estado `sin_correlacion` del
+#: glosario compartido (`shared/glossary/procedencia.json`, T-5.10).
+SIN_CORRELACION_EN_CATALOGO = (
+    "SIN CORRELACIÓN EN EL CATÁLOGO DE REFERENCIA: ningún sismo publicado "
+    "satisface el criterio de identidad con este incidente."
 )
 
 
@@ -237,6 +260,10 @@ class ReportModel:
     #: Espectro de amplitud del canal dominante: `(frecuencias_hz, amplitudes)`.
     spectrum: tuple[list[float], list[float]] | None = None
     spectrum_peak_hz: float | None = None
+    #: [T-5.23] Espectrograma del MISMO canal dominante: tiempo × frecuencia, con
+    #: escala RELATIVA. `None` cuando no hubo traza de la que calcularlo — y eso
+    #: se declara con el mismo texto de ausencia que la onda cruda, no con un hueco.
+    spectrogram: Espectrograma | None = None
     #: [T-3.14] Duración instrumental **medida** de la sacudida: D5-95 sobre la Intensidad
     #: de Arias del canal dominante. `None` cuando no se pudo medir — que NO es lo mismo
     #: que cero, y el reporte lo dice con palabras.
@@ -269,6 +296,25 @@ class ReportModel:
         """
         payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(payload.encode()).hexdigest()
+
+
+#: [T-5.26] Lo que se imprime donde va la huella de un objeto de evidencia.
+#:
+#: Existe como función —y no como un `or` en el sitio del render— porque la
+#: regla que encierra es la que estuvo rota: el sha256 se imprimía a **32 de 64**
+#: caracteres (y a 16 en la custodia del vídeo) mientras la portada del mismo
+#: documento instruye verificarlo con `sha256sum`. Con medio hash no se puede, y
+#: un dato inverificable presentado como verificable es peor que no imprimirlo:
+#: quien lo intente concluirá que la evidencia está corrupta.
+#:
+#: No había razón de espacio: 64 hex miden 108.7 mm de los 128 que deja la
+#: columna del PDF, así que caben en una sola línea.
+SIN_HASH = "sin hash"
+
+
+def huella_de_custodia(sha: str | None) -> str:
+    """El sha256 ENTERO, o la ausencia declarada. Nunca un trozo."""
+    return sha or SIN_HASH
 
 
 FELT_LABELS: dict[str, str] = {

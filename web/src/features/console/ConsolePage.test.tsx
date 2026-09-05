@@ -79,6 +79,7 @@ const SITE: MapSiteState = {
   site_id: "s-1",
   tenant_id: "t-1",
   name: "Planta Cholula",
+  code: "site-cholula-a",
   criticality: "high",
   lon: -98.3014,
   lat: 19.0633,
@@ -179,6 +180,9 @@ describe("ConsolePage", () => {
         allowed_actions: {
           ack_incident: true,
           edit_thresholds: true,
+          demo_mode_on: false,
+          demo_mode_off: false,
+          classify_incident: false,
           export: true,
           generate_report: false,
           sign_dictamen: false,
@@ -223,7 +227,13 @@ describe("ConsolePage", () => {
   it("monta el wall: mapa, banner crítico e incidentes con identidad real", () => {
     render(page());
     expect(screen.getByTestId("map-mock")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("ALERTA SÍSMICA · PROTÉJASE");
+    // [T-5.03] El banner dice lo que dice el `trigger` del fixture (`local_threshold`),
+    // no un titular fijo. Hasta hoy este test —como el de `AlertBanner`— afirmaba
+    // «ALERTA SÍSMICA · PROTÉJASE» para un umbral instrumental: la misma mentira,
+    // encodada por segunda vez en una prueba distinta. El `data-trigger` ata la
+    // aserción al fixture para que no puedan volver a separarse en silencio.
+    expect(screen.getByRole("alert")).toHaveAttribute("data-trigger", "local_threshold");
+    expect(screen.getByRole("alert")).toHaveTextContent("AVISO SÍSMICO · UMBRAL INSTRUMENTAL");
     expect(screen.getByRole("alert")).toHaveTextContent("Planta Cholula");
     expect(screen.getByText("1 ACTIVOS")).toBeInTheDocument();
     expect(screen.getByTestId("operator-label")).toHaveTextContent("TENANT_ADMIN · abcdef12");
@@ -436,6 +446,9 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
         allowed_actions: {
           ack_incident: true,
           edit_thresholds: false,
+          demo_mode_on: false,
+          demo_mode_off: false,
+          classify_incident: false,
           export: false,
           generate_report: false,
           sign_dictamen: false,
