@@ -98,3 +98,9 @@ edge/FW_VERSION
 # [T-3.10.b] Se GENERA en cada build (ci/check-licenses.sh). Commitearlo lo dejaría
 # envejecer en silencio, que es como envejecen todos los inventarios escritos a mano.
 THIRD_PARTY_NOTICES.txt
+
+# Carpeta de ENTREGA del diseño (originales tal cual llegaron, con su .rar de
+# 7.8 MB y duplicados en .jfif). Todo lo único que traía está preservado en
+# `shared/brand/`, que es la fuente canónica; esto queda fuera de git para no
+# meter un archivo comprimido en la historia para siempre.
+/img/

@@ -155,8 +155,17 @@ class SpoolMqttTransport:
 
     # --- [T-5.29] bajada nube→gabinete -------------------------------------
     def _arrancar_bajada(self) -> None:
-        """Hilo que vacía el buzón. Idempotente: reconectar no duplica hilos."""
-        if self.downlink is None or (self._poller is not None and self._poller.is_alive()):
+        """Hilo que vacía el buzón. Idempotente: reconectar no duplica hilos.
+
+        `poll_s <= 0` lo deja SIN arrancar, y entonces la única forma de entregar
+        es pedirlo con `entregar_pendientes()`. No es un capricho de test: con el
+        hilo vivo, quien llama compite con él por los mismos archivos y el número
+        que recibe de vuelta depende de quién ganó. Medido: cuatro tests de este
+        módulo fallaban ~20 % de las veces por eso, cada vez uno distinto.
+        """
+        if self.downlink is None or self._poll_s <= 0:
+            return
+        if self._poller is not None and self._poller.is_alive():
             return
         self._stop.clear()
         self._poller = threading.Thread(target=self._bajada, daemon=True, name="spool-downlink")
@@ -171,8 +180,10 @@ class SpoolMqttTransport:
     def entregar_pendientes(self) -> int:
         """Entrega lo que haya en el buzón a la suscripción de su topic.
 
-        Devuelve cuántos entregó. Se expone además del hilo porque en un test
-        —donde no hay reloj que esperar— pedirlo explícitamente es determinista.
+        Devuelve cuántos entregó. Se expone además del hilo para poder pedir la
+        entrega sin reloj que esperar. **Solo es determinista si el hilo no está
+        corriendo** (`poll_s <= 0`): con el hilo vivo, los dos consumen del mismo
+        buzón y el número que devuelve depende de cuál llegó antes al archivo.
 
         **Entregar es consumir**, igual que un mensaje QoS1 que el cliente
         confirma: el archivo se borra ANTES de invocar el callback, para que un

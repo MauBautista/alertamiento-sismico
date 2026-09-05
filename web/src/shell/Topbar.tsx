@@ -2,7 +2,7 @@ import { Cpu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
 
-import logoTakab from "../assets/LogoTakab2.png";
+import logoTakab from "../assets/logotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import ScopeBadge from "../components/ScopeBadge";
 import { edgeMqttView, useLiveHealthStore } from "../live/liveHealth.store";
@@ -63,7 +63,7 @@ export default function Topbar() {
   return (
     <header className="soc-topbar">
       <div className="soc-brand">
-        <img src={logoTakab} alt="TAKAB TECHNOLOGY" className="soc-brand__logo" />
+        <img src={logoTakab} alt="TAKAB Ailert" className="soc-brand__logo" />
       </div>
 
       {/* Telemetría VIVA (T-1.49): estado del canal /ws + RTT MQTT del último

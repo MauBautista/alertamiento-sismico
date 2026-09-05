@@ -1,10 +1,10 @@
-import logoTakab from "../assets/LogoTakab2.png";
+import logoTakab from "../assets/logotipo-takab-ailert.png";
 
 export function SplashScreen() {
   return (
     <div className="soc-screen">
       <div className="soc-screen__panel">
-        <img src={logoTakab} alt="TAKAB TECHNOLOGY" className="soc-screen__logo" />
+        <img src={logoTakab} alt="TAKAB Ailert" className="soc-screen__logo" />
         <p className="soc-screen__sub">INICIANDO CONSOLA SOC…</p>
       </div>
     </div>
