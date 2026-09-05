@@ -214,12 +214,21 @@ def test_sin_archive_no_escribe_copias(tmp_path: Path) -> None:
 # demostrando lo contrario de lo que dice demostrar.
 
 
-def _con_bajada(tmp_path: Path, thing: str = "gw-sim-0001") -> SpoolMqttTransport:
+def _con_bajada(
+    tmp_path: Path, thing: str = "gw-sim-0001", poll_s: float = 0.0
+) -> SpoolMqttTransport:
+    """Por defecto SIN hilo de sondeo: el test es el único que entrega.
+
+    Con el hilo vivo, `entregar_pendientes()` compite con él por los mismos
+    archivos y devuelve lo que le haya quedado — cuatro tests de este módulo
+    fallaban ~20 % de las corridas por eso, y en la suite completa parecía un
+    problema de otro. Quien de verdad quiera probar el hilo lo pide.
+    """
     t = SpoolMqttTransport(
         tmp_path / "cola" / thing,
         thing=thing,
         downlink_root=tmp_path / "bajada",
-        poll_s=0.01,
+        poll_s=poll_s,
     )
     t.connect()
     return t
@@ -297,7 +306,7 @@ def test_entregar_es_CONSUMIR_no_hay_segunda_entrega(tmp_path: Path) -> None:
 
 def test_con_la_WAN_CAIDA_el_comando_espera_y_baja_al_reconectar(tmp_path: Path) -> None:
     """La bajada cae con el mismo enlace, y la sesión persistente la recupera."""
-    t = _con_bajada(tmp_path)
+    t = _con_bajada(tmp_path, poll_s=0.01)  # ESTE sí prueba el hilo
     entregados: list[bytes] = []
     t.subscribe("takab/cmd/gw-sim-0001", lambda _t, raw: entregados.append(raw))
 
