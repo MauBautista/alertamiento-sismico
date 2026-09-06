@@ -155,8 +155,17 @@ body {
   height: 64px;
 }
 .soc-brand { display: flex; align-items: center; gap: 14px; color: var(--tk-fg-1); }
-.soc-brand__logo {
+/* El imagotipo, compuesto de sus dos piezas. Una sola imagen no sirve aquí: a
+   40px de alto —lo que da la topbar de 64— el imagotipo plano encoge la palabra
+   hasta hacerla ilegible (medido en maqueta antes de elegir). Compuesto, cada
+   pieza va a su tamaño: el símbolo manda a 40, la palabra respira a 26. */
+.soc-brand__mark {
   height: 40px;
+  width: auto;
+  display: block;
+}
+.soc-brand__logo {
+  height: 26px;
   width: auto;
   display: block;
   /* The wordmark ships on a dark-navy. On the topbar (also navy-800) we

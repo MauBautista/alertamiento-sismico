@@ -2,6 +2,7 @@ import { Cpu } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router";
 
+import isotipoTakab from "../assets/isotipo-takab-ailert.png";
 import logoTakab from "../assets/logotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import ScopeBadge from "../components/ScopeBadge";
@@ -63,6 +64,12 @@ export default function Topbar() {
   return (
     <header className="soc-topbar">
       <div className="soc-brand">
+        {/* Las dos piezas del imagotipo, servidas por separado: la topbar
+            restringe el ALTO (64px) y el imagotipo aplastado a 40 encoge la
+            palabra hasta perderla. El isotipo va sin texto alternativo a
+            propósito —es decorativo— porque el logotipo de al lado ya dice el
+            nombre, y anunciarlo dos veces es ruido en el lector de pantalla. */}
+        <img src={isotipoTakab} alt="" aria-hidden="true" className="soc-brand__mark" />
         <img src={logoTakab} alt="TAKAB Ailert" className="soc-brand__logo" />
       </div>
 

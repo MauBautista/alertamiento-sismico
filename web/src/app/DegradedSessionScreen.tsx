@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import logoTakab from "../assets/logotipo-takab-ailert.png";
+import logoTakab from "../assets/imagotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import { retryDelayMs } from "./degradedRetry";
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import urllib.error
 import urllib.request
 from datetime import UTC, timedelta
@@ -1046,6 +1047,56 @@ def test_favicon_de_marca_viaja_empaquetado(supervisor):
 
     _, body = _get(supervisor.local_api, "/")
     assert 'href="/favicon.png"' in body.decode(), "el panel no enlaza su propio icono"
+
+
+def test_la_cabecera_lleva_el_ISOTIPO_de_marca_y_no_una_K_dibujada_a_mano(supervisor):
+    """La marca del panel es el isotipo REAL de TAKAB Ailert.
+
+    Lo que había aquí era una «K» hecha con tres polígonos en línea: se parecía
+    lo justo para que nadie la mirara dos veces, y no era la marca.
+
+    Se cruzan las dos mitades porque cada una falla sola y en silencio: un
+    `<img>` sin fichero deja un hueco roto, y un fichero servido que nadie
+    enlaza no lo pide ningún navegador. Y viaja empaquetado con el módulo, como
+    las fuentes y el favicon, porque el gabinete sirve el panel SIN RED: una
+    marca que hubiera que descargar no se vería jamás ahí.
+
+    LO QUE ESTE TEST NO COMPRUEBA
+    -----------------------------
+    Que la tinta sea CLARA —que es el modo en que este defecto duele: el logo
+    estaría y no se vería sobre el navy del panel, y eso no se nota revisando
+    código—. Decodificar el PNG pediría Pillow, que en el gabinete solo está de
+    rebote (la arrastra matplotlib): un test que la importe se rompe el día que
+    esa dependencia se mueva, por un motivo que no tiene nada que ver.
+
+    Lo que sí se ancla es el ORIGEN: `generar.py` lo deriva del maestro
+    NEGATIVO. Mientras la derivación diga `iso_neg`, la tinta es clara por
+    construcción; si alguien la cambia al positivo, esa línea cae.
+    """
+    with urllib.request.urlopen(_url(supervisor.local_api, "/isotipo.png"), timeout=5) as response:
+        assert response.status == 200
+        assert response.headers["Content-Type"] == "image/png"
+        crudo = response.read()
+    assert crudo[:8] == b"\x89PNG\r\n\x1a\n", "no es un PNG"
+    alto = int.from_bytes(crudo[20:24], "big")
+    assert alto == 96, f"el isotipo mide {alto}px de alto; el panel lo pinta a 24 y quiere 4x"
+    # Tipo de color 6 = RGBA. Sin alfa llegaría con un rectángulo de fondo
+    # recortado sobre la cabecera, que es peor que no ponerlo.
+    assert crudo[25] == 6, f"el isotipo no lleva canal alfa (tipo de color {crudo[25]})"
+
+    _, body = _get(supervisor.local_api, "/")
+    panel = body.decode()
+    assert 'src="/isotipo.png"' in panel, "la cabecera del panel no pide el isotipo"
+    assert "M 18 12 L 32 12" not in panel, "volvió la «K» dibujada a mano"
+
+    generador = pathlib.Path(__file__).resolve().parents[2] / "shared" / "brand" / "generar.py"
+    assert (
+        'por_alto(iso_neg, 96), RAIZ / "edge/takab_edge/local_api/isotipo.png"'
+        in generador.read_text()
+    ), (
+        "el isotipo del panel dejó de derivarse del maestro NEGATIVO: sobre el "
+        "navy del panel, el positivo estaría ahí y no se vería"
+    )
 
 
 def test_static_unknown_path_is_404(supervisor):

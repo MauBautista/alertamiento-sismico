@@ -3,7 +3,7 @@ import { Navigate, useLocation } from "react-router";
 
 import { getEnv } from "../app/env";
 import { landingPath } from "../app/landing";
-import logoTakab from "../assets/logotipo-takab-ailert.png";
+import logoTakab from "../assets/imagotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import { cognitoConfigured } from "../auth/userManager";
 import MobileOnlyScreen from "./MobileOnlyScreen";

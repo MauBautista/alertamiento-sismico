@@ -198,7 +198,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 
 | # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
 |---|---|---|---|---|
-| INV-T-MINUS.a | Ninguna superficie muestra una cuenta regresiva. | `CUBIERTO` | `mobile/src/features/alert/CrisisView.test.tsx:16`<br>`sasmex: SIN magnitud, SIN ETA, SIN cuenta regresiva (test que FALLA si aparecen)`<br>`edge/tests/test_local_api.py:603`<br>`test_index_has_no_external_resources` | Serializa el árbol renderizado entero y exige que no case `/T-[0-9]/`; el cronómetro visible es ascendente.<br>El HTML del panel no contiene `T-MINUS` ni `countdown`. |
+| INV-T-MINUS.a | Ninguna superficie muestra una cuenta regresiva. | `CUBIERTO` | `mobile/src/features/alert/CrisisView.test.tsx:16`<br>`sasmex: SIN magnitud, SIN ETA, SIN cuenta regresiva (test que FALLA si aparecen)`<br>`edge/tests/test_local_api.py:604`<br>`test_index_has_no_external_resources` | Serializa el árbol renderizado entero y exige que no case `/T-[0-9]/`; el cronómetro visible es ascendente.<br>El HTML del panel no contiene `T-MINUS` ni `countdown`. |
 
 ### INV-magnitud preliminar · **Magnitud preliminar** en UI — WR-1 no provee magnitud.
 

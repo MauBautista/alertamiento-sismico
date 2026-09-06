@@ -97,9 +97,20 @@ def guarda(im: Image.Image, destino: pathlib.Path, *, rgb: bool = False) -> None
     print(f"  {destino.relative_to(RAIZ)!s:56} {im.size[0]}x{im.size[1]}  {destino.stat().st_size // 1024} KB")
 
 
+def por_ancho(arte: Image.Image, ancho: int) -> Image.Image:
+    """Reescala conservando proporción. Para piezas que se sirven por ANCHO."""
+    return arte.resize((ancho, round(arte.height * ancho / arte.width)), Image.LANCZOS)
+
+
+def por_alto(arte: Image.Image, alto: int) -> Image.Image:
+    """Reescala conservando proporción. Para piezas que se sirven por ALTO."""
+    return arte.resize((round(arte.width * alto / arte.height), alto), Image.LANCZOS)
+
+
 def main() -> None:
     iso_neg = maestro("isotipo-negativo.png")
     logo_neg = maestro("logotipo-negativo.png")
+    imago_neg = maestro("imagotipo-negativo.png")
 
     print("consola (web):")
     # Favicon: fondo propio para sobrevivir a los dos temas de navegador.
@@ -121,18 +132,37 @@ def main() -> None:
     guarda(sobre(NAVY, encaja(iso_neg, 180, 0.72)), RAIZ / "web/public/apple-touch-icon.png", rgb=True)
     guarda(sobre(NAVY, encaja(iso_neg, 192, 0.74)), RAIZ / "web/public/icon-192.png")
     guarda(sobre(NAVY, encaja(iso_neg, 512, 0.74)), RAIZ / "web/public/icon-512.png")
-    # Logotipo de la topbar y de las pantallas de estado: la consola es
-    # dark-only (`--tk-surface-0`), así que SIEMPRE va el negativo.
-    ancho = 880
-    guarda(
-        logo_neg.resize((ancho, round(logo_neg.height * ancho / logo_neg.width)), Image.LANCZOS),
-        RAIZ / "web/src/assets/logotipo-takab-ailert.png",
-    )
+    # La consola es dark-only (`--tk-surface-0`), así que SIEMPRE va el negativo.
+    # Se emiten TRES piezas porque los dos huecos de la consola tienen
+    # restricciones opuestas, y una sola imagen no sirve para los dos:
+    #
+    # - Las pantallas de login/estado dan 220 px de ANCHO y altura libre: ahí
+    #   cabe el imagotipo entero y se lee.
+    # - La topbar da 64 px de ALTO y ancho de sobra. El imagotipo aplastado a
+    #   40 px de alto encoge la palabra hasta perderla —medido en maqueta—, así
+    #   que la topbar compone las dos piezas, cada una a SU tamaño: el isotipo
+    #   a 40 px y el logotipo a 26.
+    guarda(por_ancho(imago_neg, 880), RAIZ / "web/src/assets/imagotipo-takab-ailert.png")
+    guarda(por_ancho(logo_neg, 880), RAIZ / "web/src/assets/logotipo-takab-ailert.png")
+    guarda(por_alto(iso_neg, 160), RAIZ / "web/src/assets/isotipo-takab-ailert.png")
 
     print("panel del gabinete (edge):")
     # Un único PNG servido por la whitelist del panel. 32 px: el panel se sirve
     # sin red y no conviene engordarlo por un icono de pestaña.
     guarda(sobre(NAVY, encaja(iso_neg, 32, 0.80)), RAIZ / "edge/takab_edge/local_api/favicon.png", rgb=True)
+    # La marca de la cabecera, a 24 px en el panel ⇒ 4x para que no se vea
+    # blanda en el teléfono del brigadista.
+    #
+    # Es el isotipo A COLOR y no el trazo monocromo de `isotipo.svg`: ese trazo
+    # es un derivado para reproducción a UNA tinta, y pierde el acento rojo —la
+    # onda sísmica—, que en un producto de alertamiento es la parte con más
+    # significado de la marca. Comparados los dos a 24/32/48/96 antes de elegir.
+    #
+    # El rojo va DENTRO de la silueta y nunca cambia, así que no se confunde con
+    # los rojos de estado del panel, que sí varían. Y es el mismo negativo que ya
+    # usan la consola y todos los iconos de la app: una variante distinta solo
+    # aquí sería lo que diverge dentro de seis meses.
+    guarda(por_alto(iso_neg, 96), RAIZ / "edge/takab_edge/local_api/isotipo.png")
 
     print("app movil:")
     # iOS: SIN alfa (ver cabecera).
