@@ -147,12 +147,24 @@ REV_VIVA=$(curl -s https://takabailert.com/deploy-info.json | grep -o "$REV" || 
 # la portada referencia; son ~8 y no cuestan nada.
 # El bucle NO va detras de una tuberia: eso lo mete en un subshell y `FALTAN`
 # volveria vacia, o sea un smoke que nunca falla. Sustitucion de proceso.
+#
+# Y se CUENTA lo comprobado, por dos razones. La primera es que un cero tiene que
+# tumbar el despliegue: `_astro/` es el directorio POR DEFECTO de Astro y se
+# configura con `build.assets`, asi que una actualizacion puede renombrarlo y
+# dejar a este `grep` sin coincidencias — y entonces `FALTAN` sale vacia y el
+# smoke pasa habiendo mirado NADA. La segunda es que en el log se vea el numero:
+# un guardia que en verde no imprime nada es indistinguible de uno que no corrio,
+# que es el defecto de toda esta ficha cometido una vez mas.
 FALTAN=""
+MIRADOS=0
 while IFS= read -r RUTA; do
   [ -n "$RUTA" ] || continue
+  MIRADOS=$((MIRADOS + 1))
   COD=$(curl -s -o /dev/null -w '%{http_code}' "https://takabailert.com$RUTA" || echo 000)
   [ "$COD" = "200" ] || FALTAN="$FALTAN $RUTA($COD)"
 done < <(grep -o '/_astro/[A-Za-z0-9._-]*' "$DIST_DIR/index.html" | sort -u)
+[ "$MIRADOS" -gt 0 ] || fallo "smoke: la portada no referencia ningun asset '_astro/'. O el build cambio de forma (mira build.assets en astro.config.mjs) o el index.html no es el que crees: en cualquier caso este smoke no comprobo nada."
 [ -z "$FALTAN" ] || fallo "smoke: la portada referencia assets que no se sirven:$FALTAN"
+echo "-- smoke de assets: $MIRADOS/$MIRADOS servidos"
 
 echo "== OK: https://takabailert.com sirve rev $REV =="

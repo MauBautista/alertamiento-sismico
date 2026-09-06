@@ -294,3 +294,15 @@ def test_el_smoke_de_la_landing_mira_DENTRO_de_la_portada() -> None:
         "el bucle del smoke de assets volvió a colgar de una tubería: en un "
         "subshell `FALTAN` sale vacía y el smoke no falla nunca"
     )
+    # El mismo defecto de esta ficha, cometido DENTRO del arreglo: la primera
+    # versión de este smoke no imprimía nada en verde y no contaba nada, así que
+    # si el `grep` dejaba de casar —`_astro/` es el directorio por DEFECTO de
+    # Astro y `build.assets` lo renombra— comprobaba CERO assets y pasaba igual.
+    assert 'MIRADOS" -gt 0' in guion, (
+        "el smoke de assets ya no tumba el despliegue cuando no encuentra ningún "
+        "asset: un guardia que no mira nada vuelve a pasar en verde"
+    )
+    assert "smoke de assets: $MIRADOS" in guion, (
+        "el smoke de assets dejó de decir cuántos miró: en verde sería "
+        "indistinguible de no haberse ejecutado"
+    )
