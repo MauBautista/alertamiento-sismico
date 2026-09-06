@@ -39,6 +39,8 @@ fallo() { echo "ERROR: $*" >&2; exit 1; }
 # acaban divergiendo, y la que divergiria sin ruido es la que nadie mira.
 # shellcheck source=../lib/guardas.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/guardas.sh"
+# shellcheck source=../lib/poda.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/poda.sh"
 guarda_de_rama "landing"
 aws sts get-caller-identity >/dev/null 2>&1 \
   || fallo "sesion SSO caida: corre 'aws sso logout && aws sso login --profile $AWS_PROFILE' (el login a secas no basta con cache rancia)"
@@ -107,12 +109,15 @@ aws s3 cp /tmp/deploy-info.json "s3://$BUCKET/deploy-info.json" \
 # --- Poda de huerfanos, explicita y reversible (bucket versionado) ------------
 # No se usa `sync --delete` para no pelear con los pases de metadata: se listan
 # las claves remotas, se restan las locales y deploy-info.json, y se borra el resto.
+# La resta la hace `claves_huerfanas` (deploy/lib/poda.sh) y NO se ordena aqui:
+# `sort` colaciona por locale y `comm` compara byte a byte, y bajo es_ES.UTF-8 los
+# dos ordenes no coinciden. Eso no era cosmetico: la resta mal sincronizada puede
+# proponer para BORRADO una clave que SI esta en local. Ver ese fichero.
 aws s3api list-objects-v2 --bucket "$BUCKET" --query 'Contents[].Key' --output text \
-  | tr '\t' '\n' | grep -v '^None$' | sort > /tmp/landing-remoto.txt || true
-( cd "$DIST_DIR" && find . -type f | sed 's|^\./||' | sort ) > /tmp/landing-local.txt
+  | tr '\t' '\n' | grep -v '^None$' > /tmp/landing-remoto.txt || true
+( cd "$DIST_DIR" && find . -type f | sed 's|^\./||' ) > /tmp/landing-local.txt
 echo 'deploy-info.json' >> /tmp/landing-local.txt
-sort -o /tmp/landing-local.txt /tmp/landing-local.txt
-HUERFANOS=$(comm -23 /tmp/landing-remoto.txt /tmp/landing-local.txt || true)
+HUERFANOS=$(claves_huerfanas /tmp/landing-remoto.txt /tmp/landing-local.txt || true)
 if [ -n "$HUERFANOS" ]; then
   echo "-- podando huerfanos (recuperables: bucket versionado):"
   while IFS= read -r clave; do
@@ -133,5 +138,21 @@ NO_EXISTE=$(curl -s -o /dev/null -w '%{http_code}' https://takabailert.com/no-ex
 [ "$NO_EXISTE" = "404" ] || fallo "smoke anti-espejo: /no-existe devolvio $NO_EXISTE (debe ser 404)"
 REV_VIVA=$(curl -s https://takabailert.com/deploy-info.json | grep -o "$REV" || true)
 [ -n "$REV_VIVA" ] || echo "AVISO: deploy-info.json aun no refleja $REV (cache en transito); reintenta el curl en unos segundos"
+
+# La portada NO puede quedarse desnuda. Las tres comprobaciones de arriba —`/`,
+# `/no-existe` y la rev— siguen respondiendo aunque falten TODAS las fuentes y los
+# logotipos: el HTML se sirve igual. Ese hueco era real y lo destapo la poda mal
+# restada (ver deploy/lib/poda.sh): un despliegue podia borrar `_astro/` entero de
+# produccion y aun asi imprimir "== OK ==". Se piden todas las claves `_astro/` que
+# la portada referencia; son ~8 y no cuestan nada.
+# El bucle NO va detras de una tuberia: eso lo mete en un subshell y `FALTAN`
+# volveria vacia, o sea un smoke que nunca falla. Sustitucion de proceso.
+FALTAN=""
+while IFS= read -r RUTA; do
+  [ -n "$RUTA" ] || continue
+  COD=$(curl -s -o /dev/null -w '%{http_code}' "https://takabailert.com$RUTA" || echo 000)
+  [ "$COD" = "200" ] || FALTAN="$FALTAN $RUTA($COD)"
+done < <(grep -o '/_astro/[A-Za-z0-9._-]*' "$DIST_DIR/index.html" | sort -u)
+[ -z "$FALTAN" ] || fallo "smoke: la portada referencia assets que no se sirven:$FALTAN"
 
 echo "== OK: https://takabailert.com sirve rev $REV =="
