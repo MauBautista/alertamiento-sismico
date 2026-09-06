@@ -86,13 +86,40 @@ porque el porqué no cabe en el código:
 |---|---|---|
 | consola | `web/public/favicon.ico` (16/32/48) | isotipo negativo sobre navy |
 | consola | `web/public/apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | ídem |
+| consola | `web/src/assets/imagotipo-takab-ailert.png` | imagotipo negativo |
 | consola | `web/src/assets/logotipo-takab-ailert.png` | logotipo negativo |
+| consola | `web/src/assets/isotipo-takab-ailert.png` | isotipo negativo |
 | gabinete | `edge/takab_edge/local_api/favicon.png` | isotipo negativo sobre navy |
+| gabinete | `edge/takab_edge/local_api/isotipo.png` (96 px = 4x) | isotipo negativo |
 | app | `mobile/assets/images/icon.png` (**sin alfa**) | isotipo negativo sobre navy |
 | app | `mobile/assets/images/favicon.png` | ídem |
 | app | `mobile/assets/images/android-icon-{foreground,background,monochrome}.png` | isotipo negativo |
 | app | `mobile/assets/images/splash-icon.png` | isotipo negativo, transparente |
 
-El panel del gabinete sirve su favicon por la **whitelist** de `_load_static`,
-no por una ruta abierta: el panel se sirve sin build y sin red, así que el icono
-viaja empaquetado con el módulo igual que las fuentes.
+El panel del gabinete sirve su favicon y su isotipo por la **whitelist** de
+`_load_static`, no por una ruta abierta: el panel se sirve sin build y sin red,
+así que ambos viajan empaquetados con el módulo igual que las fuentes.
+
+## Qué pieza va en cada hueco
+
+No es una preferencia estética: cada hueco tiene una restricción distinta, y la
+pieza equivocada se degrada de una forma que en el código no se ve.
+
+| hueco | restricción | pieza | por qué |
+|---|---|---|---|
+| Consola · login y pantallas de estado | 220 px de **ancho**, alto libre | **imagotipo** | cabe entero y se lee |
+| Consola · topbar | 64 px de **alto** | **isotipo 40 + logotipo 26**, compuestos | el imagotipo plano a 40 px encoge la palabra hasta perderla |
+| Panel del gabinete · cabecera | 24 px | **isotipo** solo | el nombre ya está escrito al lado; repetirlo es ruido |
+| Pestañas, iconos de app | 16–1024 px, cuadrado | **isotipo** sobre navy | necesita fondo propio (ver arriba) |
+
+La topbar **compone** el imagotipo en vez de servirlo aplastado. Se comprobó en
+maqueta antes de elegir: a 40 px de alto —lo que da una fila de 64— la palabra
+del imagotipo plano queda por debajo del umbral de lectura, mientras que el
+símbolo a 40 y la palabra a 26 se leen los dos.
+
+**`isotipo.svg` no se usa en producto.** Es el trazo monocromo, un derivado para
+reproducción a una tinta, y pierde el acento rojo —la onda sísmica—, que en un
+producto de alertamiento es la parte de la marca con más significado. Donde va el
+isotipo va el PNG negativo a color, igual que en la consola y en los iconos de la
+app: una variante distinta en un solo sitio es lo que diverge sin que nadie lo
+note.

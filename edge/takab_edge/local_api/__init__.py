@@ -215,6 +215,7 @@ def _load_static() -> dict[str, tuple[str, bytes]]:
         ("fonts/geist.ttf", "/fonts/geist.ttf", "font/ttf"),
         ("fonts/jbmono.woff2", "/fonts/jbmono.woff2", "font/woff2"),
         ("favicon.png", "/favicon.png", "image/png"),
+        ("isotipo.png", "/isotipo.png", "image/png"),
     )
     for nombre, ruta, mime in recursos:
         try:

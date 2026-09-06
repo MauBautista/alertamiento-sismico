@@ -234,7 +234,12 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
 </div>
 
 <header>
-  <svg viewBox="0 0 100 100" fill="none" style="height:24px;width:24px;color:var(--tk-fg-1)" aria-hidden="true"><g fill="currentColor"><path d="M 18 12 L 32 12 L 32 88 L 18 88 Z"></path><path d="M 32 50 L 78 12 L 96 12 L 50 50 Z"></path><path d="M 32 50 L 78 88 L 96 88 L 50 50 Z"></path></g></svg>
+  <!-- El isotipo REAL de la marca, servido por la whitelist de estáticos y
+       derivado del maestro `shared/brand/isotipo-negativo.png`. Lo que había aquí era
+       una «K» dibujada a mano con tres polígonos: se parecía lo justo para que
+       nadie la mirara dos veces, y no era la marca. Va sin texto alternativo
+       porque el nombre está escrito al lado, en el propio encabezado. -->
+  <img src="/isotipo.png" alt="" aria-hidden="true" style="height:24px;width:auto;display:block">
   <div style="display:flex;flex-direction:column;gap:3px">
     <span style="font:600 13px/1 var(--f-ui);letter-spacing:0.06em;text-transform:uppercase">Takab Ailert · Panel local del gabinete</span>
     <span class="meta" id="hdr-id">— · LAN del inmueble</span>

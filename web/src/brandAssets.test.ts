@@ -79,4 +79,54 @@ describe("iconos de marca de la consola", () => {
     // blando en cualquier portátil moderno.
     expect(ancho).toBeGreaterThanOrEqual(440);
   });
+
+  it("las tres piezas de la marca existen y tienen resolución para su hueco", () => {
+    const pieza = (n: string) => join(RAIZ, "src", "assets", n);
+    for (const n of [
+      "imagotipo-takab-ailert.png",
+      "logotipo-takab-ailert.png",
+      "isotipo-takab-ailert.png",
+    ]) {
+      expect(existsSync(pieza(n)), `falta ${n}: corre shared/brand/generar.py`).toBe(true);
+    }
+    // El imagotipo se pinta a 220 px de ancho en login/estados ⇒ 2x mínimo.
+    expect(tamañoPng(pieza("imagotipo-takab-ailert.png"))[0]).toBeGreaterThanOrEqual(440);
+    // El isotipo se pinta a 40 px de ALTO en la topbar ⇒ 2x mínimo por el alto.
+    expect(tamañoPng(pieza("isotipo-takab-ailert.png"))[1]).toBeGreaterThanOrEqual(80);
+  });
+
+  it("la topbar compone el imagotipo con sus DOS piezas, no con una aplastada", () => {
+    // El imagotipo plano a 40 px de alto —lo que da la topbar de 64— encoge la
+    // palabra hasta perderla. Por eso la topbar sirve símbolo y palabra por
+    // separado, cada uno a su altura. Si alguien vuelve a meter una sola
+    // imagen, la marca se degrada sin que nada más se queje.
+    const topbar = readFileSync(join(RAIZ, "src", "shell", "Topbar.tsx"), "utf8");
+    expect(topbar).toContain("soc-brand__mark");
+    expect(topbar).toContain("soc-brand__logo");
+    expect(topbar).toContain("isotipo-takab-ailert.png");
+    expect(topbar).toContain("logotipo-takab-ailert.png");
+
+    const css = readFileSync(join(RAIZ, "src", "styles", "soc.css"), "utf8");
+    const alto = (clase: string) =>
+      Number(new RegExp(`\\.${clase}\\s*\\{[^}]*height:\\s*(\\d+)px`).exec(css)?.[1] ?? "0");
+    // El símbolo manda sobre la palabra: si se igualan o se invierten, deja de
+    // ser una composición y vuelve a ser un logotipo con un adorno delante.
+    expect(alto("soc-brand__mark")).toBeGreaterThan(alto("soc-brand__logo"));
+    // Y ninguna de las dos puede pasarse de la fila de 64 px.
+    expect(alto("soc-brand__mark")).toBeLessThanOrEqual(64);
+  });
+
+  it("las pantallas grandes usan el imagotipo COMPLETO", () => {
+    // Ahí el hueco es de ancho, no de alto: cabe entero y es la marca completa.
+    for (const ruta of [
+      ["src", "pages", "LoginPage.tsx"],
+      ["src", "pages", "StatusScreens.tsx"],
+      ["src", "app", "DegradedSessionScreen.tsx"],
+    ]) {
+      const fuente = readFileSync(join(RAIZ, ...ruta), "utf8");
+      expect(fuente, `${ruta.join("/")} no usa el imagotipo`).toContain(
+        "imagotipo-takab-ailert.png",
+      );
+    }
+  });
 });

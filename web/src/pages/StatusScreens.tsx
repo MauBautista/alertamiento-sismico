@@ -1,4 +1,4 @@
-import logoTakab from "../assets/logotipo-takab-ailert.png";
+import logoTakab from "../assets/imagotipo-takab-ailert.png";
 
 export function SplashScreen() {
   return (
