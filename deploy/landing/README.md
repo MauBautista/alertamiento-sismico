@@ -44,6 +44,18 @@ curl -s -o /dev/null -w '%{http_code}\n' https://takabailert.com/no-existe    # 
 curl -s https://takabailert.com/deploy-info.json                              # rev desplegada
 ```
 
+Los cinco de arriba **no bastan para decir que el sitio se ve**: `/` devuelve 200
+aunque falten todas las fuentes y los logotipos, porque el HTML se sirve igual. Por
+eso el deploy pide además, una a una, las claves `_astro/` que la portada
+referencia. Se añadió el 2026-09-06, después de descubrir que la poda podía borrar
+`_astro/` entero de producción y el despliegue terminaba en `== OK ==`:
+
+```
+grep -o '/_astro/[A-Za-z0-9._-]*' landing/dist/index.html | sort -u \
+  | while read -r r; do printf '%s %s\n' \
+      "$(curl -s -o /dev/null -w '%{http_code}' "https://takabailert.com$r")" "$r"; done
+```
+
 Verificar además desde un punto NO privilegiado (lección T-2.156: la primera vez se
 verificó solo desde la máquina de Mauricio y el timeout de AWS no se vio).
 
@@ -68,6 +80,11 @@ verificó solo desde la máquina de Mauricio y el timeout de AWS no se vio).
 
 - **Nunca** `aws s3 cp/sync` manual al bucket sin `--cache-control`: un objeto sin
   metadata se cachea 86400 s en CloudFront.
+- La resta que decide **qué se borra** es `claves_huerfanas` (`deploy/lib/poda.sh`) y
+  vive en un solo sitio. No se vuelve a restar con `sort` + `comm` en el script:
+  `sort` colaciona por locale y `comm` compara bytes, y bajo cualquier locale que no
+  sea `C` los dos órdenes discrepan — lo que puede poner en la lista de borrado una
+  clave que **sí** está en `dist`.
 - `robots.txt` / `favicon.svg` / `og-v3.png` / `sitemap.xml` **jamás** `immutable`
   (no cambian de nombre). El OG lleva la versión en el nombre (`og-v3.png`).
 - El código de las rutas inexistentes es **404** (anti-espejo T-2.156); el smoke lo
