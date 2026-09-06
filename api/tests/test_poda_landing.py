@@ -306,3 +306,23 @@ def test_el_smoke_de_la_landing_mira_DENTRO_de_la_portada() -> None:
         "el smoke de assets dejó de decir cuántos miró: en verde sería "
         "indistinguible de no haberse ejecutado"
     )
+
+
+@pytest.mark.parametrize("guion", sorted((REPO / "deploy").glob("*/deploy.sh")))
+def test_todo_deploy_sh_es_EJECUTABLE(guion: Path) -> None:
+    """El bit de ejecución se pierde en silencio y git lo arrastra al commit.
+
+    `deploy/landing/deploy.sh` llegó a `main` en 644 —el único de los tres— porque
+    una comprobación de mutación hizo `mv` de un temporal de `/tmp` encima suyo:
+    `mv` se trae el modo del origen, y el `cp` de restauración conserva el del
+    destino, así que restaurar el CONTENIDO no restauró el MODO. Nada falló: el
+    Makefile invoca con `bash`, y el cambio sólo aparece como una línea
+    `mode change 100755 => 100644` al final de un diff que nadie relee.
+
+    El censo lo pone el árbol, no una lista: un `deploy/<algo>/deploy.sh` nuevo
+    también tiene que poder ejecutarse por sí mismo.
+    """
+    assert guion.stat().st_mode & 0o111, (
+        f"{guion.relative_to(REPO)} no es ejecutable (chmod 755). Suele ser un "
+        "`mv` de /tmp encima del fichero; `git ls-files -s deploy/` lo enseña"
+    )
