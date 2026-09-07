@@ -267,3 +267,36 @@ describe("DrillHistory", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("503");
   });
 });
+
+// [T-6.17] Medido el 2026-09-06: un simulacro cortado por alerta real caía en la
+// rama «scheduled_at === null» y se rotulaba EJECUTADO, como si hubiera salido bien.
+describe("DrillHistory · aborto por alerta real", () => {
+  it("rotula ABORTADO POR ALERTA REAL al simulacro y al sitio que lo cortó", () => {
+    const aborted = {
+      ...RAN,
+      drill_id: "ab-1",
+      active: false,
+      stopped_at: "2026-09-06T15:00:40Z",
+      stop_reason: "aborted",
+      aborted: true,
+      abort_reason: "SASMEX real",
+      executing: 0,
+      sites: [
+        site({ aborted_at: "2026-09-06T15:00:40Z", abort_reason: "SASMEX real" }),
+        site({ site_id: "s-2", site_name: "Torre B", command_id: "c-2" }),
+      ],
+    };
+    mocks.useDrills.mockReturnValue(historyData({ items: [aborted] }));
+    render(<DrillHistory onClose={vi.fn()} />);
+    const row = screen.getByTestId("drill-row-ab-1");
+    expect(row).toHaveTextContent("ABORTADO POR ALERTA REAL");
+    expect(row).not.toHaveTextContent("EJECUTADO");
+    expect(row).toHaveTextContent("2/2 ACUSADOS");
+    expect(row).toHaveTextContent("1 ABORTADO(S) POR ALERTA REAL");
+    fireEvent.click(screen.getByRole("button", { name: /DETALLE/ }));
+    const sites = within(screen.getByTestId("drill-sites-ab-1"));
+    expect(sites.getByText("Torre A").closest("li")).toHaveTextContent("ABORTADO POR ALERTA REAL");
+    expect(sites.getByText("Torre B").closest("li")).toHaveTextContent("ACUSADO");
+    expect(sites.getByText("Torre B").closest("li")).not.toHaveTextContent("ABORTADO");
+  });
+});

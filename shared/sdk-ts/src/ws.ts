@@ -27,6 +27,7 @@
 
 import type {
   AuthFrame,
+  DrillFrame,
   ErrorFrame,
   FeaturesFrame,
   IncidentActionFrame,
@@ -59,7 +60,8 @@ export type ServerFrame =
   | IncidentActionFrame
   | SiteStateFrame
   | FeaturesFrame
-  | RosterSignalFrame;
+  | RosterSignalFrame
+  | DrillFrame;
 
 // Discriminantes validos (el servidor siempre setea `type`).
 export type ServerFrameType = NonNullable<ServerFrame['type']>;
@@ -104,6 +106,8 @@ export const SERVER_FRAME_ROUTES: Record<ServerFrameType, FrameRoute> = {
   incident: () => TOPIC_INCIDENTS,
   incident_action: () => TOPIC_INCIDENTS,
   roster: () => TOPIC_INCIDENTS,
+  // [T-6.17] Invalidación del simulacro: la consola re-consulta /drills/active.
+  drill: () => TOPIC_INCIDENTS,
   site_state: () => TOPIC_SITE_STATE,
   features: (frame) => featuresTopic(String((frame as FeaturesFrame).site_id)),
 };

@@ -64,6 +64,12 @@ class DrillSiteOut(BaseModel):
     #: gabinete con firmware anterior a `T-5.17`, y se distingue de `sha256: null`
     #: (sí lo trae y declara que no había asset).
     audio: dict[str, Any] | None = None
+    #: [T-6.17] El aborto es POR SITIO: lo escribe la ingesta al recibir el segundo
+    #: acuse del `drill_start` (`results.aborted`). `None` = este sitio no abortó
+    #: (o no acusó nunca). Un tier instrumental aborta en un gabinete y no en el
+    #: vecino, así que el hecho vive aquí y no en el simulacro.
+    aborted_at: datetime | None = None
+    abort_reason: str | None = None
 
 
 class DrillOut(BaseModel):
@@ -84,6 +90,15 @@ class DrillOut(BaseModel):
     #: el id y NO el nombre — pintar el nombre actual sería la reescritura.
     from_template_id: UUID | None = None
     sites: list[DrillSiteOut]
+    #: [T-6.17] DERIVADOS de los sitios: `aborted` = el simulacro se cerró porque
+    #: ningún gabinete lo seguía ejecutando (`stop_reason == 'aborted'`);
+    #: `abort_reason` = la razón del primer sitio que abortó; `executing` = sitios
+    #: que acusaron y no han abortado. Son la diferencia entre «sonando en dos
+    #: edificios» y «anunciado y rechazado en los dos», que la ventana de reloj
+    #: colapsaba (INFORME-UIUX U-01).
+    aborted: bool = False
+    abort_reason: str | None = None
+    executing: int = 0
 
 
 class DrillList(BaseModel):

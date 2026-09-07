@@ -141,3 +141,66 @@ def test_on_sasmex_apertura_de_contacto_no_aborta(drill):
     controller.start_drill("DRILL-10", 300)
     controller.on_sasmex(SasmexSignal(active=False))
     assert controller.active is True
+
+
+# ----------------------------------------------------------------------------
+# [T-6.17] El aborto AVISA: el gabinete es el único que sabe que el simulacro
+# dejó de correr, y hasta aquí se lo guardaba. Medido el 2026-09-06 con un
+# simulacro real: la nube derivaba `active` del reloj y el teléfono anunciaba
+# «SIMULACRO EN CURSO» tres minutos con los gabinetes en `rejected`.
+# ----------------------------------------------------------------------------
+
+
+def test_abort_avisa_al_callback_con_la_razon_y_solo_una_vez(drill):
+    controller, _audio, _gpio = drill
+    avisos: list[dict] = []
+    ok, _ = controller.start_drill("DRILL-A", 300, on_abort=avisos.append)
+    assert ok is True
+    controller.abort("SASMEX real")
+    controller.abort("segunda vez")  # ya no hay simulacro: no avisa de nada
+    assert len(avisos) == 1
+    info = avisos[0]
+    assert info["drill_id"] == "DRILL-A"
+    assert info["aborted"] is True
+    assert info["abort_reason"] == "SASMEX real"
+    assert isinstance(info["aborted_at"], str) and "T" in info["aborted_at"]
+    assert controller.status()["aborted"] is True
+
+
+def test_el_fin_normal_no_avisa_aborto(drill):
+    controller, _audio, _gpio = drill
+    avisos: list[dict] = []
+    controller.start_drill("DRILL-B", 300, on_abort=avisos.append)
+    assert controller.end_drill("DRILL-B", reason="drill_stop firmado") is True
+    controller.abort("tarde")  # el drill ya terminó: un aborto posterior no es aborto
+    assert avisos == []
+
+
+def test_un_callback_que_revienta_no_rompe_el_aborto(drill):
+    controller, audio, _gpio = drill
+
+    def revienta(_info: dict) -> None:
+        raise RuntimeError("la nube no está")
+
+    controller.start_drill("DRILL-C", 300, on_abort=revienta)
+    controller.abort("tier instrumental restricted")  # no propaga
+    state = controller.status()
+    assert state["active"] is False and state["aborted"] is True
+    assert audio.stopped == 1  # el voceo se cortó ANTES de intentar avisar
+
+
+def test_un_drill_nuevo_reemplaza_el_callback_del_anterior(drill):
+    controller, _audio, _gpio = drill
+    primero: list[dict] = []
+    segundo: list[dict] = []
+    controller.start_drill("DRILL-1", 300, on_abort=primero.append)
+    controller.start_drill("DRILL-2", 300, on_abort=segundo.append)
+    controller.abort("SASMEX real")
+    assert primero == [] and [i["drill_id"] for i in segundo] == ["DRILL-2"]
+
+
+def test_sin_callback_el_aborto_sigue_siendo_visible(drill):
+    controller, _audio, _gpio = drill
+    controller.start_drill("DRILL-D", 300)
+    controller.abort("SASMEX real")
+    assert controller.status()["abort_reason"] == "SASMEX real"

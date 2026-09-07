@@ -137,8 +137,7 @@ _SELECT_DRILL = text(f"SELECT {_DRILL_COLS} FROM drills d WHERE d.drill_id = CAS
 _SELECT_DRILL_SITES = text(
     "SELECT ds.drill_id, ds.site_id, s.name AS site_name, ds.command_id, "
     "c.status AS command_status, c.ack, c.acked_at, c.issued_at, "
-    + (_COMMANDABLE % {"alias": "ds"})
-    + " AS commandable "
+    "ds.aborted_at, ds.abort_reason, " + (_COMMANDABLE % {"alias": "ds"}) + " AS commandable "
     "FROM drill_sites ds "
     "LEFT JOIN sites s ON s.site_id = ds.site_id "
     "LEFT JOIN commands c ON c.command_id = ds.command_id "
@@ -244,13 +243,30 @@ async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSi
                 acked_at=r["acked_at"],
                 ack_latency_s=_latencia(r["issued_at"], r["acked_at"]),
                 audio=_audio_del_acuse(r["ack"]),
+                aborted_at=r["aborted_at"],
+                abort_reason=r["abort_reason"],
             )
         )
     return out
 
 
+def _ejecutando(site: DrillSiteOut) -> bool:
+    """[T-6.17] Un gabinete EJECUTA el simulacro si acusó y no lo ha abortado."""
+    return site.command_status == "acked" and site.aborted_at is None
+
+
 def _drill_out(row: Any, sites: list[DrillSiteOut]) -> DrillOut:
-    return DrillOut(**{**dict(row), "sites": sites})
+    datos = dict(row)
+    razones = [s.abort_reason for s in sites if s.aborted_at is not None]
+    return DrillOut(
+        **{
+            **datos,
+            "sites": sites,
+            "aborted": datos.get("stop_reason") == "aborted",
+            "abort_reason": next((r for r in razones if r), None),
+            "executing": sum(1 for s in sites if _ejecutando(s)),
+        }
+    )
 
 
 def _require_scope(claims: Claims, site_ids: list[Any]) -> None:

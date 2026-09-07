@@ -24,6 +24,9 @@ export type DrillSiteAck =
   | "acked"
   | "pending"
   | "rejected"
+  // [T-6.17] El gabinete acusó y DESPUÉS lo cortó una alerta real. Es un hecho
+  // del sitio (`aborted_at`), no del simulacro: el vecino puede seguir sonando.
+  | "aborted"
   | "no_gateway"
   | "not_sent"
   | "scheduled";
@@ -32,6 +35,7 @@ const ACK_LABELS: Record<DrillSiteAck, string> = {
   acked: "ACUSADO",
   pending: "SIN ACUSE",
   rejected: "RECHAZADO POR EL GABINETE",
+  aborted: "ABORTADO POR ALERTA REAL",
   no_gateway: "SIN GABINETE COMANDABLE",
   not_sent: "SIN COMANDO EMITIDO",
   scheduled: "PROGRAMADO",
@@ -55,6 +59,7 @@ export function drillSiteAck(site: DrillSiteOut, drill: DrillOut): DrillSiteAck 
     // una excusa para un sitio que sí tenía gabinete.
     return site.commandable === false ? "no_gateway" : "not_sent";
   }
+  if (site.aborted_at != null) return "aborted";
   if (site.command_status === "acked") return "acked";
   if (site.command_status === "rejected" || site.command_status === "expired") return "rejected";
   return "pending";
@@ -69,6 +74,8 @@ export interface DrillAckReport {
   pending: number;
   /** El gabinete recibió y NO ejecutó (rechazado o vencido). */
   rejected: number;
+  /** [T-6.17] Acusó y una alerta real lo cortó. Cuenta también como acusado. */
+  aborted: number;
   /** No había gabinete comandable: no cuenta como incumplimiento del sitio. */
   noGateway: number;
   /** La nube no llegó a emitir el comando (fallo de firma/publicación). */
@@ -85,6 +92,7 @@ export function drillAckReport(drill: DrillOut): DrillAckReport {
     commanded: 0,
     pending: 0,
     rejected: 0,
+    aborted: 0,
     noGateway: 0,
     notSent: 0,
     scheduled: 0,
@@ -102,6 +110,13 @@ export function drillAckReport(drill: DrillOut): DrillAckReport {
         break;
       case "rejected":
         report.rejected += 1;
+        report.commanded += 1;
+        break;
+      case "aborted":
+        // Sí acusó (el simulacro llegó a sonar ahí): entra en el numerador y en
+        // el denominador, y además se dice que fue cortado.
+        report.acked += 1;
+        report.aborted += 1;
         report.commanded += 1;
         break;
       case "no_gateway":

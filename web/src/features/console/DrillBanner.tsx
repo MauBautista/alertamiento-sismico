@@ -142,6 +142,10 @@ export default function DrillBanner({ hasLiveIncident }: { hasLiveIncident: bool
 function ackLine(drill: Parameters<typeof drillAckReport>[0]): string {
   const r = drillAckReport(drill);
   const parts = [`${r.acked}/${r.commanded} ACUSADOS`];
+  // [T-6.17] Un rechazo o un aborto NO son «no acusó»: el gabinete contestó, y
+  // lo que contestó es justo lo que el operador tiene que leer en el banner.
+  if (r.rejected > 0) parts.push(`${r.rejected} RECHAZADO(S)`);
+  if (r.aborted > 0) parts.push(`${r.aborted} ABORTADO(S) POR ALERTA REAL`);
   if (r.noGateway > 0) parts.push(`${r.noGateway} SIN GABINETE COMANDABLE`);
   if (r.notSent > 0) parts.push(`${r.notSent} SIN COMANDO EMITIDO`);
   return parts.join(" · ");

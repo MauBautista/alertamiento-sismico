@@ -1,7 +1,9 @@
 // Simulacro institucional (T-1.60 · T-2.48): el banner NO-real de la consola.
 //
 // Poll de 10 s a /drills/active — el drill dura minutos y NO es telemetría de
-// vida (el push por WS queda anotado como mejora). Iniciar/parar/cancelar
+// vida. [T-6.17] El push por WS ya existe: el frame `drill` (arranque, acuse,
+// rechazo, aborto, fin) invalida las tres consultas y el banner deja de esperar
+// al tic; el sondeo se conserva como respaldo. Iniciar/parar/cancelar
 // reutiliza el gate de matriz `drill_start`; solo superadmin/tenant_admin lo
 // tienen.
 //
@@ -12,8 +14,10 @@
 // reloj del navegador sería precisamente lo que esa regla prohíbe.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import {
+  TOPIC_INCIDENTS,
   activeDrillDrillsActiveGet,
   cancelDrillDrillsDrillIdCancelPost,
   listDrillsDrillsGet,
@@ -21,6 +25,8 @@ import {
   stopDrillDrillsDrillIdStopPost,
 } from "@takab/sdk";
 import type { DrillOut } from "@takab/sdk";
+
+import { useLiveSocket } from "./socket";
 
 export const DRILL_POLL_MS = 10_000;
 export const ACTIVE_DRILL_KEY = ["drills", "active"] as const;
@@ -105,6 +111,20 @@ export function useActiveDrill(enabled: boolean = true): ActiveDrillData {
     await queryClient.invalidateQueries({ queryKey: SCHEDULED_DRILL_KEY });
     await queryClient.invalidateQueries({ queryKey: DRILL_LIST_KEY });
   };
+
+  // [T-6.17] El frame `drill` llega por el topic de incidentes (la consola ya
+  // está suscrita ahí) y es una invalidación pura: el banner y el historial
+  // re-consultan el REST. Sin socket (tests, degradación) queda el sondeo.
+  const socket = useLiveSocket();
+  useEffect(() => {
+    if (!enabled || socket === null) return;
+    return socket.subscribe(TOPIC_INCIDENTS, (frame) => {
+      if (frame.type !== "drill") return;
+      void queryClient.invalidateQueries({ queryKey: ACTIVE_DRILL_KEY });
+      void queryClient.invalidateQueries({ queryKey: SCHEDULED_DRILL_KEY });
+      void queryClient.invalidateQueries({ queryKey: DRILL_LIST_KEY });
+    });
+  }, [enabled, socket, queryClient]);
 
   const start = useMutation({
     mutationFn: async (input: StartDrillInput) => {

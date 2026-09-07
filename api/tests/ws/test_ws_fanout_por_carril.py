@@ -271,3 +271,33 @@ async def test_un_notify_ilegible_no_abre_carril(ws_seed) -> None:
     await hub.dispatch({"t": "no_existe", "tenant": WS_TENANT_A})
     await hub.dispatch({"t": "incident"})
     assert hub._lanes == {}
+
+
+# ----------------------------------------------------------------------------
+# [T-6.17] El simulacro tiene señal live: `t='drill'` (INSERT/UPDATE de `drills`
+# y `drill_sites`, y el acuse de un comando de simulacro) llega a la consola como
+# invalidación SIN lectura por el topic `incidents`. Antes: sondeo de 10 s.
+# ----------------------------------------------------------------------------
+
+
+async def test_el_frame_de_simulacro_llega_sin_leer_la_base(ws_seed) -> None:
+    _, ws = _suscriptor("incidents")
+    _, ws_otro_tenant = _suscriptor("incidents", tenant=WS_TENANT_B)
+    drill_id = "d6000000-0000-0000-0000-000000000017"
+    await hub.dispatch({"t": "drill", "tenant": WS_TENANT_A, "id": drill_id})
+    tardanza = await _esperar_frames(ws, 5.0)
+    assert tardanza >= 0, "el frame de simulacro no salió"
+    frame = ws.frames[-1]
+    assert frame["type"] == "drill"
+    assert frame["drill_id"] == drill_id and frame["tenant_id"] == WS_TENANT_A
+    assert "site_id" not in frame  # abarca varios sitios: no lleva uno
+    assert ws_otro_tenant.frames == []  # el prefiltro de tenant sigue mandando
+    await hub.drain()
+
+
+async def test_un_notify_de_simulacro_incompleto_no_produce_frame(ws_seed) -> None:
+    _, ws = _suscriptor("incidents")
+    await hub.dispatch({"t": "drill", "tenant": WS_TENANT_A})  # sin id
+    await asyncio.sleep(0.5)
+    assert ws.frames == []
+    await hub.drain()

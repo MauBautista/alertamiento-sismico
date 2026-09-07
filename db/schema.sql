@@ -1578,6 +1578,12 @@ CREATE TABLE drill_sites (
   site_id    uuid NOT NULL REFERENCES sites(site_id),
   tenant_id  uuid NOT NULL REFERENCES tenants(tenant_id),
   command_id uuid REFERENCES commands(command_id),  -- NULL = sitio sin gateway comandable
+  -- [T-6.17] El aborto es POR SITIO: un tier instrumental aborta en un gabinete y
+  -- no en el vecino. Lo escribe la ingesta al recibir el segundo acuse del
+  -- `drill_start` (`results.aborted`). El simulacro se cierra (`stop_reason =
+  -- 'aborted'`) solo cuando no queda ningún sitio ejecutándolo.
+  aborted_at   timestamptz,
+  abort_reason text,
   PRIMARY KEY (drill_id, site_id)
 );
 
@@ -1590,7 +1596,7 @@ ALTER TABLE evidence_objects
 
 GRANT SELECT, INSERT, UPDATE ON drills TO takab_app;
 GRANT SELECT, INSERT ON drill_sites TO takab_app;
-GRANT SELECT ON drills, drill_sites TO takab_ingest;
+GRANT SELECT, UPDATE ON drills, drill_sites TO takab_ingest;  -- [T-6.17] el aborto por acuse cierra la fila
 
 ALTER TABLE drills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE drills FORCE  ROW LEVEL SECURITY;

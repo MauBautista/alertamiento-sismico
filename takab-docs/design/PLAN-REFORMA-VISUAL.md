@@ -193,7 +193,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 
 ## 6 · Fichas · Costura (API + edge)
 
-### [ ] T-6.17 · **El rechazo y el aborto de un simulacro viajan a la nube y a las superficies** — `SOFTWARE`
+### [x] T-6.17 · **El rechazo y el aborto de un simulacro viajan a la nube y a las superficies** — `SOFTWARE`
 
 > Hoy `active` es una ventana de reloj: un gabinete que rechaza o aborta el comando no cambia
 > nada, y el móvil solo recibe `active`. Medido el 2026-09-06 con un simulacro real: dos rechazos
@@ -207,11 +207,41 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `edge/tests/test_local_api_panel.py:850-856` fabrica un estado (`active` y alerta a la vez) que el nuevo contrato hace imposible; se reescribe para leer `aborted`.
 - **Objetivo:** que la nube sepa, por acuse del gabinete, si el simulacro está sonando, fue rechazado o fue abortado, y que `MobileDrillOut` y `DrillOut` lo expongan.
 - **Criterios de aceptación:**
-  - [ ] `abort()` publica un acuse con `drill_id`, `aborted`, `abort_reason` y sello; el rechazo ya acusa y se conserva.
-  - [ ] La API cierra la fila con `stop_reason='aborted'` al recibirlo y expone `aborted`, `abort_reason` y el `command_status` por sitio en `DrillOut`; `MobileDrillOut` deja de ser solo `active`: declara cuántos gabinetes lo ejecutan.
-  - [ ] Un frame WS de drill llega a la consola sin esperar el sondeo de 10 s; `serverFrameCensus` en verde con el frame enrutado.
-  - [ ] Test de punta a punta: drill → aborto en el edge → la fila queda cerrada y `GET /drills/active` devuelve `null` antes de que venza la ventana.
-  - [ ] Un simulacro con todos los sitios en `rejected` no es `active` para el móvil.
+  - [x] `abort()` publica un acuse con `drill_id`, `aborted`, `abort_reason` y sello; el rechazo ya acusa y se conserva.
+  - [x] La API cierra la fila con `stop_reason='aborted'` al recibirlo y expone `aborted`, `abort_reason` y el `command_status` por sitio en `DrillOut`; `MobileDrillOut` deja de ser solo `active`: declara cuántos gabinetes lo ejecutan.
+  - [x] Un frame WS de drill llega a la consola sin esperar el sondeo de 10 s; `serverFrameCensus` en verde con el frame enrutado.
+  - [x] Test de punta a punta: drill → aborto en el edge → la fila queda cerrada y `GET /drills/active` devuelve `null` antes de que venza la ventana.
+  - [x] Un simulacro con todos los sitios en `rejected` no es `active` para el móvil.
+- **Cómo se cerró (2026-09-06, SESIÓN 2):**
+  - **Sin topic ni regla IoT nuevos.** El aborto viaja como un **segundo `CommandAck`** por
+    `takab/acks` con `results.aborted`, `abort_reason`, `aborted_at` y `drill_id`, con el mismo
+    `command_id`/`nonce` del `drill_start` (`edge/takab_edge/drill/__init__.py` recibe un
+    `on_abort` y `edge/takab_edge/dispatch/__init__.py` lo cablea). Así no se toca terraform ni
+    la política de flota, que es la trampa de la Fase 1.8.
+  - **El aborto es por SITIO**, no por simulacro: `drill_sites.aborted_at/abort_reason`
+    (migración `0062`). El simulacro solo se cierra con `stop_reason='aborted'` cuando ningún
+    sitio sigue `pending` o `acked` sin abortar: el vecino que sigue sonando no se apaga en la
+    consola por el rechazo de otro. La ingesta (`ingest/handlers.py`) lo reconoce aunque el
+    comando ya esté `acked`, y aplica las dos cosas si el aborto llega ANTES que el acuse de
+    arranque (SQS no ordena). Reentrega idempotente; auditoría `drill_site_aborted`.
+  - **`DrillOut`** gana `aborted`, `abort_reason`, `executing` y `sites[].aborted_at/abort_reason`;
+    **`MobileDrillOut`** gana `execution` (`executing`/`pending`/`rejected`/`expired`/`aborted`/
+    `no_gateway`/`none`), `sites_total` y `sites_executing`, y `active` pasa a significar «el
+    gabinete de ESTE sitio acusó y no abortó». Con dos gabinetes en `rejected`, la app ya no dice
+    EN CURSO (`api/tests/api/test_mobile_core.py`).
+  - **WS:** triggers `takab_notify_drill*` en `drills`, `drill_sites` y `commands` → frame
+    `drill` (sin lectura en el hub, topic de incidentes). La consola lo enruta en
+    `shared/sdk-ts/src/ws.ts`, `serverFrameCensus` lo censa y `useActiveDrill` invalida las tres
+    consultas; el sondeo de 10 s se conserva como respaldo. Los suscriptores con alcance de sitio
+    no lo reciben (el frame no lleva `site_id`, default-deny): siguen por sondeo.
+  - **Consola:** estado `aborted` en `drill.ts` (rótulo «ABORTADO POR ALERTA REAL», cuenta como
+    acusado Y abortado), el historial ya no rotula EJECUTADO a un simulacro cortado, y el banner
+    dice rechazados y abortados en vez de esconderlos en el «0/2 ACUSADOS».
+  - **Lo que NO se tocó, a propósito:** `edge/tests/test_local_api_panel.py:850-856` sigue igual —
+    el panel del gabinete no se tocó en esta sesión (es `T-6.29`, la de la superficie panel);
+    la ficha lo daba por reescrito aquí y no lo estaba: la app y la consola ya leen el aborto;
+    el panel lo pintará cuando le toque su sesión. Y `T-6.19` (la app cuenta gabinetes) ya tiene
+    el dato en el contrato.
 
 ### [ ] T-6.16 · **El reporte de simulacro se puede entregar a Protección Civil** — `SOFTWARE`
 

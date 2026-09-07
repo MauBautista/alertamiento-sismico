@@ -143,3 +143,59 @@ async def test_stop_marca_fin_y_publica_drill_stop(client, gateway, publisher):
     # Y el banner se apaga.
     active = await client.get("/drills/active", headers=_token("soc_operator"))
     assert active.json()["drill"] is None
+
+
+async def _sql(sql: str, **params) -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(text(sql), params)
+
+
+async def test_el_aborto_del_gabinete_se_expone_por_sitio_y_cierra_el_simulacro(
+    client, gateway, publisher
+):
+    """[T-6.17] El gabinete acusó (ejecuta) y una alerta real lo cortó: el sitio
+    lleva `aborted_at`/`abort_reason`, el simulacro sale `aborted` con
+    `stop_reason='aborted'` y deja de ser el activo. Medido el 2026-09-06: sin
+    esto el SOC seguía anunciando «SIMULACRO EN CURSO» sobre un gabinete callado."""
+    r = await client.post(
+        "/drills", json={"site_ids": [au.DB_SITE_PRIV], "duration_s": 300}, headers=_token()
+    )
+    assert r.status_code == 201, r.text
+    drill_id = r.json()["drill_id"]
+    command_id = r.json()["sites"][0]["command_id"]
+
+    # 1) Acuse de arranque: el sitio EJECUTA y el simulacro lo cuenta.
+    await _sql(
+        "UPDATE commands SET status = 'acked', acked_at = now() WHERE command_id = :c",
+        c=command_id,
+    )
+    active = (await client.get("/drills/active", headers=_token())).json()["drill"]
+    assert active is not None and active["drill_id"] == drill_id
+    assert active["executing"] == 1
+    assert active["aborted"] is False
+    assert active["sites"][0]["aborted_at"] is None
+
+    # 2) Aborto por alerta real (lo que deja la ingesta del segundo acuse).
+    await _sql(
+        "UPDATE drill_sites SET aborted_at = now(), abort_reason = 'SASMEX real' "
+        "WHERE drill_id = :d AND site_id = :s",
+        d=drill_id,
+        s=au.DB_SITE_PRIV,
+    )
+    await _sql(
+        "UPDATE drills SET stopped_at = now(), stop_reason = 'aborted' WHERE drill_id = :d",
+        d=drill_id,
+    )
+    assert (await client.get("/drills/active", headers=_token())).json()["drill"] is None
+    items = (await client.get("/drills", headers=_token())).json()["items"]
+    row = next(d for d in items if d["drill_id"] == drill_id)
+    assert row["active"] is False
+    assert row["aborted"] is True
+    assert row["abort_reason"] == "SASMEX real"
+    assert row["stop_reason"] == "aborted"
+    # El acuse sigue en `acked` (sí sonó), pero ya no cuenta como EJECUTANDO.
+    assert row["sites"][0]["command_status"] == "acked"
+    assert row["sites"][0]["aborted_at"] is not None
+    assert row["sites"][0]["abort_reason"] == "SASMEX real"
+    assert row["executing"] == 0

@@ -673,15 +673,30 @@ export type DrillCreateIn = {
     site_ids?: Array<string> | null;
 };
 
+/**
+ * [T-6.17] Señal de que un simulacro del tenant cambió: arrancó, acusó,
+ * fue rechazado, abortado o terminó. Es SOLO una invalidación (ids, sin
+ * estado): la consola re-consulta ``/drills/active`` y el historial en vez de
+ * esperar al sondeo de 10 s. La autoridad sigue siendo el REST.
+ */
+export type DrillFrame = {
+    drill_id: string;
+    tenant_id: string;
+    type?: 'drill';
+};
+
 export type DrillList = {
     items: Array<DrillOut>;
     next_cursor?: string | null;
 };
 
 export type DrillOut = {
+    abort_reason?: string | null;
+    aborted?: boolean;
     active: boolean;
     drill_id: string;
     duration_s: number;
+    executing?: number;
     from_template_id?: string | null;
     initiated_by: string;
     note: string | null;
@@ -716,6 +731,8 @@ export type DrillReportOut = {
  * Participación de UN sitio: el acuse se DERIVA del comando firmado.
  */
 export type DrillSiteOut = {
+    abort_reason?: string | null;
+    aborted_at?: string | null;
     ack: {
         [key: string]: unknown;
     } | null;
@@ -1708,12 +1725,21 @@ export type MobileDictamenOut = {
 /**
  * Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —
  * informativa, JAMÁS auto-arranca) y último ejecutado.
+ *
+ * [T-6.17] `active` ya NO es una ventana de reloj: es `True` solo si el gabinete
+ * de ESTE sitio está ejecutando el simulacro (`execution == "executing"`).
+ * Medido el 2026-09-06 con un simulacro real: los dos gabinetes lo rechazaron
+ * y la app lo anunció tres minutos. `execution` y los conteos dicen lo demás
+ * —anunciado, rechazado, abortado— para que la franja pueda ser honesta.
  */
 export type MobileDrillOut = {
     active: boolean;
+    execution?: 'executing' | 'pending' | 'rejected' | 'expired' | 'aborted' | 'no_gateway' | 'none';
     last_note: string | null;
     last_started_at: string | null;
     next_scheduled_at: string | null;
+    sites_executing?: number;
+    sites_total?: number;
 };
 
 export type MobileIncidentOut = {

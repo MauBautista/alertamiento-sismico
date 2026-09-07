@@ -198,11 +198,23 @@ ASSEMBLY_POINT = text(
 
 # Drill ACTIVO que toca este sitio (misma derivación que routers/drills.py; las
 # filas de AGENDA — scheduled_at — jamás derivan activo: LO REAL GANA).
+# [T-6.17] Ya no es un `SELECT 1`: trae lo que hace el gabinete de ESTE sitio con
+# el simulacro vivo (`command_id` nulo = sin gabinete comandable; `command_status`
+# del acuse; `aborted_at` del segundo acuse) y cuántos sitios lo ejecutan. La
+# ventana de reloj sigue siendo la condición de «vivo»; `active` para la app se
+# deriva en el router y solo es cierto si este gabinete acusó y no abortó.
 ACTIVE_DRILL_FOR_SITE = text(
-    "SELECT 1 FROM drills d JOIN drill_sites ds ON ds.drill_id = d.drill_id "
+    "SELECT d.drill_id, ds.command_id, c.status AS command_status, ds.aborted_at, "
+    "(SELECT count(*) FROM drill_sites x WHERE x.drill_id = d.drill_id) AS sites_total, "
+    "(SELECT count(*) FROM drill_sites x JOIN commands cx ON cx.command_id = x.command_id "
+    " WHERE x.drill_id = d.drill_id AND cx.status = 'acked' AND x.aborted_at IS NULL) "
+    "AS sites_executing "
+    "FROM drills d JOIN drill_sites ds ON ds.drill_id = d.drill_id "
+    "LEFT JOIN commands c ON c.command_id = ds.command_id "
     "WHERE ds.site_id = CAST(:site AS uuid) AND d.scheduled_at IS NULL "
     "AND d.stopped_at IS NULL "
-    "AND now() < d.started_at + make_interval(secs => d.duration_s) LIMIT 1"
+    "AND now() < d.started_at + make_interval(secs => d.duration_s) "
+    "ORDER BY d.started_at DESC LIMIT 1"
 )
 
 NEXT_SCHEDULED_DRILL = text(

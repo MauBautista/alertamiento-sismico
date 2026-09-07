@@ -32,6 +32,9 @@ const KIND_TABS: readonly { value: DrillKind; label: string }[] = [
 ];
 
 function drillStateLabel(drill: DrillOut): string {
+  // [T-6.17] Un simulacro que los gabinetes cortaron por una alerta real NO es
+  // un simulacro «ejecutado»: antes caía en esa rama y se leía como éxito.
+  if (drill.stop_reason === "aborted") return "ABORTADO POR ALERTA REAL";
   if (drill.scheduled_at === null) return drill.active ? "EN CURSO" : "EJECUTADO";
   if (drill.stopped_at === null) return "PROGRAMADO";
   return drill.stop_reason === "executed" ? "AGENDA EJECUTADA" : "CANCELADO";
@@ -43,6 +46,7 @@ function ackSummary(drill: DrillOut): string {
   const parts = [`${r.acked}/${r.commanded} ACUSADOS`];
   if (r.pending > 0) parts.push(`${r.pending} SIN ACUSE`);
   if (r.rejected > 0) parts.push(`${r.rejected} RECHAZADO(S)`);
+  if (r.aborted > 0) parts.push(`${r.aborted} ABORTADO(S) POR ALERTA REAL`);
   if (r.noGateway > 0) parts.push(`${r.noGateway} SIN GABINETE COMANDABLE`);
   if (r.notSent > 0) parts.push(`${r.notSent} SIN COMANDO EMITIDO`);
   // `S/D` y no `+0:00`: sin un solo acuse no hay mediana que dar, y un cero

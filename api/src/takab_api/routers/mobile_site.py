@@ -156,6 +156,41 @@ def _asset_out(row: Any, settings: Settings) -> SiteAssetOut:
     )
 
 
+def _ejecucion(row: Any) -> str:
+    """[T-6.17] Qué hace el gabinete de ESTE sitio con el simulacro vivo.
+
+    Default-deny: un estado que no se reconoce cuenta como `pending`, nunca como
+    `executing` — decir «sonando» sin acuse es la mentira que esto cierra.
+    """
+    if row is None:
+        return "none"
+    if row.command_id is None:
+        return "no_gateway"
+    if row.aborted_at is not None:
+        return "aborted"
+    if row.command_status == "acked":
+        return "executing"
+    if row.command_status in ("rejected", "expired"):
+        return str(row.command_status)
+    return "pending"
+
+
+def _drill_out(row: Any, next_row: Any, last_row: Any) -> MobileDrillOut:
+    execution = _ejecucion(row)
+    return MobileDrillOut(
+        # [T-6.17] `active` solo si ESTE gabinete acusó y no abortó: la ventana de
+        # reloj sigue diciendo que el simulacro está «vivo» en la nube, pero eso
+        # no es lo mismo que «este edificio está sonando».
+        active=execution == "executing",
+        next_scheduled_at=next_row.scheduled_at if next_row else None,
+        last_started_at=last_row.started_at if last_row else None,
+        last_note=last_row.note if last_row else None,
+        execution=execution,  # type: ignore[arg-type]
+        sites_total=int(row.sites_total) if row is not None else 0,
+        sites_executing=int(row.sites_executing) if row is not None else 0,
+    )
+
+
 @router.get("/sites/{site_id}/mobile-state", response_model=MobileStateOut)
 async def mobile_state(
     site_id: UUID,
@@ -252,9 +287,7 @@ async def mobile_state(
     labels_row = (await conn.execute(q.COMPLIANCE_LABELS, {"tenant": str(site.tenant_id)})).first()
     assembly_row = (await conn.execute(q.ASSEMBLY_POINT, {"site": str(site_id)})).first()
 
-    drill_active = (
-        await conn.execute(q.ACTIVE_DRILL_FOR_SITE, {"site": str(site_id)})
-    ).first() is not None
+    drill_row = (await conn.execute(q.ACTIVE_DRILL_FOR_SITE, {"site": str(site_id)})).first()
     next_row = (await conn.execute(q.NEXT_SCHEDULED_DRILL)).first()
     last_row = (await conn.execute(q.LAST_DRILL_FOR_SITE, {"site": str(site_id)})).first()
 
@@ -280,12 +313,7 @@ async def mobile_state(
         compliance_labels=mobile_projection(
             parse_document(labels_row.labels if labels_row else None)
         ),
-        drill=MobileDrillOut(
-            active=drill_active,
-            next_scheduled_at=next_row.scheduled_at if next_row else None,
-            last_started_at=last_row.started_at if last_row else None,
-            last_note=last_row.note if last_row else None,
-        ),
+        drill=_drill_out(drill_row, next_row, last_row),
         site_health=await _site_health(conn, site_id, settings),
         # [T-2.106] Solo con la fase puesta: si un sismo ganó la precedencia, el
         # hecho de la alarma NO viaja. Devolver los dos sería pedirle al cliente
@@ -481,14 +509,7 @@ async def site_drills(
 ) -> MobileDrillOut:
     """Simulacros del sitio para la card de 1.1: activo + próximo + último."""
     await q.assert_site_access(conn, claims, site_id)
-    active = (
-        await conn.execute(q.ACTIVE_DRILL_FOR_SITE, {"site": str(site_id)})
-    ).first() is not None
+    drill_row = (await conn.execute(q.ACTIVE_DRILL_FOR_SITE, {"site": str(site_id)})).first()
     next_row = (await conn.execute(q.NEXT_SCHEDULED_DRILL)).first()
     last_row = (await conn.execute(q.LAST_DRILL_FOR_SITE, {"site": str(site_id)})).first()
-    return MobileDrillOut(
-        active=active,
-        next_scheduled_at=next_row.scheduled_at if next_row else None,
-        last_started_at=last_row.started_at if last_row else None,
-        last_note=last_row.note if last_row else None,
-    )
+    return _drill_out(drill_row, next_row, last_row)

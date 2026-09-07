@@ -392,8 +392,13 @@ class _FakeDrill:
         "reason": "",
     }
 
-    def start_drill(self, drill_id: str, duration_s: float) -> tuple[bool, str]:
+    on_abort = None
+
+    def start_drill(self, drill_id: str, duration_s: float, on_abort=None) -> tuple[bool, str]:
         self.started.append((drill_id, duration_s))
+        # [T-6.17] El dispatcher entrega el callback del aborto; el controlador
+        # real solo lo conserva si el simulacro arrancó.
+        self.on_abort = on_abort if self.start_result[0] else None
         return self.start_result
 
     def end_drill(self, drill_id: str | None = None, reason: str = "") -> bool:
@@ -652,3 +657,69 @@ def test_un_drill_RECHAZADO_no_afirma_que_sono_nada() -> None:
     ack = _acks(cloud)[0]
     assert ack["success"] is False
     assert (ack.get("results") or {}).get("audio") is None
+
+
+# ----------------------------------------------------------------------------
+# [T-6.17] El aborto viaja a la nube por el MISMO camino que todo acuse: un
+# segundo `command_ack` del `drill_start`, con `results.aborted`. Sin topic
+# nuevo, sin regla IoT nueva, sin tocar la política de flota.
+# ----------------------------------------------------------------------------
+
+
+def test_el_aborto_del_drill_publica_un_segundo_acuse_con_results_aborted() -> None:
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    payload = {
+        "channel": "system",
+        "action": "drill_start",
+        "event_id": "DRILL-ab",
+        "duration_s": 60,
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-ab1", NOW))
+    assert drill.on_abort is not None, "el dispatcher no entregó el callback del aborto"
+    drill.on_abort(
+        {
+            "drill_id": "DRILL-ab",
+            "aborted": True,
+            "abort_reason": "SASMEX real",
+            "aborted_at": "2026-09-06T15:00:00+00:00",
+        }
+    )
+    acks = _acks(cloud)
+    assert len(acks) == 2
+    primero, segundo = acks
+    assert segundo["command_id"] == primero["command_id"]
+    assert segundo["nonce"] == primero["nonce"]
+    assert segundo["action"] == "drill_start" and segundo["channel"] == "system"
+    assert segundo["success"] is True  # el simulacro SÍ arrancó; lo que se acusa es su fin
+    assert segundo["results"]["aborted"] is True
+    assert segundo["results"]["abort_reason"] == "SASMEX real"
+    assert segundo["results"]["drill_id"] == "DRILL-ab"
+    assert segundo["results"]["aborted_at"] == "2026-09-06T15:00:00+00:00"
+    assert "abortado" in segundo["detail"]
+
+
+def test_un_drill_rechazado_no_deja_callback_de_aborto() -> None:
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    drill.start_result = (False, "alerta SASMEX real en curso; simulacro rechazado")
+    payload = {"channel": "system", "action": "drill_start", "event_id": "DRILL-no"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-ab2", NOW))
+    assert drill.on_abort is None
+    assert len(_acks(cloud)) == 1
+
+
+def test_el_acuse_del_aborto_no_lleva_evidencia_de_audio_inventada() -> None:
+    dispatcher, signer, cloud, _actuators, drill = _drill_dispatcher()
+    payload = {
+        "channel": "system",
+        "action": "drill_start",
+        "event_id": "DRILL-ab",
+        "duration_s": 60,
+    }
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-ab3", NOW))
+    drill.on_abort(
+        {"drill_id": "DRILL-ab", "aborted": True, "abort_reason": "x", "aborted_at": "t"}
+    )
+    segundo = _acks(cloud)[1]
+    assert (
+        "audio" not in segundo["results"]
+    )  # el audio se acusó al arrancar; el aborto no lo repite

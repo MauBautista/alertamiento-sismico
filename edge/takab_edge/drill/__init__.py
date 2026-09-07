@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 
 from takab_edge.contracts import SasmexSignal, Tier, TierDecision, utcnow
 from takab_edge.gpio_link import as_link
@@ -74,6 +75,12 @@ class DrillController(EdgeModule):
         self._lock = threading.Lock()
         self._timer: threading.Timer | None = None
         self._state: dict = {"active": False}
+        #: [T-6.17] A quién avisar si el simulacro se aborta. Lo entrega el
+        #: dispatcher al arrancar (es quien conoce `command_id`/`nonce` del
+        #: `drill_start`) y sirve para publicar el SEGUNDO acuse: sin él la nube
+        #: derivaba `active` del reloj y el teléfono anunciaba un simulacro que el
+        #: gabinete ya había cortado. Advisory: si revienta, el aborto sigue.
+        self._on_abort: Callable[[dict], None] | None = None
 
     # ------------------------------------------------------------------ estado
     def status(self) -> dict:
@@ -87,8 +94,17 @@ class DrillController(EdgeModule):
             return bool(self._state.get("active"))
 
     # ------------------------------------------------------------------ control
-    def start_drill(self, drill_id: str, duration_s: float) -> tuple[bool, str]:
+    def start_drill(
+        self,
+        drill_id: str,
+        duration_s: float,
+        on_abort: Callable[[dict], None] | None = None,
+    ) -> tuple[bool, str]:
         """Arranca el simulacro. (ok, motivo) — rechaza con alerta real viva.
+
+        [T-6.17] `on_abort` recibe, UNA vez y solo si el simulacro se aborta, un
+        dict con `drill_id`, `aborted`, `abort_reason` y `aborted_at`. Un drill
+        nuevo reemplaza al callback del anterior; el fin normal no lo invoca.
 
         [T-2.70.a·D2/P1] El guard falla CERRADO. La lectura del enclave SASMEX
         cruza la costura, y si no se puede hacer el simulacro se RECHAZA: abrir
@@ -127,6 +143,7 @@ class DrillController(EdgeModule):
                 # sacar otro.
                 "audio": _evidencia_de_audio(self._audio),
             }
+            self._on_abort = on_abort
             timer = threading.Timer(duration, self._on_window_end)
             timer.daemon = True
             self._timer = timer
@@ -151,6 +168,7 @@ class DrillController(EdgeModule):
             if drill_id is not None and self._state.get("drill_id") != drill_id:
                 return False
             self._state = {**self._state, "active": False, "ended_reason": reason}
+            self._on_abort = None
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
@@ -173,8 +191,22 @@ class DrillController(EdgeModule):
             if self._timer is not None:
                 self._timer.cancel()
                 self._timer = None
+            avisar, self._on_abort = self._on_abort, None
+            aviso = {
+                "drill_id": self._state.get("drill_id"),
+                "aborted": True,
+                "abort_reason": reason,
+                "aborted_at": utcnow().isoformat(),
+            }
         self._stop_voice()
         log.warning("SIMULACRO ABORTADO — %s (la alerta real manda)", reason)
+        # [T-6.17] El aviso va DESPUÉS de cortar el voceo y fuera del lock: es
+        # advisory y cruza a la nube; nada de lo que haga puede retener el aborto.
+        if avisar is not None:
+            try:
+                avisar(aviso)
+            except Exception:  # noqa: BLE001 — advisory, jamás al camino de vida
+                log.exception("no se pudo avisar del aborto del simulacro (aislado)")
 
     # ------------------------------------------------------------ observadores
     def on_sasmex(self, signal: SasmexSignal) -> None:
@@ -208,3 +240,4 @@ class DrillController(EdgeModule):
                 self._timer.cancel()
                 self._timer = None
             self._state = {"active": False}
+            self._on_abort = None

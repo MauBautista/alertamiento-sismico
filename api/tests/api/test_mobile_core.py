@@ -1058,3 +1058,107 @@ async def test_enrollment_code_cross_site_mismo_tenant_es_403(base_data) -> None
             headers=au.bearer(scoped),
         )
         assert denied.status_code == 403
+
+
+async def _seed_drill_con_comando(status: str = "pending") -> tuple[str, str]:
+    """[T-6.17] Un simulacro EN VENTANA con un `drill_start` hacia el gabinete
+    del sitio, en el estado de acuse que se pida. Devuelve (drill_id, command_id)."""
+    await _seed_gateway(has_wr1=True)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        drill_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO drills (tenant_id, initiated_by, note, duration_s) "
+                    "VALUES (:t, :by, 'Simulacro con acuse', 300) RETURNING drill_id"
+                ),
+                {"t": au.DB_TENANT_PRIV, "by": str(uuid.uuid4())},
+            )
+        ).scalar_one()
+        command_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO commands (tenant_id, site_id, gateway_id, issued_by, channel, "
+                    "action, nonce, expires_at, status) "
+                    "VALUES (:t, :s, :g, :by, 'system', 'drill_start', :n, "
+                    "now() + interval '30 seconds', :st) RETURNING command_id"
+                ),
+                {
+                    "t": au.DB_TENANT_PRIV,
+                    "s": au.DB_SITE_PRIV,
+                    "g": GW_PRIV,
+                    "by": str(uuid.uuid4()),
+                    "n": f"n-mob-{uuid.uuid4().hex[:8]}",
+                    "st": status,
+                },
+            )
+        ).scalar_one()
+        await conn.execute(
+            text(
+                "INSERT INTO drill_sites (drill_id, site_id, tenant_id, command_id) "
+                "VALUES (:d, :s, :t, :c)"
+            ),
+            {"d": drill_id, "s": au.DB_SITE_PRIV, "t": au.DB_TENANT_PRIV, "c": command_id},
+        )
+    return str(drill_id), str(command_id)
+
+
+@pytest.mark.anyio
+async def test_drill_activo_solo_si_el_gabinete_del_sitio_lo_ejecuta(base_data) -> None:
+    """[T-6.17] `active` en móvil es «el gabinete de ESTE sitio está ejecutando»,
+    no «alguien emitió un simulacro». Medido el 2026-09-06 en el Pixel: la app
+    decía SIMULACRO EN CURSO con los dos gabinetes en RECHAZADO."""
+    await _seed_zone_and_code()
+    drill_id, command_id = await _seed_drill_con_comando(status="pending")
+    engine = get_engine()
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        url = f"/sites/{au.DB_SITE_PRIV}/drills"
+        hdr = au.bearer(_occ())
+
+        body = (await client.get(url, headers=hdr)).json()
+        assert body["active"] is False
+        assert body["execution"] == "pending"
+        assert body["sites_total"] == 1 and body["sites_executing"] == 0
+
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE commands SET status = 'acked', acked_at = now() WHERE command_id = :c"
+                ),
+                {"c": command_id},
+            )
+        body = (await client.get(url, headers=hdr)).json()
+        assert body["active"] is True
+        assert body["execution"] == "executing"
+        assert body["sites_executing"] == 1
+        state = (await client.get(f"/sites/{au.DB_SITE_PRIV}/mobile-state", headers=hdr)).json()
+        assert state["drill"]["active"] is True and state["drill"]["execution"] == "executing"
+
+        # El gabinete lo cortó por una alerta real: la app deja de decir EN CURSO.
+        async with engine.begin() as conn:
+            await conn.execute(
+                text(
+                    "UPDATE drill_sites SET aborted_at = now(), abort_reason = 'SASMEX real' "
+                    "WHERE drill_id = :d"
+                ),
+                {"d": drill_id},
+            )
+        body = (await client.get(url, headers=hdr)).json()
+        assert body["active"] is False
+        assert body["execution"] == "aborted"
+        assert body["sites_executing"] == 0
+
+
+@pytest.mark.anyio
+async def test_drill_rechazado_por_el_gabinete_no_esta_activo_en_movil(base_data) -> None:
+    await _seed_zone_and_code()
+    await _seed_drill_con_comando(status="rejected")
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        body = (
+            await client.get(f"/sites/{au.DB_SITE_PRIV}/drills", headers=au.bearer(_occ()))
+        ).json()
+        assert body["active"] is False
+        assert body["execution"] == "rejected"
+        assert body["sites_total"] == 1 and body["sites_executing"] == 0

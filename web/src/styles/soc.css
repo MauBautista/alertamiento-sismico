@@ -1602,7 +1602,8 @@ body {
   background: var(--tk-status-warning-15);
   color: var(--tk-status-warning);
 }
-.soc-drillhist__ackpill.is-rejected {
+.soc-drillhist__ackpill.is-rejected,
+.soc-drillhist__ackpill.is-aborted {
   background: var(--tk-status-critical-15);
   color: var(--tk-status-critical);
 }

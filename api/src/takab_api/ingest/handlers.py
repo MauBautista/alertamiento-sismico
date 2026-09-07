@@ -27,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 import psycopg
 from psycopg.rows import tuple_row
@@ -720,6 +721,79 @@ UPDATE commands
 """
 
 
+# [T-6.17] El ABORTO de un simulacro viaja como SEGUNDO acuse del `drill_start`
+# (`results.aborted`), por el mismo topic y la misma regla IoT que todo acuse.
+# Hasta aquí ese segundo mensaje era un no-op silencioso: la nube derivaba
+# `active` del reloj y el teléfono anunciaba «SIMULACRO EN CURSO» minutos después
+# de que el gabinete lo cortara. El aborto es POR SITIO —un tier instrumental
+# aborta en un gabinete y no en el vecino— y el simulacro se cierra solo cuando
+# no queda ningún sitio que pueda estar ejecutándolo (`acked` sin aborto, o
+# `pending`: un acuse tardío es un gabinete que SÍ está sonando).
+_DRILL_SITE_BY_COMMAND_SQL = """
+SELECT drill_id, site_id, aborted_at FROM drill_sites WHERE command_id = %s
+"""
+
+_DRILL_SITE_ABORT_SQL = """
+UPDATE drill_sites
+   SET aborted_at = now(), abort_reason = %(reason)s
+ WHERE command_id = %(command_id)s AND aborted_at IS NULL
+"""
+
+_DRILL_CLOSE_IF_NOBODY_EXECUTES_SQL = """
+UPDATE drills d
+   SET stopped_at = now(), stop_reason = 'aborted'
+ WHERE d.drill_id = %(drill_id)s AND d.stopped_at IS NULL
+   AND NOT EXISTS (
+         SELECT 1 FROM drill_sites s JOIN commands c ON c.command_id = s.command_id
+          WHERE s.drill_id = d.drill_id AND s.aborted_at IS NULL
+            AND c.status IN ('pending', 'acked'))
+RETURNING drill_id
+"""
+
+
+def _es_aborto_de_simulacro(payload: dict) -> bool:
+    results = payload.get("results")
+    return isinstance(results, dict) and results.get("aborted") is True
+
+
+def _abortar_simulacro(
+    conn: psycopg.Connection, *, command_id: Any, tenant_id: Any, ctx: GatewayCtx, payload: dict
+) -> None:
+    """Marca el sitio como abortado y, si ya nadie lo ejecuta, cierra el simulacro.
+
+    Idempotente (re-entrega SQS): un sitio ya abortado no se reescribe — ni la hora
+    ni la razón — y no vuelve a auditar. Un comando que no pertenece a ningún
+    simulacro es un no-op: el ack ya transicionó `commands` y no hay más que hacer.
+    """
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute(_DRILL_SITE_BY_COMMAND_SQL, (command_id,))
+        row = cur.fetchone()
+    if row is None:
+        return
+    drill_id, site_id, aborted_at = row
+    if aborted_at is not None:
+        return
+    razon_cruda = payload["results"].get("abort_reason")
+    reason = str(razon_cruda)[:500] if razon_cruda else None
+    conn.execute(_DRILL_SITE_ABORT_SQL, {"command_id": command_id, "reason": reason})
+    with conn.cursor(row_factory=tuple_row) as cur:
+        cur.execute(_DRILL_CLOSE_IF_NOBODY_EXECUTES_SQL, {"drill_id": drill_id})
+        cerrado = cur.fetchone() is not None
+    audit(
+        conn,
+        tenant_id=str(tenant_id),
+        actor=f"edge:{ctx.gateway_serial}",
+        verb="drill_site_aborted",
+        obj=f"drill:{drill_id}",
+        meta={
+            "site_id": str(site_id),
+            "command_id": str(command_id),
+            "reason": reason,
+            "drill_closed": cerrado,
+        },
+    )
+
+
 def handle_command_ack(
     conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
 ) -> HandlerResult:
@@ -746,7 +820,14 @@ def handle_command_ack(
         reason = f"command_ack: gateway/tenant no coincide (comando {command_id})"
         _audit_reject(conn, ctx, meta, "command_ack", reason)
         return reject(reason)
+    aborto = _es_aborto_de_simulacro(payload)
     if status != "pending":
+        # [T-6.17] El segundo acuse de un `drill_start` ya acusado trae el aborto;
+        # sobre un comando rechazado o expirado no hay simulacro que abortar.
+        if aborto and status == "acked":
+            _abortar_simulacro(
+                conn, command_id=command_id, tenant_id=tenant_id, ctx=ctx, payload=payload
+            )
         return OK  # re-entrega o ack tardío: no-op idempotente (nunca revive)
     new_status = "acked" if payload.get("success") else "rejected"
     conn.execute(
@@ -790,6 +871,13 @@ def handle_command_ack(
         verb=f"command_{new_status}",
         obj=f"command:{command_id}",
     )
+    # [T-6.17] SQS estándar no ordena: el aborto puede adelantar al arranque. El
+    # acuse dice `success` (el simulacro SÍ arrancó) y trae el aborto: se hacen
+    # las dos cosas, en ese orden.
+    if aborto and new_status == "acked":
+        _abortar_simulacro(
+            conn, command_id=command_id, tenant_id=tenant_id, ctx=ctx, payload=payload
+        )
     return OK
 
 
