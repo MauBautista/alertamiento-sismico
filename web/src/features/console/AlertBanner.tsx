@@ -22,14 +22,17 @@ import { AlertOctagon } from "lucide-react";
 import { authorizes } from "../scene/scene";
 import { alertHeadline } from "./alertHeadline";
 import type { LiveIncident } from "./useLiveIncidents";
+import SiteLabel from "../../components/SiteLabel";
 
 export interface AlertBannerProps {
   /** Incidente crítico abierto más relevante, o null (sin banner). */
   incident: LiveIncident | null;
   siteName: string | null;
+  /** [T-6.04] `sites.code`: la tarjeta pinta la cinta DEMO si el sitio es simulado. */
+  siteCode?: string | null;
 }
 
-export default function AlertBanner({ incident, siteName }: AlertBannerProps) {
+export default function AlertBanner({ incident, siteName, siteCode = null }: AlertBannerProps) {
   if (incident === null) return null;
   const fuente = alertHeadline(incident.trigger);
   return (
@@ -47,7 +50,9 @@ export default function AlertBanner({ incident, siteName }: AlertBannerProps) {
         {fuente.title}
       </div>
 
-      <div className="soc-alert__site">{siteName ?? `SITIO ${incident.site_id.slice(0, 8)}`}</div>
+      <div className="soc-alert__site">
+        <SiteLabel name={siteName ?? `SITIO ${incident.site_id.slice(0, 8)}`} code={siteCode} />
+      </div>
       <div className="soc-alert__sub">
         EVENT_ID {incident.event_id ?? incident.incident_id.slice(0, 8).toUpperCase()}
       </div>

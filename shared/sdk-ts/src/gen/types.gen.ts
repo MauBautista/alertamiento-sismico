@@ -744,6 +744,7 @@ export type DrillSiteOut = {
     command_id: string | null;
     command_status: string | null;
     commandable?: boolean;
+    site_code?: string | null;
     site_id: string;
     site_name: string | null;
 };
@@ -1518,6 +1519,7 @@ export type MaintenanceWindowOut = {
     requested: number;
     scope: string;
     silenced: number;
+    site_code?: string | null;
     site_name?: string | null;
     starts_at: string;
     tenant_id: string | null;

@@ -409,7 +409,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - [ ] El formulario declara siempre en qué cliente escribe; un rol de tenant no puede elegir otro.
   - [ ] El flujo completo (cliente → sitio → gabinete → mapa) tiene un test que recorre las tres pantallas.
 
-### [ ] T-6.04 · **La marca DEMO llega a todo lo que pinta un sitio** — `SOFTWARE`
+### [x] T-6.04 · **La marca DEMO llega a todo lo que pinta un sitio** — `SOFTWARE`
 
 > `esDeDemostracion` la consumen el mapa y la tarjeta de flota; la cola de incidentes, el triage,
 > el detalle y los KPI pintan el sitio sin cinta. Un marcado a medias enseña la regla falsa «sin
@@ -423,9 +423,37 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** una sola función, consumida por todos: donde hay un sitio simulado hay cinta, con la misma forma en el mapa, la flota, la cola, el triage, el detalle y los KPI.
 - **Criterios de aceptación:**
-  - [ ] Con el seed de demostración, ninguna fila ni tarjeta de un sitio `site-sim-*` aparece sin cinta.
-  - [ ] Los KPI que agregan sitios simulados lo declaran («de los cuales N simulados»).
-  - [ ] El censo nuevo falla al añadir una pantalla que pinte un sitio sin pasar por la función.
+  - [x] Con el seed de demostración, ninguna fila ni tarjeta de un sitio `site-sim-*` aparece sin cinta.
+  - [x] Los KPI que agregan sitios simulados lo declaran («de los cuales N simulados»).
+  - [x] El censo nuevo falla al añadir una pantalla que pinte un sitio sin pasar por la función.
+- **Cómo se cerró (2026-09-07, SESIÓN C4):**
+  - **Un componente para pintar un sitio.** `web/src/components/SiteLabel.tsx` pinta el nombre y, si
+    `esDeDemostracion` lo dice por el código (o el serial), la MISMA cinta gris y discontinua que el
+    mapa y la tarjeta de flota (`.site-demo`; cero tokens). `siteLabelText` pega « · DEMO» en los
+    contextos de texto plano (`<option>`, títulos de formulario, la marca del SVG de la comparativa).
+    Lo consumen la cola de incidentes, la tarjeta y la línea de alerta, el detalle, el triage (tabla,
+    detalle y matriz de inspección), el alta y el historial de simulacros, la reubicación del
+    epicentro, el banner de mantenimiento, la flota (tabla, fantasmas, formularios, códigos de alta),
+    la ficha del edificio y el alcance por sitio de los usuarios.
+  - **El código viaja hasta quien pinta.** `IncidentSiteInfo`, `DetailSite`, `TriageRow` e
+    `InspectionRow` ganan el código; `AlertBanner`, `AlertLine` y `EpicenterModal` lo reciben por prop.
+    Donde el contrato no lo traía se añadió en la API: `DrillSiteOut.site_code` y
+    `MaintenanceWindowOut.site_code` (opcionales), SDK regenerado. Se descartó derivar la marca del
+    UUID: el sitio real `site-dev` comparte prefijo con los simulados, y `esDeDemostracion` ancla a
+    propósito en el código del seed.
+  - **KPI honesto:** `consoleKpis.simulados`; la tira dice «DE LAS CUALES N SIMULADAS» sólo si N > 0.
+  - **El censo:** `web/src/siteDemoCensus.test.ts`. La población se DERIVA: todo fichero de
+    producción cuyas expresiones JSX toquen un nombre o código de sitio (`site_name`, `siteName`,
+    `site.name`, `s.name`…, fuera de comentarios y tipos) tiene que importar `SiteLabel`,
+    `siteLabelText` o `esDeDemostracion`, o estar exento con razón (`ConsolePage` y `SceneStrip`
+    reparten a hijos que pintan; `GatewayForm`/`GatewayAcuse` reciben el título ya rotulado). Por
+    igualdad en las dos direcciones: una exención que ya pasa por la función sobra. El analizador va
+    probado contra fuentes sintéticas (un `siteName` en una interfaz o un comentario no es pintar; un
+    import sólo de tipo no es pasar por la función).
+  - **Verificación:** vitest (137 ficheros, 2 134 tests), eslint, prettier, tsc, `vite build`; API:
+    drills + ventanas de mantenimiento en verde, ruff limpio. En `make soc-local` con el seed
+    simulado, un barrido del DOM en `/console`, `/fleet` y `/triage`: 2 + 25 + 3 menciones de
+    `Sitio Sim NNN`, **cero sin cinta**, y la tira de KPI dice «DE LAS CUALES 20 SIMULADAS».
 
 ### [ ] T-6.05 · **El gate del LOGIN DEV lo lee un test bloqueante** — `SOFTWARE`
 

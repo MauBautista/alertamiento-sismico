@@ -14,6 +14,7 @@ import { useState } from "react";
 import type { EquipmentProfile, GatewayOut, SiteOut } from "@takab/sdk";
 
 import { EQUIPMENT_ALL, EQUIPMENT_FIELDS } from "./equipment";
+import { siteLabelText } from "./datosDeDemostracion";
 
 /** Espejo de los CHECK de `sensors` (db/schema.sql). */
 export const SENSOR_KINDS = ["structural", "ground"] as const;
@@ -72,7 +73,7 @@ export default function HardwareForm({
 
   return (
     <div className="fleet__form" data-testid="hardware-form">
-      <h3 className="fleet__formtitle">HARDWARE · {site.code}</h3>
+      <h3 className="fleet__formtitle">HARDWARE · {siteLabelText(site.code, site.code)}</h3>
 
       <fieldset className="fleet__coords">
         <legend>GABINETE (RASPBERRY PI 4)</legend>

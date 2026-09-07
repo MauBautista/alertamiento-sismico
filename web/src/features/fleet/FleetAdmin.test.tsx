@@ -414,4 +414,14 @@ describe("FleetAdmin · códigos de alta por estación (T-2.53)", () => {
     const row = await screen.findByTestId("site-row-CHL-A");
     expect(within(row).queryByRole("button", { name: "CÓDIGOS" })).toBeNull();
   });
+
+  it("[T-6.04] la fila de una estación simulada lleva la cinta DEMO", async () => {
+    mocks.listSitesSitesGet.mockResolvedValue({
+      data: [{ ...SITE, code: "site-sim-001", name: "Sitio Sim 001 Puebla" }],
+      response: { status: 200 },
+    });
+    renderAdmin();
+    expect(await screen.findByTestId("site-row-site-sim-001")).toBeInTheDocument();
+    expect(screen.getByTestId("site-demo")).toHaveTextContent("DEMO");
+  });
 });

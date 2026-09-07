@@ -33,6 +33,7 @@ import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { endClock, muteAckLine, muteHeadline, muteOutcome } from "../console/maintenance";
 import type { MaintenanceData } from "../console/useMaintenanceWindows";
+import { siteLabelText } from "../fleet/datosDeDemostracion";
 
 export default function MaintenanceBanner({ data }: { data: MaintenanceData }) {
   const canClose = useSessionStore((s) => s.me?.allowed_actions.maintenance_window === true);
@@ -78,8 +79,10 @@ export default function MaintenanceBanner({ data }: { data: MaintenanceData }) {
             <ShieldOff size={16} aria-hidden />
             <span>
               🟣 VENTANA DE MANTENIMIENTO — {muteHeadline(w)} ·{" "}
-              {w.scope === "platform" ? "PLATAFORMA" : (w.site_name ?? w.gateway_serial ?? "—")} ·{" "}
-              {muteAckLine(w)} · TERMINA {endClock(w)} UTC · MOTIVO: {w.reason}
+              {w.scope === "platform"
+                ? "PLATAFORMA"
+                : siteLabelText(w.site_name ?? w.gateway_serial ?? "—", w.site_code)}{" "}
+              · {muteAckLine(w)} · TERMINA {endClock(w)} UTC · MOTIVO: {w.reason}
             </span>
             {canClose && (
               <button

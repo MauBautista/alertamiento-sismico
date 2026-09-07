@@ -3049,6 +3049,17 @@
             "title": "Commandable",
             "type": "boolean"
           },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
+          },
           "site_id": {
             "format": "uuid",
             "title": "Site Id",
@@ -6071,6 +6082,17 @@
           "silenced": {
             "title": "Silenced",
             "type": "integer"
+          },
+          "site_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site Code"
           },
           "site_name": {
             "anyOf": [

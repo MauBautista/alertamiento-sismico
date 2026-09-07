@@ -42,6 +42,10 @@ class DrillSiteOut(BaseModel):
 
     site_id: UUID
     site_name: str | None
+    #: [T-6.04] ``sites.code``: la consola deriva de él la cinta DEMO
+    #: (``esDeDemostracion``); sin él, el historial pintaba un sitio simulado
+    #: idéntico a uno real.
+    site_code: str | None = None
     command_id: UUID | None
     command_status: str | None
     ack: dict[str, Any] | None

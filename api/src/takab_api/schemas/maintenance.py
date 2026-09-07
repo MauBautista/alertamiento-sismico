@@ -81,6 +81,8 @@ class MaintenanceWindowOut(BaseModel):
     gateway_id: UUID | None
     gateway_serial: str | None = None
     site_name: str | None = None
+    #: [T-6.04] ``sites.code`` del gabinete tapado: la consola deriva la cinta DEMO.
+    site_code: str | None = None
     scope: str
     opened_by: UUID
     reason: str

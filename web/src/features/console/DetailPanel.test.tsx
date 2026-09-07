@@ -22,6 +22,7 @@ const NOW = Date.parse("2026-07-08T10:41:35Z");
 const SITE = {
   site_id: "s-1",
   name: "Planta Cholula",
+  code: "site-cholula-a",
   coords: "19.0633°N · 98.3014°W",
   // [T-5.26] Identidad del hardware: la estación de este fixture SÍ tiene aparato.
   serial: "TKB-0001",
@@ -566,5 +567,10 @@ describe("[T-5.26] respaldoLegible", () => {
 
   it("un estado desconocido se muestra tal cual, no se traga", () => {
     expect(respaldoLegible("frobnicating", null)).toBe("FROBNICATING");
+  });
+
+  it("[T-6.04] la cabecera de un sitio simulado lleva la cinta DEMO; la de uno real, no", () => {
+    renderPanel({ site: { ...SITE, code: "site-sim-001", name: "Sitio Sim 001 Puebla" } });
+    expect(screen.getByTestId("site-demo")).toHaveTextContent("DEMO");
   });
 });

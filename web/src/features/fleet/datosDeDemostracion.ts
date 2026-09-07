@@ -37,5 +37,17 @@ export function esDeDemostracion(codigoOSerial: string | null | undefined): bool
   return PATRONES.some((p) => p.test(codigoOSerial));
 }
 
-/** Rótulo único, para que las dos superficies no puedan escribirlo distinto. */
+/** Rótulo único, para que ninguna superficie pueda escribirlo distinto. */
 export const ROTULO_DEMO = "DEMO";
+
+/** Explicación única de la cinta (va al `title`). */
+export const TITULO_DEMO = "Dato de demostración: este sitio no existe";
+
+/**
+ * [T-6.04] El nombre de un sitio para un contexto de TEXTO PLANO (`<option>`,
+ * `title`, SVG), donde no cabe la cinta de `components/SiteLabel`: se le pega el
+ * rótulo. Misma función que decide, mismo rótulo que se pinta.
+ */
+export function siteLabelText(name: string, code: string | null | undefined): string {
+  return esDeDemostracion(code) ? `${name} · ${ROTULO_DEMO}` : name;
+}

@@ -36,6 +36,7 @@ import { RELAYS_STALE_MS, type SiteRelaysData } from "./useSiteRelays";
 import FeatureStrip from "./FeatureStrip";
 import type { QuorumCommandSummary } from "./useQuorumCommands";
 import type { SiteStateFrame } from "@takab/sdk";
+import SiteLabel from "../../components/SiteLabel";
 
 /** Sin frame de features tras esto (live 1 Hz) el strip pasa a DATOS RETENIDOS. */
 export const FEATURES_STALE_MS = 15_000;
@@ -72,6 +73,8 @@ export function respaldoLegible(estado: string | null, bateria: number | null): 
 export interface DetailSite {
   site_id: string;
   name: string;
+  /** [T-6.04] `sites.code`: la cabecera pinta la cinta DEMO si el sitio es simulado. */
+  code: string | null;
   coords: string | null;
   /**
    * [T-5.26] Identidad del hardware de la estación. Vivía solo en Flota, así que
@@ -180,7 +183,9 @@ export default function DetailPanel({
       <header className="soc-detail__hd">
         <div>
           <span className="soc-meta">DETALLE DEL SITIO · EDGE+CLOUD</span>
-          <h2 className="soc-detail__site">{site.name}</h2>
+          <h2 className="soc-detail__site">
+            <SiteLabel name={site.name} code={site.code} />
+          </h2>
           <div className="soc-detail__sub">{site.coords ?? site.site_id}</div>
           {/* [T-2.50] Del wall al edificio en un clic: la ficha del inmueble ya
               existe en /building/:siteId y no tenía ninguna entrada desde aquí. */}

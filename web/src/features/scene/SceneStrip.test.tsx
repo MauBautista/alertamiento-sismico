@@ -3,7 +3,7 @@
 // se mide es qué pinta la franja para cada combinación, y que en NORMAL no pinta
 // nada.
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -406,5 +406,21 @@ describe("SceneStrip · los cuatro estados de cada fuente (regla de oro 7)", () 
     expect(screen.queryByRole("button", { name: "REINTENTAR" })).toBeNull();
     // Y sigue sin ser un hueco: los otros tres marcos están.
     expect(container.querySelectorAll(".soc-scene > .soc-stateframe")).toHaveLength(3);
+  });
+
+  it("[T-6.04] la línea de alerta de un sitio simulado lleva la cinta DEMO", () => {
+    const base = mapData();
+    mocks.useMapState.mockReturnValue(
+      mapData({
+        sites: [{ ...base.sites[0], name: "Sitio Sim 001 Puebla", code: "site-sim-001" }],
+      }),
+    );
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ trigger: "local_threshold" })] }),
+    );
+    pintar();
+    const linea = screen.getByTestId("scene-alert");
+    expect(linea).toHaveTextContent("Sitio Sim 001 Puebla");
+    expect(within(linea).getByTestId("site-demo")).toHaveTextContent("DEMO");
   });
 });

@@ -98,6 +98,8 @@ export function inspectionPriority(
 export interface PriorityRow {
   incidentId: string;
   siteName: string;
+  /** [T-6.04] `sites.code`: la matriz pinta la cinta DEMO por él. */
+  siteCode: string | null;
   maxPgaG: number | null;
   feltLabel: string;
   priority: PriorityView;
@@ -123,6 +125,7 @@ export function inspectionMatrix(
     .map((r) => ({
       incidentId: r.incident.incident_id,
       siteName: r.siteName,
+      siteCode: r.siteCode,
       maxPgaG: r.incident.max_pga_g,
       feltLabel: feltLabelOf(r.incident.max_pga_g),
       priority: inspectionPriority(r.incident.max_pga_g, criticalityOf(r.incident.site_id)),

@@ -13,6 +13,7 @@ import {
   useUserAction,
   useUsers,
 } from "./useUsers";
+import { siteLabelText } from "../fleet/datosDeDemostracion";
 
 /** Roles asignables desde la consola — espejo de `schemas/users.ASSIGNABLE_ROLES`.
  * `occupant` NO está: vive en el pool de ocupantes (ancla pool→rol) y se da de
@@ -241,7 +242,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                             )
                           }
                         />
-                        {site.code} · {site.name}
+                        {site.code} · {siteLabelText(site.name, site.code)}
                       </label>
                     ))}
                     <button

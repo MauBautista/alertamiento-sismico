@@ -28,6 +28,7 @@ import Modal from "../../components/Modal";
 import StateFrame from "../../components/StateFrame";
 import type { StartDrillInput } from "./useActiveDrill";
 import { sitiosNoUsables, useDrillTemplates } from "./useDrillTemplates";
+import SiteLabel from "../../components/SiteLabel";
 
 /** Ventanas ofrecidas; el CHECK de DB acota a 30 s..1 h. */
 const DURATIONS: readonly { value: number; label: string }[] = [
@@ -286,7 +287,7 @@ export default function DrillModal({ pending, error, onSubmit, onClose }: DrillM
                       checked={selected.includes(s.site_id)}
                       onChange={() => toggle(s.site_id)}
                     />
-                    <span>{s.name}</span>
+                    <SiteLabel name={s.name} code={s.code} />
                     <span className="soc-meta soc-mono">{s.code}</span>
                   </label>
                 </li>

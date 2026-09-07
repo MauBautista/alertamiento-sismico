@@ -125,7 +125,7 @@ _COLS = (
     "w.requested, w.silenced, w.mute_rule, w.mute_verified, "
     "w.starts_at + make_interval(secs => w.duration_s) AS ends_at, "
     f"{_ACTIVE} AS active, "
-    "g.serial AS gateway_serial, s.name AS site_name"
+    "g.serial AS gateway_serial, s.name AS site_name, s.code AS site_code"
 )
 
 _FROM = (

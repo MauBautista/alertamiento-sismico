@@ -39,6 +39,7 @@ import type { TriageRow } from "./model";
 import type { CctvState } from "./useCctv";
 import type { ForensicsState } from "./useForensics";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
+import SiteLabel from "../../components/SiteLabel";
 
 const VERDICT_ICON = { crit: AlertOctagon, warn: AlertTriangle, ok: CheckCircle2 } as const;
 
@@ -207,7 +208,7 @@ export default function TriageDetail({
             guion. Ahora encabeza el HECHO MEDIDO —la sacudida que registró el
             sensor— y la magnitud baja a métrica, rotulada como lo que es. */}
         <h2 className="triage-detail__title">
-          {feltLabelOf(inc.max_pga_g)} · {row.siteName}
+          {feltLabelOf(inc.max_pga_g)} · <SiteLabel name={row.siteName} code={row.siteCode} />
         </h2>
         <div className="triage-detail__id">
           {inc.event_id ?? inc.incident_id} · {utcStamp(Date.parse(inc.opened_at))} UTC

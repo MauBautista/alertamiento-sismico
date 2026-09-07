@@ -25,6 +25,8 @@ import {
   useRetireGateway,
   useUpdateGateway,
 } from "./useFleetMutations";
+import SiteLabel from "../../components/SiteLabel";
+import { siteLabelText } from "./datosDeDemostracion";
 
 /**
  * Un contador de la tira superior.
@@ -62,7 +64,7 @@ function GhostCard({ cabinet }: { cabinet: FleetCabinet }) {
   return (
     <li className="fleet-ghost">
       <div className="fleet-ghost__hd">
-        <span className="fleet-ghost__site">{gw.site_name}</span>
+        <SiteLabel className="fleet-ghost__site" name={gw.site_name} code={gw.site_code} />
         <span className="soc-mono fleet-ghost__serial">{gw.serial}</span>
       </div>
       <p className="fleet-ghost__why">
@@ -324,7 +326,7 @@ export default function FleetPage() {
       {action.kind === "edit" && (
         <GatewayForm
           gateway={action.cabinet.gateway}
-          siteName={action.cabinet.siteName}
+          siteName={siteLabelText(action.cabinet.siteName, action.cabinet.siteCode)}
           submitting={updateGateway.isPending}
           error={updateGateway.error?.message ?? null}
           onCancel={() => {
@@ -358,7 +360,7 @@ export default function FleetPage() {
       {action.kind === "retire" && (
         <RetireDialog
           kind="gateway"
-          label={action.cabinet.siteName}
+          label={siteLabelText(action.cabinet.siteName, action.cabinet.siteCode)}
           confirmValue={action.cabinet.gateway.serial}
           codeConfigured={codeConfigured}
           pending={retireGateway.isPending}
@@ -383,7 +385,7 @@ export default function FleetPage() {
         <OpenWindowDialog
           error={maintenance.openError}
           gatewayId={action.cabinet.gateway.gateway_id}
-          label={action.cabinet.siteName}
+          label={siteLabelText(action.cabinet.siteName, action.cabinet.siteCode)}
           onCancel={() => setAction({ kind: "none" })}
           onConfirm={(input) => {
             maintenance.open(input);

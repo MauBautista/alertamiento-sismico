@@ -30,6 +30,8 @@ import {
   useRetireSite,
   useUpdateSite,
 } from "./useFleetMutations";
+import SiteLabel from "../../components/SiteLabel";
+import { siteLabelText } from "./datosDeDemostracion";
 
 type Editing =
   | { kind: "none" }
@@ -171,7 +173,7 @@ function FleetAdminPanel() {
       ) : editing.kind === "acuse" ? (
         <GatewayAcuse
           gateway={editing.gateway}
-          siteName={editing.site.name}
+          siteName={siteLabelText(editing.site.name, editing.site.code)}
           onDone={() => setEditing({ kind: "hardware", site: editing.site })}
         />
       ) : editing.kind === "hardware" ? (
@@ -216,7 +218,9 @@ function FleetAdminPanel() {
                 {(sites.data ?? []).map((site) => (
                   <tr key={site.site_id} data-testid={`site-row-${site.code}`}>
                     <td className="soc-mono">{site.code}</td>
-                    <td>{site.name}</td>
+                    <td>
+                      <SiteLabel name={site.name} code={site.code} />
+                    </td>
                     <td className="soc-mono">{formatPoint({ lat: site.lat, lon: site.lon })}</td>
                     <td className="soc-mono">{site.criticality.toUpperCase()}</td>
                     <td className="fleet__rowactions">
@@ -270,7 +274,7 @@ function FleetAdminPanel() {
       {editing.kind === "retire" && (
         <RetireDialog
           kind="site"
-          label={editing.site.name}
+          label={siteLabelText(editing.site.name, editing.site.code)}
           confirmValue={editing.site.code}
           codeConfigured={codeConfigured}
           pending={retire.isPending}
