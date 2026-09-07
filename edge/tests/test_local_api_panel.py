@@ -845,12 +845,163 @@ def test_enclave_sin_alerta_viva_se_declara(tmp_path):
     assert _hidden(out, "banner-alert")
 
 
-def test_simulacro_activo_se_anuncia_como_no_real(tmp_path):
+def _drill_activo(**over) -> dict:
+    """La sección `drill` de un simulacro VIVO con la forma que emite el controlador
+    ([T-6.28]: `elapsed_s` lo deriva el Pi; `total_s` nunca existió)."""
+    return {
+        "active": True,
+        "drill_id": "DRILL-1",
+        "started_at": "2026-09-07T09:55:00+00:00",
+        "duration_s": 480.0,
+        "elapsed_s": 60.0,
+        "aborted": False,
+        "abort_reason": None,
+        "audio": {
+            "asset_id": "simulacro_es_mx",
+            "path": "/opt/takab/assets/simulacro.wav",
+            "sha256": "0" * 64,
+            "will_sound": True,
+            "reason": None,
+        },
+        **over,
+    }
+
+
+def test_simulacro_activo_se_anuncia_como_no_real_con_su_cuenta(tmp_path):
     st = _base()
-    st["drill"] = {"active": True, "drill_id": "DRILL-1", "elapsed_s": 60, "total_s": 480}
+    st["drill"] = _drill_activo()
     out = _render(tmp_path, status=st)
     assert not _hidden(out, "banner-amber")
     assert "NO ES UNA ALERTA REAL" in _txt(out, "amber-txt")
+    # [T-6.28] La cuenta sale de `elapsed_s`/`duration_s` (lo que el gabinete emite).
+    meta = _txt(out, "amber-meta")
+    assert "DRILL-1 · 60 s / 8 m · INICIADO 09:55:00 UTC" == meta
+    assert "Voceo de simulacro en curso" in _txt(out, "amber-sub")
+
+
+def test_simulacro_sin_audio_no_afirma_voceo(tmp_path):
+    """[T-6.28] Un gabinete sin asset corre el simulacro igual; el banner lo dice."""
+    st = _base()
+    st["drill"] = _drill_activo(
+        audio={
+            "asset_id": None,
+            "path": None,
+            "sha256": None,
+            "will_sound": False,
+            "reason": "el gabinete no tiene módulo de audio: el simulacro corre sin voceo",
+        }
+    )
+    out = _render(tmp_path, status=st)
+    sub = _txt(out, "amber-sub")
+    assert sub.startswith("SIN VOCEO · el gabinete no tiene módulo de audio")
+    assert "Voceo de simulacro en curso" not in sub
+
+
+# ------------------------------------------- T-6.28 · escenas que no mienten
+#
+# U-11: `simulacro` y `prueba_actuadores` forzaban `siren_sounding:true` con el relé
+# de sirena en REPOSO. En el gabinete real ese booleano se DERIVA de la energización
+# del relé (`GpioController.siren_sounding`) y el simulacro es voceo por jack con
+# cero relés: la línea de estado decía «SONANDO» y la tarjeta del relé «REPOSO» en la
+# misma pantalla. Las escenas son lo que se enseña en una demo; una demo que afirma
+# un estado que el hardware no puede producir enseña una máquina que no existe.
+
+
+def _relay_state(out: dict, canal_label: str) -> tuple[str, str]:
+    """(texto de estado, color) de la tarjeta del relé rotulado `canal_label`."""
+    for tarjeta in _node(out["tree"], "relays").get("kids", ()):
+        kids = tarjeta.get("kids", ())
+        if kids and (kids[0].get("txt") or "").strip() == canal_label:
+            return (kids[1].get("txt") or "").strip(), kids[1].get("color", "")
+    raise AssertionError(f"no hay tarjeta de relé rotulada {canal_label!r}")
+
+
+def test_demo_simulacro_linea_de_estado_y_rele_de_sirena_dicen_lo_mismo(tmp_path):
+    out = _render(tmp_path, search="?demo=simulacro", clicks=["frame"])
+    assert not _hidden(out, "banner-amber")
+    # [D-29] El relé en reposo y el jack sonando, cada uno con su palabra.
+    assert "SIRENA: EN REPOSO · VOCEO: SIMULACRO" in _txt(out, "tier-sub")
+    estado, _color = _relay_state(out, "SIRENA")
+    assert estado == "REPOSO"
+    # Y la cuenta usa lo que el controlador emite: nada de `elapsed_s`/`total_s` de demo.
+    assert " / 8 m" in _txt(out, "amber-meta") and "INICIADO" in _txt(out, "amber-meta")
+
+
+def test_demo_prueba_en_curso_ensena_banner_cian_y_reles_en_cian(tmp_path):
+    out = _render(tmp_path, search="?demo=prueba_actuadores_en_curso", clicks=["frame"])
+    assert not _hidden(out, "banner-cyan")
+    assert _hidden(out, "banner-alert")
+    estado, color = _relay_state(out, "SIRENA")
+    assert estado == "ACTIVADO" and color == CYAN
+    # Aquí la sirena SÍ suena, por el relé, y con su razón: no es una alerta.
+    assert "SIRENA: SONANDO · PRUEBA" in _txt(out, "tier-sub")
+    assert "EN CURSO" in _txt(out, "test-state")
+
+
+def test_demo_prueba_terminada_ensena_la_tarjeta_de_resultado_sin_sirena(tmp_path):
+    out = _render(tmp_path, search="?demo=prueba_actuadores", clicks=["frame"])
+    assert _hidden(out, "banner-cyan")
+    assert "SIRENA: EN REPOSO" in _txt(out, "tier-sub")
+    estado, _color = _relay_state(out, "SIRENA")
+    assert estado == "REPOSO"
+    assert "RELÉ SIN CONFIRMAR" in _txt(out, "test-state")
+
+
+# ---------------------------------------------- D-29 · el voceo por jack se declara
+#
+# Decisión de Mauricio (2026-09-07, `DECISIONES-MAURICIO.md` D-29): «SIRENA» sigue
+# siendo el RELÉ; el jack gana su propio segmento «VOCEO: SIMULACRO|PRUEBA|ACTIVO»,
+# y solo cuando el relé está en reposo — si el relé suena, SONANDO ya lo dice.
+
+
+def test_voceo_por_jack_con_rele_en_reposo_se_declara_con_su_palabra(tmp_path):
+    st = _base()
+    st["audio"]["sounding"] = True
+    st["drill"] = _drill_activo()
+    assert "VOCEO: SIMULACRO" in _txt(_render(tmp_path, status=st), "tier-sub")
+
+    st["drill"] = None
+    st["actuation_test"] = {"active": True, "results": None, "finished_at": None, "age_s": None}
+    assert "VOCEO: PRUEBA" in _txt(_render(tmp_path, status=st), "tier-sub")
+
+    st["actuation_test"] = {"active": False, "results": None, "finished_at": None, "age_s": None}
+    assert "VOCEO: ACTIVO" in _txt(_render(tmp_path, status=st), "tier-sub")
+
+
+def test_con_el_rele_sonando_no_hay_segmento_de_voceo(tmp_path):
+    """Dos rótulos del mismo altavoz serían dos verdades que pueden discrepar."""
+    st = _base()
+    st["audio"]["sounding"] = True
+    st["siren_sounding"] = True
+    st["siren_reason"] = "test"
+    sub = _txt(_render(tmp_path, status=st), "tier-sub")
+    assert "SIRENA: SONANDO · PRUEBA" in sub and "VOCEO" not in sub
+
+
+def test_sin_jack_sonando_la_linea_no_menciona_el_voceo(tmp_path):
+    st = _base()
+    st["audio"]["sounding"] = False
+    assert "VOCEO" not in _txt(_render(tmp_path, status=st), "tier-sub")
+    # Y si la sirena no se pudo medir (`null`), tampoco se afirma voceo: S/D manda.
+    st["audio"]["sounding"] = True
+    st["siren_sounding"] = None
+    sub = _txt(_render(tmp_path, status=st), "tier-sub")
+    assert "SIRENA: S/D" in sub and "VOCEO" not in sub
+
+
+def test_mode_desconocido_cae_a_auto_y_lo_declara(tmp_path):
+    """[T-6.28 · U-42] `?mode=` aceptaba cualquier cadena y dejaba `body.mode-xyz`."""
+    out = _render(tmp_path, search="?mode=xyz", clicks=["frame"])
+    cls = _node(out["tree"], "__body__")["cls"]
+    assert "mode-xyz" not in cls
+    assert "mode-consola" in cls  # AUTO con el ancho del arnés (≥ 1024)
+    assert "?mode=xyz NO EXISTE → DENSIDAD AUTO" in _txt(out, "hdr-meta")
+
+
+def test_mode_valido_no_se_declara_como_error(tmp_path):
+    out = _render(tmp_path, search="?mode=campo", clicks=["frame"])
+    assert "mode-campo" in _node(out["tree"], "__body__")["cls"]
+    assert "NO EXISTE" not in _txt(out, "hdr-meta")
 
 
 # ------------------------------------------------ T-6.29 · el aborto se PINTA
@@ -950,7 +1101,7 @@ def test_simulacro_activo_bajo_alerta_real_no_se_anuncia(tmp_path):
     """§9.1 regla 2: el simulacro VIVO solo se anuncia sin alerta real. Antes esta
     combinación pintaba «SIMULACRO ABORTADO» sin que nadie hubiera abortado."""
     st = _base()
-    st["drill"] = {"active": True, "drill_id": "DRILL-1", "elapsed_s": 60, "total_s": 480}
+    st["drill"] = _drill_activo()
     st["sasmex_active"] = True
     out = _render(tmp_path, status=st)
     assert not _hidden(out, "banner-alert")

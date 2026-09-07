@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import urllib.error
 import urllib.request
 from datetime import UTC, timedelta
@@ -816,7 +817,71 @@ _DEMO_SCENES = (
 # ahora se pintaba igual que un arranque en frío que nunca ocurre.
 # [T-6.29] `simulacro_abortado`: el aborto por alerta real, que el panel no podía
 # pintar (exigía `active` y alerta a la vez, y `abort()` pone `active=false`).
-_DEMO_SCENES_EXTRA = ("retirado", "gpio_caido", "simulacro_abortado")
+# [T-6.28] `prueba_actuadores_en_curso`: la prueba MIENTRAS sostiene (banner cian,
+# relés en cian, sirena por relé con razón `test`); `prueba_actuadores` quedó como
+# la prueba TERMINADA con su tarjeta de resultado (T-2.85.a) y el checklist la
+# describía como la otra.
+# [T-6.28] `aviso` (T-2.32) existía en el código desde julio y NUNCA estuvo en esta
+# lista: el test de abajo solo comprobaba CONTENCIÓN (que lo listado exista en el HTML),
+# así que una escena sin fila pasaba en silencio. Es la misma clase de defecto que U-12
+# (el checklist enumeraba 10 de 13). Desde aquí la lista y el HTML se comparan por
+# IGUALDAD (`test_la_lista_congelada_es_exactamente_la_del_panel`).
+_DEMO_SCENES_EXTRA = (
+    "aviso",
+    "retirado",
+    "gpio_caido",
+    "simulacro_abortado",
+    "prueba_actuadores_en_curso",
+)
+
+_INDEX_HTML = (
+    pathlib.Path(__file__).resolve().parents[1] / "takab_edge" / "local_api" / "index.html"
+)
+
+
+def _escenas_del_panel() -> set[str]:
+    """Las claves de `const SCENES = {…}`, derivadas del propio `index.html`."""
+    html = _INDEX_HTML.read_text(encoding="utf-8")
+    i = html.index("const SCENES = {")
+    bloque = html[i : html.index("\n};", i)]
+    escenas = set(re.findall(r"^  ([a-z0-9_]+):", bloque, re.M))
+    assert len(escenas) >= 10, f"el barrido de escenas se quedó corto: {sorted(escenas)}"
+    return escenas
+
+
+def test_la_lista_congelada_es_exactamente_la_del_panel():
+    """[T-6.28] Igualdad, no contención: una escena nueva sin declarar aquí pone esto en rojo."""
+    congeladas = set(_DEMO_SCENES + _DEMO_SCENES_EXTRA)
+    del_panel = _escenas_del_panel()
+    assert congeladas == del_panel, (
+        f"solo congeladas: {sorted(congeladas - del_panel)} · "
+        f"solo en el panel: {sorted(del_panel - congeladas)}"
+    )
+
+
+_CHECKLIST = (
+    pathlib.Path(__file__).resolve().parents[2]
+    / "takab-docs"
+    / "design"
+    / "edge-panel"
+    / "VERIFICACION-T-2-23.md"
+)
+
+
+def test_el_checklist_enumera_exactamente_las_escenas_del_panel():
+    """[T-6.28] El checklist de verificación describe TODAS las escenas, y ninguna más.
+
+    U-12: enumeraba 10 de 13 y describía `prueba_actuadores` como ya no era. Un
+    documento que manda mal a quien lo obedece es peor que ninguno; desde aquí,
+    la lista del documento y la del código se comparan por IGUALDAD.
+    """
+    texto = _CHECKLIST.read_text(encoding="utf-8")
+    en_doc = set(re.findall(r"`\?demo=([a-z0-9_]+)`", texto))
+    en_codigo = set(_DEMO_SCENES + _DEMO_SCENES_EXTRA)
+    assert en_doc == en_codigo, (
+        f"solo en el checklist: {sorted(en_doc - en_codigo)} · "
+        f"solo en el código: {sorted(en_codigo - en_doc)}"
+    )
 
 
 def test_index_declares_demo_scenes(supervisor):

@@ -259,6 +259,27 @@ def test_la_escena_del_aborto_tiene_la_forma_real_del_status(supervisor):
     assert isinstance(real["aborted_age_s"], float)
 
 
+def test_la_escena_del_simulacro_vivo_tiene_la_forma_real_del_status(supervisor):
+    """[T-6.28] La escena `simulacro` ES lo que deja `start_drill()`, clave a clave.
+
+    La forma vieja (`elapsed_s`/`total_s`) no la emitía nadie: el censo censaba
+    campos inexistentes y dejaba sin censar los reales. Igual que la del aborto,
+    se compara contra el controlador de verdad.
+    """
+    ok, motivo = supervisor.drill.start_drill("DRILL-CENSO-VIVO", 300)
+    assert ok, motivo
+    try:
+        real = json.loads(json.dumps(supervisor.local_api.status()))["drill"]
+    finally:
+        supervisor.drill.end_drill("DRILL-CENSO-VIVO")
+    escena = _escena_simulacro()["drill"]
+    assert _claves(real) == _claves(escena), (
+        f"solo en status(): {sorted(_claves(real) - _claves(escena))} · "
+        f"solo en la escena: {sorted(_claves(escena) - _claves(real))}"
+    )
+    assert real["active"] is True and isinstance(real["elapsed_s"], float)
+
+
 # ----------------------------------------------------- guardas del censo
 
 
@@ -434,14 +455,51 @@ def _escena_retirado() -> dict:
 
 
 def _escena_simulacro() -> dict:
+    """[T-6.28] El simulacro VIVO con la forma que emite `DrillController.status()`.
+
+    Antes traía `elapsed_s`/`total_s` de demo, que el controlador nunca emitió: el
+    censo daba por pintados campos que en el gabinete real no existían, y no
+    censaba los que sí (`started_at`, `duration_s`, `audio.*`). Atada al controlador
+    por `test_la_escena_del_simulacro_vivo_tiene_la_forma_real_del_status`.
+    """
     st = _base()
     st["drill"] = {
         "active": True,
         "drill_id": "DRILL-2026-0804-01",
+        "started_at": "2026-08-04T09:55:48+00:00",
+        "duration_s": 480.0,
         "elapsed_s": 252.0,
-        "total_s": 480.0,
+        "aborted": False,
+        "abort_reason": None,
+        "audio": {
+            "asset_id": "simulacro_es_mx",
+            "path": "/opt/takab/assets/simulacro.wav",
+            "sha256": "0" * 64,
+            "will_sound": True,
+            "reason": None,
+        },
     }
+    st["audio"]["sounding"] = True
     st["test_mode"] = {"active": True, "remaining_s": 87.0}
+    return st
+
+
+def _escena_simulacro_sin_voceo() -> dict:
+    """[T-6.28] El simulacro en un gabinete SIN audio: `will_sound:false` con su razón.
+
+    Es la rama que hace observable `drill.audio.reason`: con asset el motivo es
+    `null` por construcción y pintarlo sería inventarlo; sin asset el banner tiene
+    que decir por qué no suena nada (el simulacro vive igual: banner + registro).
+    """
+    st = _escena_simulacro()
+    st["audio"]["sounding"] = False
+    st["drill"]["audio"] = {
+        "asset_id": None,
+        "path": None,
+        "sha256": None,
+        "will_sound": False,
+        "reason": "el gabinete no tiene módulo de audio: el simulacro corre sin voceo",
+    }
     return st
 
 
@@ -529,6 +587,7 @@ ESCENAS: dict[str, Any] = {
     "sin_nube": _escena_sin_nube,
     "retirado": _escena_retirado,
     "simulacro": _escena_simulacro,
+    "simulacro_sin_voceo": _escena_simulacro_sin_voceo,
     "simulacro_abortado": _escena_simulacro_abortado,
     "gpio_caido": _escena_gpio_caido,
     "reles_parciales": _escena_reles_parciales,
@@ -588,23 +647,6 @@ SIN_CAMINO_DE_RENDER: dict[str, str] = {
         "tono de prueba—, no el mapa completo slot→id de catálogo, que es "
         "diagnóstico de instalación y no cambia nada de lo que hace el operador."
     ),
-    "audio.sounding": (
-        "Redundante con `siren_sounding`, que es el hecho ELÉCTRICO y es el que "
-        "se pinta (con su `siren_reason`). Dos rótulos del mismo altavoz serían "
-        "dos verdades que pueden discrepar."
-    ),
-    "drill.started_at": (
-        "[T-6.29] En un simulacro ABORTADO el panel rotula el aborto (hora, edad, "
-        "motivo), no el arranque: lo que el operador necesita es cuándo y por qué se "
-        "cortó. La hora de inicio la lleva la bitácora de eventos. La escena del "
-        "simulacro VIVO sigue con la forma vieja (`elapsed_s`/`total_s`) y es T-6.28 "
-        "quien la corrige; al hacerlo, este campo tendrá camino en la cuenta y esta "
-        "línea sobra."
-    ),
-    "drill.duration_s": (
-        "[T-6.29] La duración PLANEADA ya no describe nada de un simulacro cortado. "
-        "Misma nota que `drill.started_at`: la cuenta del simulacro vivo es de T-6.28."
-    ),
     "drill.ended_reason": (
         "[T-6.29] Es `abortado: <abort_reason>`: el mismo motivo que sí se pinta, con "
         "un prefijo. Dos rótulos del mismo hecho serían dos verdades que pueden "
@@ -612,15 +654,13 @@ SIN_CAMINO_DE_RENDER: dict[str, str] = {
         "y el estado se sirve tal cual lo deja el controlador."
     ),
     "drill.audio.asset_id": (
-        "[T-6.29] Evidencia de QUÉ iba a sonar (T-5.17), resuelta para el acuse a la "
-        "nube y el reporte de cumplimiento. Al abortar, el voceo se cortó y el banner "
-        "lo dice; el asset ya no es información para quien está de pie. Cómo reflejar "
-        "el voceo en la línea de estado es la decisión de producto pendiente de T-6.28."
+        "[T-6.29] Evidencia de QUÉ va a sonar (T-5.17), resuelta para el acuse a la "
+        "nube y el reporte de cumplimiento: identificador, ruta y hash del asset. Lo "
+        "que el operador de pie necesita saber es SI sonará y, si no, por qué — y eso "
+        "sí se pinta (`will_sound`/`reason`, en la sub del banner ámbar desde T-6.28)."
     ),
     "drill.audio.path": ("[T-6.29] Ver `drill.audio.asset_id`."),
     "drill.audio.sha256": ("[T-6.29] Ver `drill.audio.asset_id`."),
-    "drill.audio.will_sound": ("[T-6.29] Ver `drill.audio.asset_id`."),
-    "drill.audio.reason": ("[T-6.29] Ver `drill.audio.asset_id`."),
     "captured_at": (
         "Campo de compatibilidad con el panel anterior: es la hora del último "
         "diagnóstico de salud, y esa sección se rotula por EDAD (`health.age_s`). "

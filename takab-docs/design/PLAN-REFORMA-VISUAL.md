@@ -942,7 +942,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **Verificación:** `pytest edge/tests/` completo en verde — **1461 pasados**, incluidos los 5
     del gate #3 contra el Shake real; `ruff check` y `ruff format --check` limpios.
 
-### [ ] T-6.28 · **Las escenas de demostración no afirman lo que el gabinete no puede hacer; el checklist dice lo que hay** — `SOFTWARE`
+### [x] T-6.28 · **Las escenas de demostración no afirman lo que el gabinete no puede hacer; el checklist dice lo que hay** — `SOFTWARE`
 
 > `simulacro` y `prueba_actuadores` fuerzan `siren_sounding:true` con el relé en reposo; la cuenta
 > del simulacro usa campos que el gabinete nunca emite; `?mode=` acepta cualquier cadena; el
@@ -956,10 +956,47 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — la lista congelada de escenas, por adición.
 - **Objetivo:** `simulacro` sin `siren_sounding`; `prueba_actuadores` se conserva como prueba terminada y gana una hermana `_en_curso` con `siren_reason:'test'` para el banner cian; la escena demo del simulacro deja de usar `elapsed_s`/`total_s`; `?mode=` valida contra las tres densidades; el checklist se extiende a las 13 escenas y describe la tarjeta de resultado. **Decisión de producto pendiente** (registrar en `DECISIONES-MAURICIO.md`): si un voceo por jack debe reflejarse en la línea de estado y con qué palabra, porque hoy «SONANDO» significa relé.
 - **Criterios de aceptación:**
-  - [ ] En `?demo=simulacro` la línea de estado y la tarjeta del relé de sirena dicen lo mismo.
-  - [ ] Existe una escena que enseña el banner cian con relés en cian y otra que enseña la tarjeta de resultado; el checklist describe las dos.
-  - [ ] `?mode=lo-que-sea` cae a la densidad automática y lo declara.
-  - [ ] El checklist enumera las 13 escenas con su criterio.
+  - [x] En `?demo=simulacro` la línea de estado y la tarjeta del relé de sirena dicen lo mismo.
+  - [x] Existe una escena que enseña el banner cian con relés en cian y otra que enseña la tarjeta de resultado; el checklist describe las dos.
+  - [x] `?mode=lo-que-sea` cae a la densidad automática y lo declara.
+  - [x] El checklist enumera las 13 escenas con su criterio (hoy son 15: entraron `simulacro_abortado` de T-6.29 y `prueba_actuadores_en_curso` de esta ficha).
+- **Cómo se cerró (2026-09-07, SESIÓN P2):**
+  - **Las escenas dejan de afirmar lo que el hardware no produce.** `simulacro` y
+    `prueba_actuadores` ya no fuerzan `siren_sounding:true` sobre un relé en reposo: el booleano
+    se deriva de la energización del relé y el simulacro es voceo por jack con cero relés. La
+    prueba de actuadores se parte en dos escenas honestas: `prueba_actuadores_en_curso` (banner
+    cian, relés `ACTIVADO` en cian, `SIRENA: SONANDO · PRUEBA` porque ahí sí suena por el relé,
+    tarjeta `EN CURSO`) y `prueba_actuadores` (terminada: banner oculto, relés en reposo, tarjeta
+    de resultado con `1 RELÉ SIN CONFIRMAR`). La lista congelada de escenas gana las dos nuevas.
+  - **La cuenta del simulacro usa lo que el controlador emite.** `DrillController.status()` deriva
+    `elapsed_s` de `started_at` con el reloj del Pi (misma familia que `aborted_age_s`), y el
+    banner pinta `DRILL-… · 4 m / 8 m · INICIADO hh:mm:ss UTC`; `elapsed_s`/`total_s` de demo, que
+    el gabinete real nunca mandó, desaparecen. La sub del banner afirma el voceo solo si
+    `audio.will_sound` lo dice; sin asset dice `SIN VOCEO · <motivo>`.
+  - **`?mode=` valida contra las tres densidades.** Otra cadena cae a AUTO y la cabecera lo
+    declara: `?mode=xyz NO EXISTE → DENSIDAD AUTO`. Antes dejaba `body.mode-xyz`, ningún CSS
+    aplicaba y nada lo decía.
+  - **D-29, decidida por Mauricio en esta sesión:** el voceo por jack se declara APARTE en la
+    línea de estado, `SIRENA: EN REPOSO · VOCEO: SIMULACRO|PRUEBA|ACTIVO`, solo cuando el jack
+    suena y el relé está en reposo; `SIRENA` sigue siendo el relé y si suena, `SONANDO` ya lo dice.
+    Registrada con su razón en `DECISIONES-MAURICIO.md` (cabecera, índice y sección) y anotada
+    en la spec §9.2. Medido en MURO: la línea mide 845 px y no desborda.
+  - **El checklist se ata al código.** `VERIFICACION-T-2-23.md §1` enumera las 15 escenas con su
+    criterio y describe `prueba_actuadores` como la prueba terminada; un test nuevo compara por
+    IGUALDAD los `?demo=` del documento con la lista congelada. Y **destapó un tercer defecto de
+    la misma clase**: `aviso` (T-2.32) existía en el código desde julio y NUNCA estuvo en la lista
+    congelada, porque aquel test solo comprobaba contención. Desde hoy la lista congelada y las
+    claves de `SCENES` en el HTML también se comparan por igualdad.
+  - **Censo de render:** la escena `simulacro` pasa a la forma real del estado (atada al
+    controlador por un test de contrato start → status, como la del aborto), gana la hermana
+    `simulacro_sin_voceo` que hace observable `audio.reason`, y se borran cuatro excepciones
+    (`drill.started_at`, `drill.duration_s`, `drill.audio.will_sound`, `drill.audio.reason`) y una
+    quinta (`audio.sounding`) que ahora tienen camino de render.
+  - **Verificación.** Panel + censo + servidor local: 267 tests en verde; `pytest edge/tests/`
+    completo en verde en modo simulado antes del último cambio de copy, y las tres suites que
+    ejercitan el HTML repetidas después; docs (consistencia, mediciones, matriz regenerada):
+    106 en verde; ruff limpio. Chromium sobre las tres escenas y `?mode=xyz`: textos exactos,
+    relés en cian en la prueba en curso, cero errores de página.
 
 ### [x] T-6.29 · **El panel pinta el aborto cuando ocurre** — `SOFTWARE`
 
