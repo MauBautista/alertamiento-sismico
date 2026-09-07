@@ -56,6 +56,14 @@ export interface OpcionesCenso {
   root: string;
   /** Transportes propios del proyecto (además de los hooks de lectura de TanStack). */
   transportes: Transporte[];
+  /**
+   * [T-6.01] Sólo cuentan los transportes PROPIOS: los hooks de lectura de
+   * TanStack no son transporte. Sirve para censar UNA familia de dato —la
+   * escena: simulacro, mantenimiento, demo, incidentes— y no todo el dato de
+   * servidor (`src/sceneCensus.test.ts`). Sin esto, cada `useQuery` sería
+   * productor y el censo de escena sería el censo de dato entero.
+   */
+  soloPropios?: boolean;
 }
 
 /**
@@ -350,7 +358,9 @@ export function censar(fuentes: FuenteEntrada[], opts: OpcionesCenso): Censo {
   const esTransporte = (m: Modulo, local: string): boolean => {
     const imp = m.imports.get(local);
     if (!imp) return false;
-    if (imp.target === PAQUETE_QUERY) return HOOKS_DE_LECTURA.includes(imp.name);
+    if (imp.target === PAQUETE_QUERY) {
+      return opts.soloPropios !== true && HOOKS_DE_LECTURA.includes(imp.name);
+    }
     const o = origen(mods, imp.target, imp.name);
     return opts.transportes.some((t) => t.file === o.target && t.export === o.name);
   };

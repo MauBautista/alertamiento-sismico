@@ -1,35 +1,44 @@
-// Banner del SIMULACRO (T-1.60 · reescrito en T-2.48): rotulado NO-real, jamás
-// confundible con la alerta.
+// Banner del SIMULACRO (T-1.60 · reescrito en T-2.48 · al shell en T-6.01):
+// rotulado NO-real, jamás confundible con la alerta.
 //
-// PRECEDENCIA: con un incidente vivo el frame real domina — este banner se
-// degrada a un badge discreto (lo real siempre gana, también visualmente).
+// PRECEDENCIA: la decide la tabla de escena (`scene.ts`), no este componente.
+// Con la ALERTA REAL mandando —una fuente que AUTORIZA: SASMEX o cuórum— el
+// banner se degrada a un badge discreto (lo real siempre gana, también
+// visualmente). Con un AVISO instrumental o una activación manual NO: una
+// estación sola no manda sobre nada (T-2.32), y hasta T-6.01 este banner decía
+// «LA ALERTA REAL DOMINA» con cualquier incidente crítico (U-28).
 //
-// [T-2.48] Dos correcciones de fondo:
+// [T-2.48] Dos correcciones de fondo que siguen en pie:
 //
 // 1. Los 4 estados obligatorios sobre `/drills/active` (regla de oro 7). Antes
 //    ignoraba `loading` y, si la lectura fallaba con un simulacro VIVO, el
 //    banner desaparecía EN SILENCIO. Un simulacro en curso que deja de
 //    anunciarse es indistinguible de una alerta real para quien está dentro del
-//    edificio: ahora, con último dato conocido se conserva y se rotula RETENIDO;
-//    sin dato alguno se muestra el fallo con REINTENTAR. Nunca se calla.
+//    edificio: con último dato conocido se conserva y se rotula RETENIDO; sin
+//    dato alguno se muestra el fallo con REINTENTAR. Nunca se calla.
 // 2. Simulacro ARMADO: a T−15 min aparece el aviso persistente y a T−0 queda
 //    precargado `EJECUTAR AHORA`. El disparo lo hace SIEMPRE una persona con la
 //    sesión viva; aquí no hay temporizador que active nada (regla de oro 8).
+//
+// [T-6.01] Este componente ya no posee el dato: lo recibe de `SceneStrip`, que
+// es el único que llama a `useActiveDrill` para PINTAR escena (lo vigila
+// `src/sceneCensus.test.ts`). La tira de acciones —INICIAR SIMULACRO,
+// HISTORIAL— se quedó en `/console` (`features/console/DrillControls.tsx`): en
+// escena NORMAL no hay franja, sólo el botón donde ya estaba.
 
 import { AlertTriangle, CalendarClock } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { utcClock } from "../../lib/time";
 import { useNow } from "../../lib/useNow";
-import { armedPhase, drillAckReport, nextArmedDrill } from "./drill";
-import DrillHistory from "./DrillHistory";
-import DrillModal from "./DrillModal";
-import { useActiveDrill } from "./useActiveDrill";
+import { armedPhase, drillAckReport, nextArmedDrill } from "../console/drill";
+import type { ActiveDrillData } from "../console/useActiveDrill";
+import { DEGRADES_UNDER_ALERT, type Scene } from "./scene";
 
-export default function DrillBanner({ hasLiveIncident }: { hasLiveIncident: boolean }) {
-  const canStart = useSessionStore((s) => s.me?.allowed_actions.drill_start === true);
+export default function DrillBanner({ data, scene }: { data: ActiveDrillData; scene: Scene }) {
+  const canAct = useSessionStore((s) => s.me?.allowed_actions.drill_start === true);
   const now = useNow(1000);
   const {
     drill,
@@ -43,98 +52,65 @@ export default function DrillBanner({ hasLiveIncident }: { hasLiveIncident: bool
     cancel,
     pending,
     error,
-  } = useActiveDrill();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  } = data;
 
-  const armed = useMemo(() => nextArmedDrill(scheduled ?? [], now), [scheduled, now]);
+  const armed = useMemo(() => nextArmedDrill(scheduled, now), [scheduled, now]);
   // "Conocido" = hay algo que el servidor ya nos dijo alguna vez. Con eso el
   // fallo degrada a RETENIDO; sin eso, el fallo ES el estado.
   const known = drill !== null || armed !== null;
   const frameError = readError !== null && !known ? readError : null;
   const staleSince = readError !== null && known ? updatedAt : null;
+  // La excepción escrita, leída de la tabla: el simulacro es lo ÚNICO que se
+  // degrada bajo la alerta real.
+  const dominated = scene === "alert" && DEGRADES_UNDER_ALERT.drill;
 
   return (
-    <div className="soc-drill-bar">
-      <StateFrame
-        label="SIMULACRO"
-        className="soc-drill__frame"
-        loading={loading}
-        error={frameError}
-        onRetry={refetch}
-        empty={!known}
-        emptyText="SIN SIMULACRO EN CURSO"
-        staleSince={staleSince}
-      >
-        {drill !== null ? (
-          hasLiveIncident ? (
-            <span className="soc-pill soc-pill--warn" data-testid="drill-badge">
-              SIMULACRO EN CURSO (LA ALERTA REAL DOMINA)
-            </span>
-          ) : (
-            <RunningBanner
-              endsAt={Date.parse(drill.started_at) + drill.duration_s * 1000}
-              siteCount={drill.sites.length}
-              ackLine={ackLine(drill)}
-              canStop={canStart}
-              pending={pending}
-              onStop={() => stop(drill.drill_id)}
-            />
-          )
-        ) : armed !== null ? (
-          <ArmedBanner
-            scheduledAt={Date.parse(armed.scheduled_at as string)}
-            siteCount={armed.sites.length}
-            note={armed.note}
-            due={armedPhase(armed, now) === "due"}
-            canAct={canStart}
-            pending={pending}
-            onRun={() => start({ fromScheduled: armed.drill_id })}
-            onCancel={() => cancel(armed.drill_id)}
-          />
-        ) : null}
-      </StateFrame>
-
-      {/* `drill-idle` lo mide el e2e de T-1.62 (la tira no puede pasar de 60 px). */}
-      <div className="soc-drill soc-drill--idle soc-drill__actions" data-testid="drill-idle">
-        {error !== null && (
-          <span className="soc-user__error" role="alert">
-            {error.toUpperCase()}
+    <StateFrame
+      label="SIMULACRO"
+      className="soc-drill__frame"
+      loading={loading}
+      error={frameError}
+      onRetry={refetch}
+      empty={!known}
+      emptyText="SIN SIMULACRO EN CURSO"
+      silentEmpty
+      staleSince={staleSince}
+    >
+      {drill !== null ? (
+        dominated ? (
+          <span className="soc-pill soc-pill--warn" data-testid="drill-badge">
+            SIMULACRO EN CURSO (LA ALERTA REAL DOMINA)
           </span>
-        )}
-        {canStart && drill === null && (
-          <button
-            type="button"
-            className="soc-btn soc-btn--ghost"
-            disabled={pending}
-            onClick={() => setModalOpen(true)}
-            title="Banner NO-real + voceo en los gabinetes elegidos; cero relés"
-          >
-            INICIAR SIMULACRO
-          </button>
-        )}
-        <button
-          type="button"
-          className="soc-btn soc-btn--ghost"
-          onClick={() => setHistoryOpen(true)}
-        >
-          HISTORIAL
-        </button>
-      </div>
-
-      {modalOpen && (
-        <DrillModal
+        ) : (
+          <RunningBanner
+            endsAt={Date.parse(drill.started_at) + drill.duration_s * 1000}
+            siteCount={drill.sites.length}
+            ackLine={ackLine(drill)}
+            canStop={canAct}
+            pending={pending}
+            onStop={() => stop(drill.drill_id)}
+          />
+        )
+      ) : armed !== null ? (
+        <ArmedBanner
+          scheduledAt={Date.parse(armed.scheduled_at as string)}
+          siteCount={armed.sites.length}
+          note={armed.note}
+          due={armedPhase(armed, now) === "due"}
+          canAct={canAct}
           pending={pending}
-          error={error}
-          onSubmit={(input) => {
-            start(input);
-            setModalOpen(false);
-          }}
-          onClose={() => setModalOpen(false)}
+          onRun={() => start({ fromScheduled: armed.drill_id })}
+          onCancel={() => cancel(armed.drill_id)}
         />
+      ) : null}
+      {/* El fallo de TERMINAR / EJECUTAR AHORA / CANCELAR, junto al botón que lo
+          produjo: quien pulsa desde /fleet no tiene delante la tira de /console. */}
+      {error !== null && (
+        <span className="soc-user__error" role="alert">
+          {error.toUpperCase()}
+        </span>
       )}
-      {historyOpen && <DrillHistory onClose={() => setHistoryOpen(false)} />}
-    </div>
+    </StateFrame>
   );
 }
 

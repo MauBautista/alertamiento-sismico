@@ -445,6 +445,19 @@ body {
   padding: 9px 14px;
   display: flex; align-items: center; gap: 8px;
 }
+/* [T-6.01 · U-28] Un AVISO no viste la carcasa de la alerta. `.soc-alert` era
+   una sola clase: «AVISO SÍSMICO · SOLO AVISO, SIN ACTUACIÓN» salía en rojo
+   crítico y con la sombra de la alerta. El titular ya era honesto desde
+   T-5.03; ahora el color también. `data-authorizes` lo escribe `AlertBanner`
+   desde la tabla de escena (SASMEX o cuórum autorizan; nada más). */
+.soc-alert[data-authorizes="false"] {
+  border-color: var(--tk-status-warning);
+  box-shadow: var(--tk-shadow-warning);
+}
+.soc-alert[data-authorizes="false"] .soc-alert__strip {
+  background: var(--tk-status-warning);
+  color: var(--tk-navy-900);
+}
 .soc-alert__site {
   padding: 14px 16px 4px;
   font-family: var(--tk-font-ui);
@@ -1403,6 +1416,92 @@ body {
   border: 1px solid var(--tk-border-cyan);
   color: var(--tk-cyan);
   flex-wrap: wrap;
+}
+
+/* =====================================================================
+   [T-6.01] LA ESCENA — la franja del shell, encima de las seis rutas
+   =====================================================================
+   `AppShell` monta `<SceneStrip>` como PRIMER hijo del <main> del shell; la fila
+   que ocupa en la reja la decide `privacy.css` (bloque [D3]). Aquí sólo su
+   interior: cuatro marcos (alerta, simulacro, mantenimiento, demo), cada uno
+   con sus cuatro estados.
+
+   En escena NORMAL los cuatro están `empty` y el marco se pinta con `hidden`
+   (`silentEmpty` en StateFrame): la franja mide CERO. La ausencia de escena es
+   la ausencia de franja (U-45), no dos tiras diciendo que no pasa nada.
+
+   SIN `animation` NI `transition`, a propósito: la escena se declara en el
+   primer frame. `layoutInvariants.test.ts` lo vigila sobre esta hoja. */
+.soc-scene {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 12px;
+  min-width: 0;
+}
+/* Cada banner es una FILA entera y trae su propia separación: sin hijos
+   visibles no queda ni un margen. */
+.soc-scene > .soc-stateframe {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin-bottom: 8px;
+}
+/* Mientras una fuente carga, su marco es un CHIP en línea y no un panel: las
+   cuatro cargando a la vez son una fila de chips, no cuatro paneles apilados. */
+.soc-scene > .soc-stateframe--status[data-state="loading"] {
+  flex: 0 0 auto;
+}
+/* La ausencia fresca no ocupa un píxel. `.soc-stateframe--status` (app.css)
+   declara `display: grid`, y una regla de autor le gana al `[hidden]` de la
+   hoja del navegador: hay que decirlo aquí. */
+.soc-stateframe[hidden] {
+  display: none;
+}
+
+/* La ALERTA en una línea. `alert` = fuente que AUTORIZA (SASMEX, cuórum): rojo
+   crítico, el mismo de la tira de `.soc-alert__strip`. `notice` = aviso
+   instrumental, activación manual u origen no reconocido: ámbar de aviso.
+   Vestir un aviso de alerta es la mitad de U-28. */
+.soc-scene__alert {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--tk-status-critical);
+  background: var(--tk-status-critical);
+  color: var(--tk-fg-1);
+  font-family: var(--tk-font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.soc-scene__alert[data-kind="notice"] {
+  border-color: var(--tk-status-warning);
+  background: var(--tk-status-warning-15);
+  color: var(--tk-status-warning);
+}
+.soc-scene__alert-title {
+  letter-spacing: 0.12em;
+}
+.soc-scene__alert-site {
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.soc-scene__alert-meta {
+  font-family: var(--tk-font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+.soc-scene__alert-link {
+  margin-left: auto;
+  color: inherit;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-decoration: underline;
 }
 
 /* --- Alta de simulacro ---------------------------------------------------- */

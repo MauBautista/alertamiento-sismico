@@ -45,6 +45,37 @@ describe("StateFrame", () => {
     expect(screen.getByText("SIN INCIDENTES ABIERTOS")).toBeInTheDocument();
   });
 
+  it("[T-6.01] `silentEmpty`: la ausencia FRESCA se materializa pero no se pinta", () => {
+    const { container } = render(
+      frame({ empty: true, emptyText: "SIN SIMULACRO EN CURSO", silentEmpty: true }),
+    );
+    const marco = container.querySelector('[data-state="empty"]');
+    expect(
+      marco,
+      "el estado tiene que seguir existiendo para la tabla y los censos",
+    ).not.toBeNull();
+    expect(marco).toHaveAttribute("hidden");
+    expect(screen.queryByText("SIN SIMULACRO EN CURSO")).toBeNull();
+  });
+
+  it("[T-6.01] `silentEmpty` NO apaga la ausencia VIEJA: `stale` + `empty` se pinta fechada", () => {
+    // T-2.79.d decidió que entre `empty` y `stale` gana `stale` y se FECHA el
+    // «no hay». Silenciar la ausencia fresca no puede tocar esa decisión: una
+    // ausencia que no se puede confirmar es una afirmación sobre nuestro
+    // conocimiento, y ésa se dice siempre.
+    render(
+      frame({
+        empty: true,
+        emptyText: "SIN SIMULACRO EN CURSO",
+        silentEmpty: true,
+        staleSince: Date.UTC(2026, 6, 8, 10, 41, 30),
+      }),
+    );
+    expect(
+      screen.getByText(/SIN SIMULACRO EN CURSO — así estaba a las 10:41:30 UTC/),
+    ).toBeVisible();
+  });
+
   it("stale MUESTRA el contenido pero bajo el banner DATOS RETENIDOS con HH:MM:SS", () => {
     render(frame({ staleSince: Date.UTC(2026, 6, 8, 10, 41, 30) }));
     expect(screen.getByText("contenido-vivo")).toBeInTheDocument();

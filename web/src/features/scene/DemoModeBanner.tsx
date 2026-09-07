@@ -1,9 +1,10 @@
-// [T-5.02 · D-27] Banner del MODO DEMOSTRACIÓN.
+// [T-5.02 · D-27] Banner del MODO DEMOSTRACIÓN (al shell en T-6.01).
 //
 // Mientras está puesto, la nube **no avisa a nadie y no manda un solo comando de
 // actuador**. Quien esté delante de esta pantalla tiene que saberlo sin
 // preguntar — y sobre todo tiene que saberlo quien NO lo encendió, porque es
-// quien se va a preguntar por qué no llegó un aviso.
+// quien se va a preguntar por qué no llegó un aviso. Desde T-6.01 «esta
+// pantalla» son las seis: la franja vive en el shell.
 //
 // EL COLOR NO ES UN ADORNO. Va en cian y con borde discontinuo, y **no en
 // ámbar**: en esta consola el ámbar ya significa «simulacro en curso» y «dato
@@ -15,14 +16,18 @@
 // caso que importa: si la lectura falla con el modo PUESTO, el banner **no
 // desaparece en silencio** — se conserva el último dato conocido y se rotula.
 // Un modo de supresión que deja de anunciarse es indistinguible de un sistema
-// que sí está avisando.
+// que sí está avisando. Y NO se degrada bajo alerta real (la tabla lo escribe:
+// `DEGRADES_UNDER_ALERT.demo === false`): es durante la alerta cuando alguien
+// se pregunta por qué no le llegó el aviso.
+//
+// [T-6.01] No posee el dato: lo recibe de `SceneStrip`. Ver `sceneCensus.test.ts`.
 
 import { EyeOff } from "lucide-react";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
-import { useDemoMode } from "./useDemoMode";
+import type { DemoModeData } from "../console/useDemoMode";
 
 /** `7320` → `2 h 02 m`. Sin inventar precisión que no hace falta. */
 export function restanteLegible(segundos: number): string {
@@ -32,10 +37,10 @@ export function restanteLegible(segundos: number): string {
   return h > 0 ? `${h} h ${String(m).padStart(2, "0")} m` : `${m} m`;
 }
 
-export default function DemoModeBanner() {
+export default function DemoModeBanner({ data }: { data: DemoModeData }) {
   const puedeApagar = useSessionStore((s) => s.me?.allowed_actions.demo_mode_off === true);
   const now = useNow(1000);
-  const { demo, loading, readError, updatedAt, refetch, apagar, pending } = useDemoMode();
+  const { demo, loading, readError, updatedAt, refetch, apagar, pending } = data;
 
   const activo = demo?.active === true;
   const restante =
@@ -44,12 +49,15 @@ export default function DemoModeBanner() {
   return (
     <StateFrame
       label="MODO DEMOSTRACIÓN"
-      className="soc-demo-mode__frame"
+      className="soc-drill__frame"
       loading={loading}
       error={readError && demo === null ? "no se pudo leer el modo demostración" : null}
       onRetry={refetch}
       empty={!activo}
-      emptyText=""
+      // Sólo se lee cuando la ausencia es VIEJA: «apagado — así estaba a las
+      // hh:mm UTC; desde entonces no se ha podido confirmar». Fresca, no se pinta.
+      emptyText="MODO DEMOSTRACIÓN APAGADO"
+      silentEmpty
       staleSince={readError && demo !== null ? updatedAt : null}
     >
       {activo ? (

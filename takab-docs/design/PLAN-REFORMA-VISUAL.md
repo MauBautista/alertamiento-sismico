@@ -281,7 +281,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 
 ## 7 · Fichas · Consola SOC
 
-### [ ] T-6.01 · **La escena vive en el shell: alerta, simulacro, mantenimiento y demo en las seis pantallas** — `SOFTWARE`
+### [x] T-6.01 · **La escena vive en el shell: alerta, simulacro, mantenimiento y demo en las seis pantallas** — `SOFTWARE`
 
 > Los cuatro banners son hijos de `ConsolePage` con dos booleanos a mano; el shell solo monta el
 > aviso de privacidad. En `/fleet`, `/triage`, `/tenants`, `/audit` y `/building` no hay rastro de
@@ -295,10 +295,57 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `layoutInvariants` sobre las filas del shell; `DrillBanner.test.tsx` sobre la degradación por `hasLiveIncident`, que pasa a decidirse por la tabla.
 - **Objetivo:** una tabla `SCENE_PRECEDENCE` (alerta real > simulacro > mantenimiento > demo > normal) en el mismo espíritu que `STATE_PRECEDENCE`, una franja de una línea en el shell que la pinta en las seis rutas, y un censo que impida a cualquier pantalla decidir la escena por su cuenta. La excepción escrita se conserva: el mantenimiento **no** se degrada bajo alerta.
 - **Criterios de aceptación:**
-  - [ ] Con alerta real, simulacro, mantenimiento o modo demostración vivos, las seis rutas lo declaran en el primer frame y sin animación.
-  - [ ] El badge «LA ALERTA REAL DOMINA» solo aparece con un incidente que **autoriza** (SASMEX o cuórum), nunca con un aviso instrumental.
-  - [ ] En escena NORMAL no hay franjas que digan que no pasa nada: el estado normal es la ausencia de franja, con el botón de simulacro donde ya está.
-  - [ ] El censo de escena falla si un componente lee `drill`, `maintenance` o `demo_mode` para pintar escena fuera de la tabla.
+  - [x] Con alerta real, simulacro, mantenimiento o modo demostración vivos, las seis rutas lo declaran en el primer frame y sin animación.
+  - [x] El badge «LA ALERTA REAL DOMINA» solo aparece con un incidente que **autoriza** (SASMEX o cuórum), nunca con un aviso instrumental.
+  - [x] En escena NORMAL no hay franjas que digan que no pasa nada: el estado normal es la ausencia de franja, con el botón de simulacro donde ya está.
+  - [x] El censo de escena falla si un componente lee `drill`, `maintenance` o `demo_mode` para pintar escena fuera de la tabla.
+- **Cómo se cerró (2026-09-07, SESIÓN C1, en una sola sesión):**
+  - **La tabla:** `web/src/features/scene/scene.ts` — `SCENE_PRECEDENCE = alert > notice > drill >
+    maintenance > demo` (NORMAL no está en la tabla: es la ausencia), `resolveScene` como único punto
+    de decisión, `DEGRADES_UNDER_ALERT` con la excepción ESCRITA (solo el simulacro se degrada; el
+    mantenimiento, la demo y el aviso, no), `authorizes` (SASMEX o cuórum, nada más) y `sceneAlert`
+    (el crítico más relevante de la cola). `notice` es nuevo y necesario: un aviso instrumental o una
+    activación manual se declaran, pero no mandan sobre nada.
+  - **La franja:** `features/scene/SceneStrip.tsx`, montada por `AppShell` como PRIMER hijo del
+    `<main>` (una alerta se lee antes que un aviso legal). Es el único componente que lee las cuatro
+    fuentes; los tres banners se mudaron a `features/scene/` y reciben el dato por prop (ya no llaman
+    hooks). La alerta viaja como una línea (`AlertLine`: titular honesto de `alertHeadline`, sitio,
+    EVENT_ID, «IR AL MONITOREO»); `/console` conserva su tarjeta detallada. Cada fuente trae su marco
+    con los cuatro estados; un fallo de lectura del simulacro no calla al mantenimiento.
+  - **La ausencia mide cero:** `StateFrame` ganó `silentEmpty` — la ausencia FRESCA se materializa
+    (`data-state="empty"`, los censos y `expectFourStates` la ven) pero va `hidden`; la ausencia VIEJA
+    (`stale`+`empty`) se pinta siempre y fechada (T-2.79.d intacta). Con eso las dos franjas
+    permanentes de U-45 desaparecen sin tocar la tabla de estados.
+  - **El shell ganó su fila:** `privacy.css` pasa a `auto auto minmax(0, 1fr)`; `.soc-scene` clavada
+    a la 1, el aviso de privacidad por auto-colocación en la 2, la página clavada a la 3.
+    `layoutInvariants` y `AppShell.layout.test` se actualizaron con la razón; ahora fijan además que
+    ninguna regla `.soc-scene*` anima y que `.soc-stateframe[hidden]` gana al `display: grid`.
+  - **Lo que se quedó en `/console`:** `features/console/DrillControls.tsx` (INICIAR SIMULACRO,
+    HISTORIAL, el modal; `drill-idle` < 60 px como mide el e2e de T-1.62). Y `AlertBanner` gana
+    `data-authorizes` desde la tabla: un aviso ya no viste la carcasa roja ni la sombra de la alerta
+    (`.soc-alert[data-authorizes="false"]` en ámbar) — la otra mitad de U-28.
+  - **El censo:** `web/src/sceneCensus.test.ts`. Quién LEE (cierre de productores del censo de dato
+    con las cuatro fuentes como únicos transportes, `soloPropios`) se compara por igualdad contra
+    cuatro lectores con razón escrita (la franja, la cola del wall, los botones, la administración de
+    ventanas); quién PINTA se deriva de los imports de valor que cruzan la frontera de
+    `features/scene/` (solo `SceneStrip` al shell, `sceneAlert` a la consola y `authorizes` a la
+    tarjeta). La franja cuelga del shell y no de la consola (`arbolDeLaPagina`), y el literal del
+    badge existe en un solo fichero. `serverDataCensus` cuadró de nuevo (`DrillControls` y
+    `SceneStrip` con su razón; `critical` dejó de pintarse fuera del marco del wall).
+  - **Roles:** `/maintenance-windows` lo leen cuatro roles; a los demás la API contesta 403. En vez
+    de duplicar la regla en el cliente, `useMaintenanceWindows` la modela como `forbidden` (sin
+    reintento ni sondeo) y la franja no pinta un REINTENTAR imposible en seis pantallas.
+  - **En el wall no hay eco de la alerta** (`WALL_ROUTE`): la tarjeta ya está anclada al escenario y
+    el mapa manda. Medido en `make soc-local` a 1280×800 con un aviso abierto y el aviso de privacidad
+    pendiente: la línea (42 px) dejaba el escenario en 265 px y los sobrepuestos del mapa se pisaban;
+    sin ella, 307 px — lo mismo que `main`. `data-scene` sigue diciendo la escena en el wall.
+  - **Verificación:** vitest (133 ficheros, 2 086 tests), eslint, prettier y `vite build` en verde;
+    `SceneStrip.routes.test` monta el árbol real de rutas y exige la franja en las seis, y solo una.
+    Playwright contra `make soc-local`: a 1280×800 fallan los mismos siete que fallan en `main` con la
+    misma base local (aviso de privacidad pendiente + un incidente crítico que la auditoría dejó
+    abierto el 2026-09-06: `layout:19/70/108`, `screens:508` y `573`×2, `smoke:50`), comprobado
+    guardando los cambios con `git stash` y repitiendo esos tests sobre `main`; `screens:601` (01) pasa
+    ahora y fallaba en la línea base. A 1920×1080, 16/17 con el mismo `layout:19` de `main`.
 
 ### [ ] T-6.02 · **Ningún distintivo afirma lo que la consola no sabe; ningún enlace promete lo que el rol no tiene** — `SOFTWARE`
 
@@ -571,7 +618,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Criterios de aceptación:**
   - [x] Con los sitios en `rejected`, el teléfono no dice «EN CURSO».
   - [x] En RUTAS, DIRECTORIO, CUENTA, PANEL, TRIAGE, LISTA y SYNC la franja se ve igual que en INICIO.
-  - [ ] Un daltónico distingue simulacro de reingreso por la forma; verificado con simulador. **La forma está garantizada por test** (regla lateral + glifo frente a relleno sólido + glifo); **la pasada por el simulador de daltonismo en el Pixel queda pendiente**: el teléfono no estaba conectado en la sesión del 2026-09-06 y no se usan emuladores.
+  - [x] Un daltónico distingue simulacro de reingreso por la forma; verificado con simulador. **Cerrado el 2026-09-07 en el Pixel 8 Pro real:** se compiló un APK con los componentes reales (`SiteNoticeStrip` en curso / anunciado / demostración y `HomeView` en reingreso, con datos inyectados por un parche local no comiteado), se capturó en el teléfono y se simularon protanopia, deuteranopia, tritanopia y acromatopsia (Machado 2009, severidad 1.0, en RGB lineal) sobre la captura. En las cuatro, la regla lateral + altavoz, el borde discontinuo + ojo tachado y el relleno sólido + visto se distinguen sin matiz; en protanopia/deuteranopia el verde del reingreso y el ámbar del simulacro convergen al mismo amarillo, que es justo el caso que la forma resuelve. **Trampa medida:** el simulador de color de Android (`accessibility_display_daltonizer`) se activó en el aparato pero `screencap` NO lo incluye (captura idéntica byte a byte con y sin él): la simulación tiene que aplicarse sobre la captura. El teléfono quedó con el APK limpio de `main`.
   - [x] Un drill jamás abre `crisis.tsx` (test existente sigue verde).
 - **Cómo se cerró (2026-09-06, SESIÓN 2):**
   - **La franja se deriva de `execution`** (T-6.17), no de la ventana: `features/notices/drillNotice.ts`

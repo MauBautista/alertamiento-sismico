@@ -17,14 +17,13 @@ import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useProfile } from "../../auth/useProfile";
 import { useNow } from "../../lib/useNow";
+import { sceneAlert } from "../scene/scene";
 import { useCatalog } from "../triage/useCatalog";
 import AlertBanner from "./AlertBanner";
 import ComparePanel from "./ComparePanel";
 import DetailPanel from "./DetailPanel";
+import DrillControls from "./DrillControls";
 import EpicenterModal from "./EpicenterModal";
-import DemoModeBanner from "./DemoModeBanner";
-import DrillBanner from "./DrillBanner";
-import MaintenanceBanner from "./MaintenanceBanner";
 import IncidentTable from "./IncidentTable";
 import KpiStrip from "./KpiStrip";
 import MapPanel from "./MapPanel";
@@ -127,7 +126,10 @@ function ConsoleWall() {
     [siteById],
   );
 
-  const critical = incidents.incidents.find((i) => i.severity === "critical") ?? null;
+  // [T-6.01] El incidente que define la escena de alerta lo elige la TABLA
+  // (`features/scene/scene.ts`), no esta página: la tarjeta del wall y la
+  // franja del shell tienen que hablar del mismo incidente.
+  const critical = sceneAlert(incidents.incidents);
   const focusSite = focusSiteId !== null ? (siteById.get(focusSiteId) ?? null) : null;
 
   // [T-2.64.c] UNA sola condición para dos consumidores: el montaje del panel y
@@ -187,15 +189,11 @@ function ConsoleWall() {
     >
       <h1 className="soc-vh">Monitoreo en Vivo</h1>
       <main className="soc-main">
-        {/* T-1.60: banner NO-real del simulacro — FUERA del grid del wall; con
-            incidente vivo se degrada a badge (lo real domina también visualmente). */}
-        <DemoModeBanner />
-        <DrillBanner hasLiveIncident={critical !== null} />
-        {/* [T-2.71] Ventana de mantenimiento: alarmas de OPERACIÓN mudas. A
-            diferencia del simulacro NO se degrada con incidente vivo — el
-            momento en que más falta hace saber que una alarma no va a sonar es
-            justo el sismo (precedente: banner-wr1 violeta del panel LAN, T-1.69). */}
-        <MaintenanceBanner hasLiveIncident={critical !== null} />
+        {/* [T-6.01] Los banners de escena (simulacro, mantenimiento, demo) ya no
+            viven aquí: los pinta el shell en las seis rutas desde la tabla de
+            `features/scene`. Aquí se queda sólo la TIRA de acciones del
+            simulacro (T-1.60/T-1.62: fuera del grid del wall, < 60 px). */}
+        <DrillControls />
         <StateFrame
           label="MONITOREO"
           className="soc-wall"

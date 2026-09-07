@@ -22,11 +22,29 @@ import type { MaintenanceWindowIn, MaintenanceWindowOut } from "@takab/sdk";
 export const MAINTENANCE_POLL_MS = 30_000;
 export const MAINTENANCE_KEY = ["maintenance-windows", "active"] as const;
 
+/**
+ * [T-6.01] El servidor dijo 403: este rol NO puede leer qué está silenciado
+ * (`maintenance.py`: lo leen quien puede abrir ventanas, `soc_operator` y
+ * `takab_support`). Es una respuesta sobre el ALCANCE, no un fallo, y con la
+ * franja de escena en las seis rutas hay que distinguirlos: a un `inspector`
+ * no se le pinta REINTENTAR en cada pantalla por algo que no va a cambiar. Se
+ * modela como error propio para no duplicar la regla de roles en el cliente —
+ * la autoridad sigue siendo la API— y para dejar de sondear en cuanto llega.
+ */
+export class MaintenanceReadForbidden extends Error {
+  constructor() {
+    super("GET /maintenance-windows falló (403)");
+    this.name = "MaintenanceReadForbidden";
+  }
+}
+
 export interface MaintenanceData {
   items: MaintenanceWindowOut[];
   loading: boolean;
   /** Fallo de LECTURA — nunca vacía el banner (ver cabecera). */
   readError: string | null;
+  /** [T-6.01] El rol no puede leer ventanas (403). `readError` lo lleva también. */
+  forbidden: boolean;
   /** Epoch ms del último snapshot bueno (0 = ninguno). */
   updatedAt: number;
   refetch: () => void;
@@ -57,12 +75,17 @@ export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData 
         query: { active: true },
       });
       if (data === undefined) {
+        if (response.status === 403) throw new MaintenanceReadForbidden();
         throw new Error(`GET /maintenance-windows falló (${response.status})`);
       }
       return data;
     },
     enabled,
-    refetchInterval: MAINTENANCE_POLL_MS,
+    // Un 403 no se reintenta ni se vuelve a sondear: el alcance de un rol no
+    // cambia entre dos ticks. El resto conserva el sondeo de siempre.
+    retry: (count, err) => !(err instanceof MaintenanceReadForbidden) && count < 3,
+    refetchInterval: (q) =>
+      q.state.error instanceof MaintenanceReadForbidden ? false : MAINTENANCE_POLL_MS,
     staleTime: MAINTENANCE_POLL_MS / 2,
   });
 
@@ -100,6 +123,7 @@ export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData 
     // Se reporta AUNQUE haya datos en caché: en react-query `data` y `error`
     // conviven cuando falla un refetch de fondo.
     readError: active.error?.message ?? null,
+    forbidden: active.error instanceof MaintenanceReadForbidden,
     updatedAt: active.dataUpdatedAt,
     refetch: () => void active.refetch(),
     close: (windowId) => close.mutate(windowId),

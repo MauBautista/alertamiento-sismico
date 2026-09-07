@@ -214,7 +214,6 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
   "features/console/ConsolePage.tsx::ConsoleWall": [
     "actions",
     "catalog",
-    "critical",
     "detailVisible",
     "epicenterIncident",
     "epicenterSite",
@@ -229,7 +228,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "soh",
     "staleSince",
   ],
-  "features/console/DrillBanner.tsx::DrillBanner": ["drill", "error", "pending"],
+  "features/console/DrillControls.tsx::DrillControls": ["drill", "error", "loading", "pending"],
   "features/console/DrillModal.tsx::DrillModal": ["plantillas"],
   "features/console/EpicenterModal.tsx::EpicenterModal": ["effective"],
   "features/fleet/FleetAdmin.tsx::FleetAdminPanel": ["codeConfigured", "gatewaysOf"],
@@ -244,6 +243,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "visible",
   ],
   "features/fleet/SiteCard.tsx::SiteCard": ["selfTest"],
+  "features/scene/SceneStrip.tsx::SceneStrip": ["demo", "drill", "maintenance", "scene"],
   "features/tenants/ComplianceLabelsCard.tsx::ComplianceLabelsCard": [
     "available",
     "doc",
@@ -284,8 +284,10 @@ const RAZONES: Record<string, string> = {
     "literalmente el defecto que RO-7.c cerró en el panel del gabinete y aquí sigue " +
     "abierto en la nube. `siren` es estado de mutación y va a SirenTestPanel.",
   "features/console/ConsolePage.tsx::ConsoleWall":
-    "(a) SOBREPUESTOS. El riel de detalle (`DetailPanel`), los dos modales (`ComparePanel`, " +
-    "`EpicenterModal`) y los dos banners son HERMANOS del StateFrame del wall, no hijos: " +
+    "(a) SOBREPUESTOS. El riel de detalle (`DetailPanel`) y los dos modales (`ComparePanel`, " +
+    "`EpicenterModal`) son HERMANOS del StateFrame del wall, no hijos ([T-6.01] los banners " +
+    "de escena ya no viven aquí: los pinta el shell, y `critical` sólo alimenta a la tarjeta " +
+    "DENTRO del marco del wall): " +
     "están anclados a la página y meterlos dentro los borraría en `loading`/`error`, que es " +
     "cuando el operador más necesita el detalle del sitio. Cada hijo trae su propio marco " +
     "(DetailPanel tiene tres). Lo que SÍ queda pendiente es que `staleSince` sólo viaja a " +
@@ -300,11 +302,14 @@ const RAZONES: Record<string, string> = {
     "meterlo dentro haría imposible dar de alta la primera plantilla del cliente. La LISTA y " +
     "el aviso de plantilla degradada —lo que sí es dato de servidor— viven dentro del " +
     "StateFrame con sus cuatro estados.",
-  "features/console/DrillBanner.tsx::DrillBanner":
-    "(a) TIRA DE ACCIÓN. `drill-idle` vive fuera del marco porque el e2e de T-1.62 mide que " +
-    "no pase de 60 px y porque dentro desaparecería en `loading`, dejando al operador sin " +
-    "el botón de INICIAR SIMULACRO. `error` y `pending` vienen de `useMutation` (arrancar un " +
-    "simulacro), no son un dato presentado como hecho; `drill === null` sólo abre el botón.",
+  "features/console/DrillControls.tsx::DrillControls":
+    "(a) TIRA DE ACCIÓN. [T-6.01] Lo que quedó en /console del antiguo `DrillBanner`: " +
+    "`drill-idle` vive fuera del marco porque el e2e de T-1.62 mide que no pase de 60 px y " +
+    "porque dentro desaparecería en `loading`, dejando al operador sin HISTORIAL. `error` y " +
+    "`pending` vienen de `useMutation` (arrancar un simulacro), no son un dato presentado " +
+    "como hecho; `drill === null` y `loading` sólo gatean INICIAR. El DATO (simulacro vivo, " +
+    "armado, retenido, fallo de lectura) lo pinta `features/scene/DrillBanner` con sus cuatro " +
+    "estados, desde la franja del shell.",
   "features/console/EpicenterModal.tsx::EpicenterModal":
     "(a) CONTROL DE FORMULARIO. `<input value={coordsDraft ?? formatPoint(effective)}>` es la " +
     "caja de lat/lon manual: tiene que seguir siendo editable mientras `GET /events` carga, " +
@@ -323,6 +328,14 @@ const RAZONES: Record<string, string> = {
     "caída. Igual `maintenance.readError` (C3) y la sección de FANTASMAS, que es un `role=" +
     '"alert"` y tiene que sobrevivir al marco. Funciona hoy porque `FleetPage.test.tsx` lo ' +
     "mide; queda bajo igualdad para que nadie añada el octavo contador sin guarda.",
+  "features/scene/SceneStrip.tsx::SceneStrip":
+    "(a) REPARTO. [T-6.01] La franja de escena no PINTA un dato: reparte cada fuente a su " +
+    "banner (`drill` a DrillBanner, `maintenance` a MaintenanceBanner, `demo` a " +
+    "DemoModeBanner) y cada banner trae su propio `<StateFrame>` con las cuatro entradas " +
+    "(lo censa C-3; los cuatro estados de cada uno los ejercen sus tests y " +
+    "`SceneStrip.test.tsx`). Lo único que se calcula aquí es `scene`, sobre la tabla de " +
+    "`features/scene/scene.ts`, y viaja como prop para que el banner del simulacro sepa si " +
+    "lo real manda. La alerta sí va dentro de su marco, en esta misma franja.",
   "features/fleet/SiteCard.tsx::SiteCard":
     "(c) DEUDA, y de las gordas: la tarjeta NO tiene StateFrame ninguno y no tiene prueba de " +
     "los cuatro estados (ver C-4). Los chips del autodiagnóstico son el acuse de un comando " +
@@ -461,6 +474,9 @@ describe("censo · todo `<StateFrame>` cablea las cuatro entradas", () => {
 const SIN_PRUEBA_DE_CUATRO_ESTADOS: string[] = [
   // Cabecera y SALUD DEL GABINETE guardados a mano, sin `stale` (ver C-2).
   "features/building/BuildingPage.tsx::BuildingDashboard",
+  // [T-6.01] Tira de botones SIN marco a propósito (ver RAZONES): el dato lo
+  // pinta la franja del shell, que sí ejerce los cuatro estados.
+  "features/console/DrillControls.tsx::DrillControls",
   // Su marco de SITIOS no declara `staleSince` (C-3) y nadie prueba los cuatro.
   "features/console/DrillModal.tsx::DrillModal",
   // Marco sin `empty` ni `staleSince` (C-3) y el input fuera del marco (C-2).
@@ -502,7 +518,7 @@ describe("censo · todo componente con dato de servidor tiene su prueba", () => 
       conDato: CENSO.componentes.length,
       conPrueba: CENSO.componentes.filter((c) => CON_PRUEBA.has(c.fichero)).length,
       sinMarcoPropio: CENSO.componentes.filter((c) => !c.tieneMarco).length,
-    }).toEqual({ conDato: 26, conPrueba: 17, sinMarcoPropio: 2 });
+    }).toEqual({ conDato: 25, conPrueba: 15, sinMarcoPropio: 3 });
   });
 });
 

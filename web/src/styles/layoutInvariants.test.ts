@@ -873,20 +873,32 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
     ).toBeGreaterThan(orden.indexOf("soc.css"));
   });
 
-  it("el <main> del shell invierte las filas: el banner al `auto`, la página a la elástica", () => {
+  it("el <main> del shell tiene TRES filas: escena y banner al `auto`, la página a la elástica", () => {
+    // [T-6.01] Eran dos (`auto minmax(0, 1fr)`): llegó el tercer hijo que este
+    // bloque anunciaba, la franja de escena, y ganó su fila con la razón escrita
+    // en privacy.css. Dos hijos sin fila propia se apilarían en la misma celda.
     expect(
       declValue(rulesFor(ALL_BASE, ".soc-app > .soc-main"), "grid-template-rows"),
-      "el banner vuelve a caer en la fila elástica y la página entera en `auto`",
-    ).toBe("auto minmax(0, 1fr)");
+      "un hermano vuelve a caer en la fila elástica y la página entera en `auto`",
+    ).toBe("auto auto minmax(0, 1fr)");
+  });
+
+  it("[T-6.01] la franja de escena va CLAVADA a la fila 1: se pinta encima de todo", () => {
+    const escena = rulesFor(ALL_BASE, ".soc-app > .soc-main > .soc-scene");
+    expect(escena, "sin esta regla la franja cae a la fila 3, encima de la página").not.toBe("");
+    expect(declValue(escena, "grid-row")).toBe("1");
   });
 
   it("la página va CLAVADA a la fila elástica, no colocada por orden", () => {
-    const pagina = rulesFor(ALL_BASE, ".soc-app > .soc-main > *:not(.privacy-banner)");
+    const pagina = rulesFor(
+      ALL_BASE,
+      ".soc-app > .soc-main > *:not(.privacy-banner):not(.soc-scene)",
+    );
     expect(
       pagina,
-      "sin esta regla, el caso normal (sin banner) auto-coloca la página en la fila `auto`",
+      "sin esta regla, el caso normal (sin banner) auto-coloca la página en una fila `auto`",
     ).not.toBe("");
-    expect(declValue(pagina, "grid-row")).toBe("2");
+    expect(declValue(pagina, "grid-row")).toBe("3");
     // Un item de grid con contenido indivisible no baja de su altura mínima
     // automática y desborda la pista en vez de ceder: el mismo motivo por el que
     // este archivo prohíbe `1fr` desnudo en las columnas.
@@ -905,12 +917,15 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
     expect(declValue(rulesFor(ALL_BASE, ".privacy-banner"), "margin")).toBe("0 0 12px");
   });
 
-  it("y son los DOS ÚNICOS selectores de las cuatro hojas que deciden esas filas", () => {
+  it("y son los TRES ÚNICOS selectores del shell (más el genérico) que deciden esas filas", () => {
     // Misma defensa que T-2.64.c hizo con el ancho del shell: no se compara un
-    // valor, se PROHÍBE al tercero en discordia. `rulesFor` agrupa por selector
+    // valor, se PROHÍBE al siguiente en discordia. `rulesFor` agrupa por selector
     // EXACTO, así que un `.soc-app .soc-main` (0,2,0) o un
     // `main.soc-main` colado desde cualquier hoja no entraría en NINGÚN grupo
     // que este archivo mire — y ganaría en el navegador.
+    // [T-6.01] La franja de escena entró con su fila (`.soc-scene`, fila 1) y la
+    // exención de la página la nombra: son los tres del bloque [D3] de
+    // privacy.css, y ninguno más.
     const decisores = new Set<string>();
     for (const [, selectors, body] of ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
       const decide =
@@ -924,7 +939,8 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
     }
     expect([...decisores].sort()).toEqual([
       ".soc-app > .soc-main",
-      ".soc-app > .soc-main > *:not(.privacy-banner)",
+      ".soc-app > .soc-main > *:not(.privacy-banner):not(.soc-scene)",
+      ".soc-app > .soc-main > .soc-scene",
       ".soc-main",
     ]);
   });
@@ -939,6 +955,55 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
     // Y no se pinta a sí mismo en una fila: la 1 la recibe por auto-colocación,
     // que es lo que hace que el arreglo funcione con y sin banner.
     expect(declValues(banner, "grid-row")).toEqual([]);
+  });
+});
+
+/**
+ * [T-6.01] La franja de escena: alerta, simulacro, mantenimiento y demo en las
+ * seis rutas, decididos por la tabla de `features/scene/scene.ts`.
+ *
+ * Lo que la hoja tiene que sostener y jsdom no ve:
+ *   1. SIN ANIMACIÓN. La escena se declara en el primer frame (criterio 1 de la
+ *      ficha): ni `animation` ni `transition` en ninguna regla de `.soc-scene*`.
+ *   2. La ausencia fresca no ocupa un píxel: `StateFrame` la emite con `hidden`
+ *      y `.soc-stateframe--status` (app.css) declara `display: grid`, que le
+ *      GANA al `[hidden]` de la hoja del navegador. Sin la regla explícita, en
+ *      escena NORMAL habría cuatro cajas vacías de 120 px encima de cada ruta.
+ *   3. Cada banner trae su propia separación: sin hijos visibles no queda ni un
+ *      margen (la fila 1 de la reja mide cero).
+ */
+describe("[T-6.01] la franja de escena", () => {
+  it("no anima nada: la escena se declara en el primer frame", () => {
+    const reglas = [...ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, sel]) =>
+      /\.soc-scene/.test(sel),
+    );
+    expect(reglas.length, "la franja perdió sus reglas: la negación pasaría vacía").toBeGreaterThan(
+      3,
+    );
+    for (const [, sel, body] of reglas) {
+      expect(body, `${sel.trim()} anima`).not.toMatch(/\b(animation|transition)\b/);
+    }
+  });
+
+  it("la ausencia fresca de un marco no se pinta: `[hidden]` gana al `display: grid`", () => {
+    // La regla tiene que venir DESPUÉS de `.soc-stateframe--status` (app.css) o
+    // igualarla en especificidad; con (0,2,0) contra (0,1,0) gana siempre.
+    expect(declValue(rulesFor(ALL_BASE, ".soc-stateframe[hidden]"), "display")).toBe("none");
+  });
+
+  it("cada banner de la franja es una fila entera con su margen; la franja no pone ninguno", () => {
+    const hijo = rulesFor(ALL_BASE, ".soc-scene > .soc-stateframe");
+    expect(declValue(hijo, "flex")).toBe("1 1 100%");
+    expect(declValue(hijo, "margin-bottom")).toMatch(/^\d+px$/);
+    const franja = rulesFor(ALL_BASE, ".soc-scene");
+    expect(franja).not.toMatch(/(^|;)\s*(margin|padding|min-height)\s*:/);
+    // …y un marco cargando es un chip en línea, no un panel de 120 px.
+    expect(
+      declValue(
+        rulesFor(ALL_BASE, '.soc-scene > .soc-stateframe--status[data-state="loading"]'),
+        "flex",
+      ),
+    ).toBe("0 0 auto");
   });
 });
 
