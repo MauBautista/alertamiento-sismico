@@ -57,7 +57,11 @@
 @media (prefers-reduced-motion:reduce){*{animation:none !important;transition:none !important}}
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--tk-surface-0)}
-body{font-family:var(--f-ui);color:var(--tk-fg-1);-webkit-font-smoothing:antialiased;min-height:100vh;display:flex;flex-direction:column}
+/* [T-6.27] `height`, no sólo `min-height`: con min-height la página crecía
+   con el contenido y el #actionbar (el PIN) nacía fuera de pantalla —1347 px
+   de documento sobre 1080 medidos el 2026-09-07—. La spec pide CONSOLA sin
+   scroll vertical en 1080p y el PIN en la mano en 10 s. CAMPO lo revierte. */
+body{font-family:var(--f-ui);color:var(--tk-fg-1);-webkit-font-smoothing:antialiased;height:100vh;min-height:100vh;display:flex;flex-direction:column}
 button{font-family:inherit;cursor:pointer}
 button:focus-visible,input:focus-visible{outline:none;box-shadow:var(--tk-focus-ring)}
 input{font-family:inherit}
@@ -118,10 +122,18 @@ canvas{display:block}
 #action-toast .sub{font:400 12px/1 var(--f-ui);color:var(--tk-fg-2)}
 
 /* --- layout CONSOLA (por defecto; ancho mínimo real 1280: scroll, no compresión) --- */
-#main{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow-x:auto}
-#grid{flex:1 1 auto;min-height:0;min-width:1280px;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:12px;padding:12px}
+/* [T-6.27] El scroll vive en #grid, no aquí: el #actionbar es hermano
+   posterior de #grid dentro de esta columna, así que scrollear #main se lo
+   llevaba consigo bajo el pliegue. */
+#main{flex:1 1 auto;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+#grid{flex:1 1 auto;min-height:0;min-width:1280px;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:12px;padding:12px;overflow-x:auto;overflow-y:auto}
 #col-izq{display:grid;grid-template-rows:auto minmax(240px,1fr) auto;gap:12px;min-height:0;min-width:0}
-#col-der{display:grid;grid-template-rows:minmax(300px,1fr) auto auto;gap:12px;min-height:0}
+/* [T-6.27] SEIS tarjetas (brújula, salud, evidencia, LoRa, prueba, bitácora)
+   contra TRES filas declaradas: las otras tres caían en filas implícitas
+   `auto`, que no encogen, y esta columna —1124 px medidos— era la que
+   estiraba la página entera. Una fila por tarjeta y scroll propio: no se
+   recorta ninguna (sería perder la densidad que el técnico de pie usa). */
+#col-der{display:grid;grid-template-rows:minmax(240px,1fr) auto auto auto auto max-content;gap:12px;min-height:0;overflow-y:auto}
 #tierline{display:flex;align-items:stretch;background:var(--tk-surface-1);border:1px solid var(--tk-border);border-left:4px solid var(--tk-fg-3);border-radius:8px;overflow:hidden}
 #tier-label{font:700 28px/1.1 var(--f-ui);letter-spacing:-0.01em}
 #relays{flex:1 1 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-left:1px solid var(--tk-border)}
@@ -130,7 +142,7 @@ canvas{display:block}
 .relay .rs{font:700 15px/1 var(--f-ui);letter-spacing:0.04em}
 .relay .re{font:400 10px/1.3 var(--f-data);color:var(--tk-fg-3)}
 #waves-card{display:flex;flex-direction:column;min-height:0;overflow:hidden}
-#waves-wrap{flex:1 1 auto;position:relative;min-height:0;background:var(--tk-surface-0)}
+#waves-wrap{flex:1 1 auto;position:relative;min-height:240px;background:var(--tk-surface-0)}
 #wave-canvas{position:absolute;inset:0;width:100%;height:100%}
 #lanes{position:absolute;inset:0;display:flex;flex-direction:column;pointer-events:none}
 .lane{position:relative;border-top:1px solid rgba(240,242,245,0.06)}
@@ -190,7 +202,17 @@ body.mode-muro #hdr-clock{font-size:34px}
 
 /* --- modo CAMPO: <1024, una columna, objetivos táctiles ≥48px --- */
 body.mode-campo #grid{grid-template-columns:minmax(0,1fr);min-width:0;max-width:560px;margin:0 auto}
-body.mode-campo #col-izq{grid-template-rows:auto minmax(220px,300px) auto}
+/* [T-6.27] CAMPO revierte el acotado de CONSOLA: en un teléfono la página
+   SÍ scrollea, y acotarla dejaba media pantalla inalcanzable. */
+body.mode-campo{height:auto}
+body.mode-campo #main{overflow:visible}
+body.mode-campo #grid{overflow:visible}
+body.mode-campo #col-der{grid-template-rows:auto auto auto auto auto auto;overflow-y:visible}
+/* [T-6.27] La fila de ondas crece a lo que pidan las pistas: con la horquilla
+   vieja (220–300 px) el #waves-wrap medía 126 y cada pista 31.5 px, con el
+   rótulo del canal (8–21) encima de su propia nota (16–26): 6 px de solape
+   medidos a 412x915. Mismo patrón que #rose-wrap en T-2.30. */
+body.mode-campo #col-izq{grid-template-rows:auto auto auto}
 body.mode-campo #col-der{grid-template-rows:auto auto auto}
 body.mode-campo #stats{grid-template-columns:1fr}
 body.mode-campo #relays{grid-template-columns:1fr;border-left:none;border-top:1px solid var(--tk-border)}
@@ -198,6 +220,13 @@ body.mode-campo #tierline{flex-direction:column}
 /* [T-2.30] En campo #col-der pasa a filas auto: sin un mínimo, #rose-wrap
    (flex:1 + min-height:0) colapsaba a 0 y la brújula JAMÁS se pintaba en teléfono. */
 body.mode-campo #rose-wrap{min-height:240px}
+/* 216 px = 36 px para la pista MÁS PEQUEÑA por seis: el reparto de la
+   variante B es [1,3,1,1], así que la pequeña se lleva 1/6 del alto, no 1/4.
+   36 px caben el rótulo superior (hasta 20) y la nota reubicada (22–32). */
+body.mode-campo #waves-wrap{min-height:216px}
+/* La nota baja del suelo de la pista a debajo del rótulo: contra el suelo se
+   sube sobre el nombre del canal en cuanto la pista es corta (U-10). */
+body.mode-campo .lane .note{bottom:auto;top:22px}
 body.mode-campo #actionbar{order:-1;border-top:none;border-bottom:1px solid var(--tk-border-strong)}
 body.mode-campo .btn{min-height:56px;justify-content:center}
 body.mode-campo #pin{min-height:48px;flex:1 1 160px;font-size:18px}

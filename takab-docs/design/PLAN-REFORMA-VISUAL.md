@@ -851,7 +851,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 
 ## 9 · Fichas · Panel LAN del gabinete
 
-### [ ] T-6.27 · **CONSOLA sin pliegue a 1080p; CAMPO con ondas legibles** — `SOFTWARE`
+### [x] T-6.27 · **CONSOLA sin pliegue a 1080p; CAMPO con ondas legibles** — `SOFTWARE`
 
 > Medido: a 1920×1080 el documento mide 1347 px y la botonera con el PIN nace fuera de pantalla;
 > la spec fija «sin scroll vertical en 1080p» y el perfil «10 segundos con el PIN en la mano». En
@@ -865,9 +865,57 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** acotar la bitácora y las filas de la columna derecha para que el documento quepa en la resolución objetivo; en CAMPO, subir el mínimo de la fila de ondas o mover la nota al rótulo superior cuando el carril no dé para las dos. Ni un cambio de jerarquía, color ni texto.
 - **Criterios de aceptación:**
-  - [ ] A 1920×1080 en CONSOLA, la botonera y el PIN están dentro de pantalla sin scroll.
-  - [ ] En CAMPO los rótulos de cada carril no se superponen y un hueco de señal es visible.
-  - [ ] El nuevo invariante del arnés falla si alguien vuelve a empujar la botonera fuera.
+  - [x] A 1920×1080 en CONSOLA, la botonera y el PIN están dentro de pantalla sin scroll.
+  - [x] En CAMPO los rótulos de cada carril no se superponen y un hueco de señal es visible.
+  - [x] El nuevo invariante del arnés falla si alguien vuelve a empujar la botonera fuera.
+- **Cómo se cerró (2026-09-07, SESIÓN P1, en una sola sesión):**
+  - **La causa raíz no era la bitácora: era que nada acotaba la página.** `body` declaraba
+    `min-height:100vh` (no `height`), así que la página crecía con el contenido y el `#actionbar`
+    —hermano posterior de `#grid` dentro de `#main`, que es quien tenía el `overflow`— se iba con
+    él bajo el pliegue. Medido con Chromium sobre `?demo=reposo&mode=consola`: documento 1347 px
+    sobre un viewport de 1080, botonera de 1230 a 1347, **entera fuera**.
+  - **Y `#col-der` era quien estiraba:** seis tarjetas (brújula, salud, evidencia, LoRa, prueba,
+    bitácora = 1124 px) contra **tres** filas declaradas, `minmax(300px,1fr) auto auto`. Las otras
+    tres caían en filas implícitas `auto`, que no encogen. `#col-izq` medía lo mismo sólo porque
+    el grid la estiraba: no era ella la que mandaba.
+  - **El arreglo:** `body{height:100vh}`, el scroll baja de `#main` a `#grid` (así el `#actionbar`
+    queda fijo por construcción, no por aritmética), y `#col-der` gana una fila por tarjeta más
+    scroll propio. **No se recortó ninguna tarjeta:** sería perder la densidad que usa el técnico
+    de pie. Resultado medido: **1080 px de documento, `scrollV=no`, botonera 963→1080 DENTRO, PIN
+    en 1070**. A 1280×800 (el ancho mínimo declarado) también cabe, y antes no cabía (1480 px).
+  - **Dos defectos que el propio arreglo destapó, y que no se dejaron pasar:**
+    - La bitácora tiene `overflow:hidden auto`, así que su `min-content` es ~30 px y el grid le
+      descontaba a **ella** todo el déficit de la columna: pasó de 96 px a 30, una línea de evento.
+      Su fila es ahora `max-content`; quien scrollea es la columna.
+    - Al acotar la página, un viewport bajo comprimía las pistas de onda a 34 px y el rótulo del
+      canal (7–20) volvía a pisar la nota (18–28): **el solape de U-10, pero en CONSOLA, y lo
+      habría introducido esta ficha**. `#waves-wrap` gana `min-height:240px`.
+  - **CAMPO:** la fila de ondas pasa de la horquilla `minmax(220px,300px)` a `auto` con
+    `#waves-wrap{min-height:216px}` (mismo patrón que `#rose-wrap` en T-2.30, y por la misma razón:
+    el `overflow:hidden` de la tarjeta recorta el mínimo del wrap), y la nota deja el suelo de la
+    pista para colocarse bajo el rótulo. Medido a 412×915: pistas de **31.5 → 54 px** y **solape 6 px
+    → 0**. CAMPO revierte el acotado de la página (`height:auto`, `overflow:visible`): en un teléfono
+    la página SÍ debe scrollear.
+  - **El número que gobierna no es 4, es 6.** `laneGrow()` reparte `[1,3,1,1]` en la variante B, así
+    que la pista más pequeña se lleva **1/6** del alto, no 1/4. Los dos suelos (216 en campo, 240 en
+    consola) salen de esa división, y el test la **deriva** de la hoja y del propio `laneGrow()` en
+    vez de teclearla: si mañana sube la tipografía del canal o entra una quinta pista, lo caza.
+  - **El arnés no puede medir esto** (`panel_harness.js` es un mini-DOM sin motor de layout: su
+    `clientHeight` es la constante 420). Los cuatro invariantes nuevos leen la **hoja** y comprueban
+    la *mecánica* que hace el defecto imposible, igual que `layoutInvariants.test.ts` en la consola
+    web porque jsdom tampoco mide. Las mediciones de arriba son de Chromium, a mano, y quedan aquí.
+  - **Dos fallos propios que el ciclo cazó, y que valen para el siguiente:** `_regla("body")` sin
+    ancla engancha con `html,body{margin:0}` —la primera coincidencia del fichero—, y
+    `min-height:100vh` **contiene** la subcadena `height:100vh`, así que la guarda del acotado
+    pasaba en verde contra la hoja vieja. Un test de CSS por subcadena miente si no ancla el
+    separador de declaración.
+  - **Alcance:** la ficha lo acotaba a `#bitacora`, `#col-der` y `body.mode-campo`. Hizo falta
+    tocar además `body`, `#main`, `#grid` y `#waves-wrap`: dentro de aquellos tres selectores la
+    única salida era un `max-height` en `vh` con la altura de la botonera y de la pila de banners
+    tecleada a mano, que es exactamente el tipo de número que se desvía. Ni jerarquía, ni color,
+    ni texto cambiaron.
+  - **Verificación:** `pytest edge/tests/` completo en verde — **1461 pasados**, incluidos los 5
+    del gate #3 contra el Shake real; `ruff check` y `ruff format --check` limpios.
 
 ### [ ] T-6.28 · **Las escenas de demostración no afirman lo que el gabinete no puede hacer; el checklist dice lo que hay** — `SOFTWARE`
 
