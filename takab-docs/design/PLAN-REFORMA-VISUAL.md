@@ -488,7 +488,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     simulado, un barrido del DOM en `/console`, `/fleet` y `/triage`: 2 + 25 + 3 menciones de
     `Sitio Sim NNN`, **cero sin cinta**, y la tira de KPI dice «DE LAS CUALES 20 SIMULADAS».
 
-### [ ] T-6.05 · **El gate del LOGIN DEV lo lee un test bloqueante** — `SOFTWARE`
+### [x] T-6.05 · **El gate del LOGIN DEV lo lee un test bloqueante** — `SOFTWARE`
 
 > El servidor está cerrado con test; el cliente depende de una línea `ENV` del Dockerfile que
 > ningún test bloqueante lee, y el e2e que se le parece corre por `workflow_dispatch` y comprueba
@@ -502,9 +502,34 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** que un `true` tecleado en el Dockerfile, o un `ARG` homónimo añadido de buena fe, pongan el job `web` en rojo; y que el e2e desplegado asercione la ausencia del texto «LOGIN DEV» en el DOM de la entrada.
 - **Criterios de aceptación:**
-  - [ ] El censo exige `ENV VITE_DEV_TOKEN_ENABLED=false` en la etapa de build y la ausencia de un `ARG` con ese nombre.
-  - [ ] `deployed.spec.ts` comprueba el DOM de `/`, no solo el 404 del endpoint.
-  - [ ] Una mutación (`false` → `true`) pone rojo el job `web`.
+  - [x] El censo exige `ENV VITE_DEV_TOKEN_ENABLED=false` en la etapa de build y la ausencia de un `ARG` con ese nombre.
+  - [x] `deployed.spec.ts` comprueba el DOM de `/`, no solo el 404 del endpoint.
+  - [x] Una mutación (`false` → `true`) pone rojo el job `web`.
+- **Cómo se cerró (2026-09-07, SESIÓN C5):**
+  - **El censo lee el Dockerfile como Docker, no con un regex.** `consoleImageCensus.test.ts`
+    gana un analizador que pliega las continuaciones, separa las etapas (`FROM … AS`), entiende
+    las dos formas de `ENV` y localiza la etapa de build por su `RUN … npm run build`.
+    `auditarGateLoginDev` exige: el literal `false` fijado ANTES de ese `RUN` (Vite congela
+    `import.meta.env` en el build; un `ENV` posterior no sirve), ningún `ARG` homónimo en ninguna
+    etapa, ninguna interpolación `${VITE_DEV_TOKEN_ENABLED}`, y `.dockerignore` con `web/.env` y
+    `web/.env.*` (el segundo cerrojo de T-1.62). Cada defecto se describe con su porqué.
+  - **Las mutaciones se ejercen sobre el fichero REAL** dentro del propio test: `true` tecleado,
+    línea borrada, `ARG` añadido de buena fe, `ENV X=${X}`, y el `ENV` movido detrás del build; las
+    cinco ponen rojo. Trampa medida: la primera aparición de `VITE_DEV_TOKEN_ENABLED=false` en el
+    Dockerfile es un COMENTARIO, así que una mutación ingenua solo cambiaba la prosa y el gate
+    seguía (con razón) en verde; se muta la línea del `ENV`, la que lleva la continuación. La
+    mutación en vivo también se hizo a mano: `sed` al Dockerfile ⇒ 3 tests rojos ⇒ `git checkout`.
+  - **`deployed.spec.ts` mira el DOM antes que el endpoint.** Exige que la entrada MONTÓ (título
+    «CONSOLA SOC»), que no hay «LOGIN DEV», ni selector ROL, ni botón ENTRAR COMO ROL, que SÍ está
+    ENTRAR CON COGNITO, y por último el 404. Y gana su ESPEJO local: contra el stack local exige
+    que las tres huellas existan, para que un cambio de copy no deje al test de producción pasando
+    por vacuidad. Las huellas viven en una sola constante compartida por los dos.
+  - **Evidencia.** Bundle tipo producción (`vite build` con la bandera en `false`, servido con
+    `http.server`): el test de producción pasa. Servidor de desarrollo forzado como producción
+    (`PW_BASE_URL=http://127.0.0.1:5173`): falla exactamente en `getByText('LOGIN DEV')`
+    (esperado 0, recibido 1). Contra `localhost`: el espejo pasa. Web: 138 ficheros /
+    2 163 tests, eslint, prettier, tsc. La consola desplegada no se re-midió en esta sesión (IP
+    allowlist + SSO): el hallazgo U-16 ya la había medido limpia el 2026-09-06.
 
 ### [ ] T-6.06 · **Los vacíos dicen la causa real; la cola declara `error` y `stale`; ninguna caja en blanco** — `SOFTWARE`
 
@@ -851,7 +876,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 
 ## 9 · Fichas · Panel LAN del gabinete
 
-### [ ] T-6.27 · **CONSOLA sin pliegue a 1080p; CAMPO con ondas legibles** — `SOFTWARE`
+### [x] T-6.27 · **CONSOLA sin pliegue a 1080p; CAMPO con ondas legibles** — `SOFTWARE`
 
 > Medido: a 1920×1080 el documento mide 1347 px y la botonera con el PIN nace fuera de pantalla;
 > la spec fija «sin scroll vertical en 1080p» y el perfil «10 segundos con el PIN en la mano». En
@@ -865,9 +890,57 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** acotar la bitácora y las filas de la columna derecha para que el documento quepa en la resolución objetivo; en CAMPO, subir el mínimo de la fila de ondas o mover la nota al rótulo superior cuando el carril no dé para las dos. Ni un cambio de jerarquía, color ni texto.
 - **Criterios de aceptación:**
-  - [ ] A 1920×1080 en CONSOLA, la botonera y el PIN están dentro de pantalla sin scroll.
-  - [ ] En CAMPO los rótulos de cada carril no se superponen y un hueco de señal es visible.
-  - [ ] El nuevo invariante del arnés falla si alguien vuelve a empujar la botonera fuera.
+  - [x] A 1920×1080 en CONSOLA, la botonera y el PIN están dentro de pantalla sin scroll.
+  - [x] En CAMPO los rótulos de cada carril no se superponen y un hueco de señal es visible.
+  - [x] El nuevo invariante del arnés falla si alguien vuelve a empujar la botonera fuera.
+- **Cómo se cerró (2026-09-07, SESIÓN P1, en una sola sesión):**
+  - **La causa raíz no era la bitácora: era que nada acotaba la página.** `body` declaraba
+    `min-height:100vh` (no `height`), así que la página crecía con el contenido y el `#actionbar`
+    —hermano posterior de `#grid` dentro de `#main`, que es quien tenía el `overflow`— se iba con
+    él bajo el pliegue. Medido con Chromium sobre `?demo=reposo&mode=consola`: documento 1347 px
+    sobre un viewport de 1080, botonera de 1230 a 1347, **entera fuera**.
+  - **Y `#col-der` era quien estiraba:** seis tarjetas (brújula, salud, evidencia, LoRa, prueba,
+    bitácora = 1124 px) contra **tres** filas declaradas, `minmax(300px,1fr) auto auto`. Las otras
+    tres caían en filas implícitas `auto`, que no encogen. `#col-izq` medía lo mismo sólo porque
+    el grid la estiraba: no era ella la que mandaba.
+  - **El arreglo:** `body{height:100vh}`, el scroll baja de `#main` a `#grid` (así el `#actionbar`
+    queda fijo por construcción, no por aritmética), y `#col-der` gana una fila por tarjeta más
+    scroll propio. **No se recortó ninguna tarjeta:** sería perder la densidad que usa el técnico
+    de pie. Resultado medido: **1080 px de documento, `scrollV=no`, botonera 963→1080 DENTRO, PIN
+    en 1070**. A 1280×800 (el ancho mínimo declarado) también cabe, y antes no cabía (1480 px).
+  - **Dos defectos que el propio arreglo destapó, y que no se dejaron pasar:**
+    - La bitácora tiene `overflow:hidden auto`, así que su `min-content` es ~30 px y el grid le
+      descontaba a **ella** todo el déficit de la columna: pasó de 96 px a 30, una línea de evento.
+      Su fila es ahora `max-content`; quien scrollea es la columna.
+    - Al acotar la página, un viewport bajo comprimía las pistas de onda a 34 px y el rótulo del
+      canal (7–20) volvía a pisar la nota (18–28): **el solape de U-10, pero en CONSOLA, y lo
+      habría introducido esta ficha**. `#waves-wrap` gana `min-height:240px`.
+  - **CAMPO:** la fila de ondas pasa de la horquilla `minmax(220px,300px)` a `auto` con
+    `#waves-wrap{min-height:216px}` (mismo patrón que `#rose-wrap` en T-2.30, y por la misma razón:
+    el `overflow:hidden` de la tarjeta recorta el mínimo del wrap), y la nota deja el suelo de la
+    pista para colocarse bajo el rótulo. Medido a 412×915: pistas de **31.5 → 54 px** y **solape 6 px
+    → 0**. CAMPO revierte el acotado de la página (`height:auto`, `overflow:visible`): en un teléfono
+    la página SÍ debe scrollear.
+  - **El número que gobierna no es 4, es 6.** `laneGrow()` reparte `[1,3,1,1]` en la variante B, así
+    que la pista más pequeña se lleva **1/6** del alto, no 1/4. Los dos suelos (216 en campo, 240 en
+    consola) salen de esa división, y el test la **deriva** de la hoja y del propio `laneGrow()` en
+    vez de teclearla: si mañana sube la tipografía del canal o entra una quinta pista, lo caza.
+  - **El arnés no puede medir esto** (`panel_harness.js` es un mini-DOM sin motor de layout: su
+    `clientHeight` es la constante 420). Los cuatro invariantes nuevos leen la **hoja** y comprueban
+    la *mecánica* que hace el defecto imposible, igual que `layoutInvariants.test.ts` en la consola
+    web porque jsdom tampoco mide. Las mediciones de arriba son de Chromium, a mano, y quedan aquí.
+  - **Dos fallos propios que el ciclo cazó, y que valen para el siguiente:** `_regla("body")` sin
+    ancla engancha con `html,body{margin:0}` —la primera coincidencia del fichero—, y
+    `min-height:100vh` **contiene** la subcadena `height:100vh`, así que la guarda del acotado
+    pasaba en verde contra la hoja vieja. Un test de CSS por subcadena miente si no ancla el
+    separador de declaración.
+  - **Alcance:** la ficha lo acotaba a `#bitacora`, `#col-der` y `body.mode-campo`. Hizo falta
+    tocar además `body`, `#main`, `#grid` y `#waves-wrap`: dentro de aquellos tres selectores la
+    única salida era un `max-height` en `vh` con la altura de la botonera y de la pila de banners
+    tecleada a mano, que es exactamente el tipo de número que se desvía. Ni jerarquía, ni color,
+    ni texto cambiaron.
+  - **Verificación:** `pytest edge/tests/` completo en verde — **1461 pasados**, incluidos los 5
+    del gate #3 contra el Shake real; `ruff check` y `ruff format --check` limpios.
 
 ### [ ] T-6.28 · **Las escenas de demostración no afirman lo que el gabinete no puede hacer; el checklist dice lo que hay** — `SOFTWARE`
 

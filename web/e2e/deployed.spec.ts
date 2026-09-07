@@ -91,15 +91,63 @@ test("la pantalla de entrada no trae violaciones de a11y bloqueantes", async ({
   ).toEqual([]);
 });
 
-test("producción NO sirve el login dev", async ({ page, baseURL }) => {
+/**
+ * [T-6.05] Las TRES huellas del panel LOGIN DEV en el DOM de la entrada. Van en una
+ * constante porque las usan dos tests con signo contrario: el de producción exige
+ * que NO estén y el local exige que SÍ. Si un día el panel cambia de texto, el local
+ * se pone rojo — y sin él, el de producción pasaría en verde por vacuidad.
+ */
+const DEV_PANEL = {
+  texto: "LOGIN DEV",
+  selectorDeRol: "ROL",
+  boton: "ENTRAR COMO ROL",
+} as const;
+
+function esLocal(baseURL: string | undefined): boolean {
+  return /localhost/.test(baseURL ?? "");
+}
+
+test("producción NO sirve el login dev: ni en el DOM ni en el endpoint", async ({
+  page,
+  baseURL,
+}) => {
   // Es una comprobación de SEGURIDAD, no de layout: `/dev/token` firma tokens de
   // cualquier rol sin credenciales. Si algún día apareciera en el entorno
   // desplegado, este test tiene que gritar. Contra un stack local se omite,
   // porque allí el panel debe existir.
   test.skip(
-    (baseURL ?? "").includes("localhost"),
+    esLocal(baseURL),
     "solo aplica al entorno desplegado (en local el login dev SÍ debe estar)",
   );
+
+  // [T-6.05] PRIMERO el DOM, que es lo que U-16 encontró sin defender: el servidor
+  // ya tenía gate (sin JWKS inline no monta `/dev/token`), el cliente dependía de
+  // una línea del Dockerfile que nadie leía. Antes se exige que la entrada MONTÓ
+  // (su título): una página en blanco también carece de panel, y el silencio no
+  // es éxito.
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "CONSOLA SOC" })).toBeVisible();
+  await expect(page.getByText(DEV_PANEL.texto, { exact: false })).toHaveCount(0);
+  await expect(page.getByLabel(DEV_PANEL.selectorDeRol)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: DEV_PANEL.boton })).toHaveCount(0);
+  // Y la puerta que SÍ debe existir en producción: sin Cognito la consola desplegada
+  // no tendría ninguna forma de entrar.
+  await expect(page.getByRole("button", { name: "ENTRAR CON COGNITO" })).toBeVisible();
+
   const res = await page.request.get("/api/dev/token");
   expect(res.status(), "/api/dev/token está expuesto en el entorno desplegado").toBe(404);
+});
+
+test("en local el panel LOGIN DEV SÍ está: las huellas que busca el test de arriba existen", async ({
+  page,
+  baseURL,
+}) => {
+  // El espejo del anterior. Sin esto, un cambio de copy en `DevLoginPanel` dejaría al
+  // test de producción buscando un texto que ya no existe y pasando en verde por
+  // vacuidad — el modo de fallo exacto que este fichero no puede permitirse.
+  test.skip(!esLocal(baseURL), "solo contra el stack local (en producción el panel NO debe estar)");
+  await page.goto("/");
+  await expect(page.getByText(DEV_PANEL.texto, { exact: false })).toBeVisible();
+  await expect(page.getByLabel(DEV_PANEL.selectorDeRol)).toBeVisible();
+  await expect(page.getByRole("button", { name: DEV_PANEL.boton })).toBeVisible();
 });

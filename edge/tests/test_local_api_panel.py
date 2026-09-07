@@ -2508,3 +2508,194 @@ def test_SIN_ACTA_EN_EL_FIRMWARE_es_un_mensaje_DISTINTO(tmp_path: Path) -> None:
 
     assert "SIN ACTA EN ESTE FIRMWARE" in texto
     assert "SIN MEDICIONES TODAVÍA" not in texto
+
+
+# ------------------------------------------------- [T-6.27] layout que cabe
+#
+# U-09 y U-10 del INFORME-UIUX (2026-09-06). Medido con Chromium a 1920×1080
+# sobre `?demo=reposo&mode=consola`: el documento medía **1347 px** y el
+# `#actionbar` —que lleva el PIN— nacía en 1230 y terminaba en 1347, entero
+# fuera de una pantalla de 1080. La spec fija «sin scroll vertical en 1080p»
+# (§7, perfil CONSOLA) y le da al responsable del edificio «10 segundos, con el
+# PIN en la mano» (§6). Con la botonera bajo el pliegue ese perfil es imposible.
+#
+# El arnés NO puede medir esto: `panel_harness.js` es un mini-DOM sin motor de
+# layout (su `clientHeight` es la constante 420). Así que estas guardas leen la
+# HOJA y comprueban la MECÁNICA que hace imposible el defecto, igual que
+# `layoutInvariants.test.ts` hace en la consola web porque jsdom tampoco mide.
+
+
+def _regla(selector: str) -> str:
+    """El cuerpo de una regla CSS del panel, sin comentarios.
+
+    Los comentarios se quitan por la misma razón que en `_root_vars()`: varias
+    reglas de este fichero explican en prosa el valor que reemplazaron, y
+    contarlas convertiría cada explicación en una declaración fantasma.
+    """
+    html = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
+    # El selector tiene que EMPEZAR una regla: sin el ancla, `body` engancha con
+    # `html,body{margin:0}` —la primera coincidencia del fichero— y se acaba
+    # afirmando sobre una regla que no es la que se quería mirar.
+    m = re.search(r"(?:^|[};])\s*" + re.escape(selector) + r"\s*\{([^}]*)\}", html, re.M)
+    assert m, f"el panel perdió la regla `{selector}`"
+    return m.group(1)
+
+
+def _px(cuerpo: str, prop: str) -> float | None:
+    """El valor en px de una propiedad dentro del cuerpo de una regla."""
+    m = re.search(rf"(?:^|;)\s*{re.escape(prop)}\s*:\s*([0-9.]+)px", cuerpo)
+    return float(m.group(1)) if m else None
+
+
+def test_la_pagina_esta_ACOTADA_al_viewport_y_la_botonera_no_puede_salirse():
+    """La botonera con el PIN no puede quedar bajo el pliegue en CONSOLA.
+
+    No se comprueba una altura: se comprueba la MECÁNICA, que es lo que hace el
+    defecto imposible en cualquier resolución y con cualquier pila de banners.
+
+    Antes de T-6.27 `body` declaraba sólo `min-height:100vh`, así que la página
+    crecía con el contenido y `#main` (que es quien tiene `overflow`) se llevaba
+    dentro al `#actionbar`. Con `height:100vh` en el body y el scroll movido a
+    `#grid`, el `#actionbar` es un hermano POSTERIOR a `#grid` dentro de una
+    columna flex de altura fija: no hay forma de empujarlo fuera.
+    """
+    body = _regla("body")
+    # `min-height:100vh` CONTIENE la subcadena `height:100vh`: sin el separador
+    # de declaración este test pasaría contra la hoja vieja, que es justo la que
+    # produce el defecto.
+    assert re.search(r"(?:^|;)\s*height:\s*100vh", body), (
+        "`body` volvió a crecer con el contenido: sin una altura fija, `#grid` "
+        "empuja al `#actionbar` (y al PIN) fuera de la pantalla. Es el defecto "
+        "U-09, medido en 1347 px de documento sobre un viewport de 1080."
+    )
+
+    grid = _regla("#grid")
+    assert "overflow-y:auto" in grid.replace(" ", ""), (
+        "`#grid` dejó de ser el contenedor con scroll. Si el scroll vuelve a "
+        "`#main`, la botonera scrollea con él y desaparece bajo el pliegue."
+    )
+    assert "min-height:0" in grid.replace(" ", ""), (
+        "sin `min-height:0` un ítem flex no baja de su contenido: `#grid` "
+        "volvería a imponer su alto a la página."
+    )
+
+    # Y el `#actionbar` sigue DESPUÉS de `#grid` dentro de `#main`: si alguien
+    # los reordena, la altura fija del body ya no lo protege.
+    html = _INDEX.read_text("utf-8")
+    assert html.index('id="grid"') < html.index('id="actionbar"'), (
+        "el `#actionbar` dejó de ir después de `#grid`: la garantía de que la "
+        "botonera queda a la vista depende de ese orden."
+    )
+
+
+def test_la_columna_derecha_SE_ACOTA_ella_misma_y_no_estira_la_pagina():
+    """`#col-der` es quien empujaba: seis tarjetas contra tres filas declaradas.
+
+    Medido a 1920×1080: `#col-der` = 1124 px (rose 300 + salud 241 + evidencia
+    207 + LoRa 100 + prueba 119 + bitácora 96 + cinco huecos de 12). El
+    `grid-template-rows` sólo declaraba TRES filas —`minmax(300px,1fr) auto
+    auto`— así que las otras tres caían en filas implícitas `auto`, que no
+    encogen. La columna izquierda medía lo mismo porque el grid la estiraba: no
+    era ella la que mandaba.
+
+    El arreglo no recorta ninguna tarjeta (sería perder densidad en la única
+    pantalla que ve el técnico de pie): acota la COLUMNA y le da su propio
+    scroll, que es lo que la ficha pedía por «acotar las filas de la columna
+    derecha».
+    """
+    col = _regla("#col-der").replace(" ", "")
+    assert "min-height:0" in col, "`#col-der` sin `min-height:0` no baja de su contenido"
+    assert "overflow-y:auto" in col, (
+        "`#col-der` dejó de tener scroll propio: sus seis tarjetas vuelven a "
+        "estirar `#grid` y con él la página entera (U-09)."
+    )
+
+    # Sobre la regla SIN comprimir: `col` le quitó los espacios, que son justo
+    # los separadores de fila.
+    filas = re.search(r"grid-template-rows:([^;}]+)", _regla("#col-der"))
+    assert filas, "`#col-der` perdió su `grid-template-rows`"
+    # Una fila declarada por tarjeta: las filas implícitas son justo las que no
+    # encogen. Se cuentan por separadores de primer nivel, sin partir minmax().
+    plantilla = re.sub(r"minmax\([^)]*\)", "minmax", filas.group(1)).strip()
+    assert len(plantilla.split()) >= 6, (
+        f"`#col-der` declara {len(plantilla.split())} filas para seis tarjetas "
+        f"({plantilla!r}): las que sobran caen en filas implícitas `auto`, que "
+        "es exactamente el defecto que se arregló."
+    )
+
+
+def test_la_bitacora_no_puede_comerse_la_columna():
+    """La bitácora crece con cada evento; sin techo se lleva la columna."""
+    bit = _regla("#bitacora").replace(" ", "")
+    techo = _px(bit, "max-height")
+    assert techo is not None, "`#bitacora` perdió su `max-height`"
+    assert techo <= 250, f"la bitácora subió su techo a {techo}px"
+    assert "overflow:hiddenauto" in bit or "overflow-y:auto" in bit, (
+        "`#bitacora` sin scroll propio: al pasar del techo recortaría eventos "
+        "en vez de dejar leerlos."
+    )
+
+
+def test_en_CAMPO_los_rotulos_de_cada_carril_no_se_pisan():
+    """U-10: en CAMPO los dos rótulos de una pista de onda se superponían.
+
+    Medido con Chromium a 412×915 sobre `?demo=reposo&mode=campo`: cada `.lane`
+    medía 31.5 px, el rótulo superior ocupaba de 8 a 21 px y la nota inferior de
+    16 a 26 — **6 px de solape**, con el nombre del canal encima de su propia
+    nota. El técnico en campo es justo quien no puede volver a la oficina a
+    comprobarlo.
+
+    La aritmética se DERIVA de la hoja y del `laneGrow()` del propio panel, no
+    se teclea: si mañana alguien sube la tipografía del canal o mete una quinta
+    pista, este test lo caza en vez de quedarse anclado a un número viejo.
+    """
+    html = _INDEX.read_text("utf-8")
+
+    # El peor caso no es el reparto uniforme: la variante B reparte [1,3,1,1],
+    # así que la pista pequeña se lleva 1/6 del alto, no 1/4.
+    grow = re.search(r"function laneGrow\(\)\{[^}]*?\[([0-9,\s]+)\][^}]*?\[([0-9,\s]+)\]", html)
+    assert grow, "no se pudo leer `laneGrow()`: el reparto de las pistas cambió de forma"
+    repartos = [[int(n) for n in g.replace(" ", "").split(",")] for g in grow.groups()]
+    peor = max(sum(r) / min(r) for r in repartos)  # cuántas pistas "cabe" la más pequeña
+
+    # Zona que ocupa cada rótulo dentro de la pista, leída de la hoja.
+    arriba = _px(_regla(".lane .top"), "top") or 0
+    ch = re.search(r"font:\s*\d+\s+([0-9.]+)px", _regla(".lane .ch"))
+    assert ch, "`.lane .ch` dejó de declarar su tamaño en el atajo `font:`"
+    zona_arriba = arriba + float(ch.group(1))
+
+    campo_note = _regla("body.mode-campo .lane .note").replace(" ", "")
+    assert "bottom:auto" in campo_note and "top:" in campo_note, (
+        "en CAMPO la nota sigue anclada al BORDE INFERIOR de la pista. Con una "
+        "pista corta se sube sobre el rótulo del canal: es el solape de 6 px "
+        "que midió U-10. Va debajo del rótulo superior, no contra el suelo."
+    )
+    nota_top = _px(campo_note, "top")
+    assert nota_top is not None and nota_top >= zona_arriba, (
+        f"la nota de CAMPO empieza en {nota_top}px y el rótulo del canal llega "
+        f"hasta {zona_arriba}px: se siguen pisando."
+    )
+
+    nota_alto = float(re.search(r"font:\s*\d+\s+([0-9.]+)px", _regla(".lane .note")).group(1))
+    minimo = nota_top + nota_alto  # lo que la pista más pequeña TIENE que medir
+
+    suelo = _px(_regla("body.mode-campo #waves-wrap"), "min-height")
+    assert suelo is not None, (
+        "`body.mode-campo #waves-wrap` perdió su `min-height`: sin suelo, la "
+        "fila de ondas vuelve a los 126 px medidos y las pistas a 31.5."
+    )
+    pista_menor = suelo / peor
+    assert pista_menor >= minimo, (
+        f"con {suelo}px de ondas, la pista más pequeña de la variante B mide "
+        f"{pista_menor:.1f}px y sus rótulos necesitan {minimo:.1f}px. Sube el "
+        f"`min-height` de `body.mode-campo #waves-wrap` a {minimo * peor:.0f}px."
+    )
+
+    # Y la fila tiene que poder CRECER hasta ese suelo: con la horquilla vieja
+    # (`minmax(220px,300px)`) el `overflow:hidden` de la tarjeta lo recortaba.
+    izq = _regla("body.mode-campo #col-izq").replace(" ", "")
+    assert "minmax" not in izq, (
+        "`body.mode-campo #col-izq` volvió a acotar la fila de ondas por arriba: "
+        "el `min-height` del wrap se recorta contra el `overflow:hidden` de la "
+        "tarjeta y las pistas no crecen. Mismo patrón que `#rose-wrap` en T-2.30."
+    )
