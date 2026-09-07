@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GatewayConfigStateOut, RuleSetOut, SiteOut, TenantOut } from "@takab/sdk";
@@ -198,6 +199,16 @@ beforeEach(() => {
   mocks.useNotifyChannels.mockReturnValue({ channels: undefined, loading: true, error: null });
 });
 
+// [T-6.03] La página lleva un <Link> (ficha del cliente → alta de estación): hace
+// falta un router, aunque estas suites no naveguen.
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <TenantsPage />
+    </MemoryRouter>,
+  );
+}
+
 describe("TenantsPage · regla de oro 7", () => {
   it("materializa los 4 estados obligatorios", () => {
     expectFourStates((state) => {
@@ -209,43 +220,47 @@ describe("TenantsPage · regla de oro 7", () => {
           dataUpdatedAt: state === "stale" ? Date.now() - 200_000 : Date.now(),
         }),
       );
-      return <TenantsPage />;
+      return (
+        <MemoryRouter>
+          <TenantsPage />
+        </MemoryRouter>
+      );
     });
   });
 });
 
 describe("TenantsPage · aislamiento visible (dato real, no infra inventada)", () => {
   it("pinta isolation_mode tal cual del CHECK del DDL", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText("LÓGICO")).toBeTruthy();
     expect(screen.getByText("DEDICADO")).toBeTruthy();
   });
 
   it("NO afirma cosas de infra que ninguna API respalda", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText(/Schema por tenant/i)).toBeNull();
     expect(screen.queryByText(/AES-256/i)).toBeNull();
     expect(screen.queryByText(/Llaves KMS/i)).toBeNull();
   });
 
   it("tenant_admin (sin manage_tenants) no ve el botón de alta de clientes", () => {
-    render(<TenantsPage />); // beforeEach siembra tenant_admin
+    renderPage(); // beforeEach siembra tenant_admin
     expect(screen.queryByRole("button", { name: /NUEVO CLIENTE/ })).toBeNull();
   });
 
   it("no inventa una cuenta de usuarios (no hay endpoint)", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText(/usuarios/i)).toBeNull();
   });
 
   it("sitios sin cargar ⇒ S/D, nunca 0", () => {
     mocks.useTenants.mockReturnValue(tenantsData({ sites: undefined }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getAllByText(/S\/D/).length).toBeGreaterThan(0);
   });
 
   it("vertical nulo ⇒ SIN CLASIFICAR", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getAllByText(/SIN CLASIFICAR/).length).toBeGreaterThan(0);
   });
 });
@@ -253,7 +268,7 @@ describe("TenantsPage · aislamiento visible (dato real, no infra inventada)", (
 describe("TenantsPage · alta de clientes (T-1.72, solo manage_tenants)", () => {
   it("el superadmin ve el botón NUEVO CLIENTE y abre el formulario", () => {
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
     expect(screen.getByTestId("tenant-create-form")).toBeTruthy();
   });
@@ -262,7 +277,7 @@ describe("TenantsPage · alta de clientes (T-1.72, solo manage_tenants)", () => 
     const create = vi.fn();
     mocks.useCreateTenant.mockReturnValue(createState({ create }));
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
 
     fireEvent.change(screen.getByLabelText(/Código único/), { target: { value: "HOSP-1" } });
@@ -285,14 +300,14 @@ describe("TenantsPage · alta de clientes (T-1.72, solo manage_tenants)", () => 
       createState({ error: "ya existe un registro con ese identificador único" }),
     );
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
     expect(screen.getByText(/identificador único/)).toBeTruthy();
   });
 
   it("sin código o nombre el botón CREAR queda deshabilitado", () => {
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: /NUEVO CLIENTE/ }));
     expect(screen.getByRole("button", { name: /CREAR CLIENTE/ }).hasAttribute("disabled")).toBe(
       true,
@@ -303,19 +318,19 @@ describe("TenantsPage · alta de clientes (T-1.72, solo manage_tenants)", () => 
 describe("TenantsPage · visibilidad configurable (T-1.73, solo manage_visibility)", () => {
   it("el superadmin ve la tarjeta de visibilidad en el detalle", () => {
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText("VISIBILITY_CARD_STUB")).toBeTruthy();
   });
 
   it("tenant_admin (sin manage_visibility) NO ve la tarjeta", () => {
-    render(<TenantsPage />); // beforeEach siembra tenant_admin
+    renderPage(); // beforeEach siembra tenant_admin
     expect(screen.queryByText("VISIBILITY_CARD_STUB")).toBeNull();
   });
 });
 
 describe("TenantsPage · umbrales del edge", () => {
   it("cuatro sliders: cautela y disparo para PGA y PGV (el ThresholdBand real)", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByLabelText(/PGA · banda de cautela/)).toBeTruthy();
     expect(screen.getByLabelText(/PGA · banda de disparo/)).toBeTruthy();
     expect(screen.getByLabelText(/PGV · banda de cautela/)).toBeTruthy();
@@ -323,7 +338,7 @@ describe("TenantsPage · umbrales del edge", () => {
   });
 
   it("un umbral ausente en el config se rotula DEFAULT DEL EDGE", () => {
-    render(<TenantsPage />);
+    renderPage();
     // pga_trip_g SÍ está en el config; pga_watch_g no.
     expect(screen.getByText(/PGA · banda de cautela · DEFAULT DEL EDGE/)).toBeTruthy();
     expect(screen.queryByText(/PGA · banda de disparo · DEFAULT DEL EDGE/)).toBeNull();
@@ -332,7 +347,7 @@ describe("TenantsPage · umbrales del edge", () => {
   it("sin rule_set activo y SIN edit_thresholds: empty honesto, sin editor (T-1.54)", () => {
     seedRole("takab_support"); // ve /tenants pero no edita umbrales
     mocks.useTenants.mockReturnValue(tenantsData({ ruleSets: [] }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/NO TIENE RULE_SET ACTIVO/)).toBeTruthy();
     expect(screen.queryByTestId("create-v1-banner")).toBeNull();
   });
@@ -341,7 +356,7 @@ describe("TenantsPage · umbrales del edge", () => {
     // tenant_admin del tenant propio: el camino de creación (baseVersion:null)
     // existía pero quedaba enterrado tras el empty.
     mocks.useTenants.mockReturnValue(tenantsData({ ruleSets: [] }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByTestId("create-v1-banner")).toHaveTextContent("AJUSTA Y PUBLICA v1");
     expect(screen.getByLabelText(/PGA · banda de disparo/)).toBeTruthy(); // editor visible
     expect(screen.getByText(/PGA · banda de disparo · DEFAULT DEL EDGE/)).toBeTruthy();
@@ -354,7 +369,7 @@ describe("TenantsPage · umbrales del edge", () => {
     mocks.useTenants.mockReturnValue(
       tenantsData({ ruleSets: undefined, ruleSetsError: "GET /rule-sets falló (500)" }),
     );
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText(/NO TIENE RULE_SET ACTIVO/)).toBeNull();
     expect(screen.getByText(/rule-sets falló/)).toBeTruthy();
   });
@@ -362,7 +377,7 @@ describe("TenantsPage · umbrales del edge", () => {
 
 describe("TenantsPage · cascada de notificación", () => {
   it("orden fijo del servidor, con los nombres REALES (webhook, no 'api')", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByTestId("channel-webhook")).toBeTruthy();
     expect(screen.getByTestId("channel-whatsapp")).toBeTruthy();
     expect(screen.getByTestId("channel-sms")).toBeTruthy();
@@ -371,12 +386,12 @@ describe("TenantsPage · cascada de notificación", () => {
   });
 
   it("el secret del webhook jamás aparece en el DOM", () => {
-    const { container } = render(<TenantsPage />);
+    const { container } = renderPage();
     expect(container.innerHTML).not.toContain("s3cr3t");
   });
 
   it("habilitar un canal sin destino lo marca INCOMPLETO y bloquea el aplicar", () => {
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: /Habilitar SMS/ }));
     expect(screen.getByText(/INCOMPLETO · sin destino/)).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toMatch(/sms.*omitiría/);
@@ -389,7 +404,7 @@ describe("TenantsPage · cascada de notificación", () => {
     mocks.useTenants.mockReturnValue(
       tenantsData({ ruleSets: [{ ...RULE_SET, config: { notifications: {} } }] }),
     );
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/TENANT DESPROTEGIDO/)).toBeTruthy();
   });
 });
@@ -397,14 +412,14 @@ describe("TenantsPage · cascada de notificación", () => {
 describe("TenantsPage · sync firmada (nunca se afirma sin evidencia)", () => {
   it("sin config-state todavía ⇒ ESTADO DE SYNC DESCONOCIDO", () => {
     mocks.useTenantSync.mockReturnValue(syncData({ states: undefined }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/ESTADO DE SYNC DESCONOCIDO/)).toBeTruthy();
     expect(screen.queryByText(/APLICADA EN TODOS LOS GABINETES/)).toBeNull();
   });
 
   it("in_sync en todos ⇒ CONFIG FIRMADA APLICADA, identificada por su HUELLA", () => {
     mocks.useTenantSync.mockReturnValue(syncData({ states: [cfg({ sig_fingerprint: "abc123" })] }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/CONFIG FIRMADA APLICADA EN TODOS LOS GABINETES/)).toBeTruthy();
     expect(screen.getByText(/firma abc123/)).toBeTruthy();
   });
@@ -412,7 +427,7 @@ describe("TenantsPage · sync firmada (nunca se afirma sin evidencia)", () => {
   it("no muestra gateway_config_state.version junto a rule_sets.version (contadores distintos)", () => {
     mocks.useTenantSync.mockReturnValue(syncData({ states: [cfg({ version: 3 })] }));
     mocks.useRuleSetPublish.mockReturnValue(publishState({ publishedVersion: 8 }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText(/v3 en el edge/)).toBeNull();
     expect(screen.getByText(/rule_set v8 publicada/)).toBeTruthy();
   });
@@ -421,20 +436,20 @@ describe("TenantsPage · sync firmada (nunca se afirma sin evidencia)", () => {
     mocks.useTenantSync.mockReturnValue(
       syncData({ states: [cfg()], error: "config-state falló (500)" }),
     );
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText(/APLICADA EN TODOS LOS GABINETES/)).toBeNull();
     expect(screen.getByText(/ESTADO DE SYNC DESCONOCIDO/)).toBeTruthy();
   });
 
   it("mientras el poll está en vuelo tampoco", () => {
     mocks.useTenantSync.mockReturnValue(syncData({ states: [cfg()], loading: true }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/ESTADO DE SYNC DESCONOCIDO/)).toBeTruthy();
   });
 
   it("publicado pero sin llegar ⇒ PENDIENTE DE SYNC (publish sólo registra intención)", () => {
     mocks.useTenantSync.mockReturnValue(syncData({ states: [cfg({ in_sync: false })] }));
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/PENDIENTE DE SYNC/)).toBeTruthy();
   });
 
@@ -442,13 +457,13 @@ describe("TenantsPage · sync firmada (nunca se afirma sin evidencia)", () => {
     mocks.useTenantSync.mockReturnValue(
       syncData({ states: [cfg(), cfg({ gateway_id: "g-2", in_sync: false })] }),
     );
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/SYNC PARCIAL/)).toBeTruthy();
     expect(screen.queryByText(/APLICADA EN TODOS/)).toBeNull();
   });
 
   it("no promete '≤60s firmado JWT' como el mockup (es HMAC y lo hace el worker)", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText(/firmado JWT/i)).toBeNull();
   });
 });
@@ -457,7 +472,7 @@ describe("TenantsPage · edición gateada por allowed_actions.edit_thresholds", 
   it("tenant_admin puede editar y aplicar tras cambiar un umbral", () => {
     const publish = publishState();
     mocks.useRuleSetPublish.mockReturnValue(publish);
-    render(<TenantsPage />);
+    renderPage();
 
     const apply = screen.getByRole("button", { name: /APLICAR Y SINCRONIZAR/ });
     expect(apply.hasAttribute("disabled")).toBe(true); // nada sucio aún
@@ -483,7 +498,7 @@ describe("TenantsPage · edición gateada por allowed_actions.edit_thresholds", 
 
   it("takab_support (lectura) no edita: sliders y canales deshabilitados", () => {
     seedRole("takab_support");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByLabelText(/PGA · banda de disparo/).hasAttribute("disabled")).toBe(true);
     expect(screen.getByRole("button", { name: /Habilitar SMS/ }).hasAttribute("disabled")).toBe(
       true,
@@ -494,7 +509,7 @@ describe("TenantsPage · edición gateada por allowed_actions.edit_thresholds", 
   });
 
   it("una banda de cautela por encima de la de disparo bloquea el aplicar", () => {
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.change(screen.getByLabelText(/PGA · banda de cautela/), { target: { value: "0.2" } });
     expect(screen.getByRole("alert").textContent).toMatch(/cautela no puede superar/);
     expect(
@@ -503,7 +518,7 @@ describe("TenantsPage · edición gateada por allowed_actions.edit_thresholds", 
   });
 
   it("RESTAURAR descarta el borrador", () => {
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.change(screen.getByLabelText(/PGA · banda de disparo/), { target: { value: "0.1" } });
     fireEvent.click(screen.getByRole("button", { name: /RESTAURAR/ }));
     expect(screen.queryByText(/CAMBIOS SIN APLICAR/)).toBeNull();
@@ -513,7 +528,7 @@ describe("TenantsPage · edición gateada por allowed_actions.edit_thresholds", 
 describe("TenantsPage · un tenant ajeno es SÓLO LECTURA (el servidor lo rechazaría)", () => {
   it("superadmin viendo otro tenant no puede editar, y se le explica por qué", () => {
     seedRole("takab_superadmin"); // tenant de sesión = TENANT_ID
-    render(<TenantsPage />);
+    renderPage();
 
     // Selecciona el tenant AJENO (t-2).
     fireEvent.click(screen.getByRole("button", { name: /Secretaría de Salud/ }));
@@ -527,7 +542,7 @@ describe("TenantsPage · un tenant ajeno es SÓLO LECTURA (el servidor lo rechaz
 
   it("…y sobre su PROPIO tenant sí edita", () => {
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByLabelText(/PGA · banda de disparo/).hasAttribute("disabled")).toBe(false);
   });
 
@@ -535,7 +550,7 @@ describe("TenantsPage · un tenant ajeno es SÓLO LECTURA (el servidor lo rechaz
     const publish = publishState();
     mocks.useRuleSetPublish.mockReturnValue(publish);
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
 
     fireEvent.click(screen.getByRole("button", { name: /Secretaría de Salud/ }));
     const apply = screen.getByRole("button", { name: /APLICAR Y SINCRONIZAR/ });
@@ -550,7 +565,7 @@ describe("TenantsPage · concurrencia y arrastre de estado entre tenants", () =>
     const publish = publishState({ publishedVersion: 7, reset: vi.fn() });
     mocks.useRuleSetPublish.mockReturnValue(publish);
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/rule_set v7 publicada/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Secretaría de Salud/ }));
@@ -564,7 +579,7 @@ describe("TenantsPage · concurrencia y arrastre de estado entre tenants", () =>
         error: "El rule_set cambió en el servidor mientras editabas. Recarga y reintenta.",
       }),
     );
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText(/cambió en el servidor mientras editabas/)).toBeTruthy();
   });
 });
@@ -572,7 +587,7 @@ describe("TenantsPage · concurrencia y arrastre de estado entre tenants", () =>
 describe("TenantsPage · una publicación ajena no pisa la edición sin guardar", () => {
   it("avisa y CONSERVA el borrador del operador", () => {
     mocks.useTenants.mockReturnValue(tenantsData());
-    const { rerender } = render(<TenantsPage />);
+    const { rerender } = renderPage();
 
     // El operador edita y NO aplica.
     const slider = screen.getByLabelText(/PGA · banda de disparo/) as HTMLInputElement;
@@ -593,7 +608,11 @@ describe("TenantsPage · una publicación ajena no pisa la edición sin guardar"
         ],
       }),
     );
-    rerender(<TenantsPage />);
+    rerender(
+      <MemoryRouter>
+        <TenantsPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.getByText(/OTRO ADMIN PUBLICÓ UNA VERSIÓN NUEVA/)).toBeTruthy();
     // El trabajo del operador sigue ahí: no se lo pisó con el 0.2 del servidor.
@@ -604,7 +623,7 @@ describe("TenantsPage · una publicación ajena no pisa la edición sin guardar"
 
   it("sin edición sin guardar, el rule_set nuevo se adopta en silencio", () => {
     mocks.useTenants.mockReturnValue(tenantsData());
-    const { rerender } = render(<TenantsPage />);
+    const { rerender } = renderPage();
 
     mocks.useTenants.mockReturnValue(
       tenantsData({
@@ -619,7 +638,11 @@ describe("TenantsPage · una publicación ajena no pisa la edición sin guardar"
         ],
       }),
     );
-    rerender(<TenantsPage />);
+    rerender(
+      <MemoryRouter>
+        <TenantsPage />
+      </MemoryRouter>,
+    );
 
     expect(screen.queryByText(/OTRO ADMIN PUBLICÓ/)).toBeNull();
     expect((screen.getByLabelText(/PGA · banda de disparo/) as HTMLInputElement).value).toBe("0.2");
@@ -628,7 +651,7 @@ describe("TenantsPage · una publicación ajena no pisa la edición sin guardar"
 
 describe("TenantsPage · búsqueda local del catálogo (T-2.51)", () => {
   it("filtra la lista sin pedir nada al servidor", () => {
-    render(<TenantsPage />);
+    renderPage();
     const list = screen.getByRole("navigation", { name: "Tenants" });
     expect(within(list).getByText("Industrias del Valle")).toBeTruthy();
 
@@ -640,20 +663,20 @@ describe("TenantsPage · búsqueda local del catálogo (T-2.51)", () => {
   });
 
   it("el contador pasa a MOSTRANDO n DE N mientras se filtra", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText("2 TENANT(S) VISIBLES")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "Salud" } });
     expect(screen.getByText("MOSTRANDO 1 DE 2")).toBeTruthy();
   });
 
   it("sin coincidencias lo DICE en vez de dejar la columna en blanco", () => {
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "zzz" } });
     expect(screen.getByTestId("tenant-search-empty")).toBeTruthy();
   });
 
   it("filtrar NO deselecciona el cliente abierto (el detalle no se vacía)", () => {
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "zzz" } });
     expect(screen.getByText("Industrias del Valle")).toBeTruthy(); // sigue en el detalle
   });
@@ -661,7 +684,7 @@ describe("TenantsPage · búsqueda local del catálogo (T-2.51)", () => {
 
 describe("TenantsPage · edición de la ficha (T-2.51, solo manage_tenants)", () => {
   it("tenant_admin NO ve el botón de editar ficha (la RLS lo rechazaría)", () => {
-    render(<TenantsPage />); // beforeEach siembra tenant_admin
+    renderPage(); // beforeEach siembra tenant_admin
     expect(screen.queryByRole("button", { name: "EDITAR FICHA" })).toBeNull();
   });
 
@@ -669,7 +692,7 @@ describe("TenantsPage · edición de la ficha (T-2.51, solo manage_tenants)", ()
     seedRole("takab_superadmin");
     const update = vi.fn();
     mocks.useUpdateTenant.mockReturnValue(updateState({ update }));
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: "EDITAR FICHA" }));
     fireEvent.change(screen.getByLabelText("Nombre"), { target: { value: "Otro Nombre" } });
     fireEvent.click(screen.getByRole("button", { name: "GUARDAR FICHA" }));
@@ -684,7 +707,7 @@ describe("TenantsPage · edición de la ficha (T-2.51, solo manage_tenants)", ()
     mocks.useUpdateTenant.mockReturnValue(
       updateState({ error: "CONFLICTO · otro administrador guardó este cliente" }),
     );
-    render(<TenantsPage />);
+    renderPage();
     fireEvent.click(screen.getByRole("button", { name: "EDITAR FICHA" }));
     expect(screen.getByRole("alert").textContent).toMatch(/CONFLICTO/);
   });
@@ -693,18 +716,18 @@ describe("TenantsPage · edición de la ficha (T-2.51, solo manage_tenants)", ()
 describe("TenantsPage · gestión de usuarios (T-2.54, solo manage_users)", () => {
   it("el superadmin ve la tarjeta de usuarios", () => {
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText("USERS_CARD_STUB")).toBeTruthy();
   });
 
   it("tenant_admin también: administra SU propio cliente", () => {
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText("USERS_CARD_STUB")).toBeTruthy();
   });
 
   it("takab_support NO la ve: soporte lee la plataforma, no reparte identidades", () => {
     seedRole("takab_support");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.queryByText("USERS_CARD_STUB")).toBeNull();
   });
 });
@@ -712,7 +735,7 @@ describe("TenantsPage · gestión de usuarios (T-2.54, solo manage_users)", () =
 describe("TenantsPage · marco normativo declarado (T-2.82)", () => {
   it("el superadmin lo edita: cargar el marco es administrar la ficha del cliente", () => {
     seedRole("takab_superadmin");
-    render(<TenantsPage />);
+    renderPage();
     expect(screen.getByText("COMPLIANCE_CARD_STUB_EDITABLE")).toBeTruthy();
   });
 
@@ -720,11 +743,45 @@ describe("TenantsPage · marco normativo declarado (T-2.82)", () => {
     "%s LO VE pero no lo edita: se imprime en SU dictamen, así que tiene que poder leerlo",
     (role) => {
       seedRole(role as "tenant_admin");
-      render(<TenantsPage />);
+      renderPage();
       // Se monta —a diferencia de usuarios/visibilidad, que desaparecen— porque la
       // lectura no está gateada: lo que está gateado es escribir una afirmación
       // normativa en la ficha de un cliente (GATE-LEGAL, escritura interna).
       expect(screen.getByText("COMPLIANCE_CARD_STUB_SOLO_LECTURA")).toBeTruthy();
     },
   );
+});
+
+describe("TenantsPage · de la ficha del cliente al alta de estación (T-6.03)", () => {
+  it("el superadmin ve NUEVA ESTACIÓN AQUÍ apuntando a /fleet con el cliente preseleccionado", () => {
+    seedRole("takab_superadmin");
+    renderPage();
+    const link = screen.getByTestId("tenant-new-site-link");
+    expect(link).toHaveAttribute("href", `/fleet?tenant=${TENANT_ID}&nueva=1`);
+    expect(link).toHaveAttribute(
+      "title",
+      "Abre el alta de estación escribiendo en Industrias del Valle",
+    );
+  });
+
+  it("el enlace sigue al cliente SELECCIONADO", () => {
+    seedRole("takab_superadmin");
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /Secretaría de Salud/ }));
+    expect(screen.getByTestId("tenant-new-site-link")).toHaveAttribute(
+      "href",
+      `/fleet?tenant=${DEDICATED.tenant_id}&nueva=1`,
+    );
+  });
+
+  it("tenant_admin también lo tiene: administra su flota", () => {
+    renderPage(); // beforeEach siembra tenant_admin
+    expect(screen.getByTestId("tenant-new-site-link")).toBeInTheDocument();
+  });
+
+  it("takab_support NO: lee la flota, no la mueve — no se promete un alta condenada al 403", () => {
+    seedRole("takab_support");
+    renderPage();
+    expect(screen.queryByTestId("tenant-new-site-link")).toBeNull();
+  });
 });

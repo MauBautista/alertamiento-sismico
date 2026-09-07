@@ -75,9 +75,10 @@ function scopeLabel(user: UserOut, sites: SiteOut[] | undefined): string {
  *   listan siquiera.
  */
 export default function UsersCard({ tenant, sites }: UsersCardProps) {
-  const myRole = useSessionStore((s) => s.me?.role ?? "");
   const now = useNow(5000);
-  const isInternal = myRole === "takab_superadmin" || myRole === "takab_support";
+  // [T-6.03] Lo declara `/me` (`is_internal`), no el nombre del rol: la lista de
+  // roles internos vive en `auth/matrix.INTERNAL_ROLES` y viaja con el token.
+  const isInternal = useSessionStore((s) => s.me?.is_internal === true);
   const data = useUsers(true);
   const create = useCreateUser();
   const update = useUpdateUser();

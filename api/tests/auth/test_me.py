@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 import auth_utils as au
-from takab_api.auth.matrix import ACTIONS, allowed_actions, allowed_routes
+from takab_api.auth.matrix import ACTIONS, INTERNAL_ROLES, allowed_actions, allowed_routes
 
 ALL_ROLES = [
     "takab_superadmin",
@@ -34,6 +34,10 @@ async def test_me_returns_role_matrix(client, role: str) -> None:
     assert body["site_scope"] == "*"
     assert body["allowed_routes"] == allowed_routes(role)
     assert body["allowed_actions"] == allowed_actions(role)
+    # [T-6.03] El servidor declara si el portador es interno de TAKAB: para él el
+    # ``tenant_id`` de una fila nueva es OBLIGATORIO (``resolve_write_tenant``), y la
+    # consola necesita saberlo para pintar el selector de cliente en vez de un 400.
+    assert body["is_internal"] is (role in INTERNAL_ROLES)
 
 
 @pytest.mark.parametrize("role", sorted(MOBILE_ONLY))
@@ -75,6 +79,9 @@ async def test_me_openapi_publishes_typed_response(client) -> None:
         # [T-2.45] La UI declara si el SERVIDOR filtra de verdad; sin este campo la
         # insignia de alcance afirmaría un filtro que en fase A no se aplica.
         "console_scope_enforced",
+        # [T-6.03] Si el portador escribe en el tenant que NOMBRE (interno) o en el
+        # suyo (rol de cliente). La consola deriva de aquí el selector de cliente.
+        "is_internal",
         "surface",
         "allowed_routes",
         "allowed_actions",

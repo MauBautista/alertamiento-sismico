@@ -629,6 +629,8 @@ body {
   cursor: pointer;
   transition: all 120ms var(--tk-ease);
   display: inline-flex; align-items: center; gap: 8px;
+  /* [T-6.03] También se usa sobre un <Link> (la ficha del cliente → alta de estación). */
+  text-decoration: none;
 }
 .soc-btn--primary { background: var(--tk-cyan); color: var(--tk-navy-900); }
 .soc-btn--primary:hover { background: var(--tk-cyan-hover); }

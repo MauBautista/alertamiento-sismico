@@ -1426,6 +1426,11 @@
   margin: 0 0 4px;
   color: var(--tk-fg-1);
 }
+/* [T-6.03] Rótulo PERMANENTE del alta: en qué cliente se escribe. Va entre el título
+   y los campos, con el nombre en primer plano — un dato que decide dónde aterriza un
+   edificio no puede vivir sólo en un tooltip ni apagarse cuando el rol no elige. */
+.fleet__target { font-size: 10px; letter-spacing: 0.1em; color: var(--tk-fg-3); margin: 0 0 2px; }
+.fleet__target strong { color: var(--tk-fg-1); font-weight: 600; letter-spacing: 0.04em; }
 .fleet__form label { display: flex; flex-direction: column; gap: 4px; }
 .fleet__form label > span { font-size: 9px; letter-spacing: 0.1em; color: var(--tk-fg-3); }
 .fleet__form input,

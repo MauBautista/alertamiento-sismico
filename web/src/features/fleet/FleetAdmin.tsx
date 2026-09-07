@@ -6,6 +6,7 @@
 // — pintar un botón que siempre daría 403 es lo que prohíbe la regla de oro 7.
 
 import { useState } from "react";
+import { useSearchParams } from "react-router";
 
 import { listSitesSitesGet } from "@takab/sdk";
 import type { GatewayOut, GatewayRowOut, SiteOut } from "@takab/sdk";
@@ -19,9 +20,11 @@ import type { GatewayValues, SensorValues } from "./HardwareForm";
 import GatewayAcuse from "./GatewayAcuse";
 import RetireDialog from "./RetireDialog";
 import SiteForm from "./SiteForm";
-import type { SiteFormValues } from "./SiteForm";
+import type { SiteFormValues, WriteTarget } from "./SiteForm";
 import { formatPoint } from "./geo";
 import { useFleet } from "./useFleet";
+import { useTenantOptions } from "./useTenantOptions";
+import { FLEET_NEW_SITE_PARAMS } from "./newSiteHref";
 import {
   useCreateGateway,
   useCreateSensor,
@@ -70,7 +73,23 @@ export default function FleetAdmin() {
 
 function FleetAdminPanel() {
   const sites = useSites();
-  const [editing, setEditing] = useState<Editing>({ kind: "none" });
+  // [T-6.03] `?tenant=<id>&nueva=1`: la ficha del cliente manda aquí con el alta
+  // abierta y el cliente preseleccionado. Se consume UNA vez (estado inicial) y se
+  // limpia al cerrar el formulario, para que recargar no reabra un alta a medias.
+  const [params, setParams] = useSearchParams();
+  const preselectedTenant = params.get(FLEET_NEW_SITE_PARAMS.tenant);
+  const [editing, setEditing] = useState<Editing>(() =>
+    params.get(FLEET_NEW_SITE_PARAMS.nueva) === "1" ? { kind: "new" } : { kind: "none" },
+  );
+  function closeForm() {
+    setEditing({ kind: "none" });
+    if (params.has(FLEET_NEW_SITE_PARAMS.tenant) || params.has(FLEET_NEW_SITE_PARAMS.nueva)) {
+      const next = new URLSearchParams(params);
+      next.delete(FLEET_NEW_SITE_PARAMS.tenant);
+      next.delete(FLEET_NEW_SITE_PARAMS.nueva);
+      setParams(next, { replace: true });
+    }
+  }
 
   const create = useCreateSite();
   const update = useUpdateSite();
@@ -84,6 +103,30 @@ function FleetAdminPanel() {
 
   const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
   const codeConfigured = useRetireCodeConfigured(tenantId);
+  // [T-6.03] Lo dice el SERVIDOR (`/me.is_internal`), no el nombre del rol: un rol
+  // interno debe NOMBRAR el cliente al crear un sitio (la API responde 400 si no);
+  // un rol de cliente escribe siempre en el suyo y sólo se le rotula.
+  const isInternal = useSessionStore((s) => s.me?.is_internal === true);
+  const tenantOptions = useTenantOptions();
+  const tenantName = (id: string | null): string | null =>
+    id === null ? null : (tenantOptions.tenants.find((t) => t.tenant_id === id)?.name ?? null);
+  const writeTarget: WriteTarget =
+    editing.kind === "edit"
+      ? // Un sitio no se muda de cliente: al editar sólo se rotula de quién es.
+        {
+          kind: "own",
+          tenantId: editing.site.tenant_id,
+          tenantName: tenantName(editing.site.tenant_id),
+        }
+      : isInternal
+        ? {
+            kind: "choose",
+            tenants: tenantOptions.tenants,
+            loading: tenantOptions.loading,
+            error: tenantOptions.error,
+            initialTenantId: preselectedTenant,
+          }
+        : { kind: "own", tenantId: tenantId ?? "", tenantName: tenantName(tenantId) };
   // [T-2.53] El botón de códigos se gatea por su PROPIA acción: `manage_fleet` y
   // `enrollment_manage` coinciden hoy en la web, pero derivarlo de la otra dejaría
   // el control colgando de una coincidencia (regla de oro 7).
@@ -106,7 +149,11 @@ function FleetAdminPanel() {
     };
 
     if (editing.kind === "new") {
-      create.mutate(common, { onSuccess: () => setEditing({ kind: "none" }) });
+      // [T-6.03] El cliente viaja SÓLO cuando el rol puede elegirlo. Para un rol de
+      // cliente lo resuelve el servidor desde los claims: mandarlo sería una
+      // invitación a probar con otro (`resolve_write_tenant` lo negaría igual).
+      const body = isInternal ? { ...common, tenant_id: values.tenant_id } : common;
+      create.mutate(body, { onSuccess: closeForm });
     } else if (editing.kind === "edit") {
       update.mutate(
         {
@@ -160,7 +207,7 @@ function FleetAdminPanel() {
   return (
     <section className="fleet__admin" data-testid="fleet-admin">
       <header className="fleet__adminhd">
-        <h2>ESTACIONES DEL TENANT</h2>
+        <h2>{isInternal ? "ESTACIONES · TODOS LOS CLIENTES" : "ESTACIONES DEL TENANT"}</h2>
         {editing.kind === "none" && (
           <button type="button" className="soc-btn" onClick={() => setEditing({ kind: "new" })}>
             NUEVA ESTACIÓN
@@ -189,10 +236,11 @@ function FleetAdminPanel() {
       ) : editing.kind !== "none" ? (
         <SiteForm
           site={editing.kind === "edit" ? editing.site : undefined}
+          writeTarget={writeTarget}
           submitting={active}
           error={error}
           onSubmit={submit}
-          onCancel={() => setEditing({ kind: "none" })}
+          onCancel={closeForm}
         />
       ) : (
         <StateFrame
@@ -209,6 +257,9 @@ function FleetAdminPanel() {
                 <tr>
                   <th>CÓDIGO</th>
                   <th>NOMBRE</th>
+                  {/* [T-6.03] Un interno ve los sitios de TODOS los clientes (RLS):
+                      sin esta columna la tabla no dice de quién es cada fila. */}
+                  {isInternal && <th>CLIENTE</th>}
                   <th>UBICACIÓN</th>
                   <th>CRITICIDAD</th>
                   <th />
@@ -221,6 +272,15 @@ function FleetAdminPanel() {
                     <td>
                       <SiteLabel name={site.name} code={site.code} />
                     </td>
+                    {isInternal && (
+                      <td data-testid={`site-tenant-${site.code}`}>
+                        {tenantName(site.tenant_id) ?? (
+                          // Sin catálogo no se inventa un nombre: el identificador es
+                          // feo pero cierto.
+                          <span className="soc-mono">{site.tenant_id}</span>
+                        )}
+                      </td>
+                    )}
                     <td className="soc-mono">{formatPoint({ lat: site.lat, lon: site.lon })}</td>
                     <td className="soc-mono">{site.criticality.toUpperCase()}</td>
                     <td className="fleet__rowactions">

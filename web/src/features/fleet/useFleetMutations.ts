@@ -38,8 +38,11 @@ import type {
 export function messageFor(status: number, fallback: string): string {
   switch (status) {
     case 400:
-      // [T-2.36] Primer factor: el identificador tecleado no coincide.
-      return "NO COINCIDE · el identificador que escribiste no es el de esta estación.";
+      // [T-6.03] Antes decía «NO COINCIDE · el identificador…», que es el 400 del
+      // RETIRO (primer factor) y vive ahora en `retireMessageFor`. Aquí, el 400 de
+      // un alta era «tenant_id es obligatorio para roles internos TAKAB» disfrazado
+      // de otro error. El `detail` del servidor se añade en `unwrap`.
+      return "PETICIÓN RECHAZADA · el servidor no aceptó los datos.";
     case 409:
       return "CONFLICTO · el registro cambió en el servidor o el identificador ya existe. Recarga y reintenta.";
     case 403:
@@ -59,6 +62,10 @@ export function messageFor(status: number, fallback: string): string {
 
 /** El 403 del retiro es del CÓDIGO, no del rol: el rol ya se validó al pintar el botón. */
 function retireMessageFor(status: number, fallback: string): string {
+  if (status === 400) {
+    // [T-2.36] Primer factor: el identificador tecleado no coincide.
+    return "NO COINCIDE · el identificador que escribiste no es el de esta estación.";
+  }
   if (status === 403) {
     return "CÓDIGO INCORRECTO · verifica el código de retiro con TAKAB.";
   }
@@ -68,14 +75,25 @@ function retireMessageFor(status: number, fallback: string): string {
   return messageFor(status, fallback);
 }
 
+/** El `detail` textual de un error de FastAPI, si lo hay. */
+export function serverDetail(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const detail = (error as { detail?: unknown }).detail;
+  return typeof detail === "string" && detail.trim() !== "" ? detail : null;
+}
+
 async function unwrap<T>(
-  call: Promise<{ data?: T; response: Response }>,
+  call: Promise<{ data?: T; error?: unknown; response: Response }>,
   what: string,
   translate: (status: number, fallback: string) => string = messageFor,
 ): Promise<T> {
-  const { data, response } = await call;
+  const { data, error, response } = await call;
   if (data === undefined) {
-    throw new Error(translate(response.status, `${what} falló (HTTP ${response.status})`));
+    const base = translate(response.status, `${what} falló (HTTP ${response.status})`);
+    // [T-6.03] Si el servidor dijo POR QUÉ, se lee: «tenant_id es obligatorio para
+    // roles internos TAKAB» explica más que cualquier traducción por código.
+    const detail = serverDetail(error);
+    throw new Error(detail === null ? base : `${base} · ${detail}`);
   }
   return data;
 }

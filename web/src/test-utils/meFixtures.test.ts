@@ -36,6 +36,16 @@ describe("[T-5.28] fixtures de /me derivadas de la matriz", () => {
     }
   });
 
+  it("[T-6.03] `is_internal` sale del fichero: exactamente dos roles internos, ninguno de campo", () => {
+    const internos = Object.entries(ME_FIXTURES)
+      .filter(([, me]) => me.is_internal === true)
+      .map(([rol]) => rol)
+      .sort();
+    expect(internos).toEqual([...matriz.internal_roles].sort());
+    expect(internos).toHaveLength(2);
+    for (const rol of MOBILE_ONLY_ROLES) expect(ME_FIXTURES[rol].is_internal).toBe(false);
+  });
+
   it("`ACTIONS_NONE` es TODO en false: es la base sobre la que se pinta cada rol", () => {
     expect(Object.values(ACTIONS_NONE).every((v) => v === false)).toBe(true);
   });

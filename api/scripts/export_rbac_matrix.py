@@ -27,6 +27,7 @@ from pathlib import Path
 
 from takab_api.auth.matrix import (
     ACTIONS,
+    INTERNAL_ROLES,
     ROLE_ACTION_MATRIX,
     ROLE_ROUTE_MATRIX,
     ROUTE_ORDER,
@@ -51,6 +52,9 @@ def matriz() -> dict:
         # como destino tras el login. Un `sorted()` aquí movería el aterrizaje.
         "route_order": list(ROUTE_ORDER),
         "actions": list(ACTIONS),
+        # [T-6.03] Quién debe NOMBRAR el tenant al escribir; `/me` lo publica como
+        # `is_internal` y `meFixtures.ts` lo deriva de aquí.
+        "internal_roles": sorted(INTERNAL_ROLES),
         "roles": {
             rol: {
                 # Las rutas del rol, EN EL ORDEN de `ROUTE_ORDER` — que es como las

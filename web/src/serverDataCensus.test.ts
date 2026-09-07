@@ -231,7 +231,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
   "features/console/DrillControls.tsx::DrillControls": ["drill", "error", "loading", "pending"],
   "features/console/DrillModal.tsx::DrillModal": ["plantillas"],
   "features/console/EpicenterModal.tsx::EpicenterModal": ["effective"],
-  "features/fleet/FleetAdmin.tsx::FleetAdminPanel": ["codeConfigured", "gatewaysOf"],
+  "features/fleet/FleetAdmin.tsx::FleetAdminPanel": ["codeConfigured", "gatewaysOf", "writeTarget"],
   "features/fleet/FleetPage.tsx::FleetPage": [
     "activos",
     "codeConfigured",
@@ -319,7 +319,10 @@ const RAZONES: Record<string, string> = {
     "(a) FORMULARIOS QUE SUSTITUYEN A LA LISTA. `HardwareForm` y `RetireDialog` reemplazan el " +
     "listado mientras se edita: colgarlos del StateFrame de ESTACIONES los haría desaparecer " +
     "en cada refetch con el formulario a medio llenar. `gatewaysOf(site_id)` es la consulta " +
-    "ya cargada y `codeConfigured` es un booleano de habilitación, no una medición.",
+    "ya cargada y `codeConfigured` es un booleano de habilitación, no una medición. " +
+    "[T-6.03] `writeTarget` es la lista de clientes del SELECTOR del alta y va al mismo " +
+    "formulario: sus tres estados (cargando / sin lista / lista) los declara el propio " +
+    "`SiteForm` en el rótulo «ESCRIBIENDO EN …» y en el selector apagado, no un marco.",
   "features/fleet/FleetPage.tsx::FleetPage":
     "(b) EL CASO T-2.59, ya arreglado a mano y por eso censado. La tira de KPI es la cabecera " +
     "de la página y vive fuera del marco; su guarda es `sinDato = fleet.loading || " +

@@ -27,6 +27,7 @@ import pytest
 
 from takab_api.auth.matrix import (
     ACTIONS,
+    INTERNAL_ROLES,
     ROLE_ACTION_MATRIX,
     ROLE_ROUTE_MATRIX,
     ROUTE_ORDER,
@@ -82,6 +83,14 @@ def test_CELDA_A_CELDA_por_igualdad(fichero: dict) -> None:
     ]
     detalle = "\n".join(divergentes)
     assert not divergentes, f"{len(divergentes)} celda(s) divergen. {_COMO_REGENERAR}\n{detalle}"
+
+
+def test_los_roles_internos_son_los_de_la_matriz(fichero: dict) -> None:
+    """[T-6.03] ``INTERNAL_ROLES`` decide quién debe NOMBRAR el tenant al escribir
+    (``resolve_write_tenant``). Las fixtures de la web derivan ``is_internal`` de
+    aquí; una lista a mano en `meFixtures.ts` sería el mismo espejo que divergió."""
+    assert fichero["internal_roles"] == sorted(INTERNAL_ROLES), _COMO_REGENERAR
+    assert set(fichero["internal_roles"]) <= set(fichero["roles"]), _COMO_REGENERAR
 
 
 def test_el_censo_declara_SU_TAMAÑO(fichero: dict) -> None:

@@ -1,9 +1,11 @@
 import { ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
+import { newSiteHref } from "../fleet/newSiteHref";
 import ComplianceLabelsCard from "./ComplianceLabelsCard";
 import NotificationChannels from "./NotificationChannels";
 import SyncFooter from "./SyncFooter";
@@ -142,6 +144,12 @@ export default function TenantsPage() {
   // [T-2.54] Gestión de usuarios: superadmin y tenant_admin (acotado a su tenant
   // por el servidor). No es una ruta nueva — vive dentro de la ficha del cliente.
   const canManageUsers = me?.allowed_actions.manage_users === true;
+  // [T-6.03] «Crear cliente → crear estación» era un flujo roto en su segundo paso:
+  // el alta de estación no sabía en qué cliente escribir. La ficha del cliente lleva
+  // ahora al alta YA apuntada a él. Se gatea por la acción Y por la ruta, como todo
+  // enlace desde T-6.02: no se promete una pantalla que el rol no tiene.
+  const canManageFleet =
+    me?.allowed_actions.manage_fleet === true && me.allowed_routes.includes("/fleet");
   const createTenant = useCreateTenant();
   const updateTenant = useUpdateTenant();
   const [editingTenant, setEditingTenant] = useState(false);
@@ -492,6 +500,16 @@ export default function TenantsPage() {
                     <ShieldCheck size={11} aria-hidden />
                     {isDedicated(selected) ? "TENANT DEDICADO" : "TENANT LÓGICO"}
                   </span>
+                  {canManageFleet && (
+                    <Link
+                      to={newSiteHref(selected.tenant_id)}
+                      className="soc-btn soc-btn--secondary"
+                      data-testid="tenant-new-site-link"
+                      title={`Abre el alta de estación escribiendo en ${selected.name}`}
+                    >
+                      NUEVA ESTACIÓN AQUÍ
+                    </Link>
+                  )}
                   {canManageTenants && (
                     <button
                       type="button"

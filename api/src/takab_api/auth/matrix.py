@@ -59,6 +59,14 @@ BUILDING = "/building"
 # de él como destino tras el login: meter /audit antes rompería el aterrizaje.
 ROUTE_ORDER: tuple[str, ...] = (CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING)
 
+# Roles internos TAKAB. Sus políticas RLS ``*_admin`` llevan ``WITH CHECK
+# (app_is_takab_internal())`` SIN filtro de tenant: la base no los detendría al
+# escribir en un tenant ajeno, así que para ellos el ``tenant_id`` de una fila nueva
+# es OBLIGATORIO y explícito (``routers/_common.resolve_write_tenant``). Vive aquí
+# —y no en ``routers/_common``— porque ``GET /me`` lo publica como ``is_internal``
+# y ``scripts/export_rbac_matrix.py`` lo exporta a las fixtures de la web [T-6.03].
+INTERNAL_ROLES: frozenset[str] = frozenset({"takab_superadmin", "takab_support"})
+
 # Rutas concedidas por rol (espejo de §2, celda ≠ "—").
 ROLE_ROUTE_MATRIX: dict[str, frozenset[str]] = {
     "takab_superadmin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),

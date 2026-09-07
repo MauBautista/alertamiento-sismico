@@ -391,7 +391,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     «los botones vivos responden y los apagados dicen por qué» **6/6 pantallas** a 1280×800, donde
     en `main` fallaban `03` y `04`.
 
-### [ ] T-6.03 · **Dar de alta un sitio dice y elige en qué cliente se escribe** — `SOFTWARE`
+### [x] T-6.03 · **Dar de alta un sitio dice y elige en qué cliente se escribe** — `SOFTWARE`
 
 > El formulario de estación no tiene campo de cliente y la API resuelve el tenant del JWT: el
 > sitio del cliente recién creado aterriza en el tenant del operador, sin aviso. La API ya acepta
@@ -405,9 +405,42 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `FleetAdmin.test.tsx` sobre el cuerpo del `POST /sites`.
 - **Objetivo:** para roles internos, un selector de cliente en el alta de estación con rótulo permanente «escribiendo en …»; para roles de tenant, el rótulo solo.
 - **Criterios de aceptación:**
-  - [ ] Crear cliente → crear estación deja el sitio en el cliente nuevo, y `/console` lo muestra al elegir ese cliente.
-  - [ ] El formulario declara siempre en qué cliente escribe; un rol de tenant no puede elegir otro.
-  - [ ] El flujo completo (cliente → sitio → gabinete → mapa) tiene un test que recorre las tres pantallas.
+  - [x] Crear cliente → crear estación deja el sitio en el cliente nuevo, y `/console` lo muestra al elegir ese cliente.
+  - [x] El formulario declara siempre en qué cliente escribe; un rol de tenant no puede elegir otro.
+  - [x] El flujo completo (cliente → sitio → gabinete → mapa) tiene un test que recorre las tres pantallas.
+- **Cómo se cerró (2026-09-07, SESIÓN C3):**
+  - **El defecto era peor que «aterriza en el tenant del operador».** Medido en vivo contra
+    `make soc-local`: el superadmin —el único rol que crea clientes— recibía del `POST /sites`
+    un **400 «tenant_id es obligatorio para roles internos TAKAB»** (la API ya exigía nombrar el
+    cliente), y la consola lo traducía con el mensaje del **retiro** («NO COINCIDE · el
+    identificador que escribiste…»). No podía crear una estación, y nada le decía por qué. Para
+    un `tenant_admin` sí aterrizaba en el suyo, sin rótulo.
+  - **El servidor dice quién debe elegir.** `GET /me` publica `is_internal` (derivado de
+    `auth/matrix.INTERNAL_ROLES`, que se movió allí desde `routers/_common` y ahora también lo
+    usa el hub WS). La consola no adivina por el nombre del rol: `FleetAdmin` y `UsersCard` leen
+    `me.is_internal`. El exportador de la matriz RBAC vuelca `internal_roles` al fixture
+    compartido y `meFixtures.ts` deriva `is_internal` de ahí (test de igualdad en la API).
+  - **El formulario declara SIEMPRE en qué cliente escribe.** `SiteForm` lleva un rótulo
+    permanente «ESCRIBIENDO EN · <cliente>» («ESTACIÓN DE · …» al editar). Para un rol interno,
+    un selector CLIENTE (`/tenants`, misma clave de caché que la pantalla Multi-Tenant, así el
+    cliente recién creado aparece sin recargar) y el envío apagado hasta elegir uno **de la
+    lista**, con el porqué en el `title`; para un rol de cliente, sólo el rótulo. El cuerpo
+    lleva `tenant_id` únicamente cuando el rol pudo elegirlo. La tabla de estaciones del
+    interno gana la columna CLIENTE y el 400 genérico ya no se disfraza de retiro: `unwrap`
+    añade el `detail` del servidor al mensaje.
+  - **El flujo se enlaza.** La ficha del cliente en `/tenants` ofrece «NUEVA ESTACIÓN AQUÍ»
+    (gateada por `manage_fleet` **y** la ruta `/fleet`, como todo enlace desde T-6.02) hacia
+    `/fleet?tenant=<id>&nueva=1`, que abre el alta ya apuntada a ese cliente; los parámetros se
+    limpian al cerrar el formulario.
+  - **Verificación.** `web/e2e/onboarding.spec.ts` recorre las tres pantallas contra el stack
+    real: crea un cliente único, salta por el enlace, crea la estación (el `POST /sites` responde
+    con el `tenant_id` del cliente nuevo), añade el gabinete (el acuse lleva ese tenant) y en
+    `/console` el `map/state` trae el sitio en ese cliente y el semáforo lo cuenta. 6/6 en los
+    tres viewports. Unitarios: `SiteForm.test` (10), `FleetAdmin.test` (+4: superadmin envía el
+    `tenant_id` elegido, `?tenant=` preselecciona, el 400 trae el `detail`, `tenant_admin` sigue
+    sin mandarlo), `TenantsPage.test` (+4 del enlace por rol), `meFixtures.test` (+1),
+    `test_me.py` e `test_rbac_fixture_es_la_matriz.py` en la API. Censo `serverDataCensus`:
+    `FleetAdminPanel` declara `writeTarget` con su razón.
 
 ### [x] T-6.04 · **La marca DEMO llega a todo lo que pinta un sitio** — `SOFTWARE`
 

@@ -74,6 +74,9 @@ function me(role: RoleName): MeResponse {
     surface: fila.routes.length > 0 ? "web" : "mobile",
     allowed_routes: [...fila.routes],
     allowed_actions: { ...ACTIONS_NONE, ...(fila.actions as unknown as MeActions) },
+    // [T-6.03] También derivado: `internal_roles` sale de `matrix.INTERNAL_ROLES`
+    // por el mismo exportador. Una lista a mano aquí sería el espejo que divergió.
+    is_internal: (matriz.internal_roles as readonly string[]).includes(role),
   };
 }
 
