@@ -249,4 +249,28 @@ describe("formatPga (T-1.50)", () => {
     expect(formatPga(0.567)).toBe("0.567g");
     expect(formatPga(0)).toBe("0.000g"); // cero MEDIDO sí es cero
   });
+
+  // [T-6.02 · U-05] «AUTH · MFA» era un literal del mockup pintado en verde en
+  // TODA sesión, incluida la de /dev/token. Ahora se pinta lo que se puede
+  // afirmar, y sólo si hay algo que afirmar.
+  it("sin constancia de autenticación no pinta ningún distintivo", () => {
+    renderTable();
+    expect(screen.queryByTestId("auth-badge")).toBeNull();
+    expect(screen.queryByText(/MFA/)).toBeNull();
+  });
+
+  it("con constancia pinta el rótulo que le pasan, con su explicación en el title", () => {
+    renderTable({
+      authBadge: {
+        label: "AUTH · POOL PRINCIPAL · MFA OBLIGATORIO",
+        title: "El token certifica el pool, no el factor de esta sesión",
+      },
+    });
+    const badge = screen.getByTestId("auth-badge");
+    expect(badge).toHaveTextContent("AUTH · POOL PRINCIPAL · MFA OBLIGATORIO");
+    expect(badge).toHaveAttribute(
+      "title",
+      "El token certifica el pool, no el factor de esta sesión",
+    );
+  });
 });

@@ -121,6 +121,7 @@ export default function ComplianceLabelsCard({ tenant, canEdit }: ComplianceLabe
                       )
                     }
                     disabled={mut.pending}
+                    title={mut.pending ? "Guardando…" : undefined}
                   >
                     Retirar
                   </button>

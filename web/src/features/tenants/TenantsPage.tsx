@@ -176,6 +176,12 @@ export default function TenantsPage() {
    */
   const ownTenant = tenantId !== null && tenantId === me?.tenant_id;
   const canEdit = hasEditAction && ownTenant;
+  // [T-6.02] Por qué no se puede editar, para los controles apagados.
+  const editGateTitle = !hasEditAction
+    ? "Tu rol no tiene la acción edit_thresholds"
+    : !ownTenant
+      ? "SÓLO LECTURA: los umbrales de un tenant ajeno se editan con una sesión de ese tenant"
+      : undefined;
 
   const ruleSet = useMemo(
     () => activeTenantRuleSet(data.ruleSets, tenantId),
@@ -411,6 +417,13 @@ export default function TenantsPage() {
                     newTenant.code.trim() === "" ||
                     newTenant.name.trim() === ""
                   }
+                  title={
+                    createTenant.pending
+                      ? "Creando…"
+                      : newTenant.code.trim() === "" || newTenant.name.trim() === ""
+                        ? "Escribe el código y el nombre del cliente"
+                        : undefined
+                  }
                 >
                   {createTenant.pending ? "CREANDO…" : "CREAR CLIENTE"}
                 </button>
@@ -567,6 +580,7 @@ export default function TenantsPage() {
                 <NotificationChannels
                   drafts={drafts}
                   disabled={!canEdit}
+                  disabledTitle={editGateTitle}
                   onChange={setDrafts}
                   reality={notifyChannels.channels}
                 />

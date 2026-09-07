@@ -15,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
+import { useAuthEvidence } from "../../auth/useAuthEvidence";
 import { useProfile } from "../../auth/useProfile";
 import { useNow } from "../../lib/useNow";
 import { sceneAlert } from "../scene/scene";
@@ -51,6 +52,8 @@ function coordsLabel(lat: number, lon: number): string {
 function ConsoleWall() {
   const me = useSessionStore((s) => s.me);
   const profile = useProfile();
+  // [T-6.02] Lo que se puede afirmar de la autenticación, no un literal del mockup.
+  const auth = useAuthEvidence();
   const now = useNow(1000);
   const queryClient = useQueryClient();
   const incidents = useLiveIncidents();
@@ -252,6 +255,7 @@ function ConsoleWall() {
                   `${me.role.toUpperCase()} · ${me.sub.slice(0, 8)}`)
                 : "—"
             }
+            authBadge={auth.badge}
             selectedId={focusIncident?.incident_id ?? null}
             onSelect={(incident) => openDetail(incident.site_id)}
             canAck={canAck}

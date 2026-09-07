@@ -60,4 +60,9 @@ describe("ConfirmButton (two-step, RBAC §4.3)", () => {
     fireEvent.click(btn);
     expect(onConfirm).not.toHaveBeenCalled();
   });
+
+  it("[T-6.02] `title` llega al botón: un apagado puede decir por qué", () => {
+    render(<ConfirmButton label="FIRMAR" disabled title="Tu rol no firma" />);
+    expect(screen.getByRole("button")).toHaveAttribute("title", "Tu rol no firma");
+  });
 });

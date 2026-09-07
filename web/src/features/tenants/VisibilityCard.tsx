@@ -80,6 +80,7 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
                 className="vis-grant__revoke"
                 onClick={() => mut.revoke(g.grant_id)}
                 disabled={mut.pending}
+                title={mut.pending ? "Guardando…" : undefined}
               >
                 Revocar
               </button>

@@ -54,6 +54,8 @@ const REALITY_LABEL: Record<ChannelReality, string> = {
 export interface NotificationChannelsProps {
   drafts: ChannelDraft[];
   disabled: boolean;
+  /** [T-6.02] Por qué está apagado: los interruptores grises no pueden ser mudos. */
+  disabledTitle?: string;
   onChange: (drafts: ChannelDraft[]) => void;
   /**
    * [T-2.75.a] Realidad de cada provider según `GET /notify/channels`.
@@ -82,6 +84,7 @@ export interface NotificationChannelsProps {
 export default function NotificationChannels({
   drafts,
   disabled,
+  disabledTitle,
   onChange,
   reality,
 }: NotificationChannelsProps) {
@@ -147,6 +150,7 @@ export default function NotificationChannels({
                 aria-pressed={d.enabled}
                 aria-label={`Habilitar ${label}`}
                 disabled={disabled}
+                title={disabled ? disabledTitle : undefined}
                 onClick={() => update(d.key, { enabled: !d.enabled })}
               >
                 <span className="mt-channel__knob" />

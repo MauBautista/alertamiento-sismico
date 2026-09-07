@@ -158,6 +158,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                   type="button"
                   className="soc-btn soc-btn--secondary"
                   disabled={busy}
+                  title={busy ? "Operación en curso…" : undefined}
                   onClick={() => (editing === user.username ? setEditing(null) : startEdit(user))}
                 >
                   {editing === user.username ? "CERRAR" : "EDITAR"}
@@ -166,6 +167,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                   type="button"
                   className="soc-btn soc-btn--secondary"
                   disabled={busy}
+                  title={busy ? "Operación en curso…" : undefined}
                   onClick={() =>
                     update.mutate({
                       username: user.username,
@@ -246,6 +248,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                       type="button"
                       className="soc-btn"
                       disabled={busy}
+                      title={busy ? "Operación en curso…" : undefined}
                       onClick={() =>
                         update.mutate({
                           username: user.username,
@@ -264,6 +267,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                       type="button"
                       className="soc-btn soc-btn--secondary"
                       disabled={busy}
+                      title={busy ? "Operación en curso…" : undefined}
                       onClick={() => action.mutate({ username: user.username, action: "reset" })}
                     >
                       RESTABLECER CONTRASEÑA
@@ -272,6 +276,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                       type="button"
                       className="soc-btn soc-btn--secondary"
                       disabled={busy}
+                      title={busy ? "Operación en curso…" : undefined}
                       onClick={() => action.mutate({ username: user.username, action: "resend" })}
                     >
                       REENVIAR INVITACIÓN
@@ -280,6 +285,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                       type="button"
                       className="soc-btn soc-btn--secondary"
                       disabled={busy}
+                      title={busy ? "Operación en curso…" : undefined}
                       onClick={() => remove.mutate(user.username)}
                     >
                       DAR DE BAJA
@@ -372,6 +378,13 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
               type="submit"
               className="soc-btn"
               disabled={create.isPending || draft.email.trim() === ""}
+              title={
+                create.isPending
+                  ? "Creando…"
+                  : draft.email.trim() === ""
+                    ? "Escribe el correo del usuario"
+                    : undefined
+              }
             >
               {create.isPending ? "CREANDO…" : "CREAR E INVITAR"}
             </button>

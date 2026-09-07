@@ -27,6 +27,11 @@ function EvidenceVerifier({ evidenceId }: { evidenceId: string }) {
     <button
       className={`structural-verify structural-verify--${cls}`}
       disabled={state === "verifying"}
+      title={
+        state === "verifying"
+          ? "Verificando la evidencia…"
+          : "Verifica la integridad de esta evidencia"
+      }
       onClick={run}
       type="button"
       data-testid={`verify-${evidenceId}`}
