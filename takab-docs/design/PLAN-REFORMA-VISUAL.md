@@ -1047,7 +1047,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     ejerce); `ruff check` y `ruff format --check` limpios. El Pi de Puebla NO se redesplegó en
     esta sesión: el cambio llega con el siguiente despliegue del edge.
 
-### [ ] T-6.30 · **El pulso de vida se pinta y se detiene** — `SOFTWARE`
+### [x] T-6.30 · **El pulso de vida se pinta y se detiene** — `SOFTWARE`
 
 > El halo anima opacidad y escala de una caja sin fondo (`setPill` colorea el punto, nunca el halo)
 > y late incondicionalmente: seguiría latiendo con «DATO RETENIDO» y con «SIN CONEXIÓN».
@@ -1060,9 +1060,36 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** dar fondo al halo con el color del punto y aplicar `tk-pulse` solo con `conn.kind === 'live'`. Sin keyframes nuevos; `prefers-reduced-motion` ya lo apaga; el texto «PANEL EN VIVO» / «DATO RETENIDO DESDE …» porta el mismo estado.
 - **Criterios de aceptación:**
-  - [ ] En vivo, el punto late y se ve; con dato retenido o sin conexión, está quieto.
-  - [ ] Bajo `reduce`, quieto siempre y el texto dice lo mismo.
-  - [ ] Cero `transition` y ningún keyframe nuevo en el fichero.
+  - [x] En vivo, el punto late y se ve; con dato retenido o sin conexión, está quieto.
+  - [x] Bajo `reduce`, quieto siempre y el texto dice lo mismo.
+  - [x] Cero `transition` y ningún keyframe nuevo en el fichero.
+- **Cómo se cerró (2026-09-07, SESIÓN P4):**
+  - **El halo tiene fondo, así que ahora hay algo que mirar.** `tk-pulse` anima opacidad y escala;
+    el halo era una caja `position:absolute;inset:0` **sin color** —`setPill()` colorea el punto,
+    nunca el halo—, de modo que la animación llevaba desde el primer día moviendo lo invisible.
+    El halo hereda el fondo del punto (`background:inherit`): el color sigue saliendo del único
+    sitio que ya lo calcula, el estado de conexión, sin un segundo lugar donde equivocarse.
+  - **Y late solo cuando el dato es de ahora.** La animación pasa de `.dot .halo` a
+    `.dot.pulse .halo`, y `render()` pone la clase con `classList.toggle('pulse', conn.kind ===
+    'live')`. Antes latía incondicionalmente: con el fondo puesto habría seguido latiendo bajo
+    `DATO RETENIDO` y bajo `SIN CONEXIÓN`, que es la regla de oro 7 contada al revés —un dato
+    congelado con aspecto de vivo—. La spec §10.4 ya lo pedía así («variante con pulso animado
+    para en vivo»); lo que faltaba era decirlo en §9.3, que es la sección que se sigue al
+    implementar los cuatro estados: ahora lo dice.
+  - **Tests.** Seis en `test_local_api_panel.py`: el pulso armado en vivo y quieto en los otros dos
+    estados de conexión (por el árbol renderizado, con el contador de fallos real del arnés, no con
+    un estado fabricado); el halo con fondo y sin animación en reposo, y la regla armada como
+    único sitio donde se enciende; y dos guardas de movimiento —el inventario del panel es
+    exactamente `tk-blink` y `tk-pulse`, no hay ninguna `transition`, y la defensa de
+    `prefers-reduced-motion` sigue siendo el `*` global, que es lo que la hace cubrir todo—.
+  - **Medido en Chromium** (1440×900, servido en local, cero errores de página):
+    en vivo el halo es `rgb(0,230,118)` con `animation-name: tk-pulse` de 1 s y se le pilla a
+    13.5 px de los 8 px del punto; con `reduced-motion: reduce` el rótulo sigue diciendo `PANEL EN
+    VIVO` y el halo se queda en 8 px con `animation-name: none`; `?demo=dato_retenido` lo deja
+    quieto en ámbar y, con la API apagada, quieto en rojo.
+  - **Verificación:** `pytest edge/tests/` completo en verde en modo simulado (el gate #3 no se
+    ejerce); `ruff check` y `ruff format --check` limpios. El Pi de Puebla NO se redesplegó: el
+    cambio llega con el siguiente despliegue del edge, junto con T-6.27, T-6.28 y T-6.29.
 
 ### [ ] T-6.31 · **Variables que existen; MURO que se lee entero** — `SOFTWARE`
 

@@ -74,7 +74,14 @@ canvas{display:block}
 .meta{font:400 10px/1.3 var(--f-data);color:var(--tk-fg-3)}
 .pill{display:inline-flex;align-items:center;gap:7px;padding:5px 12px;border-radius:999px;border:1px solid;font:700 11px/1 var(--f-ui);letter-spacing:0.10em}
 .dot{width:8px;height:8px;border-radius:999px;flex:0 0 auto;position:relative}
-.dot .halo{position:absolute;inset:0;border-radius:999px;animation:tk-pulse 1s linear infinite}
+/* [T-6.30] El halo hereda el fondo del punto —`setPill()` colorea el punto, no
+   el halo—: sin fondo, `tk-pulse` movía la opacidad y la escala de una caja
+   invisible y el pulso de vida no se veía. Y late SOLO armado: la clase la
+   pone `render()` cuando la conexión es `live`, porque un punto latiendo con
+   DATO RETENIDO o SIN CONEXIÓN es la regla de oro 7 al revés. La spec §10.4
+   ya lo pedía así: «variante con pulso animado para en vivo». */
+.dot .halo{position:absolute;inset:0;border-radius:999px;background:inherit}
+.dot.pulse .halo{animation:tk-pulse 1s linear infinite}
 .btn{padding:9px 16px;border-radius:4px;border:1px solid var(--tk-border-strong);background:transparent;color:var(--tk-fg-2);font:700 11px/1.3 var(--f-ui);letter-spacing:0.10em;text-transform:uppercase;text-align:left;display:flex;flex-direction:column;gap:3px;align-items:flex-start}
 .btn:hover{background:var(--tk-cyan-tint-soft)}
 .btn:active{background:var(--tk-cyan-tint)}
@@ -1023,6 +1030,9 @@ function render(){
   $('hdr-clock').textContent = clockUTC();
   setPill('pill-live-txt','pill-live-dot',$('pill-live'), conn.label, conn.color,
     conn.kind === 'live' ? 'rgba(0,230,118,0.08)' : conn.kind === 'down' ? 'rgba(255,82,82,0.15)' : 'rgba(255,193,7,0.18)');
+  /* [T-6.30] El pulso es la única señal del panel que dice «esto se está
+     midiendo AHORA». Se enciende con el estado de conexión, no con el reloj. */
+  $('pill-live-dot').classList.toggle('pulse', conn.kind === 'live');
   document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', (S.userMode ? S.mode === b.dataset.mode : b.dataset.mode === 'auto')));
   document.querySelectorAll('[data-variant]').forEach(b => b.classList.toggle('on', S.variant === b.dataset.variant));
   $('rose-variant-note').textContent = S.variant === 'A' ? 'variante A · plano de estación con vecinas' : 'variante B · instrumento de ejes';

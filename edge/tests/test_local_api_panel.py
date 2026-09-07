@@ -2048,6 +2048,98 @@ def test_un_500_del_servidor_tambien_degrada(tmp_path):
     assert "DATO RETENIDO" in _txt(out, "pill-live-txt")
 
 
+# ------------------------------------------------- el PULSO DE VIDA (T-6.30)
+
+
+def _clases(out: dict, node_id: str) -> set[str]:
+    return set(_node(out["tree"], node_id).get("cls", "").split())
+
+
+def test_el_pulso_de_vida_late_solo_cuando_el_dato_es_de_ahora(tmp_path):
+    """El punto verde late; es la señal de «esto se está midiendo ahora».
+
+    La animación estaba escrita en `.dot .halo` sin condición: habría seguido
+    latiendo con `DATO RETENIDO` y con `SIN CONEXIÓN`, que es la regla de oro 7
+    contada al revés —un dato congelado con aspecto de vivo—. La spec §10.4 la
+    describe desde el principio como «variante con pulso animado para en vivo».
+    """
+    out = _render(tmp_path)
+    assert _txt(out, "pill-live-txt") == "PANEL EN VIVO"
+    assert "pulse" in _clases(out, "pill-live-dot")
+
+
+def test_el_pulso_se_para_con_dato_retenido(tmp_path):
+    out = _render(tmp_path, statusNetworkFail=True)
+    assert "DATO RETENIDO" in _txt(out, "pill-live-txt")
+    assert "pulse" not in _clases(out, "pill-live-dot"), (
+        "el punto sigue latiendo sobre una foto vieja del gabinete"
+    )
+
+
+def test_el_pulso_se_para_sin_conexion_con_el_gabinete(tmp_path):
+    out = _render(tmp_path, statusNetworkFail=True, clicks=["tick", "tick"])
+    assert "SIN CONEXIÓN CON EL GABINETE" in _txt(out, "pill-live-txt")
+    assert "pulse" not in _clases(out, "pill-live-dot")
+
+
+def test_el_halo_del_pulso_tiene_fondo_o_no_se_ve_nada():
+    """`tk-pulse` mueve opacidad y escala: sin fondo no anima NADA visible.
+
+    El halo llevaba desde el primer día `position:absolute;inset:0` y ningún
+    color —`setPill()` pinta el punto, nunca el halo—, así que el pulso de vida
+    no existía en pantalla aunque el CSS lo declarara. Hereda el fondo del
+    punto para que el color siga siendo el que ya calcula el estado de conexión,
+    sin un segundo sitio donde equivocarse.
+    """
+    hoja = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
+
+    reposo = re.search(r"\.dot \.halo\{([^}]*)\}", hoja)
+    assert reposo, "el halo del punto de estado perdió su regla CSS"
+    assert "background:inherit" in reposo.group(1).replace(" ", ""), (
+        f"el halo no toma el color del punto y sería invisible: {reposo.group(1)}"
+    )
+    assert "animation" not in reposo.group(1), (
+        "el halo late en reposo: volvería a latir con dato retenido y sin conexión"
+    )
+
+    armado = re.search(r"\.dot\.pulse \.halo\{([^}]*)\}", hoja)
+    assert armado, "no hay ninguna regla que encienda el pulso; el punto no latiría nunca"
+    assert "animation:tk-pulse" in armado.group(1).replace(" ", "")
+
+
+def test_el_movimiento_del_panel_es_exactamente_el_declarado():
+    """Inventario de movimiento del panel: dos animaciones y ninguna transición.
+
+    Es lo que hace verificable la promesa de `prefers-reduced-motion`. La regla
+    que lo apaga todo es un `*{animation:none}` global, así que basta con que no
+    aparezca movimiento por ninguna otra vía —una `transition` inline en JS, por
+    ejemplo, la esquivaría sin que nadie lo notara—.
+    """
+    hoja = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
+
+    assert set(re.findall(r"@keyframes ([a-z-]+)", hoja)) == {"tk-blink", "tk-pulse"}, (
+        "cambió el inventario de keyframes del panel"
+    )
+    animaciones = re.findall(r"animation:\s*([a-z-]+)", hoja)
+    assert sorted(animaciones) == ["none", "tk-blink", "tk-pulse"], (
+        f"el panel anima algo que no está declarado: {animaciones}"
+    )
+    assert re.findall(r"transition:\s*([a-z-]+)", hoja) == ["none"], (
+        "el panel tiene una transición: el movimiento del panel se declara en "
+        "keyframes y se apaga entero bajo `prefers-reduced-motion`"
+    )
+
+
+def test_el_movimiento_se_apaga_entero_bajo_reduce():
+    """La única defensa del panel es global: si se estrecha, deja de cubrir."""
+    hoja = _INDEX.read_text("utf-8")
+    regla = re.search(r"@media \(prefers-reduced-motion:reduce\)\{([^}]*)\}", hoja)
+    assert regla, "el panel dejó de honrar `prefers-reduced-motion`"
+    cuerpo = regla.group(1).replace(" ", "")
+    assert cuerpo.startswith("*{"), f"la defensa ya no es global: {regla.group(1)}"
+    assert "animation:none!important" in cuerpo
+
+
 # --------------------------------------------------------- barra de acciones
 
 

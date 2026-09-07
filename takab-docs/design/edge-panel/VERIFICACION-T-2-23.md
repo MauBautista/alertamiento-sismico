@@ -98,7 +98,8 @@ AUTO y la cabecera lo declara (`?mode=xyz NO EXISTE → DENSIDAD AUTO`).
 - [ ] Consola del navegador sin errores.
 - [ ] Un solo request `/api/status` + uno `/api/waveform` por segundo (secuenciales);
       `/api/catalog` solo al arrancar y cada ~10 min.
-- [ ] Apagar la API ⇒ `DATO RETENIDO…` y luego `SIN CONEXIÓN…` con backoff 2 s → 5 s.
+- [ ] Apagar la API ⇒ `DATO RETENIDO…` y luego `SIN CONEXIÓN…` con backoff 2 s → 5 s,
+      y el punto del pill **deja de latir** en cuanto el dato deja de ser de ahora.
 - [ ] PIN: sin PIN configurado en prod ⇒ `SIN PIN CONFIGURADO · ACCIONES BLOQUEADAS`;
       PIN malo ⇒ `PIN INCORRECTO`; 5 intentos ⇒ `BLOQUEADO POR INTENTOS · ESPERA 60 s`;
       two-step se desarma SOLO a los 5 s.

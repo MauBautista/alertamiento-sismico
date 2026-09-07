@@ -734,6 +734,11 @@ Copy ya establecido, reutilízalo:
 Nota sobre `SIN ENLACE — PROTECCIÓN LOCAL ACTIVA`: ese texto **no es un error**. Es el sistema
 funcionando como fue diseñado. Píntalo ámbar informativo, nunca rojo de falla.
 
+El **pulso** del punto (§10.4) pertenece a **`En vivo` y a nada más**: es la única señal del
+panel que afirma «esto se está midiendo ahora», así que late con el dato fresco y se queda
+quieto con `DATO RETENIDO` y con `SIN CONEXIÓN`. Un punto latiendo sobre una foto vieja dice
+exactamente lo contrario de lo que dice su propio rótulo.
+
 ---
 
 ## §10 · Sistema de diseño
