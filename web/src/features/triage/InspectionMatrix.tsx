@@ -9,6 +9,7 @@
 
 import { PRIORITY_LABEL } from "./priority";
 import type { PriorityRow } from "./priority";
+import SiteLabel from "../../components/SiteLabel";
 
 export interface InspectionMatrixProps {
   rows: PriorityRow[];
@@ -48,7 +49,7 @@ export default function InspectionMatrix({ rows, selectedId, onSelect }: Inspect
               onClick={() => onSelect(row.incidentId)}
             >
               <span className="inspection__dot" aria-hidden />
-              <span className="inspection__site">{row.siteName}</span>
+              <SiteLabel className="inspection__site" name={row.siteName} code={row.siteCode} />
               <span className="inspection__pga soc-mono">
                 {row.maxPgaG === null ? "SIN MEDICIÓN" : `${row.maxPgaG.toFixed(3)} g`}
               </span>

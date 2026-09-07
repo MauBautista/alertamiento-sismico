@@ -17,15 +17,19 @@ import { Link } from "react-router";
 
 import { alertHeadline } from "../console/alertHeadline";
 import type { LiveIncident } from "../console/useLiveIncidents";
+import SiteLabel from "../../components/SiteLabel";
 
 export default function AlertLine({
   incident,
   kind,
   siteName,
+  siteCode,
 }: {
   incident: LiveIncident;
   kind: "alert" | "notice";
   siteName: string | null;
+  /** [T-6.04] `sites.code`: la línea pinta la cinta DEMO si el sitio es simulado. */
+  siteCode: string | null;
 }) {
   const fuente = alertHeadline(incident.trigger);
   return (
@@ -38,9 +42,11 @@ export default function AlertLine({
     >
       <AlertOctagon size={14} aria-hidden />
       <span className="soc-scene__alert-title">{fuente.title}</span>
-      <span className="soc-scene__alert-site">
-        {siteName ?? `SITIO ${incident.site_id.slice(0, 8)}`}
-      </span>
+      <SiteLabel
+        className="soc-scene__alert-site"
+        name={siteName ?? `SITIO ${incident.site_id.slice(0, 8)}`}
+        code={siteCode}
+      />
       <span className="soc-scene__alert-meta">
         EVENT_ID {incident.event_id ?? incident.incident_id.slice(0, 8).toUpperCase()} ·{" "}
         {fuente.attribution}

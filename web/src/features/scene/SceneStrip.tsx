@@ -58,8 +58,10 @@ export default function SceneStrip() {
     maintenance: maintenance.items.length > 0,
     demo: demo.demo?.active === true,
   });
-  const siteName =
-    alert !== null ? (map.sites.find((s) => s.site_id === alert.site_id)?.name ?? null) : null;
+  const alertSite =
+    alert !== null ? (map.sites.find((s) => s.site_id === alert.site_id) ?? null) : null;
+  const siteName = alertSite?.name ?? null;
+  const siteCode = alertSite?.code ?? null;
   const alertStale =
     !incidents.loading &&
     incidents.error === null &&
@@ -88,7 +90,7 @@ export default function SceneStrip() {
           staleSince={alertStale}
         >
           {alert !== null && kind !== null && (
-            <AlertLine incident={alert} kind={kind} siteName={siteName} />
+            <AlertLine incident={alert} kind={kind} siteName={siteName} siteCode={siteCode} />
           )}
         </StateFrame>
       )}

@@ -59,6 +59,8 @@ export interface TriageRow {
   /** Contexto sísmico del catálogo; null si el incidente no referencia evento. */
   event: SeismicEventOut | null;
   siteName: string;
+  /** [T-6.04] `sites.code`, o null si el sitio no está en el listado: de él sale la cinta DEMO. */
+  siteCode: string | null;
   /** ``seismic_events.meta.node_count`` (lo escribe el motor de incidentes). */
   nodeCount: number | null;
 }
@@ -89,6 +91,7 @@ export function buildRows(
       incident,
       event,
       siteName: bySite.get(incident.site_id)?.name ?? `SITIO ${incident.site_id.slice(0, 8)}`,
+      siteCode: bySite.get(incident.site_id)?.code ?? null,
       nodeCount: nodeCountOf(event),
     };
   });

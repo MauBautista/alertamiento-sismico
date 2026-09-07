@@ -31,7 +31,11 @@ function renderTable(over: Partial<Parameters<typeof IncidentTable>[0]> = {}) {
   render(
     <IncidentTable
       incidents={[incident("a")]}
-      siteInfoOf={() => ({ name: "Planta Cholula", coords: "19.0633°N · 98.3014°W" })}
+      siteInfoOf={() => ({
+        name: "Planta Cholula",
+        coords: "19.0633°N · 98.3014°W",
+        code: "site-cholula-a",
+      })}
       nowMs={NOW}
       liveStatus="ready"
       operatorLabel="TENANT_ADMIN · SOC"
@@ -272,5 +276,21 @@ describe("formatPga (T-1.50)", () => {
       "title",
       "El token certifica el pool, no el factor de esta sesión",
     );
+  });
+
+  // [T-6.04 · U-07] La fila de un sitio simulado lleva la MISMA cinta que el pin
+  // del mapa: un marcado a medias enseñaba «sin cinta ⇒ real».
+  it("la fila de un sitio simulado lleva la cinta DEMO; la de uno real, no", () => {
+    renderTable({
+      siteInfoOf: () => ({ name: "Sitio Sim 001 Puebla", coords: null, code: "site-sim-001" }),
+    });
+    expect(screen.getByText("Sitio Sim 001 Puebla")).toBeInTheDocument();
+    expect(screen.getByTestId("site-demo")).toHaveTextContent("DEMO");
+  });
+
+  it("sin sitio en el snapshot no inventa ni nombre ni cinta", () => {
+    renderTable({ siteInfoOf: () => null });
+    expect(screen.getByText(/^SITIO /)).toBeInTheDocument();
+    expect(screen.queryByTestId("site-demo")).toBeNull();
   });
 });

@@ -207,6 +207,23 @@ describe("BuildingPage", () => {
     expect(await screen.findByText("Planta Cholula")).toBeInTheDocument();
   });
 
+  it("[T-6.04] un sitio simulado lleva la cinta DEMO en la cabecera; uno real, no", async () => {
+    seedAuthenticated(ME_FIXTURES.building_admin);
+    mocks.getSite.mockResolvedValue({
+      data: {
+        site_id: "s-1",
+        name: "Sitio Sim 001 Puebla",
+        code: "site-sim-001",
+        lat: 19.06,
+        lon: -98.3,
+      },
+      response: { status: 200 },
+    });
+    renderRoutesAt("/building/s-1");
+    expect(await screen.findByText("Sitio Sim 001 Puebla")).toBeInTheDocument();
+    expect(screen.getByTestId("site-demo")).toHaveTextContent("DEMO");
+  });
+
   it("sin frame de salud muestra S/D, nunca una salud inventada", () => {
     seedAuthenticated(ME_FIXTURES.building_admin);
     renderRoutesAt("/building/s-1");

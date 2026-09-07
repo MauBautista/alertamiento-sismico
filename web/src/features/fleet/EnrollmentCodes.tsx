@@ -12,6 +12,7 @@ import {
   useEnrollmentCodes,
   useRevokeEnrollmentCode,
 } from "./useEnrollmentCodes";
+import SiteLabel from "../../components/SiteLabel";
 
 /** Ventanas de vigencia ofrecidas. Sin caducidad NO es una opción por defecto:
  * un código eterno pegado en un tablón enrola a cualquiera que pase. */
@@ -121,7 +122,9 @@ export default function EnrollmentCodes({ site, onClose }: EnrollmentCodesProps)
     <section className="enroll" data-testid="enrollment-codes">
       <header className="enroll__hd">
         <div>
-          <h3 className="enroll__title">Códigos de alta · {site.name}</h3>
+          <h3 className="enroll__title">
+            Códigos de alta · <SiteLabel name={site.name} code={site.code} />
+          </h3>
           <p className="enroll__sub">
             Quien teclee uno de estos códigos en la app queda enrolado como OCUPANTE de esta
             estación. Nunca concede otro rol (lo fija la base de datos).

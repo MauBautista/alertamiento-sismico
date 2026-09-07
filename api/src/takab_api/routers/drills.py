@@ -73,7 +73,7 @@ _COMMANDABLE_SITES = text(
 # AGENDA. Un simulacro se programa semanas antes — exigir gabinete al agendar
 # impediría planear el simulacro del edificio cuyo gabinete se instala el jueves.
 _TENANT_SITES = text(
-    "SELECT s.site_id, s.tenant_id, s.name, "
+    "SELECT s.site_id, s.tenant_id, s.name, s.code, "
     + (_COMMANDABLE % {"alias": "s"})
     + " AS commandable FROM sites s WHERE s.status <> 'retired' ORDER BY s.site_id"
 )
@@ -135,7 +135,7 @@ _SELECT_DRILL = text(f"SELECT {_DRILL_COLS} FROM drills d WHERE d.drill_id = CAS
 # a quién mandarle el simulacro" y "el sitio no acusó" — dos hechos que la
 # pantalla NO puede colapsar (regla de oro 7).
 _SELECT_DRILL_SITES = text(
-    "SELECT ds.drill_id, ds.site_id, s.name AS site_name, ds.command_id, "
+    "SELECT ds.drill_id, ds.site_id, s.name AS site_name, s.code AS site_code, ds.command_id, "
     "c.status AS command_status, c.ack, c.acked_at, c.issued_at, "
     "ds.aborted_at, ds.abort_reason, " + (_COMMANDABLE % {"alias": "ds"}) + " AS commandable "
     "FROM drill_sites ds "
@@ -236,6 +236,7 @@ async def _sites_of(rows: Any, conn: AsyncConnection) -> dict[UUID, list[DrillSi
             DrillSiteOut(
                 site_id=r["site_id"],
                 site_name=r["site_name"],
+                site_code=r["site_code"],
                 command_id=r["command_id"],
                 command_status=r["command_status"],
                 ack=r["ack"],
@@ -365,6 +366,7 @@ async def _schedule_drill(
             DrillSiteOut(
                 site_id=t["site_id"],
                 site_name=t["name"],
+                site_code=t["code"],
                 command_id=None,
                 command_status=None,
                 ack=None,
@@ -571,6 +573,7 @@ async def start_drill(
             DrillSiteOut(
                 site_id=target["site_id"],
                 site_name=None,
+                site_code=None,
                 command_id=command_id,
                 command_status=command_status,
                 ack=None,
@@ -592,6 +595,7 @@ async def start_drill(
             DrillSiteOut(
                 site_id=site_id,
                 site_name=None,
+                site_code=None,
                 command_id=None,
                 command_status=None,
                 ack=None,

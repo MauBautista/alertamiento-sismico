@@ -17,11 +17,12 @@ import MapPointPicker from "../fleet/MapPointPicker";
 import { DEFAULT_PICK, parseLatLonPair, formatPoint, type LonLat } from "../fleet/geo";
 import type { LiveIncident } from "./useLiveIncidents";
 import { useEpicenter } from "./useEpicenter";
+import { siteLabelText } from "../fleet/datosDeDemostracion";
 
 export interface EpicenterModalProps {
   incident: LiveIncident;
   /** Coordenadas del sitio del incidente (arranque sin evento), si se conocen. */
-  site: { name: string; lat: number; lon: number } | null;
+  site: { name: string; code: string | null; lat: number; lon: number } | null;
   onClose: () => void;
 }
 
@@ -65,7 +66,7 @@ export default function EpicenterModal({ incident, site, onClose }: EpicenterMod
         <p className="soc-epicenter__ctx">
           <MapPin size={12} aria-hidden /> Incidente{" "}
           <span className="soc-mono">{incident.incident_id.slice(0, 8)}</span>
-          {site ? ` · ${site.name}` : ""}
+          {site ? ` · ${siteLabelText(site.name, site.code)}` : ""}
         </p>
 
         {eventId === null ? (

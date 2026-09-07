@@ -16,6 +16,7 @@ import { secondsSince, utcClock } from "../../lib/time";
 import type { LiveStatus } from "../../lib/ws";
 import { INCIDENT_ORDERS, orderIncidents, type IncidentOrderKey } from "./stats";
 import type { LiveDegradation, LiveIncident } from "./useLiveIncidents";
+import SiteLabel from "../../components/SiteLabel";
 
 const SEV_DOT: Record<string, string> = {
   critical: "var(--tk-status-critical)",
@@ -27,6 +28,8 @@ const SEV_DOT: Record<string, string> = {
 export interface IncidentSiteInfo {
   name: string;
   coords: string | null;
+  /** [T-6.04] `sites.code`: de él se deriva la cinta DEMO de la fila. */
+  code: string | null;
 }
 
 export interface IncidentTableProps {
@@ -228,7 +231,10 @@ export default function IncidentTable({
                       className="soc-dot"
                       style={{ color: SEV_DOT[incident.severity] ?? "var(--tk-status-warning)" }}
                     />
-                    {site?.name ?? `SITIO ${incident.site_id.slice(0, 8)}`}
+                    <SiteLabel
+                      name={site?.name ?? `SITIO ${incident.site_id.slice(0, 8)}`}
+                      code={site?.code ?? null}
+                    />
                   </td>
                   <td>
                     <SevTag severity={incident.severity} />

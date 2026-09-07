@@ -1504,6 +1504,30 @@ body {
   text-decoration: underline;
 }
 
+/* =====================================================================
+   [T-6.04] EL NOMBRE DE UN SITIO CON SU CINTA DE DEMOSTRACIÓN
+   =====================================================================
+   `components/SiteLabel` es la única forma de pintar un nombre de sitio (lo
+   vigila `src/siteDemoCensus.test.ts`). La cinta es la MISMA que la tarjeta de
+   flota (`.fleet-card__demo`) y la capa `site-demo` del mapa: gris y
+   discontinua, nunca ámbar. */
+.site-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.site-demo {
+  padding: 2px 6px;
+  border: 1px dashed var(--tk-fg-3);
+  border-radius: 3px;
+  color: var(--tk-fg-3);
+  font: 700 9px/1 var(--tk-font-ui);
+  letter-spacing: 0.14em;
+  text-transform: none;
+  white-space: nowrap;
+}
+
 /* --- Alta de simulacro ---------------------------------------------------- */
 .soc-drillform {
   display: flex;

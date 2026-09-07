@@ -2,6 +2,7 @@ import SevTag from "../../components/SevTag";
 import { utcStamp } from "../../lib/time";
 import { epicenterKindOf, magnitudeOf } from "./model";
 import type { TriageRow } from "./model";
+import SiteLabel from "../../components/SiteLabel";
 
 /** Estados del CHECK de ``incidents.state`` con etiqueta de operador. */
 const STATE_LABEL: Record<string, string> = {
@@ -98,7 +99,8 @@ export default function TriageTable({ rows, selectedId, onSelect }: TriageTableP
               </td>
               <td className="soc-mono">{row.nodeCount ?? "—"}</td>
               <td className="triage-table__dictamen">
-                {row.siteName} · {STATE_LABEL[inc.state] ?? inc.state.toUpperCase()}
+                <SiteLabel name={row.siteName} code={row.siteCode} /> ·{" "}
+                {STATE_LABEL[inc.state] ?? inc.state.toUpperCase()}
               </td>
             </tr>
           );

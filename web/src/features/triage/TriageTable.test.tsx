@@ -42,6 +42,7 @@ function row(over: Partial<TriageRow> = {}): TriageRow {
     incident: incident(),
     event: event(),
     siteName: "Torre Norte",
+    siteCode: null,
     nodeCount: 3,
     ...over,
   };
@@ -134,5 +135,10 @@ describe("TriageTable [T-2.39]", () => {
   it("sin filas no revienta", () => {
     arrange([]);
     expect(screen.queryByTestId("triage-row")).not.toBeInTheDocument();
+  });
+
+  it("[T-6.04] la fila de un sitio simulado lleva la cinta DEMO", () => {
+    arrange([row({ siteName: "Sitio Sim 003 Puebla", siteCode: "site-sim-003" })]);
+    expect(screen.getByTestId("site-demo")).toHaveTextContent("DEMO");
   });
 });

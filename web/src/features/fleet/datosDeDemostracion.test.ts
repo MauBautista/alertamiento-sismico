@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { esDeDemostracion } from "./datosDeDemostracion";
+import { esDeDemostracion, siteLabelText } from "./datosDeDemostracion";
 
 const RAIZ = resolve(process.cwd(), "..");
 const ID_RE = /'(site-[a-z0-9-]+|gw-[a-z0-9-]+|SIM\d+|R4F74)'/g;
@@ -50,5 +50,15 @@ describe("esDeDemostracion · derivado de los seeds, no de una lista", () => {
     expect(esDeDemostracion(null)).toBe(false);
     expect(esDeDemostracion(undefined)).toBe(false);
     expect(esDeDemostracion("")).toBe(false);
+  });
+});
+
+describe("siteLabelText · [T-6.04] el nombre en texto plano lleva el rótulo", () => {
+  it("pega el rótulo al simulado y deja intacto al real", () => {
+    expect(siteLabelText("Sitio Sim 001 Puebla", "site-sim-001")).toBe(
+      "Sitio Sim 001 Puebla · DEMO",
+    );
+    expect(siteLabelText("Planta Cholula", "site-cholula-a")).toBe("Planta Cholula");
+    expect(siteLabelText("Sin código", null)).toBe("Sin código");
   });
 });

@@ -15,6 +15,7 @@ import StateFrame from "../../components/StateFrame";
 import { bearing16, haversineKm } from "../fleet/geo";
 import { attenPoints, hypoKm, pgaLawG, pTravelS, V_P_KM_S } from "./attenuation";
 import { CATALOG_COLOR } from "./MapPanel";
+import { siteLabelText } from "../fleet/datosDeDemostracion";
 
 export const MASTER_LABEL = "ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO";
 export const NO_MEASURED_NOTE =
@@ -88,7 +89,7 @@ export default function ComparePanel({ quake, sites, initialSiteId, onClose }: C
           >
             {sites.map((s) => (
               <option key={s.site_id} value={s.site_id}>
-                {s.name}
+                {siteLabelText(s.name, s.code)}
               </option>
             ))}
           </select>
@@ -126,7 +127,11 @@ export default function ComparePanel({ quake, sites, initialSiteId, onClose }: C
                   SIN PROFUNDIDAD REPORTADA — la hipocentral degrada a la epicentral
                 </p>
               )}
-              <AttenChart quake={quake} epiKm={model.epiKm} siteName={site.name} />
+              <AttenChart
+                quake={quake}
+                epiKm={model.epiKm}
+                siteName={siteLabelText(site.name, site.code)}
+              />
               <p className="soc-compare__note" role="note" data-testid="compare-no-measured">
                 {NO_MEASURED_NOTE}
               </p>

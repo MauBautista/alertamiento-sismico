@@ -44,7 +44,7 @@ const INCIDENT: LiveIncident = {
   max_pgv_cms: null,
 };
 
-const SITE = { name: "Sitio Dev Puebla", lat: 19.0414, lon: -98.2063 };
+const SITE = { name: "Sitio Dev Puebla", code: null, lat: 19.0414, lon: -98.2063 };
 
 function wrap(ui: ReactElement): ReactElement {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

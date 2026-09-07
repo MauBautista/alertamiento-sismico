@@ -112,6 +112,14 @@ export default function KpiStrip({ kpis, shown, hideNoLink, onToggleHideNoLink }
       <div className="soc-kpis__group soc-kpis__group--end">
         <span className="soc-kpis__showing" data-testid="kpi-showing">
           {showingLabel(shown, kpis.stations)}
+          {/* [T-6.04] Los contadores de arriba suman sitios simulados con reales;
+              aquí se declara cuántos, o el semáforo enseña una flota que no existe. */}
+          {kpis.simulados > 0 && (
+            <span data-testid="kpi-simulados">
+              {" "}
+              · DE LAS CUALES {kpis.simulados} {kpis.simulados === 1 ? "SIMULADA" : "SIMULADAS"}
+            </span>
+          )}
         </span>
         <button
           type="button"

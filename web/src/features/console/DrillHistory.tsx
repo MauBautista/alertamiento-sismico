@@ -24,6 +24,7 @@ import {
   medianaLatencia,
 } from "./drill";
 import { useDrillReport, useDrills, type DrillKind } from "./useDrills";
+import SiteLabel from "../../components/SiteLabel";
 
 const KIND_TABS: readonly { value: DrillKind; label: string }[] = [
   { value: "all", label: "TODOS" },
@@ -147,7 +148,10 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
                         const lat = state === "acked" ? latenciaLegible(s.ack_latency_s) : null;
                         return (
                           <li key={s.site_id} data-ack={state}>
-                            <span>{s.site_name ?? `SITIO ${s.site_id.slice(0, 8)}`}</span>
+                            <SiteLabel
+                              name={s.site_name ?? `SITIO ${s.site_id.slice(0, 8)}`}
+                              code={s.site_code ?? null}
+                            />
                             <span className={`soc-drillhist__ackpill is-${state}`}>
                               {ackLabel(state)}
                             </span>

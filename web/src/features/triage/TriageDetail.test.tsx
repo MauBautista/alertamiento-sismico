@@ -85,6 +85,7 @@ const ROW: TriageRow = {
   incident: INCIDENT,
   event: EVENT,
   siteName: "Torre Norte",
+  siteCode: null,
   nodeCount: 3,
 };
 

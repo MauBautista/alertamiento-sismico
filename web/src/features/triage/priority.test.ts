@@ -50,6 +50,7 @@ function row(id: string, siteId: string, pga: number | null, eventId: string | n
     } as TriageRow["incident"],
     event: null,
     siteName: `Sitio ${siteId}`,
+    siteCode: null,
     nodeCount: null,
   };
 }

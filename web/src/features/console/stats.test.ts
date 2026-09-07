@@ -237,3 +237,22 @@ describe("orderIncidents — cinco órdenes, todos deterministas", () => {
     expect(entrada.map((i) => i.incident_id)).toEqual(todos.map((i) => i.incident_id));
   });
 });
+
+describe("consoleKpis · [T-6.04] cuenta las estaciones simuladas", () => {
+  it("las cuenta por el código del seed, no por el nombre", () => {
+    const k = consoleKpis(
+      [
+        site("a", { code: "site-sim-001", name: "Sitio Sim 001 Puebla" }),
+        site("b", { code: "site-sim-002", name: "Sitio Sim 002 Puebla" }),
+        site("c", { code: "site-cholula-a", name: "Sitio Sim Onírico" }),
+      ],
+      [],
+    );
+    expect(k.stations).toBe(3);
+    expect(k.simulados).toBe(2);
+  });
+
+  it("sin estaciones simuladas es cero, y cero aquí SÍ es una medición", () => {
+    expect(consoleKpis([site("a")], []).simulados).toBe(0);
+  });
+});

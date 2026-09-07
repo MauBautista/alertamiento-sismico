@@ -14,6 +14,7 @@
 
 import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
+import { esDeDemostracion } from "../fleet/datosDeDemostracion";
 import { haversineKm } from "../fleet/geo";
 import {
   LINK_DEGRADADO,
@@ -69,6 +70,12 @@ export interface ConsoleKpis {
   lagMaxS: number | null;
   incidentesAbiertos: number;
   incidentesCriticos: number;
+  /**
+   * [T-6.04] Cuántas de `stations` son de DEMOSTRACIÓN (`esDeDemostracion`).
+   * Un KPI que agrega sitios simulados con reales sin decirlo enseña una flota
+   * que no existe; la tira lo declara cuando es > 0.
+   */
+  simulados: number;
 }
 
 function median(values: number[]): number | null {
@@ -99,6 +106,7 @@ export function consoleKpis(sites: MapSiteState[], incidents: LiveIncident[]): C
     lagMaxS: null,
     incidentesAbiertos: incidents.length,
     incidentesCriticos: incidents.filter((i) => i.severity === "critical").length,
+    simulados: sites.filter((s) => esDeDemostracion(s.code)).length,
   };
   const rtts: number[] = [];
   const lags: number[] = [];

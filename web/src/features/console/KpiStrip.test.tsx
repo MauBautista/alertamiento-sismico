@@ -74,4 +74,15 @@ describe("KpiStrip", () => {
     renderStrip({ kpis: kpis({ incidentesAbiertos: 5, incidentesCriticos: 2 }) });
     expect(screen.getByText("2/5")).toBeInTheDocument();
   });
+
+  // [T-6.04] Los contadores suman sitios simulados con reales: se declara cuántos.
+  it("declara cuántas estaciones son simuladas cuando hay alguna", () => {
+    renderStrip({ kpis: kpis({ stations: 21, simulados: 20 }) });
+    expect(screen.getByTestId("kpi-simulados")).toHaveTextContent("DE LAS CUALES 20 SIMULADAS");
+  });
+
+  it("y sin simuladas no dice nada: la ausencia de cinta es la afirmación", () => {
+    renderStrip({ kpis: kpis({ stations: 3, simulados: 0 }) });
+    expect(screen.queryByTestId("kpi-simulados")).toBeNull();
+  });
 });

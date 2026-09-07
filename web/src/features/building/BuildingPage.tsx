@@ -29,6 +29,7 @@ import type { HistoryPreset } from "../telemetry/useSiteMetrics";
 import SirenTestPanel from "./SirenTestPanel";
 import { SITE_INCIDENTS_STALE_MS, useSiteIncidents } from "./useSiteIncidents";
 import { useSirenTest } from "./useSirenTest";
+import SiteLabel from "../../components/SiteLabel";
 
 function BuildingDashboard({ siteId }: { siteId: string }) {
   const me = useSessionStore((s) => s.me);
@@ -72,21 +73,22 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
         {/* B-4 (T-1.58): el subtítulo distingue "cargando" de "falló" — un GET
             /sites/{id} caído no puede quedarse en "CARGANDO…" eterno. */}
         <p className="bld__name">
-          {site.data?.name ??
-            (site.isError ? (
-              <>
-                SITIO NO DISPONIBLE{" "}
-                <button
-                  type="button"
-                  className="soc-btn soc-btn--secondary"
-                  onClick={() => void site.refetch()}
-                >
-                  REINTENTAR
-                </button>
-              </>
-            ) : (
-              "CARGANDO SITIO…"
-            ))}
+          {site.data ? (
+            <SiteLabel name={site.data.name} code={site.data.code} />
+          ) : site.isError ? (
+            <>
+              SITIO NO DISPONIBLE{" "}
+              <button
+                type="button"
+                className="soc-btn soc-btn--secondary"
+                onClick={() => void site.refetch()}
+              >
+                REINTENTAR
+              </button>
+            </>
+          ) : (
+            "CARGANDO SITIO…"
+          )}
         </p>
         <p className="bld__sub soc-mono">
           <span>{siteId}</span>

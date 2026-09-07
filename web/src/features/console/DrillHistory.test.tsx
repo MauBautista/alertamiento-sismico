@@ -299,4 +299,22 @@ describe("DrillHistory · aborto por alerta real", () => {
     expect(sites.getByText("Torre B").closest("li")).toHaveTextContent("ACUSADO");
     expect(sites.getByText("Torre B").closest("li")).not.toHaveTextContent("ABORTADO");
   });
+
+  it("[T-6.04] un sitio simulado del historial lleva la cinta DEMO", () => {
+    mocks.useDrills.mockReturnValue(
+      historyData({
+        items: [
+          {
+            ...RAN,
+            sites: [site({ site_name: "Sitio Sim 002 Puebla", site_code: "site-sim-002" })],
+          },
+        ],
+      }),
+    );
+    render(<DrillHistory onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /DETALLE/ }));
+    const sites = within(screen.getByTestId("drill-sites-d-1"));
+    expect(sites.getByText("Sitio Sim 002 Puebla")).toBeInTheDocument();
+    expect(sites.getByTestId("site-demo")).toHaveTextContent("DEMO");
+  });
 });

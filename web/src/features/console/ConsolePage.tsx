@@ -124,7 +124,9 @@ function ConsoleWall() {
   const siteInfoOf = useCallback(
     (siteId: string) => {
       const site = siteById.get(siteId);
-      return site ? { name: site.name, coords: coordsLabel(site.lat, site.lon) } : null;
+      return site
+        ? { name: site.name, coords: coordsLabel(site.lat, site.lon), code: site.code }
+        : null;
     },
     [siteById],
   );
@@ -236,6 +238,7 @@ function ConsoleWall() {
               <AlertBanner
                 incident={critical}
                 siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
+                siteCode={critical ? (siteById.get(critical.site_id)?.code ?? null) : null}
               />
             </div>
           </div>
@@ -295,7 +298,12 @@ function ConsoleWall() {
           incident={epicenterIncident}
           site={
             epicenterSite
-              ? { name: epicenterSite.name, lat: epicenterSite.lat, lon: epicenterSite.lon }
+              ? {
+                  name: epicenterSite.name,
+                  code: epicenterSite.code,
+                  lat: epicenterSite.lat,
+                  lon: epicenterSite.lon,
+                }
               : null
           }
           onClose={() => setEpicenterFor(null)}
@@ -306,6 +314,8 @@ function ConsoleWall() {
           site={{
             site_id: focusSiteId,
             name: focusSite?.name ?? `SITIO ${focusSiteId.slice(0, 8)}`,
+            // [T-6.04] El código viaja para que el detalle pinte la cinta DEMO.
+            code: focusSite?.code ?? null,
             coords: focusSite ? coordsLabel(focusSite.lat, focusSite.lon) : null,
             // [T-5.26] Identidad del hardware. `?? null` y no `?? ""`: sin sitio
             // enfocado en el snapshot no se sabe nada de su aparato, y una cadena
