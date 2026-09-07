@@ -1,7 +1,10 @@
 // 1.1 Modo reposo — presentacional puro. Todo lo que pinta viene del servidor
-// (mobile-state + directorio); el teléfono no calcula estados. La variante
-// SIMULACRO es una franja ámbar sobre el contenido normal: un drill JAMÁS
+// (mobile-state + directorio); el teléfono no calcula estados. Un drill JAMÁS
 // dispara pantallas de crisis (no crea incidente — garantía server-side).
+// [T-6.19] Las franjas de SIMULACRO y de MODO DEMOSTRACIÓN ya no viven aquí:
+// las pinta `features/notices/SiteNoticeStrip` desde el layout de las
+// pestañas, para que se vean igual en INICIO, RUTAS, DIRECTORIO y CUENTA.
+import { Feather } from "@expo/vector-icons";
 import type { DirectoryEntryOut, MobileStateOut } from "@takab/sdk";
 import {
   Linking,
@@ -51,37 +54,20 @@ export function HomeView(props: {
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
       <Text style={styles.eyebrow}>{data.site_name.toUpperCase()}</Text>
 
+      {/* [T-6.19] Relleno SÓLIDO + glifo de visto: es la única franja con
+          relleno, y así se distingue de la de simulacro (regla lateral) sin
+          depender del verde. */}
       {data.phase === "reentry_approved" ? (
         <View style={styles.reentryBanner} testID="reentry-banner">
+          <Feather
+            color={palette.bg}
+            name="check-circle"
+            size={fontSize.md}
+            testID="reentry-glyph"
+          />
           <Text style={styles.reentryText}>
             REINGRESO AUTORIZADO — el dictamen técnico del inspector aprobó el
             reingreso al inmueble.
-          </Text>
-        </View>
-      ) : null}
-
-      {/* [T-5.02 · D-27] MODO DEMOSTRACIÓN. Va ANTES del simulacro y con OTRO
-          color —borde discontinuo, no el ámbar sólido del simulacro— porque son
-          cosas distintas: el simulacro es un ensayo que SÍ suena; esto es que la
-          nube no está avisando a nadie. Si la app no lo dijera, el ocupante
-          vería una pantalla en calma sin saber que su canal de aviso está
-          suprimido. Y dice lo segundo que hay que decir: el gabinete sigue
-          armado — este modo no llega hasta él. */}
-      {data.demo_mode ? (
-        <View style={styles.demoBanner} testID="demo-mode-banner">
-          <Text style={styles.demoText}>
-            MODO DEMOSTRACIÓN — LA NUBE NO ESTÁ ENVIANDO AVISOS
-          </Text>
-          <Text style={styles.demoNota}>
-            La protección del gabinete de su edificio sigue armada
-          </Text>
-        </View>
-      ) : null}
-
-      {data.drill.active ? (
-        <View style={styles.drillBanner} testID="drill-banner">
-          <Text style={styles.drillText}>
-            SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL
           </Text>
         </View>
       ) : null}
@@ -211,41 +197,17 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: palette.bg },
   wrap: { padding: space[4], paddingTop: 64, gap: space[3] },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2 },
-  drillBanner: {
-    backgroundColor: palette.warn,
-    borderRadius: radius.md,
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-  },
-  drillText: {
-    color: palette.bg,
-    fontSize: fontSize.sm,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  demoBanner: {
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: palette.fg3,
-    paddingVertical: space[2],
-    paddingHorizontal: space[3],
-    gap: 2,
-  },
-  demoText: {
-    color: palette.fg2,
-    fontSize: fontSize.sm,
-    fontWeight: "800",
-    letterSpacing: 1,
-  },
-  demoNota: { color: palette.fg3, fontSize: fontSize.xs },
   reentryBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
     backgroundColor: palette.ok,
     borderRadius: radius.md,
     paddingVertical: space[2],
     paddingHorizontal: space[3],
   },
   reentryText: {
+    flex: 1,
     color: palette.bg,
     fontSize: fontSize.sm,
     fontWeight: "800",

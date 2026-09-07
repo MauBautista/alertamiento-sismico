@@ -3,8 +3,10 @@
 // Guard de grupo server-driven: si el gate no dio "tactical", fuera.
 import { Feather } from "@expo/vector-icons";
 import { Redirect, Tabs } from "expo-router";
+import { StyleSheet, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
+import { SiteNotices } from "@/features/notices/SiteNotices";
 import { fontSize, palette } from "@/ui/theme";
 
 export default function BrigadistaLayout() {
@@ -14,7 +16,11 @@ export default function BrigadistaLayout() {
     return <Redirect href="/" />;
   }
 
+  // [T-6.19] La franja de avisos (simulacro · modo demostración) va en el
+  // navegador, no en una pestaña: se ve igual en todas.
   return (
+    <View style={styles.root}>
+      <SiteNotices />
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -63,5 +69,10 @@ export default function BrigadistaLayout() {
         }}
       />
     </Tabs>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1, backgroundColor: palette.bg },
+});
