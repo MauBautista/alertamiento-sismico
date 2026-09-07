@@ -182,8 +182,35 @@ class CommandDispatcher(EdgeModule):
             drill_id = str(payload.get("event_id") or f"CMD-{command_id}")
             if action is ActuatorAction.DRILL_START:
                 duration = payload.get("duration_s") or 300
+
+                # [T-6.17] El aborto viaja por el MISMO camino que todo acuse: un
+                # SEGUNDO `command_ack` del `drill_start`, con `results.aborted`.
+                # Sin topic nuevo ni regla IoT (la política de flota no cambia). El
+                # controlador lo invoca UNA vez y solo si el simulacro arrancó; la
+                # nube lo reconoce por `results.aborted` sobre un comando ya
+                # acusado — hasta hoy ese segundo acuse era un no-op silencioso y
+                # el teléfono anunciaba un simulacro que el gabinete había cortado.
+                def _avisar_aborto(info: dict, _cid: str = command_id, _nonce: str = nonce) -> None:
+                    razon = info.get("abort_reason") or "sin razón declarada"
+                    self._ack(
+                        _cid,
+                        _nonce,
+                        channel,
+                        action,
+                        True,
+                        f"simulacro abortado: {razon}",
+                        results={
+                            "aborted": True,
+                            "abort_reason": info.get("abort_reason"),
+                            "aborted_at": info.get("aborted_at"),
+                            "drill_id": info.get("drill_id"),
+                        },
+                    )
+
                 try:
-                    ok, reason = self._drill.start_drill(drill_id, float(duration))
+                    ok, reason = self._drill.start_drill(
+                        drill_id, float(duration), on_abort=_avisar_aborto
+                    )
                 except (TypeError, ValueError):
                     ok, reason = False, f"duration_s inválido: {duration!r}"
                 except Exception as exc:  # noqa: BLE001 — un comando FIRMADO siempre se ACKea

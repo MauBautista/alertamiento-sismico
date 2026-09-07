@@ -104,13 +104,16 @@ _TOPIC_BY_TYPE: dict[str, str] = {
     # [T-2.11] La señal de check-in llega por el topic incidents (el headcount
     # táctico ya está suscrito ahí); el frame es una invalidación sin PII.
     "checkin": p.TOPIC_INCIDENTS,
+    # [T-6.17] El simulacro va por el topic de la consola: es una invalidación
+    # sin estado (el banner y el historial re-consultan el REST).
+    "drill": p.TOPIC_INCIDENTS,
 }
 
 #: [T-2.129] Tipos que ``_build_frame`` resuelve SIN tocar la base. Su éxito no
 #: es evidencia de que el canal pueda leer, así que no apaga una degradación.
-#: Es el espejo de la rama ``t == "checkin"`` de ``_build_frame``: si algún día
-#: hay un segundo frame sin re-consulta, tiene que aparecer aquí.
-_TIPOS_SIN_LECTURA = frozenset({"checkin"})
+#: Es el espejo de las ramas ``t == "checkin"`` y ``t == "drill"`` de
+#: ``_build_frame``: un frame nuevo sin re-consulta tiene que aparecer aquí.
+_TIPOS_SIN_LECTURA = frozenset({"checkin", "drill"})
 
 _SQL_INCIDENT = text(
     "SELECT incident_id, tenant_id, site_id, event_id, opened_at, closed_at, "
@@ -483,6 +486,19 @@ class Hub:
             return p.RosterSignalFrame(
                 tenant_id=_uuid(tenant), site_id=_uuid(site), incident_id=_uuid(incident)
             ).model_dump(mode="json")
+        if t == "drill":
+            # [T-6.17] Invalidación pura, sin re-consulta ni PII: solo ids. Un
+            # simulacro abarca varios sitios, así que el frame no lleva `site_id`
+            # y la entrega default-deny (`_frame_in_scope`) lo reserva a los
+            # suscriptores sin alcance acotado — la consola. Un operador acotado
+            # sigue con el sondeo de 10 s, que no se retira.
+            tenant = payload.get("tenant")
+            drill = payload.get("id")
+            if tenant is None or drill is None:
+                return None
+            return p.DrillFrame(tenant_id=_uuid(tenant), drill_id=_uuid(drill)).model_dump(
+                mode="json"
+            )
         # [T-2.121] Tope de espera por lock, escalón de SEGUNDO PLANO. Es la MISMA
         # política que aplican las dos laterales de auditoría (`audit.py`,
         # T-2.73.c / T-2.112) y se reutiliza a propósito en vez de inventar un

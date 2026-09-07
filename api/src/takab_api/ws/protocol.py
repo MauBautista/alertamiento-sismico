@@ -178,6 +178,17 @@ class RosterSignalFrame(BaseModel):
     incident_id: UUID
 
 
+class DrillFrame(BaseModel):
+    """[T-6.17] Señal de que un simulacro del tenant cambió: arrancó, acusó,
+    fue rechazado, abortado o terminó. Es SOLO una invalidación (ids, sin
+    estado): la consola re-consulta ``/drills/active`` y el historial en vez de
+    esperar al sondeo de 10 s. La autoridad sigue siendo el REST."""
+
+    type: Literal["drill"] = "drill"
+    tenant_id: UUID
+    drill_id: UUID
+
+
 # ---- censo de la dirección del cable --------------------------------------
 def _server_frame_types() -> frozenset[str]:
     """[T-2.129] Discriminantes de los frames SERVIDOR→CLIENTE, DERIVADOS.

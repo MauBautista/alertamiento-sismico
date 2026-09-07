@@ -2692,6 +2692,33 @@
         "title": "DrillCreateIn",
         "type": "object"
       },
+      "DrillFrame": {
+        "description": "[T-6.17] Señal de que un simulacro del tenant cambió: arrancó, acusó,\nfue rechazado, abortado o terminó. Es SOLO una invalidación (ids, sin\nestado): la consola re-consulta ``/drills/active`` y el historial en vez de\nesperar al sondeo de 10 s. La autoridad sigue siendo el REST.",
+        "properties": {
+          "drill_id": {
+            "format": "uuid",
+            "title": "Drill Id",
+            "type": "string"
+          },
+          "tenant_id": {
+            "format": "uuid",
+            "title": "Tenant Id",
+            "type": "string"
+          },
+          "type": {
+            "const": "drill",
+            "default": "drill",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_id",
+          "drill_id"
+        ],
+        "title": "DrillFrame",
+        "type": "object"
+      },
       "DrillList": {
         "properties": {
           "items": {
@@ -2721,6 +2748,22 @@
       },
       "DrillOut": {
         "properties": {
+          "abort_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abort Reason"
+          },
+          "aborted": {
+            "default": false,
+            "title": "Aborted",
+            "type": "boolean"
+          },
           "active": {
             "title": "Active",
             "type": "boolean"
@@ -2732,6 +2775,11 @@
           },
           "duration_s": {
             "title": "Duration S",
+            "type": "integer"
+          },
+          "executing": {
+            "default": 0,
+            "title": "Executing",
             "type": "integer"
           },
           "from_template_id": {
@@ -2903,6 +2951,29 @@
       "DrillSiteOut": {
         "description": "Participación de UN sitio: el acuse se DERIVA del comando firmado.",
         "properties": {
+          "abort_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Abort Reason"
+          },
+          "aborted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aborted At"
+          },
           "ack": {
             "anyOf": [
               {
@@ -6905,11 +6976,25 @@
         "type": "object"
       },
       "MobileDrillOut": {
-        "description": "Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —\ninformativa, JAMÁS auto-arranca) y último ejecutado.",
+        "description": "Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —\ninformativa, JAMÁS auto-arranca) y último ejecutado.\n\n[T-6.17] `active` ya NO es una ventana de reloj: es `True` solo si el gabinete\nde ESTE sitio está ejecutando el simulacro (`execution == \"executing\"`).\nMedido el 2026-09-06 con un simulacro real: los dos gabinetes lo rechazaron\ny la app lo anunció tres minutos. `execution` y los conteos dicen lo demás\n—anunciado, rechazado, abortado— para que la franja pueda ser honesta.",
         "properties": {
           "active": {
             "title": "Active",
             "type": "boolean"
+          },
+          "execution": {
+            "default": "none",
+            "enum": [
+              "executing",
+              "pending",
+              "rejected",
+              "expired",
+              "aborted",
+              "no_gateway",
+              "none"
+            ],
+            "title": "Execution",
+            "type": "string"
           },
           "last_note": {
             "anyOf": [
@@ -6945,6 +7030,16 @@
               }
             ],
             "title": "Next Scheduled At"
+          },
+          "sites_executing": {
+            "default": 0,
+            "title": "Sites Executing",
+            "type": "integer"
+          },
+          "sites_total": {
+            "default": 0,
+            "title": "Sites Total",
+            "type": "integer"
           }
         },
         "required": [

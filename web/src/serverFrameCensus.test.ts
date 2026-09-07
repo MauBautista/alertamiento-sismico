@@ -157,6 +157,7 @@ describe("censo · ningún frame del servidor puede caer en el descarte silencio
       incident: TOPIC_INCIDENTS,
       incident_action: TOPIC_INCIDENTS,
       roster: TOPIC_INCIDENTS,
+      drill: TOPIC_INCIDENTS, // [T-6.17] invalidación del simulacro
       site_state: TOPIC_SITE_STATE,
       features: featuresTopic("s-1"),
     });

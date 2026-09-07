@@ -145,14 +145,36 @@ class SiteAssetOut(BaseModel):
     updated_at: datetime
 
 
+#: [T-6.17] Qué hace EL GABINETE DE ESTE SITIO con el simulacro vivo del tenant.
+#: `executing` = acusó y no ha abortado (la única situación en la que el edificio
+#: está sonando); `pending` = comando emitido sin acuse todavía; `rejected` =
+#: el gabinete lo rechazó (p. ej. `command_enabled` apagada); `expired` = sin
+#: acuse dentro del TTL; `aborted` = lo cortó una alerta real; `no_gateway` = el
+#: sitio no tenía gabinete comandable; `none` = no hay simulacro vivo.
+DrillExecution = Literal[
+    "executing", "pending", "rejected", "expired", "aborted", "no_gateway", "none"
+]
+
+
 class MobileDrillOut(BaseModel):
     """Simulacros para la app: activo (banner ámbar), próximo (agenda D4c —
-    informativa, JAMÁS auto-arranca) y último ejecutado."""
+    informativa, JAMÁS auto-arranca) y último ejecutado.
+
+    [T-6.17] `active` ya NO es una ventana de reloj: es `True` solo si el gabinete
+    de ESTE sitio está ejecutando el simulacro (`execution == "executing"`).
+    Medido el 2026-09-06 con un simulacro real: los dos gabinetes lo rechazaron
+    y la app lo anunció tres minutos. `execution` y los conteos dicen lo demás
+    —anunciado, rechazado, abortado— para que la franja pueda ser honesta.
+    """
 
     active: bool
     next_scheduled_at: datetime | None
     last_started_at: datetime | None
     last_note: str | None
+    execution: DrillExecution = "none"
+    #: Sitios del simulacro vivo (0 si no hay) y cuántos lo están ejecutando.
+    sites_total: int = 0
+    sites_executing: int = 0
 
 
 class MobileReentryOut(BaseModel):

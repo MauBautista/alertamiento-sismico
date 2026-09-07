@@ -261,3 +261,29 @@ describe("medianaLatencia", () => {
     expect(medianaLatencia(drill([viejo]))).toBeNull();
   });
 });
+
+// [T-6.17] El aborto es un hecho del SITIO (`aborted_at`): el gabinete acusó y
+// una alerta real lo cortó. Medido el 2026-09-06: sin este estado, un simulacro
+// rechazado por los dos gabinetes se anunciaba como en curso.
+describe("drillSiteAck · aborto por alerta real", () => {
+  it("un sitio con aborted_at es ABORTADO aunque su acuse siga en acked", () => {
+    const s = site({ command_status: "acked", aborted_at: "2026-09-06T15:00:30Z" });
+    expect(drillSiteAck(s, drill())).toBe("aborted");
+    expect(ackLabel("aborted")).toBe("ABORTADO POR ALERTA REAL");
+  });
+
+  it("el reporte cuenta el aborto como acusado Y como abortado", () => {
+    const d = drill({
+      sites: [
+        site(),
+        site({ site_id: "s-2", command_id: "c-2", aborted_at: "2026-09-06T15:00:30Z" }),
+        site({ site_id: "s-3", command_id: "c-3", command_status: "rejected" }),
+      ],
+    });
+    const r = drillAckReport(d);
+    expect(r.acked).toBe(2);
+    expect(r.aborted).toBe(1);
+    expect(r.rejected).toBe(1);
+    expect(r.commanded).toBe(3);
+  });
+});
