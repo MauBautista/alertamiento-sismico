@@ -488,7 +488,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     simulado, un barrido del DOM en `/console`, `/fleet` y `/triage`: 2 + 25 + 3 menciones de
     `Sitio Sim NNN`, **cero sin cinta**, y la tira de KPI dice «DE LAS CUALES 20 SIMULADAS».
 
-### [ ] T-6.05 · **El gate del LOGIN DEV lo lee un test bloqueante** — `SOFTWARE`
+### [x] T-6.05 · **El gate del LOGIN DEV lo lee un test bloqueante** — `SOFTWARE`
 
 > El servidor está cerrado con test; el cliente depende de una línea `ENV` del Dockerfile que
 > ningún test bloqueante lee, y el e2e que se le parece corre por `workflow_dispatch` y comprueba
@@ -502,9 +502,34 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** que un `true` tecleado en el Dockerfile, o un `ARG` homónimo añadido de buena fe, pongan el job `web` en rojo; y que el e2e desplegado asercione la ausencia del texto «LOGIN DEV» en el DOM de la entrada.
 - **Criterios de aceptación:**
-  - [ ] El censo exige `ENV VITE_DEV_TOKEN_ENABLED=false` en la etapa de build y la ausencia de un `ARG` con ese nombre.
-  - [ ] `deployed.spec.ts` comprueba el DOM de `/`, no solo el 404 del endpoint.
-  - [ ] Una mutación (`false` → `true`) pone rojo el job `web`.
+  - [x] El censo exige `ENV VITE_DEV_TOKEN_ENABLED=false` en la etapa de build y la ausencia de un `ARG` con ese nombre.
+  - [x] `deployed.spec.ts` comprueba el DOM de `/`, no solo el 404 del endpoint.
+  - [x] Una mutación (`false` → `true`) pone rojo el job `web`.
+- **Cómo se cerró (2026-09-07, SESIÓN C5):**
+  - **El censo lee el Dockerfile como Docker, no con un regex.** `consoleImageCensus.test.ts`
+    gana un analizador que pliega las continuaciones, separa las etapas (`FROM … AS`), entiende
+    las dos formas de `ENV` y localiza la etapa de build por su `RUN … npm run build`.
+    `auditarGateLoginDev` exige: el literal `false` fijado ANTES de ese `RUN` (Vite congela
+    `import.meta.env` en el build; un `ENV` posterior no sirve), ningún `ARG` homónimo en ninguna
+    etapa, ninguna interpolación `${VITE_DEV_TOKEN_ENABLED}`, y `.dockerignore` con `web/.env` y
+    `web/.env.*` (el segundo cerrojo de T-1.62). Cada defecto se describe con su porqué.
+  - **Las mutaciones se ejercen sobre el fichero REAL** dentro del propio test: `true` tecleado,
+    línea borrada, `ARG` añadido de buena fe, `ENV X=${X}`, y el `ENV` movido detrás del build; las
+    cinco ponen rojo. Trampa medida: la primera aparición de `VITE_DEV_TOKEN_ENABLED=false` en el
+    Dockerfile es un COMENTARIO, así que una mutación ingenua solo cambiaba la prosa y el gate
+    seguía (con razón) en verde; se muta la línea del `ENV`, la que lleva la continuación. La
+    mutación en vivo también se hizo a mano: `sed` al Dockerfile ⇒ 3 tests rojos ⇒ `git checkout`.
+  - **`deployed.spec.ts` mira el DOM antes que el endpoint.** Exige que la entrada MONTÓ (título
+    «CONSOLA SOC»), que no hay «LOGIN DEV», ni selector ROL, ni botón ENTRAR COMO ROL, que SÍ está
+    ENTRAR CON COGNITO, y por último el 404. Y gana su ESPEJO local: contra el stack local exige
+    que las tres huellas existan, para que un cambio de copy no deje al test de producción pasando
+    por vacuidad. Las huellas viven en una sola constante compartida por los dos.
+  - **Evidencia.** Bundle tipo producción (`vite build` con la bandera en `false`, servido con
+    `http.server`): el test de producción pasa. Servidor de desarrollo forzado como producción
+    (`PW_BASE_URL=http://127.0.0.1:5173`): falla exactamente en `getByText('LOGIN DEV')`
+    (esperado 0, recibido 1). Contra `localhost`: el espejo pasa. Web: 138 ficheros /
+    2 163 tests, eslint, prettier, tsc. La consola desplegada no se re-midió en esta sesión (IP
+    allowlist + SSO): el hallazgo U-16 ya la había medido limpia el 2026-09-06.
 
 ### [ ] T-6.06 · **Los vacíos dicen la causa real; la cola declara `error` y `stale`; ninguna caja en blanco** — `SOFTWARE`
 
