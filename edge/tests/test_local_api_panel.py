@@ -845,16 +845,138 @@ def test_enclave_sin_alerta_viva_se_declara(tmp_path):
     assert _hidden(out, "banner-alert")
 
 
-def test_simulacro_se_anuncia_y_lo_real_lo_aborta(tmp_path):
+def test_simulacro_activo_se_anuncia_como_no_real(tmp_path):
     st = _base()
     st["drill"] = {"active": True, "drill_id": "DRILL-1", "elapsed_s": 60, "total_s": 480}
     out = _render(tmp_path, status=st)
+    assert not _hidden(out, "banner-amber")
     assert "NO ES UNA ALERTA REAL" in _txt(out, "amber-txt")
 
+
+# ------------------------------------------------ T-6.29 · el aborto se PINTA
+#
+# El defecto (U-03): el texto «SIMULACRO ABORTADO — ALERTA REAL EN CURSO» exigía
+# `drill.active` Y alerta a la vez, y `DrillController.abort()` pone `active=False`:
+# la condición era inalcanzable y `aborted`/`abort_reason` no se leían en ninguna
+# línea. El test que lo «cubría» fabricaba ese estado imposible a mano; estos
+# leen la forma que el controlador emite de verdad, y el último la produce
+# recorriendo `abort()` → `status()` → render sin fabricar nada.
+
+
+def _drill_abortado(**over) -> dict:
+    """La sección `drill` tal como queda tras `abort()` (forma real, ver el test
+    de contrato del censo de render)."""
+    return {
+        "active": False,
+        "drill_id": "DRILL-2026-0907-01",
+        "started_at": "2026-09-07T09:55:00+00:00",
+        "duration_s": 480.0,
+        "aborted": True,
+        "abort_reason": "SASMEX real",
+        "aborted_at": "2026-09-07T09:58:12+00:00",
+        "aborted_age_s": 42.0,
+        "ended_reason": "abortado: SASMEX real",
+        "audio": {
+            "asset_id": "simulacro_es_mx",
+            "path": "/opt/takab/assets/simulacro.wav",
+            "sha256": "0" * 64,
+            "will_sound": True,
+            "reason": None,
+        },
+        **over,
+    }
+
+
+def _ventana_de_aborto_s() -> float:
+    """La ventana la declara el propio panel; el test la LEE, no la teclea."""
+    m = re.search(r"const DRILL_ABORT_VISIBLE_S\s*=\s*(\d+)", _INDEX.read_text("utf-8"))
+    assert m, "el panel ya no declara DRILL_ABORT_VISIBLE_S"
+    return float(m.group(1))
+
+
+def _orden_en_el_dom(out: dict, *ids: str) -> list[int]:
+    """Posición de cada id en el recorrido en profundidad del árbol renderizado."""
+    plano: list[str] = []
+
+    def caminar(n: dict) -> None:
+        plano.append(n.get("id", ""))
+        for k in n.get("kids", ()):
+            caminar(k)
+
+    caminar(out["tree"])
+    return [plano.index(i) for i in ids]
+
+
+def test_simulacro_abortado_se_pinta_aunque_active_sea_falso(tmp_path):
+    st = _base()
+    st["drill"] = _drill_abortado()
+    out = _render(tmp_path, status=st)
+    assert not _hidden(out, "banner-amber")
+    txt = _txt(out, "amber-txt")
+    assert "SIMULACRO ABORTADO" in txt and "(SASMEX real)" in txt
+    assert "HUBO UNA ALERTA REAL" in txt  # la alerta ya cerró: se dice en pasado
+    meta = _txt(out, "amber-meta")
+    assert "DRILL-2026-0907-01" in meta and "09:58:12 UTC" in meta and "hace 42 s" in meta
+    assert _hidden(out, "banner-alert")
+
+
+def test_bajo_alerta_real_la_alerta_va_arriba_y_el_aborto_se_lee_debajo(tmp_path):
+    st = _base()
+    st["drill"] = _drill_abortado()
+    st["sasmex_active"] = True
+    st["siren_sounding"] = True
+    out = _render(tmp_path, status=st)
+    assert not _hidden(out, "banner-alert")
+    assert not _hidden(out, "banner-amber")
+    assert "SIMULACRO ABORTADO — ALERTA REAL EN CURSO (SASMEX real)" == _txt(out, "amber-txt")
+    # §9.1: la precedencia es el ORDEN FÍSICO. La alerta precede al aborto.
+    alerta, aborto = _orden_en_el_dom(out, "banner-alert", "banner-amber")
+    assert alerta < aborto
+
+
+def test_el_aviso_de_aborto_caduca_por_la_ventana_que_declara_el_panel(tmp_path):
+    limite = _ventana_de_aborto_s()
+    st = _base()
+    st["drill"] = _drill_abortado(aborted_age_s=limite)
+    assert not _hidden(_render(tmp_path, status=st), "banner-amber")
+    st["drill"] = _drill_abortado(aborted_age_s=limite + 1)
+    assert _hidden(_render(tmp_path, status=st), "banner-amber")
+    # Sin edad conocida NO se esconde: esconder por un dato ausente sería inventarlo.
+    st["drill"] = _drill_abortado(aborted_age_s=None)
+    assert not _hidden(_render(tmp_path, status=st), "banner-amber")
+
+
+def test_simulacro_activo_bajo_alerta_real_no_se_anuncia(tmp_path):
+    """§9.1 regla 2: el simulacro VIVO solo se anuncia sin alerta real. Antes esta
+    combinación pintaba «SIMULACRO ABORTADO» sin que nadie hubiera abortado."""
+    st = _base()
+    st["drill"] = {"active": True, "drill_id": "DRILL-1", "elapsed_s": 60, "total_s": 480}
     st["sasmex_active"] = True
     out = _render(tmp_path, status=st)
-    assert "SIMULACRO ABORTADO" in _txt(out, "amber-txt")
     assert not _hidden(out, "banner-alert")
+    assert _hidden(out, "banner-amber")
+
+
+def test_el_aborto_recorre_controller_status_y_render_sin_fabricar_nada(supervisor, tmp_path):
+    """Criterio 3 de T-6.29: `DrillController.abort()` → `LocalDashboard.status()`
+    → render. Lo que llega al panel es lo que el gabinete emite, no un dict a mano."""
+    ok, motivo = supervisor.drill.start_drill("DRILL-E2E", 300)
+    assert ok, motivo
+    supervisor.drill.abort("SASMEX real")
+    real = json.loads(json.dumps(supervisor.local_api.status()))
+    assert real["drill"]["active"] is False and real["drill"]["aborted"] is True
+    assert real["drill"]["aborted_age_s"] is not None
+
+    out = _render(tmp_path, status=real)
+    assert not _hidden(out, "banner-amber")
+    assert "SIMULACRO ABORTADO" in _txt(out, "amber-txt")
+    assert "SASMEX real" in _txt(out, "amber-txt")
+    assert "DRILL-E2E" in _txt(out, "amber-meta")
+
+    real["sasmex_active"] = True
+    out = _render(tmp_path, status=real)
+    assert not _hidden(out, "banner-alert") and not _hidden(out, "banner-amber")
+    assert "ALERTA REAL EN CURSO" in _txt(out, "amber-txt")
 
 
 def test_banner_wr1_sigue_visible_incluso_bajo_alerta(tmp_path):

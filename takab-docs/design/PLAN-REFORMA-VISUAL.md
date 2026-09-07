@@ -961,7 +961,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - [ ] `?mode=lo-que-sea` cae a la densidad automática y lo declara.
   - [ ] El checklist enumera las 13 escenas con su criterio.
 
-### [ ] T-6.29 · **El panel pinta el aborto cuando ocurre** — `SOFTWARE`
+### [x] T-6.29 · **El panel pinta el aborto cuando ocurre** — `SOFTWARE`
 
 > El texto «SIMULACRO ABORTADO — ALERTA REAL EN CURSO» existe pero su condición exige
 > `drill.active` y alerta a la vez, combinación que `abort()` hace imposible; `aborted` y
@@ -975,9 +975,40 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — el test del aborto, por la razón escrita.
 - **Objetivo:** leer `st.drill.aborted` y `abort_reason`; el banner ámbar pasa a «SIMULACRO ABORTADO — …» con la razón y se mantiene un tiempo declarado bajo la alerta real, sin tapar nada de la precedencia §9.1. Sin animación.
 - **Criterios de aceptación:**
-  - [ ] Con `aborted:true` en el status, el panel lo pinta aunque `active` sea falso.
-  - [ ] Bajo alerta real el banner de alerta sigue arriba y el aborto se lee debajo.
-  - [ ] Test que recorre `DrillController.abort()` → `status()` → render, sin fabricar el estado.
+  - [x] Con `aborted:true` en el status, el panel lo pinta aunque `active` sea falso.
+  - [x] Bajo alerta real el banner de alerta sigue arriba y el aborto se lee debajo.
+  - [x] Test que recorre `DrillController.abort()` → `status()` → render, sin fabricar el estado.
+- **Cómo se cerró (2026-09-07, SESIÓN P3):**
+  - **El aborto es un estado propio, no la coincidencia «activo y alerta».** `render()` lee
+    `st.drill.aborted` y pinta el banner ámbar «SIMULACRO ABORTADO — ALERTA REAL EN CURSO (motivo)»
+    bajo la alerta (el orden físico de la pila es la precedencia de §9.1) o «— HUBO UNA ALERTA
+    REAL (motivo)» cuando la alerta ya cerró. La condición vieja `drill && alert` era inalcanzable
+    y, peor, con un simulacro vivo y una alerta de red encima habría rotulado «ABORTADO» sin que
+    nadie abortara; ahora esa combinación sigue la regla 2 de §9.1 (el simulacro vivo solo se
+    anuncia sin alerta real) y hay un test que lo fija.
+  - **La ventana se declara y la edad la deriva el gabinete.** `DRILL_ABORT_VISIBLE_S = 1800` en
+    el panel (30 min: cubre la ventana del simulacro y la de la alerta que lo cortó); `abort()`
+    guarda `aborted_at` EN EL ESTADO (antes solo viajaba en el aviso a la nube) y `status()` añade
+    `aborted_age_s` resuelto en el Pi, como toda edad de dato de este panel. Sin edad conocida el
+    aviso no se esconde: esconder por un dato ausente sería inventarlo. El test lee la constante de
+    la hoja en vez de teclearla.
+  - **La meta dice cuándo:** `DRILL-… · ABORTADO 09:58:12 UTC · hace 42 s`. La sub declara que el
+    voceo se cortó y que el aviso se retira solo. Ni animación ni color nuevos.
+  - **Tests.** `test_local_api_panel.py`: el test que fabricaba el estado imposible se reescribe
+    en cinco (aborto con `active:false`; alerta arriba y aborto debajo, midiendo el ORDEN en el
+    árbol renderizado; caducidad en el límite, en el límite+1 y con edad desconocida; simulacro
+    vivo bajo alerta real ⇒ ámbar oculto) más el del criterio 3, que corre
+    `supervisor.drill.start_drill()` → `abort("SASMEX real")` → `local_api.status()` → render.
+    `test_panel_render_census.py` gana la escena `simulacro_abortado` con la forma REAL del
+    estado, atada al controlador por un test de contrato clave a clave (start → abort → status),
+    y ocho excepciones escritas (`started_at`, `duration_s`, `ended_reason`, `audio.*`), dos de
+    ellas con fecha de caducidad: T-6.28 les dará camino al corregir la cuenta del simulacro vivo.
+    La escena demo `?demo=simulacro_abortado` entra en `_DEMO_SCENES_EXTRA`.
+  - **Medido en Chromium** (`?demo=simulacro_abortado&mode=consola`, 1440×900): banner rojo de
+    121 a 183 px, ámbar de 183 a 236 px justo debajo, cian oculto, cero errores de página.
+  - **Verificación:** `pytest edge/tests/` completo en verde en modo simulado (el gate #3 no se
+    ejerce); `ruff check` y `ruff format --check` limpios. El Pi de Puebla NO se redesplegó en
+    esta sesión: el cambio llega con el siguiente despliegue del edge.
 
 ### [ ] T-6.30 · **El pulso de vida se pinta y se detiene** — `SOFTWARE`
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from datetime import datetime
 
 from takab_edge.contracts import SasmexSignal, Tier, TierDecision, utcnow
 from takab_edge.gpio_link import as_link
@@ -84,9 +85,23 @@ class DrillController(EdgeModule):
 
     # ------------------------------------------------------------------ estado
     def status(self) -> dict:
-        """Sección `drill` del panel LAN (copia; el aborto queda visible)."""
+        """Sección `drill` del panel LAN (copia; el aborto queda visible).
+
+        [T-6.29] Con el simulacro ABORTADO añade `aborted_age_s`, derivado aquí y
+        no en el navegador: el panel decide con él cuánto tiempo sigue rotulando
+        el aborto, y toda edad de dato de este panel viaja ya resuelta por el
+        gabinete (restar relojes distintos ya costó una corrección en la pantalla
+        de salud). `None` si la marca no se pudo leer: nunca se inventa una edad.
+        """
         with self._lock:
-            return dict(self._state)
+            st = dict(self._state)
+        if st.get("aborted") and st.get("aborted_at"):
+            try:
+                marca = datetime.fromisoformat(str(st["aborted_at"]))
+                st["aborted_age_s"] = max(0.0, (utcnow() - marca).total_seconds())
+            except (TypeError, ValueError):
+                st["aborted_age_s"] = None
+        return st
 
     @property
     def active(self) -> bool:
@@ -181,11 +196,16 @@ class DrillController(EdgeModule):
         with self._lock:
             if not self._state.get("active"):
                 return
+            # [T-6.29] La marca del aborto queda EN EL ESTADO, no solo en el aviso
+            # a la nube: es lo que permite al panel decir «hace 3 min» y retirar el
+            # rótulo tras una ventana declarada, en vez de mostrarlo días.
+            aborted_at = utcnow().isoformat()
             self._state = {
                 **self._state,
                 "active": False,
                 "aborted": True,
                 "abort_reason": reason,
+                "aborted_at": aborted_at,
                 "ended_reason": f"abortado: {reason}",
             }
             if self._timer is not None:
@@ -196,7 +216,7 @@ class DrillController(EdgeModule):
                 "drill_id": self._state.get("drill_id"),
                 "aborted": True,
                 "abort_reason": reason,
-                "aborted_at": utcnow().isoformat(),
+                "aborted_at": aborted_at,
             }
         self._stop_voice()
         log.warning("SIMULACRO ABORTADO — %s (la alerta real manda)", reason)

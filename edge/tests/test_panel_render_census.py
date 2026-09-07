@@ -238,6 +238,27 @@ def test_el_fixture_del_censo_es_el_status_real_hasta_el_ultimo_anidado(supervis
     assert _claves(real["actuation_test"]), "sección actuation_test vacía"
 
 
+def test_la_escena_del_aborto_tiene_la_forma_real_del_status(supervisor):
+    """[T-6.29] La escena `simulacro_abortado` ES lo que deja `abort()`, clave a clave.
+
+    Se corre el aborto de VERDAD sobre el controlador del supervisor (start →
+    abort → `status()`) y se compara el conjunto recursivo de claves. Un campo
+    nuevo en el aborto rompe aquí hasta que la escena lo traiga — y entonces el
+    censo exige que el panel lo pinte o que alguien escriba por qué no.
+    """
+    ok, motivo = supervisor.drill.start_drill("DRILL-CENSO", 300)
+    assert ok, motivo
+    supervisor.drill.abort("SASMEX real")
+    real = json.loads(json.dumps(supervisor.local_api.status()))["drill"]
+    escena = _escena_simulacro_abortado()["drill"]
+    assert _claves(real) == _claves(escena), (
+        f"solo en status(): {sorted(_claves(real) - _claves(escena))} · "
+        f"solo en la escena: {sorted(_claves(escena) - _claves(real))}"
+    )
+    assert real["active"] is False and real["aborted"] is True
+    assert isinstance(real["aborted_age_s"], float)
+
+
 # ----------------------------------------------------- guardas del censo
 
 
@@ -424,6 +445,37 @@ def _escena_simulacro() -> dict:
     return st
 
 
+def _escena_simulacro_abortado() -> dict:
+    """[T-6.29] El simulacro que una alerta real CORTÓ, bajo esa alerta.
+
+    Con la forma que `DrillController.abort()` deja en `status()` —`active=false`,
+    `aborted=true`, la razón, la marca y la edad derivada—, que es lo que el
+    panel no leía (U-03). `test_la_escena_del_aborto_tiene_la_forma_real_del_
+    status` la ata al controlador real: un campo nuevo en el aborto rompe aquí
+    hasta que la escena lo traiga y el panel lo mire (o lo declare mudo).
+    """
+    st = _escena_alerta()
+    st["drill"] = {
+        "active": False,
+        "drill_id": "DRILL-2026-0907-01",
+        "started_at": "2026-09-07T09:55:00+00:00",
+        "duration_s": 480.0,
+        "aborted": True,
+        "abort_reason": "SASMEX real",
+        "aborted_at": "2026-09-07T09:58:12+00:00",
+        "aborted_age_s": 42.0,
+        "ended_reason": "abortado: SASMEX real",
+        "audio": {
+            "asset_id": "simulacro_es_mx",
+            "path": "/opt/takab/assets/simulacro.wav",
+            "sha256": "0" * 64,
+            "will_sound": True,
+            "reason": None,
+        },
+    }
+    return st
+
+
 def _escena_gpio_caido() -> dict:
     st = _base()
     st["relays"] = []
@@ -477,6 +529,7 @@ ESCENAS: dict[str, Any] = {
     "sin_nube": _escena_sin_nube,
     "retirado": _escena_retirado,
     "simulacro": _escena_simulacro,
+    "simulacro_abortado": _escena_simulacro_abortado,
     "gpio_caido": _escena_gpio_caido,
     "reles_parciales": _escena_reles_parciales,
     "lora_caido": _escena_lora_caido,
@@ -540,6 +593,34 @@ SIN_CAMINO_DE_RENDER: dict[str, str] = {
         "se pinta (con su `siren_reason`). Dos rótulos del mismo altavoz serían "
         "dos verdades que pueden discrepar."
     ),
+    "drill.started_at": (
+        "[T-6.29] En un simulacro ABORTADO el panel rotula el aborto (hora, edad, "
+        "motivo), no el arranque: lo que el operador necesita es cuándo y por qué se "
+        "cortó. La hora de inicio la lleva la bitácora de eventos. La escena del "
+        "simulacro VIVO sigue con la forma vieja (`elapsed_s`/`total_s`) y es T-6.28 "
+        "quien la corrige; al hacerlo, este campo tendrá camino en la cuenta y esta "
+        "línea sobra."
+    ),
+    "drill.duration_s": (
+        "[T-6.29] La duración PLANEADA ya no describe nada de un simulacro cortado. "
+        "Misma nota que `drill.started_at`: la cuenta del simulacro vivo es de T-6.28."
+    ),
+    "drill.ended_reason": (
+        "[T-6.29] Es `abortado: <abort_reason>`: el mismo motivo que sí se pinta, con "
+        "un prefijo. Dos rótulos del mismo hecho serían dos verdades que pueden "
+        "discrepar. Viaja porque el fin normal (`fin de ventana`, `fin manual`) lo usa "
+        "y el estado se sirve tal cual lo deja el controlador."
+    ),
+    "drill.audio.asset_id": (
+        "[T-6.29] Evidencia de QUÉ iba a sonar (T-5.17), resuelta para el acuse a la "
+        "nube y el reporte de cumplimiento. Al abortar, el voceo se cortó y el banner "
+        "lo dice; el asset ya no es información para quien está de pie. Cómo reflejar "
+        "el voceo en la línea de estado es la decisión de producto pendiente de T-6.28."
+    ),
+    "drill.audio.path": ("[T-6.29] Ver `drill.audio.asset_id`."),
+    "drill.audio.sha256": ("[T-6.29] Ver `drill.audio.asset_id`."),
+    "drill.audio.will_sound": ("[T-6.29] Ver `drill.audio.asset_id`."),
+    "drill.audio.reason": ("[T-6.29] Ver `drill.audio.asset_id`."),
     "captured_at": (
         "Campo de compatibilidad con el panel anterior: es la hora del último "
         "diagnóstico de salud, y esa sección se rotula por EDAD (`health.age_s`). "

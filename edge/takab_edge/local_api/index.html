@@ -641,6 +641,12 @@ const RELAY_STATUS = {
 /* [T-2.49] POR QUÉ suena. El altavoz ya conmuta el tono con esto; la pantalla
    no lo miraba y una prueba de sirena se leía igual que un sismo real. */
 const SIREN_REASON = { alert:'ALERTA', safe_state:'ESTADO SEGURO', test:'PRUEBA' };
+/* [T-6.29] Cuánto sigue rotulado SIMULACRO ABORTADO después del aborto. El
+   controlador guarda el aborto hasta el siguiente simulacro (pueden ser días) y un
+   aviso que no caduca deja de leerse; 30 min cubre la ventana de un simulacro
+   institucional (8 min) y la de la alerta real que lo cortó. La edad la deriva el
+   gabinete (`drill.aborted_age_s`), no este reloj. */
+const DRILL_ABORT_VISIBLE_S = 1800;
 
 /* ============================== estado ============================== */
 const params = new URLSearchParams(location.search);
@@ -782,6 +788,15 @@ const SCENES = {
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
   simulacro: () => { const s = baseStatus(); s.siren_sounding=true;
     s.drill = {active:true, drill_id:'DRILL-2026-0730-01', elapsed_s:252, total_s:480}; return s; },
+  /* [T-6.29] El aborto por alerta real, con la FORMA que emite DrillController.abort():
+     active=false y aborted=true (antes el panel exigía las dos a la vez). La alerta
+     va encima y el aborto se lee debajo, §9.1. */
+  simulacro_abortado: () => { const s = SCENES.alerta(); const now = new Date().toISOString();
+    s.drill = {active:false, drill_id:'DRILL-2026-0730-01', started_at:now, duration_s:480,
+      aborted:true, abort_reason:'SASMEX real', aborted_at:now, aborted_age_s:42,
+      ended_reason:'abortado: SASMEX real',
+      audio:{asset_id:'simulacro_es_mx', path:'/opt/takab/assets/simulacro.wav', sha256:'demo', will_sound:true, reason:null}};
+    return s; },
   prueba_actuadores: () => { const s = baseStatus(); s.siren_sounding=true;
     /* [T-2.85.a] La demo trae un relé que NO confirma y otro que ni se probó:
        la escena existe para enseñar la TARJETA de resultado, y una en la que
@@ -1011,6 +1026,12 @@ function render(){
 
   /* banners (§9.1) */
   const drill = st.drill && st.drill.active;
+  /* [T-6.29] El aborto es un ESTADO PROPIO, no la coincidencia «activo y alerta»:
+     `abort()` pone active=false, así que esa coincidencia era inalcanzable y el
+     texto «SIMULACRO ABORTADO» no se pintó jamás (U-03). Se lee `aborted` y se
+     mantiene una ventana declarada; sin edad conocida no se esconde. */
+  const drillAborted = !!(st.drill && st.drill.aborted &&
+    (st.drill.aborted_age_s == null || st.drill.aborted_age_s <= DRILL_ABORT_VISIBLE_S));
   const test = st.actuation_test && st.actuation_test.active;
   const wr1 = st.test_mode && st.test_mode.active;
   /* [T-2.32] El ROJO es exclusivo de ACTUACIÓN REAL (SASMEX o comando firmado
@@ -1025,11 +1046,17 @@ function render(){
   /* [T-2.26] enclave sin alerta viva: el tier decayó pero los relés siguen en
      protección — el rojo queda EXCLUSIVO de alerta viva, esto es ámbar */
   $('banner-latched').classList.toggle('hide', !(st.alert_latched && !alert));
-  const showAmber = drill && !alert;
-  $('banner-amber').classList.toggle('hide', !showAmber && !(drill && alert));
-  if (drill && alert){
-    $('amber-txt').textContent = 'SIMULACRO ABORTADO — ALERTA REAL EN CURSO';
-    $('amber-sub').textContent = 'Lo real siempre gana'; $('amber-meta').textContent = st.drill.drill_id || '';
+  /* §9.1 regla 2: el simulacro vivo solo se anuncia SIN alerta real; el aborto se
+     lee también bajo ella, debajo del banner rojo (orden físico, no z-index). */
+  const showAmber = (drill && !alert) || drillAborted;
+  $('banner-amber').classList.toggle('hide', !showAmber);
+  if (drillAborted){
+    const motivo = st.drill.abort_reason ? ' (' + st.drill.abort_reason + ')' : '';
+    $('amber-txt').textContent = 'SIMULACRO ABORTADO — ' + (alert ? 'ALERTA REAL EN CURSO' : 'HUBO UNA ALERTA REAL') + motivo;
+    $('amber-sub').textContent = 'Lo real siempre gana · el voceo se cortó al abortar · este aviso se retira solo a los ' + Math.round(DRILL_ABORT_VISIBLE_S/60) + ' min';
+    $('amber-meta').textContent = (st.drill.drill_id || '') +
+      (st.drill.aborted_at ? ' · ABORTADO ' + String(st.drill.aborted_at).slice(11,19) + ' UTC' : '') +
+      (st.drill.aborted_age_s != null ? ' · hace ' + fmtAge(st.drill.aborted_age_s) : '');
   } else if (showAmber){
     $('amber-txt').textContent = '🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL';
     $('amber-sub').textContent = 'Voceo de simulacro en curso · aborta solo si entra una alerta real';
