@@ -1,6 +1,6 @@
-// 1.1 — honestidad del reposo: SIMULACRO es franja ámbar (jamás crisis), el
-// chip SASMEX solo con WR-1 declarado Y gabinete reportando, agenda de
-// simulacros sin inventar datos.
+// 1.1 — honestidad del reposo: el chip SASMEX solo con WR-1 declarado Y
+// gabinete reportando, agenda de simulacros sin inventar datos. La franja de
+// SIMULACRO ya no es de esta pantalla (T-6.19: `features/notices`).
 import type { MobileStateOut } from "@takab/sdk";
 import { fireEvent, render } from "@testing-library/react-native";
 import { Linking } from "react-native";
@@ -59,58 +59,47 @@ describe("HomeView (1.1)", () => {
     expect(v.queryByTestId("drill-banner")).toBeNull();
   });
 
-  it("[T-5.02] modo demostración: lo dice, y dice que el gabinete sigue armado", async () => {
-    // Sin esto el ocupante vería una pantalla en calma sin saber que su canal de
-    // aviso está suprimido. Y la segunda frase cierra la lectura peligrosa: que
-    // alguien crea que el edificio está desprotegido. No lo está.
-    const view = await render(
-      <HomeView
-        brigadistas={[]}
-        data={state({ demo_mode: true })}
-        nowMs={NOW}
-        {...NOOP}
-      />,
-    );
-    expect(view.getByTestId("demo-mode-banner")).toBeTruthy();
-    const texto = JSON.stringify(view.toJSON());
-    expect(texto).toContain("LA NUBE NO ESTÁ ENVIANDO AVISOS");
-    expect(texto).toContain("sigue armada");
-  });
-
-  it("[T-5.02] sin modo demostración no hay franja: cero ruido en el caso normal", async () => {
-    const view = await render(
-      <HomeView
-        brigadistas={[]}
-        data={state({ demo_mode: false })}
-        nowMs={NOW}
-        {...NOOP}
-      />,
-    );
-    expect(view.queryByTestId("demo-mode-banner")).toBeNull();
-  });
-
-  it("drill activo: franja ámbar SIMULACRO sobre contenido NORMAL (jamás crisis)", async () => {
+  it("[T-6.19] la franja de simulacro NO vive aquí: la pinta el layout, igual en todas las pestañas", async () => {
+    // Antes esta pantalla pintaba «SIMULACRO EN CURSO» con solo `active` (la
+    // ventana de reloj): el 2026-09-06 lo anunció tres minutos con los dos
+    // gabinetes en RECHAZADO. Ahora la franja sale de `execution` y se monta
+    // en `(occupant)/_layout.tsx`; INICIO sigue siendo contenido NORMAL bajo
+    // ella — jamás una pantalla de crisis.
     const v = await render(
       <HomeView
         brigadistas={[]}
         data={state({
+          demo_mode: true,
           drill: {
             active: true,
             next_scheduled_at: null,
             last_started_at: null,
             last_note: null,
+            execution: "executing",
+            sites_total: 1,
+            sites_executing: 1,
           },
         })}
         nowMs={NOW}
         {...NOOP}
       />,
     );
-    expect(v.getByTestId("drill-banner")).toHaveTextContent(
-      "SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL",
-    );
-    // el contenido de reposo sigue presente: NO es una pantalla de crisis
+    expect(v.queryByTestId("drill-banner")).toBeNull();
+    expect(v.queryByTestId("demo-mode-banner")).toBeNull();
     expect(v.getByTestId("estado")).toBeTruthy();
     expect(v.queryByText(/EVACÚE|REPLIÉGUESE AHORA/)).toBeNull();
+  });
+
+  it("[T-6.19] reingreso autorizado: relleno sólido + glifo (forma, no solo verde)", async () => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={state({ phase: "reentry_approved" })} nowMs={NOW} {...NOOP} />,
+    );
+    const banner = v.getByTestId("reentry-banner");
+    expect(banner).toHaveTextContent(/REINGRESO AUTORIZADO/);
+    const style = Object.assign({}, ...[banner.props.style].flat(Infinity).filter(Boolean));
+    expect(style.backgroundColor).toBeTruthy();
+    expect(style.borderLeftWidth).toBeUndefined();
+    expect(v.getByTestId("reentry-glyph")).toBeTruthy();
   });
 
   it("agenda: sin datos dice 'sin programar'/'sin registro', no inventa", async () => {

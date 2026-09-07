@@ -555,7 +555,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 
 ## 8 · Fichas · App móvil
 
-### [ ] T-6.19 · **La franja de simulacro dice la verdad, en todas las pestañas y para el brigadista** — `SOFTWARE`
+### [x] T-6.19 · **La franja de simulacro dice la verdad, en todas las pestañas y para el brigadista** — `SOFTWARE`
 
 > Medido con un simulacro real: dos gabinetes lo rechazaron y el teléfono anunció «SIMULACRO EN
 > CURSO» tres minutos. El brigadista no ve el simulacro ni el modo demostración; el ocupante solo
@@ -569,10 +569,31 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `HomeView.test.tsx` «drill activo: franja ámbar» gana la variante «anunciado sin gabinete que lo ejecute».
 - **Objetivo:** la franja distingue «SIMULACRO EN CURSO» (al menos un gabinete acusó) de «SIMULACRO ANUNCIADO · ningún gabinete lo ejecuta» (todos rechazados o sin comando); vive en el layout de las dos pestañeras, no en INICIO; el brigadista la ve encima de su panel junto con el modo demostración; la forma la separa de la franja de reingreso (regla lateral gruesa y glifo, no relleno sólido) y ninguna de las dos depende del matiz. Sin bucles de animación: una entrada y una salida, ninguna si `reduceMotion`.
 - **Criterios de aceptación:**
-  - [ ] Con los sitios en `rejected`, el teléfono no dice «EN CURSO».
-  - [ ] En RUTAS, DIRECTORIO, CUENTA, PANEL, TRIAGE, LISTA y SYNC la franja se ve igual que en INICIO.
-  - [ ] Un daltónico distingue simulacro de reingreso por la forma; verificado con simulador.
-  - [ ] Un drill jamás abre `crisis.tsx` (test existente sigue verde).
+  - [x] Con los sitios en `rejected`, el teléfono no dice «EN CURSO».
+  - [x] En RUTAS, DIRECTORIO, CUENTA, PANEL, TRIAGE, LISTA y SYNC la franja se ve igual que en INICIO.
+  - [ ] Un daltónico distingue simulacro de reingreso por la forma; verificado con simulador. **La forma está garantizada por test** (regla lateral + glifo frente a relleno sólido + glifo); **la pasada por el simulador de daltonismo en el Pixel queda pendiente**: el teléfono no estaba conectado en la sesión del 2026-09-06 y no se usan emuladores.
+  - [x] Un drill jamás abre `crisis.tsx` (test existente sigue verde).
+- **Cómo se cerró (2026-09-06, SESIÓN 2):**
+  - **La franja se deriva de `execution`** (T-6.17), no de la ventana: `features/notices/drillNotice.ts`
+    es una función pura con cinco salidas — EN CURSO (solo si el gabinete de ESTE sitio acusó y no
+    abortó), ANUNCIADO · AÚN NO CONFIRMA (`pending`), ANUNCIADO · NINGÚN GABINETE / SU GABINETE NO LO
+    EJECUTA (`rejected`/`expired`/`no_gateway`, con la razón y el conteo «N de M gabinetes»),
+    ABORTADO · ATENDIÓ UNA ALERTA REAL, y nada. Un valor desconocido cae en ANUNCIADO (default-deny).
+    Una nube anterior a T-6.17 (sin `execution`) cae a `active`.
+  - **Vive en el navegador:** `SiteNotices` se monta UNA vez en `(occupant)/_layout.tsx` y en
+    `(brigadista)/_layout.tsx`, encima de `<Tabs>`; INICIO y las demás pestañas ya no la pintan. El
+    brigadista la ve encima de su panel junto con el MODO DEMOSTRACIÓN, que se mudó a la misma
+    franja. `tests/app/tab-layouts-notices.test.ts` lo deriva del sistema de ficheros: las dos
+    pestañeras la montan, ninguna pestaña la monta por su cuenta, y todas reservan la banda de 64
+    que la franja solapa (así no abre un hueco; lo que asoma bajo ella es el inset real).
+  - **Forma, no matiz:** simulacro = regla lateral gruesa + glifo sobre fondo de tarjeta (nunca
+    relleno sólido); demostración = borde discontinuo + ojo tachado; reingreso (en INICIO) =
+    relleno sólido + visto. Tokens existentes; ninguno nuevo.
+  - **Movimiento:** un fundido de entrada y uno de salida (`Animated`, sin Reanimated), ninguno con
+    `reduceMotion` (`ui/useReduceMotion.ts`, observable). Un test exige que `Animated.loop` no se
+    invoque y que un sondeo con el mismo aviso no re-anime.
+  - **Censo:** `screenStateCensus` sigue en verde sin declarar nada nuevo — el contenedor está en
+    `features/`, la pestaña sigue montando su `StateFrame` y JSX no es una llamada para el censo.
 
 ### [ ] T-6.20 · **Todo objetivo táctil de una pantalla de vida cumple el mínimo** — `SOFTWARE`
 
