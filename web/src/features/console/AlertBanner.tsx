@@ -11,9 +11,15 @@
 // severidad crítica por D-11— salía en el videowall como un sismo detectado por
 // el sensor, mientras la app móvil decía «NO ES UNA ALERTA SÍSMICA» para el mismo
 // incidente. Los literales viven en `shared/glossary/estados.json`.
+//
+// [T-6.01 · U-28] La CARCASA tampoco: `.soc-alert` era una sola clase y un
+// aviso instrumental —«SOLO AVISO, SIN ACTUACIÓN»— salía vestido con el rojo
+// crítico y la sombra de la alerta. `data-authorizes` lo deriva de la tabla de
+// escena (`authorizes`: SASMEX o cuórum) y la hoja viste el aviso de ámbar.
 
 import { AlertOctagon } from "lucide-react";
 
+import { authorizes } from "../scene/scene";
 import { alertHeadline } from "./alertHeadline";
 import type { LiveIncident } from "./useLiveIncidents";
 
@@ -34,6 +40,7 @@ export default function AlertBanner({ incident, siteName }: AlertBannerProps) {
       data-testid="alert-banner"
       data-trigger={incident.trigger ?? "desconocido"}
       data-seismic={String(fuente.seismic)}
+      data-authorizes={String(authorizes(incident.trigger))}
     >
       <div className="soc-alert__strip">
         <AlertOctagon size={16} aria-hidden />

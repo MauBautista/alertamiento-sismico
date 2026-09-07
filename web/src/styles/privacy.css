@@ -33,27 +33,40 @@
 
    Lo vigilan `src/styles/layoutInvariants.test.ts` (la hoja),
    `src/shell/AppShell.layout.test.tsx` (la forma del árbol que estos selectores
-   dan por supuesta) y `e2e/layout.spec.ts` (el alto real, en un navegador). */
+   dan por supuesta) y `e2e/layout.spec.ts` (el alto real, en un navegador).
+
+   [T-6.01] Llegó el tercer hijo que este bloque anunciaba: la FRANJA DE ESCENA
+   (`.soc-scene`, alerta / simulacro / mantenimiento / demo en las seis rutas).
+   Tres filas: la escena CLAVADA a la 1, el aviso de privacidad por
+   auto-colocación en la 2 (la única celda libre) y la página CLAVADA a la 3. En
+   escena NORMAL la franja mide cero y, con `row-gap: 0`, la fila vacía no
+   cobra nada — el mismo truco que ya protegía al banner. */
 .soc-app > .soc-main {
-  grid-template-rows: auto minmax(0, 1fr);
-  /* Un `gap` cobra el hueco entre filas AUNQUE la fila 1 esté vacía, y vacía es
+  grid-template-rows: auto auto minmax(0, 1fr);
+  /* Un `gap` cobra el hueco entre filas AUNQUE la fila esté vacía, y vacía es
      el caso NORMAL: sin esto quedaría una banda muerta permanente arriba de las
-     seis pantallas. La separación la pone el `margin-bottom` del banner, que
-     solo existe cuando el banner existe. */
+     seis pantallas. La separación la pone el `margin-bottom` de cada franja,
+     que solo existe cuando la franja existe. */
   row-gap: 0;
+}
+
+/* La escena va PRIMERA, en la reja y en el DOM: una alerta se lee antes que un
+   aviso legal (lector de pantalla, tabulación), y se pinta encima. */
+.soc-app > .soc-main > .soc-scene {
+  grid-row: 1;
 }
 
 /* La página va CLAVADA a la fila elástica, no colocada por orden: el banner
    desaparece en cuanto el consentimiento está al día, y entonces "el primer
    hijo" y "el que crece" dejan de ser el mismo elemento. El banner recibe la
-   fila 1 por auto-colocación (es la única celda libre) — por eso NO declara
+   fila 2 por auto-colocación (es la única celda libre) — por eso NO declara
    `grid-row` él mismo.
 
-   Si algún día hace falta un tercer hijo en el shell, hay que darle su propia
-   fila: dos hijos no-banner se apilarían en esta misma celda. Lo asserta
+   Si algún día hace falta un CUARTO hijo en el shell, hay que darle su propia
+   fila: dos hijos sin fila se apilarían en la misma celda. Lo asserta
    `AppShell.layout.test.tsx`. */
-.soc-app > .soc-main > *:not(.privacy-banner) {
-  grid-row: 2;
+.soc-app > .soc-main > *:not(.privacy-banner):not(.soc-scene) {
+  grid-row: 3;
   min-height: 0;
 }
 

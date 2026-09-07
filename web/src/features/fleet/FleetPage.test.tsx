@@ -118,6 +118,7 @@ function maintData(over: Partial<MaintenanceData> = {}): MaintenanceData {
     items: [],
     loading: false,
     readError: null,
+    forbidden: false,
     updatedAt: Date.now(),
     refetch: vi.fn(),
     close: vi.fn(),

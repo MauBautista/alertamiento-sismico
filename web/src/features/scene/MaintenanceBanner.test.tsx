@@ -12,17 +12,18 @@
 //   pinte "no hay ventana". Decir que no hay ventana cuando las alarmas están
 //   mudas es el peor fallo posible de esta pantalla.
 
+//
+// [T-6.01] El banner recibe `data` de `SceneStrip` y ya no recibe la alerta:
+// que NO se degrada bajo alerta real está escrito en la tabla
+// (`DEGRADES_UNDER_ALERT.maintenance === false`, `scene.test.ts`) y lo ejerce
+// `SceneStrip.test.tsx` con la escena `alert` resuelta de verdad.
+
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ useMaintenanceWindows: vi.fn() }));
-vi.mock("./useMaintenanceWindows", () => ({
-  useMaintenanceWindows: mocks.useMaintenanceWindows,
-}));
-
 import { expectFourStates, type UiState } from "../../test-utils/states";
+import type { MaintenanceData } from "../console/useMaintenanceWindows";
 import MaintenanceBanner from "./MaintenanceBanner";
-import type { MaintenanceData } from "./useMaintenanceWindows";
 
 const NOW = Date.parse("2026-08-06T03:35:00Z");
 
@@ -54,6 +55,7 @@ function data(over: Partial<MaintenanceData> = {}): MaintenanceData {
     items: [],
     loading: false,
     readError: null,
+    forbidden: false,
     updatedAt: NOW - 5_000,
     refetch: vi.fn(),
     close: vi.fn(),
@@ -63,15 +65,24 @@ function data(over: Partial<MaintenanceData> = {}): MaintenanceData {
   } as MaintenanceData;
 }
 
+/** Pinta el banner con ese dato (lo que antes devolvía el hook mockeado). */
+let ultimo: MaintenanceData = data();
+function conDato(over: Partial<MaintenanceData> = {}): void {
+  ultimo = data(over);
+}
+function pintar() {
+  return render(<MaintenanceBanner data={ultimo} />);
+}
+
 beforeEach(() => {
   vi.setSystemTime(NOW);
-  mocks.useMaintenanceWindows.mockReturnValue(data());
+  conDato();
 });
 
 describe("MaintenanceBanner", () => {
   it("declara la ventana con su hora UTC de cierre y su acuse", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(data({ items: [WINDOW] as never }));
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [WINDOW] as never });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("VENTANA DE MANTENIMIENTO");
     expect(banner.textContent).toContain("TERMINA 04:01 UTC");
@@ -82,8 +93,8 @@ describe("MaintenanceBanner", () => {
   });
 
   it("nombra el gabinete tapado, no solo 'una ventana'", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(data({ items: [WINDOW] as never }));
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [WINDOW] as never });
+    pintar();
     expect(screen.getByTestId("maintenance-banner").textContent).toContain("Torre Dev");
   });
 
@@ -92,22 +103,20 @@ describe("MaintenanceBanner", () => {
     // VISIBLE, incluso bajo alerta real, porque el operador DEBE saberlo. Si el
     // gabinete está mudo justo durante el sismo, ese es el momento en el que más
     // falta hace saber que su alarma no va a sonar.
-    mocks.useMaintenanceWindows.mockReturnValue(data({ items: [WINDOW] as never }));
-    render(<MaintenanceBanner hasLiveIncident={true} />);
+    conDato({ items: [WINDOW] as never });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("TERMINA 04:01 UTC");
     expect(banner.textContent).toContain("2/2 ALARMAS SILENCIADAS");
   });
 
   it("una ventana que no silenció nada NO se pinta como éxito", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({
-        items: [
-          { ...WINDOW, requested: 2, silenced: 0, missing: 2, missing_names: ["a", "b"] },
-        ] as never,
-      }),
-    );
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({
+      items: [
+        { ...WINDOW, requested: 2, silenced: 0, missing: 2, missing_names: ["a", "b"] },
+      ] as never,
+    });
+    pintar();
     expect(screen.getByTestId("maintenance-banner").textContent).toContain(
       "0/2 ALARMAS SILENCIADAS · 2 SIN SILENCIAR: NO EXISTEN O LA REGLA NO LAS GUARDÓ",
     );
@@ -116,8 +125,8 @@ describe("MaintenanceBanner", () => {
   // --- [B8] El titular obedece al servidor, no al deseo del que abrió --------
 
   it("con TODAS mudas afirma el silencio y lo marca en el DOM", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(data({ items: [WINDOW] as never }));
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [WINDOW] as never });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
     expect(banner.querySelector('[data-mute="all"]')).not.toBeNull();
@@ -128,21 +137,19 @@ describe("MaintenanceBanner", () => {
     // decía «ALARMAS DE OPERACIÓN SILENCIADAS» igual: una afirmación que el
     // servidor desmiente en el mismo payload, mientras el on-call sigue
     // recibiendo los correos que cree haber callado.
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({
-        items: [
-          {
-            ...WINDOW,
-            requested: 2,
-            silenced: 0,
-            missing: 2,
-            missing_names: ["a", "b"],
-            mute_rule: null,
-          },
-        ] as never,
-      }),
-    );
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({
+      items: [
+        {
+          ...WINDOW,
+          requested: 2,
+          silenced: 0,
+          missing: 2,
+          missing_names: ["a", "b"],
+          mute_rule: null,
+        },
+      ] as never,
+    });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("LAS ALARMAS DE OPERACIÓN SIGUEN SONANDO");
     expect(banner.textContent).not.toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
@@ -153,14 +160,10 @@ describe("MaintenanceBanner", () => {
   });
 
   it("con ALGUNAS mudas dice que el resto sigue sonando", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({
-        items: [
-          { ...WINDOW, requested: 2, silenced: 1, missing: 1, missing_names: ["a"] },
-        ] as never,
-      }),
-    );
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({
+      items: [{ ...WINDOW, requested: 2, silenced: 1, missing: 1, missing_names: ["a"] }] as never,
+    });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("PARTE DE LAS ALARMAS DE OPERACIÓN SIGUE SONANDO");
     expect(banner.textContent).toContain("1/2 ALARMAS SILENCIADAS");
@@ -168,14 +171,12 @@ describe("MaintenanceBanner", () => {
   });
 
   it("una ventana sin alarmas que callar no insinúa que haya callado alguna", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({
-        items: [
-          { ...WINDOW, requested: 0, silenced: 0, missing: 0, missing_names: [], mute_rule: null },
-        ] as never,
-      }),
-    );
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({
+      items: [
+        { ...WINDOW, requested: 0, silenced: 0, missing: 0, missing_names: [], mute_rule: null },
+      ] as never,
+    });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("SIN ALARMAS DE OPERACIÓN QUE SILENCIAR");
     expect(banner.querySelector('[data-mute="none_requested"]')).not.toBeNull();
@@ -192,10 +193,8 @@ describe("MaintenanceBanner", () => {
 
   it("un acuse SIN COMPROBAR no se pinta como el mismo payload comprobado", () => {
     const render1 = (verified: boolean) => {
-      mocks.useMaintenanceWindows.mockReturnValue(
-        data({ items: [{ ...WINDOW, mute_verified: verified }] as never }),
-      );
-      const view = render(<MaintenanceBanner hasLiveIncident={false} />);
+      conDato({ items: [{ ...WINDOW, mute_verified: verified }] as never });
+      const view = pintar();
       const banner = screen.getByTestId("maintenance-banner");
       const texto = banner.textContent ?? "";
       const marca = banner.querySelector("[data-mute]")?.getAttribute("data-mute");
@@ -210,10 +209,8 @@ describe("MaintenanceBanner", () => {
   });
 
   it("el acuse a ciegas NO afirma el silencio ni imprime la cifra como medida", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({ items: [{ ...WINDOW, mute_verified: false }] as never }),
-    );
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [{ ...WINDOW, mute_verified: false }] as never });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     expect(banner.textContent).toContain("SILENCIO SUPUESTO");
     expect(banner.textContent).not.toContain("ALARMAS DE OPERACIÓN SILENCIADAS");
@@ -236,10 +233,8 @@ describe("MaintenanceBanner", () => {
   // borrar ese `error !== null` no ponía roja ninguna prueba. Esto lo ancla: no
   // persigue un defecto, impide que vuelva a serlo.
   it("un REABRIR VIGILANCIA que falla se declara: la ventana sigue ahí y el fallo también", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({ items: [WINDOW] as never, error: "la ventana no se cerró (HTTP 502)" }),
-    );
-    render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [WINDOW] as never, error: "la ventana no se cerró (HTTP 502)" });
+    pintar();
     const banner = screen.getByTestId("maintenance-banner");
     // El fallo se dice, y con `role="alert"`: es una acción que el operador cree
     // haber completado.
@@ -251,10 +246,8 @@ describe("MaintenanceBanner", () => {
   });
 
   it("un fallo de lectura CON ventana conocida la conserva y la rotula RETENIDO", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({ items: [WINDOW] as never, readError: "GET /maintenance-windows falló (500)" }),
-    );
-    const { container } = render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [WINDOW] as never, readError: "GET /maintenance-windows falló (500)" });
+    const { container } = pintar();
     // Sigue anunciando el silencio…
     expect(screen.getByTestId("maintenance-banner").textContent).toContain("TERMINA 04:01 UTC");
     // …y avisa de que el dato es viejo.
@@ -262,24 +255,20 @@ describe("MaintenanceBanner", () => {
   });
 
   it("un fallo de lectura SIN ventana conocida muestra el fallo, jamás 'no hay ventana'", () => {
-    mocks.useMaintenanceWindows.mockReturnValue(
-      data({ items: [], readError: "GET /maintenance-windows falló (500)" }),
-    );
-    const { container } = render(<MaintenanceBanner hasLiveIncident={false} />);
+    conDato({ items: [], readError: "GET /maintenance-windows falló (500)" });
+    const { container } = pintar();
     expect(container.querySelector('[data-state="error"]')).not.toBeNull();
     expect(container.textContent).not.toContain("SIN VENTANA DE MANTENIMIENTO");
   });
 
   it("cumple los 4 estados obligatorios", () => {
     expectFourStates((state: UiState) => {
-      mocks.useMaintenanceWindows.mockReturnValue(
-        data({
-          loading: state === "loading",
-          readError: state === "error" || state === "stale" ? "fallo" : null,
-          items: state === "stale" ? ([WINDOW] as never) : [],
-        }),
-      );
-      return <MaintenanceBanner hasLiveIncident={false} />;
+      conDato({
+        loading: state === "loading",
+        readError: state === "error" || state === "stale" ? "fallo" : null,
+        items: state === "stale" ? ([WINDOW] as never) : [],
+      });
+      return <MaintenanceBanner data={ultimo} />;
     });
   });
 });

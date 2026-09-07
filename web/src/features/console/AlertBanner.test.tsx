@@ -70,6 +70,23 @@ describe("AlertBanner · el titular se atribuye a quien lo dijo", () => {
     expect(caja).toHaveTextContent("SOLO AVISO, SIN ACTUACIÓN");
     expect(caja).not.toHaveTextContent("PROTÉJASE");
     expect(caja).not.toHaveTextContent(/SASMEX/);
+    // [T-6.01 · U-28] …y tampoco viste la carcasa roja: la hoja lo viste de
+    // ámbar por este atributo, que sale de la tabla de escena.
+    expect(caja).toHaveAttribute("data-authorizes", "false");
+  });
+
+  it("[U-28] sólo SASMEX y el cuórum autorizan: el resto lo declara en el DOM", () => {
+    for (const [trigger, esperado] of [
+      ["sasmex", "true"],
+      ["quorum", "true"],
+      ["local_threshold", "false"],
+      ["manual", "false"],
+      ["teletransporte", "false"],
+    ] as const) {
+      const { unmount } = render(<AlertBanner incident={con(trigger)} siteName="Torre B" />);
+      expect(screen.getByRole("alert"), trigger).toHaveAttribute("data-authorizes", esperado);
+      unmount();
+    }
   });
 
   it("el quórum se atribuye a la red y declara que el comando iba firmado", () => {

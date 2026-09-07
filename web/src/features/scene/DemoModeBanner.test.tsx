@@ -1,4 +1,4 @@
-// [T-5.02 · D-27] Banner del MODO DEMOSTRACIÓN.
+// [T-5.02 · D-27] Banner del MODO DEMOSTRACIÓN (al shell en T-6.01).
 //
 // Lo que fija, y en este orden:
 //  1. los CUATRO estados sobre `/demo-mode` (regla de oro 7). El caso que
@@ -9,18 +9,17 @@
 //     protección local del gabinete SIGUE ARMADA. La segunda evita la lectura
 //     más peligrosa posible — que alguien crea que el edificio está desprotegido;
 //  3. el botón de salir lo ve quien puede apagarlo, y solo ése.
+//
+// [T-6.01] El banner recibe `data` de `SceneStrip`; ya no llama al hook.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ useDemoMode: vi.fn() }));
-vi.mock("./useDemoMode", () => ({ useDemoMode: mocks.useDemoMode }));
-
 import { resetSessionStoreForTests, useSessionStore } from "../../auth/session.store";
 import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import { expectFourStates, type UiState } from "../../test-utils/states";
+import type { DemoModeData } from "../console/useDemoMode";
 import DemoModeBanner, { restanteLegible } from "./DemoModeBanner";
-import type { DemoModeData } from "./useDemoMode";
 
 const NOW = Date.parse("2026-09-02T18:00:00Z");
 
@@ -48,12 +47,13 @@ const ACTIVO = {
   note: "demo con cliente",
 };
 
+const APAGADO = { ...ACTIVO, active: false };
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   resetSessionStoreForTests();
   useSessionStore.setState({ me: ME_FIXTURES.takab_superadmin });
-  mocks.useDemoMode.mockReturnValue(datos());
 });
 
 afterEach(() => {
@@ -62,14 +62,15 @@ afterEach(() => {
 });
 
 describe("DemoModeBanner", () => {
-  it("apagado no pinta banner: cero ruido en el caso normal", () => {
-    render(<DemoModeBanner />);
+  it("apagado no pinta banner ni ocupa sitio: cero ruido en el caso normal", () => {
+    const { container } = render(<DemoModeBanner data={datos({ demo: APAGADO })} />);
     expect(screen.queryByTestId("demo-mode-banner")).toBeNull();
+    // [T-6.01] El estado existe (la tabla lo ve); la hoja lo esconde.
+    expect(container.querySelector('[data-state="empty"]')).toHaveAttribute("hidden");
   });
 
   it("encendido dice que NO se avisa a nadie NI se acciona nada", () => {
-    mocks.useDemoMode.mockReturnValue(datos({ demo: ACTIVO }));
-    render(<DemoModeBanner />);
+    render(<DemoModeBanner data={datos({ demo: ACTIVO })} />);
     const caja = screen.getByTestId("demo-mode-banner");
     expect(caja).toHaveTextContent("MODO DEMOSTRACIÓN");
     expect(caja).toHaveTextContent("NO SE AVISA A NADIE NI SE ACCIONA NADA");
@@ -79,34 +80,40 @@ describe("DemoModeBanner", () => {
     // La lectura peligrosa que este texto cierra: que alguien concluya que el
     // edificio está desprotegido mientras dura la demostración. No lo está — el
     // gabinete no sabe que este modo existe.
-    mocks.useDemoMode.mockReturnValue(datos({ demo: ACTIVO }));
-    render(<DemoModeBanner />);
+    render(<DemoModeBanner data={datos({ demo: ACTIVO })} />);
     expect(screen.getByTestId("demo-mode-banner")).toHaveTextContent(
       "La protección local del gabinete sigue armada",
     );
   });
 
   it("pinta cuánto le queda: nadie tiene que restar dos horas UTC de cabeza", () => {
-    mocks.useDemoMode.mockReturnValue(datos({ demo: ACTIVO }));
-    render(<DemoModeBanner />);
+    render(<DemoModeBanner data={datos({ demo: ACTIVO })} />);
     expect(screen.getByTestId("demo-mode-banner")).toHaveTextContent("TERMINA SOLO EN 1 h 00 m");
   });
 
   it("el botón de salir lo ve quien puede apagarlo", () => {
-    mocks.useDemoMode.mockReturnValue(datos({ demo: ACTIVO }));
-    render(<DemoModeBanner />);
+    const apagar = vi.fn();
+    render(<DemoModeBanner data={datos({ demo: ACTIVO, apagar })} />);
     fireEvent.click(screen.getByTestId("demo-mode-off"));
-    expect(mocks.useDemoMode.mock.results[0].value.apagar).toHaveBeenCalled();
+    expect(apagar).toHaveBeenCalled();
   });
 
   it("quien NO puede apagarlo lo ve igual, pero sin botón", () => {
     // Ver el estado no es un privilegio: quien no lo encendió es justo quien se
     // va a preguntar por qué no le llegó un aviso.
     useSessionStore.setState({ me: ME_FIXTURES.soc_operator });
-    mocks.useDemoMode.mockReturnValue(datos({ demo: ACTIVO }));
-    render(<DemoModeBanner />);
+    render(<DemoModeBanner data={datos({ demo: ACTIVO })} />);
     expect(screen.getByTestId("demo-mode-banner")).toBeInTheDocument();
     expect(screen.queryByTestId("demo-mode-off")).toBeNull();
+  });
+
+  it("una ausencia VIEJA sí se pinta, fechada: no se afirma un apagado que no se puede confirmar", () => {
+    // T-2.79.d: entre `empty` y `stale` gana `stale`, y el «no hay» se FECHA.
+    // Con la lectura caída y el último dato conocido en APAGADO, la franja no
+    // puede callar: nadie sabe si alguien lo encendió desde entonces.
+    render(<DemoModeBanner data={datos({ demo: APAGADO, readError: true })} />);
+    expect(screen.getByText(/DATOS RETENIDOS/)).toBeInTheDocument();
+    expect(screen.getByText(/MODO DEMOSTRACIÓN APAGADO — así estaba a las/)).toBeInTheDocument();
   });
 
   it("declara los cuatro estados obligatorios (regla de oro 7)", () => {
@@ -118,10 +125,7 @@ describe("DemoModeBanner", () => {
       // conserva y se rotula viejo; jamás desaparece en silencio.
       stale: { demo: ACTIVO, readError: true },
     };
-    expectFourStates((state) => {
-      mocks.useDemoMode.mockReturnValue(datos(byState[state]));
-      return <DemoModeBanner />;
-    });
+    expectFourStates((state) => <DemoModeBanner data={datos(byState[state])} />);
   });
 });
 

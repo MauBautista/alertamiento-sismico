@@ -16,6 +16,18 @@ export interface StateFrameProps {
    */
   staleSince?: number | null;
   /**
+   * [T-6.01] La ausencia FRESCA no se pinta. Es para los marcos cuyo «no hay»
+   * es la escena NORMAL de la consola (sin simulacro, sin ventana de
+   * mantenimiento, sin modo demostración): una franja permanente que dice que
+   * no pasa nada enseña al operador a no leerla (U-45). El marco sigue pasando
+   * por la tabla y sigue emitiendo `data-state="empty"` —los tests lo ven, la
+   * hoja lo esconde con `hidden`—, así que no es una precedencia local: es el
+   * mismo estado, sin píxeles. La ausencia VIEJA (`stale` + `empty`) se pinta
+   * SIEMPRE y fechada, porque ésa es una afirmación sobre nuestro conocimiento,
+   * no sobre el mundo, y nadie la apaga.
+   */
+  silentEmpty?: boolean;
+  /**
    * Clase(s) de layout del DUEÑO aplicadas al wrapper en TODOS los estados
    * (T-1.50). El caso que motivó esto: el grid del live wall
    * (`.soc-main { grid-template-rows: minmax(0,1fr) auto }`) esperaba a
@@ -140,6 +152,7 @@ export default function StateFrame({
   empty,
   emptyText,
   staleSince,
+  silentEmpty,
   className,
   children,
 }: StateFrameProps) {
@@ -175,6 +188,11 @@ export default function StateFrame({
     );
   }
   if (state === "empty") {
+    if (silentEmpty === true) {
+      // El estado se materializa (es lo que `expectFourStates` y los censos
+      // miran); la hoja lo esconde. Ver el comentario de la prop.
+      return <div className={cls("soc-stateframe", className)} data-state="empty" hidden />;
+    }
     return (
       <div className={cls("soc-stateframe soc-stateframe--status", className)} data-state="empty">
         <span>{emptyText ?? `SIN DATOS · ${label}`}</span>

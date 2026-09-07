@@ -29,6 +29,75 @@ vi.mock("./useSiteIncidents", () => ({
 }));
 vi.mock("./useSirenTest", () => ({ useSirenTest: mocks.useSirenTest }));
 vi.mock("../console/useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
+// [T-6.01] El árbol real de rutas monta la franja de escena en el shell, y sus
+// cuatro fuentes irían a la red. Inertes aquí: este archivo mide la página del
+// edificio, y un marco de error del shell con su REINTENTAR haría ambiguo al de
+// «SITIO NO DISPONIBLE» (medido: B-4 se puso rojo por eso).
+vi.mock("../console/useLiveIncidents", () => ({
+  useLiveIncidents: () => ({
+    incidents: [],
+    loading: false,
+    error: null,
+    dataUpdatedAt: Date.now(),
+    liveStatus: "ready",
+    lastFrameAt: null,
+    degraded: [],
+    refetch: () => undefined,
+  }),
+}));
+vi.mock("../console/useMapState", () => ({
+  useMapState: () => ({
+    sites: [],
+    epicenters: [],
+    loading: false,
+    error: null,
+    dataUpdatedAt: Date.now(),
+    refetch: () => undefined,
+  }),
+}));
+vi.mock("../console/useActiveDrill", () => ({
+  useActiveDrill: () => ({
+    drill: null,
+    scheduled: [],
+    loading: false,
+    readError: null,
+    updatedAt: Date.now(),
+    refetch: () => undefined,
+    start: () => undefined,
+    stop: () => undefined,
+    cancel: () => undefined,
+    pending: false,
+    error: null,
+  }),
+}));
+vi.mock("../console/useMaintenanceWindows", () => ({
+  useMaintenanceWindows: () => ({
+    items: [],
+    loading: false,
+    readError: null,
+    forbidden: false,
+    updatedAt: Date.now(),
+    refetch: () => undefined,
+    close: () => undefined,
+    open: () => undefined,
+    pending: false,
+    openPending: false,
+    error: null,
+    openError: null,
+  }),
+}));
+vi.mock("../console/useDemoMode", () => ({
+  useDemoMode: () => ({
+    demo: { active: false },
+    loading: false,
+    readError: false,
+    updatedAt: Date.now(),
+    refetch: () => undefined,
+    encender: () => undefined,
+    apagar: () => undefined,
+    pending: false,
+  }),
+}));
 // B-4 (T-1.58): el subtítulo depende de GET /sites/{id} — se mockea SOLO esa
 // función del SDK (el resto del módulo sigue real).
 vi.mock("@takab/sdk", async (importOriginal) => ({
