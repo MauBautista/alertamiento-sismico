@@ -814,7 +814,9 @@ _DEMO_SCENES = (
 # lo que ese test congela. Precedente: `aviso` (T-2.32).
 # [T-2.68] `gpio_caido`: la avería en caliente del proceso de relés, que hasta
 # ahora se pintaba igual que un arranque en frío que nunca ocurre.
-_DEMO_SCENES_EXTRA = ("retirado", "gpio_caido")
+# [T-6.29] `simulacro_abortado`: el aborto por alerta real, que el panel no podía
+# pintar (exigía `active` y alerta a la vez, y `abort()` pone `active=false`).
+_DEMO_SCENES_EXTRA = ("retirado", "gpio_caido", "simulacro_abortado")
 
 
 def test_index_declares_demo_scenes(supervisor):
