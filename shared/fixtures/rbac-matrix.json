@@ -46,6 +46,10 @@
     "cctv_read",
     "cctv_video"
   ],
+  "internal_roles": [
+    "takab_superadmin",
+    "takab_support"
+  ],
   "roles": {
     "brigadista": {
       "routes": [],

@@ -1673,6 +1673,7 @@ export type MeResponse = {
     allowed_routes: Array<string>;
     console_scope_enforced?: boolean;
     enrolled_sites?: Array<MeEnrolledSite>;
+    is_internal?: boolean;
     role: string;
     site_scope: '*' | Array<string>;
     sub: string;

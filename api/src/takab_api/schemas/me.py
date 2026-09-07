@@ -122,6 +122,12 @@ class MeResponse(BaseModel):
     #: ESTACIONES" mientras se ve todo el tenant sería exactamente el dato falso
     #: que la regla de oro 7 prohíbe. La UI declara lo que el servidor hace.
     console_scope_enforced: bool = False
+    #: [T-6.03] Si el portador es un rol INTERNO de TAKAB (``matrix.INTERNAL_ROLES``).
+    #: Para él, el ``tenant_id`` de un sitio nuevo es OBLIGATORIO y lo debe nombrar
+    #: (``resolve_write_tenant`` responde 400 si falta); un rol de cliente escribe
+    #: siempre en el suyo. La consola pinta el selector de cliente con esto, en vez
+    #: de adivinarlo por el nombre del rol.
+    is_internal: bool = False
     surface: str
     allowed_routes: list[str]
     allowed_actions: MeActions

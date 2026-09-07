@@ -29,14 +29,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session
+from takab_api.auth.matrix import INTERNAL_ROLES
 
 # Dependencia de solo lectura: misma sesión con rol takab_app + GUCs RLS del request.
 read_session = get_session
 
-# Roles internos TAKAB: sus políticas ``*_admin`` llevan ``WITH CHECK
-# (app_is_takab_internal())`` SIN filtro de tenant, así que la DB no los detendría
-# al escribir en un tenant ajeno. Para ellos el ``tenant_id`` debe ser explícito.
-INTERNAL_ROLES = frozenset({"takab_superadmin", "takab_support"})
+# ``INTERNAL_ROLES`` se importa aquí también para los routers que ya lo tomaban de
+# este módulo; la definición (y su porqué) vive en ``auth.matrix`` desde T-6.03.
 
 _TENANT_EXISTS = text("SELECT 1 FROM tenants WHERE tenant_id = CAST(:t AS uuid)")
 

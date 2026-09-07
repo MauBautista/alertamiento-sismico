@@ -69,12 +69,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.websockets import WebSocket
 
 from takab_api.auth.claims import Claims, scope_filter
+from takab_api.auth.matrix import INTERNAL_ROLES
 from takab_api.db.session import BACKGROUND_LOCK_TIMEOUT_MS, SessionCtx, get_tenant_conn
 from takab_api.ws import protocol as p
 
 logger = logging.getLogger("takab_api.ws")
 
-_INTERNAL_ROLES = frozenset({"takab_superadmin", "takab_support"})
 _VISIBILITY_TTL_S = 60.0
 _LISTEN_READY_TIMEOUT_S = 5.0
 
@@ -709,7 +709,7 @@ def _can_maybe_see(claims: Claims, tenant: Any, visibility: str) -> bool:
     """Prefiltro barato de tenancy (la re-consulta RLS es la autoridad final)."""
     if str(claims.tenant_id) == str(tenant):
         return True
-    if claims.role in _INTERNAL_ROLES:
+    if claims.role in INTERNAL_ROLES:
         return True
     if claims.role == "gov_operator" and visibility == "gov_shared":
         return True

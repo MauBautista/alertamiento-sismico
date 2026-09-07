@@ -6783,6 +6783,11 @@
             "title": "Enrolled Sites",
             "type": "array"
           },
+          "is_internal": {
+            "default": false,
+            "title": "Is Internal",
+            "type": "boolean"
+          },
           "role": {
             "title": "Role",
             "type": "string"

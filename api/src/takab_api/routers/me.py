@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import ALL_SITES, Claims
 from takab_api.auth.deps import get_claims, get_session
-from takab_api.auth.matrix import allowed_actions, allowed_routes
+from takab_api.auth.matrix import INTERNAL_ROLES, allowed_actions, allowed_routes
 from takab_api.auth.scope import console_scope
 from takab_api.schemas.me import (
     MeActions,
@@ -80,6 +80,7 @@ async def me(
         console_scope_enforced=console_scope(
             claims, enforced=Settings().console_scope_enforced
         ).enforced,
+        is_internal=claims.role in INTERNAL_ROLES,
         surface=claims.surface,
         allowed_routes=allowed_routes(claims.role),
         allowed_actions=MeActions(**allowed_actions(claims.role)),

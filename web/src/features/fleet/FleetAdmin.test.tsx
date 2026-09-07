@@ -1,14 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SiteOut } from "@takab/sdk";
 
 import { resetSessionStoreForTests, useSessionStore } from "../../auth/session.store";
-import { ME_FIXTURES } from "../../test-utils/meFixtures";
+import { ME_FIXTURES, TENANT_ID } from "../../test-utils/meFixtures";
 
 const mocks = vi.hoisted(() => ({
   listSitesSitesGet: vi.fn(),
+  // [T-6.03] El alta pregunta en qué clientes puede escribir (y el nombre del propio).
+  listTenantsTenantsGet: vi.fn(),
   listGatewaysFleetGatewaysGet: vi.fn(),
   listRuleSetsRuleSetsGet: vi.fn(),
   createSiteSitesPost: vi.fn(),
@@ -34,7 +37,8 @@ import FleetAdmin from "./FleetAdmin";
 
 const SITE: SiteOut = {
   site_id: "s-1",
-  tenant_id: "t-1",
+  // [T-6.03] El del tenant_admin sembrado: la tabla y el rótulo buscan su NOMBRE por id.
+  tenant_id: TENANT_ID,
   code: "CHL-A",
   name: "Planta Cholula",
   timezone: "America/Mexico_City",
@@ -68,11 +72,29 @@ const GATEWAY_ROW = {
   row_version: "1",
 };
 
-function renderAdmin() {
+/** Clientes visibles: para tenant_admin la RLS devuelve sólo el suyo; el superadmin ve dos. */
+const TENANT_OWN = {
+  tenant_id: ME_FIXTURES.tenant_admin.tenant_id,
+  code: "IDV",
+  name: "Industrias del Valle",
+  isolation_mode: "logical",
+  vertical: null,
+  visibility: "private",
+  status: "active",
+  plan_code: "mvp",
+  row_version: "1",
+  created_at: "2026-01-01T00:00:00Z",
+};
+const TENANT_OTHER = { ...TENANT_OWN, tenant_id: "t-hosp", code: "HOSP-1", name: "Hospital Uno" };
+
+// [T-6.03] `FleetAdmin` lee `?tenant=&nueva=` de la URL: hace falta un router.
+function renderAdmin(path = "/fleet") {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <FleetAdmin />
+      <MemoryRouter initialEntries={[path]}>
+        <FleetAdmin />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -90,6 +112,10 @@ describe("FleetAdmin", () => {
     // [T-2.36] El diálogo consulta si el cliente tiene código configurado.
     mocks.getRetireCodeStateTenantsTenantIdRetireCodeGet.mockResolvedValue({
       data: { tenant_id: "t-1", configured: true, version: 1, rotated_at: "2026-08-03T00:00:00Z" },
+      response: { status: 200 },
+    });
+    mocks.listTenantsTenantsGet.mockResolvedValue({
+      data: [TENANT_OWN],
       response: { status: 200 },
     });
     useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
@@ -115,12 +141,16 @@ describe("FleetAdmin", () => {
     expect(screen.getByText("19.0600°N · 98.3000°W")).toBeInTheDocument();
   });
 
-  it("crear una estación envía lat/lon y NO envía tenant_id", async () => {
+  it("tenant_admin: crear una estación envía lat/lon, NO envía tenant_id y el rótulo dice su cliente", async () => {
     mocks.createSiteSitesPost.mockResolvedValue({ data: SITE, response: { status: 201 } });
     renderAdmin();
     await screen.findByTestId("site-row-CHL-A");
 
     fireEvent.click(screen.getByRole("button", { name: "NUEVA ESTACIÓN" }));
+    // [T-6.03] Declara SIEMPRE en qué cliente escribe, y un rol de cliente no elige.
+    expect(await screen.findByText("Industrias del Valle")).toBeInTheDocument();
+    expect(screen.getByTestId("site-form-target")).toHaveTextContent("ESCRIBIENDO EN");
+    expect(screen.queryByTestId("site-form-tenant")).toBeNull();
     fireEvent.change(screen.getByLabelText("CÓDIGO"), { target: { value: "NUEVA" } });
     fireEvent.change(screen.getByLabelText("NOMBRE"), { target: { value: "Torre Norte" } });
     fireEvent.click(screen.getByRole("button", { name: "CREAR ESTACIÓN" }));
@@ -130,6 +160,78 @@ describe("FleetAdmin", () => {
     expect(body).toMatchObject({ code: "NUEVA", name: "Torre Norte", lat: 19.04, lon: -98.2 });
     // El tenant lo resuelve el servidor desde los claims: mandarlo sería una invitación.
     expect(body).not.toHaveProperty("tenant_id");
+  });
+
+  // [T-6.03] El defecto U-06, medido en vivo el 2026-09-07: el superadmin recibía un
+  // 400 «tenant_id es obligatorio para roles internos TAKAB» que la consola traducía
+  // como «NO COINCIDE · el identificador…» (el mensaje del retiro). No podía crear
+  // un sitio, y nada le decía por qué.
+  it("superadmin: elige el cliente y ese tenant_id viaja en el cuerpo", async () => {
+    useSessionStore.setState({ me: ME_FIXTURES.takab_superadmin });
+    mocks.listTenantsTenantsGet.mockResolvedValue({
+      data: [TENANT_OWN, TENANT_OTHER],
+      response: { status: 200 },
+    });
+    mocks.createSiteSitesPost.mockResolvedValue({ data: SITE, response: { status: 201 } });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+    expect(screen.getByText("ESTACIONES · TODOS LOS CLIENTES")).toBeInTheDocument();
+    // Y la tabla dice de quién es cada fila.
+    expect(await screen.findByTestId("site-tenant-CHL-A")).toHaveTextContent(
+      "Industrias del Valle",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "NUEVA ESTACIÓN" }));
+    fireEvent.change(screen.getByLabelText("CÓDIGO"), { target: { value: "NUEVA" } });
+    fireEvent.change(screen.getByLabelText("NOMBRE"), { target: { value: "Torre Norte" } });
+    const submit = screen.getByRole("button", { name: "CREAR ESTACIÓN" });
+    expect(submit).toBeDisabled(); // sin cliente no hay alta: sería el 400
+    const selector = await screen.findByTestId("site-form-tenant");
+    await waitFor(() => expect(selector).not.toBeDisabled());
+    fireEvent.change(selector, { target: { value: "t-hosp" } });
+    expect(screen.getByTestId("site-form-target")).toHaveTextContent(
+      "ESCRIBIENDO EN · Hospital Uno",
+    );
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(mocks.createSiteSitesPost).toHaveBeenCalledTimes(1));
+    expect(mocks.createSiteSitesPost.mock.calls[0][0].body).toMatchObject({
+      code: "NUEVA",
+      tenant_id: "t-hosp",
+    });
+  });
+
+  it("superadmin: llegar con ?tenant=&nueva=1 abre el alta ya apuntada al cliente", async () => {
+    useSessionStore.setState({ me: ME_FIXTURES.takab_superadmin });
+    mocks.listTenantsTenantsGet.mockResolvedValue({
+      data: [TENANT_OWN, TENANT_OTHER],
+      response: { status: 200 },
+    });
+    renderAdmin("/fleet?tenant=t-hosp&nueva=1");
+    expect(await screen.findByTestId("site-form")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId("site-form-target")).toHaveTextContent("Hospital Uno"),
+    );
+    expect(screen.getByTestId("site-form-tenant")).toHaveValue("t-hosp");
+  });
+
+  it("un 400 del alta ya no se disfraza de retiro: llega el detail del servidor", async () => {
+    mocks.createSiteSitesPost.mockResolvedValue({
+      data: undefined,
+      error: { detail: "tenant_id es obligatorio para roles internos TAKAB" },
+      response: { status: 400 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+    fireEvent.click(screen.getByRole("button", { name: "NUEVA ESTACIÓN" }));
+    fireEvent.change(screen.getByLabelText("CÓDIGO"), { target: { value: "X" } });
+    fireEvent.change(screen.getByLabelText("NOMBRE"), { target: { value: "X" } });
+    fireEvent.click(screen.getByRole("button", { name: "CREAR ESTACIÓN" }));
+
+    const error = await screen.findByTestId("site-form-error");
+    expect(error).toHaveTextContent(/PETICIÓN RECHAZADA/);
+    expect(error).toHaveTextContent(/tenant_id es obligatorio para roles internos TAKAB/);
+    expect(error).not.toHaveTextContent(/NO COINCIDE/);
   });
 
   it("editar envía base_row_version para que el servidor detecte el lost update", async () => {
@@ -379,6 +481,10 @@ describe("FleetAdmin · códigos de alta por estación (T-2.53)", () => {
     });
     mocks.listEnrollmentCodesSitesSiteIdEnrollmentCodesGet.mockResolvedValue({
       data: [],
+      response: { status: 200 },
+    });
+    mocks.listTenantsTenantsGet.mockResolvedValue({
+      data: [TENANT_OWN],
       response: { status: 200 },
     });
     useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
