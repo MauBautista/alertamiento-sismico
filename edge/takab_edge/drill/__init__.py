@@ -32,6 +32,19 @@ log = logging.getLogger("takab_edge.drill")
 _ABORT_TIERS = (Tier.RESTRICTED, Tier.EVACUATE_OR_HOLD, Tier.MANUAL_ONLY)
 
 
+def _edad_s(marca_iso: object) -> float | None:
+    """Segundos desde una marca ISO del propio controlador; `None` si no se lee.
+
+    Nunca se inventa una edad: un `None` deja al panel decir «S/D» en vez de una
+    cuenta falsa.
+    """
+    try:
+        marca = datetime.fromisoformat(str(marca_iso))
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (utcnow() - marca).total_seconds())
+
+
 def _evidencia_de_audio(audio) -> dict:  # noqa: ANN001 — módulo advisory opcional
     """Qué sonará en el simulacro, o por qué no sonará nada.
 
@@ -96,11 +109,13 @@ class DrillController(EdgeModule):
         with self._lock:
             st = dict(self._state)
         if st.get("aborted") and st.get("aborted_at"):
-            try:
-                marca = datetime.fromisoformat(str(st["aborted_at"]))
-                st["aborted_age_s"] = max(0.0, (utcnow() - marca).total_seconds())
-            except (TypeError, ValueError):
-                st["aborted_age_s"] = None
+            st["aborted_age_s"] = _edad_s(st["aborted_at"])
+        # [T-6.28] Y con el simulacro VIVO, cuánto lleva: el panel pintaba una cuenta
+        # con `elapsed_s`/`total_s`, campos que este controlador jamás emitió, así que
+        # en el gabinete real la meta solo mostraba el `drill_id` (U-42). La cuenta
+        # sale de aquí, de `started_at` y `duration_s`, con el reloj del Pi.
+        if st.get("active") and st.get("started_at"):
+            st["elapsed_s"] = _edad_s(st["started_at"])
         return st
 
     @property

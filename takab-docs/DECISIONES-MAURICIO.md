@@ -12,9 +12,9 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-02 · **28 decisiones** · 22 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-07 · **29 decisiones** · 23 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
-> 2026-08-30), 6 delegadas (3 el 2026-08-12, 3 el 2026-09-02).
+> 2026-08-30, 1 el 2026-09-07), 6 delegadas (3 el 2026-08-12, 3 el 2026-09-02).
 >
 > **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
 > 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
@@ -77,6 +77,7 @@
 | [D-26](#d-26) | El CCTV **no graba audio** — vídeo mudo, y derogarlo exige base legal | 2026-08-30 | Mauricio |
 | [D-27](#d-27) | Modo demostración: **por cliente, con vencimiento**, y **lo real lo apaga** | 2026-09-02 | delegada |
 | [D-28](#d-28) | La **tipología del inmueble sugiere** un umbral; no lo resuelve | 2026-09-02 | delegada |
+| [D-29](#d-29) | El voceo por jack **se declara aparte** en el panel: `VOCEO: SIMULACRO\|PRUEBA\|ACTIVO`; `SIRENA` sigue siendo el relé | 2026-09-07 | Mauricio |
 
 ---
 
@@ -1407,3 +1408,59 @@ publicado y firmado**, no una edición de formulario: es decir, sacar `building_
 pantalla de alta y meterlo en el mismo camino que los umbrales. Mientras se edite donde se edita
 hoy, esta decisión se mantiene. Lo que **no** cambia en ninguna revocación: una banda que nadie
 eligió no puede pintarse como una banda elegida.
+
+---
+
+## D-29 · El voceo por jack **se declara aparte** en el panel; `SIRENA` sigue siendo el relé
+
+**Fecha:** 2026-09-07 · **Ficha:** `T-6.28` · **Estado:** vigente · **Quién:** Mauricio
+
+### El problema
+
+La línea de estado del panel del gabinete dice `SIRENA: SONANDO|SILENCIADA|EN REPOSO`, y ese
+booleano **se deriva de la energización del relé** (`GpioController.siren_sounding`). El
+simulacro institucional es **voceo por el jack con cero relés** (`DrillController` es un
+observador), así que durante un simulacro el altavoz suena y la línea dice `SIRENA: EN REPOSO`.
+Las escenas de demostración lo tapaban forzando `siren_sounding:true` sobre un relé en reposo —
+un estado que el hardware no puede producir— y la auditoría UI/UX lo midió (U-11). La pregunta
+abierta era si el voceo debía reflejarse en la línea de estado y **con qué palabra**, porque
+hoy «SONANDO» significa relé.
+
+### La decisión
+
+**Sí, aparte.** `SIRENA` sigue significando el relé, sin cambiar una letra del copy de la
+especificación (§9.2). El jack gana su propio segmento, `VOCEO: SIMULACRO|PRUEBA|ACTIVO`, que
+aparece **solo cuando el jack suena y el relé está en reposo**. Si el relé suena, `SONANDO` ya
+lo dice y no se añade nada.
+
+### Por qué, y es la parte que no conviene perder
+
+1. **Son dos hechos físicos distintos, y el operador de pie necesita distinguirlos.** El relé
+   mueve la sirena del edificio; el jack mueve un altavoz. Un simulacro «SONANDO» en la línea de
+   estado habría enseñado que los relés actuaron, que es justo lo que un simulacro **no** hace.
+2. **La palabra dice qué suena, no que suena.** `SIMULACRO` (drill vivo), `PRUEBA` (actuadores)
+   o `ACTIVO` (voceo suelto, p. ej. el botón `SIMULACRO DE VOCEO`): quien lee la línea sabe qué
+   está escuchando sin mirar el banner.
+3. **Un solo rótulo por altavoz.** Cuando el relé suena, el jack suele acompañarlo (la prueba de
+   actuadores reproduce `siren.wav`); pintar `SONANDO` y `VOCEO` a la vez serían dos verdades del
+   mismo hecho que pueden discrepar. Se omite el segundo por construcción.
+4. **Lo barato es lo aditivo.** Renombrar la línea a `SIRENA RELÉ / VOCEO JACK` era más explícito,
+   pero cambiaba el copy que fija la spec, alargaba la línea en MURO y obligaba a tocar los
+   literales que congelan los tests. Un segmento condicional no cambia nada de lo que ya se lee.
+
+### Lo que se construyó encima
+
+- `render()` del panel: segmento `VOCEO` derivado de `audio.sounding` (el estado real del
+  reproductor del jack) y `siren_sounding === false`; con `siren_sounding: null` (no medido) no
+  se afirma voceo: `S/D` manda.
+- Las escenas `simulacro` y `prueba_actuadores` dejaron de forzar la sirena; `simulacro` enseña
+  `SIRENA: EN REPOSO · VOCEO: SIMULACRO`. El censo de render dejó de declarar `audio.sounding`
+  como campo mudo: ahora tiene camino de render.
+
+### Cómo se revocaría
+
+Si algún día el gabinete deja de tener jack —o el voceo pasa a ir por el mismo relé que la
+sirena—, el segmento sobra y se quita; `SIRENA` no habrá cambiado de significado en ningún
+momento. Lo que **no** cambia en ninguna revocación: `SONANDO` jamás puede afirmarse con el
+relé en reposo.
+

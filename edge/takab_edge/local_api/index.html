@@ -660,6 +660,8 @@ const S = {
   cursor: null,          // cursor de /api/waveform
   nominalSr: 100,
   mode: 'consola', userMode: false,
+  /* [T-6.28] `?mode=` que no es una de las tres densidades: se declara en la cabecera. */
+  badMode: null,
   variant: 'A',
   catalog: null,
   catalogAt: 0,
@@ -786,8 +788,17 @@ const SCENES = {
   aviso: () => { const s = baseStatus(); s.last_tier='evacuate_or_hold';
     s.signal.channels = sceneChannels(0.31);
     s.shake_history.events_by_tier.evacuate_or_hold = 1; return s; },
-  simulacro: () => { const s = baseStatus(); s.siren_sounding=true;
-    s.drill = {active:true, drill_id:'DRILL-2026-0730-01', elapsed_s:252, total_s:480}; return s; },
+  /* [T-6.28] Sin `siren_sounding`: el simulacro es voceo por jack y CERO relés
+     (DrillController es observador); `siren_sounding` se deriva del relé y el
+     hardware no puede producir «SONANDO» con el relé en reposo (U-11). Y con la
+     FORMA que emite el controlador —`started_at`/`duration_s`/`elapsed_s`—, no
+     `elapsed_s`/`total_s` de demo que el gabinete real nunca mandó (U-42). */
+  simulacro: () => { const s = baseStatus(); const now = Date.now();
+    s.audio.sounding = true;
+    s.drill = {active:true, drill_id:'DRILL-2026-0730-01', started_at:new Date(now-252000).toISOString(),
+      duration_s:480, elapsed_s:252, aborted:false, abort_reason:null,
+      audio:{asset_id:'simulacro_es_mx', path:'/opt/takab/assets/simulacro.wav', sha256:'demo', will_sound:true, reason:null}};
+    return s; },
   /* [T-6.29] El aborto por alerta real, con la FORMA que emite DrillController.abort():
      active=false y aborted=true (antes el panel exigía las dos a la vez). La alerta
      va encima y el aborto se lee debajo, §9.1. */
@@ -797,7 +808,10 @@ const SCENES = {
       ended_reason:'abortado: SASMEX real',
       audio:{asset_id:'simulacro_es_mx', path:'/opt/takab/assets/simulacro.wav', sha256:'demo', will_sound:true, reason:null}};
     return s; },
-  prueba_actuadores: () => { const s = baseStatus(); s.siren_sounding=true;
+  /* [T-6.28] Prueba TERMINADA: los relés ya volvieron a reposo, así que la sirena
+     no suena (antes forzaba `siren_sounding:true` sobre un relé en reposo, U-11).
+     La prueba EN CURSO —banner cian y relés en cian— es la hermana de abajo. */
+  prueba_actuadores: () => { const s = baseStatus();
     /* [T-2.85.a] La demo trae un relé que NO confirma y otro que ni se probó:
        la escena existe para enseñar la TARJETA de resultado, y una en la que
        todo sale bien no enseña la única distinción que importa. */
@@ -807,6 +821,15 @@ const SCENES = {
         strobe:{held:true, readback_ok:true, fail_safe:'normally_open', energized:true},
         gas_valve:{pulsed:true, readback_ok:false, fail_safe:'fail_close', energized:true},
         elevator:{pulsed:true, readback_ok:true, fail_safe:'normally_open', energized:false}}}};
+    return s; },
+  /* [T-6.28] La prueba de actuadores MIENTRAS sostiene: el gpio energiza los relés
+     (activados en cian, no en rojo), la sirena suena DE VERDAD por el relé con razón
+     `test`, y el banner cian anuncia que no es alerta real. Es el estado que el
+     checklist describía para `prueba_actuadores` y que esa escena ya no enseña. */
+  prueba_actuadores_en_curso: () => { const s = baseStatus();
+    s.actuation_test = {active:true, results:null, finished_at:null, age_s:null};
+    s.siren_sounding = true; s.siren_reason = 'test'; s.audio.sounding = true;
+    s.relays.forEach(r => { r.activated = true; r.energized = (r.fail_safe==='normally_open'); });
     return s; },
   wr1: () => { const s = baseStatus(); s.test_mode = {active:true, remaining_s:87}; return s; },
   sin_senal: () => { const s = baseStatus(); s.last_tier='manual_only';
@@ -1018,7 +1041,8 @@ function render(){
      no están configurados: un hueco se lee como si el dato fuera bueno. */
   $('hdr-ident').textContent = (st.iot_thing || 'S/D') + ' · ' + (st.station_code || 'S/D');
   $('hdr-meta').textContent = 'CADENCIA ' + (st.refresh_ms||1000) + ' ms · config ' +
-    (st.config_version == null ? 'S/D' : (st.config_version === 0 ? 'v0 · defaults' : 'v'+st.config_version));
+    (st.config_version == null ? 'S/D' : (st.config_version === 0 ? 'v0 · defaults' : 'v'+st.config_version)) +
+    (S.badMode ? ' · ?mode=' + S.badMode + ' NO EXISTE → DENSIDAD AUTO' : '');
   const cloud = st.cloud || {online:false, queued:null};
   setPill('pill-cloud-txt','pill-cloud-dot',$('pill-cloud'),
     cloud.online ? 'ENLACE NUBE · CONECTADO' : 'SIN ENLACE — PROTECCIÓN LOCAL ACTIVA' + (cloud.queued != null ? ' · '+cloud.queued+' EN COLA' : ''),
@@ -1059,8 +1083,17 @@ function render(){
       (st.drill.aborted_age_s != null ? ' · hace ' + fmtAge(st.drill.aborted_age_s) : '');
   } else if (showAmber){
     $('amber-txt').textContent = '🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL';
-    $('amber-sub').textContent = 'Voceo de simulacro en curso · aborta solo si entra una alerta real';
-    $('amber-meta').textContent = (st.drill.drill_id||'') + (st.drill.total_s ? ' · ' + fmtAge(st.drill.elapsed_s||0) + ' / ' + fmtAge(st.drill.total_s) : '');
+    /* [T-6.28] El voceo se afirma solo si el controlador dice que sonará: un gabinete
+       sin asset corre el simulacro igual (banner + registro) y aquí se dice. */
+    const voz = st.drill.audio;
+    $('amber-sub').textContent = (voz && voz.will_sound === false
+      ? 'SIN VOCEO · ' + (voz.reason || 'el gabinete no tiene audio de simulacro')
+      : 'Voceo de simulacro en curso') + ' · aborta solo si entra una alerta real';
+    /* [T-6.28] La cuenta sale de lo que el controlador EMITE (`elapsed_s` derivado en el
+       Pi y `duration_s`), no de `elapsed_s`/`total_s` de la demo, que no existían. */
+    $('amber-meta').textContent = (st.drill.drill_id||'') +
+      (st.drill.duration_s ? ' · ' + fmtAge(st.drill.elapsed_s||0) + ' / ' + fmtAge(st.drill.duration_s) : '') +
+      (st.drill.started_at ? ' · INICIADO ' + String(st.drill.started_at).slice(11,19) + ' UTC' : '');
   }
   $('banner-cyan').classList.toggle('hide', !(test && !alert));
   if (test) $('cyan-meta').textContent = 'EN CURSO';
@@ -1094,7 +1127,13 @@ function render(){
     : (st.siren_sounding ? ('SONANDO' + (why ? ' · ' + why : ''))
        : (st.audible_silenced ? 'SILENCIADA' : 'EN REPOSO'));
   const sasmex = st.sasmex_active == null ? 'S/D' : (st.sasmex_active ? 'ACTIVO' : 'NO');
-  $('tier-sub').textContent = 'SIRENA: ' + sirena + ' · SASMEX: ' + sasmex +
+  /* [T-6.28 · D-29] El voceo por JACK se declara aparte: «SIRENA» es el relé y así
+     sigue. Solo cuando el jack suena Y el relé está en reposo — si el relé suena,
+     SONANDO ya lo dice y dos rótulos del mismo altavoz serían dos verdades. La
+     palabra dice QUÉ suena: SIMULACRO (drill vivo), PRUEBA (actuadores) o ACTIVO. */
+  const voceo = (st.audio && st.audio.sounding && st.siren_sounding === false)
+    ? (drill ? 'SIMULACRO' : (test ? 'PRUEBA' : 'ACTIVO')) : null;
+  $('tier-sub').textContent = 'SIRENA: ' + sirena + (voceo ? ' · VOCEO: ' + voceo : '') + ' · SASMEX: ' + sasmex +
     ' · TIER ' + (st.last_tier || 'S/D');
   const relays = $('relays'); relays.textContent = '';
   (st.relays || []).forEach(r => {
@@ -2590,7 +2629,14 @@ function autoMode(){ if (S.userMode) return; S.mode = window.innerWidth < 1024 ?
 window.addEventListener('resize', () => { autoMode(); render(); });
 
 /* ============================== arranque ============================== */
-if (params.get('mode')){ S.userMode = true; S.mode = params.get('mode'); }
+/* [T-6.28] `?mode=` valida contra las TRES densidades. Antes aceptaba cualquier cadena
+   y dejaba `body.mode-<lo-que-sea>`: ningún CSS aplicaba y el panel quedaba en la
+   hoja base sin decir por qué. Ahora cae a AUTO y lo declara en la cabecera. */
+const MODES = ['muro', 'consola', 'campo'];
+if (params.get('mode')){
+  if (MODES.includes(params.get('mode'))){ S.userMode = true; S.mode = params.get('mode'); }
+  else { S.badMode = params.get('mode'); }
+}
 else autoMode();
 if (DEMO){
   $('demo-ribbon').classList.remove('hide');

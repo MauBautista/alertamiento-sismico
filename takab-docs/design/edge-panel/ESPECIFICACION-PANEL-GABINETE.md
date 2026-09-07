@@ -708,6 +708,11 @@ armado por olvido.
 
 Subtítulo del estado actual: `SIRENA: SONANDO|SILENCIADA|EN REPOSO · SASMEX: ACTIVO|NO`.
 
+> **[D-29 · T-6.28 · 2026-09-07]** `SIRENA` es el **relé**, y así sigue. El voceo por el **jack**
+> se declara aparte, solo cuando el jack suena y el relé está en reposo: `SIRENA: EN REPOSO ·
+> VOCEO: SIMULACRO|PRUEBA|ACTIVO · SASMEX: …`. Si el relé suena, `SONANDO` ya lo dice y no se
+> añade nada: dos rótulos del mismo altavoz serían dos verdades que pueden discrepar.
+
 ### 9.3 · Los cuatro estados de UI obligatorios
 
 Regla de oro del proyecto: **todo componente maneja `loading`, `error`, `empty` y `stale`.**

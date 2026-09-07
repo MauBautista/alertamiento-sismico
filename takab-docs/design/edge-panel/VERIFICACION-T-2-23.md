@@ -35,24 +35,38 @@
 > **Con esto, el checklist queda CERRADO al 100 %**: contrato por pytest (49), recorrido
 > visual con navegador real (44/44 + soak), y lo presencial confirmado por el operador.
 
-## 1 · Los 10 estados (§13.2) × 3 densidades
+## 1 · Las 15 escenas (10 de §13.2 + 5 añadidas) × 3 densidades
+
+> **[T-6.28 · 2026-09-07]** Esta tabla enumeraba 10 escenas cuando el panel tenía 13, y
+> describía `prueba_actuadores` como «banner cian, relés en cian» cuando desde `T-2.85.a` es la
+> prueba **terminada** con su tarjeta de resultado (U-12). Ahora la lista se compara por
+> igualdad con la del código (`edge/tests/test_local_api.py::test_el_checklist_enumera_
+> exactamente_las_escenas_del_panel`): una escena nueva sin fila aquí pone el CI en rojo. Las
+> escenas `simulacro` y `prueba_actuadores` ya **no** fuerzan `siren_sounding` sobre un relé en
+> reposo (U-11): la línea de estado y la tarjeta del relé de sirena dicen lo mismo.
 
 Recorre `?demo=<escena>` en los 3 modos (`?mode=muro`, `?mode=consola`, `?mode=campo`
 o el conmutador de cabecera). El ribbon `DEMO · NO ES ESTADO REAL` debe ser visible
-SIEMPRE que `?demo=` esté en la URL.
+SIEMPRE que `?demo=` esté en la URL. Un `?mode=` que no sea una de las tres densidades cae a
+AUTO y la cabecera lo declara (`?mode=xyz NO EXISTE → DENSIDAD AUTO`).
 
 | Escena | Qué verificar |
 |---|---|
 | `?demo=reposo` | Tier verde `✓ NORMAL · SIN ALERTA`; barras de proximidad casi vacías; ondas con ruido fino; UPS `line · 100 % · 41 min` |
 | `?demo=vigilancia` | Tier ámbar `▲ VIGILANCIA`; barra PGA en ámbar; ondas moduladas |
-| `?demo=alerta` | Banner rojo `ALERTA SÍSMICA · PROTÉJASE` PARPADEANDO; los 5 relés `ACTIVADO`; marcas SASMEX/TIER sobre las trazas; botón `CERRAR ALERTA` (two-step) |
-| `?demo=simulacro` | Banner ámbar `🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL`, sin parpadeo |
-| `?demo=prueba_actuadores` | Banner cian `🔧 PRUEBA DE ACTUADORES`; relés en cian, no rojo |
+| `?demo=alerta` | Banner rojo `ALERTA SÍSMICA · PROTÉJASE` PARPADEANDO; los relés `ACTIVADO` en rojo; `SIRENA: SONANDO`; marcas SASMEX/TIER sobre las trazas; botón `CERRAR ALERTA` (two-step) |
+| `?demo=aviso` | Banner ámbar `⚠️ AVISO SÍSMICO · MOVIMIENTO FUERTE (UMBRAL INSTRUMENTAL)` con `SOLO AVISO · SIN ACTUACIÓN`; tier `■ EVACUAR / RESGUARDO` **sin** relés activados ni sirena: una estación sola no actúa (T-2.32) |
+| `?demo=simulacro` | Banner ámbar `🔶 SIMULACRO — ESTO NO ES UNA ALERTA REAL`, sin parpadeo; meta `DRILL-… · 4 m / 8 m · INICIADO hh:mm:ss UTC`; sub `Voceo de simulacro en curso`; **`SIRENA: EN REPOSO` y relé de sirena `REPOSO`** (el simulacro es voceo por jack, cero relés) |
+| `?demo=simulacro_abortado` | Banner rojo de alerta ARRIBA y, justo debajo, ámbar `SIMULACRO ABORTADO — ALERTA REAL EN CURSO (SASMEX real)` con meta `… · ABORTADO hh:mm:ss UTC · hace 42 s`; el aviso se retira solo a los 30 min (T-6.29) |
+| `?demo=prueba_actuadores_en_curso` | Banner cian `🔧 PRUEBA DE ACTUADORES — NO ES ALERTA REAL`; relés `ACTIVADO` **en cian, no rojo**; `SIRENA: SONANDO · PRUEBA` (aquí sí suena, por el relé); tarjeta de prueba `EN CURSO` |
+| `?demo=prueba_actuadores` | Prueba **terminada**: banner cian oculto, relés en `REPOSO`, `SIRENA: EN REPOSO`; la tarjeta de resultado dice `1 RELÉ SIN CONFIRMAR` y distingue por canal sostenido OK / pulso OK / **no confirmó** (`gas_valve`) / **no se probó** (T-2.85.a) |
 | `?demo=wr1` | Banner violeta con cuenta atrás; visible el banner AUNQUE cambies a `alerta` no aplica en demo (escenas exclusivas) — la precedencia real se prueba armando el modo en el gabinete |
 | `?demo=sin_senal` | Tier ámbar `⚠ MODO MANUAL — SENSORES DEGRADADOS`; carriles VACÍOS punteados (no línea plana); `SIN SEÑAL DEL SENSOR` por carril; lag en horas en rojo |
 | `?demo=sin_nube` | Pill ámbar `SIN ENLACE — PROTECCIÓN LOCAL ACTIVA · 47 EN COLA` (ámbar informativo, NO rojo); RTT `S/D` |
-| `?demo=arranque_frio` | TODAS las secciones degradadas a la vez: tier ámbar de arranque, relés `S/D`, umbrales `S/D`, `SIN UBICACIÓN PROVISIONADA`, calibración `SIN CALIBRAR`, salud `S/D · SIN DIAGNÓSTICO AÚN` — cero valores inventados, GET sigue 200 |
+| `?demo=arranque_frio` | TODAS las secciones degradadas a la vez: tier ámbar de arranque, relés `S/D`, umbrales `S/D`, `SIN UBICACIÓN PROVISIONADA`, calibración `SIN CALIBRAR`, salud `S/D · SIN DIAGNÓSTICO AÚN` — cero valores inventados, GET sigue 20
 | `?demo=dato_retenido` | Pill ámbar `DATO RETENIDO DESDE 14:22:07 UTC`; los datos se ven pero declarados viejos |
+| `?demo=retirado` | Banner `📋 RETIRADO EN LA NUBE · ESTE GABINETE SIGUE PROTEGIENDO` al FONDO de la pila (nunca sobre una alerta); evidencia atascada e ilegible declarada (T-2.65) |
+| `?demo=gpio_caido` | Relés `S/D` con la razón `gpio_unreachable`: la avería en caliente del proceso de relés, distinta de un arranque en frío (T-2.68) |
 
 ## 2 · Ondas (§6) — variantes A y B
 
