@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
 import type {
@@ -155,20 +156,24 @@ function arrange(
     ...over,
   } as unknown as TriageDetailProps["detail"];
 
+  // [T-6.02] Con router: el enlace «IR A FLOTA EDGE» es un <Link>.
   render(
-    <TriageDetail
-      row={ROW}
-      detail={detail}
-      forensics={FORENSICS}
-      cctv={CCTV}
-      canDownloadClip={false}
-      minNodes={3}
-      incidentStaleSince={null}
-      canSign={false}
-      canExport={false}
-      canGenerateReport={false}
-      {...props}
-    />,
+    <MemoryRouter>
+      <TriageDetail
+        row={ROW}
+        detail={detail}
+        forensics={FORENSICS}
+        cctv={CCTV}
+        canDownloadClip={false}
+        minNodes={3}
+        incidentStaleSince={null}
+        canSign={false}
+        canExport={false}
+        canGenerateReport={false}
+        canOpenFleet={false}
+        {...props}
+      />
+    </MemoryRouter>,
   );
 }
 
@@ -235,6 +240,7 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
         canSign={false}
         canExport={false}
         canGenerateReport={false}
+        canOpenFleet={false}
       />,
     );
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("SIN MEDICIÓN");
@@ -342,5 +348,39 @@ describe("TriageDetail · la edad del dato llega a los paneles [T-2.82.a]", () =
   it("con todo fresco, ni un solo panel anuncia datos retenidos", () => {
     arrange({}, { forensics: conForensics({ staleSince: null }) });
     expect(screen.queryByText(/DATOS RETENIDOS/)).toBeNull();
+  });
+});
+
+describe("TriageDetail · ningún enlace promete lo que el rol no tiene [T-6.02]", () => {
+  // Sin miniSEED archivado y con el incidente fuera de la ventana de backfill
+  // (ROW abre el 2026-08-03), la nota ofrece verificar el enlace de la estación.
+  it("con /fleet en allowed_routes, la nota enlaza a FLOTA EDGE", () => {
+    arrange({}, { canExport: true, canOpenFleet: true });
+    expect(screen.getByTestId("miniseed-note")).toHaveTextContent("SIN miniSEED ARCHIVADO");
+    expect(screen.getByRole("link", { name: "IR A FLOTA EDGE" })).toHaveAttribute("href", "/fleet");
+    expect(screen.queryByTestId("fleet-link-denied")).toBeNull();
+  });
+
+  it("[U-38] sin /fleet (inspector, building_admin) no hay enlace: la ausencia se declara", () => {
+    arrange({}, { canExport: true, canOpenFleet: false });
+    expect(screen.queryByRole("link", { name: "IR A FLOTA EDGE" })).toBeNull();
+    expect(screen.getByTestId("fleet-link-denied")).toHaveTextContent(
+      "Su rol no accede a FLOTA EDGE",
+    );
+  });
+
+  it("FIRMAR DICTAMEN apagado dice por qué: el gate, no un gris mudo", () => {
+    // El botón vive dentro del marco DICTAMEN: hace falta una cadena para verlo.
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [DICTAMEN] }) }, { canSign: false });
+    const firmar = screen.getByRole("button", { name: /FIRMAR DICTAMEN/ });
+    expect(firmar).toBeDisabled();
+    expect(firmar.getAttribute("title")).toMatch(/sign_dictamen/);
+  });
+
+  it("…y con permiso no lleva ninguna excusa", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [DICTAMEN] }) }, { canSign: true });
+    const firmar = screen.getByRole("button", { name: /FIRMAR DICTAMEN/ });
+    expect(firmar).toBeEnabled();
+    expect(firmar).not.toHaveAttribute("title");
   });
 });

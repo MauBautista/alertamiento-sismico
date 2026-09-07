@@ -362,14 +362,36 @@ describe("TriagePage · ningún panel fabrica ausencia (regla de oro 7)", () => 
     }
   });
 
-  it("incidente viejo sin miniSEED: lo declara y manda a revisar el enlace", () => {
+  it("incidente viejo sin miniSEED: lo declara y, SIN /fleet en el rol, declara la ausencia", () => {
+    // [T-6.02 · U-38] El arnés siembra `inspector`, que exporta pero no tiene
+    // FLOTA EDGE en `allowed_routes`: hasta esta ficha el enlace lo mandaba a
+    // «SIN ACCESO». Ahora ve a quién pedir la verificación, no un enlace roto.
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-08T11:00:00Z"));
     try {
       renderWith({ evidence: res<EvidenceObject[]>([]) });
       expect(screen.getByRole("button", { name: /SIN miniSEED ARCHIVADO/ })).toBeTruthy();
+      expect(screen.queryByRole("link", { name: /IR A FLOTA EDGE/ })).toBeNull();
+      expect(screen.getByTestId("fleet-link-denied")).toHaveTextContent(
+        "Su rol no accede a FLOTA EDGE",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("incidente viejo sin miniSEED: con /fleet en el rol, manda a revisar el enlace", () => {
+    // `gov_operator` exporta Y tiene FLOTA EDGE: el enlace sigue ahí para quien
+    // puede seguirlo. Sale de la matriz (`allowed_routes` del /me), no de un rol
+    // escrito a mano.
+    seedRole("gov_operator");
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-08T11:00:00Z"));
+    try {
+      renderWith({ evidence: res<EvidenceObject[]>([]) });
       const link = screen.getByRole("link", { name: /IR A FLOTA EDGE/ });
       expect(link.getAttribute("href")).toBe("/fleet");
+      expect(screen.queryByTestId("fleet-link-denied")).toBeNull();
     } finally {
       vi.useRealTimers();
     }

@@ -133,13 +133,27 @@ export default function TenantEditForm({
       )}
 
       <div className="mt-edit__actions">
-        <button type="submit" className="soc-btn" disabled={pending || !dirty || invalid}>
+        <button
+          type="submit"
+          className="soc-btn"
+          disabled={pending || !dirty || invalid}
+          title={
+            pending
+              ? "Guardando…"
+              : invalid
+                ? "Corrige los campos marcados"
+                : !dirty
+                  ? "Sin cambios que guardar"
+                  : undefined
+          }
+        >
           {pending ? "GUARDANDO…" : "GUARDAR FICHA"}
         </button>
         <button
           type="button"
           className="soc-btn soc-btn--secondary"
           disabled={pending}
+          title={pending ? "Guardando…" : undefined}
           onClick={onCancel}
         >
           CANCELAR

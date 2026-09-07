@@ -9,6 +9,12 @@ export interface ConfirmButtonProps {
   variant?: "primary" | "secondary";
   /** Gate de allowed_actions: deshabilitado ni arma ni dispara. */
   disabled?: boolean;
+  /**
+   * [T-6.02] Por qué está apagado (o qué hace). Un `disabled` mudo obliga al
+   * operador a adivinar en mitad de un turno; `screens.spec.ts` inventaría los
+   * apagados sin explicación y aquí faltaba el hueco para dársela.
+   */
+  title?: string;
   timeoutSec?: number;
   onConfirm?: () => void;
 }
@@ -25,6 +31,7 @@ export default function ConfirmButton({
   icon,
   variant = "primary",
   disabled = false,
+  title,
   timeoutSec = 5,
   onConfirm,
 }: ConfirmButtonProps) {
@@ -81,6 +88,7 @@ export default function ConfirmButton({
       type="button"
       className={cls}
       disabled={disabled}
+      title={title}
       aria-live="polite"
       onClick={() => {
         if (state === "idle") {

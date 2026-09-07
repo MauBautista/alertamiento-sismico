@@ -60,6 +60,11 @@ export default function RuleSetHistory({
                   type="button"
                   className="soc-btn soc-btn--ghost"
                   disabled={rollback.pendingId === v.rule_set_id}
+                  title={
+                    rollback.pendingId === v.rule_set_id
+                      ? "Volviendo…"
+                      : `Crea una versión nueva que vuelve a v${v.version}; no borra nada`
+                  }
                   onClick={() =>
                     rollback.volver({ ruleSetId: v.rule_set_id, baseVersion: activa.version })
                   }

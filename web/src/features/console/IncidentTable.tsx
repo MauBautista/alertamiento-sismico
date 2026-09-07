@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 
 import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
+import type { AuthBadge } from "../../auth/authEvidence";
 import ConfirmButton from "../../components/ConfirmButton";
 import SevTag from "../../components/SevTag";
 import StateFrame from "../../components/StateFrame";
@@ -35,6 +36,12 @@ export interface IncidentTableProps {
   nowMs: number;
   liveStatus: LiveStatus;
   operatorLabel: string;
+  /**
+   * [T-6.02] Lo que la consola PUEDE afirmar sobre cómo se autenticó la sesión
+   * (`auth/authEvidence.ts`). `null` = nada que afirmar, y no se pinta nada:
+   * hasta esta ficha aquí vivía «AUTH · MFA» a fuego, también en la sesión dev.
+   */
+  authBadge?: AuthBadge | null;
   selectedId: string | null;
   onSelect: (incident: LiveIncident) => void;
   /** allowed_actions.ack_incident del /me (server-driven, default-deny). */
@@ -84,6 +91,7 @@ export default function IncidentTable({
   nowMs,
   liveStatus,
   operatorLabel,
+  authBadge = null,
   selectedId,
   onSelect,
   canAck,
@@ -256,9 +264,16 @@ export default function IncidentTable({
           <span className="soc-mono" data-testid="operator-label">
             {operatorLabel}
           </span>
-          <span className="soc-pill soc-pill--ok" style={{ fontSize: 9 }}>
-            <UserCheck size={11} aria-hidden /> AUTH · MFA
-          </span>
+          {authBadge != null && (
+            <span
+              className="soc-pill soc-pill--ok"
+              style={{ fontSize: 9 }}
+              title={authBadge.title}
+              data-testid="auth-badge"
+            >
+              <UserCheck size={11} aria-hidden /> {authBadge.label}
+            </span>
+          )}
         </div>
         <div className="soc-incidents__actions">
           {/* T-1.51: gates por allowed_actions (matriz server-driven, jamás

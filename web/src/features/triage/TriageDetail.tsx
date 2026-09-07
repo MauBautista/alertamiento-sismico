@@ -110,6 +110,12 @@ export interface TriageDetailProps {
   canDownloadClip: boolean;
   onDownloadClip?: (clipId: string) => void;
   canGenerateReport: boolean;
+  /**
+   * [T-6.02] `allowed_routes` incluye `/fleet`. Un `inspector` no la tiene: el
+   * enlace «IR A FLOTA EDGE» lo mandaba a SIN ACCESO (U-38). Sin la ruta se
+   * declara la ausencia y a quién pedirle la verificación.
+   */
+  canOpenFleet: boolean;
 }
 
 /**
@@ -131,6 +137,17 @@ export interface TriageDetailProps {
  * - `audit_log` no tiene endpoint de lectura: la bitácora visible es
  *   `incident_actions`, que §9 nombra como evidencia inmutable.
  */
+/**
+ * [T-6.02] Por qué la firma está apagada. El superadmin no firma dictámenes
+ * (decisión ratificada en T-1.30): un botón gris y mudo en la pantalla donde
+ * se firma obligaba a adivinarlo. Lo inventaría `screens.spec.ts`.
+ */
+function signGateTitle(canSign: boolean, signing: boolean): string | undefined {
+  if (!canSign) return "Tu rol no tiene la acción sign_dictamen: el dictamen lo firma el inspector";
+  if (signing) return "Firmando…";
+  return undefined;
+}
+
 export default function TriageDetail({
   row,
   detail,
@@ -143,6 +160,7 @@ export default function TriageDetail({
   canDownloadClip,
   onDownloadClip,
   canGenerateReport,
+  canOpenFleet,
 }: TriageDetailProps) {
   const [status, setStatus] = useState<string>("no_inhabit_inspect");
   const inc = row.incident;
@@ -289,14 +307,23 @@ export default function TriageDetail({
         {(mseed.kind === "backfill" || mseed.kind === "absent") && (
           <p className="soc-meta" data-testid="miniseed-note">
             {mseed.label} · {mseed.hint}
-            {mseed.fleetLink && (
-              <>
-                {" "}
-                <Link to="/fleet" className="soc-link">
-                  IR A FLOTA EDGE
-                </Link>
-              </>
-            )}
+            {mseed.fleetLink &&
+              (canOpenFleet ? (
+                <>
+                  {" "}
+                  <Link to="/fleet" className="soc-link">
+                    IR A FLOTA EDGE
+                  </Link>
+                </>
+              ) : (
+                <>
+                  {" "}
+                  <span data-testid="fleet-link-denied">
+                    Su rol no accede a FLOTA EDGE: pida al operador de flota que verifique el enlace
+                    de la estación.
+                  </span>
+                </>
+              ))}
           </p>
         )}
       </div>
@@ -395,6 +422,7 @@ export default function TriageDetail({
                 aria-label="Status del dictamen a firmar"
                 value={status}
                 disabled={!canSign}
+                title={signGateTitle(canSign, detail.signing)}
                 onChange={(e) => setStatus(e.target.value)}
               >
                 {SIGNABLE_STATUS.map((s) => (
@@ -407,6 +435,7 @@ export default function TriageDetail({
                 label="FIRMAR DICTAMEN"
                 icon={<ShieldCheck size={13} aria-hidden />}
                 disabled={!canSign || detail.signing}
+                title={signGateTitle(canSign, detail.signing)}
                 onConfirm={() => detail.sign(status, null)}
               />
               {detail.signError && (

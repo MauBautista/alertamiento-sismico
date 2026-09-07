@@ -347,7 +347,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     guardando los cambios con `git stash` y repitiendo esos tests sobre `main`; `screens:601` (01) pasa
     ahora y fallaba en la línea base. A 1920×1080, 16/17 con el mismo `layout:19` de `main`.
 
-### [ ] T-6.02 · **Ningún distintivo afirma lo que la consola no sabe; ningún enlace promete lo que el rol no tiene** — `SOFTWARE`
+### [x] T-6.02 · **Ningún distintivo afirma lo que la consola no sabe; ningún enlace promete lo que el rol no tiene** — `SOFTWARE`
 
 > «AUTH · MFA» es un literal del mockup pintado en verde junto al botón de acuse en toda sesión,
 > incluida la de desarrollo. «IR A FLOTA EDGE» manda al inspector a «SIN ACCESO». Dos botones de
@@ -361,9 +361,35 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `IncidentTable.test.tsx` y `screens.spec.ts:573` (que hoy falla por los dos botones).
 - **Objetivo:** retirar el distintivo o respaldarlo con un dato real del token (`iss` del pool); condicionar el enlace a `allowed_routes`; dar `title` a todo botón apagado.
 - **Criterios de aceptación:**
-  - [ ] Ninguna sesión sin constancia real de MFA pinta «MFA»; una sesión de `/dev/token` no pinta nada.
-  - [ ] `inspector` y `building_admin` no ven un enlace a `/fleet`; ven el dato que el enlace prometía o su ausencia declarada.
-  - [ ] `screens.spec.ts` «los apagados dicen por qué» en verde en las seis pantallas.
+  - [x] Ninguna sesión sin constancia real de MFA pinta «MFA»; una sesión de `/dev/token` no pinta nada.
+  - [x] `inspector` y `building_admin` no ven un enlace a `/fleet`; ven el dato que el enlace prometía o su ausencia declarada.
+  - [x] `screens.spec.ts` «los apagados dicen por qué» en verde en las seis pantallas.
+- **Cómo se cerró (2026-09-07, SESIÓN C2):**
+  - **El distintivo dice lo que se sabe, y sólo eso.** `web/src/auth/authEvidence.ts` sigue la
+    doctrina que ya había escrito la API (`auth/mfa.py`, RO-8.c): el ID token de Cognito no lleva
+    `amr` ni `acr` —ni un Lambda propio puede fabricarlos—, así que **no certifica que esta sesión
+    presentó el factor**; certifica el POOL (`iss`), y el pool principal exige TOTP
+    (`mfa_configuration = ON`, anclado en terraform). Por eso: sesión dev ⇒ nada; sesión del pool
+    principal ⇒ «AUTH · POOL PRINCIPAL · MFA OBLIGATORIO» con la grieta que AWS documenta en el
+    `title` (el primer inicio de una cuenta nueva sale sin TOTP); otro pool o token ilegible ⇒
+    «AUTH · COGNITO» sin afirmar MFA. `IncidentTable` lo recibe como prop (`null` = nada) y
+    `ConsolePage` lo alimenta desde el almacén de sesión. Verificado en `make soc-local`: con
+    `/dev/token` la palabra MFA no aparece en la pantalla.
+  - **El enlace obedece a `allowed_routes`.** `TriageDetail` gana `canOpenFleet`, que `TriagePage`
+    deriva del `/me` como los guards. Sin la ruta, la nota del miniSEED declara la ausencia y a quién
+    pedir la verificación («Su rol no accede a FLOTA EDGE: pida al operador de flota…»). No se le
+    pinta el dato del enlace de la estación: sacarlo aquí exigiría una lectura más en la pantalla de
+    firma, que el censo de frescura vigila panel a panel, y la ficha admite la ausencia declarada.
+  - **Todo apagado dice por qué.** `ConfirmButton` gana `title` (el hueco que faltaba). FIRMAR
+    DICTAMEN explica su gate (`sign_dictamen`; el superadmin no firma): era el botón mudo que tumbaba
+    `screens.spec` en `/triage` con un incidente abierto. El pie de `/tenants` tiene un porqué por
+    estado (`syncFooterTitles`, con su test), los interruptores de canales reciben el gate de edición
+    (`edit_thresholds` o tenant ajeno), y las tiras transitorias (crear, guardar, volver, verificar,
+    cargar más) también lo dicen.
+  - **Verificación:** vitest (135 ficheros, 2 107 tests), eslint, prettier, tsc y `vite build` en
+    verde. Playwright contra `make soc-local` con la misma base que ayer (incidente abierto):
+    «los botones vivos responden y los apagados dicen por qué» **6/6 pantallas** a 1280×800, donde
+    en `main` fallaban `03` y `04`.
 
 ### [ ] T-6.03 · **Dar de alta un sitio dice y elige en qué cliente se escribe** — `SOFTWARE`
 

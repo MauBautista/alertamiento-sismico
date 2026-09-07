@@ -40,6 +40,34 @@ export interface SyncFooterProps {
 }
 
 /**
+ * [T-6.02] Por qué está apagado cada botón (o qué hace). Los dos salían grises
+ * y mudos en el estado por defecto de /tenants —sin cambios que aplicar— y
+ * `screens.spec.ts` «los apagados dicen por qué» fallaba por ellos (U-38).
+ */
+export function syncFooterTitles(s: {
+  canEdit: boolean;
+  dirty: boolean;
+  hasErrors: boolean;
+  pending: boolean;
+}): { reset: string; apply: string } {
+  const reset = s.pending
+    ? "Aplicando… espera a que termine"
+    : !s.dirty
+      ? "Sin cambios que restaurar"
+      : "Descarta los cambios sin aplicar y vuelve a la versión del servidor";
+  const apply = !s.canEdit
+    ? "Tu rol no puede editar los umbrales de este cliente (edit_thresholds y tenant propio)"
+    : s.pending
+      ? "Aplicando…"
+      : s.hasErrors
+        ? "Corrige los errores marcados antes de aplicar"
+        : !s.dirty
+          ? "Sin cambios que aplicar"
+          : "Crea una versión nueva del rule_set y registra la intención de sync al edge";
+  return { reset, apply };
+}
+
+/**
  * Pie de la matriz: aplicar + estado REAL del sync firmado.
  *
  * El mockup prometía "Cambios pendientes de sync al edge · ≤60s · firmado JWT" como
@@ -66,6 +94,7 @@ export default function SyncFooter({
 }: SyncFooterProps) {
   const copy = STATUS_COPY[status];
   const blocked = !canEdit || !dirty || errors.length > 0 || pending;
+  const titles = syncFooterTitles({ canEdit, dirty, hasErrors: errors.length > 0, pending });
 
   return (
     <footer className="mt__detail-ft">
@@ -104,6 +133,7 @@ export default function SyncFooter({
           type="button"
           className="soc-btn soc-btn--secondary"
           disabled={!dirty || pending}
+          title={titles.reset}
           onClick={onReset}
         >
           <RotateCcw size={12} aria-hidden /> RESTAURAR
@@ -112,6 +142,7 @@ export default function SyncFooter({
           label="APLICAR Y SINCRONIZAR"
           icon={<UploadCloud size={12} aria-hidden />}
           disabled={blocked}
+          title={titles.apply}
           onConfirm={onApply}
         />
       </div>

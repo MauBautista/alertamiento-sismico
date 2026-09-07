@@ -195,6 +195,7 @@ export default function TriagePage() {
               className="soc-btn soc-btn--secondary triage__more"
               onClick={triage.loadMore}
               disabled={triage.loadingMore}
+              title={triage.loadingMore ? "Cargando…" : undefined}
             >
               {triage.loadingMore ? "CARGANDO MÁS…" : "CARGAR MÁS"}
             </button>
@@ -229,6 +230,9 @@ export default function TriagePage() {
             canExport={me?.allowed_actions.export === true}
             canDownloadClip={me?.allowed_actions.cctv_video === true}
             canGenerateReport={me?.allowed_actions.generate_report === true}
+            // [T-6.02] Un enlace no promete lo que el rol no tiene: `allowed_routes`
+            // del servidor, como los guards.
+            canOpenFleet={me?.allowed_routes.includes("/fleet") === true}
           />
         )}
       </div>
