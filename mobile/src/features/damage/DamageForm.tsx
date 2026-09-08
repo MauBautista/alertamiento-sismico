@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 import {
   DAMAGE_CATEGORIES,
@@ -21,6 +21,15 @@ import {
   type SelectedCategory,
   type Severity,
 } from "./categories";
+
+/**
+ * [T-6.20] Alto VISIBLE del chip que vive DENTRO de una fila. Crecerlo hasta el
+ * mínimo táctil empujaría la lista fuera de pantalla, así que el que crece es
+ * el área que recibe el dedo: `slopHasta(CHIP_ALTO)` la lleva a `touch.min`.
+ * El número sale de aquí y no de una estimación a ojo, para que la cuenta siga
+ * siendo cierta si alguien cambia el chip.
+ */
+const CHIP_ALTO = 24;
 
 const SEV_COLOR: Record<Severity, string> = {
   low: palette.fg3,
@@ -99,6 +108,7 @@ export function DamageForm(props: {
                 {SEVERITIES.map((s) => (
                   <Pressable
                     accessibilityRole="button"
+                    hitSlop={slopHasta(CHIP_ALTO)}
                     key={s}
                     onPress={() => props.onSeverity(cat.key, s)}
                     style={[
@@ -181,12 +191,14 @@ const styles = StyleSheet.create({
   },
   catOn: { borderColor: palette.borderStrong },
   catDanger: { borderColor: palette.crit },
-  catHead: { flexDirection: "row", alignItems: "center", gap: space[2] },
+  catHead: { minHeight: touch.min, justifyContent: "center", flexDirection: "row", alignItems: "center", gap: space[2] },
   catMark: { fontSize: fontSize.md, fontWeight: "800", width: 20 },
   catLabel: { color: palette.fg, fontSize: fontSize.md, fontWeight: "600", flex: 1 },
   catLabelDanger: { color: palette.crit },
   sevRow: { flexDirection: "row", gap: space[1], flexWrap: "wrap" },
   sevChip: {
+    minHeight: CHIP_ALTO,
+    justifyContent: "center",
     borderColor: palette.border,
     borderWidth: 1,
     borderRadius: radius.pill,
@@ -206,6 +218,8 @@ const styles = StyleSheet.create({
     marginTop: space[1],
   },
   photoBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderColor: palette.cyan,
     borderWidth: 1,
     borderRadius: radius.md,
@@ -214,6 +228,8 @@ const styles = StyleSheet.create({
   },
   photoText: { color: palette.cyan, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
   submitBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     marginTop: space[2],
     backgroundColor: palette.cyan,
     borderRadius: radius.lg,

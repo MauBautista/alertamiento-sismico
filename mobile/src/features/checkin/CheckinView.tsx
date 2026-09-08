@@ -3,7 +3,7 @@
 // GPS, el encolado y el estado derivado viven en la ruta.
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { whatWillBeSent } from "./payload";
 
@@ -72,6 +72,8 @@ const styles = StyleSheet.create({
   title: { color: palette.fg, fontSize: fontSize.xl, fontWeight: "700" },
   sub: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20 },
   btn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderRadius: radius.lg,
     paddingVertical: space[5],
     paddingHorizontal: space[4],

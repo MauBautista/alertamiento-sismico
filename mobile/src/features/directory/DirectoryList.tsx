@@ -4,7 +4,16 @@
 import type { DirectoryEntryOut } from "@takab/sdk";
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, slopHasta, space } from "@/ui/theme";
+/**
+ * [T-6.20] Alto VISIBLE del chip que vive DENTRO de una fila. Crecerlo hasta el
+ * mínimo táctil empujaría la lista fuera de pantalla, así que el que crece es
+ * el área que recibe el dedo: `slopHasta(CHIP_ALTO)` la lleva a `touch.min`.
+ * El número sale de aquí y no de una estimación a ojo, para que la cuenta siga
+ * siendo cierta si alguien cambia el chip.
+ */
+const CHIP_ALTO = 24;
+
 
 const ROLE_LABEL: Record<string, string> = {
   brigadista: "BRIGADISTA",
@@ -38,6 +47,7 @@ export function DirectoryList(props: { entries: DirectoryEntryOut[] }) {
               {e.phone ? (
                 <Pressable
                   accessibilityRole="button"
+                  hitSlop={slopHasta(CHIP_ALTO)}
                   onPress={() => void Linking.openURL(`tel:${e.phone}`)}
                   style={styles.callBtn}
                   testID={`dir-call-${e.user_id}`}
@@ -71,6 +81,8 @@ const styles = StyleSheet.create({
   name: { color: palette.fg, fontSize: fontSize.md, fontWeight: "600" },
   role: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 1 },
   callBtn: {
+    minHeight: CHIP_ALTO,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.md,
     paddingHorizontal: space[3],

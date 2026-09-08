@@ -23,7 +23,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 
 
 import { setWatchedSite } from "@/services/mySite";
 import { markOnboardingDone } from "@/services/onboarding";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 /** Quién falló: el código que trajo la persona, o la nube. */
 type Fallo = "codigo" | "servidor" | null;
@@ -162,6 +162,7 @@ const styles = StyleSheet.create({
   title: { color: palette.fg, fontSize: fontSize.xl, fontWeight: "600", marginTop: space[1] },
   sub: { color: palette.fg3, fontSize: fontSize.sm, marginTop: space[1] },
   input: {
+    minHeight: touch.min,
     marginTop: space[4],
     backgroundColor: palette.card,
     borderWidth: 1,
@@ -176,6 +177,8 @@ const styles = StyleSheet.create({
   },
   error: { color: palette.crit, fontSize: fontSize.sm, marginTop: space[2] },
   primaryBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     marginTop: space[4],
     backgroundColor: palette.cyan,
     borderRadius: radius.lg,
@@ -193,9 +196,11 @@ const styles = StyleSheet.create({
     padding: space[4],
     gap: space[2],
   },
-  ghostBtn: { alignItems: "center", paddingVertical: space[2] },
+  ghostBtn: { minHeight: touch.min, justifyContent: "center", alignItems: "center", paddingVertical: space[2] },
   ghostBtnText: { color: palette.fg3, fontSize: fontSize.sm },
   salidaBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.cyan,
     borderRadius: radius.lg,

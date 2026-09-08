@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { GateDenyReason } from "@/auth/profileGate";
 import { useSessionStore } from "@/auth/session.store";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 const REASON_TEXT: Record<GateDenyReason, string> = {
   no_session: "No hay sesión activa.",
@@ -51,6 +51,8 @@ const styles = StyleSheet.create({
   eyebrow: { color: palette.crit, fontSize: fontSize.xs, letterSpacing: 2, fontWeight: "700" },
   text: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20 },
   btn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.borderStrong,
     borderRadius: radius.md,

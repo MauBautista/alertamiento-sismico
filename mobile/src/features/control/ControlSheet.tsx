@@ -14,7 +14,7 @@ import {
   View,
 } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { ackView, type AckContext } from "./ackState";
 import type { TacticalAction } from "./service";
@@ -205,6 +205,8 @@ const styles = StyleSheet.create({
   warnNote: { color: palette.crit, fontSize: fontSize.xs, marginTop: space[1] },
   errorNote: { color: palette.crit, fontSize: fontSize.sm },
   primaryBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     marginTop: space[2],
     backgroundColor: palette.cyan,
     borderRadius: radius.md,
@@ -213,7 +215,7 @@ const styles = StyleSheet.create({
   },
   primaryText: { color: palette.bg, fontWeight: "700", letterSpacing: 1 },
   dim: { opacity: 0.4 },
-  ghostBtn: { alignItems: "center", paddingVertical: space[2] },
+  ghostBtn: { minHeight: touch.min, justifyContent: "center", alignItems: "center", paddingVertical: space[2] },
   ghostText: { color: palette.fg3, fontSize: fontSize.sm },
   slideTrack: {
     height: 64,
@@ -239,6 +241,8 @@ const styles = StyleSheet.create({
   ackTitle: { fontSize: fontSize.lg, fontWeight: "800", letterSpacing: 1 },
   ackDetail: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20 },
   closeBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     marginTop: space[2],
     borderColor: palette.border,
     borderWidth: 1,

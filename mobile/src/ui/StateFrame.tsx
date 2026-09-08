@@ -5,7 +5,7 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { timeAgoLabel } from "./timeAgo";
 
@@ -100,6 +100,8 @@ const styles = StyleSheet.create({
   errorBody: { color: palette.fg3, fontSize: fontSize.sm, textAlign: "center" },
   emptyText: { color: palette.fg3, fontSize: fontSize.sm, textAlign: "center" },
   retryBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderColor: palette.cyan,
     borderWidth: 1,
     borderRadius: radius.md,

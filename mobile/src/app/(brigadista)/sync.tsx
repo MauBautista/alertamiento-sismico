@@ -25,7 +25,7 @@ import { retryFailed } from "@/offline/queue";
 import { useQueueStore } from "@/offline/queue.store";
 import { drainQueue } from "@/offline/sync";
 import { StateFrame } from "@/ui/StateFrame";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 const TONE: Record<string, string> = {
   ok: palette.ok,
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   counter: { flex: 1, backgroundColor: palette.card, borderColor: palette.border, borderWidth: 1, borderRadius: radius.md, padding: space[2], alignItems: "center" },
   counterValue: { fontSize: fontSize.xl, fontWeight: "800" },
   counterLabel: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 1 },
-  retryAll: { backgroundColor: palette.crit, borderRadius: radius.md, paddingVertical: space[3], alignItems: "center", marginBottom: space[3] },
+  retryAll: { minHeight: touch.min, justifyContent: "center", backgroundColor: palette.crit, borderRadius: radius.md, paddingVertical: space[3], alignItems: "center", marginBottom: space[3] },
   retryAllText: { color: palette.fg, fontWeight: "800", letterSpacing: 1 },
   itemCard: { backgroundColor: palette.card, borderColor: palette.border, borderWidth: 1, borderRadius: radius.lg, padding: space[3], gap: space[1], marginBottom: space[3] },
   itemHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
@@ -197,6 +197,6 @@ const styles = StyleSheet.create({
   itemState: { fontSize: fontSize.xs, fontWeight: "800", letterSpacing: 1 },
   itemUrgent: { color: palette.crit, fontSize: fontSize.xs, fontWeight: "800", letterSpacing: 1 },
   itemDetail: { color: palette.fg3, fontSize: fontSize.xs },
-  retryBtn: { alignSelf: "flex-start", borderColor: palette.cyan, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2, marginTop: space[1] },
+  retryBtn: { minHeight: touch.min, justifyContent: "center", alignSelf: "flex-start", borderColor: palette.cyan, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2, marginTop: space[1] },
   retryText: { color: palette.cyan, fontSize: fontSize.xs, fontWeight: "700", letterSpacing: 1 },
 });

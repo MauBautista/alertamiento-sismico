@@ -5,9 +5,18 @@
 import type { RosterOut } from "@takab/sdk";
 import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 import { allAccounted, rosterRows, type PersonState } from "./rosterView";
+
+/**
+ * [T-6.20] Alto VISIBLE del chip que vive DENTRO de una fila. Crecerlo hasta el
+ * mínimo táctil empujaría la lista fuera de pantalla, así que el que crece es
+ * el área que recibe el dedo: `slopHasta(CHIP_ALTO)` la lleva a `touch.min`.
+ * El número sale de aquí y no de una estimación a ojo, para que la cuenta siga
+ * siendo cierta si alguien cambia el chip.
+ */
+const CHIP_ALTO = 24;
 
 const STATE_COLOR: Record<PersonState, string> = {
   safe: palette.ok,
@@ -63,6 +72,7 @@ export function HeadcountView(props: {
       <View style={styles.filterRow}>
         <Text style={styles.filterLabel}>Solo no reportados</Text>
         <Switch
+          hitSlop={slopHasta(touch.switchDp)}
           onValueChange={props.onToggleFilter}
           testID="filter-unreported"
           value={props.onlyUnreported}
@@ -92,6 +102,7 @@ export function HeadcountView(props: {
                   {r.phone ? (
                     <Pressable
                       accessibilityRole="button"
+                      hitSlop={slopHasta(CHIP_ALTO)}
                       onPress={() => void Linking.openURL(`tel:${r.phone}`)}
                       style={styles.callBtn}
                       testID={`call-${r.userId}`}
@@ -102,6 +113,7 @@ export function HeadcountView(props: {
                   <Pressable
                     accessibilityRole="button"
                     disabled={props.markingId === r.userId}
+                    hitSlop={slopHasta(CHIP_ALTO)}
                     onPress={() => props.onMarkVerified(r.userId)}
                     style={styles.verifyBtn}
                     testID={`verify-${r.userId}`}
@@ -163,13 +175,13 @@ const styles = StyleSheet.create({
   personRight: { alignItems: "flex-end", gap: space[1] },
   personState: { fontSize: fontSize.xs, fontWeight: "800", letterSpacing: 1 },
   actions: { flexDirection: "row", gap: space[1] },
-  callBtn: { backgroundColor: palette.cyan, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2 },
+  callBtn: { minHeight: CHIP_ALTO, justifyContent: "center", backgroundColor: palette.cyan, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2 },
   callText: { color: palette.bg, fontSize: fontSize.xs, fontWeight: "700" },
-  verifyBtn: { borderColor: palette.ok, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2 },
+  verifyBtn: { minHeight: CHIP_ALTO, justifyContent: "center", borderColor: palette.ok, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2 },
   verifyText: { color: palette.ok, fontSize: fontSize.xs, fontWeight: "700" },
-  notifyBtn: { borderColor: palette.warn, borderWidth: 1, borderRadius: radius.md, paddingVertical: space[3], alignItems: "center", marginTop: space[2] },
+  notifyBtn: { minHeight: touch.min, justifyContent: "center", borderColor: palette.warn, borderWidth: 1, borderRadius: radius.md, paddingVertical: space[3], alignItems: "center", marginTop: space[2] },
   notifyText: { color: palette.warn, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
-  closeBtn: { backgroundColor: palette.cyan, borderRadius: radius.lg, paddingVertical: space[3], alignItems: "center" },
+  closeBtn: { minHeight: touch.min, justifyContent: "center", backgroundColor: palette.cyan, borderRadius: radius.lg, paddingVertical: space[3], alignItems: "center" },
   closeText: { color: palette.bg, fontWeight: "800", letterSpacing: 1 },
   dim: { opacity: 0.4 },
 });

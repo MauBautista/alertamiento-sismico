@@ -65,7 +65,7 @@ import { useQueueStore } from "@/offline/queue.store";
 import { drainQueue } from "@/offline/sync";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 /** Sin sitio vigilado no hay incidente al que atribuir la foto: se DICE. */
 const SIN_SITIO =
@@ -224,7 +224,11 @@ export default function Camera() {
                   <Text style={styles.shutterText}>CAPTURAR</Text>
                 )}
               </Pressable>
-              <Pressable accessibilityRole="button" onPress={() => router.back()}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.back()}
+                style={styles.textBtn}
+              >
                 <Text style={styles.cancel}>Cancelar</Text>
               </Pressable>
             </View>
@@ -259,7 +263,11 @@ export default function Camera() {
                   <Text style={styles.shutterText}>USAR ESTA FOTO</Text>
                 )}
               </Pressable>
-              <Pressable accessibilityRole="button" onPress={() => setPhotoUri(null)}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setPhotoUri(null)}
+                style={styles.textBtn}
+              >
                 <Text style={styles.cancel}>Repetir</Text>
               </Pressable>
             </View>
@@ -292,16 +300,26 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.4)",
   },
   shutter: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.pill,
     paddingVertical: space[3],
     paddingHorizontal: space[5],
     alignItems: "center",
   },
+  /* [T-6.20] Un texto pulsable es un control: mide lo que mide el mínimo. */
+  textBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
+    paddingHorizontal: space[3],
+  },
   shutterText: { color: palette.bg, fontWeight: "800", letterSpacing: 1 },
   cancel: { color: palette.fg2, fontSize: fontSize.sm },
   error: { color: palette.crit, fontSize: fontSize.sm },
   btn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.md,
     paddingVertical: space[3],

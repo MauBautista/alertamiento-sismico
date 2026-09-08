@@ -27,7 +27,7 @@ import { getGpsConsent, markOnboardingDone, setGpsConsent } from "@/services/onb
 import { decideConsent, fetchConsentStatus, needsConsent } from "@/services/privacy";
 import type { ConsentStatus } from "@/services/privacy";
 import { StateFrame } from "@/ui/StateFrame";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 export default function Privacidad() {
   const router = useRouter();
@@ -156,6 +156,7 @@ export default function Privacidad() {
           <Text style={styles.consentSub}>Revocable en Cuenta · sin GPS se envía su zona</Text>
         </View>
         <Switch
+          hitSlop={slopHasta(touch.switchDp)}
           onValueChange={(v) => {
             setGps(v);
             void setGpsConsent(v);
@@ -225,6 +226,8 @@ const styles = StyleSheet.create({
   consentTitle: { color: palette.fg, fontSize: fontSize.base, fontWeight: "500" },
   consentSub: { color: palette.fg3, fontSize: fontSize.xs, marginTop: 2 },
   primaryBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     marginTop: space[4],
     backgroundColor: palette.cyan,
     borderRadius: radius.lg,

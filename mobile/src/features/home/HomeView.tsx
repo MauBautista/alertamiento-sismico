@@ -15,9 +15,18 @@ import {
   View,
 } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 import { healthBanner, wr1Chip, type HealthTone } from "./health";
+
+/**
+ * [T-6.20] Alto VISIBLE del chip que vive DENTRO de una fila. Crecerlo hasta el
+ * mínimo táctil empujaría la lista fuera de pantalla, así que el que crece es
+ * el área que recibe el dedo: `slopHasta(CHIP_ALTO)` la lleva a `touch.min`.
+ * El número sale de aquí y no de una estimación a ojo, para que la cuenta siga
+ * siendo cierta si alguien cambia el chip.
+ */
+const CHIP_ALTO = 24;
 
 const TONE_COLOR: Record<HealthTone, string> = {
   ok: palette.ok,
@@ -152,6 +161,7 @@ export function HomeView(props: {
               {b.phone ? (
                 <Pressable
                   accessibilityRole="button"
+                  hitSlop={slopHasta(CHIP_ALTO)}
                   onPress={() => void Linking.openURL(`tel:${b.phone}`)}
                   style={styles.callBtn}
                   testID={`call-${b.user_id}`}
@@ -162,7 +172,11 @@ export function HomeView(props: {
             </View>
           ))
         )}
-        <Pressable accessibilityRole="button" onPress={props.onOpenDirectorio}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={props.onOpenDirectorio}
+          style={styles.linkBtn}
+        >
           <Text style={styles.link}>Ver directorio completo →</Text>
         </Pressable>
       </View>
@@ -253,6 +267,8 @@ const styles = StyleSheet.create({
   },
   dirInfo: { gap: 2 },
   callBtn: {
+    minHeight: CHIP_ALTO,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.md,
     paddingHorizontal: space[3],
@@ -266,6 +282,8 @@ const styles = StyleSheet.create({
   },
   link: { color: palette.cyan, fontSize: fontSize.sm, marginTop: space[1] },
   routesBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.card,
     borderColor: palette.cyan,
     borderWidth: 1,
@@ -279,11 +297,16 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   panicBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderColor: palette.crit,
     borderWidth: 1,
     borderRadius: radius.lg,
     padding: space[4],
   },
+  /* [T-6.20] Medido en el Pixel: 382×19 dp. Es el camino a los teléfonos de
+     la brigada; ahora el control mide lo que mide el mínimo. */
+  linkBtn: { minHeight: touch.min, justifyContent: "center" },
   panicText: {
     color: palette.crit,
     fontWeight: "700",

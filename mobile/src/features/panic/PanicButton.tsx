@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, Text } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 const HOLD_MS = 1500;
 
@@ -55,6 +55,7 @@ export function PanicButton(props: { disabled: boolean; label: string; onConfirm
 
 const styles = StyleSheet.create({
   btn: {
+    minHeight: touch.min,
     backgroundColor: palette.card,
     borderColor: palette.crit,
     borderWidth: 2,
