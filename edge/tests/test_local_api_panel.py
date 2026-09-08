@@ -702,6 +702,154 @@ def test_el_banner_wr1_se_lee_de_pie_frente_al_gabinete():
     )
 
 
+# ------------------------------------ variables CSS declaradas y escala de MURO
+
+
+_ESCALA_10_2 = (11, 13, 14, 16, 18, 22, 28, 40, 56, 72)
+
+
+def _hoja() -> str:
+    """El `index.html` sin comentarios de HTML ni de CSS.
+
+    Los comentarios de este panel citan a menudo el valor o la variable que
+    reemplazaron; contarlos convertiría cada explicación en una declaración
+    fantasma. Misma disciplina que `_root_vars()`.
+    """
+    html = re.sub(r"<!--[\s\S]*?-->", "", _INDEX.read_text("utf-8"))
+    return re.sub(r"/\*[\s\S]*?\*/", "", html)
+
+
+def _vars_declaradas(hoja: str) -> set[str]:
+    inicio = hoja.index(":root{")
+    bloque = hoja[inicio + len(":root{") : hoja.index("}", inicio)]
+    return {m.group(1) for m in re.finditer(r"(--[A-Za-z0-9_-]+)\s*:", bloque)}
+
+
+def _vars_usadas(hoja: str) -> set[str]:
+    """Todo `var(--x)` del fichero, incluido el que se escribe desde JS.
+
+    El fallback NO exime: `var(--f-mono,monospace)` es justo el caso que hizo
+    falta cazar —la comparativa perdió JetBrains Mono y sus cifras tabulares
+    durante meses y la página no se veía rota, solo distinta—.
+    """
+    return {m.group(1) for m in re.finditer(r"var\(\s*(--[A-Za-z0-9_-]+)", hoja)}
+
+
+def _vars_sin_declarar(hoja: str) -> set[str]:
+    return _vars_usadas(hoja) - _vars_declaradas(hoja)
+
+
+def test_ninguna_variable_css_del_panel_esta_sin_declarar():
+    """Una `var()` fantasma no rompe la página: la deja distinta y callada.
+
+    Eran dos —`--f-mono` en la comparativa y `--warn` en la advertencia de banda
+    de fábrica— y ninguna de las dos existió jamás; los nombres del panel son
+    `--f-data` y `--tk-warn`. La primera traía fallback, así que el texto se
+    pintaba en la monoespaciada del sistema sin cifras tabulares; la segunda no,
+    así que la advertencia heredaba el color de su padre y no era ámbar.
+    """
+    hoja = _hoja()
+    assert _vars_declaradas(hoja), "no se encontró el `:root` del panel: el resto mentiría"
+    huerfanas = _vars_sin_declarar(hoja)
+    assert not huerfanas, (
+        "el panel usa variables CSS que nadie declara en su `:root`: "
+        + ", ".join(sorted(huerfanas))
+        + ". El panel no puede importar el paquete de tokens: su copia se "
+        "corrige en el `:root`, y el nombre se escribe igual que allí."
+    )
+
+
+def test_la_guarda_de_variables_caza_una_inexistente():
+    """La guarda solo vale si falla cuando debe — con fallback y sin él.
+
+    Se mide la DIFERENCIA contra la hoja real, no el conjunto entero: así este
+    test dice lo suyo aunque el panel llegue sucio, que es exactamente el día
+    en que hace falta creerle.
+    """
+    hoja = _hoja()
+    previas = _vars_sin_declarar(hoja)
+    assert _vars_sin_declarar(hoja + ".x{color:var(--no-existe)}") - previas == {"--no-existe"}
+    assert _vars_sin_declarar(hoja + ".x{font-family:var(--tampoco,monospace)}") - previas == {
+        "--tampoco"
+    }
+
+
+def test_la_comparativa_pinta_sus_cifras_en_la_fuente_del_dato():
+    """§10.2: «todo número va en monoespaciada con cifras tabulares».
+
+    La regla usaba el atajo `font:` con una variable inexistente, y el atajo
+    además REINICIA `font-variant-numeric`: ganaba en especificidad a `.mono`,
+    que es la clase que el JS le pone al valor. Distancia epicentral, profundidad
+    y PGA estimado bailaban horizontalmente a cada repintado.
+    """
+    regla = re.search(r"\.cmp-kv \.v\{([^}]*)\}", _hoja())
+    assert regla, "la comparativa perdió la regla de sus valores"
+    cuerpo = regla.group(1).replace(" ", "")
+    assert "var(--f-data)" in cuerpo, f"la comparativa no usa la fuente del dato: {regla.group(1)}"
+    assert "font-variant-numeric:tabular-nums" in cuerpo, (
+        "sin cifras tabulares las columnas de la comparativa se mueven a 1 Hz"
+    )
+
+
+def test_la_advertencia_de_banda_de_fabrica_es_ambar():
+    regla = re.search(r"\.sin-resolver\{([^}]*)\}", _hoja())
+    assert regla, "se perdió la regla de la banda sin resolver"
+    assert "var(--tk-warn)" in regla.group(1).replace(" ", ""), (
+        f"la advertencia no se pinta con el ámbar del panel: {regla.group(1)}"
+    )
+
+
+def test_la_linea_de_umbrales_conserva_su_tipografia_en_los_tres_origenes(tmp_path):
+    """`className = …` BORRABA la clase `meta` del rótulo en cada repintado.
+
+    La línea nace como `<span class="meta">` —10 px en la fuente del dato y
+    `--tk-fg-3`— y el render le reasignaba la clase entera, así que desde el
+    primer segundo se pintaba con la tipografía heredada del contenedor. Se
+    conmuta la clase, que es lo único que esta línea decide.
+    """
+    for origen, ambar in (("sincronizado", False), ("sin_resolver", True), ("otra_cosa", True)):
+        st = _base()
+        st["thresholds"]["origen"] = origen
+        clases = set(_node(_render(tmp_path, status=st)["tree"], "prox-profile")["cls"].split())
+        assert "meta" in clases, f"con origen {origen!r} el rótulo perdió su tipografía: {clases}"
+        assert ("sin-resolver" in clases) is ambar, f"origen {origen!r} → {clases}"
+
+    # …y sin motor de reglas tampoco: el rótulo dice «umbrales S/D» y sigue
+    # siendo una meta, no una advertencia.
+    st = _base()
+    st["thresholds"] = None
+    clases = set(_node(_render(tmp_path, status=st)["tree"], "prox-profile")["cls"].split())
+    assert clases == {"meta"}, clases
+
+
+def test_en_muro_el_nombre_del_rele_se_lee_igual_que_su_estado():
+    """En el monitor de sala, `ACTIVADO` medía 28 px y de qué relé, 10.
+
+    Es la única zona del panel que dice si la sirena, el gas, los ascensores o
+    los retenedores están accionados. A cinco metros se leía el estado y no a
+    quién pertenecía, que es justo la mitad que hace falta para actuar.
+    """
+    hoja = _hoja()
+    medidas = {}
+    for clase in ("rl", "rs", "re"):
+        m = re.search(r"body\.mode-muro \.relay \." + clase + r"\{([^}]*)font-size:(\d+)px", hoja)
+        assert m, f"MURO no declara tamaño para `.relay .{clase}`"
+        medidas[clase] = int(m.group(2))
+
+    assert medidas["rs"] == 28, "el estado del relé no puede encoger"
+    assert medidas["rl"] > medidas["re"], (
+        f"el nombre del relé no puede ser más pequeño que su detalle: {medidas}"
+    )
+    fuera = {c: px for c, px in medidas.items() if px not in _ESCALA_10_2}
+    assert not fuera, f"tamaños fuera de la escala de §10.2: {fuera}"
+
+    # …y en CONSOLA y CAMPO no cambia nada: el tamaño de sala es de sala.
+    for modo in ("consola", "campo"):
+        assert not re.search(r"body\.mode-" + modo + r" \.relay \.", hoja), (
+            f"el modo {modo} empezó a tocar los relés: la corrección era de MURO"
+        )
+
+
 # --------------------------------------------------- contrato con el servidor
 
 

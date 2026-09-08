@@ -184,7 +184,13 @@ canvas{display:block}
 #cmp-canvas-wrap{flex:1 1 auto;min-height:0;position:relative}
 #cmp-canvas{position:absolute;inset:0;width:100%;height:100%}
 .cmp-kv{display:inline-flex;align-items:baseline;gap:6px;font:600 10px/1.3 var(--f-ui);letter-spacing:0.08em;text-transform:uppercase;color:var(--tk-fg-3)}
-.cmp-kv .v{font:700 12px/1 var(--f-mono,monospace);letter-spacing:0;text-transform:none;color:var(--tk-fg-1)}
+/* [T-6.31] `--f-mono` no existió nunca —la variable del panel es `--f-data`—
+   y el fallback la dejaba en la monoespaciada del sistema sin que nada se
+   viera roto. El atajo `font:` además REINICIA `font-variant-numeric` y gana
+   por especificidad a `.mono`, que es la clase que el JS pone en el valor:
+   las cifras de la comparativa bailaban a cada repintado. §10.2: todo número
+   va en monoespaciada con cifras tabulares. */
+.cmp-kv .v{font:700 12px/1 var(--f-data);font-variant-numeric:tabular-nums;letter-spacing:0;text-transform:none;color:var(--tk-fg-1)}
 #map-canvas{position:absolute;inset:0;width:100%;height:100%}
 #muro-extra{display:none}
 /* [T-2.30] min-height + wrap: en 1080p una sola línea (idéntico); en un viewport
@@ -202,6 +208,12 @@ body.mode-muro #stats{display:none}
 body.mode-muro #tier-label{font-size:72px;line-height:1.05}
 body.mode-muro #tier-sub{font-size:24px}
 body.mode-muro .relay .rs{font-size:28px}
+/* [T-6.31] …y con quién va ese ACTIVADO. El estado crecía a 28 px y el
+   nombre del relé se quedaba en 10: a cinco metros se leía que algo está
+   accionado y no si es la sirena, el gas, los ascensores o los retenedores.
+   Escalones de §10.2; CONSOLA y CAMPO no se tocan. */
+body.mode-muro .relay .rl{font-size:18px}
+body.mode-muro .relay .re{font-size:14px}
 body.mode-muro .lane .ch{font-size:22px}
 body.mode-muro .lane .peak{font-size:18px}
 body.mode-muro #muro-extra{display:flex}
@@ -258,7 +270,10 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
 /* [T-5.16] La banda que nadie eligió, en ámbar: no es una avería —el gabinete
    opera igual (regla de oro 2)— pero tampoco es una decisión, y pintarla como
    las demás era hacerla pasar por una. */
-.sin-resolver{color:var(--warn)}
+/* [T-6.31] Era `var(--warn)`, que tampoco existe: el ámbar del panel es
+   `--tk-warn`. Sin fallback, la declaración entera se descarta y el aviso
+   heredaba el color de su padre — se leía igual que una banda elegida. */
+.sin-resolver{color:var(--tk-warn)}
 </style>
 </head>
 <body>
@@ -1290,8 +1305,12 @@ function renderProximity(st, cal){
     ? ('cautela ' + th.pga_watch_g.toFixed(3) + ' g · disparo ' + th.pga_trip_g.toFixed(3) + ' g'
        + procedencia)
     : 'umbrales S/D (motor caído)';
-  $('prox-profile').className =
-    (th && th.origen !== 'sincronizado') ? 'sin-resolver' : '';
+  /* [T-6.31] `classList.toggle`, no `className`: reasignar la clase entera
+     BORRABA el `meta` con el que nace el rótulo en el esqueleto, y desde el
+     primer repintado la línea se pintaba con la tipografía heredada. Esta
+     línea solo decide una cosa —si la banda está sin resolver—, así que solo
+     esa clase le corresponde conmutar. */
+  $('prox-profile').classList.toggle('sin-resolver', !!(th && th.origen !== 'sincronizado'));
   const enz = liveChannels(st).ENZ;
   [['PGA ENZ', enz ? enz.pga_g : null, th ? th.pga_watch_g : null, th ? th.pga_trip_g : null, (v)=>fmtG(v,cal)],
    ['PGV ENZ', enz ? enz.pgv_cms : null, th ? th.pgv_watch_cms : null, th ? th.pgv_trip_cms : null, (v)=>fmtV(v,cal)]]
