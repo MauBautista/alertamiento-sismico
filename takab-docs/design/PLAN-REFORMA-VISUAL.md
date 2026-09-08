@@ -1091,7 +1091,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     ejerce); `ruff check` y `ruff format --check` limpios. El Pi de Puebla NO se redesplegó: el
     cambio llega con el siguiente despliegue del edge, junto con T-6.27, T-6.28 y T-6.29.
 
-### [ ] T-6.31 · **Variables que existen; MURO que se lee entero** — `SOFTWARE`
+### [x] T-6.31 · **Variables que existen; MURO que se lee entero** — `SOFTWARE`
 
 > `--f-mono` y `--warn` no están definidas: la comparativa pierde la fuente del dato y las cifras
 > tabulares, y la advertencia de banda de fábrica no se pinta ámbar. En MURO el estado del relé
@@ -1105,6 +1105,40 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** usar los tokens que existen; en `:1188` conmutar la clase con `classList.toggle` en vez de reasignar `className`; en `body.mode-muro`, dos reglas para `.relay .rl` y `.relay .re`, sin tocar CONSOLA ni CAMPO.
 - **Criterios de aceptación:**
-  - [ ] La guarda de `var()` está en verde y falla al introducir una variable inexistente.
-  - [ ] La comparativa muestra cifras tabulares en la fuente del dato; la advertencia de banda se ve ámbar.
-  - [ ] En MURO a cinco metros se lee de qué relé es cada «ACTIVADO».
+  - [x] La guarda de `var()` está en verde y falla al introducir una variable inexistente.
+  - [x] La comparativa muestra cifras tabulares en la fuente del dato; la advertencia de banda se ve ámbar.
+  - [x] En MURO a cinco metros se lee de qué relé es cada «ACTIVADO».
+- **Cómo se cerró (2026-09-07, SESIÓN P5):**
+  - **Las dos variables fantasma resultaron ser tres defectos, no dos.** `--f-mono` (la
+    comparativa) traía fallback, así que sus cifras se pintaban en la monoespaciada del sistema y
+    nada se veía roto; y el atajo `font:` **reinicia** `font-variant-numeric` y gana por
+    especificidad a la clase `.mono` que el JS pone en cada valor, así que las columnas bailaban
+    horizontalmente a cada repintado — lo contrario de lo que pide §10.2. `--warn` (la advertencia
+    de banda de fábrica) no traía fallback: la declaración entera se descartaba y el aviso heredaba
+    el color de su padre, es decir, se leía igual que una banda elegida. Los nombres del panel son
+    `--f-data` y `--tk-warn`; ninguno de los dos es un token nuevo.
+  - **El tercero salió al tirar del hilo:** `$('prox-profile').className = …` reasignaba la clase
+    **entera** y borraba el `meta` con el que nace el rótulo en el esqueleto, en las tres ramas
+    —incluida la de «umbrales S/D (motor caído)»—. Desde el primer repintado la línea de umbrales
+    se pintaba con la tipografía heredada del contenedor, no con la de una meta. Se conmuta con
+    `classList.toggle`, que es lo único que esa línea decide.
+  - **MURO: el `ACTIVADO` ya tiene dueño.** El estado del relé crecía a 28 px y el nombre se
+    quedaba en 10: a cinco metros se leía que algo está accionado y no si era la sirena, el gas,
+    los ascensores o los retenedores — justo la mitad que hace falta para actuar. Dos reglas
+    nuevas en `body.mode-muro` (nombre 18 px, detalle 14 px, escalones de §10.2). CONSOLA y CAMPO
+    no se tocan, y hay un test que lo exige.
+  - **La guarda que faltaba.** El arnés extrae todo `var(--x)` del fichero —también el que se
+    escribe desde JS— y lo compara contra lo declarado en el `:root`: 27 declaradas, 23 usadas,
+    cero huérfanas. **El fallback no exime**, porque el fallback es precisamente lo que hizo que
+    `--f-mono` sobreviviera meses. Y una guarda de la guarda: se le inyecta una variable
+    inexistente —con fallback y sin él— y se exige que la cace, midiendo la DIFERENCIA contra la
+    hoja real para que el test siga diciendo la verdad el día que el panel llegue sucio.
+  - **Medido en Chromium** (cero errores de página): MURO a 1920×1080 con los cinco relés
+    accionados → `18 / 28 / 14 px` en las cinco filas, sin desbordes y sin scroll horizontal de
+    página; la comparativa resuelve a `"JetBrains Mono", ui-monospace…` de 12 px con
+    `font-variant-numeric: tabular-nums`; y la línea de umbrales conserva `meta` en los dos
+    orígenes, pasando de `rgb(138,156,177)` (`--tk-fg-3`) a `rgb(255,193,7)` (`--tk-warn`) cuando
+    la banda es de fábrica.
+  - **Verificación:** `pytest edge/tests/` completo en verde en modo simulado (el gate #3 no se
+    ejerce); `ruff check` y `ruff format --check` limpios. El Pi de Puebla NO se redesplegó: el
+    cambio llega con el siguiente despliegue del edge, junto con T-6.27…T-6.30.

@@ -109,6 +109,8 @@ AUTO y la cabecera lo declara (`?mode=xyz NO EXISTE → DENSIDAD AUTO`).
 
 - [ ] 10 min abierto: fluidez, memoria estable (DevTools performance monitor).
 - [ ] Fuentes Geist/JetBrains Mono aplicadas (no la pila del sistema).
-- [ ] `?mode=muro` en el monitor de pared: tier a 72 px, sin acciones, sin PIN.
+- [ ] `?mode=muro` en el monitor de pared: tier a 72 px, sin acciones, sin PIN,
+      y **de qué relé** es cada `ACTIVADO` legible a cinco metros (nombre 18 px sobre
+      estado 28 px).
 - [ ] Prueba WR-1 real ⇒ `latencies.reflex_s` pasa de `S/D` a ~6-7 ms pintado contra
       el presupuesto de 100 ms.
