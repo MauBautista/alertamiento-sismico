@@ -471,3 +471,57 @@ describe("[T-5.24] pérdida de paquetes del enlace sensor→Pi", () => {
     expect(screen.getAllByText(/— sin enlace —/).length).toBeGreaterThan(0);
   });
 });
+
+// ── [T-6.06] LOS ESTADOS DEL AUTODIAGNÓSTICO, TRADUCIDOS ───────────────────
+//
+// La máquina de fases ya distinguía SIN ACUSE (TTL) de RECHAZADO, y eso estaba
+// bien. Lo que no estaba: corría en PARALELO a los cuatro estados de la consola
+// —esta tarjeta era el único dato de servidor de la flota sin `StateFrame`— así
+// que nadie podía cruzarla con el resto ni el e2e la miraba. Aquí se fija la
+// traducción, que es lo que se puede romper sin darse cuenta.
+
+describe("SiteCard · el autodiagnóstico pasa por el marco [T-6.06]", () => {
+  /** Dispara el autodiagnóstico y deja el comando en el estado pedido.
+   *  La consulta del comando sólo se habilita DESPUÉS de emitirlo (`commandId`),
+   *  así que sin el clic no hay nada que mirar. */
+  async function trasDisparar(over: Record<string, unknown>) {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+    sdk.issueCommandSitesSiteIdCommandsPost.mockResolvedValue({
+      data: { command_id: "c-6-06", status: "pending" },
+      response: { status: 201 },
+    });
+    sdk.listCommandsSitesSiteIdCommandsGet.mockResolvedValue({
+      data: { items: [{ command_id: "c-6-06", ack: null, error: null, ...over }] },
+      response: { status: 200 },
+    });
+    const { container } = render(<SiteCard cabinet={cabinet()} />);
+    fireEvent.click(screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ }));
+    return container;
+  }
+
+  it("esperando el acuse, el marco declara CARGANDO (no un hueco)", async () => {
+    const container = await trasDisparar({ status: "pending" });
+    await waitFor(() => expect(container.querySelector('[data-state="loading"]')).not.toBeNull());
+  });
+
+  it("un acuse que NO llegó (TTL) es ERROR, y dice que fue el TTL", async () => {
+    const container = await trasDisparar({ status: "expired" });
+    await waitFor(() => expect(container.querySelector('[data-state="error"]')).not.toBeNull());
+    expect(screen.getByText(/SIN ACUSE \(TTL\)/)).toBeInTheDocument();
+  });
+
+  it("un RECHAZO es error y conserva el detalle del gabinete", async () => {
+    const container = await trasDisparar({
+      status: "rejected",
+      ack: { detail: "command_enabled=false", results: null },
+    });
+    await waitFor(() => expect(container.querySelector('[data-state="error"]')).not.toBeNull());
+    expect(screen.getByText(/command_enabled=false/)).toBeInTheDocument();
+  });
+
+  it("acusar SIN censo de relés no es lo mismo que no acusar: es vacío", async () => {
+    const container = await trasDisparar({ status: "acked", ack: { results: {} } });
+    await waitFor(() => expect(container.querySelector('[data-state="empty"]')).not.toBeNull());
+    expect(screen.getByText("EL GABINETE ACUSÓ SIN CENSO DE RELÉS")).toBeInTheDocument();
+  });
+});

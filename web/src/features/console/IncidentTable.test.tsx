@@ -294,3 +294,43 @@ describe("formatPga (T-1.50)", () => {
     expect(screen.queryByTestId("site-demo")).toBeNull();
   });
 });
+
+// ── [T-6.06] LA COLA DECLARA SUS CUATRO ESTADOS ────────────────────────────
+//
+// El marco de INCIDENTES ABIERTOS sólo cableaba `empty`. `error` y `stale`
+// vivían en el marco del WALL, que envuelve mapa y cola juntos: una lectura de
+// incidentes caída borraba también el mapa, y la cola no tenía cómo ofrecer
+// reintentar lo suyo. Un marco sin `staleSince` además afirma «este dato no
+// puede envejecer», y una cola vieja se lee exactamente igual que una vacía.
+
+describe("cola de incidentes · sus propios estados [T-6.06]", () => {
+  it("con la lectura caída, la COLA lo dice y ofrece reintentarla", () => {
+    const onRetryQueue = vi.fn();
+    renderTable({
+      incidents: [],
+      queueError: "GET /incidents/open falló (503)",
+      onRetryQueue,
+    });
+    // En `error` y `stale` el marco NO imprime su `label` (lo dice el mensaje),
+    // así que se busca por el estado materializado, que es lo que censan las
+    // guardas y lo que mira el e2e.
+    expect(document.querySelector('[data-state="error"]')).not.toBeNull();
+    expect(screen.getByText(/503/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /reintentar/i }));
+    expect(onRetryQueue).toHaveBeenCalled();
+  });
+
+  it("una cola VIEJA no se pinta como una cola vacía", () => {
+    // Es la regla de oro 7 en el caso que más se parece a una buena noticia:
+    // «sin incidentes abiertos» y «no sé desde hace diez minutos» son cosas
+    // distintas, y sólo la segunda se puede verificar.
+    renderTable({ incidents: [], queueStaleSince: NOW - 600_000 });
+    expect(document.querySelector('[data-state="stale"]')).not.toBeNull();
+    expect(screen.getByText(/DATOS RETENIDOS/)).toBeInTheDocument();
+  });
+
+  it("sin error y fresca, la cola vacía sigue siendo la BUENA noticia de siempre", () => {
+    renderTable({ incidents: [], queueError: null, queueStaleSince: null });
+    expect(screen.getByText("SIN INCIDENTES ABIERTOS EN EL ALCANCE")).toBeInTheDocument();
+  });
+});

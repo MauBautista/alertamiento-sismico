@@ -71,6 +71,8 @@ describe("ComparePanel", () => {
 
   it("sin sitios con coordenadas: estado vacío honesto", () => {
     render(<ComparePanel quake={QUAKE_19S} sites={[]} initialSiteId={null} onClose={vi.fn()} />);
+    // [T-6.06] El ámbito del vacío se deriva del alcance: sin `console_scope_
+    // enforced` (que es lo que hay hoy) sigue siendo el tenant, y lo dice.
     expect(screen.getByText("SIN SITIOS CON COORDENADAS EN EL TENANT")).toBeInTheDocument();
     expect(screen.getByText(MASTER_LABEL)).toBeInTheDocument();
   });

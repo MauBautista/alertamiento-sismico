@@ -16,6 +16,8 @@ import { bearing16, haversineKm } from "../fleet/geo";
 import { attenPoints, hypoKm, pgaLawG, pTravelS, V_P_KM_S } from "./attenuation";
 import { CATALOG_COLOR } from "./MapPanel";
 import { siteLabelText } from "../fleet/datosDeDemostracion";
+import { useSiteScope } from "../../auth/useSiteScope";
+import { vacioConCausa } from "./vacioConCausa";
 
 export const MASTER_LABEL = "ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO MEDIDO";
 export const NO_MEASURED_NOTE =
@@ -34,6 +36,8 @@ export interface ComparePanelProps {
 
 export default function ComparePanel({ quake, sites, initialSiteId, onClose }: ComparePanelProps) {
   const [siteId, setSiteId] = useState<string | null>(initialSiteId ?? sites[0]?.site_id ?? null);
+  // [T-6.06] El ÁMBITO del vacío sale de la misma fuente que la insignia.
+  const scope = useSiteScope();
   const site = sites.find((s) => s.site_id === siteId) ?? null;
 
   const model = useMemo(() => {
@@ -79,7 +83,7 @@ export default function ComparePanel({ quake, sites, initialSiteId, onClose }: C
           label="COMPARATIVA"
           loading={false}
           empty={sites.length === 0}
-          emptyText="SIN SITIOS CON COORDENADAS EN EL TENANT"
+          emptyText={vacioConCausa("SIN SITIOS CON COORDENADAS", scope)}
         >
           <select
             id="compare-site"

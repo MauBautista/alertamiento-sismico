@@ -31,6 +31,18 @@ import { SITE_INCIDENTS_STALE_MS, useSiteIncidents } from "./useSiteIncidents";
 import { useSirenTest } from "./useSirenTest";
 import SiteLabel from "../../components/SiteLabel";
 
+/**
+ * [T-6.06] Cuándo cada dato de esta pantalla deja de poder llamarse fresco.
+ *
+ * Tres números y no uno: la serie histórica se pide por rango y se refresca
+ * despacio; el sitio (nombre, código, coordenadas) casi no cambia, y su edad
+ * importa sólo para no afirmar identidad sobre una lectura vieja; la salud llega
+ * por latido del gabinete y ahí un minuto ya es mucho.
+ */
+const METRICS_STALE_MS = 180_000;
+const SITE_STALE_MS = 300_000;
+const SOH_STALE_MS = 90_000;
+
 function BuildingDashboard({ siteId }: { siteId: string }) {
   const me = useSessionStore((s) => s.me);
   const now = useNow(1000);
@@ -64,6 +76,21 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
       ? incidents.dataUpdatedAt
       : null;
 
+  // [T-6.06] Las otras tres edades. Vivían sin declarar: el HISTORIAL no tenía
+  // `staleSince` (afirmaba «esto no envejece»), y la cabecera y SALUD DEL
+  // GABINETE se guardaban a mano —`soh?.x ?? "S/D"` evita inventar salud, pero
+  // un `soh` de hace dos horas se pintaba idéntico a uno de hace un segundo—.
+  const metricsStale =
+    !metrics.loading && metrics.dataUpdatedAt > 0 && now - metrics.dataUpdatedAt > METRICS_STALE_MS
+      ? metrics.dataUpdatedAt
+      : null;
+  const siteStale =
+    !site.isPending && site.dataUpdatedAt > 0 && now - site.dataUpdatedAt > SITE_STALE_MS
+      ? site.dataUpdatedAt
+      : null;
+  const sohAt = soh?.ts != null ? Date.parse(soh.ts) : null;
+  const sohStale = sohAt !== null && now - sohAt > SOH_STALE_MS ? sohAt : null;
+
   return (
     <section className="bld" data-screen-label="06 Dashboard Edificio">
       <header className="bld__hd">
@@ -72,32 +99,38 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
         <h1 className="bld__title">DASHBOARD EDIFICIO</h1>
         {/* B-4 (T-1.58): el subtítulo distingue "cargando" de "falló" — un GET
             /sites/{id} caído no puede quedarse en "CARGANDO…" eterno. */}
-        <p className="bld__name">
-          {site.data ? (
-            <SiteLabel name={site.data.name} code={site.data.code} />
-          ) : site.isError ? (
-            <>
-              SITIO NO DISPONIBLE{" "}
-              <button
-                type="button"
-                className="soc-btn soc-btn--secondary"
-                onClick={() => void site.refetch()}
-              >
-                REINTENTAR
-              </button>
-            </>
-          ) : (
-            "CARGANDO SITIO…"
-          )}
-        </p>
+        {/* [T-6.06] La identidad del edificio pasa por el MARCO, como todo lo
+            demás. Se guardaba a mano —tres ramas escritas aquí— y por eso no
+            tenía `stale`: el nombre de un sitio leído hace media hora se pintaba
+            igual que uno de hace un segundo. Las tres ramas no se pierden: son
+            las que el marco ya sabe pintar, y la de error conserva su
+            REINTENTAR. */}
+        <div className="bld__name">
+          <StateFrame
+            label="SITIO"
+            loading={site.isPending}
+            error={site.isError ? `GET /sites/${siteId} falló` : null}
+            onRetry={() => void site.refetch()}
+            // Un `GET /sites/{id}` o trae el sitio o falla con 404: no hay
+            // vacío posible, y decirlo es distinto de callarlo.
+            empty={false}
+            staleSince={siteStale}
+          >
+            {site.data && <SiteLabel name={site.data.name} code={site.data.code} />}
+            {/* El código y las coordenadas son el MISMO dato del mismo GET: van
+                dentro del mismo marco. Fuera, el censo los contaba —con razón—
+                como dato de servidor pintado sin marco. */}
+            {site.data && (
+              <span className="bld__sub soc-mono">
+                {site.data.code} · {site.data.lat.toFixed(4)}, {site.data.lon.toFixed(4)}
+              </span>
+            )}
+          </StateFrame>
+        </div>
+        {/* El identificador de la URL no es dato de servidor: existe antes de
+            preguntar y no envejece. Por eso vive fuera del marco. */}
         <p className="bld__sub soc-mono">
           <span>{siteId}</span>
-          {site.data && (
-            <span>
-              {" · "}
-              {site.data.code} · {site.data.lat.toFixed(4)}, {site.data.lon.toFixed(4)}
-            </span>
-          )}
         </p>
       </header>
 
@@ -127,6 +160,7 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
             onRetry={metrics.refetch}
             empty={metrics.points.length === 0}
             emptyText="SIN MÉTRICAS EN EL RANGO"
+            staleSince={metricsStale}
           >
             <HistoryChart
               points={metrics.points}
@@ -142,25 +176,43 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
           <header className="bld__cardhd">
             <h2>SALUD DEL GABINETE</h2>
           </header>
-          {/* Sin frame todavía ⇒ S/D. Nunca se inventa salud (regla de oro 10). */}
-          <dl className="bld__soh soc-mono">
-            <div>
-              <dt>NTP OFFSET</dt>
-              <dd>
-                {soh?.ntp_offset_ms != null
-                  ? `±${Math.abs(soh.ntp_offset_ms).toFixed(0)} ms`
-                  : "S/D"}
-              </dd>
-            </div>
-            <div>
-              <dt>LAG SEEDLINK</dt>
-              <dd>{soh?.seedlink_lag_s != null ? `${soh.seedlink_lag_s.toFixed(1)} s` : "S/D"}</dd>
-            </div>
-            <div>
-              <dt>ALIMENTACIÓN</dt>
-              <dd>{soh?.power_status ?? "S/D"}</dd>
-            </div>
-          </dl>
+          {/* [T-6.06] Con marco. El `?? "S/D"` seguía siendo correcto —nunca se
+              inventa salud— pero no decía NADA sobre la edad del latido, y una
+              salud de hace dos horas se pintaba idéntica a una de hace un
+              segundo: el defecto que la regla de oro 7 cerró en el panel del
+              gabinete y aquí seguía abierto. La ausencia se dice como lo que es,
+              una afirmación sobre nuestro conocimiento: no ha llegado latido. */}
+          <StateFrame
+            label="SALUD DEL GABINETE"
+            loading={false}
+            // El latido llega por el canal live, empujado: no hay petición que
+            // pueda fallar aquí. Que el canal esté caído lo declara la consola.
+            error={null}
+            empty={soh === null}
+            emptyText="SIN LATIDO DEL GABINETE EN ESTA SESIÓN"
+            staleSince={sohStale}
+          >
+            <dl className="bld__soh soc-mono">
+              <div>
+                <dt>NTP OFFSET</dt>
+                <dd>
+                  {soh?.ntp_offset_ms != null
+                    ? `±${Math.abs(soh.ntp_offset_ms).toFixed(0)} ms`
+                    : "S/D"}
+                </dd>
+              </div>
+              <div>
+                <dt>LAG SEEDLINK</dt>
+                <dd>
+                  {soh?.seedlink_lag_s != null ? `${soh.seedlink_lag_s.toFixed(1)} s` : "S/D"}
+                </dd>
+              </div>
+              <div>
+                <dt>ALIMENTACIÓN</dt>
+                <dd>{soh?.power_status ?? "S/D"}</dd>
+              </div>
+            </dl>
+          </StateFrame>
         </div>
 
         <SirenTestPanel siren={siren} canTest={me?.allowed_actions.siren_test === true} />

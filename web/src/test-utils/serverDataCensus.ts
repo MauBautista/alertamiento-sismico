@@ -110,6 +110,8 @@ export interface MarcoDeEstado {
   linea: number;
   /** Entradas de las cuatro que NO están cableadas. */
   faltan: string[];
+  /** [T-6.06] Declara `silentEmpty`: su ausencia fresca no se pinta. */
+  silencioso: boolean;
 }
 
 export interface ComponenteConDato {
@@ -135,6 +137,14 @@ export interface Censo {
   marcos: MarcoDeEstado[];
   /** `fichero:línea` donde se materializa `data-state` fuera de StateFrame.tsx. */
   dataStateForaneo: string[];
+  /**
+   * [T-6.06] Marcos que declaran `silentEmpty`: su ausencia FRESCA se
+   * materializa pero no se pinta. Es legítimo —una franja de escena sin escena
+   * no dibuja nada— y es también la única forma de que un marco pase el e2e de
+   * «nunca una caja en blanco» sin decir nada, así que quiénes lo usan se
+   * compara por igualdad en `serverDataCensus.test.ts`.
+   */
+  silenciosos: string[];
 }
 
 /* =====================================================================
@@ -436,6 +446,7 @@ export function censar(fuentes: FuenteEntrada[], opts: OpcionesCenso): Censo {
             clave: `${rel}#${nombre}`,
             linea: linea(abre),
             faltan: CUATRO_ENTRADAS.filter((x) => !nombres.includes(x)),
+            silencioso: nombres.includes("silentEmpty"),
           });
         }
         for (const a of props) {
@@ -571,6 +582,10 @@ export function censar(fuentes: FuenteEntrada[], opts: OpcionesCenso): Censo {
     sitios,
     marcos: marcos.filter((f) => f.faltan.length > 0),
     dataStateForaneo,
+    silenciosos: marcos
+      .filter((f) => f.silencioso)
+      .map((f) => f.clave)
+      .sort(),
   };
 }
 

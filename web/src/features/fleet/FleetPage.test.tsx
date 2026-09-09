@@ -316,6 +316,7 @@ describe("FleetPage", () => {
   it("flota vacía muestra el empty propio", () => {
     mocks.useFleet.mockReturnValue(fleetData());
     render(<FleetPage />);
+    // [T-6.06] Ámbito derivado del alcance; sin alcance impuesto, el tenant.
     expect(screen.getByText("SIN GABINETES REGISTRADOS EN EL TENANT")).toBeInTheDocument();
   });
 
