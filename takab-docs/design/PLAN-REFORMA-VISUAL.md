@@ -742,7 +742,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - [ ] La fila nueva lleva `NUEVO` N segundos aunque no haya animación; `AlertBanner` no cambia ni una línea.
   - [ ] Cero `transition: all` y cero literales de duración en las hojas de la consola.
 
-### [ ] T-6.11 · **El aviso de privacidad es una franja, no un panel** — `SOFTWARE`
+### [x] T-6.11 · **El aviso de privacidad es una franja, no un panel** — `SOFTWARE`
 
 > Ocupa unos 170 px en todas las pantallas hasta aceptarlo y a 1280×800 deja el mapa en su piso;
 > dos e2e de layout lo miden y fallan hoy. Es lo primero que ve un cliente en la demo.
@@ -755,9 +755,44 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no; hace pasar dos e2e que hoy fallan (`layout.spec.ts:70`, `:108`).
 - **Objetivo:** una sola línea con el rótulo, la versión y dos acciones; el texto largo en el modal que ya existe. Sigue siendo no bloqueante y no modal (`T-2.79`).
 - **Criterios de aceptación:**
-  - [ ] A 1280×800 con el banner presente, el mapa mide más que su piso.
-  - [ ] El banner no crece más de una fila en ningún viewport de la matriz.
-  - [ ] `layout.spec.ts` «el banner de privacidad es una FRANJA» en verde.
+  - [x] A 1280×800 con el banner presente, el mapa mide más que su piso.
+  - [x] El banner no crece más de una fila en ningún viewport de la matriz.
+  - [x] `layout.spec.ts` «el banner de privacidad es una FRANJA» en verde.
+- **Cómo se cerró (2026-09-09, SESIÓN C11):**
+  - **Medido antes de tocar nada, que es de donde sale el diseño.** El bloque medía **164 px** y se
+    los cobraba al mapa uno a uno: a 1280×800 el escenario pasaba de 445 px sin banner a **269**
+    con él —por debajo de su piso de 280—, y a 1440×900 de 455 a 279. No era una impresión: la
+    fila del aviso en la reja del shell medía 176.23 px en los tres viewports.
+  - **La franja es una línea, y por construcción.** Se queda a la vista lo que hay que poder leer
+    sin pulsar nada: el estado (el título ya distingue los cuatro), qué aviso y de quién, el sello
+    de TEXTO PROVISIONAL cuando lo es, **que NO bloquea la operación** —esa promesa no se esconde—
+    y las acciones. La explicación larga y el texto del aviso encabezan el cuerpo desplegable, que
+    ya existía. `flex-wrap: nowrap` con el nombre del aviso recortándose con puntos suspensivos (y
+    su `title` con el texto entero): que quepa no depende de que hoy los textos sean cortos.
+  - **Resultado, medido en el navegador:** la franja pasa de 164 a **32 px** en los tres viewports
+    y el mapa sube a **405 px a 1280×800** (era 269) y **415 a 1440×900** (era 279). El aviso le
+    cuesta al mapa 40 px en vez de 176.
+  - **Dos defectos que solo aparecieron al medir el rediseño.** El rótulo `TEXTO PROVISIONAL` se
+    pasaba por dos píxeles del ancho de su propia caja y **se partía en dos líneas**: 32 px que se
+    llevaban por delante la franja entera (por eso a 1280 medía 42 y a 1440, 32). Y con `nowrap` la
+    caja medía **1376 px de ancho en una ventana de 1280**: un item de reja no baja de su contenido
+    sin `min-width: 0`, así que la consola ganaba scroll horizontal — lo caza
+    `layout.spec.ts` «sin desborde horizontal», que sigue en verde.
+  - **Guardas.** `layoutInvariants.test.ts` gana el invariante de la línea única (la caja es `flex`
+    con `nowrap`, y el nombre del aviso declara `min-width: 0` + `overflow: hidden` +
+    `text-overflow: ellipsis`; sin lo primero el recorte no llega a pasar). El invariante del
+    margen deja de clavar `12px` y pasa a exigir que la separación EXISTA y venga sólo por abajo:
+    el hueco es parte de lo que la franja le cobra al mapa y esta ficha lo bajó a 8 px con esa
+    cuenta delante; clavar el número convertía una medida de diseño en un contrato.
+  - **Verificación:** web 2 185 tests, `tsc`, `eslint`, `prettier` y `build` limpios. En el
+    navegador, `layout.spec.ts` **«el mapa conserva su alto»** y **«el banner de privacidad es una
+    FRANJA»** en verde en los tres viewports —los dos que la auditoría midió fallando— y 138
+    aserciones de `layout` + `screens` en verde.
+  - **Lo que sigue rojo y NO es de esta ficha:** `layout.spec.ts:19` (la pila de alertas se solapa
+    con las leyendas del mapa, 73 080 px²) y `screens.spec.ts:508` (la franja de alerta tapa los
+    cuatro botones de capas del mapa). Los dos fallan igual en `main` sin este cambio —comprobado
+    con el árbol limpio en la verificación de T-6.06— y ninguna ficha los nombra todavía: son dos
+    solapamientos sobre el mapa, de la familia de esta ficha pero con causa propia.
 
 ### [ ] T-6.14 · **El flujo alerta → dictamen no pierde el contexto** — `SOFTWARE`
 

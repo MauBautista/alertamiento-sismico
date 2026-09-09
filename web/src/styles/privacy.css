@@ -72,28 +72,48 @@
 
 .privacy-banner {
   display: block;
-  margin: 0 0 12px;
+  /* Un item de reja NO baja de su contenido sin esto (`min-width: auto` es el
+     default), y con la franja en `nowrap` su contenido mide más que la ventana:
+     medido a 1280×800, la caja salía 1376 px de ancha y la consola ganaba
+     scroll horizontal. Con `0`, quien cede es el nombre del aviso, que para eso
+     lleva sus puntos suspensivos. */
+  min-width: 0;
+  /* [T-6.11] 8 px y no 12: el hueco entre la franja y la página es parte de lo
+     que el aviso le cobra al mapa, y a 1280×800 el escenario se juega volver
+     por encima de su piso en esa docena de píxeles. Lo vigila
+     `layoutInvariants.test.ts`, que exige que la separación EXISTA. */
+  margin: 0 0 8px;
 }
 
+/* [T-6.11] UNA LÍNEA, y por construcción: `nowrap` + los textos que se recortan
+   con puntos suspensivos. Antes era un bloque apilado —cabecera, dos párrafos y
+   dos filas de botones— de 164 px que salían enteros del alto del mapa: medido a
+   1280×800, el escenario pasaba de 445 px a 269, por debajo de su piso de 280.
+   El texto largo no se pierde: se despliega. */
 .privacy-banner__box {
+  align-items: center;
+  background: var(--tk-surface-2);
   border: 1px solid var(--tk-border);
   border-left: 3px solid var(--tk-status-warning);
   border-radius: 8px;
-  background: var(--tk-surface-2);
-  padding: 12px 14px;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-height: 32px;
+  padding: 4px 12px;
+}
+
+/* Con el cuerpo desplegado deja de ser una línea, y eso es a petición de la
+   persona: el estado plegado es el que tiene que caber en una franja. */
+.privacy-banner__box:has(.privacy-banner__body) {
+  align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 /* El consentimiento retirado no es "un aviso pendiente": es una decisión
  * expresa del titular, y la consola no la pinta como si fuera un despiste. */
 .privacy-banner__box[data-consent-state="withdrawn"] {
   border-left-color: var(--tk-fg-3);
-}
-
-.privacy-banner__hd {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 10px;
 }
 
 .privacy-banner__tag {
@@ -104,16 +124,26 @@
 
 .privacy-banner__title {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
+/* El que cede espacio cuando la ventana es estrecha: el nombre del aviso se
+   recorta, el estado y las acciones no. */
 .privacy-banner__version {
   color: var(--tk-fg-2);
   font-size: 12px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+/* `nowrap`: con el tracking de 1 px el rótulo se pasaba por dos píxeles del
+   ancho de su propia caja y se partía en dos líneas — 32 px de alto que se
+   llevaban por delante la franja entera (medido a 1280×800). */
 .privacy-banner__provisional {
   border: 1px dashed var(--tk-status-warning);
   border-radius: 4px;
@@ -121,19 +151,21 @@
   font-size: 11px;
   letter-spacing: 1px;
   padding: 1px 6px;
+  white-space: nowrap;
 }
 
-.privacy-banner__why,
-.privacy-banner__nonblocking {
+.privacy-banner__why {
   color: var(--tk-fg-2);
   font-size: 13px;
   line-height: 1.45;
-  margin: 8px 0 0;
+  margin: 0 0 10px;
 }
 
+/* En la línea, corta y sin envolver: es una promesa, no un párrafo. */
 .privacy-banner__nonblocking {
   color: var(--tk-fg-3);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .privacy-banner__toggle {
@@ -141,16 +173,18 @@
   border: none;
   color: var(--tk-cyan);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 1px;
-  margin-top: 8px;
   padding: 0;
   text-decoration: underline;
+  white-space: nowrap;
 }
 
+/* El cuerpo desplegado ocupa la línea entera por debajo de la franja. */
 .privacy-banner__body {
   border-top: 1px solid var(--tk-border);
-  margin-top: 10px;
+  flex-basis: 100%;
+  margin-top: 8px;
   max-height: 40vh;
   overflow-y: auto;
   padding-top: 10px;
@@ -172,21 +206,24 @@
   margin: 0;
 }
 
+/* Pegadas a la derecha de la franja: el `auto` empuja, no hace falta un hueco
+   elástico aparte. */
 .privacy-banner__actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
+  flex-wrap: nowrap;
+  gap: 8px;
+  margin-left: auto;
 }
 
 .privacy-banner__accept,
 .privacy-banner__withdraw {
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 1px;
-  padding: 7px 14px;
+  padding: 4px 10px;
+  white-space: nowrap;
 }
 
 .privacy-banner__accept {
@@ -207,8 +244,11 @@
   opacity: 0.6;
 }
 
+/* Un fallo al registrar la decisión rompe la línea a propósito: es lo único de
+   este banner que el operador tiene que leer entero sin desplegar nada. */
 .privacy-banner__err {
   color: var(--tk-status-critical);
+  flex-basis: 100%;
   font-size: 12px;
-  margin: 10px 0 0;
+  margin: 6px 0 0;
 }

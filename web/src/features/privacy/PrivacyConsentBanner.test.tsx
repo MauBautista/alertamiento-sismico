@@ -152,7 +152,15 @@ describe("PrivacyConsentBanner", () => {
     );
     const textoStale = b.textContent ?? "";
     expect(textoStale).not.toBe(textoMissing);
-    expect(textoStale).toContain("Su consentimiento anterior se conserva");
+    // [T-6.11] La franja plegada distingue los dos estados por su TÍTULO; la
+    // explicación larga vive en el cuerpo, a un clic. Se comprueban las dos
+    // cosas: que la línea no los confunda y que el porqué siga estando.
+    expect(textoStale).toContain("EL AVISO DE PRIVACIDAD CAMBIÓ");
+    expect(textoMissing).toContain("ACEPTE EL AVISO DE PRIVACIDAD");
+    fireEvent.click(screen.getByText("LEER EL AVISO COMPLETO"));
+    expect(screen.getByTestId("privacy-body").textContent).toContain(
+      "Su consentimiento anterior se conserva",
+    );
   });
 
   /**
