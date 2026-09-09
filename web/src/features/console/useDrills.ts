@@ -100,9 +100,10 @@ export function useDrillReport(): DrillReportData {
         }
         return data;
       } catch (err) {
-        // Sin esto el operador se queda un `about:blank` huérfano delante y
-        // ningún mensaje: parecería que la exportación salió bien.
-        vars.pending.cancel();
+        // [T-6.16] La pestaña reservada DECLARA el fallo. Antes se cerraba sola,
+        // y una pestaña que aparece y desaparece no le dice nada a quien acaba
+        // de pulsar EXPORTAR: parecería que la exportación salió bien.
+        vars.pending.fail(err instanceof Error ? err.message : "error desconocido");
         throw err;
       }
     },

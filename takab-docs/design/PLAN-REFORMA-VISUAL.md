@@ -243,7 +243,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     el panel lo pintará cuando le toque su sesión. Y `T-6.19` (la app cuenta gabinetes) ya tiene
     el dato en el contrato.
 
-### [ ] T-6.16 · **El reporte de simulacro se puede entregar a Protección Civil** — `SOFTWARE`
+### [x] T-6.16 · **El reporte de simulacro se puede entregar a Protección Civil** — `SOFTWARE`
 
 > El PDF se titula con el UUID del cliente, no dice cómo terminó el simulacro y no explica por qué
 > faltó cada acuse; la consola sí distingue `rejected` de `pending`. `T-5.14` ya puso tiempos y
@@ -257,10 +257,45 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** cabecera con el nombre del cliente y del sitio, línea de cierre (`stop_reason` legible: manual, ventana cumplida, cancelado, abortado por alerta real) y, por cada sitio sin acuse, la causa que la consola ya conoce.
 - **Criterios de aceptación:**
-  - [ ] El PDF nombra cliente y sitios; jamás imprime un UUID donde hay nombre.
-  - [ ] Imprime cómo terminó y, por sitio, `rechazado` / `sin gabinete comandable` / `sin acuse`.
-  - [ ] Dos PDFs del mismo modelo producen los mismos bytes (test existente sigue verde).
-  - [ ] La pestaña reservada al exportar muestra el documento o un error legible; nunca queda en blanco.
+  - [x] El PDF nombra cliente y sitios; jamás imprime un UUID donde hay nombre.
+  - [x] Imprime cómo terminó y, por sitio, `rechazado` / `sin gabinete comandable` / `sin acuse`.
+  - [x] Dos PDFs del mismo modelo producen los mismos bytes (test existente sigue verde).
+  - [x] La pestaña reservada al exportar muestra el documento o un error legible; nunca queda en blanco.
+- **Cómo se cerró (2026-09-09, SESIÓN X2):**
+  - **El documento lleva nombres.** La cabecera se titulaba con el uuid del cliente y cada sitio sin
+    nombre salía como ocho caracteres de su uuid —que se leen como si fueran un nombre—. Ahora el
+    nombre sale de `tenants`/`sites` y, si falta, se cae al **código** (lo que el operador teclea y
+    reconoce); solo si no hay ninguno de los dos se rotula «SITIO SIN NOMBRE REGISTRADO (…)» con el
+    identificador para poder buscarlo. La consulta del nombre del cliente va aparte y no como JOIN
+    en `_DRILL_COLS`, que la comparten cinco endpoints que no lo necesitan.
+  - **Dice cómo terminó.** Línea `CIERRE` con `stop_reason` en castellano —detenido por el
+    operador, abortado por una alerta real (con su motivo), cancelado antes de ejecutarse, agenda
+    ejecutada, cerrado sin motivo registrado— y, sin cerrar, la ventana que corre desde el inicio.
+    **No mira el reloj**, y eso no es un detalle: decir «en curso» o «ventana cumplida» según la
+    hora de quien exporta daría bytes distintos en dos exportaciones del mismo simulacro y el
+    sha256 registrado dejaría de probar nada.
+  - **Y dice por qué faltó cada acuse.** El documento colapsaba los tres casos en un guion mientras
+    la consola sí los distinguía. Ahora: `RECHAZADO POR EL GABINETE — <la razón que él mismo dio>`
+    (el `detail` del acuse: `command_enabled=false`, `demo_mode`…), `EXPIRADO — la orden venció`,
+    `SIN ACUSE — la orden salió y el gabinete no contestó` y `SIN GABINETE COMANDABLE — no había a
+    quién mandarle la orden`. Un rechazo es accionable y un silencio no: reaccionar igual a los dos
+    es no haber leído el reporte.
+  - **El sitio que acusó y luego abortó lo dice en su línea** (T-6.17): cuenta como acuse —lo fue— y
+    debajo lleva `ABORTADO hh:mm:ss UTC — motivo`.
+  - **La pestaña reservada ya no es un `about:blank`.** Se reserva dentro del gesto porque la URL
+    presignada no existe todavía, y se quedaba en blanco los ~10 s que tarda el servidor en generar,
+    sellar y firmar: una pestaña vacía que aparece sola no se distingue de un fallo y quien la ve la
+    cierra. Ahora escribe la espera al reservarse y, si la petición falla, **esa misma pestaña
+    declara el motivo** en vez de cerrarse de golpe. Vale para el reporte y para el dictamen, que
+    tenían el mismo hueco.
+  - **Medido:** PDF de ejemplo con los cinco casos (acuse, acuse+aborto, rechazo con razón, silencio
+    y sin gabinete) rasterizado y revisado a ojo; de paso se corrigió un rótulo que no cabía en la
+    columna de 52 mm y pegaba el número al texto («SITIOS SIN GABINETE COMANDABLE» → «SITIOS SIN
+    GABINETE»; la categoría se explica entera en la línea de cada sitio).
+  - **Verificación:** `tests/api/test_drill_report.py` con 29 (8 nuevos, incluido el del endpoint
+    que intercepta el render para leer el MODELO — el texto del PDF no se puede raspar: va
+    comprimido y por glifos); los 4 ficheros de simulacros del `api`, 77; web 2 170, con 7 nuevos
+    de `download.test.ts`; `ruff` y `prettier` limpios.
 
 ### [x] T-6.18 · **Los dos arneses vuelven a ejercer lo que prometen** — `SOFTWARE`
 

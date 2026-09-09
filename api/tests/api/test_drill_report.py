@@ -28,8 +28,18 @@ from moto import mock_aws
 from sqlalchemy import text
 
 import auth_utils as au
+from seed_shared import SITE_NAME, TENANT_NAME
 from takab_api.db.engine import get_engine
-from takab_api.drill_report import ReporteSimulacro, SitioReporte, linea_de_audio, render
+from takab_api.drill_report import (
+    ReporteSimulacro,
+    SitioReporte,
+    linea_de_aborto,
+    linea_de_audio,
+    linea_de_cierre,
+    motivo_sin_acuse,
+    nombre_presentable,
+    render,
+)
 from takab_api.main import create_app
 from takab_api.routers.commands import get_publisher
 from takab_api.routers.drills import router as drills_router
@@ -44,6 +54,9 @@ from tests.api.test_commands_router import (  # noqa: F401  (fixtures por nombre
 BUCKET = "takab-dev-evidence"
 _REGION = "us-east-2"
 BASE = datetime(2026, 9, 2, 18, 0, tzinfo=UTC)
+
+#: Un uuid de sitio cualquiera, para el caso «sin nombre y sin código».
+UUID_SITIO = "d1000000-0000-0000-0000-000000000009"
 
 
 @pytest.fixture
@@ -281,3 +294,165 @@ def test_el_PDF_sigue_siendo_DETERMINISTA_con_el_audio_dentro() -> None:
     """La huella del reporte solo prueba algo si dos renders coinciden."""
     r = _rep(SitioReporte("A", True, True, 12.0, audio=AUDIO_OK))
     assert render(r) == render(_rep(SitioReporte("A", True, True, 12.0, audio=AUDIO_OK)))
+
+
+# ── [T-6.16] PRESENTABLE ANTE PROTECCIÓN CIVIL ─────────────────────────────
+#
+# Lo que faltaba para poder entregarlo: el documento se titulaba con el UUID del
+# cliente, no decía CÓMO TERMINÓ el simulacro y, por cada sitio sin acuse, no
+# decía POR QUÉ — cuando la consola sí distingue un rechazo de un silencio.
+#
+# Se prueban las LÍNEAS, no los bytes del PDF: rasparlas del binario probaría el
+# renderizador, no el enunciado (misma disciplina que T-5.17).
+
+
+def test_jamas_se_imprime_un_UUID_donde_hay_NOMBRE() -> None:
+    """Un reporte con `d1000000-…` en la cabecera no se entrega a nadie."""
+    assert nombre_presentable("Torre Reforma", "TR-01", UUID_SITIO) == "Torre Reforma"
+    # Sin nombre, el CÓDIGO — que es lo que el operador teclea y reconoce.
+    assert nombre_presentable(None, "TR-01", UUID_SITIO) == "TR-01"
+    assert nombre_presentable("", "TR-01", UUID_SITIO) == "TR-01"
+
+
+def test_un_sitio_SIN_nombre_y_SIN_codigo_se_declara_como_tal() -> None:
+    """El uuid recortado se leía como si fuera un nombre. Ahora se rotula.
+
+    No se inventa un nombre ni se deja el hueco: el documento dice que ese sitio
+    no tiene nombre registrado y da el identificador para poder buscarlo.
+    """
+    linea = nombre_presentable(None, None, UUID_SITIO)
+    assert "SIN NOMBRE" in linea.upper()
+    assert UUID_SITIO[:8] in linea, "sin el identificador, el sitio no se puede buscar"
+
+
+@pytest.mark.parametrize(
+    ("stop_reason", "stopped", "esperado"),
+    [
+        ("manual", True, "DETENID"),
+        ("aborted", True, "ABORTAD"),
+        ("cancelled", True, "CANCELAD"),
+        ("executed", True, "EJECUTAD"),
+        (None, True, "SIN MOTIVO REGISTRADO"),
+        (None, False, "SIN CERRAR"),
+    ],
+)
+def test_la_linea_de_cierre_dice_COMO_TERMINO(stop_reason, stopped, esperado) -> None:
+    """Un reporte que no dice cómo terminó el simulacro no acredita nada."""
+    rep = _rep()
+    rep.stop_reason = stop_reason
+    rep.stopped_at = BASE + timedelta(minutes=5) if stopped else None
+    assert esperado in linea_de_cierre(rep).upper()
+
+
+def test_el_cierre_por_ALERTA_REAL_lleva_su_motivo() -> None:
+    """«Abortado» sin el porqué obliga a preguntar; con él, no."""
+    rep = _rep(
+        SitioReporte(
+            "A",
+            True,
+            True,
+            12.0,
+            aborted_at=BASE + timedelta(minutes=1),
+            abort_reason="tier instrumental restricted",
+        )
+    )
+    rep.stop_reason = "aborted"
+    linea = linea_de_cierre(rep)
+    assert "ALERTA REAL" in linea.upper()
+    assert "tier instrumental restricted" in linea
+
+
+def test_la_linea_de_cierre_NO_MIRA_EL_RELOJ() -> None:
+    """Determinismo: si dijera «en curso» vs «ventana cumplida» según la hora,
+    dos exportaciones del mismo simulacro darían bytes distintos y la huella
+    dejaría de probar nada."""
+    rep = _rep()
+    rep.stop_reason = None
+    rep.stopped_at = None
+    assert linea_de_cierre(rep) == linea_de_cierre(rep)
+    assert str(rep.duration_s) in linea_de_cierre(rep)
+
+
+def test_el_motivo_del_NO_ACUSE_distingue_el_rechazo_del_silencio() -> None:
+    """La consola ya lo distinguía; el documento los colapsaba en un guion.
+
+    Un RECHAZO es un gabinete que recibió la orden, verificó la firma y dijo que
+    no —y su razón se puede arreglar—; un SILENCIO es un gabinete que no
+    contestó. Reaccionar igual a los dos es no haber leído el reporte.
+    """
+    rechazado = SitioReporte(
+        "A", True, False, None, command_status="rejected", ack_detail="command_enabled=false"
+    )
+    assert "RECHAZ" in motivo_sin_acuse(rechazado).upper()
+    assert "command_enabled=false" in motivo_sin_acuse(rechazado)
+
+    expirado = SitioReporte("B", True, False, None, command_status="expired")
+    assert "EXPIR" in motivo_sin_acuse(expirado).upper()
+
+    callado = SitioReporte("C", True, False, None, command_status="pending")
+    assert "SIN ACUSE" in motivo_sin_acuse(callado).upper()
+
+    sin_gabinete = SitioReporte("D", False, False, None, command_status=None)
+    assert "COMANDABLE" in motivo_sin_acuse(sin_gabinete).upper()
+
+
+def test_un_sitio_que_acuso_y_luego_ABORTO_lo_dice_en_su_linea() -> None:
+    """Acusó (cuenta como acuse) y después cortó el simulacro: las dos cosas."""
+    s = SitioReporte(
+        "A",
+        True,
+        True,
+        12.0,
+        aborted_at=BASE + timedelta(minutes=1),
+        abort_reason="SASMEX real",
+    )
+    r = _rep(s)
+    assert [x.site_name for x in r.acusaron] == ["A"], "abortar no borra que acusó"
+    assert "ABORT" in linea_de_aborto(s).upper()
+    assert "SASMEX real" in linea_de_aborto(s)
+    assert linea_de_aborto(SitioReporte("B", True, True, 1.0)) == ""
+
+
+def test_el_PDF_sigue_siendo_DETERMINISTA_con_el_cierre_y_los_motivos() -> None:
+    def modelo() -> ReporteSimulacro:
+        r = _rep(
+            SitioReporte("A", True, True, 12.0, aborted_at=BASE, abort_reason="SASMEX real"),
+            SitioReporte("B", True, False, None, command_status="rejected", ack_detail="demo_mode"),
+            SitioReporte("C", False, False, None),
+        )
+        r.stop_reason = "aborted"
+        return r
+
+    assert render(modelo()) == render(modelo())
+
+
+async def test_el_documento_lleva_el_NOMBRE_del_cliente_y_del_sitio(
+    client, gateway, publisher, monkeypatch
+):
+    """El endpoint completo: lo que llega al modelo es el nombre, no el UUID.
+
+    Se intercepta el render para leer el MODELO. Raspar el texto del PDF no es
+    posible —va comprimido y por glifos— y probaría el renderizador, no que la
+    consulta trajo el nombre.
+    """
+    capturado: dict[str, ReporteSimulacro] = {}
+
+    def espia(rep: ReporteSimulacro) -> bytes:
+        capturado["rep"] = rep
+        return render(rep)
+
+    monkeypatch.setattr("takab_api.routers.drills.render_drill_report", espia)
+
+    with mock_aws():
+        _bucket()
+        did = await _simulacro(client, publisher)
+        r = await client.post(f"/drills/{did}/report", headers=_token())
+        assert r.status_code == 201, r.text
+
+    rep = capturado["rep"]
+    assert rep.tenant_name == TENANT_NAME, "la cabecera sigue llevando el UUID del cliente"
+    assert au.DB_TENANT_PRIV not in rep.tenant_name
+    assert [s.site_name for s in rep.sitios] == [SITE_NAME]
+    # Y el estado crudo del comando viaja: sin él no se puede decir POR QUÉ.
+    assert rep.sitios[0].command_status == "pending"
+    assert rep.stop_reason is None

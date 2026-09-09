@@ -23,6 +23,12 @@ class DetailRequestError extends Error {
   }
 }
 
+/** [T-6.16] El motivo que se escribe EN la pestaña reservada. Un objeto sin
+ *  mensaje no se le enseña a nadie: se traduce a una frase. */
+function _motivo(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : "el servidor no devolvió el documento";
+}
+
 async function fetchDictamens(incidentId: string): Promise<DictamenOut[]> {
   const { data, response } = await listDictamensIncidentsIncidentIdDictamensGet({
     path: { incident_id: incidentId },
@@ -179,9 +185,9 @@ export function useIncidentDetail(
         }
         return data;
       } catch (err) {
-        // Cualquier fallo (503 sin bucket, red caída): cerrar la pestaña que se
-        // reservó, o el operador se queda con un `about:blank` huérfano delante.
-        pending.cancel();
+        // Cualquier fallo (503 sin bucket, red caída): la pestaña reservada lo
+        // DICE. Cerrarla dejaba al operador sin pestaña y sin explicación.
+        pending.fail(_motivo(err));
         throw err;
       }
     },
@@ -203,7 +209,7 @@ export function useIncidentDetail(
         }
         return data;
       } catch (err) {
-        vars.pending.cancel();
+        vars.pending.fail(_motivo(err));
         throw err;
       }
     },
