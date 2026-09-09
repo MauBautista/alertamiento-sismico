@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   downloadEvidenceEvidenceEvidenceIdDownloadPost: vi.fn(),
   // La pestaña se RESERVA en el gesto y se navega cuando llega la URL.
   resolve: vi.fn(),
-  cancel: vi.fn(),
+  fail: vi.fn(),
   openPendingDownload: vi.fn(),
 }));
 
@@ -51,7 +51,7 @@ beforeEach(() => {
   mocks.openPendingDownload.mockReturnValue({
     opened: true,
     resolve: mocks.resolve,
-    cancel: mocks.cancel,
+    fail: mocks.fail,
   });
   mocks.listDictamensIncidentsIncidentIdDictamensGet.mockResolvedValue(OK({ items: [DICTAMEN] }));
   mocks.listIncidentActionsIncidentsIncidentIdActionsGet.mockResolvedValue(OK([]));
@@ -130,7 +130,7 @@ describe("useIncidentDetail", () => {
     // onSuccess, el navegador ya habría consumido la activación del usuario.
     expect(mocks.openPendingDownload).toHaveBeenCalled();
     await waitFor(() => expect(mocks.resolve).toHaveBeenCalledWith("https://s3/report.pdf?sig=x"));
-    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.fail).not.toHaveBeenCalled();
   });
 
   it("descargar evidencia abre su presigned GET", async () => {
@@ -148,14 +148,17 @@ describe("useIncidentDetail", () => {
     await waitFor(() => expect(mocks.resolve).toHaveBeenCalledWith("https://s3/eq.mseed?sig=y"));
   });
 
-  it("un 503 al exportar se reporta y CIERRA la pestaña reservada (sin about:blank huérfano)", async () => {
+  it("un 503 al exportar se reporta Y LO DECLARA en la pestaña reservada", async () => {
+    // [T-6.16] Antes se cerraba la pestaña. Una que aparece y desaparece no le
+    // dice nada a quien acaba de pulsar el botón; ahora explica por qué.
     mocks.generateReportIncidentsIncidentIdReportPost.mockResolvedValue(FAIL(503));
     const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.generatePdf());
     await waitFor(() => expect(result.current.exportError).toMatch(/503/));
     expect(mocks.resolve).not.toHaveBeenCalled();
-    await waitFor(() => expect(mocks.cancel).toHaveBeenCalled());
+    await waitFor(() => expect(mocks.fail).toHaveBeenCalled());
+    expect(String(mocks.fail.mock.calls[0][0])).toMatch(/503/);
   });
 });
 

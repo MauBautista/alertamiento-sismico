@@ -95,7 +95,7 @@ beforeEach(() => {
   mocks.useDrillReport.mockReturnValue(exportar());
   mocks.openPendingDownload.mockReturnValue({
     resolve: vi.fn(),
-    cancel: vi.fn(),
+    fail: vi.fn(),
     opened: true,
   });
 });

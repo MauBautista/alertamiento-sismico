@@ -27,7 +27,7 @@ from takab_api.auth.matrix import roles_with_action
 from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher
 from takab_api.commands.service import issue_signed_command
-from takab_api.drill_report import ReporteSimulacro, SitioReporte
+from takab_api.drill_report import ReporteSimulacro, SitioReporte, nombre_presentable
 from takab_api.drill_report import render as render_drill_report
 from takab_api.routers._common import (
     clamp_limit,
@@ -770,6 +770,12 @@ async def cancel_drill(
 
 # ─────────────────────────────────────────────────── [T-5.14] el reporte
 
+# [T-6.16] El NOMBRE del cliente. La cabecera se titulaba con su uuid —un
+# documento que se entrega a Protección Civil con `d0000000-…` donde va el
+# nombre del cliente no se entrega—. Consulta aparte y no un JOIN en
+# `_DRILL_COLS`: esa lista la comparten cinco endpoints que no lo necesitan.
+_SELECT_TENANT_NAME = text("SELECT name, code FROM tenants WHERE tenant_id = CAST(:tenant AS uuid)")
+
 _INSERT_EVIDENCIA_DRILL = text(
     "INSERT INTO evidence_objects (tenant_id, drill_id, kind, s3_key, sha256) "
     "VALUES (CAST(:tenant AS uuid), CAST(:drill AS uuid), 'report_pdf', :key, :sha) "
@@ -804,22 +810,40 @@ async def drill_report(
     settings = Settings()
 
     sitios = (await _sites_of([{"drill_id": drill_id}], conn)).get(drill_id, [])
+    cliente = (
+        (await conn.execute(_SELECT_TENANT_NAME, {"tenant": str(row["tenant_id"])}))
+        .mappings()
+        .first()
+    )
     rep = ReporteSimulacro(
         folio=f"TKB-DRILL-{str(drill_id)[:8].upper()}",
-        tenant_name=str(row["tenant_id"]),
+        # Nombre, código y —solo si el cliente no tuviera ninguno de los dos— el
+        # uuid rotulado como lo que es.
+        tenant_name=nombre_presentable(
+            cliente["name"] if cliente else None,
+            cliente["code"] if cliente else None,
+            str(row["tenant_id"]),
+        ),
         drill_id=str(drill_id),
         started_at=row["started_at"],
         stopped_at=row["stopped_at"],
         duration_s=row["duration_s"],
         note=row["note"] or "",
+        stop_reason=row["stop_reason"],
         sitios=[
             SitioReporte(
-                site_name=s.site_name or str(s.site_id)[:8],
+                site_name=nombre_presentable(s.site_name, s.site_code, str(s.site_id)),
                 commandable=s.commandable,
                 acked=s.command_status == "acked",
                 latency_s=s.ack_latency_s,
                 # [T-5.17] Lo que sonó, del acuse del propio gabinete.
                 audio=s.audio,
+                # [T-6.16] El porqué del no-acuse: el estado crudo y, si el
+                # gabinete rechazó, la razón que él mismo dio.
+                command_status=s.command_status,
+                ack_detail=(s.ack or {}).get("detail") if isinstance(s.ack, dict) else None,
+                aborted_at=s.aborted_at,
+                abort_reason=s.abort_reason,
             )
             for s in sitios
         ],
