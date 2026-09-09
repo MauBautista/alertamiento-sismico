@@ -261,3 +261,31 @@ describe("DrillBanner", () => {
     expect(screen.queryByTestId("drill-armed")).toBeNull();
   });
 });
+
+describe("[T-6.10 · S3] la trama del banner DERIVA mientras la lectura es fresca", () => {
+  // El simulacro y la alerta real comparten forma de banner y se distinguen por
+  // color y por rótulo. El movimiento añade un tercer canal que NO es
+  // redundante: dice si lo que se está anunciando sigue siendo lo que el
+  // servidor afirma AHORA, o es lo último que se supo. Confirma; no informa.
+  it("con la lectura viva, la trama corre", () => {
+    pintar(drillData({ drill: DRILL }));
+    const banner = screen.getByTestId("drill-banner");
+    expect(banner.className).toContain("soc-drill--fresca");
+  });
+
+  it("con la lectura RETENIDA se congela, y el texto sigue diciéndolo", () => {
+    // La franja retenida ya la escribe `StateFrame`; la trama no la sustituye.
+    pintar(drillData({ drill: DRILL, readError: "503 upstream" }));
+    const banner = screen.getByTestId("drill-banner");
+    expect(banner.className).not.toContain("soc-drill--fresca");
+    expect(banner.className).toContain("soc-drill--on");
+    expect(document.body.textContent).toMatch(/RETENID/i);
+  });
+
+  it("el simulacro se sigue anunciando igual: la trama no se lleva ni una palabra", () => {
+    pintar(drillData({ drill: DRILL, readError: "503 upstream" }));
+    expect(screen.getByTestId("drill-banner").textContent).toMatch(
+      /SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL/,
+    );
+  });
+});

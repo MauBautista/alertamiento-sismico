@@ -96,6 +96,40 @@ test.describe("con movimiento reducido", () => {
     }
   });
 
+  test("[T-6.10] NINGUNA transición viva sobrevive a la preferencia", async ({ page }) => {
+    // Hasta esta ficha la reducción alcanzaba 2 de 18 transiciones. Se apagan
+    // poniendo a cero los TOKENS de duración, así que lo que hay que comprobar
+    // en un navegador es que esa anulación llega de verdad al valor computado —
+    // que es donde se rompería si alguien moviera el orden de los imports.
+    await devLogin(page);
+    await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+
+    const vivas = await page.evaluate(() => {
+      const sospechosos = [...document.querySelectorAll<HTMLElement>("*")];
+      return sospechosos
+        .map((el) => ({
+          sel: el.className?.toString().split(/\s+/)[0] ?? el.tagName,
+          dur: getComputedStyle(el).transitionDuration,
+        }))
+        .filter((x) => x.dur !== "" && !/^0s(,\s*0s)*$/.test(x.dur))
+        .slice(0, 12);
+    });
+    expect(vivas, `siguen animando bajo reducción: ${JSON.stringify(vivas)}`).toEqual([]);
+  });
+
+  test("[T-6.10] la barra del UPS SALTA al valor: un dato no llega deslizándose", async ({
+    page,
+  }) => {
+    // Era la única transición sobre un DATO y la que peor se llevaba con la
+    // reducción: un porcentaje de batería que se desliza es un número que
+    // tarda en ser cierto.
+    await devLogin(page);
+    await gotoScreen(page, "/fleet", "02 Flota Edge");
+    const fill = page.locator(".fleet-ups__fill").first();
+    if ((await fill.count()) === 0) return; // seed sin UPS reportado
+    expect(await fill.evaluate((el) => getComputedStyle(el).transitionDuration)).toBe("0s");
+  });
+
   test("el botón armado no parpadea (sigue siendo ámbar, que es lo que informa)", async ({
     page,
   }) => {
@@ -112,6 +146,19 @@ test.describe("con movimiento reducido", () => {
 
 test.describe("sin preferencia declarada", () => {
   test.use({ contextOptions: { reducedMotion: "no-preference" } });
+
+  test("[T-6.10] y las transiciones SÍ duran: el cero de arriba no es que no existan", async ({
+    page,
+  }) => {
+    // El mismo control negativo que el halo, para la mitad nueva del
+    // interruptor: sin esto, borrar todas las transiciones de la hoja dejaría
+    // el caso de reducción en verde.
+    await devLogin(page);
+    await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+    const tab = page.locator(".soc-nav__tab").first();
+    await expect(tab).toBeVisible();
+    expect(await tab.evaluate((el) => getComputedStyle(el).transitionDuration)).not.toBe("0s");
+  });
 
   test("el halo SÍ se anima: el interruptor de arriba no es un placebo", async ({ page }) => {
     // Sin este contraste, los tests de reducción pasarían igual si la animación

@@ -170,6 +170,10 @@ export default function DetailPanel({
     .sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts))[0];
   const liveFresh =
     features.lastFrameAt !== null && nowMs - features.lastFrameAt < FEATURES_STALE_MS;
+  // [T-6.10] Edad del último latido del gabinete en ms (la misma que pinta el
+  // renglón ÚLTIMO LATIDO), para el halo de las pills de enlace.
+  const latidoSegundos = heartbeatAge(link?.lastHeartbeatTs, nowMs).seconds;
+  const latidoMs = latidoSegundos === null ? null : latidoSegundos * 1000;
   const staleSince =
     !features.loading && !features.error && features.points.length > 0 && !liveFresh
       ? (features.lastFrameAt ?? features.points[features.points.length - 1].ts)
@@ -256,17 +260,22 @@ export default function DetailPanel({
                 </span>
               </div>
               <div className="soc-links">
+                {/* [T-6.10] La MISMA edad que la fila de arriba, para que el
+                    halo de la pill no pueda decir «llega ahora» sobre el latido
+                    que ese renglón acaba de fechar hace seis horas. */}
                 <LinkPill
                   kind={linkPillKind(link.state)}
                   label="MQTT RTT"
                   value={link.mqttRttMs !== null ? `${link.mqttRttMs.toFixed(0)} ms` : "S/D"}
                   icon={<Radio size={11} aria-hidden />}
+                  frameAgeMs={latidoMs}
                 />
                 <LinkPill
                   kind={linkPillKind(link.state)}
                   label="LAG SEEDLINK"
                   value={link.seedlinkLagS !== null ? `${link.seedlinkLagS.toFixed(1)} s` : "S/D"}
                   icon={<Activity size={11} aria-hidden />}
+                  frameAgeMs={latidoMs}
                 />
               </div>
               {link.reasons.length > 0 && (

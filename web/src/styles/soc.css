@@ -209,7 +209,7 @@ body {
   padding: 9px 12px;
   border-radius: 4px;
   cursor: pointer;
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease);
   display: inline-flex; align-items: center; gap: 6px;
 }
 .soc-nav__tab:hover { color: var(--tk-fg-1); }
@@ -297,7 +297,7 @@ body {
   content: ''; position: absolute; inset: -3px;
   border-radius: 999px;
   background: currentColor; opacity: 0.35;
-  animation: soc-pulse 1.6s var(--tk-ease) infinite;
+  animation: soc-pulse var(--tk-dur-pulse) var(--tk-ease) infinite;
 }
 @keyframes soc-pulse {
   0%   { transform: scale(0.6); opacity: 0.55; }
@@ -642,7 +642,7 @@ body {
   border-radius: 4px;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease), opacity var(--tk-dur-fast) var(--tk-ease);
   display: inline-flex; align-items: center; gap: 8px;
   /* [T-6.03] También se usa sobre un <Link> (la ficha del cliente → alta de estación). */
   text-decoration: none;
@@ -720,7 +720,7 @@ body {
   padding: 6px;
   border-radius: 4px;
   display: inline-flex; align-items: center; justify-content: center;
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease);
 }
 .soc-icon-btn:hover { color: var(--tk-cyan); background: var(--tk-cyan-08); }
 
@@ -1080,9 +1080,36 @@ body {
   font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
 }
 .soc-drill--on {
-  background: rgba(255, 193, 7, 0.14);
+  /* [T-6.10 · S3] La trama de galones es la CAPA de arriba; el tinte ámbar
+     sigue debajo y sin él el banner no diría nada. Forma y color primero: el
+     movimiento solo confirma. */
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      rgba(255, 193, 7, 0.16) 0 10px,
+      transparent 10px 20px
+    ),
+    rgba(255, 193, 7, 0.14);
   border: 1px solid var(--tk-status-warning);
   color: var(--tk-status-warning);
+}
+/* Deriva SOLO mientras la lectura de `/drills/active` sigue viva. Retenida, se
+   queda quieta: un banner que sigue corriendo sobre un dato viejo afirma que el
+   simulacro sigue sonando cuando lo único cierto es que dejamos de saberlo. */
+.soc-drill--fresca {
+  animation: soc-drill-weave var(--tk-dur-drill) var(--tk-ease-data) infinite;
+}
+@keyframes soc-drill-weave {
+  from {
+    background-position:
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      28.28px 0,
+      0 0;
+  }
 }
 /* En reposo el simulacro es una TIRA, no un panel: el mapa manda. */
 .soc-drill--idle { justify-content: flex-end; padding: 0; gap: 8px; }
@@ -1237,7 +1264,7 @@ body {
   font: 700 9px var(--tk-font-mono);
   letter-spacing: 0.08em;
   cursor: pointer;
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease);
 }
 .soc-map__layer-btn:hover {
   border-color: var(--tk-cyan);
@@ -1391,6 +1418,34 @@ body {
 }
 .soc-detail__deeplink:hover { text-decoration: underline; }
 
+/* [T-6.10 · W13] LA FILA QUE ACABA DE LLEGAR.
+   Dos canales, y el que manda es el rótulo: `NUEVO` sobrevive sin movimiento,
+   que es lo que ve quien tiene la reducción puesta. La entrada anima el
+   CONTENEDOR —un tinte de fondo que se retira— y jamás el contenido: el dato
+   está pintado y legible desde el primer frame. Una cifra que aparece
+   desvaneciéndose es una cifra que no se puede leer todavía. */
+.soc-table__nuevo {
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--tk-border-cyan);
+  border-radius: 3px;
+  font: 700 8.5px/1.3 var(--tk-font-ui);
+  letter-spacing: 0.14em;
+  color: var(--tk-cyan);
+  vertical-align: middle;
+}
+.soc-table__row--nueva {
+  animation: soc-row-in var(--tk-dur-row-in) var(--tk-ease) 1;
+}
+@keyframes soc-row-in {
+  from {
+    background-color: var(--tk-cyan-15);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
 /* =====================================================================
    [T-2.47] prefers-reduced-motion — un INTERRUPTOR, no una sugerencia
    =====================================================================
@@ -1403,19 +1458,39 @@ body {
    [T-2.55] Cae `.soc-cctv__live::before` con el resto del reproductor CCTV del
    mockup: no había nada que apagar. */
 @media (prefers-reduced-motion: reduce) {
+  /* [T-6.10] EL INTERRUPTOR SE DERIVA, no se enumera.
+     Aquí abajo vivía una lista de dos selectores con `transition: none`, y la
+     medición dijo lo que valía: cubría 2 de 18 transiciones. Enumerar no
+     escala porque el que se queda fuera no rompe nada — simplemente sigue
+     moviéndose.
+     Ahora la duración de TODA transición de estas hojas es un token (lo vigila
+     `motionInvariants.test.ts`), así que poner los tokens a cero apaga también
+     lo que nadie ha escrito todavía. Gana a `tokens.css` por ORDEN de import,
+     no por especificidad: una `@media` no añade ninguna (T-2.59). */
+  :root {
+    --tk-dur-fast: 0ms;
+    --tk-dur-base: 0ms;
+    --tk-dur-slow: 0ms;
+    /* La que más importa de las cinco: la barra de carga del UPS era la única
+       transición sobre un DATO, y bajo reducción seguía deslizándose. Un
+       porcentaje de batería que llega tarde a propósito es la regla de oro 7
+       con otra ropa. A cero salta al valor final. */
+    --tk-dur-data: 0ms;
+    --tk-dur-row-in: 0ms;
+  }
+  /* Los keyframes no los alcanza el token: con `infinite` y duración cero
+     algunos motores se quedan en el PRIMER frame en vez de en el reposo. Se
+     apagan por selector, y a cada uno se le fija su reposo — apagarlo bien es
+     que siga leyéndose como estado, no que desaparezca. */
   .soc-dot--pulse::after,
-  .soc-confirm--armed {
+  .soc-confirm--armed,
+  .soc-drill--fresca,
+  .soc-table__row--nueva {
     animation: none !important;
   }
-  /* Sin la animación, el halo del punto se quedaría congelado a media escala:
-     se fija en su estado de reposo para que siga leyéndose como un halo. */
   .soc-dot--pulse::after {
     transform: scale(1);
     opacity: 0.35;
-  }
-  .soc-map__layer-btn,
-  .soc-kpis__filter {
-    transition: none;
   }
 }
 

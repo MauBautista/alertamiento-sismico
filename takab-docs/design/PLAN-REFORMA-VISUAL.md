@@ -833,7 +833,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     **376 px con los cambios y 376 sin ellos**, y las mismas cuatro pruebas en rojo. Los tres siguen
     sin ficha, igual que los dos de siempre.
 
-### [ ] T-6.10 · **Movimiento honesto: se detiene, se declara y se apaga** — `SOFTWARE`
+### [x] T-6.10 · **Movimiento honesto: se detiene, se declara y se apaga** — `SOFTWARE`
 
 > `prefers-reduced-motion` apaga los dos keyframes y 2 de 18 transiciones; la barra del UPS anima
 > un dato bajo reducción; el latido de `LinkPill` late por `kind`, no por frescura; una fila nueva
@@ -847,10 +847,58 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `motion.spec.ts` gana casos (las transiciones bajo reducción) y `LinkPill` cambia su condición.
 - **Objetivo:** bajo reducción no queda ninguna transición viva; todo latido late por edad del dato y se congela al envejecer; una fila nueva se anuncia con rótulo `NUEVO` (portador) y entrada del contenedor con el dato ya pintado; el banner de simulacro gana una trama de galones que deriva mientras la lectura es fresca y se congela al retenerse; `transition: all` enumera propiedades; las duraciones usan el token.
 - **Criterios de aceptación:**
-  - [ ] Con `reduce`, `getComputedStyle(...).transitionDuration` es cero en los selectores hoy vivos y la barra del UPS salta al valor final.
-  - [ ] El latido de `LinkPill` se detiene cuando el último frame supera el umbral, con el texto de edad diciendo lo mismo.
-  - [ ] La fila nueva lleva `NUEVO` N segundos aunque no haya animación; `AlertBanner` no cambia ni una línea.
-  - [ ] Cero `transition: all` y cero literales de duración en las hojas de la consola.
+  - [x] Con `reduce`, `getComputedStyle(...).transitionDuration` es cero en los selectores hoy vivos y la barra del UPS salta al valor final.
+  - [x] El latido de `LinkPill` se detiene cuando el último frame supera el umbral, con el texto de edad diciendo lo mismo.
+  - [x] La fila nueva lleva `NUEVO` N segundos aunque no haya animación; `AlertBanner` no cambia ni una línea.
+  - [x] Cero `transition: all` y cero literales de duración en las hojas de la consola.
+- **Cómo se cerró (2026-09-09, SESIÓN C10):**
+  - **El interruptor dejó de ser una lista.** La reducción apagaba dos selectores escritos a mano y
+    por eso alcanzaba 2 de 18 transiciones: el que se queda fuera no rompe nada, simplemente sigue
+    moviéndose. Ahora la duración de TODA transición de las hojas es un token y el bloque de
+    `prefers-reduced-motion` **pone esos tokens a cero en un `:root`**, así que cubre también lo que
+    nadie ha escrito todavía. Gana a `tokens.css` por ORDEN de import, no por especificidad —una
+    `@media` no añade ninguna, lo aprendió T-2.59—, y hay un test que vigila justo eso.
+  - **Medido en el navegador, que es donde vive:** a 1440×900, **15 transiciones vivas** en
+    `/console` y **295** en `/fleet` sin la preferencia; con `reduce`, **0 y 0**. La barra del UPS
+    —la única transición sobre un DATO— pasa de **0.24 s a 0 s**: el porcentaje de batería salta al
+    valor en vez de llegar tarde a propósito.
+  - **El latido mentía durante tres minutos, y ahora hay número.** Con el WAN del gabinete simulado
+    cortado: el halo siguió latiendo hasta **t+75 s** (correcto: el frame aún era reciente), se paró
+    en **t+90 s** escribiendo `ÚLTIMO FRAME · 2 min`, y el servidor no declaró `SIN ENLACE` hasta
+    **t+286 s**. Esos ~3 minutos eran exactamente la ventana en la que dos halos latían sobre un
+    enlace ya muerto. El umbral son **120 s** y no es un número redondo: más ancho que la cadencia
+    del edge (`health_heartbeat_s = 60`, o parpadearía con cualquier jitter) y más estrecho que el
+    del servidor (`sin_enlace_min = 5`, o no apagaría nunca nada).
+  - **Y el latido ya no se puede escribir a fuego.** Un censo nuevo exige que `soc-dot--pulse` salga
+    siempre de una condición: qué condición sea la correcta lo miden los tests del componente, pero
+    escribirla pelada deja de pasar en verde. Comprobado por mutación.
+  - **La fila que llega se anuncia con un RÓTULO, no con un destello.** `NUEVO` dura 10 s por RELOJ
+    (no por render: un refresco del WebSocket a los 200 ms lo habría borrado) y el primer censo no
+    marca nada —abrir la consola no es que lleguen doce incidentes—. En el navegador: 3 filas al
+    abrir con **0 rótulos**, el rótulo aparece **366 ms** después del `/quake` y se retira solo a los
+    11 s. Con `reduce` la entrada del contenedor computa `animation-name: none` y **el rótulo sigue
+    ahí, en cian**: el portador sobrevive a la preferencia. `AlertBanner` no cambió ni una línea.
+  - **El simulacro gana una trama que DICE si la lectura sigue viva** (S3, que estaba en rojo en las
+    tres superficies). Galones ámbar sobre el mismo tinte de siempre: forma y color primero, el
+    movimiento sólo confirma. Medido con el banner real: vivo ⇒ `soc-drill-weave 1.4s` y los píxeles
+    cambian entre dos capturas a 700 ms; con la lectura de `/drills/active` cortada ⇒ la clase se
+    cae, `animation: none`, **los píxeles son idénticos** y la franja escribe `DATOS RETENIDOS ·
+    23:30:23 UTC` sin quitarle una palabra al aviso de simulacro.
+  - **Diez `transition: all` enumeradas y quince literales de duración retirados.** `all` anima
+    cualquier propiedad futura del selector, incluido un color de estado: el día que un rojo crítico
+    entrara por hover, llegaría deslizándose. Cinco tokens nuevos, y los cuatro que no son de
+    interacción se separan a propósito: `--tk-dur-data` va con `--tk-ease-data` (lineal, porque una
+    curva de aceleración sobre un porcentaje real inventa un énfasis que el dato no tiene),
+    `--tk-dur-row-in` no hereda la de hover, y `--tk-dur-pulse`/`--tk-dur-armed`/`--tk-dur-drill` son
+    PERÍODOS: laten distinto porque dicen cosas distintas.
+  - **`statePrecedenceCensus.test.ts` no hizo falta tocarlo** y conviene decir por qué: vigila el
+    acoplamiento `empty`↔`staleSince` de los marcos, y la frescura del latido no pasa por
+    `StateFrame` — viaja como prop del dato al componente.
+  - **El e2e cierra en 223 pasados / 9 fallidos**, los nueve de la línea base que dejó T-6.09. La
+    corrida trajo además dos rojos de `drill.spec` que **no eran de la rama**: un simulacro que
+    arranqué a mano para ver la trama **sobrevivió al reinicio del stack** —`make soc-local` vuelve a
+    sembrar la base, pero no la tira— y mientras estuvo vivo escondía el botón `INICIAR SIMULACRO`.
+    Con el stack en reposo, `drill.spec` + `motion.spec` cierran **36/36** en los tres viewports.
 
 ### [x] T-6.11 · **El aviso de privacidad es una franja, no un panel** — `SOFTWARE`
 

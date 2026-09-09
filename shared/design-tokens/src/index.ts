@@ -183,6 +183,26 @@ export const tokens = {
     durFast: v("--tk-dur-fast"),
     durBase: v("--tk-dur-base"),
     durSlow: v("--tk-dur-slow"),
+    /**
+     * [T-6.10] Las tres de arriba son de INTERACCIÓN: responden a lo que hizo
+     * la mano. Las cuatro de abajo no, y por eso no se mezclan con ellas.
+     *
+     * `durData` mueve un DATO —hoy la única: la carga del UPS— y va con
+     * `easeData` (lineal): una curva de aceleración sobre un porcentaje real
+     * inventa un énfasis que el dato no tiene. `durRowIn` es la ENTRADA de una
+     * fila de dato a una cola; no hereda la de hover a propósito, porque lo que
+     * cuenta no es que se note poco sino que dé tiempo a verla llegar.
+     *
+     * `durPulse` y `durArmed` son PERÍODOS, no duraciones: el latido del dato
+     * vivo y el del control armado esperando confirmación. Laten distinto
+     * porque dicen cosas distintas, y por eso son dos tokens y no uno.
+     * `durDrill` es el período de la trama del banner de simulacro.
+     */
+    durData: v("--tk-dur-data"),
+    durRowIn: v("--tk-dur-row-in"),
+    durPulse: v("--tk-dur-pulse"),
+    durArmed: v("--tk-dur-armed"),
+    durDrill: v("--tk-dur-drill"),
   },
   /**
    * [T-6.07] Cuánto puede callar una espera antes de tener que DECIR qué

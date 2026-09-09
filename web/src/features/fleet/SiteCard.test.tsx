@@ -86,6 +86,34 @@ function cabinet(over: Partial<FleetCabinet> = {}, gw: Partial<GatewayOut> = {})
   };
 }
 
+describe("[T-6.10] la tarjeta DERIVA la edad del frame, no la inventa", () => {
+  const LATIDO = "2026-07-08T10:41:00Z";
+  const T0 = Date.parse(LATIDO);
+
+  it("con el latido recién llegado, el enlace late", () => {
+    const { container } = render(<SiteCard cabinet={cabinet()} nowMs={T0 + 5_000} />);
+    expect(container.querySelector(".soc-dot--pulse")).not.toBeNull();
+    expect(screen.queryByTestId("link-frame-age")).toBeNull();
+  });
+
+  it("con el latido de hace cuatro minutos NO late, aunque el servidor diga OPERATIVO", () => {
+    // El cableado es donde se pierde un arreglo así: la regla puede estar
+    // perfecta en `LinkPill` y la tarjeta pasarle siempre un cero.
+    const { container } = render(<SiteCard cabinet={cabinet()} nowMs={T0 + 240_000} />);
+    expect(screen.getByText("OPERATIVO")).toBeInTheDocument();
+    expect(container.querySelector(".soc-dot--pulse")).toBeNull();
+    expect(screen.getAllByTestId("link-frame-age")[0].textContent).toMatch(/4 min/);
+  });
+
+  it("sin latido NUNCA no se finge un cero", () => {
+    const { container } = render(
+      <SiteCard cabinet={cabinet({}, { last_heartbeat_ts: null })} nowMs={T0} />,
+    );
+    expect(container.querySelector(".soc-dot--pulse")).toBeNull();
+    expect(screen.getAllByTestId("link-frame-age")[0].textContent).toMatch(/S\/D/);
+  });
+});
+
 describe("SiteCard", () => {
   it("pinta el estado server-derived tal cual (OPERATIVO ⇒ pill ok)", () => {
     const { container } = render(<SiteCard cabinet={cabinet()} />);

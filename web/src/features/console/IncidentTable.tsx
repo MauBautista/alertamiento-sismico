@@ -4,7 +4,7 @@
 // gateado por allowed_actions.ack_incident (default-deny server-driven).
 
 import { CheckCircle2, FileSearch, List, MapPin, UserCheck } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
@@ -14,6 +14,7 @@ import SevTag from "../../components/SevTag";
 import StateFrame from "../../components/StateFrame";
 import { secondsSince, utcClock } from "../../lib/time";
 import type { LiveStatus } from "../../lib/ws";
+import { actualizarCenso, type CensoFilas } from "./filasNuevas";
 import { INCIDENT_ORDERS, orderIncidents, type IncidentOrderKey } from "./stats";
 import type { LiveDegradation, LiveIncident } from "./useLiveIncidents";
 import SiteLabel from "../../components/SiteLabel";
@@ -152,6 +153,17 @@ export default function IncidentTable({
   // Ordenar por distancia sin epicentro conocido barajaría las filas fingiendo
   // una medida que nadie tomó: se degrada a severidad y se DICE (regla de oro 7).
   const distanceUnavailable = order === "distance" && epicenter === null;
+  // [T-6.10 · W13] Qué filas LLEGARON mientras se miraba. El censo vive en una
+  // ref y no en estado: no dispara un render propio —lo dispara `nowMs`, que ya
+  // late— y volver a censar con el mismo instante devuelve lo mismo, así que la
+  // doble pintura del modo estricto no reinicia la cuenta.
+  const censoRef = useRef<CensoFilas | null>(null);
+  const { censo, nuevas } = actualizarCenso(
+    censoRef.current,
+    rows.map((r) => r.incident_id),
+    nowMs,
+  );
+  censoRef.current = censo;
   return (
     <section className="soc-incidents" data-screen-label="Incidents queue">
       <header className="soc-incidents__hd">
@@ -240,9 +252,11 @@ export default function IncidentTable({
           <tbody>
             {rows.map((incident) => {
               const site = siteInfoOf(incident.site_id);
+              const nueva = nuevas.has(incident.incident_id);
               return (
                 <tr
                   key={incident.incident_id}
+                  className={nueva ? "soc-table__row--nueva" : undefined}
                   onClick={() => onSelect(incident)}
                   aria-selected={incident.incident_id === selectedId}
                   style={{ cursor: "pointer" }}
@@ -256,6 +270,14 @@ export default function IncidentTable({
                       name={site?.name ?? `SITIO ${incident.site_id.slice(0, 8)}`}
                       code={site?.code ?? null}
                     />
+                    {/* El PORTADOR del aviso es este rótulo, no el destello: con
+                        la reducción de movimiento puesta la fila no se mueve y
+                        hay que enterarse igual. */}
+                    {nueva && (
+                      <span className="soc-table__nuevo" data-testid="fila-nueva">
+                        NUEVO
+                      </span>
+                    )}
                   </td>
                   <td>
                     <SevTag severity={incident.severity} />
