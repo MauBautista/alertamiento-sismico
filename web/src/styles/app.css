@@ -72,7 +72,7 @@ a.soc-btn {
 }
 
 .soc-screen__error {
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
   font-size: var(--tk-text-sm);
   margin: 0;
 }
@@ -141,7 +141,7 @@ a.soc-btn {
 }
 
 .soc-stateframe__error {
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 
 .soc-stateframe__stale {

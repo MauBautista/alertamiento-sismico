@@ -134,8 +134,10 @@ export default function IncidentTable({
   // apilar los dos avisos sólo diluye el que hay que atender primero.
   const degradadoVisible = live && degraded.length > 0;
   const pill = degradadoVisible ? "● LIVE DEGRADADO" : live ? "● LIVE" : "● SIN LIVE";
+  // [T-6.09] Tinta, no ancla: `--tk-status-critical` dibuja (el punto de
+  // severidad de arriba) y `--tk-status-critical-text` escribe.
   const pillColor = degradadoVisible
-    ? "var(--tk-status-critical)"
+    ? "var(--tk-status-critical-text)"
     : live
       ? "var(--tk-status-normal)"
       : "var(--tk-status-warning)";
@@ -202,7 +204,7 @@ export default function IncidentTable({
           data-testid="live-degraded"
           role="status"
           title={degraded.map((d) => `${d.topic}: ${d.detail ?? "sin detalle"}`).join(" · ")}
-          style={{ color: "var(--tk-status-critical)" }}
+          style={{ color: "var(--tk-status-critical-text)" }}
         >
           {`CANAL LIVE DEGRADADO · ${degraded.map((d) => d.label).join(" · ")} · ` +
             "PUEDE FALTAR INFORMACIÓN EN VIVO · EL REFRESCO PERIÓDICO SIGUE"}

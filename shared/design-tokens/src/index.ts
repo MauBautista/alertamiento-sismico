@@ -51,6 +51,17 @@ export const tokens = {
       warning: v("--tk-status-warning"),
       critical: v("--tk-status-critical"),
       /**
+       * [T-6.09] LA TINTA del estado crítico. El rojo de arriba es un ANCLA de
+       * identidad y dibuja: bordes, barras, rellenos, el punto del mapa. Pero
+       * escribiendo sobre su propio tinte da 3.35–4.23:1 y AA exige 4.5, así
+       * que la consola llevaba 36 nodos de `color-contrast` por este único
+       * motivo. Este tono es el MISMO rojo, más claro: escribe, y no toca el
+       * ancla. El ámbar, el verde y el cian pasan con holgura y por eso no
+       * estrenan tinta propia — la simetría por la simetría son tres tokens
+       * que nadie usa.
+       */
+      criticalText: v("--tk-status-critical-text"),
+      /**
        * [T-2.64.d] VIOLETA — "este equipo NO va a alertar, y es a propósito":
        * ventana de mantenimiento en la consola y MODO PRUEBA WR-1 en el panel
        * LAN. NO entra en `StatusKind` (ok/warn/crit): el semáforo dice cómo

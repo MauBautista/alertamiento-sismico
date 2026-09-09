@@ -48,6 +48,7 @@ import MapPanel, {
   epicentersToFeatureCollection,
   FALLBACK_STYLE,
   FELT_COLOR,
+  FELT_GLYPH,
   pulseAt,
   sitesToFeatureCollection,
   staticRingsFeatureCollection,
@@ -254,6 +255,62 @@ describe("[T-2.46] el ENLACE no usa el canal de color", () => {
   });
 });
 
+describe("[T-6.09] la banda de sacudida no viaja SOLO en el color", () => {
+  it("`watch` y `normal` se distinguen sin mirar el color", () => {
+    // El defecto: ámbar (#FFC107) y verde (#00E676) con el MISMO radio. Bajo
+    // deuteranopía —el 6 % de los hombres— los dos tiran a un amarillo
+    // parecido, y son la diferencia entre «superó cautela» y «bajo umbral».
+    expect(FELT_GLYPH.watch).not.toBe(FELT_GLYPH.normal);
+    expect(FELT_GLYPH.watch.trim()).not.toBe("");
+  });
+
+  it("el que NO tiene nada que decir no dice nada; el que no midió dice que no sabe", () => {
+    // Misma doctrina que el glifo de enlace: el ruido visual se reserva al
+    // problema. Y `unknown` gana marca propia porque «no reportó» no es «no se
+    // movió» (regla de oro 7) y hasta hoy solo lo decía el gris.
+    expect(FELT_GLYPH.normal).toBe("");
+    expect(FELT_GLYPH.unknown).toBe("?");
+    expect(FELT_GLYPH.trip).not.toBe(FELT_GLYPH.watch);
+  });
+
+  it("no reusa el vocabulario del ENLACE: dos alfabetos que dicen cosas distintas", () => {
+    // `⊘ ▲ ○` ya significan «sin enlace / degradado / sin gabinete». Un ▲ que
+    // según la capa signifique «cautela» o «enlace degradado» no es un glifo:
+    // es una adivinanza.
+    const enlace = new Set(["⊘", "▲", "○", "✳", "◇"]);
+    for (const [banda, glifo] of Object.entries(FELT_GLYPH)) {
+      expect(enlace.has(glifo), `${banda} usa \`${glifo}\`, que ya significa otra cosa`).toBe(
+        false,
+      );
+    }
+  });
+
+  it("cada sitio lleva su glifo en la fuente, derivado de la MISMA banda que el color", () => {
+    const fc = sitesToFeatureCollection([
+      site("a", { felt: "trip" }),
+      site("b", { felt: "watch" }),
+      site("c", { felt: "normal" }),
+      site("d", { felt: "unknown" }),
+    ]);
+    expect(fc.features.map((f) => f.properties.felt_glyph)).toEqual([
+      FELT_GLYPH.trip,
+      FELT_GLYPH.watch,
+      FELT_GLYPH.normal,
+      FELT_GLYPH.unknown,
+    ]);
+    // Y el color no se mueve: el glifo se SUMA al canal de color, no lo sustituye.
+    expect(fc.features[1].properties.color).toBe(FELT_COLOR.watch);
+  });
+
+  it("una banda que el server estrene no se pinta como «bajo umbral»", () => {
+    // `felt` viene del rule_set. Si mañana llega una banda nueva, un default
+    // que caiga en verde afirmaría que el edificio está tranquilo.
+    const f = sitesToFeatureCollection([site("x", { felt: "banda_nueva" })]).features[0];
+    expect(f.properties.color).toBe(FELT_COLOR.unknown);
+    expect(f.properties.felt_glyph).toBe(FELT_GLYPH.unknown);
+  });
+});
+
 describe("[T-2.47] anillos estáticos con radio FÍSICO", () => {
   const EPI = {
     event_id: "E",
@@ -430,6 +487,30 @@ describe("MapPanel", () => {
     );
     const glyph = layers.find((l) => l.id === "site-link");
     expect(glyph?.source).toBe("sites");
+  });
+
+  it("[T-6.09] el glifo de sacudida es una capa propia, y la leyenda lo enseña", () => {
+    // Sin capa, `felt_glyph` sería un dato que no llega a ninguna pantalla; sin
+    // leyenda, una marca que nadie sabe leer.
+    render(
+      <MapPanel
+        sites={[site("a", { felt: "watch" }), site("b", { felt: "normal" })]}
+        epicenters={[]}
+        onSelectSite={vi.fn()}
+      />,
+    );
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    const layers: Array<{ id: string; source: string; layout?: Record<string, unknown> }> =
+      mocks.map.addLayer.mock.calls.map((call) => call[0] as never);
+    const felt = layers.find((l) => l.id === "site-felt");
+    expect(felt?.source).toBe("sites");
+    expect(felt?.layout?.["text-field"]).toEqual(["get", "felt_glyph"]);
+
+    const leyenda = screen.getByText(/SACUDIDA MEDIDA EN EL EDIFICIO/i).parentElement;
+    expect(leyenda).toHaveTextContent(`${FELT_GLYPH.watch} Superó cautela`);
+    expect(leyenda).toHaveTextContent(`${FELT_GLYPH.unknown} Sin dato`);
   });
 
   it("[T-5.05] el rótulo DEMO es su propia capa sobre la fuente de sitios", () => {

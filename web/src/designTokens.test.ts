@@ -175,6 +175,242 @@ describe("design tokens · contraste WCAG AA (rótulos de 8–10 px)", () => {
 });
 
 /* =====================================================================
+   [T-6.09] EL CONTRATO SOBRE LOS FONDOS QUE LA CONSOLA **COMPONE**
+   =====================================================================
+   El bloque de arriba mide tres fondos PLANOS. La consola no pinta tres:
+   pinta esos tres y, encima, un tinte por cada estado —`--tk-status-*-08` y
+   `--tk-status-*-15`, `--tk-cyan-08`— que es exactamente donde va el texto de
+   ese estado. Ocho fondos reales contra tres bajo contrato, y la diferencia no
+   era teórica: axe sin filtrar sobre las seis pantallas con el seed de
+   demostración devolvió 44 nodos `color-contrast`, y 36 de ellos eran el mismo
+   rojo anclado (`#FF5252`) haciendo de TINTA sobre su propio tinte —3.35:1 en
+   una fila seleccionada de `/triage`, 3.76:1 en la píldora de la tarjeta
+   crítica de flota, 4.23:1 en los enlaces de esa misma tarjeta.
+
+   El rojo NO se mueve: es un ancla de identidad y lo defiende el bloque de
+   anclas de arriba. Lo que se separa es el OFICIO: `--tk-status-critical`
+   dibuja (bordes, barras, rellenos, el punto del mapa) y
+   `--tk-status-critical-text` escribe. Los otros tres estados ya pasaban con
+   holgura y por eso no estrenan tinta propia — una tinta por estado "por
+   simetría" sería tres tokens que nadie necesita.
+   ===================================================================== */
+
+/** `rgba(r, g, b, a)` o `#RRGGBB` → [r, g, b, a]. */
+function parseColor(value: string): [number, number, number, number] {
+  if (value.startsWith("#")) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(value.slice(i, i + 2), 16));
+    return [r, g, b, 1];
+  }
+  const partes = /rgba?\(([^)]+)\)/.exec(value)?.[1].split(",").map(Number);
+  if (partes === undefined) throw new Error(`color no reconocido: ${value}`);
+  return [partes[0], partes[1], partes[2], partes[3] ?? 1];
+}
+
+/** Compone `fg` (con alfa) sobre `bg` opaco: lo que el navegador acaba pintando. */
+function componer(fg: string, bg: string): string {
+  const [r, g, b, a] = parseColor(fg);
+  const base = parseColor(bg);
+  const mezcla = [r, g, b].map((c, i) => Math.round(c * a + base[i] * (1 - a)));
+  return `#${mezcla.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** Ratio de contraste contra un fondo COMPUESTO (tinte sobre superficie). */
+function ratioSobreTinte(ink: string, tinte: string, surface: string): number {
+  return contrastRatio(ink, componer(tinte, surface));
+}
+
+/**
+ * Los pares que la consola PINTA: cada estado escribe sobre su propio tinte, y
+ * el tinte se compone sobre cualquiera de los tres fondos planos. No hay más
+ * combinaciones porque no hay más tintes: el conjunto sale de `tokens.json`.
+ */
+const TINTA_SOBRE_SU_TINTE = [
+  ["--tk-status-critical-text", "--tk-status-critical-08"],
+  ["--tk-status-critical-text", "--tk-status-critical-15"],
+  ["--tk-status-warning", "--tk-status-warning-08"],
+  ["--tk-status-warning", "--tk-status-warning-15"],
+  ["--tk-status-normal", "--tk-status-normal-08"],
+  ["--tk-status-normal", "--tk-status-normal-15"],
+  ["--tk-cyan", "--tk-cyan-08"],
+  ["--tk-cyan", "--tk-cyan-15"],
+] as const;
+
+describe("[T-6.09] contraste sobre los fondos COMPUESTOS, no solo los tres planos", () => {
+  it.each(
+    TINTA_SOBRE_SU_TINTE.flatMap(([ink, tinte]) =>
+      FONDOS.map((surface) => [ink, tinte, surface] as const),
+    ),
+  )("%s sobre %s compuesto en %s alcanza AA", (ink, tinte, surface) => {
+    const ratio = ratioSobreTinte(cssVariables[ink], cssVariables[tinte], cssVariables[surface]);
+    expect(
+      ratio,
+      `${ink} sobre ${tinte}/${surface} (= ${componer(cssVariables[tinte], cssVariables[surface])}) ` +
+        `= ${ratio.toFixed(2)}:1 — AA exige ${AA}:1`,
+    ).toBeGreaterThanOrEqual(AA);
+  });
+
+  it("NINGÚN tinte es SEGURO para el gris terciario; el secundario lo es siempre", () => {
+    // La regla de la que salen los arreglos de esta ficha, afirmada en
+    // positivo y DERIVADA del paquete: se recorren todos los tintes (`-08`,
+    // `-15`) sobre los tres fondos, no una lista escrita a mano.
+    //
+    // «Seguro» quiere decir *en cualquier fondo*, que es lo único que se puede
+    // prometer al escribir una hoja: una clase no sabe sobre qué superficie la
+    // van a montar. Sobre el navy más oscuro algún tinte deja pasar al
+    // terciario por poco (4.72–5.29:1); sobre `--tk-surface-2` el mismo tinte
+    // lo hunde a 3.20. El secundario aguanta los 24 pares (4.99:1 el peor).
+    //
+    // Por eso el arreglo va donde está el tinte —la tinta sube a secundaria— y
+    // NO en el token: para que el terciario pasara sobre un tinte habría que
+    // llevarlo a `#98AABE`, y ahí el escalón fg-2/fg-3 baja de 1.56 a 1.32,
+    // por debajo del 1.4 que exige el test de la jerarquía. Tres niveles que
+    // se leen igual no son tres niveles.
+    const tintes = Object.keys(cssVariables).filter(
+      (n) =>
+        /-(08|15)$/.test(n) && cssVariables[n as keyof typeof cssVariables].startsWith("rgba("),
+    ) as Array<keyof typeof cssVariables>;
+    expect(
+      tintes.length,
+      "el paquete se quedó sin tintes: este censo dejó de mirar nada",
+    ).toBeGreaterThan(5);
+
+    const seguros: string[] = [];
+    const secundarioCae: string[] = [];
+    for (const tinte of tintes) {
+      let peor = Infinity;
+      for (const surface of FONDOS) {
+        const fondo = componer(cssVariables[tinte], cssVariables[surface]);
+        peor = Math.min(peor, contrastRatio(cssVariables["--tk-fg-3"], fondo));
+        const r2 = contrastRatio(cssVariables["--tk-fg-2"], fondo);
+        if (r2 < AA) secundarioCae.push(`${tinte}/${surface} = ${r2.toFixed(2)}`);
+      }
+      if (peor >= AA) seguros.push(`${tinte} (peor caso ${peor.toFixed(2)})`);
+    }
+    expect(
+      seguros,
+      "un tinte pasó a ser seguro para el terciario en los tres fondos. Si es " +
+        "real, el arreglo de esta ficha (subir la tinta a secundaria bajo " +
+        `tinte) tiene una excepción que hay que escribir:\n${seguros.join("\n")}`,
+    ).toEqual([]);
+    expect(
+      secundarioCae,
+      `el gris SECUNDARIO dejó de ser la salida bajo tinte:\n${secundarioCae.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("el rojo ANCLADO se queda como está: dibuja, y por eso NO tiene que pasar AA", () => {
+    // Afirmado en positivo para que nadie "arregle" el ancla: `#FF5252` sobre
+    // `--tk-surface-2` da 4.10:1 y ese es justamente el motivo de que exista
+    // una tinta aparte. Si alguien aclarara el ancla, este test lo diría.
+    expect(cssVariables["--tk-status-critical"]).toBe("#FF5252");
+    expect(
+      contrastRatio(cssVariables["--tk-status-critical"], cssVariables["--tk-surface-2"]),
+    ).toBeLessThan(AA);
+  });
+
+  it("la tinta crítica es OTRO tono del mismo rojo, no un rojo distinto", () => {
+    // Que pase AA no basta: si la tinta derivara a naranja o a rosa, la
+    // consola tendría dos "rojos de estado" y el operador vería dos cosas.
+    const [r, g, b] = parseColor(cssVariables["--tk-status-critical-text"]);
+    const [ar, ag] = parseColor(cssVariables["--tk-status-critical"]);
+    expect(r, "la tinta crítica dejó de ser roja saturada").toBeGreaterThanOrEqual(ar);
+    expect(Math.abs(g - b), `g=${g} b=${b}: el rojo se está yendo a un tono`).toBeLessThanOrEqual(
+      12,
+    );
+    expect(g, "la tinta es MÁS CLARA que el ancla, ese es todo el cambio").toBeGreaterThan(ag);
+  });
+});
+
+/* =====================================================================
+   [T-6.09] CENSO DE OFICIO: quién DIBUJA y quién ESCRIBE
+   =====================================================================
+   Sin esto la separación dura una tarde. El día que alguien escriba
+   `color: var(--tk-status-critical)` en una hoja vuelve el 3.76:1, y no lo
+   ve nadie: un rojo sobre un tinte rojo se parece mucho a un rojo que pasa.
+   El censo es sobre TODAS las hojas, no sobre las que hoy tienen el defecto.
+   ===================================================================== */
+
+/** Hojas de la consola, sin comentarios (un ejemplo en prosa no es una regla). */
+function hojasSinComentarios(): Array<{ nombre: string; css: string }> {
+  const dir = path.resolve(process.cwd(), "src", "styles");
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".css"))
+    .map((nombre) => ({
+      nombre,
+      css: readFileSync(path.join(dir, nombre), "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
+    }));
+}
+
+describe("[T-6.09] el rojo anclado DIBUJA; escribir es oficio de la tinta", () => {
+  it("ninguna hoja usa `--tk-status-critical` como `color:`", () => {
+    const ofensores = hojasSinComentarios().flatMap(({ nombre, css }) =>
+      [...css.matchAll(/(?:^|[;{\s])color:\s*var\(--tk-status-critical\)/g)].map((m) => {
+        const linea = css.slice(0, m.index).split("\n").length;
+        return `${nombre}:${linea}`;
+      }),
+    );
+    expect(
+      ofensores,
+      `el rojo anclado volvió a hacer de tinta (3.35–4.23:1 sobre sus propios ` +
+        `tintes). Usa \`--tk-status-critical-text\`:\n${ofensores.join("\n")}`,
+    ).toEqual([]);
+  });
+
+  it("tampoco lo usa como tinta desde un `style` de TSX", () => {
+    // La hoja no es el único sitio donde se escribe un color: `IncidentTable`
+    // pintaba la píldora del canal live y el aviso de canal degradado con un
+    // `style` en línea, y ahí el censo de arriba no llega.
+    //
+    // El barrido acepta la INDIRECCIÓN, que es como estaba escrito el defecto
+    // (`const pillColor = … ? "var(--tk-status-critical)"`): busca la palabra
+    // `color` y el token dentro de la MISMA sentencia. Dibujar sigue estando
+    // permitido —`stroke=`, un mapa de puntos del semáforo— porque en ninguno
+    // de esos casos aparece la palabra.
+    const dir = path.resolve(process.cwd(), "src");
+    const tsx: string[] = [];
+    const recorrer = (d: string): void => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) recorrer(full);
+        else if (e.name.endsWith(".tsx") && !e.name.includes(".test.")) tsx.push(full);
+      }
+    };
+    recorrer(dir);
+    const ofensores = tsx.filter((f) =>
+      /color[^;]{0,120}var\(--tk-status-critical\)/s.test(readFileSync(f, "utf8")),
+    );
+    expect(
+      ofensores.map((f) => path.relative(dir, f)),
+      "el rojo anclado hace de tinta desde un `style` en línea; usa `--tk-status-critical-text`",
+    ).toEqual([]);
+  });
+
+  it("una tira de estado SÓLIDA lleva tinta oscura, no blanca", () => {
+    // El defecto real: `.soc-alert__strip` —«ALERTA SÍSMICA · PROTÉJASE», el
+    // texto más importante de la consola— pintaba `#fff` sobre `#FF5252`:
+    // 2.85:1, el peor par del producto. Y axe nunca lo vio porque ninguna
+    // corrida tenía una alerta en pantalla. La tira de AVISO ya lo hacía bien
+    // (navy sobre ámbar) desde T-6.01; esto extiende esa regla a la de alerta.
+    //
+    // Solo se miran los bloques que ADEMÁS declaran `color`: una barra o un
+    // relleno pintan el estado sin texto encima y no tienen nada que declarar.
+    const solido = /background(?:-color)?:\s*var\(--tk-status-(critical|warning|normal)\)/;
+    const ofensores = hojasSinComentarios().flatMap(({ nombre, css }) =>
+      [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+        .filter(([, , cuerpo]) => solido.test(cuerpo) && /(?:^|[;\s])color:/.test(cuerpo))
+        .filter(([, , cuerpo]) => !/(?:^|[;\s])color:\s*var\(--tk-navy-900\)/.test(cuerpo))
+        .map(([, selector]) => `${nombre}: ${selector.trim()}`),
+    );
+    expect(
+      ofensores,
+      `un fondo de estado SÓLIDO con tinta clara no pasa AA (blanco sobre el ` +
+        `rojo anclado = 2.85:1). La tinta de una tira sólida es ` +
+        `\`var(--tk-navy-900)\`:\n${ofensores.join("\n")}`,
+    ).toEqual([]);
+  });
+});
+
+/* =====================================================================
    [D2] TOKENS FANTASMA — la hoja cita `--tk-algo` que no existe
    ===================================================================== */
 

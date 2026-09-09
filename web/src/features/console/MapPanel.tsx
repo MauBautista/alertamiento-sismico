@@ -106,6 +106,26 @@ export const FELT_COLOR: Record<string, string> = {
   unknown: "#7A8DA6", // no hay medida: ausencia de dato
 };
 
+/**
+ * [T-6.09] La banda, en FORMA. El color solo no bastaba: `watch` (#FFC107) y
+ * `normal` (#00E676) llevaban el mismo radio y bajo deuteranopía —el 6 % de
+ * los hombres— los dos tiran a un amarillo parecido. Son la diferencia entre
+ * «superó cautela» y «bajo umbral».
+ *
+ * El alfabeto es propio y no reusa el del ENLACE (`⊘ ▲ ○`): un ▲ que según la
+ * capa signifique una cosa u otra no es un glifo, es una adivinanza. Y sigue
+ * la misma doctrina que aquél — el que no tiene nada que decir no dice nada,
+ * así que `normal` va vacío y el mapa tranquilo se queda sin ruido. `unknown`
+ * SÍ marca: «no reportó» no es «no se movió» (regla de oro 7), y hasta hoy eso
+ * lo decía únicamente un gris.
+ */
+export const FELT_GLYPH: Record<string, string> = {
+  trip: "!!",
+  watch: "!",
+  normal: "",
+  unknown: "?",
+};
+
 export const EPICENTER_COLOR = "#E040FB";
 
 /** [T-2.28] Catálogo HISTÓRICO de referencia (1985–2022): color y símbolo (◇)
@@ -145,6 +165,10 @@ export function sitesToFeatureCollection(sites: MapSiteState[]): FeatureCollecti
           name: site.name,
           felt,
           color: FELT_COLOR[felt] ?? FELT_COLOR.unknown,
+          // [T-6.09] La MISMA banda, en el canal de la forma. Un `felt` que el
+          // server estrene cae en `unknown` por los dos canales a la vez: color
+          // y glifo no pueden decir cosas distintas del mismo edificio.
+          felt_glyph: FELT_GLYPH[felt] ?? FELT_GLYPH.unknown,
           // El halo y el pulso marcan al que SINTIÓ el disparo.
           tripped: felt === "trip",
           // Sin calibrar el PGA es RELATIVO: el borde punteado lo declara y la
@@ -595,6 +619,27 @@ export default function MapPanel({
         },
       });
 
+      // [T-6.09] Glifo de la BANDA DE SACUDIDA. Se ancla abajo-izquierda para
+      // no chocar con el del enlace (arriba-derecha): son dos alfabetos y el
+      // sitio puede llevar los dos a la vez.
+      map.addLayer({
+        id: "site-felt",
+        type: "symbol",
+        source: "sites",
+        layout: {
+          "text-field": ["get", "felt_glyph"],
+          "text-size": 12,
+          "text-offset": [-0.85, 0.85],
+          "text-allow-overlap": true,
+          "text-ignore-placement": true,
+        },
+        paint: {
+          "text-color": "#F0F2F5",
+          "text-halo-color": "#0d2034",
+          "text-halo-width": 1.6,
+        },
+      });
+
       // [T-5.05] Rótulo DEMO. Va en gris neutro y NO en ámbar: el ámbar de esta
       // consola ya significa simulacro en curso y dato retenido, y un tercer
       // significado en el mismo color deja de significar nada. Vacío en los
@@ -1005,19 +1050,29 @@ export default function MapPanel({
         <div className="soc-map__legend">
           <div className="soc-map__legend-title">SACUDIDA MEDIDA EN EL EDIFICIO</div>
           <div className="soc-map__legend-row">
-            <span className="soc-map__sw" style={{ background: FELT_COLOR.trip }} /> Superó disparo
+            <span className="soc-map__sw" style={{ background: FELT_COLOR.trip }} />
+            <span className="soc-map__glyph">{FELT_GLYPH.trip}</span> Superó disparo
           </div>
           <div className="soc-map__legend-row">
-            <span className="soc-map__sw" style={{ background: FELT_COLOR.watch }} /> Superó cautela
+            <span className="soc-map__sw" style={{ background: FELT_COLOR.watch }} />
+            <span className="soc-map__glyph">{FELT_GLYPH.watch}</span> Superó cautela
           </div>
           <div className="soc-map__legend-row">
-            <span className="soc-map__sw" style={{ background: FELT_COLOR.normal }} /> Bajo umbral
+            <span className="soc-map__sw" style={{ background: FELT_COLOR.normal }} />
+            {/* [T-6.09] El tranquilo no lleva marca, y la leyenda lo dice con un
+                hueco del MISMO ancho: si el renglón se encogiera, la columna de
+                glifos dejaría de leerse como una columna. */}
+            <span className="soc-map__glyph" aria-hidden="true" />
+            Bajo umbral
           </div>
           <div className="soc-map__legend-row">
-            <span className="soc-map__sw" style={{ background: FELT_COLOR.unknown }} /> Sin dato
+            <span className="soc-map__sw" style={{ background: FELT_COLOR.unknown }} />
+            <span className="soc-map__glyph">{FELT_GLYPH.unknown}</span> Sin dato
           </div>
           <div className="soc-map__legend-row">
-            <span className="soc-map__sw" style={{ background: EPICENTER_COLOR }} /> Epicentro
+            <span className="soc-map__sw" style={{ background: EPICENTER_COLOR }} />
+            <span className="soc-map__glyph" aria-hidden="true" />
+            Epicentro
           </div>
           {epicenters.length === 0 && (
             <div className="soc-map__legend-note" data-testid="map-no-epicenter">

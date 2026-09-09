@@ -12,10 +12,14 @@
 // `.disableRules()` interminable que lo vacía de sentido. Todo lo que queda por
 // debajo del umbral se ADJUNTA al reporte con nombre y recuento, para que la
 // deuda sea visible y se pueda ir subiendo la barra con datos.
+//
+// [T-6.09] Y SE SUBIÓ, con datos: `color-contrast` pasa de adjunto a
+// bloqueante. Esa era la promesa de arriba —"ir subiendo la barra"— y una barra
+// que no sube nunca es un umbral honesto una sola vez.
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type TestInfo } from "@playwright/test";
 
-import { devLogin, gotoScreen } from "./helpers";
+import { devLogin, gotoScreen, SITE_DEV } from "./helpers";
 
 const SCREENS = [
   { path: "/console", label: "01 Monitoreo en Vivo" },
@@ -23,6 +27,11 @@ const SCREENS = [
   { path: "/triage", label: "03 Evaluación Estructural" },
   { path: "/tenants", label: "04 Multi-Tenant" },
   { path: "/audit", label: "05 Auditoría" },
+  // [T-6.09] `/building` no es pestaña —se llega por enlace profundo desde la
+  // tarjeta de flota y desde triage (T-6.14)— y por eso se había quedado fuera
+  // de este barrido. Que no tenga pestaña no la hace menos pantalla: es la que
+  // se le enseña al administrador del inmueble.
+  { path: `/building/${SITE_DEV}`, label: "06 Dashboard Edificio" },
 ];
 
 /**
@@ -43,6 +52,17 @@ const BLOCKING_RULES = [
   "label",
   "link-name",
   "select-name",
+  // [T-6.09] SUBE LA BARRA. `color-contrast` llevaba desde T-2.56 por debajo
+  // del umbral —se adjuntaba al reporte y nadie lo miraba— y la medición de la
+  // auditoría del 2026-09-06 dijo cuánto costaba eso: 44 nodos en estas seis
+  // pantallas con el seed de demostración. 36 eran un solo defecto (el rojo
+  // anclado haciendo de tinta) y el resto, tres. Arreglados los cuatro, dejar
+  // la regla fuera del umbral sería devolver la deuda al día siguiente.
+  //
+  // Es la única regla de esta lista que NO es estructural, y entra por lo
+  // mismo que ellas: un operador de turno largo frente a un videowall que no
+  // puede leer el estado de un edificio no tiene un problema cosmético.
+  "color-contrast",
 ];
 
 function summarize(violations: { id: string; impact?: string | null; nodes: unknown[] }[]): string {

@@ -288,7 +288,7 @@ body {
 }
 .soc-pill--ok { background: var(--tk-status-normal-15); color: var(--tk-status-normal); }
 .soc-pill--warn { background: var(--tk-status-warning-15); color: var(--tk-status-warning); }
-.soc-pill--crit { background: var(--tk-status-critical-15); color: var(--tk-status-critical); }
+.soc-pill--crit { background: var(--tk-status-critical-15); color: var(--tk-status-critical-text); }
 .soc-pill--edge { background: var(--tk-cyan-15); color: var(--tk-cyan); }
 
 .soc-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: currentColor; }
@@ -394,6 +394,16 @@ body {
 }
 .soc-map__legend-row { display: flex; align-items: center; gap: 8px; }
 .soc-map__sw { width: 10px; height: 10px; border-radius: 2px; }
+/* [T-6.09] La columna de la MARCA, al lado de la del color: ancho fijo para
+   que las cinco filas de la leyenda se lean como una tabla y el hueco del
+   «bajo umbral» siga siendo un hueco y no un renglón corrido. */
+.soc-map__glyph {
+  width: 14px;
+  flex: none;
+  font: 700 12px/1 var(--tk-font-mono);
+  color: var(--tk-fg-1);
+  text-align: center;
+}
 /* Salvedades del mapa (sin epicentro localizado, sensores sin calibrar): el dato
  * que FALTA se declara, no se rellena con una suposición (regla de oro 7). */
 .soc-map__legend-note {
@@ -437,7 +447,12 @@ body {
 }
 .soc-alert__strip {
   background: var(--tk-status-critical);
-  color: #fff;
+  /* [T-6.09] Navy sobre el rojo anclado = 5.01:1. Era `#fff` = 2.85:1, el
+     PEOR par del producto en el texto MÁS importante que pinta la consola
+     («ALERTA SÍSMICA · PROTÉJASE»). Ninguna corrida de axe lo vio nunca
+     porque ninguna tenía una alerta en pantalla. La tira de AVISO ya escribía
+     en navy sobre el ámbar (abajo, T-6.01): ahora las dos hablan igual. */
+  color: var(--tk-navy-900);
   font-family: var(--tk-font-ui);
   font-weight: 700;
   font-size: 13px;
@@ -592,7 +607,7 @@ body {
   letter-spacing: 0.10em;
   text-transform: uppercase;
 }
-.soc-sev--red { background: var(--tk-status-critical-15); color: var(--tk-status-critical); }
+.soc-sev--red { background: var(--tk-status-critical-15); color: var(--tk-status-critical-text); }
 .soc-sev--ok { background: var(--tk-status-normal-15); color: var(--tk-status-normal); }
 .soc-sev--warn { background: var(--tk-status-warning-15); color: var(--tk-status-warning); }
 .soc-incidents__ft {
@@ -639,8 +654,11 @@ body {
 .soc-btn--secondary:hover { border-color: var(--tk-cyan); color: var(--tk-cyan); background: var(--tk-cyan-08); }
 .soc-btn--ghost { background: transparent; color: var(--tk-fg-2); }
 .soc-btn--ghost:hover { color: var(--tk-cyan); }
-.soc-btn--danger { background: var(--tk-status-critical); color: #fff; }
-.soc-btn--danger:hover { background: #ff6f6f; }
+/* [T-6.09] El botón que BORRA escribía en blanco sobre el rojo (2.85:1) y
+   se aclaraba al pasar por encima con un hex suelto. Navy sobre el rojo
+   son 5.01:1, y sobre el rojo claro del hover, 7.01. */
+.soc-btn--danger { background: var(--tk-status-critical); color: var(--tk-navy-900); }
+.soc-btn--danger:hover { background: var(--tk-status-critical-text); }
 
 /* =====================================================================
    DETAIL PANEL (right column)
@@ -803,7 +821,7 @@ body {
 }
 .soc-check--ok { background: var(--tk-status-normal-15); color: var(--tk-status-normal); }
 .soc-check--warning { background: var(--tk-status-warning-15); color: var(--tk-status-warning); }
-.soc-check--critical { background: var(--tk-status-critical-15); color: var(--tk-status-critical); }
+.soc-check--critical { background: var(--tk-status-critical-15); color: var(--tk-status-critical-text); }
 .soc-bms__label {
   font-size: 13px;
   color: var(--tk-fg-1);
@@ -820,7 +838,7 @@ body {
 }
 .soc-bms__state--ok { background: var(--tk-status-normal); color: var(--tk-navy-900); }
 .soc-bms__state--warning { background: var(--tk-status-warning); color: var(--tk-navy-900); }
-.soc-bms__state--critical { background: var(--tk-status-critical); color: #fff; }
+.soc-bms__state--critical { background: var(--tk-status-critical); color: var(--tk-navy-900); }
 
 /* CCTV — [T-2.55] solo queda el contenedor. El reproductor del mockup
    (`__feed-wrap`, `__feed`, `__overlay`, `__live`, `__camlbl`, `__ts`,
@@ -920,7 +938,7 @@ body {
 .soc-user__row { display: flex; gap: 8px; justify-content: space-between; }
 .soc-user__error {
   margin: 0; font: 500 11px var(--tk-font-ui); letter-spacing: 0.04em;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .soc-user__caption {
   margin: 0; font: 400 11px var(--tk-font-mono); color: var(--tk-fg-3);
@@ -1297,7 +1315,7 @@ body {
    no es una falla (p. ej. estaciones sin gabinete instalado). */
 .soc-kpi--ok .soc-kpi__value { color: var(--tk-status-normal); }
 .soc-kpi--warn .soc-kpi__value { color: var(--tk-status-warning); }
-.soc-kpi--crit .soc-kpi__value { color: var(--tk-status-critical); }
+.soc-kpi--crit .soc-kpi__value { color: var(--tk-status-critical-text); }
 .soc-kpi--muted .soc-kpi__value { color: var(--tk-fg-2); }
 
 .soc-kpis__showing {
@@ -1507,7 +1525,9 @@ body {
   border-radius: 6px;
   border: 1px solid var(--tk-status-critical);
   background: var(--tk-status-critical);
-  color: var(--tk-fg-1);
+  /* [T-6.09] Igual que `.soc-alert__strip`: sobre el rojo sólido se escribe en
+     navy (5.01:1). El gris claro daba 2.85. */
+  color: var(--tk-navy-900);
   font-family: var(--tk-font-ui);
   font-size: 12px;
   font-weight: 700;
@@ -1553,11 +1573,18 @@ body {
   gap: 6px;
   min-width: 0;
 }
+/* [T-6.09] La cinta lleva SU PROPIO fondo. Era transparente, así que su gris
+   se medía contra lo que hubiera debajo —y debajo hay de todo: la franja de
+   escena en ámbar (3.88:1), una fila seleccionada (4.41:1) y, en una alerta,
+   el rojo sólido. Con un fondo opaco propio el contraste deja de depender del
+   anfitrión: 8.87:1 donde se pinte. Sigue siendo GRIS y discontinua (T-6.04):
+   el ámbar de esta consola ya significa simulacro. */
 .site-demo {
   padding: 2px 6px;
   border: 1px dashed var(--tk-fg-3);
   border-radius: 3px;
-  color: var(--tk-fg-3);
+  background: var(--tk-surface-0);
+  color: var(--tk-fg-2);
   font: 700 9px/1 var(--tk-font-ui);
   letter-spacing: 0.14em;
   text-transform: none;
@@ -1764,7 +1791,7 @@ body {
 .soc-drillhist__ackpill.is-rejected,
 .soc-drillhist__ackpill.is-aborted {
   background: var(--tk-status-critical-15);
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .soc-drillhist__ackpill.is-no_gateway,
 .soc-drillhist__ackpill.is-scheduled {

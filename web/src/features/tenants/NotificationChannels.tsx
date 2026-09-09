@@ -164,7 +164,7 @@ export default function NotificationChannels({
         <span className="soc-meta">CASCADA APLICADA · ORDEN FIJO DEL SERVIDOR</span>
         <span className="mt-channels__cascade-trace">
           {active.length === 0 ? (
-            <span style={{ color: "var(--tk-status-critical)" }}>
+            <span style={{ color: "var(--tk-status-critical-text)" }}>
               SIN CANAL CON DESTINO · TENANT DESPROTEGIDO
             </span>
           ) : (
