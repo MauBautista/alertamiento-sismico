@@ -914,7 +914,15 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
       "una fila vacía sigue cobrando su gap: sin banner queda una banda muerta arriba",
     ).toBe("0");
     // Y la separación tiene que venir de algún sitio cuando el banner SÍ está.
-    expect(declValue(rulesFor(ALL_BASE, ".privacy-banner"), "margin")).toBe("0 0 12px");
+    // [T-6.11] Se afirma que EXISTE y que es sólo por abajo, no su valor: el
+    // hueco es parte de lo que la franja le cobra al mapa y esta ficha lo bajó
+    // de 12 a 8 px con esa cuenta delante. Clavar el número convertía una
+    // medida de diseño en un contrato, y el contrato es «que haya separación y
+    // que no la ponga el grid».
+    const margen = declValue(rulesFor(ALL_BASE, ".privacy-banner"), "margin");
+    expect(margen, ".privacy-banner perdió su margen: la franja pegaría con la página").toMatch(
+      /^0 0 [1-9]\d*px$/,
+    );
   });
 
   it("y son los TRES ÚNICOS selectores del shell (más el genérico) que deciden esas filas", () => {
@@ -943,6 +951,30 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
       ".soc-app > .soc-main > .soc-scene",
       ".soc-main",
     ]);
+  });
+
+  it("[T-6.11] la franja plegada es UNA LÍNEA por construcción, no por suerte", () => {
+    // El aviso medía 164 px —cabecera, dos párrafos y dos filas de botones— y
+    // esos 164 salían ENTEROS del alto del mapa: a 1280×800 el escenario pasaba
+    // de 445 px a 269, por debajo de su piso. Que quepa en una línea no puede
+    // depender de que hoy los textos sean cortos: se declara.
+    const caja = rulesFor(ALL, ".privacy-banner__box");
+    expect(caja, ".privacy-banner__box perdió su regla: lo de abajo pasaría vacío").not.toBe("");
+    expect(declValue(caja, "display")).toBe("flex");
+    expect(
+      declValue(caja, "flex-wrap"),
+      "sin `nowrap` la franja vuelve a apilarse en cuanto un texto crezca",
+    ).toBe("nowrap");
+
+    // Y alguien tiene que ceder cuando la ventana es estrecha, o `nowrap`
+    // desborda en vez de recortar. El que cede es el nombre del aviso.
+    const version = rulesFor(ALL, ".privacy-banner__version");
+    expect(declValue(version, "text-overflow")).toBe("ellipsis");
+    expect(declValue(version, "overflow")).toBe("hidden");
+    expect(
+      declValue(version, "min-width"),
+      "un item flex no baja de su contenido sin `min-width: 0`: el recorte no llegaría a pasar",
+    ).toBe("0");
   });
 
   it("el banner no se ancla ni se superpone: sigue siendo una franja que EMPUJA", () => {

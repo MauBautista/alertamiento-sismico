@@ -133,48 +133,50 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
     >
       {notice && (
         <section aria-live="polite" className="privacy-banner__box" data-consent-state={state}>
-          <header className="privacy-banner__hd">
-            <span className="privacy-banner__tag">CUMPLIMIENTO</span>
-            <h2 className="privacy-banner__title">{TITULO[state]}</h2>
-            <span className="privacy-banner__version">
-              {notice.title} · v{notice.version} ·{" "}
-              {notice.source === "tenant" ? "de su organización" : "de la plataforma"}
-            </span>
-            {notice.provisional && (
-              <span className="privacy-banner__provisional" title={notice.provisional_reason}>
-                TEXTO PROVISIONAL · pendiente de revisión jurídica
-              </span>
-            )}
-          </header>
+          {/* [T-6.11] UNA LÍNEA. Este bloque medía 164 px en las seis pantallas
+              hasta que alguien aceptara —dos párrafos, una cabecera de tres
+              piezas y dos filas de botones— y esos 164 px salían ENTEROS del
+              alto del mapa: medido a 1280×800, el escenario pasaba de 445 px a
+              269, por debajo de su piso. Es lo primero que ve un cliente en una
+              demo, y lo que veía era un trámite tapando la operación.
 
-          <p className="privacy-banner__why">{EXPLICACION[state]}</p>
-          <p className="privacy-banner__nonblocking">
-            Esto NO bloquea la operación: puede seguir acusando incidentes y pasar lista aunque no
-            lo acepte ahora.
-          </p>
-
-          <button
-            className="privacy-banner__toggle"
-            onClick={() => setAbierto((v) => !v)}
-            type="button"
+              Lo que se queda en la línea es lo que hay que poder leer sin
+              pulsar nada: en qué estado está el consentimiento (el título ya lo
+              distingue), qué aviso y de quién, y que esto NO bloquea. La
+              explicación larga y el texto del aviso se leen al desplegar, que
+              es donde ya vivía el cuerpo. */}
+          <span className="privacy-banner__tag">CUMPLIMIENTO</span>
+          <h2 className="privacy-banner__title">{TITULO[state]}</h2>
+          {/* El que cede cuando la ventana estrecha: se recorta con puntos
+              suspensivos, y el `title` conserva lo que se recortó — la versión
+              es lo que identifica QUÉ aviso se está aceptando. */}
+          <span
+            className="privacy-banner__version"
+            title={`${notice.title} · v${notice.version} · ${
+              notice.source === "tenant" ? "de su organización" : "de la plataforma"
+            }`}
           >
-            {abierto ? "OCULTAR EL AVISO" : "LEER EL AVISO COMPLETO"}
-          </button>
-
-          {abierto && (
-            <div className="privacy-banner__body" data-testid="privacy-body">
-              {notice.paragraphs.map((p) => (
-                <p className="privacy-banner__p" key={p.slice(0, 48)}>
-                  {p}
-                </p>
-              ))}
-              <p className="privacy-banner__digest">
-                Sello del texto: {notice.digest.slice(0, 16)}…
-              </p>
-            </div>
+            {notice.title} · v{notice.version} ·{" "}
+            {notice.source === "tenant" ? "de su organización" : "de la plataforma"}
+          </span>
+          {notice.provisional && (
+            <span className="privacy-banner__provisional" title={notice.provisional_reason}>
+              TEXTO PROVISIONAL
+            </span>
           )}
+          {/* La promesa se queda a la vista, corta: que el aviso no sea un
+              torniquete es justo lo que un operador necesita saber sin abrir
+              nada (reglas de oro 1 y 2). */}
+          <span className="privacy-banner__nonblocking">NO bloquea la operación</span>
 
           <div className="privacy-banner__actions">
+            <button
+              className="privacy-banner__toggle"
+              onClick={() => setAbierto((v) => !v)}
+              type="button"
+            >
+              {abierto ? "OCULTAR EL AVISO" : "LEER EL AVISO COMPLETO"}
+            </button>
             <button
               className="privacy-banner__accept"
               disabled={live.deciding}
@@ -206,6 +208,26 @@ export default function PrivacyConsentBanner({ override }: PrivacyConsentBannerP
           </div>
 
           {live.decideError && <p className="privacy-banner__err">{live.decideError}</p>}
+
+          {abierto && (
+            <div className="privacy-banner__body" data-testid="privacy-body">
+              {/* La explicación del estado ENCABEZA el cuerpo: quien despliega
+                  lo primero que pregunta es por qué le están enseñando esto. */}
+              <p className="privacy-banner__why">{EXPLICACION[state]}</p>
+              <p className="privacy-banner__p">
+                Esto NO bloquea la operación: puede seguir acusando incidentes y pasar lista aunque
+                no lo acepte ahora.
+              </p>
+              {notice.paragraphs.map((p) => (
+                <p className="privacy-banner__p" key={p.slice(0, 48)}>
+                  {p}
+                </p>
+              ))}
+              <p className="privacy-banner__digest">
+                Sello del texto: {notice.digest.slice(0, 16)}…
+              </p>
+            </div>
+          )}
         </section>
       )}
     </StateFrame>
