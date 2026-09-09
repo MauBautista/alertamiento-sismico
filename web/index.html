@@ -15,7 +15,77 @@
     <title>TAKAB Ailert · Consola SOC</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- [T-6.07] EL PASO 0 DEL ARRANQUE, que no tenía pantalla.
+         Entre que el navegador pinta este HTML y que React monta su primer
+         frame no había NADA: fondo del navegador y silencio. Medido en la
+         auditoría del 2026-09-06: 0.5 s con el login dev en local y 1.3 s
+         hasta la landing desplegada — suficiente para que alguien crea que la
+         consola no arrancó, y en una sala de operación eso se resuelve
+         recargando a ciegas.
+
+         Va INLINE y sin depender de nada: si el bundle no llega, esto es lo
+         único que hay. Los colores son los del paquete de tokens escritos a
+         mano a propósito: la hoja que los declara viaja DENTRO del bundle que
+         todavía no ha cargado. React sustituye este contenido al montar. -->
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite">
+        <p class="boot__marca">TAKAB AILERT</p>
+        <p class="boot__sub">CONSOLA SOC · INICIANDO…</p>
+      </div>
+    </div>
+    <noscript>
+      <!-- Sin JavaScript, el navegador PINTA los dos bloques: el de `#root`
+           seguiría diciendo «INICIANDO…» de una consola que no va a iniciar
+           nunca, encima del texto que explica por qué. Una pantalla que dice
+           que algo está en marcha cuando no lo está es la regla de oro 7 en
+           pequeño. Una hoja inline puesta AQUÍ DENTRO solo se aplica cuando el
+           scripting está apagado, y `#root .boot` gana por especificidad de id
+           esté donde esté escrita. (Sin nombrar la etiqueta: el test localiza
+           el bloque del arranque escaneando estas mismas hojas.) -->
+      <style>
+        #root .boot {
+          display: none;
+        }
+      </style>
+      <div class="boot">
+        <p class="boot__marca">TAKAB AILERT</p>
+        <p class="boot__sub">
+          Esta consola necesita JavaScript. El alertamiento del edificio NO depende de esta
+          pantalla: el gabinete sigue operando aunque nadie la tenga abierta.
+        </p>
+      </div>
+    </noscript>
+    <style>
+      .boot {
+        align-items: center;
+        background: #0e2336;
+        color: #f0f2f5;
+        display: flex;
+        flex-direction: column;
+        font:
+          400 14px/1.5 system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+        gap: 10px;
+        justify-content: center;
+        min-height: 100vh;
+        text-align: center;
+      }
+      .boot__marca {
+        color: #00bfff;
+        font-size: 13px;
+        font-weight: 700;
+        letter-spacing: 0.24em;
+        margin: 0;
+      }
+      .boot__sub {
+        color: #8a9cb1;
+        margin: 0;
+        max-width: 34rem;
+        padding: 0 1.5rem;
+      }
+    </style>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

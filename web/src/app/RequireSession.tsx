@@ -13,7 +13,8 @@ export default function RequireSession() {
   const location = useLocation();
 
   if (status === "booting" || status === "authenticating") {
-    return <SplashScreen />;
+    // Qué se espera aquí: el arranque de la sesión (`bootstrap` → `/me`).
+    return <SplashScreen espera="la sesión del operador (/me)" />;
   }
   // [T-2.123] SEGUNDA CAPA. `App` ni siquiera monta el router en degradado, así
   // que en la app real esto no se alcanza; existe para que el día que alguien

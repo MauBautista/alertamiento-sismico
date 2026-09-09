@@ -140,6 +140,42 @@ describe("session.store", () => {
     expect(window.sessionStorage.getItem(DEV_STORAGE_KEY)).toBeNull();
   });
 
+  // [T-6.07] Un 401 echaba al operador SIN DECIRLO: volvía a un login idéntico
+  // al de un arranque en frío. La causa se guarda para que la landing la diga,
+  // y se guarda en un CAMPO —el estado sigue siendo `anonymous`, que es lo que
+  // es— porque el censo de más abajo exige productor real por cada miembro de
+  // `SessionStatus` y una causa no es un estado.
+  it("/me 401 ⇒ queda registrado POR QUÉ, para que la landing lo diga", async () => {
+    saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
+    mocks.getMe.mockRejectedValue(new MeRequestError(401));
+
+    await useSessionStore.getState().bootstrap();
+
+    expect(useSessionStore.getState().endedReason).toBe("expired");
+  });
+
+  it("entrar otra vez CIERRA el episodio: la causa no sobrevive a la sesión nueva", async () => {
+    saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
+    mocks.getMe.mockRejectedValueOnce(new MeRequestError(401));
+    await useSessionStore.getState().bootstrap();
+    expect(useSessionStore.getState().endedReason).toBe("expired");
+
+    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().refreshMe();
+
+    // Sin esto, «SU SESIÓN SE CERRÓ» reaparecería meses después, en el siguiente
+    // logout deliberado, culpando de una expiración que ya nadie recuerda.
+    expect(useSessionStore.getState().status).toBe("authenticated");
+    expect(useSessionStore.getState().endedReason).toBeNull();
+  });
+
+  it("un arranque en frío no acusa expiración de nada", async () => {
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().bootstrap();
+
+    expect(useSessionStore.getState().endedReason).toBeNull();
+  });
+
   // [T-2.123] Un /me que no contesta por algo que NO es 401 (5xx de Postgres
   // caído, red) es "alcance desconocido", no "sesión cerrada": la consola
   // arranca en degradado y lo declara. Ver app/DegradedSessionScreen.tsx.

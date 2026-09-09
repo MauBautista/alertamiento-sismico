@@ -173,6 +173,20 @@ export const tokens = {
     durBase: v("--tk-dur-base"),
     durSlow: v("--tk-dur-slow"),
   },
+  /**
+   * [T-6.07] Cuánto puede callar una espera antes de tener que DECIR qué
+   * espera. No es una duración de interacción —las de `motion` son de
+   * animación, 120–280 ms— sino el umbral a partir del cual una pantalla que
+   * sigue esperando deja de ser normal y se convierte en una pantalla muda.
+   *
+   * 3 s sale de lo medido en la auditoría del 2026-09-06: 0.5 s hasta pantalla
+   * con el login dev, 1.3 s hasta la landing desplegada. Por debajo de 3 s el
+   * mensaje sería ruido en el camino feliz; por encima, quien mira ya se está
+   * preguntando si aquello se colgó.
+   */
+  wait: {
+    declare: v("--tk-wait-declare"),
+  },
   layout: {
     gridCols: v("--tk-grid-cols"),
     gridGutter: v("--tk-grid-gutter"),

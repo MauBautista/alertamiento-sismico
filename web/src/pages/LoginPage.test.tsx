@@ -58,10 +58,44 @@ describe("LoginPage", () => {
     expect(loginCognito).toHaveBeenCalledWith("/fleet");
   });
 
-  it("sin Cognito configurado muestra la nota en lugar del botón", () => {
+  it("sin Cognito configurado la nota le habla al operador, no al que despliega", () => {
+    // [T-6.07] Este test AFIRMABA el literal viejo («Cognito no configurado
+    // (VITE_COGNITO_*)»), así que el copy y él cambian en el mismo commit. Lo
+    // que se defiende ahora no es una frase, son las tres cosas que quien está
+    // de turno necesita: que desde aquí no se entra, a quién avisar, y que el
+    // edificio sigue protegido (reglas de oro 1 y 2).
     renderRoutesAt("/");
     expect(screen.queryByRole("button", { name: "ENTRAR CON COGNITO" })).not.toBeInTheDocument();
-    expect(screen.getByText(/Cognito no configurado/)).toBeInTheDocument();
+    const nota = screen.getByText(/no tiene identidad configurada/);
+    expect(nota).toHaveTextContent(/Avise a quien la desplegó/);
+    expect(nota).toHaveTextContent(/NO depende de esta pantalla/);
+    // Y NINGUNA variable de build en el texto: ese detalle es del `title`, que
+    // es donde lo busca quien desplegó y no se le pone delante a nadie más.
+    expect(nota.textContent).not.toMatch(/VITE_/);
+    expect(nota).toHaveAttribute("title", expect.stringContaining("VITE_COGNITO_AUTHORITY"));
+  });
+
+  it("tras una expiración la landing dice POR QUÉ se cerró la sesión", () => {
+    // [T-6.07] `handleUnauthorized` limpiaba en silencio y el operador
+    // reaparecía en un login idéntico al de un arranque en frío. La causa viaja
+    // en un CAMPO (`endedReason`), no en un `SessionStatus` nuevo: el estado
+    // sigue siendo `anonymous`, que es lo que es.
+    useSessionStore.getState().handleUnauthorized();
+    renderRoutesAt("/");
+
+    const aviso = screen.getByTestId("login-sesion-cerrada");
+    expect(aviso).toHaveTextContent(/SU SESIÓN SE CERRÓ/);
+    // No se inventa la causa: un 401 puede ser expiración o revocación.
+    expect(aviso).toHaveTextContent(/expiró o fue revocada/);
+    // Anunciado, no solo pintado: quien usa lector de pantalla no ve el panel.
+    expect(aviso).toHaveAttribute("role", "status");
+  });
+
+  it("un arranque en frío NO acusa a nadie de haber expirado", () => {
+    // El aviso solo existe cuando hubo un episodio anterior; en un login normal
+    // sería una alarma falsa, y una consola que alarma sin causa se ignora.
+    renderRoutesAt("/");
+    expect(screen.queryByTestId("login-sesion-cerrada")).not.toBeInTheDocument();
   });
 
   it("autenticado en / redirige al landing del rol (primera allowed_route)", () => {

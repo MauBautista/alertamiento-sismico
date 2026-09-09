@@ -77,6 +77,20 @@ a.soc-btn {
   margin: 0;
 }
 
+/* [T-6.07] La causa de que la sesión anterior terminara. No es un error de la
+   consola —nada falló aquí— ni una nota al pie: es lo que explica por qué esta
+   pantalla está delante. De ahí el tono de aviso y no el crítico del
+   `__error`, y el borde que la separa del resto del panel. */
+.soc-screen__aviso {
+  border: 1px solid var(--tk-status-warning);
+  border-radius: var(--tk-radius-md);
+  color: var(--tk-status-warning);
+  font-size: var(--tk-text-sm);
+  line-height: var(--tk-leading-normal);
+  margin: 0;
+  padding: var(--tk-space-2) var(--tk-space-3);
+}
+
 /* Placeholder de pantalla en construcción (T-1.27→T-1.30). */
 .soc-placeholder {
   display: grid;

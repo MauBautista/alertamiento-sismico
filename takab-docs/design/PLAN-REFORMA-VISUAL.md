@@ -668,7 +668,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     privacidad se lleva el mapa, ficha `T-6.11`) y los sobrepuestos del escenario, ninguno de esta
     ficha.
 
-### [ ] T-6.07 · **El arranque no tiene silencios** — `SOFTWARE`
+### [x] T-6.07 · **El arranque no tiene silencios** — `SOFTWARE`
 
 > Entre el HTML y el primer frame no hay pantalla; el splash es estático y mudo; la sesión expira
 > y el operador vuelve a un login idéntico al de un arranque frío; el fallback nombra variables de
@@ -682,10 +682,59 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `LoginPage.test.tsx` afirma el literal del fallback; copy y test cambian en el mismo commit.
 - **Objetivo:** una marca de arranque en el HTML con la marca; un splash con `role="status"` que a partir del umbral dice qué espera; la landing que declara «su sesión expiró» cuando esa es la causa; cero texto de ingeniero.
 - **Criterios de aceptación:**
-  - [ ] Con JavaScript lento, el usuario ve algo con marca antes del primer frame de React.
-  - [ ] Pasado el umbral, el splash dice qué espera (`/me`) y desde cuándo.
-  - [ ] Tras `handleUnauthorized`, la landing dice por qué se cerró la sesión.
-  - [ ] El fallback sin Cognito habla al operador, no al que despliega.
+  - [x] Con JavaScript lento, el usuario ve algo con marca antes del primer frame de React.
+  - [x] Pasado el umbral, el splash dice qué espera (`/me`) y desde cuándo.
+  - [x] Tras `handleUnauthorized`, la landing dice por qué se cerró la sesión.
+  - [x] El fallback sin Cognito habla al operador, no al que despliega.
+- **Cómo se cerró (2026-09-09, SESIÓN C7):**
+  - **El paso 0 existe y vive DENTRO de `#root`.** `index.html` trae marca, «CONSOLA SOC ·
+    INICIANDO…» y un `<style>` inline. Dentro de `#root` a propósito: React lo sustituye al montar,
+    y fuera se quedaría pegado debajo de la consola para siempre. No depende de nada que todavía
+    no haya llegado —ni hoja externa, ni fuente remota, ni `var(--tk-*)`: la hoja que declara esos
+    tokens viaja en el bundle que aún no está—, así que los colores van escritos a mano y
+    `bootMarker.test.ts` exige que sean **los del paquete** y que no haya ningún otro hex, la misma
+    disciplina que el panel del gabinete.
+  - **Medido en un navegador con el bundle cortado:** la marca se pinta al segundo, cian
+    `--tk-cyan` sobre `--tk-surface-0`, y al llegar el bundle quedan **cero** marcadores de
+    arranque en el DOM. Con el scripting apagado se pintaban **los dos bloques**: el de `#root`
+    anunciando el arranque de una consola que no iba a arrancar, encima del texto que explica por
+    qué. Una hoja inline dentro del propio `noscript` lo apaga (solo se aplica en ese caso, y
+    `#root .boot` gana por especificidad de id) y queda el deslinde que de verdad importa: **el
+    alertamiento del edificio NO depende de esta pantalla**.
+  - **El splash dice qué espera y desde cuándo.** Umbral en token semántico nuevo
+    (`--tk-wait-declare`, 3000 ms) porque la misma pregunta se la hacen otras pantallas; el número
+    no se escribe en el componente ni en su test. Pasado el umbral: «ESTO ESTÁ TARDANDO · esperando
+    la sesión del operador (/me) desde hace N s», con el contador corriendo —que es la diferencia
+    entre lento y colgado— y `role="status"` + `aria-live="polite"` en el panel, porque quien usa
+    lector de pantalla oía un rótulo y luego silencio. **Qué se espera lo declara cada sitio**:
+    `RequireSession` la sesión, `AuthCallbackPage` la vuelta de Cognito. Confundirlas manda a mirar
+    el sitio equivocado: la API propia y el proveedor de identidad son dos diagnósticos distintos.
+    Verificado en el navegador con `/me` colgado: 0 s muda, el aviso a los 3 s, 6 s tres segundos
+    después.
+  - **La expiración deja de ser muda.** `handleUnauthorized` limpiaba y el operador reaparecía en
+    un login idéntico al de un arranque en frío, sin una palabra: volvía a entrar sin enterarse de
+    que el turno llevaba un rato sin consola. La causa viaja en un **campo** (`endedReason`) y no
+    en un `SessionStatus` nuevo —el estado sigue siendo `anonymous`, que es lo que es, y el censo de
+    `session.store.test.ts` exige productor real por cada miembro del union: **el test tenía razón**,
+    como decía la ficha. La landing solo la LEE; quien la apaga es el `/me` de la sesión siguiente,
+    para que «SU SESIÓN SE CERRÓ» no reaparezca meses después culpando de una expiración que ya
+    nadie recuerda.
+  - **No se inventa la causa.** Un 401 puede ser expiración o revocación y desde el navegador no se
+    distinguen, así que el aviso dice «el servidor dejó de reconocerla (expiró o fue revocada)» y no
+    «expiró por inactividad», que sería adivinar. Tono de aviso, no de error: aquí no falló nada de
+    la consola.
+  - **El fallback sin Cognito le habla a quien está de turno.** Decía «Cognito no configurado
+    (VITE_COGNITO_*)»: nombra un proveedor de identidad y dos variables de build a alguien que solo
+    quiere entrar, y no dice ni qué hacer ni si el edificio sigue protegido. Ahora dice que desde
+    ahí no se entra, a quién avisar y que el alertamiento no depende de esta pantalla; el detalle
+    técnico viaja en el `title`, donde lo busca quien desplegó. `LoginPage.test.tsx` afirmaba el
+    literal viejo: **copy y test cambian en el mismo commit**, y lo que el test defiende ahora no es
+    una frase sino las tres cosas que hacen falta, más que **ninguna** variable de build aparezca en
+    el texto.
+  - **Verificación:** web 2 201 tests (6 ficheros nuevos o tocados: `bootMarker`, `StatusScreens`,
+    `LoginPage`, `session.store`), `tsc`, `eslint`, `prettier` y `vite build` limpios; los cuatro
+    criterios ejercidos en un navegador real sobre el build de producción (bundle cortado, scripting
+    apagado, `/me` colgado y `/me` en 401), con capturas.
 
 ### [ ] T-6.08 · **El login se ve TAKAB** — `SOFTWARE` + `TERRAFORM`
 
