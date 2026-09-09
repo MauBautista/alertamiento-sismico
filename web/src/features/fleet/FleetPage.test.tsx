@@ -1,5 +1,6 @@
 import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -7,7 +8,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 // T-1.59: SiteCard monta useSelfTest (react-query) — todo render lleva provider.
 function render(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  // [T-6.14] Con router: cada tarjeta lleva un `<Link>` a la ficha del edificio.
+  return rtlRender(
+    <MemoryRouter>
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  );
 }
 
 import { resetSessionStoreForTests } from "../../auth/session.store";
@@ -241,12 +247,16 @@ describe("FleetPage", () => {
           dataUpdatedAt: state === "stale" ? Date.now() - 100_000 : Date.now(),
         }),
       );
-      // expectFourStates renderiza por su cuenta: el provider viaja en el JSX.
+      // expectFourStates renderiza por su cuenta: el provider —y desde T-6.14
+      // el router, que exigen los enlaces a la ficha del edificio— viajan en el
+      // JSX que se le devuelve.
       const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       return (
-        <QueryClientProvider client={client}>
-          <FleetPage />
-        </QueryClientProvider>
+        <MemoryRouter>
+          <QueryClientProvider client={client}>
+            <FleetPage />
+          </QueryClientProvider>
+        </MemoryRouter>
       );
     });
   });

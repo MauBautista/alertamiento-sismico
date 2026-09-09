@@ -2,6 +2,7 @@ import {
   AlertOctagon,
   AlertTriangle,
   CheckCircle2,
+  ExternalLink,
   FileDown,
   Printer,
   ShieldCheck,
@@ -117,6 +118,19 @@ export interface TriageDetailProps {
    * declara la ausencia y a quién pedirle la verificación.
    */
   canOpenFleet: boolean;
+  /**
+   * [T-6.14] `allowed_routes` incluye `/building`. Hoy la tienen los siete roles
+   * web, y aun así se pregunta: el enlace se pinta desde el contrato del
+   * servidor, no desde lo que hoy resulta ser cierto para todos.
+   */
+  canOpenBuilding: boolean;
+  /**
+   * [T-6.14] Sitio al que volver en el wall, si se llegó desde allí
+   * (`/triage?...&volver=<site_id>`). `null` = se entró por la pestaña, y
+   * entonces no hay riel al que regresar: ofrecerlo mandaría al operador a una
+   * pantalla en la que no estuvo.
+   */
+  volverASitioId: string | null;
 }
 
 /**
@@ -162,6 +176,8 @@ export default function TriageDetail({
   onDownloadClip,
   canGenerateReport,
   canOpenFleet,
+  canOpenBuilding,
+  volverASitioId,
 }: TriageDetailProps) {
   const [status, setStatus] = useState<string>("no_inhabit_inspect");
   const inc = row.incident;
@@ -202,6 +218,19 @@ export default function TriageDetail({
   return (
     <aside className="triage-detail">
       <header className="triage-detail__hd">
+        {/* [T-6.14] EL CAMINO DE VUELTA, arriba del todo: quien llegó aquí desde
+            el wall venía mirando un sitio, y al salir de esta pantalla lo que
+            quiere es seguir mirándolo. Sin esto, firmar era el final del hilo:
+            la consola se re-armaba desde cero. */}
+        {volverASitioId !== null && (
+          <Link
+            className="soc-link triage-detail__volver"
+            data-testid="triage-volver"
+            to={`/console?sitio=${encodeURIComponent(volverASitioId)}`}
+          >
+            ◀ VOLVER A MONITOREO · <SiteLabel name={row.siteName} code={row.siteCode} />
+          </Link>
+        )}
         <span className="soc-meta">{badge}</span>
         {/* [T-2.39] El título era `M — · Sitio`: la magnitud es SIEMPRE null (no hay
             ingesta de catálogo), así que el encabezado del panel se abría con un
@@ -213,6 +242,19 @@ export default function TriageDetail({
         <div className="triage-detail__id">
           {inc.event_id ?? inc.incident_id} · {utcStamp(Date.parse(inc.opened_at))} UTC
         </div>
+        {/* [T-6.14] `/building` colgaba de UN enlace en el riel de `/console`.
+            `inspector` y `building_admin` tienen la ruta concedida y NO tienen
+            `/fleet`: para ellos ese riel era el único camino a la ficha del
+            inmueble que están evaluando. Aquí es donde la necesitan. */}
+        {canOpenBuilding && (
+          <Link
+            className="soc-link triage-detail__deeplink"
+            data-testid="triage-building-link"
+            to={`/building/${inc.site_id}`}
+          >
+            <ExternalLink size={11} aria-hidden /> FICHA DEL EDIFICIO
+          </Link>
+        )}
       </header>
 
       {/* HECHOS del incidente/evento (T-1.52): PGA/PGV/duración/profundidad,

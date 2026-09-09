@@ -195,6 +195,17 @@ export function epicentersToFeatureCollection(epicenters: MapEpicenter[]): Featu
   };
 }
 
+/**
+ * [T-6.14] El rótulo de un sismo del catálogo, en UN solo sitio.
+ *
+ * El ◇ del mapa y el aviso de «comparativa armada» tienen que nombrar el mismo
+ * sismo con las mismas palabras: con trece diamantes iguales en pantalla, dos
+ * rótulos distintos para el mismo evento se leen como dos eventos.
+ */
+export function catalogLabel(q: CatalogEarthquakeOut): string {
+  return `M ${q.magnitude.toFixed(1)} · ${q.origin_time.slice(0, 4)} · ${q.source}`;
+}
+
 /** [T-2.28] GeoJSON del catálogo histórico. Los "gemelos" SSN/USGS del mismo sismo
  * se pintan AMBOS: sus ~28 km de separación son dato honesto del catálogo. */
 export function catalogToFeatureCollection(
@@ -208,7 +219,7 @@ export function catalogToFeatureCollection(
       geometry: { type: "Point", coordinates: [q.lon, q.lat] },
       properties: {
         ref_id: q.ref_id,
-        label: `M ${q.magnitude.toFixed(1)} · ${q.origin_time.slice(0, 4)} · ${q.source}`,
+        label: catalogLabel(q),
         selected: q.ref_id === selectedId,
       },
     })),
@@ -286,7 +297,9 @@ export interface MapPanelProps {
   catalog?: CatalogEarthquakeOut[];
   catalogError?: boolean;
   selectedCatalogId?: string | null;
-  onSelectCatalog?: (refId: string) => void;
+  /** [T-6.14] `null` DESARMA: apagar el histórico y el «CANCELAR» del aviso
+   * pasan por aquí, y quien manda en la selección sigue siendo el padre. */
+  onSelectCatalog?: (refId: string | null) => void;
   /** [T-2.50] Estaciones dentro del viewport actual (moveend + getBounds). */
   onViewportChange?: (visibleSiteIds: string[]) => void;
 }
@@ -863,11 +876,35 @@ export default function MapPanel({
     acc[state] = (acc[state] ?? 0) + 1;
     return acc;
   }, {});
-  const toggle = (key: keyof LayerToggles) => () =>
-    setLayers((prev) => ({ ...prev, [key]: !prev[key] }));
+  // [T-6.14] Apagar el HISTÓRICO desarma la comparativa. El aviso del paso 2
+  // colgaba de `layers.catalog`, así que apagar la capa lo borraba y dejaba el
+  // mapa armado en silencio: el siguiente clic en una estación abría la
+  // comparativa en vez del detalle. Se desarma desde AQUÍ y no desde un efecto
+  // del padre porque el interruptor vive aquí; el padre sigue siendo el dueño
+  // de la selección y por eso se le avisa en vez de tocarla.
+  //
+  // Vale para los DOS mandos del mismo interruptor (la fila de CAPAS y el
+  // rótulo de la leyenda): que uno desarmara y el otro no sería peor que no
+  // desarmar ninguno.
+  // El sismo con el que está armada la comparativa, si lo tenemos en el
+  // catálogo cargado: `null` = no armado.
+  const armado = catalog.find((q) => q.ref_id === selectedCatalogId) ?? null;
+  const toggle = (key: keyof LayerToggles) => () => {
+    const apagando = layersRef.current[key];
+    // El ref se ADELANTA al render: dos pulsaciones en el mismo lote (un doble
+    // clic, o el mando de la fila y el de la leyenda seguidos) leerían las dos
+    // el estado viejo y la segunda no se enteraría de que está apagando.
+    layersRef.current = { ...layersRef.current, [key]: !apagando };
+    setLayers(layersRef.current);
+    if (key === "catalog" && apagando) onSelectCatalogRef.current?.(null);
+  };
 
   return (
-    <div className="soc-map" data-testid="map-panel">
+    <div
+      className="soc-map"
+      data-testid="map-panel"
+      data-comparativa={armado !== null ? "armada" : undefined}
+    >
       <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
 
       {/* [T-2.55] Pila de ESTADO DEL MAPA, arriba-izquierda. El badge estaba
@@ -877,6 +914,25 @@ export default function MapPanel({
         {degraded && (
           <div className="soc-map__degraded" data-testid="map-degraded" role="status">
             ◐ SIN MAPA BASE · TILES NO DISPONIBLES · SITIOS EN VIVO
+          </div>
+        )}
+        {/* [T-6.14] El mapa ARMADO lo dice donde se está mirando, no en la
+            tercera leyenda de abajo. Dice también QUÉ sismo, porque el mapa
+            tiene trece ◇ iguales, y trae su propio modo de salir: quien armó
+            sin querer no tiene que adivinar que se desarma apagando una capa. */}
+        {armado !== null && (
+          <div className="soc-map__armado" data-testid="map-armado" role="status">
+            <span>
+              ◇ COMPARATIVA ARMADA · {catalogLabel(armado)} · ELIJA LA ESTACIÓN A COMPARAR
+            </span>
+            <button
+              type="button"
+              className="soc-map__armado-btn"
+              data-testid="map-desarmar"
+              onClick={() => onSelectCatalogRef.current?.(null)}
+            >
+              CANCELAR
+            </button>
           </div>
         )}
       </div>

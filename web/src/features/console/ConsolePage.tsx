@@ -8,7 +8,7 @@
 // puede pintar).
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
 import { useQueryClient } from "@tanstack/react-query";
@@ -63,8 +63,18 @@ function ConsoleWall() {
   const scope = useSiteScope();
   const map = useMapState();
 
-  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  // [T-6.14] LA VUELTA DEL VIAJE. Solicitar un dictamen salta a `/triage` y tira
+  // el riel, el mapa y el filtro; el operador vuelve —cuando vuelve— a una
+  // consola en blanco que tiene que armar otra vez. `?sitio=` es lo que hace
+  // que ese regreso sea UN clic: el enlace de triage lo trae puesto.
+  //
+  // Estado INICIAL y no un efecto: el deep-link es cómo se entró a esta
+  // pantalla, no algo que la pantalla tenga que ir aplicando después. Un efecto
+  // volvería a abrir el riel cada vez que el operador lo cerrara.
+  const [searchParams] = useSearchParams();
+  const sitioDeEntrada = searchParams.get("sitio");
+  const [selectedSiteId, setSelectedSiteId] = useState<string | null>(sitioDeEntrada);
+  const [detailOpen, setDetailOpen] = useState(sitioDeEntrada !== null);
 
   // [T-2.28] comparativa histórica en dos pasos: sismo del catálogo → sitio.
   const catalog = useCatalog();
@@ -187,11 +197,17 @@ function ConsoleWall() {
     (incidentId: string) => {
       // La solicitud aterriza en el timeline; el flujo del dictamen vive en
       // Triage — se navega con el incidente preseleccionado.
+      //
+      // [T-6.14] Y con el camino de vuelta puesto: el sitio del incidente por
+      // el que se saltó, que es el que el operador estaba mirando. Sin él,
+      // triage es un callejón: se firma y se vuelve a una consola vacía.
+      const sitio = incidents.incidents.find((i) => i.incident_id === incidentId)?.site_id ?? null;
+      const volver = sitio === null ? "" : `&volver=${encodeURIComponent(sitio)}`;
       dictamenRequest.mutate(incidentId, {
-        onSuccess: () => void navigate(`/triage?incident=${incidentId}`),
+        onSuccess: () => void navigate(`/triage?incident=${incidentId}${volver}`),
       });
     },
-    [dictamenRequest, navigate],
+    [dictamenRequest, navigate, incidents.incidents],
   );
   const epicenterIncident =
     epicenterFor !== null

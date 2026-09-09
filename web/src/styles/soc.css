@@ -939,6 +939,40 @@ body {
   font: 700 10px var(--tk-font-mono); letter-spacing: 0.08em;
 }
 
+/* [T-6.14] EL MAPA ARMADO. Con un sismo del catálogo elegido, el próximo clic
+   en una estación abre la comparativa en vez del detalle. Vive en la pila
+   arriba-izquierda —la esquina del ESTADO DEL MAPA, que es lo que esto es— y
+   no en la tercera leyenda de abajo, donde el aviso anterior pasaba
+   desapercibido. Cian y no ámbar: no es una anomalía, es un modo que el
+   operador pidió; lo que hacía falta era que se viera. */
+.soc-map__armado {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 12px;
+  border-radius: var(--tk-radius-sm);
+  background: var(--tk-cyan-08);
+  color: var(--tk-cyan);
+  border: 1px solid var(--tk-cyan);
+  font: 700 10px var(--tk-font-mono);
+  letter-spacing: 0.08em;
+}
+.soc-map__armado-btn {
+  background: none;
+  border: 1px solid var(--tk-cyan);
+  border-radius: var(--tk-radius-sm);
+  color: var(--tk-cyan);
+  cursor: pointer;
+  font: inherit;
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+/* La cruz dice, sin leer nada, que este clic no va a hacer lo de siempre. */
+.soc-map[data-comparativa="armada"] .maplibregl-canvas {
+  cursor: crosshair;
+}
+
 .soc-incident-facts { display: grid; gap: 8px; padding: 4px 0; }
 .soc-fact { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .soc-fact__label {

@@ -133,3 +133,107 @@ describe("MapPanel · capa catálogo", () => {
     );
   });
 });
+
+/**
+ * [T-6.14] EL MAPA ARMADO. Con un sismo del catálogo elegido, el siguiente clic
+ * en una estación abre la COMPARATIVA en vez del detalle. El aviso existía —el
+ * «PASO 2» de arriba— pero vivía en la tercera leyenda, abajo a la izquierda,
+ * y encima estaba condicionado a que la capa siguiera encendida: apagar el
+ * histórico borraba el aviso y dejaba el mapa armado EN SILENCIO. El operador
+ * pincha una estación esperando su detalle y le sale otra pantalla.
+ */
+describe("MapPanel · la comparativa armada se DECLARA y se puede desarmar", () => {
+  const renderPanel = (selected: string | null, onSelectCatalog = vi.fn()) => {
+    render(
+      <MapPanel
+        sites={[]}
+        epicenters={[]}
+        onSelectSite={vi.fn()}
+        catalog={QUAKES}
+        selectedCatalogId={selected}
+        onSelectCatalog={onSelectCatalog}
+      />,
+    );
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    return onSelectCatalog;
+  };
+
+  it("armado, el mapa lo dice en su esquina de estado y nombra el sismo", () => {
+    renderPanel("r-19s");
+    const aviso = screen.getByTestId("map-armado");
+    expect(aviso).toHaveAttribute("role", "status");
+    expect(aviso).toHaveTextContent(/COMPARATIVA ARMADA/);
+    // Qué va a pasar con el próximo clic, dicho antes de que pase.
+    expect(aviso).toHaveTextContent(/estación/i);
+    // Y de qué sismo se está hablando: el mapa tiene 13 ◇ iguales.
+    expect(aviso).toHaveTextContent(/M 7.1/);
+  });
+
+  it("sin armar no hay aviso: no se alarma por lo que no está pasando", () => {
+    renderPanel(null);
+    expect(screen.queryByTestId("map-armado")).not.toBeInTheDocument();
+  });
+
+  it("el aviso vive AUNQUE la capa esté apagada (armado es armado)", () => {
+    // Defensa en profundidad: el desarmado de abajo es lo que evita este caso,
+    // pero si un día el padre arma sin capa, el mapa no puede callarse.
+    const { rerender } = render(
+      <MapPanel sites={[]} epicenters={[]} onSelectSite={vi.fn()} catalog={QUAKES} />,
+    );
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    rerender(
+      <MapPanel
+        sites={[]}
+        epicenters={[]}
+        onSelectSite={vi.fn()}
+        catalog={QUAKES}
+        selectedCatalogId="r-19s"
+        onSelectCatalog={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("map-armado")).toBeInTheDocument();
+  });
+
+  it("APAGAR el histórico desarma la comparativa", () => {
+    const spy = renderPanel("r-19s");
+    act(() => {
+      screen.getByTestId("catalog-toggle").click(); // ON
+    });
+    expect(spy).not.toHaveBeenCalled();
+    act(() => {
+      screen.getByTestId("catalog-toggle").click(); // OFF
+    });
+    expect(spy).toHaveBeenCalledWith(null);
+  });
+
+  it("el botón de capas hace lo MISMO que el de la leyenda", () => {
+    // Son dos mandos del mismo interruptor; que uno desarme y el otro no sería
+    // peor que no desarmar ninguno.
+    const spy = renderPanel("r-19s");
+    act(() => {
+      screen.getByTestId("layer-catalog").click(); // ON
+      screen.getByTestId("layer-catalog").click(); // OFF
+    });
+    expect(spy).toHaveBeenCalledWith(null);
+  });
+
+  it("CANCELAR desde el propio aviso desarma", () => {
+    const spy = renderPanel("r-19s");
+    act(() => {
+      screen.getByTestId("map-desarmar").click();
+    });
+    expect(spy).toHaveBeenCalledWith(null);
+  });
+
+  it("encender el histórico no desarma nada", () => {
+    const spy = renderPanel(null);
+    act(() => {
+      screen.getByTestId("catalog-toggle").click();
+    });
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactElement } from "react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MapSiteState } from "@takab/sdk";
@@ -527,15 +527,17 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
     });
 
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createMemoryRouter(
+      [
+        { path: "/console", element: <ConsolePage /> },
+        { path: "/triage", element: <div data-testid="triage-probe" /> },
+      ],
+      { initialEntries: ["/console"] },
+    );
     render(
-      <MemoryRouter initialEntries={["/console"]}>
-        <QueryClientProvider client={client}>
-          <Routes>
-            <Route path="/console" element={<ConsolePage />} />
-            <Route path="/triage" element={<div data-testid="triage-probe" />} />
-          </Routes>
-        </QueryClientProvider>
-      </MemoryRouter>,
+      <QueryClientProvider client={client}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /SOLICITAR DICTAMEN TÉCNICO/ }));
@@ -545,5 +547,47 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
     expect(mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost).toHaveBeenCalledWith(
       expect.objectContaining({ path: { incident_id: "i-1" } }),
     );
+    // [T-6.14] Y se lleva PUESTO el camino de vuelta. Solicitar el dictamen
+    // salta de pantalla y tira el riel, el mapa y el filtro; sin este `volver`,
+    // el operador termina en triage y regresa a una consola en blanco que tiene
+    // que volver a armar a mano. El sitio es el del incidente por el que se
+    // saltó: es el que estaba mirando.
+    expect(router.state.location.search).toContain("incident=i-1");
+    expect(router.state.location.search).toContain("volver=s-1");
+  });
+
+  it("`?sitio=` devuelve el riel abierto en ESE sitio", () => {
+    // La otra mitad del viaje: la vuelta desde triage es un enlace normal, y
+    // esta página tiene que saber leerlo. Sin esto, «volver» aterrizaría en la
+    // consola con el riel cerrado y el operador tendría que buscar su estación
+    // en el mapa otra vez.
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [] }));
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter initialEntries={["/console?sitio=s-1"]}>
+        <QueryClientProvider client={client}>
+          <ConsolePage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    const panel = screen.getByTestId("detail-panel");
+    expect(panel).toBeInTheDocument();
+    expect(panel).toHaveTextContent("Planta Cholula");
+  });
+
+  it("sin `?sitio=` el riel sigue naciendo cerrado", () => {
+    // El deep-link no puede convertirse en el comportamiento por defecto: el
+    // wall es un mapa, y un cajón abierto de arranque le come 380 px.
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [] }));
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+    render(page());
+    expect(screen.queryByTestId("detail-panel")).not.toBeInTheDocument();
   });
 });

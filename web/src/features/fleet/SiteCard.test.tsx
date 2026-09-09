@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { GatewayOut } from "@takab/sdk";
@@ -22,7 +23,12 @@ import type { FleetCabinet } from "./useFleet";
 /** Render con QueryClient limpio (useSelfTest lo exige); sesión opcional aparte. */
 function render(ui: ReactElement) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return rtlRender(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  // [T-6.14] Con router: la tarjeta lleva un `<Link>` a la ficha del edificio.
+  return rtlRender(
+    <MemoryRouter>
+      <QueryClientProvider client={client}>{ui}</QueryClientProvider>
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
@@ -523,5 +529,26 @@ describe("SiteCard · el autodiagnóstico pasa por el marco [T-6.06]", () => {
     const container = await trasDisparar({ status: "acked", ack: { results: {} } });
     await waitFor(() => expect(container.querySelector('[data-state="empty"]')).not.toBeNull());
     expect(screen.getByText("EL GABINETE ACUSÓ SIN CENSO DE RELÉS")).toBeInTheDocument();
+  });
+});
+
+/**
+ * [T-6.14] `/building` colgaba de UN enlace: el del riel de detalle de
+ * `/console`. Quien administra la flota mira estas tarjetas, y para llegar a la
+ * ficha del inmueble tenía que salir a la consola, encontrar el sitio en el
+ * mapa y abrir el riel.
+ */
+describe("SiteCard · entrada a la ficha del edificio", () => {
+  it("la tarjeta enlaza a /building/<site_id>", () => {
+    render(<SiteCard cabinet={cabinet()} />);
+    expect(screen.getByTestId("card-building-link")).toHaveAttribute("href", "/building/s-1");
+  });
+
+  it("un gabinete RETIRADO no ofrece la ficha como si fuera operación viva", () => {
+    // Sus métricas son historia (T-2.35/37): el enlace sigue existiendo porque
+    // la ficha del inmueble no desaparece, pero la tarjeta ya se rotula sola.
+    render(<SiteCard cabinet={cabinet({}, { status: "retired" })} />);
+    expect(screen.getByTestId("card-retired")).toBeInTheDocument();
+    expect(screen.getByTestId("card-building-link")).toBeInTheDocument();
   });
 });

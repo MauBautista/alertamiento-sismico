@@ -131,7 +131,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 | RO-7.b | La consola SOC rotula el dato viejo en vez de pintarlo como fresco. | `CUBIERTO` | `web/src/features/console/DetailPanel.test.tsx:363`<br>`M-6: flota vieja se rotula stale, no se pinta como fresca` | Flota de hace 10 min ⇒ la tarjeta dice DATOS RETENIDOS. |
 | RO-7.c | El panel del gabinete no pinta una medición de hace dos horas como viva. | `CUBIERTO` | `edge/tests/test_local_api_panel.py:1467`<br>`test_feature_vieja_no_se_pinta_como_medicion_viva`<br>🔒 *lleva `skipif`, pero el CI lo impide con `run: node --version`* | Con `age_s=7200` las barras dicen S/D y la brújula estampa SIN SEÑAL DEL SENSOR. |
 | RO-7.d | La app móvil sirve la copia vieja con su edad, nunca como dato fresco. | `CUBIERTO` | `mobile/src/ui/StateFrame.test.tsx:42`<br>`stale: contenido VIEJO con banner DATOS RETENIDOS + edad honesta` | El contenido viejo se pinta bajo `state-stale` con la edad real. |
-| RO-7.e | La tira de KPI de `/fleet` dice S/D cuando no hay dato, jamás cero. | `CUBIERTO` | `web/src/features/fleet/FleetPage.test.tsx:283`<br>`sin dato (%s) los KPI dicen S/D, no CERO` | Con la consulta en error 503 o cargando, los cuatro KPI dicen S/D. |
+| RO-7.e | La tira de KPI de `/fleet` dice S/D cuando no hay dato, jamás cero. | `CUBIERTO` | `web/src/features/fleet/FleetPage.test.tsx:293`<br>`sin dato (%s) los KPI dicen S/D, no CERO` | Con la consulta en error 503 o cargando, los cuatro KPI dicen S/D. |
 
 ### RO-8 · Control de actuadores por nube = superficie más sensible.
 
