@@ -4,7 +4,7 @@
 // TOTP (Cognito) llega en T-2.14 (hardening) — la fila lo declara.
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export type AccountProfile = {
   displayName: string;
@@ -69,7 +69,16 @@ export function AccountView(props: {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>PRIVACIDAD Y PERMISOS</Text>
-        <View style={styles.row}>
+        {/* [T-6.20] La fila es el control; el interruptor, el indicador. En
+            Android el `hitSlop` de un `<Switch>` nativo se ignora (ver
+            `privacidad.tsx`). */}
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: props.gpsConsent }}
+          onPress={() => props.onToggleConsent(!props.gpsConsent)}
+          style={styles.row}
+          testID="consent-switch"
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowLabel}>Enviar mi ubicación GPS si pido ayuda</Text>
             <Text style={styles.rowDetail} testID="consent-note">
@@ -78,16 +87,20 @@ export function AccountView(props: {
                 : "Revocado: si pide ayuda se enviará su zona asignada, sin GPS."}
             </Text>
           </View>
-          <Switch
-            onValueChange={props.onToggleConsent}
-            testID="consent-switch"
-            value={props.gpsConsent}
-          />
-        </View>
-        <Pressable accessibilityRole="button" onPress={props.onOpenPermisos}>
+          <Switch pointerEvents="none" value={props.gpsConsent} />
+        </Pressable>
+        <Pressable
+        accessibilityRole="button"
+        onPress={props.onOpenPermisos}
+        style={styles.linkBtn}
+      >
           <Text style={styles.link}>Estado de permisos de alerta →</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={props.onOpenPrivacidad}>
+        <Pressable
+        accessibilityRole="button"
+        onPress={props.onOpenPrivacidad}
+        style={styles.linkBtn}
+      >
           <Text style={styles.link}>Aviso de privacidad →</Text>
         </Pressable>
       </View>
@@ -103,7 +116,11 @@ export function AccountView(props: {
         </View>
       ) : null}
 
-      <Pressable accessibilityRole="button" onPress={props.onOpenVincular}>
+      <Pressable
+        accessibilityRole="button"
+        onPress={props.onOpenVincular}
+        style={styles.linkBtn}
+      >
         <Text style={styles.link}>Vincular a un edificio (código de sitio) →</Text>
       </Pressable>
 
@@ -133,6 +150,7 @@ const styles = StyleSheet.create({
   cardTitle: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2 },
   fieldLabel: { color: palette.fg2, fontSize: fontSize.xs },
   input: {
+    minHeight: touch.min,
     backgroundColor: palette.bg,
     borderColor: palette.borderStrong,
     borderWidth: 1,
@@ -143,6 +161,8 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
   },
   saveBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.md,
     paddingVertical: space[2],
@@ -151,12 +171,14 @@ const styles = StyleSheet.create({
   },
   saveText: { color: palette.bg, fontWeight: "700", fontSize: fontSize.xs, letterSpacing: 1 },
   savedNote: { color: palette.ok, fontSize: fontSize.xs },
-  row: { flexDirection: "row", alignItems: "center", gap: space[2] },
+  row: { minHeight: touch.min, flexDirection: "row", alignItems: "center", gap: space[2] },
   rowInfo: { flex: 1, gap: 2 },
   rowLabel: { color: palette.fg, fontSize: fontSize.sm, fontWeight: "600" },
   rowDetail: { color: palette.fg3, fontSize: fontSize.xs, lineHeight: 16 },
   link: { color: palette.cyan, fontSize: fontSize.sm, paddingVertical: space[1] },
   logoutBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderColor: palette.crit,
     borderWidth: 1,
     borderRadius: radius.lg,
@@ -164,6 +186,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: space[2],
   },
+  /* [T-6.20] Los enlaces de esta pantalla eran texto suelto de 19 dp. Un
+     texto que se pulsa es un control, y mide lo que mide el mínimo. */
+  linkBtn: { minHeight: touch.min, justifyContent: "center" },
   logoutText: { color: palette.crit, fontWeight: "700", letterSpacing: 1 },
   dim: { opacity: 0.5 },
 });

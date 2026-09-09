@@ -6,7 +6,7 @@ import type { ActuatorGroup, FeatureRow, MobileSiteHealthOut } from "@takab/sdk"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { timeAgoLabel } from "@/ui/timeAgo";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { fmtMetric, upsLabel } from "./health";
 
@@ -217,6 +217,8 @@ const styles = StyleSheet.create({
   bmsCount: { color: palette.fg3, fontSize: fontSize.xs },
   controlRow: { flexDirection: "row", gap: space[2] },
   controlBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     flex: 1,
     borderWidth: 1,
     borderRadius: radius.md,
@@ -225,6 +227,8 @@ const styles = StyleSheet.create({
   },
   controlText: { fontWeight: "800", fontSize: fontSize.sm, letterSpacing: 1 },
   dictamenBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderColor: palette.ok,
     borderWidth: 1,
     borderRadius: radius.md,

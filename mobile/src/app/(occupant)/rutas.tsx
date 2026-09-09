@@ -10,7 +10,7 @@ import { assetRowKind, downloadAsset, isCached, openAsset } from "@/features/rou
 import { useCachedQuery } from "@/offline/useCachedQuery";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 const KIND_LABEL: Record<string, string> = {
   evac_route: "RUTA DE EVACUACIÓN",
@@ -155,6 +155,8 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: palette.ok, fontSize: fontSize.xs, letterSpacing: 1 },
   actionBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.raised,
     borderRadius: radius.md,
     paddingHorizontal: space[3],

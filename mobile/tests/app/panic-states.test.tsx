@@ -15,6 +15,7 @@
 // La rama `else` de `!res.data` YA existía y pintaba «NO SE PUDO ENVIAR»: el
 // defecto es que el camino del LANZAMIENTO no llegaba nunca a ella.
 import { act, fireEvent, render } from "@testing-library/react-native";
+import { StyleSheet } from "react-native";
 
 import Panic from "@/app/panic";
 
@@ -38,6 +39,14 @@ jest.mock("@/auth/session.store", () => ({
 
 let mockSitio: string | null = SITE;
 jest.mock("@/services/mySite", () => ({ useWatchedSiteId: () => mockSitio }));
+
+// [T-6.20] El inset de abajo (la barra de gestos) se lee del aparato con
+// `useSafeAreaInsets`, y fuera de un `SafeAreaProvider` ese hook LANZA. Se
+// moquea con un inset REALISTA —el Pixel declara 24 dp abajo— para que el
+// hueco que se afirma más abajo sea el que se ve en el teléfono.
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 24, left: 0, right: 0 }),
+}));
 
 let mockConsienteGps = false;
 jest.mock("@/services/onboarding", () => ({ getGpsConsent: async () => mockConsienteGps }));
@@ -162,5 +171,38 @@ describe("1.9 · pánico · sin sitio vigilado DECLARA su estado", () => {
     expect(v.getByTestId("state-empty")).toBeTruthy();
     expect(v.getByTestId("state-empty")).toHaveTextContent(/Vincúlese a su edificio/);
     expect(v.queryByTestId("panic-hold")).toBeNull();
+  });
+});
+
+// [T-6.20] EL BOTÓN NO PUEDE VIVIR EN EL TERCIO SUPERIOR.
+//
+// Medido en el Pixel 8 Pro (2026-09-06): el botón de pánico —correcto en
+// tamaño, 70 dp— quedaba al 35 % de la altura con el 60 % inferior VACÍO,
+// fuera del alcance del pulgar en un teléfono de 2992 px. Es un control que se
+// usa con una sola mano y con prisa.
+//
+// Lo que lo ancla son DOS cosas y las dos hacen falta: el contenido crece hasta
+// llenar el alto (`flexGrow`) y el hueco sobrante se pone ENCIMA del botón
+// (`marginTop: "auto"`). Con una sola, el botón vuelve arriba — por eso se
+// afirman las dos y no la posición pintada, que este arnés no mide.
+describe("1.9 · pánico · el botón queda al alcance del pulgar", () => {
+  it("el hueco crece por encima del botón, no por debajo", async () => {
+    mockSitio = SITE;
+
+    const v = await render(<Panic />);
+    await asentar();
+
+    expect(StyleSheet.flatten(v.getByTestId("panic-hold-zone").props.style)).toMatchObject({
+      marginTop: "auto",
+    });
+    expect(
+      StyleSheet.flatten(v.getByTestId("panic-scroll").props.contentContainerStyle),
+    ).toMatchObject({ flexGrow: 1 });
+    // …y el hueco de abajo esquiva la barra de gestos: 16 del espaciado + 24
+    // del aparato. Sin esto el botón queda DEBAJO de la barra, que se queda con
+    // el toque — medido en el Pixel.
+    expect(
+      StyleSheet.flatten(v.getByTestId("panic-scroll").props.contentContainerStyle).paddingBottom,
+    ).toBe(40);
   });
 });

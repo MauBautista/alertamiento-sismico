@@ -754,7 +754,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **Censo:** `screenStateCensus` sigue en verde sin declarar nada nuevo — el contenedor está en
     `features/`, la pestaña sigue montando su `StateFrame` y JSX no es una llamada para el censo.
 
-### [ ] T-6.20 · **Todo objetivo táctil de una pantalla de vida cumple el mínimo** — `SOFTWARE`
+### [x] T-6.20 · **Todo objetivo táctil de una pantalla de vida cumple el mínimo** — `SOFTWARE`
 
 > Medido en el Pixel: `REINTENTAR` ≈29 dp en las pantallas de crisis y alarma; «Ver directorio
 > completo» 19 dp; el botón de pánico correcto (70 dp) pero al 35 % de la altura con el 60 %
@@ -768,9 +768,58 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** ningún control por debajo del mínimo; el botón de pánico anclado al tercio inferior (cambio de posición, no de paso del flujo; si el revisor lo considera reordenamiento, va a ficha propia).
 - **Criterios de aceptación:**
-  - [ ] `uiautomator` en el Pixel: todo control de crisis, check-in, alarma, pánico e inicio ≥ el mínimo en alto.
-  - [ ] El centro del botón de pánico queda en el tercio inferior de la pantalla.
-  - [ ] El censo táctil falla al añadir un `Pressable` sin altura del token ni `hitSlop`.
+  - [x] `uiautomator` en el Pixel: todo control de crisis, check-in, alarma, pánico e inicio ≥ el mínimo en alto.
+  - [x] El centro del botón de pánico queda en el tercio inferior de la pantalla.
+  - [x] El censo táctil falla al añadir un `Pressable` sin altura del token ni `hitSlop`.
+- **Cómo se cerró (2026-09-09, SESIÓN M2):**
+  - **El mínimo es un token: `--tk-touch-min = 48 px`.** 48 dp es el mínimo de Android —la
+    plataforma sobre la que se acredita esta app— y supera los 44 dp con los que la auditoría
+    midió, así que no hay que elegir entre los dos números: el estricto cumple el otro. Vive en
+    `@takab/design-tokens` (`tokens.touch.min`) y no en `theme.ts` para que la consola no pueda
+    diverger; el tema lo consume como `touch.min` y expone `slopHasta(altoVisible)`, que calcula
+    la holgura de un control que no puede crecer.
+  - **Los 52 controles quedaron declarados.** 47 con `minHeight: touch.min` —entre ellos el
+    `REINTENTAR` de las pantallas de vida (medía ≈29 dp) y los enlaces de texto que medían 19—;
+    5 chips que viven DENTRO de una fila densa (LLAMAR y VERIFICAR del pase de lista, las
+    severidades del reporte de daños) con `hitSlop` derivado del token, porque crecerlos hasta 48
+    empujaría un pase de lista de 200 personas fuera de pantalla.
+  - **Dos clases de control entraron por MEDIR, no por leer.** El censo de la ficha era de
+    `Pressable`. En el aparato aparecieron el interruptor de GPS del aviso de privacidad (**27 dp**)
+    y el campo del código de sitio (**46.7 dp**): ni `Switch` ni `TextInput` estaban censados.
+    Ahora lo están.
+  - **Y el arreglo del interruptor ERA INERTE, también medido.** Se le puso `hitSlop` y el teléfono
+    dijo que no: un toque a 8 dp de su borde no lo movió. En Android el `hitSlop` solo lo honra una
+    vista de React (`ReactHitSlopView`); sobre un control NATIVO se ignora **en silencio**. Así que
+    el interruptor pasa a INDICADOR (`pointerEvents="none"`) y **la fila es el control**: 65 dp,
+    con `accessibilityRole="switch"`, y responde tocando el rótulo a 20 dp del dibujo. El censo lo
+    exige ahora por escrito: un `<Switch>` que reciba el dedo es un fallo.
+  - **El botón de pánico, al alcance del pulgar.** El contenido crece (`flexGrow`) y el hueco
+    sobrante se pone ENCIMA del botón (`marginTop:"auto"`): pasó del **35 %** de la altura al
+    **92.4 %**. Anclarlo destapó lo siguiente, que solo se ve en el aparato: **la barra de gestos
+    del sistema se comía su borde inferior**, y esa franja se queda con el toque. El hueco de abajo
+    sale ahora del inset real del teléfono, no de un número inventado.
+  - **Verificación en el Pixel 8 Pro** (`uiautomator`, 1344×2992 a 480 dpi ⇒ 1 dp = 3 px), con el
+    APK compilado de este commit y sesión de ocupante real:
+
+    | Pantalla | Medido |
+    |---|---|
+    | login | 67.7 y 59.3 dp · 0 por debajo |
+    | privacidad (onboarding) | fila del GPS **65.3** (era un interruptor de 27) · CONTINUAR 48.0 |
+    | enrolamiento | campo **48.0** (era 46.7) · VINCULAR 48.0 · continuar sin vincular 48.0 |
+    | inicio | «Ver directorio completo →» **48.0** (era 19) · rutas 49.7 · alarma 49.7 · 4 pestañas 48.7 |
+    | pánico | botón 70.7 dp, centro al **92.4 %** y por encima de la barra de gestos |
+    | cuenta | 12 controles, todos ≥ 48 |
+    | error sin conexión | **REINTENTAR 48.0** (era ≈29), con la red del teléfono apagada |
+
+    El único nodo por debajo en cualquier captura es la superposición de LogBox (el visor de
+    errores de desarrollo de React Native), que no es UI de la app.
+  - **Lo que NO se ejerció en el aparato, y por qué:** los 5 chips con holgura —el directorio del
+    sitio de staging no publica contactos y el resto vive tras una sesión táctica cuyo MFA lo teclea
+    una persona— y las pantallas de crisis, check-in y alarma de inmueble, que redirigen sin
+    incidente activo y sembrarlo pide la ventana de AWS (el SSO estaba caducado). Sus controles
+    salen de los mismos estilos que sí se midieron, y el censo los cubre.
+  - **Verificación:** móvil 566 tests + `tsc` + `expo lint` + `expo export`; web 2 163; gates de
+    documentos 106. El paquete de tokens gana una variable y `css/tokens.css` se regeneró.
 
 ### [ ] T-6.21 · **Las pantallas de crisis y alarma salen del token** — `SOFTWARE`
 

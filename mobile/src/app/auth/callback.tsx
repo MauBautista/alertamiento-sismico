@@ -12,7 +12,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { type CallbackParams, planCallback } from "@/auth/callback";
 import { takePendingAuth } from "@/auth/pendingAuth";
 import { exchangeAndResolve } from "@/auth/useAuth";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 type UiState = { phase: "working" } | { phase: "done" } | { phase: "error"; message: string };
 
@@ -107,6 +107,8 @@ const styles = StyleSheet.create({
   },
   message: { color: palette.fg3, fontSize: fontSize.sm, textAlign: "center", lineHeight: 18 },
   btn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.borderStrong,
     borderRadius: radius.lg,

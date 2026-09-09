@@ -35,6 +35,29 @@ export const space = {
   6: toNumber(tokens.space[6]),
 } as const;
 
+/**
+ * [T-6.20] Objetivos táctiles. `min` es el alto mínimo de cualquier control;
+ * `slopHasta` es la salida para los controles que viven DENTRO de una fila
+ * densa —los chips de LLAMAR/VERIFICAR de un pase de lista de 200 personas—,
+ * donde crecer el botón hasta el mínimo empujaría la lista fuera de pantalla:
+ * el control se ve pequeño y el área que responde al dedo es la del mínimo.
+ * El alto visible se le pasa desde su propio estilo, no a ojo, para que la
+ * cuenta siga siendo cierta si alguien lo cambia.
+ */
+export const touch = {
+  min: toNumber(tokens.touch.min),
+} as const;
+
+export function slopHasta(altoVisible: number): {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+} {
+  const s = Math.max(0, Math.ceil((touch.min - altoVisible) / 2));
+  return { top: s, bottom: s, left: s, right: s };
+}
+
 export const radius = {
   sm: toNumber(tokens.radius.sm),
   md: toNumber(tokens.radius.md),

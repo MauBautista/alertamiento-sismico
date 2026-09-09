@@ -7,7 +7,7 @@ import { AppState, Linking, Pressable, StyleSheet, Text, View } from "react-nati
 
 import { deriveAlertability, type PermissionSnapshot } from "@/services/alertability";
 import { getPermissionSnapshot, requestPermissions } from "@/services/push";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export default function Permisos() {
   const router = useRouter();
@@ -128,6 +128,8 @@ const styles = StyleSheet.create({
   bannerBody: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20 },
   actions: { marginTop: space[4], gap: space[3] },
   primaryBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.lg,
     paddingVertical: space[3],
@@ -135,6 +137,8 @@ const styles = StyleSheet.create({
   },
   primaryBtnText: { color: palette.bg, fontWeight: "700", letterSpacing: 1 },
   ghostBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.borderStrong,
     borderRadius: radius.lg,

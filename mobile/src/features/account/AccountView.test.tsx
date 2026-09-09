@@ -51,7 +51,10 @@ describe("AccountView (1.8)", () => {
     const onToggleConsent = jest.fn();
     const onLogout = jest.fn();
     const v = await render(<AccountView {...props({ onToggleConsent, onLogout })} />);
-    await fireEvent(v.getByTestId("consent-switch"), "valueChange", true);
+    // [T-6.20] Se PULSA LA FILA, que es lo que hace el dedo: el interruptor
+    // quedó de indicador porque en Android un control nativo ignora el
+    // `hitSlop` y 27 dp no son un objetivo táctil.
+    await fireEvent.press(v.getByTestId("consent-switch"));
     expect(onToggleConsent).toHaveBeenCalledWith(true);
     await fireEvent.press(v.getByTestId("logout"));
     expect(onLogout).toHaveBeenCalled();

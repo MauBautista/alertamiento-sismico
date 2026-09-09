@@ -140,6 +140,16 @@ export const tokens = {
     7: v("--tk-space-7"),
     8: v("--tk-space-8"),
   },
+  /**
+   * [T-6.20] Alto mínimo de un objetivo táctil. **48 dp**, que es el mínimo de
+   * Android —la plataforma sobre la que se acredita la app— y supera el 44 dp
+   * con el que la auditoría UI/UX midió el Pixel. Vive en el paquete y no en
+   * `theme.ts` porque la consola tiene los mismos controles en pantallas
+   * táctiles de sala y el número no puede diverger entre superficies.
+   */
+  touch: {
+    min: v("--tk-touch-min"),
+  },
   radius: {
     none: v("--tk-radius-none"),
     sm: v("--tk-radius-sm"),

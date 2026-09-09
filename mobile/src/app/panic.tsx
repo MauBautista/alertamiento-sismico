@@ -12,6 +12,7 @@ import { panicVoteSitesSiteIdManualActivationVotesPost } from "@takab/sdk";
 import { Redirect } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSessionStore } from "@/auth/session.store";
 import { captureLocation } from "@/features/checkin/location";
@@ -46,6 +47,7 @@ const VOTO_FALLIDO: PanicStatus = {
 
 export default function Panic() {
   const authed = useSessionStore((s) => s.status) === "authenticated";
+  const insets = useSafeAreaInsets();
   const siteId = useWatchedSiteId();
   const [status, setStatus] = useState<PanicStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -124,7 +126,15 @@ export default function Panic() {
       loading={false}
       staleSinceMs={null}
     >
-      <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
+      <ScrollView
+        /* [T-6.20] El inset de abajo. Medido en el Pixel: anclado al fondo, la
+           barra de gestos del sistema se comía el borde inferior del botón —y
+           esa franja se queda con el toque—. El hueco que la esquiva sale del
+           aparato, no de un número inventado. */
+        contentContainerStyle={[styles.wrap, { paddingBottom: space[4] + insets.bottom }]}
+        style={styles.scroll}
+        testID="panic-scroll"
+      >
         <Text style={styles.eyebrow}>ALARMA DEL INMUEBLE · NO SÍSMICA</Text>
         <Text style={styles.title}>Solicitar activación de alarma</Text>
         <View style={styles.disclaimer}>
@@ -147,12 +157,20 @@ export default function Panic() {
           </View>
         ) : null}
 
+        {/* [T-6.20] ANCLADO ABAJO. Medido en el Pixel: el botón quedaba al 35 %
+            de la altura con el 60 % inferior vacío, es decir, fuera del alcance
+            del pulgar en un teléfono de 2992 px — y es el control que se usa con
+            una sola mano y con prisa. `marginTop:"auto"` sobre un contenido que
+            crece (`flexGrow`) lo lleva al tercio inferior sin cambiar ni un paso
+            del flujo: la pantalla se lee igual, el pulgar llega. */}
         {status?.phase !== "activated" ? (
-          <PanicButton
-            disabled={busy}
-            label={busy ? "ENVIANDO…" : "MANTENGA PRESIONADO PARA CONFIRMAR"}
-            onConfirm={vote}
-          />
+          <View style={styles.holdZone} testID="panic-hold-zone">
+            <PanicButton
+              disabled={busy}
+              label={busy ? "ENVIANDO…" : "MANTENGA PRESIONADO PARA CONFIRMAR"}
+              onConfirm={vote}
+            />
+          </View>
         ) : null}
       </ScrollView>
     </StateFrame>
@@ -161,7 +179,8 @@ export default function Panic() {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: palette.bg },
-  wrap: { padding: space[4], paddingTop: 64, gap: space[3] },
+  wrap: { padding: space[4], paddingTop: 64, gap: space[3], flexGrow: 1 },
+  holdZone: { marginTop: "auto" },
   eyebrow: { color: palette.crit, fontSize: fontSize.xs, letterSpacing: 2 },
   title: { color: palette.fg, fontSize: fontSize.xl, fontWeight: "700" },
   disclaimer: {

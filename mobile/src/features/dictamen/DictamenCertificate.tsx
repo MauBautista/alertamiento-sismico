@@ -3,7 +3,7 @@
 // descarga y cachea offline; sin PDF aún, se declara (no se finge).
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import type { CertificateView } from "./dictamenView";
 
@@ -102,6 +102,8 @@ const styles = StyleSheet.create({
   },
   sealText: { color: palette.fg2, fontSize: fontSize.xs, letterSpacing: 1, fontWeight: "700" },
   pdfBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderColor: palette.cyan,
     borderWidth: 1,
     borderRadius: radius.md,

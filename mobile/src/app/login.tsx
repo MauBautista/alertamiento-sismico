@@ -7,7 +7,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useLogin } from "@/auth/useAuth";
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export default function Login() {
   const status = useSessionStore((s) => s.status);
@@ -86,6 +86,8 @@ const styles = StyleSheet.create({
   brandSub: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 1.5 },
   actions: { gap: space[3] },
   primaryBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     backgroundColor: palette.cyan,
     borderRadius: radius.lg,
     paddingVertical: space[4],
@@ -100,6 +102,8 @@ const styles = StyleSheet.create({
   },
   btnSub: { color: palette.bg, fontSize: fontSize.xs, opacity: 0.8 },
   ghostBtn: {
+    minHeight: touch.min,
+    justifyContent: "center",
     borderWidth: 1,
     borderColor: palette.borderStrong,
     borderRadius: radius.lg,
