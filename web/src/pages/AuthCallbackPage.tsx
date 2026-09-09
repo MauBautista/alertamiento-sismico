@@ -40,5 +40,7 @@ export default function AuthCallbackPage() {
     return <Navigate to={result.returnTo ?? landingPath(me) ?? "/"} replace />;
   }
 
-  return <SplashScreen />;
+  // Aquí se espera el canje del código con Cognito y el `/me` que viene
+  // después: decir «la sesión» mandaría a mirar el sitio equivocado.
+  return <SplashScreen espera="la vuelta de Cognito" />;
 }

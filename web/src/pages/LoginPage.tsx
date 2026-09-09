@@ -87,6 +87,7 @@ interface LoginLocationState {
 export default function LoginPage() {
   const status = useSessionStore((s) => s.status);
   const me = useSessionStore((s) => s.me);
+  const endedReason = useSessionStore((s) => s.endedReason);
   const loginCognito = useSessionStore((s) => s.loginCognito);
   const location = useLocation();
   const [cognitoError, setCognitoError] = useState<string | null>(null);
@@ -113,6 +114,21 @@ export default function LoginPage() {
       <div className="soc-screen__panel">
         <img src={logoTakab} alt="TAKAB Ailert" className="soc-screen__logo" />
         <h1 className="soc-screen__title">CONSOLA SOC</h1>
+        {/* [T-6.07] POR QUÉ está aquí, cuando no vino por su pie. La sesión se
+            caía en silencio —`signinSilent` falla, `handleUnauthorized` limpia—
+            y el operador reaparecía en un login idéntico al de un arranque en
+            frío. Sin esta línea vuelve a entrar creyendo que se equivocó de
+            pestaña, y no se entera de que el turno lleva un rato sin consola.
+
+            Dice lo que se sabe y nada más: que el servidor dejó de reconocer la
+            sesión. Un 401 puede ser expiración o revocación y desde aquí no se
+            distinguen; llamarlo «inactividad» sería inventarse la causa. */}
+        {endedReason === "expired" ? (
+          <p className="soc-screen__aviso" role="status" data-testid="login-sesion-cerrada">
+            SU SESIÓN SE CERRÓ · el servidor dejó de reconocerla (expiró o fue revocada). Vuelva a
+            entrar.
+          </p>
+        ) : null}
         {cognitoConfigured() ? (
           <button
             type="button"
@@ -128,7 +144,19 @@ export default function LoginPage() {
             ENTRAR CON COGNITO
           </button>
         ) : (
-          <p className="soc-screen__sub">Cognito no configurado (VITE_COGNITO_*).</p>
+          /* [T-6.07] Esto lo lee quien está de turno, no quien desplegó. Decía
+             «Cognito no configurado (VITE_COGNITO_*)»: nombra un proveedor de
+             identidad y dos variables de build a alguien que solo quiere entrar
+             a la consola, y no dice ni qué hacer ni si el edificio sigue
+             protegido —que es la pregunta de verdad. El detalle técnico no se
+             pierde: viaja en el `title`, donde lo encuentra quien lo necesita. */
+          <p
+            className="soc-screen__sub"
+            title="Faltan VITE_COGNITO_AUTHORITY y/o VITE_COGNITO_CLIENT_ID en el build de esta consola."
+          >
+            Esta consola no tiene identidad configurada: desde aquí no se puede entrar. Avise a
+            quien la desplegó. El alertamiento de los edificios NO depende de esta pantalla.
+          </p>
         )}
         {cognitoError ? <p className="soc-screen__error">{cognitoError}</p> : null}
         {getEnv().devTokenEnabled ? <DevLoginPanel /> : null}

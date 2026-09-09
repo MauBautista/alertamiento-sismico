@@ -51,6 +51,19 @@ export type SessionStatus =
 export interface SessionState {
   status: SessionStatus;
   origin: "cognito" | "dev" | null;
+  /**
+   * [T-6.07] POR QUÉ terminó la sesión anterior, para que la landing lo diga.
+   *
+   * La sesión expiraba EN SILENCIO: `signinSilent` falla, `handleUnauthorized`
+   * limpia, y el operador aparece en un login idéntico al de un arranque en
+   * frío, sin una palabra. Vuelve a entrar sin saber que le habían echado.
+   *
+   * Es un CAMPO y no un miembro de `SessionStatus` a propósito: el estado
+   * sigue siendo `anonymous` —eso es lo que es— y el censo de
+   * `session.store.test.ts` exige productor real para cada miembro del union.
+   * Un estado nuevo por cada causa haría crecer la máquina sin necesidad.
+   */
+  endedReason: "expired" | null;
   /** ID token vigente (la API exige token_use="id"); cache síncrono del interceptor. */
   idToken: string | null;
   me: MeResponse | null;
@@ -75,6 +88,9 @@ const CLEARED = {
   idToken: null,
   me: null,
   error: null,
+  // Por defecto NINGUNA causa: un `logout` deliberado no es una expiración, y
+  // decirle «su sesión expiró» a quien acaba de pulsar SALIR es ruido.
+  endedReason: null,
 };
 
 export const useSessionStore = create<SessionState>()((set, get) => {
@@ -86,7 +102,9 @@ export const useSessionStore = create<SessionState>()((set, get) => {
   async function fetchMe(): Promise<void> {
     try {
       const me = await getMe();
-      set({ status: "authenticated", me, error: null });
+      // Entrar otra vez cierra el episodio: la causa no puede sobrevivir a la
+      // sesión siguiente y volver a aparecer meses después.
+      set({ status: "authenticated", me, error: null, endedReason: null });
     } catch (err) {
       if (err instanceof MeRequestError && err.status === 401) {
         get().handleUnauthorized();
@@ -164,6 +182,7 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     idToken: null,
     me: null,
     error: null,
+    endedReason: null,
 
     bootstrap: () => {
       bootstrapOnce ??= runBootstrap();
@@ -223,6 +242,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
     handleUnauthorized: () => {
       const { origin } = get();
       clearSession();
+      // DESPUÉS de limpiar: `clearSession` deja la causa en null como debe, y
+      // esta es la única que la enciende. La landing solo la LEE; quien la
+      // apaga es el `/me` de la sesión siguiente, en `fetchMe`.
+      set({ endedReason: "expired" });
       if (origin === "cognito") {
         void getUserManager()
           .removeUser()
