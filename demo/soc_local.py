@@ -23,6 +23,7 @@ local, como pasaría en producción.
 from __future__ import annotations
 
 import argparse
+import os
 import signal
 import subprocess
 import sys
@@ -63,6 +64,28 @@ def main() -> int:
     parser.add_argument(
         "--workdir", default=str(_ROOT / ".local-soc"), help="spool/buffer del gabinete"
     )
+    # [T-6.18] El buzón de bajada (≡ `takab/cmd/<thing>` de IoT Core). Sale del
+    # entorno para que sea EL MISMO que publica `demo/api_local.py`: si las dos
+    # mitades apuntaran a directorios distintos, el comando se escribiría en un
+    # buzón que nadie lee y el simulacro volvería a quedarse sin acuse — el
+    # fallo silencioso que esta ficha cierra.
+    parser.add_argument(
+        "--downlink",
+        default=os.environ.get("TAKAB_DEMO_DOWNLINK", str(_ROOT / ".local-soc" / "bajada")),
+        help="raíz de los buzones de bajada nube→gabinete",
+    )
+    # [T-6.18] El gabinete EJECUTA los comandos firmados de la nube. De fábrica
+    # `command_enabled` va APAGADO por gateway —y así debe seguir: un gabinete
+    # recién provisionado no acciona nada que le mande la nube hasta que alguien
+    # lo decide—. El arnés local lo enciende A PROPÓSITO, igual que el guion del
+    # hito, porque su razón de ser es poder ensayar el simulacro y su aborto.
+    # Sin esto el gabinete verifica la firma y acusa `rejected` con
+    # `command_enabled=false`: correcto, y exactamente lo que no se quiere aquí.
+    parser.add_argument(
+        "--sin-comandos",
+        action="store_true",
+        help="deja el gabinete como de fábrica: verifica la firma y RECHAZA",
+    )
     args = parser.parse_args()
 
     work = Path(args.workdir)
@@ -86,6 +109,9 @@ def main() -> int:
             str(args.control_port),
             "--dashboard-port",
             str(args.dashboard_port),
+            "--downlink",
+            args.downlink,
+            *([] if args.sin_comandos else ["--command-enabled"]),
         ],
         cwd=str(_ROOT / "edge"),
         stdout=subprocess.PIPE,
@@ -107,6 +133,11 @@ def main() -> int:
     print(f"                curl -X POST http://127.0.0.1:{args.control_port}/sasmex")
     print(f"                curl -X POST http://127.0.0.1:{args.control_port}/sasmex/clear")
     print(f"                curl -X POST http://127.0.0.1:{args.control_port}/wan/off | /wan/on")
+    print("  · Simulacro comandado DESDE LA NUBE (T-6.18): la consola lo dispara en")
+    print(f"    /console y el gabinete lo acusa; el panel lo pinta en :{args.dashboard_port}.")
+    print(f"    Bajada: {args.downlink}")
+    modo = "RECHAZADOS (como de fábrica)" if args.sin_comandos else "EJECUTADOS"
+    print(f"    Comandos remotos: {modo}  (--sin-comandos deja el gabinete de fábrica)")
     print("  Ctrl+C para apagar el gabinete y el bridge.", flush=True)
 
     stop = threading.Event()

@@ -22,8 +22,24 @@
 # ⇒ el reset cierra con UPDATE. Se siembra como SUPERUSUARIO (todas tienen RLS;
 # igual que `db/seeds/prod_fleet.sql` y el paso 2 de `seed_mobile_users.sh`).
 #
+# [T-6.18] UN INCIDENTE FRESCO POR CORRIDA. El id era una constante y `crisis`
+# REABRÍA el mismo incidente; en cuanto una corrida pasaba por `reentry`, ese
+# incidente se quedaba con un dictamen firmado —`dictamens` es append-only— y la
+# derivación, que busca el dictamen POR INCIDENTE, devolvía `reentry_approved`
+# para siempre. Desde entonces `PHASE=crisis` no producía la toma de crisis y el
+# flujo 01 de Maestro no podía pasar: el arnés prometía algo que ya no hacía.
+# Ahora `crisis` CIERRA lo abierto del sitio y abre uno nuevo; los demás
+# subcomandos trabajan sobre el incidente abierto que encuentran. Con
+# `INCIDENT_ID=<uuid>` se puede volver a fijar uno concreto.
+#
+# El SQL vive en `infra/scripts/sql/staging-incident/*.sql` — no por estética:
+# `api/tests/api/test_seed_staging_incident.py` corre ESOS MISMOS ficheros contra
+# la base de tests y comprueba contra el endpoint real que la secuencia
+# crisis→reentry→crisis vuelve a dar `alert_active`. Un arnés que no se ejerce
+# se pudre en silencio, que es exactamente lo que pasó aquí.
+#
 # Subcomandos (idempotentes; imprimen la fase derivada resultante):
-#   crisis    (default) abre el incidente + tier `evacuate_or_hold` ⇒ alert_active
+#   crisis    (default) CIERRA lo abierto y abre uno NUEVO + tier `evacuate_or_hold`
 #   conclude  tier `normal` (ts posterior)                          ⇒ shaking_concluded
 #   reentry   dictamen firmado `inhabit_monitor`                    ⇒ reentry_approved
 #   roster    N ocupantes sintéticos NO reportados (headcount 2.6 / flujo 05)
@@ -42,9 +58,11 @@ TENANT_ID="${TENANT_ID:-d0000000-0000-0000-0000-000000000001}"
 SITE_ID="${SITE_ID:-d1000000-0000-0000-0000-000000000000}"
 ZONE_ID="${ZONE_ID:-d2000000-0000-0000-0000-000000000001}"
 
-# Incidente FIJO (idempotencia): re-correr `crisis` reabre el MISMO incidente.
-INCIDENT_ID="${INCIDENT_ID:-d4000000-0000-0000-0000-000000000001}"
-EVENT_UUID="${EVENT_UUID:-d4000000-0000-0000-0000-0000000000e1}"
+# [T-6.18] Sin valor por defecto: `crisis` genera uno nuevo y el resto resuelve
+# el incidente ABIERTO del sitio. Fijarlo sigue siendo posible por entorno.
+INCIDENT_ID="${INCIDENT_ID:-}"
+EVENT_UUID="${EVENT_UUID:-}"
+SQL_DIR="$(cd "$(dirname "$0")/sql/staging-incident" && pwd)"
 
 ROSTER_N="${ROSTER_N:-3}"
 DB_LOCAL_PORT="${DB_LOCAL_PORT:-5436}" # 5436: no choca con make db-tunnel(5434) ni el seed de usuarios(5435)
@@ -60,7 +78,7 @@ esac
 
 REGION="$(terraform -chdir="$TF_DIR" output -raw region 2>/dev/null || echo us-east-2)"
 
-echo "incidente=$INCIDENT_ID  sitio=$SITE_ID  zona=$ZONE_ID  subcomando=$SUB"
+echo "sitio=$SITE_ID  zona=$ZONE_ID  subcomando=$SUB"
 echo
 
 # --- Túnel SSM → BD (patrón idéntico a seed_mobile_users.sh) -------------------
@@ -109,92 +127,60 @@ if [[ "$("${PSQL[@]}" -tAc "SELECT count(*) FROM sites WHERE site_id = '$SITE_ID
   exit 1
 fi
 
-V=(-v tenant="$TENANT_ID" -v site="$SITE_ID" -v zone="$ZONE_ID" -v iid="$INCIDENT_ID" -v euuid="$EVENT_UUID")
+# --- Resolución del incidente ------------------------------------------------
+# `crisis` abre uno NUEVO; el resto trabaja sobre el que esté abierto en el
+# sitio. El uuid lo genera la propia base (`gen_random_uuid`) para no depender
+# de `uuidgen`, que no está en todas las máquinas.
+abierto() {
+  "${PSQL[@]}" -tAc "SELECT incident_id FROM incidents
+                      WHERE site_id = '$SITE_ID' AND state <> 'closed'
+                      ORDER BY opened_at DESC LIMIT 1"
+}
+
+if [[ "$SUB" == "crisis" ]]; then
+  IID="${INCIDENT_ID:-$("${PSQL[@]}" -tAc 'SELECT gen_random_uuid()')}"
+  EUUID="${EVENT_UUID:-$("${PSQL[@]}" -tAc 'SELECT gen_random_uuid()')}"
+else
+  IID="${INCIDENT_ID:-$(abierto)}"
+  EUUID="$EVENT_UUID"
+  if [[ -z "$IID" && "$SUB" != "reset" && "$SUB" != "status" && "$SUB" != "roster" ]]; then
+    echo "  ✗ no hay incidente abierto en $SITE_ID — corre 'crisis' primero" >&2
+    exit 1
+  fi
+fi
+
+V=(-v tenant="$TENANT_ID" -v site="$SITE_ID" -v zone="$ZONE_ID" -v iid="$IID" -v euuid="$EUUID")
+echo "incidente=${IID:-∅}"
 
 case "$SUB" in
 crisis)
-  # Incidente abierto (idempotente por incident_id) + tier de crisis.
-  # severity/state/trigger según CHECK de schema.sql:214-216; event_uuid NOT NULL UNIQUE.
-  "${PSQL[@]}" "${V[@]}" <<'SQL'
-INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, event_id,
-                       opened_at, severity, state, trigger)
-VALUES (:'iid'::uuid, :'euuid'::uuid, :'tenant'::uuid, :'site'::uuid, NULL,
-        now(), 'warning', 'open', 'sasmex')
-ON CONFLICT (incident_id) DO UPDATE SET state = 'open';
-
--- Tier de crisis. gateway_id es uuid NOT NULL SIN FK ⇒ cualquiera vale.
-INSERT INTO rule_evaluations (ts, tenant_id, site_id, gateway_id, prev_tier, new_tier)
-VALUES (now(), :'tenant'::uuid, :'site'::uuid, gen_random_uuid(), 'normal', 'evacuate_or_hold');
-SQL
+  "${PSQL[@]}" "${V[@]}" -f "$SQL_DIR/crisis.sql"
+  echo "  ✓ incidente FRESCO $IID (los anteriores del sitio quedaron cerrados)"
   ;;
 conclude)
-  if [[ "$("${PSQL[@]}" -tAc "SELECT count(*) FROM incidents WHERE incident_id='$INCIDENT_ID' AND state<>'closed'")" != "1" ]]; then
-    echo "  ✗ no hay incidente abierto — corre 'crisis' primero" >&2
-    exit 1
-  fi
-  "${PSQL[@]}" "${V[@]}" <<'SQL'
-INSERT INTO rule_evaluations (ts, tenant_id, site_id, gateway_id, prev_tier, new_tier)
-VALUES (now(), :'tenant'::uuid, :'site'::uuid, gen_random_uuid(), 'evacuate_or_hold', 'normal');
-SQL
+  "${PSQL[@]}" "${V[@]}" -f "$SQL_DIR/conclude.sql"
   ;;
 reentry)
-  if [[ "$("${PSQL[@]}" -tAc "SELECT count(*) FROM incidents WHERE incident_id='$INCIDENT_ID' AND state<>'closed'")" != "1" ]]; then
-    echo "  ✗ no hay incidente abierto — corre 'crisis' primero" >&2
-    exit 1
-  fi
-  # Dictamen FIRMADO (signed_by no nulo) + habitable (inhabit_monitor).
-  # basis es jsonb NOT NULL sin default ⇒ '{}'. Append-only ⇒ fila nueva.
-  "${PSQL[@]}" "${V[@]}" <<'SQL'
-INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by)
-VALUES (:'tenant'::uuid, :'iid'::uuid, 'inhabit_monitor', '{}'::jsonb, gen_random_uuid());
-SQL
+  "${PSQL[@]}" "${V[@]}" -f "$SQL_DIR/reentry.sql"
   echo "  (nota: el push OPS real lo dispara la consola al firmar; por SQL la app"
   echo "   levanta reentry_approved en su próximo poll de mobile-state ≤ ~60 s)"
   ;;
 roster)
-  # Ocupantes SINTÉTICOS no reportados, para que el headcount (2.6/flujo 05)
-  # tenga a quién marcar 'verificado en persona'. role sin CHECK; el roster/
-  # headcount cuenta TODOS los roles (el directorio filtra, el headcount no).
   for i in $(seq 1 "$ROSTER_N"); do
     UID_N="$(printf 'd5000000-0000-0000-0000-%012d' "$i")"
-    "${PSQL[@]}" "${V[@]}" -v uid="$UID_N" <<'SQL'
-INSERT INTO user_zone_assignments (user_id, tenant_id, site_id, zone_id, role)
-VALUES (:'uid'::uuid, :'tenant'::uuid, :'site'::uuid, :'zone'::uuid, 'occupant')
-ON CONFLICT (user_id, site_id) DO NOTHING;
-SQL
+    "${PSQL[@]}" "${V[@]}" -v uid="$UID_N" -f "$SQL_DIR/roster.sql"
     echo "  ✓ ocupante sintético $UID_N (no reportado)"
   done
   ;;
 reset)
-  # incidents NO es append-only ⇒ cerrar por UPDATE devuelve la fase a idle.
-  "${PSQL[@]}" "${V[@]}" <<'SQL'
-UPDATE incidents SET state = 'closed' WHERE incident_id = :'iid'::uuid;
-SQL
+  "${PSQL[@]}" "${V[@]}" -f "$SQL_DIR/reset.sql"
   ;;
 status) ;;
 esac
 
 echo
-echo "Fase derivada actual (réplica de mobile_site.py:152-174):"
-"${PSQL[@]}" "${V[@]}" -tA <<'SQL'
-SELECT 'phase=' || CASE
-  WHEN NOT EXISTS (SELECT 1 FROM incidents WHERE site_id = :'site'::uuid AND state <> 'closed')
-    THEN 'idle'
-  WHEN (SELECT (signed_by IS NOT NULL) AND status IN ('normal_operation','inhabit_monitor')
-          FROM dictamens WHERE incident_id = :'iid'::uuid ORDER BY created_at DESC LIMIT 1)
-    THEN 'reentry_approved'
-  WHEN (SELECT new_tier FROM rule_evaluations WHERE site_id = :'site'::uuid ORDER BY ts DESC LIMIT 1) = 'normal'
-    THEN 'shaking_concluded'
-  ELSE 'alert_active'
-END
-|| '   | tier=' || COALESCE((SELECT new_tier FROM rule_evaluations WHERE site_id = :'site'::uuid ORDER BY ts DESC LIMIT 1), '∅')
-|| '   | roster=' || (SELECT count(*) FROM user_zone_assignments WHERE site_id = :'site'::uuid)::text
-|| '   | no_reportados=' || (
-     SELECT count(*) FROM user_zone_assignments uza
-     WHERE uza.site_id = :'site'::uuid
-       AND NOT EXISTS (SELECT 1 FROM life_checkins lc
-                       WHERE lc.incident_id = :'iid'::uuid AND lc.user_id = uza.user_id))::text;
-SQL
+echo "Fase derivada actual (réplica de mobile_site.py; la verdad es el endpoint):"
+"${PSQL[@]}" "${V[@]}" -tA -f "$SQL_DIR/phase.sql"
 
 _kill_tunnel
 trap - EXIT

@@ -262,7 +262,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - [ ] Dos PDFs del mismo modelo producen los mismos bytes (test existente sigue verde).
   - [ ] La pestaña reservada al exportar muestra el documento o un error legible; nunca queda en blanco.
 
-### [ ] T-6.18 · **Los dos arneses vuelven a ejercer lo que prometen** — `SOFTWARE`
+### [x] T-6.18 · **Los dos arneses vuelven a ejercer lo que prometen** — `SOFTWARE`
 
 > El sembrador de staging reutiliza el incidente `d4000000…` y ya no produce la toma de crisis;
 > `make soc-local` emite un simulacro con «5 SIN COMANDO EMITIDO», así que el aborto no se puede
@@ -276,8 +276,48 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** que cada corrida del sembrador use un incidente fresco (y limpie el anterior) y que el SOC local entregue los comandos firmados al gabinete simulado.
 - **Criterios de aceptación:**
-  - [ ] `PHASE=crisis` produce `alert_active` en el teléfono aunque el incidente anterior tenga dictamen firmado.
-  - [ ] En `make soc-local`, un simulacro sobre el sitio simulado llega al panel `:8080` como `drill.active=true` y un `/quake` lo aborta de forma visible.
+  - [x] `PHASE=crisis` produce `alert_active` en el teléfono aunque el incidente anterior tenga dictamen firmado.
+  - [x] En `make soc-local`, un simulacro sobre el sitio simulado llega al panel `:8080` como `drill.active=true` y un `/quake` lo aborta de forma visible.
+- **Cómo se cerró (2026-09-09, SESIÓN X3):**
+  - **El sembrador abre un incidente FRESCO por corrida.** El id era una constante, así que
+    `crisis` REABRÍA el mismo incidente; en cuanto una corrida pasaba por `reentry`, ese incidente
+    se quedaba con un dictamen firmado —`dictamens` es append-only— y la derivación, que busca el
+    dictamen POR INCIDENTE, devolvía `reentry_approved` para siempre. Ahora `crisis` cierra lo
+    abierto del sitio y abre uno nuevo; los demás subcomandos resuelven el incidente abierto en vez
+    de dar por hecho el suyo. `INCIDENT_ID=<uuid>` sigue permitiendo fijarlo.
+  - **Y el sembrador entró en CI, que es lo que impide que se vuelva a pudrir.** Su SQL vive ahora
+    en `infra/scripts/sql/staging-incident/*.sql` —una sola copia— y
+    `api/tests/api/test_seed_staging_incident.py` corre ESOS ficheros contra la base de tests,
+    comprobando la fase por el **endpoint real** que lee la app. La cadena del defecto
+    (crisis → reentry → crisis ⇒ `alert_active`) es un test; con el id constante de antes se pone
+    rojo, medido. Se compara además la réplica en SQL que el script imprime contra el endpoint en
+    las cuatro fases: dos derivaciones de la misma regla que nadie comparaba.
+  - **El SOC local ya entrega los comandos firmados al gabinete.** La API se levantaba tal cual y
+    su publicador es el de AWS IoT Core: en una laptop sin credenciales cada comando moría al
+    publicar y el simulacro salía con «SIN COMANDO EMITIDO». `demo/api_local.py` sustituye **solo**
+    esa dependencia por el `SpoolCommandPublisher` que ya existía (T-5.29) y deja el envelope
+    firmado en el buzón del thing; el gabinete lo recibe por `--downlink` y lo verifica su
+    `CommandDispatcher` REAL. La firma no se salta: la clave sale del mismo sitio para las dos
+    mitades, y el buzón también, porque si divergieran el comando iría a un directorio que nadie
+    lee sin un solo error en ningún log. Un test estático en `demo/tests/` lo amarra.
+  - **De paso quedó a la vista una defensa que funciona.** El primer intento acabó en
+    `rejected · command_enabled=false`: el comando llegó, **la firma se verificó** y el gabinete lo
+    rechazó porque de fábrica no ejecuta lo que le mande la nube. Ese default no se toca; el arnés
+    lo enciende a propósito y lo DECLARA al arrancar (`--sin-comandos` devuelve el gabinete de
+    fábrica).
+  - **Ensayado de punta a punta en local** (2026-09-09): simulacro disparado por la API →
+    `command_id` emitido → acuse `acked · «simulacro iniciado»` → el panel `:8080` pinta
+    `drill.active=true` con `elapsed_s` → `POST :9100/quake` → `aborted:true`,
+    `abort_reason: "tier instrumental restricted"`, `aborted_at` y `aborted_age_s`, y el aborto
+    **vuelve a la nube** en el segundo acuse (`drill_sites.aborted_at`). Medido en Chromium: el
+    banner ámbar «SIMULACRO ABORTADO — HUBO UNA ALERTA REAL (…)» visible, 53 px de alto bajo la
+    cabecera, cero errores de página. Es la primera vez que el aborto de T-6.29 se ejerce entero
+    fuera de los tests, y era justo lo que U-37 impedía.
+  - **Lo que NO se ejerció:** el sembrador contra la nube de staging, porque su túnel SSM pide la
+    ventana de AWS y el SSO estaba caducado. Lo que sí corre en cada PR es su SQL contra el mismo
+    esquema, con la fase leída del endpoint real; lo único que queda sin cubrir es el túnel.
+  - **Verificación:** suite `api` completa en verde (incluidos los 4 tests nuevos del sembrador) y
+    `demo/tests` con 43; `ruff check` y `ruff format --check` limpios.
 
 ## 7 · Fichas · Consola SOC
 
