@@ -843,7 +843,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     con el árbol limpio en la verificación de T-6.06— y ninguna ficha los nombra todavía: son dos
     solapamientos sobre el mapa, de la familia de esta ficha pero con causa propia.
 
-### [ ] T-6.14 · **El flujo alerta → dictamen no pierde el contexto** — `SOFTWARE`
+### [x] T-6.14 · **El flujo alerta → dictamen no pierde el contexto** — `SOFTWARE`
 
 > Solicitar el dictamen salta a `/triage` y tira el riel, el mapa y el filtro; con un sismo del
 > catálogo seleccionado el mapa queda armado y el siguiente clic abre la comparativa sin aviso;
@@ -857,9 +857,52 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — `ConsolePage.test.tsx` sobre la navegación tras solicitar.
 - **Objetivo:** volver al riel al terminar en triage (o abrir el dictamen sin abandonar `/console`), desarmar la comparativa al apagar el histórico y declararla mientras está armada, y una entrada a la ficha del edificio desde `SiteCard` y desde el triage.
 - **Criterios de aceptación:**
-  - [ ] Tras firmar o cancelar en triage, un solo clic devuelve al riel con el mismo sitio en foco.
-  - [ ] Con la comparativa armada, el mapa lo dice; al apagar el histórico se desarma.
-  - [ ] `inspector` llega a la ficha del edificio desde `/triage` sin pasar por `/console`.
+  - [x] Tras firmar o cancelar en triage, un solo clic devuelve al riel con el mismo sitio en foco.
+  - [x] Con la comparativa armada, el mapa lo dice; al apagar el histórico se desarma.
+  - [x] `inspector` llega a la ficha del edificio desde `/triage` sin pasar por `/console`.
+- **Cómo se cerró (2026-09-09, SESIÓN C14):**
+  - **El viaje de ida ya llevaba billete; faltaba el de vuelta.** Solicitar el dictamen navega a
+    `/triage?incident=…`, y eso tiraba el riel, el mapa y el filtro. Ahora el salto se lleva puesto
+    **de dónde se vino** (`&volver=<site_id>`, el sitio del incidente por el que se saltó, que es el
+    que el operador estaba mirando) y el panel de triage encabeza con **◀ VOLVER A MONITOREO ·
+    \<sitio\>**. Del otro lado, `/console?sitio=<id>` abre el riel enfocado en ese sitio. Es
+    **estado inicial y no un efecto**: el deep-link es cómo se entró a la pantalla, no algo que la
+    pantalla vaya aplicando después —un efecto reabriría el cajón cada vez que el operador lo
+    cerrara—, y sin `?sitio=` el riel sigue naciendo cerrado, que es lo que protege los 380 px del
+    mapa.
+  - **Medido en el navegador, con la pila local viva:** el ciclo completo `SOLICITAR DICTAMEN` →
+    `/triage?incident=…&volver=d1000000…` → `◀ VOLVER A MONITOREO` → `/console?sitio=d1000000…` con
+    el riel abierto en *Sitio Sim 001 Puebla*, **un clic y 195 ms**.
+  - **El mapa armado ya no es un secreto.** Con un sismo del catálogo elegido, el próximo clic en
+    una estación abre la COMPARATIVA en vez del detalle. El aviso existía —el «PASO 2» de la tercera
+    leyenda, abajo a la izquierda— pero además colgaba de `layers.catalog`: **apagar el histórico
+    borraba el aviso y dejaba el mapa armado en silencio**. Ahora el aviso vive en la esquina de
+    ESTADO DEL MAPA (arriba-izquierda, dueño único desde T-2.55), nombra el sismo con el mismo
+    rótulo que su ◇ —función `catalogLabel`, una sola verdad: con trece diamantes iguales, dos
+    rótulos distintos se leen como dos eventos—, trae su propio **CANCELAR**, y el cursor pasa a
+    cruz. Medido: 593 × 25 px, una línea.
+  - **Y apagar el histórico DESARMA**, por los dos mandos del mismo interruptor (la fila de CAPAS y
+    el rótulo de la leyenda): que uno desarmara y el otro no sería peor que no desarmar ninguno. El
+    desarmado se emite hacia el padre (`onSelectCatalog(null)`) en vez de tocarle el estado: el
+    interruptor vive en el mapa, la selección sigue siendo suya.
+  - **La ficha del edificio deja de colgar de un solo hilo.** `/building` se alcanzaba **solo** desde
+    el riel de detalle de `/console`, y `inspector` y `building_admin` —que tienen la ruta concedida
+    y NO tienen `/fleet`— dependían de ese riel para llegar al inmueble que están evaluando. Ahora
+    hay entrada desde el panel de triage y desde cada tarjeta de flota, con la misma forma que el
+    enlace del riel (tres formas distintas para un mismo destino se leen como tres destinos). El
+    enlace se pinta desde `allowed_routes` (T-6.02): hoy lo tienen los siete roles web, y por eso
+    mismo el gate tiene que existir antes de que deje de ser cierto.
+  - **Ejercido con el rol real:** `inspector` entra, ve dos pestañas (MONITOREO · EVALUACIÓN), abre
+    `/triage`, pulsa FICHA DEL EDIFICIO y aterriza en **DASHBOARD EDIFICIO** —no en SIN ACCESO—;
+    y desde `/fleet`, la tarjeta lleva a la ficha del sitio de la tarjeta.
+  - **Una trampa que se llevó por delante 42 tests:** montar un `<Link>` dentro de `SiteCard` puso en
+    rojo `FleetPage.test` entero («Cannot destructure property 'basename'»), incluido el caso de los
+    cuatro estados, que **construye su JSX aparte** y no pasa por el helper `render`. Y en
+    `TriageDetail.test` había un caso que montaba el panel **a mano**, con la lista de props copiada
+    y sin router: se reescribió sobre `arrange`, que es lo que evita que la próxima prop lo vuelva a
+    romper.
+  - **Verificación:** web 2 216 tests, `tsc`, `eslint`, `prettier` y `vite build` limpios; los tres
+    criterios ejercidos en un navegador real contra `make soc-local`, con capturas.
 
 ### [ ] T-6.12 · **El dato es lo más grande de cada pantalla** — `SOFTWARE`
 

@@ -269,6 +269,19 @@
   font-size: 11px;
   font-family: var(--tk-font-ui);
 }
+/* [T-6.14] Misma forma que en el riel de la consola y en el triage: es el mismo
+   destino desde una tercera pantalla, y tres formas distintas para un mismo
+   enlace se leen como tres cosas distintas. */
+.fleet-card__deeplink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font: 700 9.5px var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+.fleet-card__deeplink:hover { text-decoration: underline; }
 .fleet-card__tenant {
   color: var(--tk-fg-2);
   font-weight: 600;
@@ -683,7 +696,31 @@
   overflow-y: auto;
   min-height: 0;
 }
-.triage-detail__hd { display: flex; flex-direction: column; }
+.triage-detail__hd { display: flex; flex-direction: column; align-items: flex-start; }
+/* [T-6.14] El camino de vuelta al wall va ARRIBA del todo y separado del
+   badge: es lo primero que se busca al terminar aquí, no un pie de página. */
+.triage-detail__volver {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  font: 700 10px var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+.triage-detail__volver:hover { text-decoration: underline; }
+/* Misma forma que el enlace equivalente del riel de la consola
+   (`.soc-detail__deeplink`): es el mismo destino desde otra pantalla. */
+.triage-detail__deeplink {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font: 700 9.5px var(--tk-font-ui);
+  letter-spacing: 0.08em;
+  text-decoration: none;
+}
+.triage-detail__deeplink:hover { text-decoration: underline; }
 .triage-detail__title {
   margin: 4px 0 0;
   font-family: var(--tk-font-ui);

@@ -1,5 +1,7 @@
 import { DERIVED_STATE_PILL, UNKNOWN_DERIVED_STATE_KIND } from "@takab/design-tokens";
-import { Activity, Clock, Cpu, MapPin, Radio, ToggleRight, Zap } from "lucide-react";
+import { Activity, Clock, Cpu, ExternalLink, MapPin, Radio, ToggleRight, Zap } from "lucide-react";
+
+import { Link } from "react-router";
 
 import type { GatewayConfigStateOut, GatewayHealthOut, MaintenanceWindowOut } from "@takab/sdk";
 
@@ -121,6 +123,17 @@ export default function SiteCard({
             {cabinet.siteCode}
             {gw.iot_thing && <span className="fleet-card__tenant"> · {gw.iot_thing}</span>}
           </div>
+          {/* [T-6.14] La ficha del inmueble se alcanzaba SOLO desde el riel de
+              detalle de `/console`: quien administra flota tenía que salir a la
+              consola, buscar el sitio en el mapa y abrir el cajón para llegar a
+              la pantalla del edificio que tiene delante en esta tarjeta. */}
+          <Link
+            className="soc-link fleet-card__deeplink"
+            data-testid="card-building-link"
+            to={`/building/${gw.site_id}`}
+          >
+            <ExternalLink size={11} aria-hidden /> FICHA DEL EDIFICIO
+          </Link>
         </div>
         <div className="fleet-card__id">
           <span className={`soc-pill soc-pill--${pill}`}>

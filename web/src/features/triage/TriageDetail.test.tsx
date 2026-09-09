@@ -172,11 +172,57 @@ function arrange(
         canExport={false}
         canGenerateReport={false}
         canOpenFleet={false}
+        canOpenBuilding
+        volverASitioId={null}
         {...props}
       />
     </MemoryRouter>,
   );
 }
+
+/**
+ * [T-6.14] TRIAGE NO ES UN CALLEJÓN.
+ *
+ * Se llega aquí desde el wall (SOLICITAR DICTAMEN), y hasta hoy el salto tiraba
+ * el riel, el mapa y el filtro: el operador firmaba y volvía —cuando volvía— a
+ * una consola en blanco que tenía que armar otra vez. Medido en la auditoría:
+ * 3 clics hasta solicitar y 4 más hasta el PDF, con un salto de pantalla en
+ * medio y ningún camino de vuelta.
+ *
+ * Y la ficha del inmueble colgaba de UN enlace en el riel de `/console`: para
+ * `inspector` y `building_admin` —que no tienen `/fleet`— ese riel era el único
+ * camino a `/building`, teniendo la ruta concedida.
+ */
+describe("TriageDetail · el camino de vuelta y la ficha del edificio", () => {
+  it("con `volver` hay UN clic de regreso al riel, con el sitio en foco", () => {
+    arrange({}, { volverASitioId: "s-1" });
+    const volver = screen.getByTestId("triage-volver");
+    expect(volver).toHaveAttribute("href", "/console?sitio=s-1");
+    // Que diga a DÓNDE vuelve: «volver» a secas no distingue el riel del
+    // historial de donde se venía.
+    expect(volver).toHaveTextContent(/MONITOREO/);
+  });
+
+  it("sin `volver` no se inventa un regreso", () => {
+    // A triage también se entra por su pestaña. Un botón «volver al riel» ahí
+    // manda a una pantalla en la que el operador nunca estuvo.
+    arrange({}, { volverASitioId: null });
+    expect(screen.queryByTestId("triage-volver")).not.toBeInTheDocument();
+  });
+
+  it("el sitio del incidente tiene entrada a su ficha de edificio", () => {
+    arrange();
+    expect(screen.getByTestId("triage-building-link")).toHaveAttribute("href", "/building/s-1");
+  });
+
+  it("sin la ruta concedida, el enlace al edificio NO se pinta", () => {
+    // [T-6.02] Un enlace no promete lo que el rol no tiene: mandaría a SIN
+    // ACCESO. Ningún rol web está hoy en este caso, y por eso mismo el gate
+    // tiene que existir antes de que lo esté.
+    arrange({}, { canOpenBuilding: false });
+    expect(screen.queryByTestId("triage-building-link")).not.toBeInTheDocument();
+  });
+});
 
 describe("TriageDetail · los hechos no dependen del dictamen [T-2.39]", () => {
   // EL bug: `<StructuralTriage>` vivía dentro de `{verdict && head && …}` Y dentro
@@ -213,37 +259,11 @@ describe("TriageDetail · datos honestos [T-2.39]", () => {
   });
 
   it("sin PGA el título dice SIN MEDICIÓN, no una banda tranquilizadora", () => {
-    render(
-      <TriageDetail
-        row={{ ...ROW, incident: { ...INCIDENT, max_pga_g: null } }}
-        detail={
-          {
-            dictamens: resource<DictamenOut[]>({ data: [] }),
-            actions: resource<unknown[]>({ data: [] }),
-            evidence: resource<unknown[]>({ data: [] }),
-            event: resource<unknown>({ data: EVENT }),
-            refetch: vi.fn(),
-            sign: vi.fn(),
-            signing: false,
-            signError: null,
-            generatePdf: vi.fn(),
-            pdfPending: false,
-            downloadEvidence: vi.fn(),
-            downloadPending: false,
-            exportError: null,
-          } as unknown as TriageDetailProps["detail"]
-        }
-        forensics={FORENSICS}
-        cctv={CCTV}
-        canDownloadClip={false}
-        minNodes={3}
-        incidentStaleSince={null}
-        canSign={false}
-        canExport={false}
-        canGenerateReport={false}
-        canOpenFleet={false}
-      />,
-    );
+    // [T-6.14] Este caso montaba el panel A MANO —sin router y con la lista de
+    // props copiada— y por eso se rompía cada vez que el componente ganaba una:
+    // el `<Link>` de esta ficha lo tiró. `arrange` ya monta el router y `props`
+    // se esparce al final, así que el `row` se sustituye sin duplicar nada.
+    arrange({}, { row: { ...ROW, incident: { ...INCIDENT, max_pga_g: null } } });
     expect(screen.getByRole("heading", { level: 2 })).toHaveTextContent("SIN MEDICIÓN");
   });
 

@@ -56,6 +56,8 @@ export default function TriagePage() {
   // página cargada se avisa (el endpoint pagina a 50) y se cae a la más reciente.
   const [searchParams] = useSearchParams();
   const wantedIncident = searchParams.get("incident");
+  // [T-6.14] El sitio que el operador estaba mirando en el wall cuando saltó.
+  const volverASitio = searchParams.get("volver");
   const appliedDeepLink = useRef(false);
   const deepLinkMiss =
     wantedIncident !== null &&
@@ -233,6 +235,13 @@ export default function TriagePage() {
             // [T-6.02] Un enlace no promete lo que el rol no tiene: `allowed_routes`
             // del servidor, como los guards.
             canOpenFleet={me?.allowed_routes.includes("/fleet") === true}
+            // [T-6.14] Misma regla para la ficha del inmueble, que hasta hoy
+            // solo se alcanzaba desde el riel de `/console`.
+            canOpenBuilding={me?.allowed_routes.includes("/building") === true}
+            // [T-6.14] De dónde se vino. Lo trae el enlace del wall al saltar
+            // aquí (`&volver=<site_id>`); entrando por la pestaña no hay riel
+            // al que volver y el enlace no se pinta.
+            volverASitioId={volverASitio}
           />
         )}
       </div>
