@@ -317,6 +317,7 @@ export default function FleetPage() {
               onRetire={canManage ? () => setAction({ kind: "retire", cabinet: c }) : undefined}
               onRestore={canManage ? () => restoreGateway.mutate(c.gateway.gateway_id) : undefined}
               restoring={restoreGateway.isPending}
+              nowMs={now}
             />
           ))}
         </div>

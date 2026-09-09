@@ -89,6 +89,7 @@ export default function DrillBanner({ data, scene }: { data: ActiveDrillData; sc
             canStop={canAct}
             pending={pending}
             onStop={() => stop(drill.drill_id)}
+            fresca={staleSince === null}
           />
         )
       ) : armed !== null ? (
@@ -134,6 +135,7 @@ function RunningBanner({
   canStop,
   pending,
   onStop,
+  fresca,
 }: {
   endsAt: number;
   siteCount: number;
@@ -141,9 +143,24 @@ function RunningBanner({
   canStop: boolean;
   pending: boolean;
   onStop: () => void;
+  /**
+   * [T-6.10 · S3] Si lo que se anuncia es lo que el servidor afirma AHORA.
+   *
+   * El simulacro y la alerta real comparten forma de banner: se distinguen por
+   * color y por rótulo, y esos dos siguen siendo los que mandan. La trama que
+   * deriva añade un tercer canal que no repite a ninguno de los dos —dice si la
+   * lectura sigue viva— y se congela con ella. Un banner que sigue corriendo
+   * sobre un dato retenido afirmaría que el simulacro sigue sonando cuando lo
+   * único cierto es que dejamos de saberlo (regla de oro 7).
+   */
+  fresca: boolean;
 }) {
   return (
-    <div className="soc-drill soc-drill--on" role="status" data-testid="drill-banner">
+    <div
+      className={`soc-drill soc-drill--on${fresca ? " soc-drill--fresca" : ""}`}
+      role="status"
+      data-testid="drill-banner"
+    >
       <AlertTriangle size={16} aria-hidden />
       <span>
         🔶 SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL · {siteCount} SITIO(S) · {ack} · TERMINA{" "}

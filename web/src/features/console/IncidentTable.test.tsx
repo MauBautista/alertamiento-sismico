@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { NUEVO_MS } from "./filasNuevas";
 import IncidentTable from "./IncidentTable";
 import type { LiveIncident } from "./useLiveIncidents";
 
@@ -52,6 +53,63 @@ function renderTable(over: Partial<Parameters<typeof IncidentTable>[0]> = {}) {
   );
   return { onAck, onSelect, onRelocate, onRequestDictamen };
 }
+
+describe("[T-6.10] la fila que ACABA de llegar se anuncia", () => {
+  /** Igual que `renderTable` pero devolviendo `rerender`: el sujeto de estos
+   * casos es la SEGUNDA pintura, y volver a llamar a `render` monta un árbol
+   * nuevo —con lo que el censo arrancaría de cero y nada sería nuevo jamás. */
+  function montar(incidents: LiveIncident[], nowMs: number) {
+    const props = {
+      siteInfoOf: () => ({ name: "Planta Cholula", coords: null, code: "site-cholula-a" }),
+      liveStatus: "ready" as const,
+      operatorLabel: "TENANT_ADMIN · SOC",
+      selectedId: null,
+      onSelect: vi.fn(),
+      canAck: false,
+      onAck: vi.fn(),
+      canRelocate: false,
+      onRelocate: vi.fn(),
+      canRequestDictamen: false,
+      onRequestDictamen: vi.fn(),
+    };
+    const vista = render(<IncidentTable {...props} incidents={incidents} nowMs={nowMs} />);
+    return {
+      pintar: (siguientes: LiveIncident[], t: number) =>
+        vista.rerender(<IncidentTable {...props} incidents={siguientes} nowMs={t} />),
+    };
+  }
+
+  it("abrir la consola con la cola llena NO enciende doce rótulos", () => {
+    montar([incident("a"), incident("b")], NOW);
+    expect(screen.queryAllByTestId("fila-nueva")).toHaveLength(0);
+  });
+
+  it("la que llega después lleva NUEVO, y solo ella", () => {
+    const { pintar } = montar([incident("a")], NOW);
+    pintar([incident("b"), incident("a")], NOW + 1_000);
+    const rotulos = screen.getAllByTestId("fila-nueva");
+    expect(rotulos).toHaveLength(1);
+    // Y va DENTRO de la fila que llegó, no suelto en la cabecera.
+    expect(rotulos[0].closest("tr")?.textContent).toContain("Planta Cholula");
+  });
+
+  it("el rótulo caduca solo, sin que nadie toque la cola", () => {
+    const { pintar } = montar([incident("a")], NOW);
+    pintar([incident("b"), incident("a")], NOW + 1_000);
+    expect(screen.getAllByTestId("fila-nueva")).toHaveLength(1);
+    pintar([incident("b"), incident("a")], NOW + 1_000 + NUEVO_MS + 1);
+    expect(screen.queryAllByTestId("fila-nueva")).toHaveLength(0);
+  });
+
+  it("el movimiento CONFIRMA y no informa: la clase de entrada acompaña al rótulo", () => {
+    // Si el aviso viviera solo en la animación, con `prefers-reduced-motion`
+    // no habría aviso ninguno.
+    const { pintar } = montar([incident("a")], NOW);
+    pintar([incident("b"), incident("a")], NOW + 1_000);
+    const fila = screen.getAllByTestId("fila-nueva")[0].closest("tr");
+    expect(fila?.className).toContain("soc-table__row--nueva");
+  });
+});
 
 describe("IncidentTable", () => {
   it("pinta la fila con sitio, PGA, hora UTC y edad", () => {

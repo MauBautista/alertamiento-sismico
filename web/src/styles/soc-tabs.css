@@ -78,7 +78,7 @@
   border-radius: 4px;
   border: 1px solid transparent;
   cursor: pointer;
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease), opacity var(--tk-dur-fast) var(--tk-ease);
   display: flex; flex-direction: column; align-items: stretch; gap: 3px;
   text-align: left;
   min-width: 0;
@@ -144,7 +144,7 @@
   color: var(--tk-navy-900);
   border-color: var(--tk-status-warning);
   box-shadow: var(--tk-shadow-warning);
-  animation: soc-armed-pulse 1s var(--tk-ease) infinite;
+  animation: soc-armed-pulse var(--tk-dur-armed) var(--tk-ease) infinite;
 }
 @keyframes soc-armed-pulse {
   0%, 100% { box-shadow: var(--tk-shadow-warning); }
@@ -245,7 +245,7 @@
   padding: 14px;
   display: flex; flex-direction: column;
   gap: 12px;
-  transition: border-color 120ms var(--tk-ease);
+  transition: border-color var(--tk-dur-fast) var(--tk-ease);
 }
 .fleet-card:hover { border-color: var(--tk-border-strong); }
 .fleet-card--warn { border-left: 3px solid var(--tk-status-warning); }
@@ -419,6 +419,14 @@
   color: var(--tk-fg-1);
   font-variant-numeric: tabular-nums;
 }
+/* [T-6.10] La edad del último frame, cuando el halo se ha parado. Va en ámbar
+   —el tono de «esto no es lo que parece»— y solo aparece cuando hay algo que
+   explicar: el enlace vivo con frame fresco no gana ni un píxel de ruido. */
+.fleet-link__age {
+  font: 700 9px/1.2 var(--tk-font-ui);
+  letter-spacing: 0.10em;
+  color: var(--tk-status-warning);
+}
 .fleet-link--ok   { background: var(--tk-status-normal-08);   border-color: var(--tk-status-normal-15);   color: var(--tk-status-normal); }
 .fleet-link--warn { background: var(--tk-status-warning-08);  border-color: var(--tk-status-warning-15);  color: var(--tk-status-warning); }
 .fleet-link--crit { background: var(--tk-status-critical-08); border-color: var(--tk-status-critical-15); color: var(--tk-status-critical-text); }
@@ -461,7 +469,7 @@
 .fleet-ups__fill {
   height: 100%;
   border-radius: 999px;
-  transition: width 240ms var(--tk-ease-data);
+  transition: width var(--tk-dur-data) var(--tk-ease-data);
 }
 .fleet-ups__fill--ok   { background: var(--tk-status-normal); }
 .fleet-ups__fill--warn { background: var(--tk-status-warning); }
@@ -543,7 +551,7 @@
   cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
   overflow: hidden;
-  transition: all 120ms var(--tk-ease);
+  transition: background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease), opacity var(--tk-dur-fast) var(--tk-ease);
 }
 .fleet-card__diag:hover:not(:disabled) { background: var(--tk-cyan-15); border-color: var(--tk-cyan); }
 .fleet-card__diag:disabled { opacity: 0.4; cursor: not-allowed; }
@@ -633,7 +641,7 @@
   letter-spacing: 0.10em;
   padding: 7px 11px;
   cursor: pointer;
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease);
 }
 .triage__seg-btn.is-active {
   background: var(--tk-cyan-15);
@@ -930,7 +938,7 @@
   border: 1px solid var(--tk-border);
   border-radius: 4px;
   cursor: pointer;
-  transition: all 120ms var(--tk-ease);
+  transition: background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease), box-shadow var(--tk-dur-fast) var(--tk-ease);
   text-align: left;
 }
 .mt-tenant:hover { border-color: var(--tk-border-strong); }
@@ -1082,7 +1090,7 @@
   border: 2px solid var(--tk-cyan);
   box-shadow: 0 0 0 4px var(--tk-cyan-08);
   pointer-events: none;
-  transition: border-color 120ms var(--tk-ease), box-shadow 120ms var(--tk-ease);
+  transition: border-color var(--tk-dur-fast) var(--tk-ease), box-shadow var(--tk-dur-fast) var(--tk-ease);
 }
 .mt-slider__thumb--ok   { border-color: var(--tk-status-normal);   box-shadow: 0 0 0 4px var(--tk-status-normal-08); }
 .mt-slider__thumb--warn { border-color: var(--tk-status-warning);  box-shadow: 0 0 0 4px var(--tk-status-warning-08); }
@@ -1134,7 +1142,7 @@
   cursor: pointer;
   font-family: var(--tk-font-ui);
   color: var(--tk-fg-2);
-  transition: all 120ms var(--tk-ease);
+  transition: color var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease), border-color var(--tk-dur-fast) var(--tk-ease);
 }
 .mt-channel:hover { border-color: var(--tk-border-strong); }
 .mt-channel.is-on {
@@ -1176,7 +1184,7 @@
   width: 32px; height: 18px; border-radius: 999px;
   background: var(--tk-surface-0);
   position: relative;
-  transition: background 120ms var(--tk-ease);
+  transition: background var(--tk-dur-fast) var(--tk-ease);
   flex-shrink: 0;
 }
 .mt-channel__knob {
@@ -1185,7 +1193,7 @@
   width: 14px; height: 14px;
   border-radius: 999px;
   background: var(--tk-fg-3);
-  transition: all 120ms var(--tk-ease);
+  transition: left var(--tk-dur-fast) var(--tk-ease), background-color var(--tk-dur-fast) var(--tk-ease);
 }
 .mt-channel__switch.is-on { background: var(--tk-cyan); }
 .mt-channel__switch.is-on .mt-channel__knob {
@@ -1944,7 +1952,7 @@
   font-weight: 700;
   letter-spacing: 0.1em;
   padding: 5px 9px;
-  transition: background 120ms var(--tk-ease);
+  transition: background var(--tk-dur-fast) var(--tk-ease);
 }
 .mt__new-btn:hover { background: var(--tk-cyan-08); }
 .mt__new-btn:focus-visible { outline: var(--tk-focus-ring); outline-offset: 1px; }

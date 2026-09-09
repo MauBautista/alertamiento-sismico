@@ -47,6 +47,12 @@ export interface SiteCardProps {
   onRetire?: () => void;
   onRestore?: () => void;
   restoring?: boolean;
+  /**
+   * [T-6.10] Reloj de la página, para decidir si el latido del enlace puede
+   * seguir afirmando «esto llega ahora». Viene de fuera —`FleetPage` ya tiene
+   * uno— porque un `useNow` por tarjeta pondría a tictaquear la reja entera.
+   */
+  nowMs?: number;
 }
 
 /** Tarjeta de gabinete: pinta el estado YA derivado por el servidor (G7). */
@@ -60,6 +66,7 @@ export default function SiteCard({
   onRetire,
   onRestore,
   restoring = false,
+  nowMs,
 }: SiteCardProps) {
   const gw = cabinet.gateway;
   // [T-2.35/37] Un gabinete retirado (o cuyo sitio lo está) solo aparece con el
@@ -73,6 +80,13 @@ export default function SiteCard({
   // desconocido ⇒ ámbar, nunca ok.
   const pill = DERIVED_STATE_PILL[gw.derived_state] ?? UNKNOWN_DERIVED_STATE_KIND;
   const linkKind = offline ? "crit" : "ok";
+  // [T-6.10 · U-23] La edad del último latido, que es lo que decide si el halo
+  // puede latir. Sin `last_heartbeat_ts` es `null` y NO cero: un cero afirmaría
+  // que acaba de llegar (regla de oro 7).
+  const frameAgeMs =
+    gw.last_heartbeat_ts != null
+      ? Math.max(0, (nowMs ?? Date.now()) - Date.parse(gw.last_heartbeat_ts))
+      : null;
   const mqttValue = offline
     ? "— sin enlace —"
     : gw.mqtt_rtt_ms != null
@@ -199,12 +213,14 @@ export default function SiteCard({
           label="MQTT BROKER"
           icon={<Radio size={12} aria-hidden />}
           value={mqttValue}
+          frameAgeMs={frameAgeMs}
         />
         <LinkPill
           kind={linkKind}
           label="SEEDLINK · RS4D"
           icon={<Activity size={12} aria-hidden />}
           value={seedlinkValue}
+          frameAgeMs={frameAgeMs}
         />
       </div>
 
