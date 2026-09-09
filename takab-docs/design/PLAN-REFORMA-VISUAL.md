@@ -754,7 +754,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - [ ] El CSS subido es salida de un generador; un test falla si diverge de `tokens.json`.
   - [ ] Captura antes y después en el informe de la sesión; los textos siguen siendo los de Cognito (no se pueden cambiar) y se dice.
 
-### [ ] T-6.09 · **Contraste AA donde hay texto, y forma donde solo había color** — `SOFTWARE`
+### [x] T-6.09 · **Contraste AA donde hay texto, y forma donde solo había color** — `SOFTWARE`
 
 > axe sin filtrar: 171 nodos `color-contrast` (rojo crítico sobre la tarjeta crítica de flota a
 > 11 px, 3.76:1; la meta del cliente en `/tenants`, 4.4:1). `color-contrast` no bloquea, `/building`
@@ -768,9 +768,70 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — las anclas de identidad no se tocan; los pares `fg×bg` medidos se añaden al test.
 - **Objetivo:** cero nodos `color-contrast` en las seis pantallas con datos sembrados; un glifo propio para `watch` en el mapa; `/building` en `axe.spec`; `color-contrast` como regla observada por pantalla y bloqueante donde ya está en cero.
 - **Criterios de aceptación:**
-  - [ ] axe sin filtrar reporta cero `color-contrast` en `/fleet` y `/tenants` con el seed de demostración.
-  - [ ] `watch` y `normal` se distinguen sin color (glifo o radio), verificado con un simulador de deuteranopía.
-  - [ ] `axe.spec.ts` cubre `/building` y bloquea por contraste en las pantallas que ya están limpias.
+  - [x] axe sin filtrar reporta cero `color-contrast` en `/fleet` y `/tenants` con el seed de demostración.
+  - [x] `watch` y `normal` se distinguen sin color (glifo o radio), verificado con un simulador de deuteranopía.
+  - [x] `axe.spec.ts` cubre `/building` y bloquea por contraste en las pantallas que ya están limpias.
+- **Cómo se cerró (2026-09-09, SESIÓN C9):**
+  - **La medición primero, y salió más chica y más grave de lo fichado.** axe sin filtrar sobre las
+    seis pantallas con el seed de demostración a 1440×900: **44 nodos** `color-contrast`, no 171 —
+    aquella cifra sumaba 72 corridas (roles × viewports) y contaba el mismo nodo muchas veces. Pero
+    los 44 se reparten en **cuatro** defectos, no cuarenta: **36 son el rojo anclado haciendo de
+    tinta sobre su propio tinte** (3.35:1 en una fila seleccionada de `/triage`, 3.76 en la píldora
+    de la tarjeta crítica de flota, 4.23 en sus enlaces), 6 son la cinta DEMO, 3 la selección y 1 el
+    resto.
+  - **Un ancla no se mueve: se le separa el oficio.** `--tk-status-critical` (`#FF5252`) es ancla de
+    identidad y la defiende un test desde T-2.01. Sobre `--tk-surface-2` da 4.10:1 y sobre su propio
+    tinte, 3.46 — no puede escribir. Se estrena **`--tk-status-critical-text`** (`#FF8A80`): el mismo
+    rojo, más claro, con **4.69:1 en el peor fondo que la consola compone**. El ancla dibuja
+    (bordes, barras, rellenos, el punto del mapa); la tinta escribe. Las 36 declaraciones `color:`
+    cambiaron de token de una vez. Ámbar, verde y cian pasaban con holgura y **no** estrenan tinta:
+    la simetría por la simetría serían tres tokens que nadie usa.
+  - **El peor par del producto no lo había visto nunca nadie.** El censo nuevo —«una tira de estado
+    SÓLIDA lleva tinta oscura»— sacó cuatro bloques que axe jamás alcanzó porque **ninguna corrida
+    tenía una alerta en pantalla**: `.soc-alert__strip` pintaba `#fff` sobre el rojo, **2.85:1**, y
+    ese es el texto más importante que escribe la consola («ALERTA SÍSMICA · PROTÉJASE»). Con él, el
+    botón que BORRA, la píldora de estado del BMS y la franja de escena. La tira de AVISO ya lo hacía
+    bien desde T-6.01 (navy sobre ámbar): ahora las cinco hablan igual. Medido en el navegador con un
+    SASMEX real del gabinete simulado: **5.01:1**.
+  - **El contrato medía tres fondos y la consola pinta ocho.** El bloque de contraste de
+    `designTokens.test.ts` comparaba texto contra `--tk-surface-0/1/2`, planos. Encima de esos tres
+    la consola compone un tinte por estado, y **es justo ahí donde va el texto de ese estado**. El
+    contrato nuevo compone `tinte × superficie` y mide los ocho pares que se pintan de verdad.
+  - **Dos defectos que solo existían por composición.** La cinta `DEMO` era transparente, así que su
+    gris se medía contra lo que hubiera debajo: 3.88:1 sobre la franja de escena en ámbar, 4.41 sobre
+    una fila seleccionada y, en una alerta, contra el rojo sólido. Ahora **lleva su propio fondo
+    opaco** y da 8.87:1 se pinte donde se pinte, sin dejar de ser gris y discontinua (T-6.04). Y
+    **seleccionar una fila la hacía más difícil de leer**: el tinte cian ACLARA el fondo y el gris
+    terciario caía a 4.41 — la fila que el operador está leyendo era la única de la tabla por debajo
+    de AA.
+  - **La forma, verificada donde importa.** `watch` (#FFC107) y `normal` (#00E676) llevaban el mismo
+    radio y solo se distinguían por tono. La banda estrena alfabeto propio en una capa aparte —
+    `!!` disparo · `!` cautela · nada bajo umbral · `?` sin dato— que no reusa el del enlace
+    (`⊘ ▲ ○`): un ▲ que según la capa signifique una cosa u otra no es un glifo, es una adivinanza.
+    `unknown` gana marca porque «no reportó» no es «no se movió» (regla de oro 7). **Bajo el
+    simulador de deuteranopía (matriz de Machado) los tres colores de la leyenda son el MISMO
+    amarillo** y lo único que los separa es la columna de marcas — está en las capturas.
+  - **Ningún tinte es seguro para el gris terciario, y eso ahora es un test.** Al subir la barra, el
+    e2e a 1280×800 sacó dos nodos que el barrido a 1440 no veía: el encabezado del catálogo de
+    triage **con el ratón encima** (4.02–4.41:1). La tentación es aclarar `--tk-fg-3`, y está
+    medido que no se puede: para pasar sobre un tinte habría que llevarlo a `#98AABE`, y ahí el
+    escalón fg-2/fg-3 cae de 1.56 a **1.32** — por debajo del 1.4 que ya exige el test de la
+    jerarquía. Así que la regla es la contraria y se dejó derivada del paquete: **sobre cualquiera
+    de los ocho tintes el terciario deja de ser seguro (3.20:1 en el peor fondo) y el secundario
+    aguanta los 24 pares (4.99:1 el peor)**; donde hay tinte, la tinta sube.
+  - **La barra sube con datos.** `color-contrast` pasa de adjunto a **bloqueante** en `axe.spec.ts`,
+    que era la promesa escrita en su cabecera desde T-2.56, y el barrido estrena `/building` (no es
+    pestaña: se llega por enlace profundo desde flota y desde triage). Comprobado en el navegador
+    **44 → 0 nodos**, y **0 violaciones de cualquier regla** en las seis pantallas, con y sin alerta
+    en pantalla.
+  - **El e2e cierra en 216 pasados / 9 fallidos, y los 9 son de antes.** Seis son los dos conocidos
+    (`layout.spec:19` y `screens.spec:508` × 3 viewports: la franja de alerta tapando los cuatro
+    botones de capas). Los otros **tres son nuevos en la línea base, no en esta rama**: a 1440×900 el
+    escenario mide **376 px** contra los 400 que exigen `layout.spec:70`, `:108` y `smoke.spec:50`,
+    y los 24 px que faltan son la tira de simulacro en reposo. Verificado con un control A/B sobre
+    **el mismo stack y en el mismo minuto** —`git stash` de todo `web/src` + el paquete de tokens—:
+    **376 px con los cambios y 376 sin ellos**, y las mismas cuatro pruebas en rojo. Los tres siguen
+    sin ficha, igual que los dos de siempre.
 
 ### [ ] T-6.10 · **Movimiento honesto: se detiene, se declara y se apaga** — `SOFTWARE`
 

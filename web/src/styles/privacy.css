@@ -247,7 +247,7 @@
 /* Un fallo al registrar la decisión rompe la línea a propósito: es lo único de
    este banner que el operador tiene que leer entero sin desplegar nada. */
 .privacy-banner__err {
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
   flex-basis: 100%;
   font-size: 12px;
   margin: 6px 0 0;

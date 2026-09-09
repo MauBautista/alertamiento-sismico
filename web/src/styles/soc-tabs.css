@@ -45,7 +45,7 @@
 .soc-soh__badge--crit {
   background: var(--tk-status-critical-08);
   border-color: var(--tk-status-critical-15);
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .soc-soh__badge .soc-dot {
   width: 6px; height: 6px;
@@ -226,7 +226,7 @@
 }
 .fleet__kpi--ok   .fleet__kpi-val { color: var(--tk-status-normal); }
 .fleet__kpi--warn .fleet__kpi-val { color: var(--tk-status-warning); }
-.fleet__kpi--crit .fleet__kpi-val { color: var(--tk-status-critical); }
+.fleet__kpi--crit .fleet__kpi-val { color: var(--tk-status-critical-text); }
 
 /* [T-2.38] La reja se auto-ajusta. Antes eran TRES columnas duras: en 1366 px las
    tarjetas se estrujaban hasta partir sus pills de razones, y en 4K quedaban
@@ -336,11 +336,11 @@
 .notifychain__st { font-weight: 700; letter-spacing: 0.06em; font-size: 10px; }
 .notifychain__st.is-ok { color: var(--tk-status-normal); }
 .notifychain__st.is-wait { color: var(--tk-status-warning); }
-.notifychain__st.is-bad { color: var(--tk-status-critical); }
+.notifychain__st.is-bad { color: var(--tk-status-critical-text); }
 .notifychain__st.is-muted { color: var(--tk-fg-3); }
 .notifychain__lat, .notifychain__ts { margin-left: auto; color: var(--tk-fg-3); font-size: 10px; }
-.notifychain__sla { color: var(--tk-status-critical); font: 700 10px/1 var(--f-ui); letter-spacing: 0.06em; }
-.notifychain__err { flex-basis: 100%; color: var(--tk-status-critical); font-size: 10px; }
+.notifychain__sla { color: var(--tk-status-critical-text); font: 700 10px/1 var(--f-ui); letter-spacing: 0.06em; }
+.notifychain__err { flex-basis: 100%; color: var(--tk-status-critical-text); font-size: 10px; }
 
 /* [T-5.12] Clasificación de un incidente y su tasa. */
 .triage-clasif { display: flex; flex-direction: column; gap: 6px; }
@@ -421,8 +421,8 @@
 }
 .fleet-link--ok   { background: var(--tk-status-normal-08);   border-color: var(--tk-status-normal-15);   color: var(--tk-status-normal); }
 .fleet-link--warn { background: var(--tk-status-warning-08);  border-color: var(--tk-status-warning-15);  color: var(--tk-status-warning); }
-.fleet-link--crit { background: var(--tk-status-critical-08); border-color: var(--tk-status-critical-15); color: var(--tk-status-critical); }
-.fleet-link--crit .fleet-link__val { color: var(--tk-status-critical); }
+.fleet-link--crit { background: var(--tk-status-critical-08); border-color: var(--tk-status-critical-15); color: var(--tk-status-critical-text); }
+.fleet-link--crit .fleet-link__val { color: var(--tk-status-critical-text); }
 
 /* UPS gauge */
 .fleet-ups {
@@ -450,7 +450,7 @@
 }
 .fleet-ups__pct--ok   { color: var(--tk-status-normal); }
 .fleet-ups__pct--warn { color: var(--tk-status-warning); }
-.fleet-ups__pct--crit { color: var(--tk-status-critical); }
+.fleet-ups__pct--crit { color: var(--tk-status-critical-text); }
 .fleet-ups__bar {
   margin-top: 7px;
   height: 6px;
@@ -513,7 +513,7 @@
 }
 .fleet-relay--ok   .fleet-relay__state { background: var(--tk-status-normal-15);   color: var(--tk-status-normal); }
 .fleet-relay--warn .fleet-relay__state { background: var(--tk-status-warning-15);  color: var(--tk-status-warning); }
-.fleet-relay--crit .fleet-relay__state { background: var(--tk-status-critical-15); color: var(--tk-status-critical); }
+.fleet-relay--crit .fleet-relay__state { background: var(--tk-status-critical-15); color: var(--tk-status-critical-text); }
 
 .fleet-card__ft {
   display: flex; justify-content: space-between; align-items: center;
@@ -659,9 +659,16 @@
   border-bottom: 1px solid var(--tk-border);
 }
 .triage-table tr { cursor: pointer; }
+/* [T-6.09] SELECCIONAR NO PUEDE HACER LA FILA MÁS DIFÍCIL DE LEER. El tinte
+   cian ACLARA el fondo, y sobre él el gris terciario cae a 4.41:1 — la fila
+   que el operador está leyendo era la única de la tabla por debajo de AA. El
+   terciario sube a secundario mientras dura la selección (6.87:1). */
 .triage-table tr.is-selected td {
   background: var(--tk-cyan-08);
   box-shadow: inset 2px 0 0 var(--tk-cyan);
+}
+.triage-table tr.is-selected .triage-table__id {
+  color: var(--tk-fg-2);
 }
 .triage-table__dt {
   font-family: var(--tk-font-ui);
@@ -746,7 +753,7 @@
 .triage-detail__verdict--crit {
   background: var(--tk-status-critical-08);
   border-color: var(--tk-status-critical-15);
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .triage-detail__verdict--warn {
   background: var(--tk-status-warning-08);
@@ -932,6 +939,11 @@
   border-color: var(--tk-cyan);
   box-shadow: inset 0 0 0 1px var(--tk-cyan-15);
 }
+/* [T-6.09] Misma regla que la fila de triage: el tinte de selección aclara el
+   fondo y se come el escalón terciario (4.41:1). */
+.mt-tenant.is-selected .mt-tenant__meta {
+  color: var(--tk-fg-2);
+}
 .mt-tenant__swatch {
   width: 6px; height: 38px;
   border-radius: 2px;
@@ -1039,7 +1051,7 @@
 }
 .mt-slider__val--ok   { color: var(--tk-status-normal); }
 .mt-slider__val--warn { color: var(--tk-status-warning); }
-.mt-slider__val--crit { color: var(--tk-status-critical); }
+.mt-slider__val--crit { color: var(--tk-status-critical-text); }
 
 .mt-slider__track-wrap {
   position: relative;
@@ -1309,7 +1321,7 @@
 }
 .fleet-sync--ok { color: var(--tk-status-normal); border-color: var(--tk-status-normal); }
 .fleet-sync--warn { color: var(--tk-status-warning); border-color: var(--tk-status-warning); }
-.fleet-sync--crit { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.fleet-sync--crit { color: var(--tk-status-critical-text); border-color: var(--tk-status-critical); }
 .fleet-sync--idle { color: var(--tk-fg-3); }
 
 /* [T-2.69] Versión de firmware del gabinete. Mismos cuatro tonos y el mismo motivo
@@ -1327,7 +1339,7 @@
 }
 .fleet-fw--ok { color: var(--tk-status-normal); border-color: var(--tk-status-normal); }
 .fleet-fw--warn { color: var(--tk-status-warning); border-color: var(--tk-status-warning); }
-.fleet-fw--crit { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.fleet-fw--crit { color: var(--tk-status-critical-text); border-color: var(--tk-status-critical); }
 .fleet-fw--idle { color: var(--tk-fg-3); }
 
 /* Acciones de administración de la tarjeta (solo con manage_fleet). */
@@ -1451,7 +1463,7 @@
   margin: 0;
   font-size: 10px;
   letter-spacing: 0.06em;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .retire__actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 
@@ -1545,6 +1557,16 @@
   text-align: left;
 }
 .triage-catalog__hd:hover { background: var(--tk-cyan-08); }
+/* [T-6.09] Misma regla que la fila seleccionada, ahora en un HOVER: el tinte
+   cian aclara el fondo y el gris terciario cae a 4.02–4.41:1. No se arregla
+   aclarando `--tk-fg-3` —medido: para pasar sobre el tinte habría que llevarlo
+   a `#98AABE`, y ahí el escalón fg-2/fg-3 baja de 1.56 a 1.32, por debajo del
+   1.4 que ya exige `designTokens.test.ts`; tres niveles que se leen igual no
+   son tres niveles—. Se arregla donde está el tinte: sube la tinta. */
+.triage-catalog__hd:hover .triage-catalog__badge,
+.triage-catalog__hd:hover .triage-catalog__sub {
+  color: var(--tk-fg-2);
+}
 .triage-catalog__title {
   display: inline-flex; align-items: center; gap: 8px;
   font: 600 11px var(--tk-font-ui); letter-spacing: 0.10em; color: var(--tk-fg-1);
@@ -1594,10 +1616,10 @@
 .structural__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .structural-card { border: 1px solid var(--tk-border); border-radius: 8px; padding: 8px; background: var(--tk-surface-1); }
 .structural-card--urgent { border-color: var(--tk-status-critical); }
-.structural-card__urgent { font: 700 10px var(--tk-font-mono); letter-spacing: 0.06em; color: var(--tk-status-critical); margin-bottom: 6px; }
+.structural-card__urgent { font: 700 10px var(--tk-font-mono); letter-spacing: 0.06em; color: var(--tk-status-critical-text); margin-bottom: 6px; }
 .structural-card__cats { display: flex; flex-wrap: wrap; gap: 4px; }
 .structural-cat { font: 600 10px var(--tk-font-mono); border: 1px solid var(--tk-border); border-radius: 999px; padding: 1px 6px; color: var(--tk-fg-2); }
-.structural-cat--critical { color: var(--tk-status-critical); border-color: var(--tk-status-critical); }
+.structural-cat--critical { color: var(--tk-status-critical-text); border-color: var(--tk-status-critical); }
 .structural-cat--high { color: var(--tk-status-warning); }
 .structural-card__notes { color: var(--tk-fg-2); font-size: 12px; margin: 6px 0 4px; }
 .structural-card__meta { color: var(--tk-fg-3); font: 500 10px var(--tk-font-mono); }
@@ -1608,7 +1630,7 @@
 .structural-verify__id { font: 600 10px var(--tk-font-mono); color: var(--tk-fg-2); }
 .structural-verify__state { font: 700 10px var(--tk-font-mono); letter-spacing: 0.04em; }
 .structural-verify--ok .structural-verify__state { color: var(--tk-status-normal); }
-.structural-verify--crit .structural-verify__state { color: var(--tk-status-critical); }
+.structural-verify--crit .structural-verify__state { color: var(--tk-status-critical-text); }
 .structural-verify--muted .structural-verify__state { color: var(--tk-cyan); }
 
 
@@ -1962,7 +1984,7 @@
   margin: 0;
   font-size: 10.5px;
   line-height: 1.4;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .mt__new-submit {
   background: var(--tk-cyan-15);
@@ -2023,7 +2045,7 @@
   margin: 0;
   font-size: 10.5px;
   line-height: 1.4;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .mt-edit__actions { display: flex; gap: 8px; }
 
@@ -2053,7 +2075,7 @@
   background: transparent;
   border: 1px solid var(--tk-border-strong);
   border-radius: 3px;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
   cursor: pointer;
   font-family: var(--tk-font-ui);
   font-size: 9px;
@@ -2093,7 +2115,7 @@
 .vis-form__error {
   margin: 0;
   font-size: 10.5px;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .vis-form__submit {
   align-self: flex-start;
@@ -2161,7 +2183,7 @@
   background: transparent;
   border: 1px solid var(--tk-border-strong);
   border-radius: 3px;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
   cursor: pointer;
   font-family: var(--tk-font-ui);
   font-size: 9px;
@@ -2213,7 +2235,7 @@
   font-size: 12px;
   padding: 7px 9px;
 }
-.cmp-form__error { margin: 0; font-size: 10.5px; color: var(--tk-status-critical); }
+.cmp-form__error { margin: 0; font-size: 10.5px; color: var(--tk-status-critical-text); }
 .cmp-form__submit {
   align-self: flex-start;
   background: var(--tk-cyan-15);
@@ -2332,7 +2354,7 @@
   margin: 0;
   font-size: 10.5px;
   line-height: 1.4;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .users__new {
   display: flex;
@@ -2390,7 +2412,7 @@
   border-left: 2px solid var(--tk-status-warning);
   padding-left: 8px;
 }
-.enroll__error { margin: 0; font-size: 10.5px; line-height: 1.4; color: var(--tk-status-critical); }
+.enroll__error { margin: 0; font-size: 10.5px; line-height: 1.4; color: var(--tk-status-critical-text); }
 /* El código recién creado se destaca UNA vez y se retira del DOM solo. */
 .enroll__fresh {
   display: flex;
@@ -2596,7 +2618,7 @@
 .fleet-ghosts__badge {
   font: 700 11px/1 var(--f-ui, inherit);
   letter-spacing: 0.08em;
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
 }
 .fleet-ghosts__list {
   list-style: none;
@@ -2691,7 +2713,7 @@
 /* Que la gente reentrara ANTES del dictamen no es una línea más: el inmueble se reocupó
    sin certificación de habitabilidad, y tiene que verse antes de leerse. */
 .cctv__veredicto--hallazgo {
-  color: var(--tk-status-critical);
+  color: var(--tk-status-critical-text);
   border-left: 3px solid var(--tk-status-critical);
   padding-left: 8px;
   font-weight: 600;
