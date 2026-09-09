@@ -187,11 +187,14 @@ describe("BuildingPage", () => {
   });
 
   it("B-4: el subtítulo distingue cargar de fallar, con reintento real", async () => {
+    // [T-6.06] Las tres ramas siguen ahí, pero ya no escritas a mano: las pinta
+    // el `StateFrame` de SITIO, que además declara la edad de la lectura. El
+    // reintento es el mismo y sigue llamando al servidor.
     seedAuthenticated(ME_FIXTURES.building_admin);
     mocks.getSite.mockResolvedValue({ data: undefined, response: { status: 500 } });
     renderRoutesAt("/building/s-1");
-    expect(await screen.findByText(/SITIO NO DISPONIBLE/)).toBeInTheDocument();
-    expect(screen.queryByText(/CARGANDO SITIO…/)).toBeNull();
+    expect(await screen.findByText(/GET \/sites\/s-1 falló/)).toBeInTheDocument();
+    expect(screen.queryByText(/CARGANDO · SITIO/)).toBeNull();
     const calls = mocks.getSite.mock.calls.length;
     fireEvent.click(screen.getByRole("button", { name: "REINTENTAR" }));
     await waitFor(() => expect(mocks.getSite.mock.calls.length).toBeGreaterThan(calls));
@@ -224,11 +227,15 @@ describe("BuildingPage", () => {
     expect(screen.getByTestId("site-demo")).toHaveTextContent("DEMO");
   });
 
-  it("sin frame de salud muestra S/D, nunca una salud inventada", () => {
+  it("sin latido, la salud lo DICE en vez de enseñar tres S/D mudos", () => {
+    // [T-6.06] Antes pintaba tres «S/D» —correcto: no se inventa salud— pero no
+    // decía por qué. «No ha llegado el latido» es una afirmación sobre nuestro
+    // conocimiento, y es la que el operador puede usar: le manda a mirar el
+    // enlace, no a concluir que el gabinete está sano.
     seedAuthenticated(ME_FIXTURES.building_admin);
     renderRoutesAt("/building/s-1");
-    // Regla de oro 10: el heartbeat no ha llegado; no hay batería ni NTP que enseñar.
-    expect(screen.getAllByText("S/D").length).toBe(3);
+    expect(screen.getByText("SIN LATIDO DEL GABINETE EN ESTA SESIÓN")).toBeInTheDocument();
+    expect(screen.queryAllByText("S/D")).toHaveLength(0);
   });
 
   it("building_admin ve la prueba de sirena; inspector no", () => {

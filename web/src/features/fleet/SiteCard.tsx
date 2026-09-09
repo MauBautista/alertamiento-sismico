@@ -4,6 +4,7 @@ import { Activity, Clock, Cpu, MapPin, Radio, ToggleRight, Zap } from "lucide-re
 import type { GatewayConfigStateOut, GatewayHealthOut, MaintenanceWindowOut } from "@takab/sdk";
 
 import Sparkline from "../../components/Sparkline";
+import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { utcClock } from "../../lib/time";
 import LinkPill from "./LinkPill";
@@ -288,28 +289,51 @@ export default function SiteCard({
         </div>
       )}
 
-      {/* T-1.59: resultado del ack del edge — chips por relé, jamás inventados. */}
-      {selfTest.phase !== "idle" && selfTest.phase !== "issued" && (
-        <div className="fleet-card__selftest" data-testid="selftest-result">
-          {selfTest.phase === "acked" && selfTest.relays ? (
-            Object.entries(selfTest.relays).map(([channel, check]) => (
-              <span
-                key={channel}
-                className={`soc-pill soc-pill--${check.readback_ok ? "ok" : "crit"}`}
-              >
-                {channel.toUpperCase()} {check.pulsed ? (check.readback_ok ? "✓" : "✗") : "LECTURA"}
-              </span>
-            ))
-          ) : (
-            <span className="soc-pill soc-pill--crit">
-              SELF-TEST {selfTest.phase === "expired" ? "SIN ACUSE (TTL)" : "RECHAZADO"}
-              {selfTest.detail ? ` · ${selfTest.detail}` : ""}
-            </span>
-          )}
-          <button type="button" className="fleet-card__diag" onClick={selfTest.reset}>
-            LIMPIAR
-          </button>
-        </div>
+      {/* T-1.59: resultado del ack del edge — chips por relé, jamás inventados.
+          [T-6.06] Y por el MARCO. La máquina de fases del autodiagnóstico
+          (idle/issued/acked/expired/rejected) ya distinguía SIN ACUSE de
+          RECHAZADO —eso estaba bien—, pero era una precedencia PARALELA a los
+          cuatro estados de la consola: nadie la cruzaba con ellos y esta tarjeta
+          era el único dato de servidor de la flota sin `StateFrame`. Las fases
+          no se pierden; se traducen, que es distinto de colapsarlas.
+          Se monta desde `issued` (antes desde `acked`): la espera de un acuse
+          es un estado, no un hueco. */}
+      {selfTest.phase !== "idle" && (
+        <StateFrame
+          label="AUTODIAGNÓSTICO"
+          className="fleet-card__selftest"
+          loading={selfTest.phase === "issued" || selfTest.pending}
+          error={
+            selfTest.phase === "expired"
+              ? `SIN ACUSE (TTL)${selfTest.detail ? ` · ${selfTest.detail}` : ""}`
+              : selfTest.phase === "rejected"
+                ? `RECHAZADO${selfTest.detail ? ` · ${selfTest.detail}` : ""}`
+                : null
+          }
+          onRetry={selfTest.run}
+          // Acusó y no trajo un solo relé: raro, y no es lo mismo que no acusar.
+          empty={selfTest.phase === "acked" && !selfTest.relays}
+          emptyText="EL GABINETE ACUSÓ SIN CENSO DE RELÉS"
+          // El acuse es la respuesta a una orden que el operador acaba de dar:
+          // no envejece en pantalla, se limpia. Se declara en vez de callarlo.
+          staleSince={null}
+        >
+          <div data-testid="selftest-result">
+            {selfTest.relays &&
+              Object.entries(selfTest.relays).map(([channel, check]) => (
+                <span
+                  key={channel}
+                  className={`soc-pill soc-pill--${check.readback_ok ? "ok" : "crit"}`}
+                >
+                  {channel.toUpperCase()}{" "}
+                  {check.pulsed ? (check.readback_ok ? "✓" : "✗") : "LECTURA"}
+                </span>
+              ))}
+            <button type="button" className="fleet-card__diag" onClick={selfTest.reset}>
+              LIMPIAR
+            </button>
+          </div>
+        </StateFrame>
       )}
     </article>
   );

@@ -39,6 +39,8 @@ import { useMapState } from "./useMapState";
 import { useSiteFeatures } from "./useSiteFeatures";
 import { useSiteRelays } from "./useSiteRelays";
 import { useSiteSoh } from "./useSiteSoh";
+import { useSiteScope } from "../../auth/useSiteScope";
+import { vacioConCausa } from "./vacioConCausa";
 
 /** Sin snapshot fresco del mapa tras esto (poll 30 s) el wall es DATOS RETENIDOS. */
 export const CONSOLE_STALE_MS = 90_000;
@@ -57,6 +59,8 @@ function ConsoleWall() {
   const now = useNow(1000);
   const queryClient = useQueryClient();
   const incidents = useLiveIncidents();
+  // [T-6.06] De aquí sale el ÁMBITO del vacío: la misma fuente que la insignia.
+  const scope = useSiteScope();
   const map = useMapState();
 
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(null);
@@ -151,6 +155,16 @@ function ConsoleWall() {
       ? map.dataUpdatedAt
       : null;
 
+  // [T-6.06] La MISMA regla, aplicada a la cola: su edad es la suya, no la del
+  // mapa. Que las dos lecturas envejezcan a la vez es casualidad, no contrato.
+  const colaVieja =
+    !incidents.loading &&
+    incidents.error === null &&
+    incidents.dataUpdatedAt > 0 &&
+    now - incidents.dataUpdatedAt > CONSOLE_STALE_MS
+      ? incidents.dataUpdatedAt
+      : null;
+
   const canAck = me?.allowed_actions.ack_incident === true;
   const onAck = useCallback(
     (incidentId: string) => {
@@ -203,13 +217,16 @@ function ConsoleWall() {
           label="MONITOREO"
           className="soc-wall"
           loading={map.loading || incidents.loading}
-          error={map.error ?? incidents.error}
+          // [T-6.06] SOLO el error del mapa. El de la cola lo declara la cola,
+          // con su propio reintento: unirlos aquí borraba el mapa entero porque
+          // la lista de incidentes no hubiera cargado.
+          error={map.error}
           onRetry={() => {
             map.refetch();
             incidents.refetch();
           }}
           empty={map.sites.length === 0}
-          emptyText="SIN SITIOS VISIBLES EN EL TENANT"
+          emptyText={vacioConCausa("SIN SITIOS VISIBLES", scope)}
           staleSince={staleSince}
         >
           <KpiStrip
@@ -244,6 +261,9 @@ function ConsoleWall() {
           </div>
           <IncidentTable
             incidents={incidents.incidents}
+            queueError={incidents.error}
+            onRetryQueue={incidents.refetch}
+            queueStaleSince={colaVieja}
             siteInfoOf={siteInfoOf}
             sites={map.sites}
             epicenter={map.epicenters[0] ?? null}

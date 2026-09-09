@@ -27,6 +27,8 @@ import {
 } from "./useFleetMutations";
 import SiteLabel from "../../components/SiteLabel";
 import { siteLabelText } from "./datosDeDemostracion";
+import { useSiteScope } from "../../auth/useSiteScope";
+import { vacioConCausa } from "../console/vacioConCausa";
 
 /**
  * Un contador de la tira superior.
@@ -139,6 +141,8 @@ export default function FleetPage() {
   const [includeRetired, setIncludeRetired] = useState(false);
   const fleet = useFleet({ includeRetired });
   const now = useNow(5000);
+  // [T-6.06] El ÁMBITO del vacío sale de la misma fuente que la insignia.
+  const scope = useSiteScope();
 
   const canManage = useSessionStore((s) => s.me?.allowed_actions.manage_fleet === true);
   // [T-2.71] Abrir ventana es su PROPIA acción de la matriz, no `manage_fleet`:
@@ -292,7 +296,7 @@ export default function FleetPage() {
         emptyText={
           isFiltering(filters) && fleet.cabinets.length > 0
             ? "SIN RESULTADOS PARA EL FILTRO"
-            : "SIN GABINETES REGISTRADOS EN EL TENANT"
+            : vacioConCausa("SIN GABINETES REGISTRADOS", scope)
         }
         staleSince={staleSince}
       >

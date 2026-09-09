@@ -606,7 +606,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     2 163 tests, eslint, prettier, tsc. La consola desplegada no se re-midió en esta sesión (IP
     allowlist + SSO): el hallazgo U-16 ya la había medido limpia el 2026-09-06.
 
-### [ ] T-6.06 · **Los vacíos dicen la causa real; la cola declara `error` y `stale`; ninguna caja en blanco** — `SOFTWARE`
+### [x] T-6.06 · **Los vacíos dicen la causa real; la cola declara `error` y `stale`; ninguna caja en blanco** — `SOFTWARE`
 
 > Cuatro estados vacíos culpan al TENANT de lo que con `console_scope_enforced` será el ALCANCE;
 > la cola de incidentes no declara `error` ni `stale`; `DemoModeBanner` pasa `emptyText=""` y hoy
@@ -620,10 +620,53 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — los literales de `emptyText` que algunos tests de pantalla afirman.
 - **Objetivo:** que el vacío diga si es por tenant o por alcance, derivado de `useSiteScope()`; que la cola tenga sus cuatro estados; que ningún `emptyText` esté vacío.
 - **Criterios de aceptación:**
-  - [ ] Con alcance vacío, `/console`, `/fleet`, la comparativa y la cola dicen «EN SU ALCANCE», no «EN EL TENANT».
-  - [ ] La cola de incidentes declara `error` con reintento y `stale` con su reloj.
-  - [ ] `DemoModeBanner` con lectura caída y modo apagado imprime una frase con sujeto; el e2e «nunca una caja en blanco» en verde.
-  - [ ] `SiteCard` y la cabecera de `/building` salen de `MARCOS_INCOMPLETOS`.
+  - [x] Con alcance vacío, `/console`, `/fleet`, la comparativa y la cola dicen «EN SU ALCANCE», no «EN EL TENANT».
+  - [x] La cola de incidentes declara `error` con reintento y `stale` con su reloj.
+  - [x] `DemoModeBanner` con lectura caída y modo apagado imprime una frase con sujeto; el e2e «nunca una caja en blanco» en verde.
+  - [x] `SiteCard` y la cabecera de `/building` salen de `MARCOS_INCOMPLETOS`.
+- **Cómo se cerró (2026-09-09, SESIÓN C6):**
+  - **El ámbito del vacío se DERIVA, ya no se escribe en cada pantalla.** Tres decían «EN EL
+    TENANT» y una «EN EL ALCANCE» porque cada una redactaba la frase entera. Ahora
+    `vacioConCausa(base, scope)` la compone a partir del MISMO `useSiteScope()` del que sale la
+    insignia de la barra superior —la única fuente que sabe si el servidor está acotando de
+    verdad—, con tres desenlaces: sin alcance impuesto, «EN EL TENANT» (hoy es cierto); con
+    alcance, «EN SU ALCANCE (N ESTACIONES)»; y **sin ninguna estación asignada deja de hablar de
+    lo que no hay** y dice lo que pasa: «SU CUENTA NO TIENE ESTACIONES ASIGNADAS · SOLICITE EL
+    ALTA A SU ADMINISTRADOR». Ese último es el caso de la ficha: el día del apply de `T-2.89`, un
+    operador con cero sitios habría leído «sin sitios en el tenant» sobre un cliente con 21 — falso,
+    y encima le mandaba a preguntar por su cliente en vez de a pedir su alta.
+  - **La cola de incidentes tiene sus cuatro estados.** `error` y `stale` vivían en el marco del
+    WALL, que envuelve mapa y cola juntos: una lectura de incidentes caída borraba también el
+    mapa, y la cola no podía ofrecer reintentar lo suyo. Ahora el marco del wall se queda con el
+    error del MAPA y la cola declara el suyo con su reintento y su propia edad — que las dos
+    lecturas envejezcan a la vez es casualidad, no contrato.
+  - **La caja en blanco ya no existe, y ahora hay quien lo vigile.** El `emptyText=""` que midió la
+    auditoría (1264×120 px) lo cerró `T-6.01` al mover la franja al shell y darle `silentEmpty`;
+    se comprobó corriendo el e2e **tal como está escrito**, sin relajarlo: **18/18** en las seis
+    pantallas × tres viewports. Lo que faltaba era impedir que vuelva: `silentEmpty` es la única
+    forma de que un marco pase ese e2e sin decir nada, así que el censo compara **por igualdad**
+    quién puede usarlo — hoy, sólo las cuatro franjas de `features/scene/`. El día que alguien
+    silencie el vacío de una tabla para quitarse un rojo de encima, el censo se pone rojo con él.
+  - **Las tres deudas del censo, pagadas.** `HISTORIAL DEL SITIO` gana su `staleSince` (el hook de
+    métricas no exponía la edad); la cabecera de `/building` y `SALUD DEL GABINETE` dejan de
+    guardarse a mano y pasan por `StateFrame` —un `soh` de hace dos horas se pintaba idéntico a uno
+    de hace un segundo, el defecto que RO-7.c cerró en el panel y aquí seguía abierto—; y `SiteCard`
+    deja de ser el único dato de servidor de la flota **sin marco**: la máquina de fases del
+    autodiagnóstico se TRADUCE a los cuatro estados (esperando el acuse = cargando, TTL y rechazo =
+    error con el detalle del gabinete y su reintento, acuse sin censo de relés = vacío) en vez de
+    correr en paralelo. Tres entradas menos en `FUERA_DEL_MARCO`, una en `MARCOS_INCOMPLETOS` y el
+    recuento del censo baja de 3 a 2 marcos ausentes.
+  - **Lo que NO se pagó, y por qué está escrito:** `SiteCard` sigue en la lista de los que no
+    tienen prueba de los cuatro estados. `expectFourStates` exige los CUATRO y el `stale` de esa
+    tarjeta no existe —el acuse de una orden que el operador acaba de dar no envejece en pantalla,
+    se limpia— así que el marco lo declara (`staleSince={null}`) en vez de callarlo. Inventarle una
+    edad para pasar el helper sería el defecto, no el arreglo.
+  - **Verificación:** web 2 184 tests (14 nuevos), `eslint`, `prettier` y `vite build` limpios; e2e
+    contra el stack local: `screens.spec.ts` «nunca una caja en blanco» 18/18 y 152 aserciones más
+    en verde. Los 4 e2e que fallan (`layout.spec.ts:19`, `:70`, `:108` y `screens.spec.ts:508`)
+    fallan IGUAL en `main` sin este cambio —se comprobó con el árbol limpio—: son U-35 (el aviso de
+    privacidad se lleva el mapa, ficha `T-6.11`) y los sobrepuestos del escenario, ninguno de esta
+    ficha.
 
 ### [ ] T-6.07 · **El arranque no tiene silencios** — `SOFTWARE`
 

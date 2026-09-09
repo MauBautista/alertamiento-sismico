@@ -210,7 +210,7 @@ describe("censo · la precedencia vive en UN solo sitio", () => {
  * tengan EXACTAMENTE las mismas claves: aquí no se exime sin explicar.
  */
 const FUERA_DEL_MARCO: Record<string, string[]> = {
-  "features/building/BuildingPage.tsx::BuildingDashboard": ["siren", "site", "soh"],
+  "features/building/BuildingPage.tsx::BuildingDashboard": ["siren"],
   "features/console/ConsolePage.tsx::ConsoleWall": [
     "actions",
     "catalog",
@@ -277,12 +277,12 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
  */
 const RAZONES: Record<string, string> = {
   "features/building/BuildingPage.tsx::BuildingDashboard":
-    "(c) DEUDA. La cabecera (`site.data.name`, code y lat/lon) y el `<dl>` de SALUD DEL " +
-    "GABINETE (`soh`) se guardan a mano: `site.isError` pinta SITIO NO DISPONIBLE con " +
-    'REINTENTAR, y `soh?.x ?? "S/D"` evita inventar salud. Pero NINGUNO declara `stale`: ' +
-    "un `soh` de hace dos horas se pinta idéntico a uno de hace un segundo, que es " +
-    "literalmente el defecto que RO-7.c cerró en el panel del gabinete y aquí sigue " +
-    "abierto en la nube. `siren` es estado de mutación y va a SirenTestPanel.",
+    "(a) MUTACIÓN. Sólo queda `siren`, que es el estado de una orden que el operador " +
+    "acaba de emitir y vive en `SirenTestPanel` con su propio marco. [T-6.06] La cabecera " +
+    "(`site`) y SALUD DEL GABINETE (`soh`) ya NO están aquí: se guardaban a mano y por eso " +
+    "no declaraban edad —un `soh` de hace dos horas se pintaba idéntico a uno de hace un " +
+    "segundo, el defecto que RO-7.c cerró en el panel del gabinete—; ahora las dos pasan " +
+    "por `StateFrame` con sus cuatro entradas.",
   "features/console/ConsolePage.tsx::ConsoleWall":
     "(a) SOBREPUESTOS. El riel de detalle (`DetailPanel`) y los dos modales (`ComparePanel`, " +
     "`EpicenterModal`) son HERMANOS del StateFrame del wall, no hijos ([T-6.01] los banners " +
@@ -340,11 +340,12 @@ const RAZONES: Record<string, string> = {
     "`features/scene/scene.ts`, y viaja como prop para que el banner del simulacro sepa si " +
     "lo real manda. La alerta sí va dentro de su marco, en esta misma franja.",
   "features/fleet/SiteCard.tsx::SiteCard":
-    "(c) DEUDA, y de las gordas: la tarjeta NO tiene StateFrame ninguno y no tiene prueba de " +
-    "los cuatro estados (ver C-4). Los chips del autodiagnóstico son el acuse de un comando " +
-    "que el operador acaba de emitir (`useSelfTest`), con una máquina de fases " +
-    "idle/issued/acked/expired/rejected que sí distingue SIN ACUSE (TTL) de RECHAZADO — pero " +
-    "esa máquina es paralela a los cuatro estados y nadie la cruza con ellos.",
+    "(a) EL BOTÓN. [T-6.06] La tarjeta YA tiene su StateFrame: la máquina de fases del " +
+    "autodiagnóstico (idle/issued/acked/expired/rejected) se traduce a los cuatro estados en " +
+    "vez de correr en paralelo — `issued` es cargando, `expired`/`rejected` son error con su " +
+    "detalle y su reintento, y un acuse sin censo de relés es vacío. Lo que queda fuera es " +
+    "`selfTest.phase` leído por el BOTÓN que dispara la orden (rótulo y `disabled`), que es " +
+    "un control, no el dato.",
   "features/tenants/ComplianceLabelsCard.tsx::ComplianceLabelsCard":
     "(a) FORMULARIO Y PIE. Las notas y el alta de afirmaciones cuelgan de `doc`/`unreadable`, " +
     "que el StateFrame de la propia tarjeta ya resolvió justo encima; están fuera porque un " +
@@ -433,19 +434,50 @@ describe("censo · nada de dato de servidor se pinta fuera de `StateFrame`", () 
  * sale rojo, y arreglar uno de éstos obliga a borrar su línea.
  */
 const MARCOS_INCOMPLETOS: string[] = [
-  "features/building/BuildingPage.tsx#HISTORIAL DEL SITIO falta staleSince",
   "features/console/ComparePanel.tsx#COMPARATIVA falta error,staleSince",
   "features/console/DetailPanel.tsx#ACCIONES DEL INCIDENTE falta staleSince",
   "features/console/DetailPanel.tsx#CCTV falta error,staleSince",
   "features/console/DetailPanel.tsx#INCIDENTE falta error,staleSince",
   "features/console/DrillModal.tsx#SITIOS falta staleSince",
   "features/console/EpicenterModal.tsx#EVENTO falta empty,staleSince",
-  "features/console/IncidentTable.tsx#INCIDENTES ABIERTOS falta error,staleSince",
   "features/fleet/FleetAdmin.tsx#ESTACIONES falta staleSince",
   "features/triage/CatalogPanel.tsx#CATÁLOGO falta staleSince",
   // `StructuralTriage.tsx#Evaluación de campo` salió de esta lista en T-2.82.a:
   // `useDamageReports` ya deriva la edad de su consulta y el marco la declara.
 ];
+
+/**
+ * [T-6.06] QUIÉN PUEDE CALLARSE UNA AUSENCIA, y por qué esa lista existe.
+ *
+ * `silentEmpty` materializa el estado `empty` pero no lo pinta. Es correcto
+ * exactamente donde la ausencia NO es una noticia: una franja de escena sin
+ * escena que anunciar no dibuja nada, y una consola llena de tiras que dicen
+ * «no pasa nada» es una consola en la que nadie ve la que sí dice algo.
+ *
+ * Y es también la única forma de que un marco pase el e2e «nunca una caja en
+ * blanco» sin decir nada —el e2e perdona el vacío que no ocupa espacio, porque
+ * lo que no se ve no puede engañar a nadie—. Por eso la lista se compara por
+ * IGUALDAD: el día que alguien silencie el vacío de una TABLA para quitarse un
+ * rojo de encima, este censo lo pone rojo a él.
+ */
+const SILENCIOSOS: string[] = [
+  "features/scene/DemoModeBanner.tsx#MODO DEMOSTRACIÓN",
+  "features/scene/DrillBanner.tsx#SIMULACRO",
+  "features/scene/MaintenanceBanner.tsx#VENTANAS DE MANTENIMIENTO",
+  "features/scene/SceneStrip.tsx#ALERTA",
+];
+
+describe("censo · sólo la franja de escena se calla su ausencia [T-6.06]", () => {
+  it("nadie más usa `silentEmpty`", () => {
+    expect(
+      CENSO.silenciosos,
+      "un `silentEmpty` fuera de `features/scene/` esconde una ausencia que " +
+        "alguien tendría que leer — y de paso esquiva el e2e de «nunca una caja " +
+        "en blanco», que perdona lo que no ocupa espacio. Si de verdad hace " +
+        "falta, añádelo aquí CON SU RAZÓN.",
+    ).toEqual(SILENCIOSOS);
+  });
+});
 
 describe("censo · todo `<StateFrame>` cablea las cuatro entradas", () => {
   it("ninguno se calla una", () => {
@@ -486,7 +518,11 @@ const SIN_PRUEBA_DE_CUATRO_ESTADOS: string[] = [
   "features/console/EpicenterModal.tsx::EpicenterModal",
   // Marco de ESTACIONES sin `staleSince`; los formularios viven fuera (C-2).
   "features/fleet/FleetAdmin.tsx::FleetAdminPanel",
-  // No tiene StateFrame NINGUNO: la máquina de fases del self-test va por libre.
+  // [T-6.06] Ya tiene marco, y sus tres estados vivos se prueban abajo. Sigue
+  // aquí porque `expectFourStates` exige los CUATRO y el `stale` de esta tarjeta
+  // no existe: el acuse de una orden que el operador acaba de dar no envejece en
+  // pantalla, se limpia — y el marco lo declara (`staleSince={null}`) en vez de
+  // callarlo. Inventarle una edad para pasar el helper sería el defecto.
   "features/fleet/SiteCard.tsx::SiteCard",
   // Tiene marco completo, pero nadie lo ejerce en los cuatro estados.
   "features/tenants/VisibilityCard.tsx::VisibilityCard",
@@ -521,7 +557,8 @@ describe("censo · todo componente con dato de servidor tiene su prueba", () => 
       conDato: CENSO.componentes.length,
       conPrueba: CENSO.componentes.filter((c) => CON_PRUEBA.has(c.fichero)).length,
       sinMarcoPropio: CENSO.componentes.filter((c) => !c.tieneMarco).length,
-    }).toEqual({ conDato: 25, conPrueba: 15, sinMarcoPropio: 3 });
+      // [T-6.06] `sinMarcoPropio` baja de 3 a 2: `SiteCard` ya tiene el suyo.
+    }).toEqual({ conDato: 25, conPrueba: 15, sinMarcoPropio: 2 });
   });
 });
 
@@ -695,6 +732,7 @@ describe("el analizador del censo · probado contra fuentes sintéticas", () => 
         clave: "A.tsx#A",
         linea: 4,
         faltan: ["error", "empty", "staleSince"],
+        silencioso: false,
       },
     ]);
   });

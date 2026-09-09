@@ -34,6 +34,19 @@ export interface IncidentSiteInfo {
 
 export interface IncidentTableProps {
   incidents: LiveIncident[];
+  /**
+   * [T-6.06] El error de la COLA, con su reintento. Vivía sólo en el marco del
+   * wall, que envuelve mapa y cola juntos: una lectura de incidentes caída
+   * borraba también el mapa, y la cola no podía ofrecer reintentar lo suyo.
+   */
+  queueError?: string | null;
+  onRetryQueue?: () => void;
+  /**
+   * [T-6.06] Cuándo se supo por última vez de la cola. Sin esto el marco
+   * afirmaba «este dato no puede envejecer», que es la mentira que la regla de
+   * oro 7 persigue: una cola vieja se lee como una cola vacía.
+   */
+  queueStaleSince?: number | null;
   /** Datos del sitio para la fila (nombre/coordenadas), o null si no visible. */
   siteInfoOf: (siteId: string) => IncidentSiteInfo | null;
   nowMs: number;
@@ -90,6 +103,9 @@ export function formatPga(pga: number | null): string {
 
 export default function IncidentTable({
   incidents,
+  queueError = null,
+  onRetryQueue,
+  queueStaleSince = null,
   siteInfoOf,
   nowMs,
   liveStatus,
@@ -202,8 +218,11 @@ export default function IncidentTable({
       <StateFrame
         label="INCIDENTES ABIERTOS"
         loading={false}
+        error={queueError}
+        onRetry={onRetryQueue}
         empty={rows.length === 0}
         emptyText="SIN INCIDENTES ABIERTOS EN EL ALCANCE"
+        staleSince={queueStaleSince}
       >
         <table className="soc-table">
           <thead>

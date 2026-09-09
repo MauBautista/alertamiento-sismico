@@ -261,6 +261,39 @@ describe("ConsolePage", () => {
     });
   });
 
+  it("[T-6.06] el vacío culpa al ALCANCE cuando el servidor lo está imponiendo", () => {
+    // El defecto que esto cierra solo se ve el día del apply de `T-2.89`: un
+    // operador con cero estaciones asignadas leía «SIN SITIOS VISIBLES EN EL
+    // TENANT» sobre un cliente con veintiuna — falso, y encima le mandaba a
+    // preguntar por su cliente en vez de a pedir el alta de sus estaciones.
+    useSessionStore.setState({
+      me: {
+        ...useSessionStore.getState().me!,
+        site_scope: [],
+        console_scope_enforced: true,
+      },
+    });
+    mocks.useMapState.mockReturnValue(mapData({ sites: [] }));
+    render(page());
+    expect(screen.getByText(/SU CUENTA NO TIENE ESTACIONES ASIGNADAS/)).toBeInTheDocument();
+    expect(screen.queryByText(/EN EL TENANT/)).toBeNull();
+  });
+
+  it("[T-6.06] con alcance impuesto y estaciones, el vacío dice CUÁNTAS", () => {
+    useSessionStore.setState({
+      me: {
+        ...useSessionStore.getState().me!,
+        site_scope: ["s-1", "s-2"],
+        console_scope_enforced: true,
+      },
+    });
+    mocks.useMapState.mockReturnValue(mapData({ sites: [] }));
+    render(page());
+    expect(
+      screen.getByText("SIN SITIOS VISIBLES EN SU ALCANCE (2 ESTACIONES)"),
+    ).toBeInTheDocument();
+  });
+
   it("materializa los 4 estados obligatorios (regla de oro 7)", () => {
     expectFourStates((state: UiState) => {
       mocks.useLiveIncidents.mockReturnValue(

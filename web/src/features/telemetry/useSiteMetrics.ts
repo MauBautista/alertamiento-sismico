@@ -37,6 +37,8 @@ export interface SiteMetricsData {
   calibrated: boolean | undefined;
   loading: boolean;
   error: string | null;
+  /** [T-6.06] Epoch ms de la última lectura buena. */
+  dataUpdatedAt: number;
   refetch: () => void;
 }
 
@@ -77,6 +79,11 @@ export function useSiteMetrics(siteId: string | null, preset: HistoryPreset): Si
     calibrated: query.data?.calibrated,
     loading: siteId !== null && query.isPending,
     error: query.data === undefined && query.error ? query.error.message : null,
+    // [T-6.06] Cuándo se supo. Sin esto el marco del HISTORIAL afirmaba «este
+    // dato no puede envejecer»: una serie de hace media hora se pintaba igual
+    // que una de hace un segundo, y el gráfico es justo lo que se mira para
+    // decidir si la sacudida sigue.
+    dataUpdatedAt: query.dataUpdatedAt,
     refetch: () => {
       void query.refetch();
     },
