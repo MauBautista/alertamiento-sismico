@@ -4,7 +4,7 @@
 // TOTP (Cognito) llega en T-2.14 (hardening) — la fila lo declara.
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
 
-import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export type AccountProfile = {
   displayName: string;
@@ -69,7 +69,16 @@ export function AccountView(props: {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>PRIVACIDAD Y PERMISOS</Text>
-        <View style={styles.row}>
+        {/* [T-6.20] La fila es el control; el interruptor, el indicador. En
+            Android el `hitSlop` de un `<Switch>` nativo se ignora (ver
+            `privacidad.tsx`). */}
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: props.gpsConsent }}
+          onPress={() => props.onToggleConsent(!props.gpsConsent)}
+          style={styles.row}
+          testID="consent-switch"
+        >
           <View style={styles.rowInfo}>
             <Text style={styles.rowLabel}>Enviar mi ubicación GPS si pido ayuda</Text>
             <Text style={styles.rowDetail} testID="consent-note">
@@ -78,13 +87,8 @@ export function AccountView(props: {
                 : "Revocado: si pide ayuda se enviará su zona asignada, sin GPS."}
             </Text>
           </View>
-          <Switch
-            hitSlop={slopHasta(touch.switchDp)}
-            onValueChange={props.onToggleConsent}
-            testID="consent-switch"
-            value={props.gpsConsent}
-          />
-        </View>
+          <Switch pointerEvents="none" value={props.gpsConsent} />
+        </Pressable>
         <Pressable
         accessibilityRole="button"
         onPress={props.onOpenPermisos}
@@ -167,7 +171,7 @@ const styles = StyleSheet.create({
   },
   saveText: { color: palette.bg, fontWeight: "700", fontSize: fontSize.xs, letterSpacing: 1 },
   savedNote: { color: palette.ok, fontSize: fontSize.xs },
-  row: { flexDirection: "row", alignItems: "center", gap: space[2] },
+  row: { minHeight: touch.min, flexDirection: "row", alignItems: "center", gap: space[2] },
   rowInfo: { flex: 1, gap: 2 },
   rowLabel: { color: palette.fg, fontSize: fontSize.sm, fontWeight: "600" },
   rowDetail: { color: palette.fg3, fontSize: fontSize.xs, lineHeight: 16 },

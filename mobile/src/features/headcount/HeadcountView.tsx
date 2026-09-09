@@ -69,15 +69,19 @@ export function HeadcountView(props: {
         <Counter label="SIN REPORTE" value={props.roster.unreported} color={palette.warn} />
       </View>
 
-      <View style={styles.filterRow}>
+      {/* [T-6.20] La fila es el control; el interruptor, el indicador. En
+          Android el `hitSlop` de un `<Switch>` nativo se ignora (ver
+          `privacidad.tsx`). */}
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityState={{ checked: props.onlyUnreported }}
+        onPress={() => props.onToggleFilter(!props.onlyUnreported)}
+        style={styles.filterRow}
+        testID="filter-unreported"
+      >
         <Text style={styles.filterLabel}>Solo no reportados</Text>
-        <Switch
-          hitSlop={slopHasta(touch.switchDp)}
-          onValueChange={props.onToggleFilter}
-          testID="filter-unreported"
-          value={props.onlyUnreported}
-        />
-      </View>
+        <Switch pointerEvents="none" value={props.onlyUnreported} />
+      </Pressable>
 
       {rows.length === 0 ? (
         <Text style={styles.empty}>
@@ -165,7 +169,7 @@ const styles = StyleSheet.create({
   counter: { flex: 1, backgroundColor: palette.card, borderColor: palette.border, borderWidth: 1, borderRadius: radius.md, padding: space[2], alignItems: "center" },
   counterValue: { fontSize: fontSize.xl, fontWeight: "800" },
   counterLabel: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 1 },
-  filterRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  filterRow: { minHeight: touch.min, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   filterLabel: { color: palette.fg2, fontSize: fontSize.sm },
   empty: { color: palette.fg3, fontSize: fontSize.sm, textAlign: "center", marginVertical: space[3] },
   personRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: palette.card, borderColor: palette.border, borderWidth: 1, borderRadius: radius.md, padding: space[3] },

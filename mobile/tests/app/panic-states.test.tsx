@@ -40,6 +40,14 @@ jest.mock("@/auth/session.store", () => ({
 let mockSitio: string | null = SITE;
 jest.mock("@/services/mySite", () => ({ useWatchedSiteId: () => mockSitio }));
 
+// [T-6.20] El inset de abajo (la barra de gestos) se lee del aparato con
+// `useSafeAreaInsets`, y fuera de un `SafeAreaProvider` ese hook LANZA. Se
+// moquea con un inset REALISTA —el Pixel declara 24 dp abajo— para que el
+// hueco que se afirma más abajo sea el que se ve en el teléfono.
+jest.mock("react-native-safe-area-context", () => ({
+  useSafeAreaInsets: () => ({ top: 0, bottom: 24, left: 0, right: 0 }),
+}));
+
 let mockConsienteGps = false;
 jest.mock("@/services/onboarding", () => ({ getGpsConsent: async () => mockConsienteGps }));
 
@@ -190,5 +198,11 @@ describe("1.9 · pánico · el botón queda al alcance del pulgar", () => {
     expect(
       StyleSheet.flatten(v.getByTestId("panic-scroll").props.contentContainerStyle),
     ).toMatchObject({ flexGrow: 1 });
+    // …y el hueco de abajo esquiva la barra de gestos: 16 del espaciado + 24
+    // del aparato. Sin esto el botón queda DEBAJO de la barra, que se queda con
+    // el toque — medido en el Pixel.
+    expect(
+      StyleSheet.flatten(v.getByTestId("panic-scroll").props.contentContainerStyle).paddingBottom,
+    ).toBe(40);
   });
 });

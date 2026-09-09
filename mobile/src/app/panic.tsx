@@ -12,6 +12,7 @@ import { panicVoteSitesSiteIdManualActivationVotesPost } from "@takab/sdk";
 import { Redirect } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSessionStore } from "@/auth/session.store";
 import { captureLocation } from "@/features/checkin/location";
@@ -46,6 +47,7 @@ const VOTO_FALLIDO: PanicStatus = {
 
 export default function Panic() {
   const authed = useSessionStore((s) => s.status) === "authenticated";
+  const insets = useSafeAreaInsets();
   const siteId = useWatchedSiteId();
   const [status, setStatus] = useState<PanicStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -125,7 +127,11 @@ export default function Panic() {
       staleSinceMs={null}
     >
       <ScrollView
-        contentContainerStyle={styles.wrap}
+        /* [T-6.20] El inset de abajo. Medido en el Pixel: anclado al fondo, la
+           barra de gestos del sistema se comía el borde inferior del botón —y
+           esa franja se queda con el toque—. El hueco que la esquiva sale del
+           aparato, no de un número inventado. */
+        contentContainerStyle={[styles.wrap, { paddingBottom: space[4] + insets.bottom }]}
         style={styles.scroll}
         testID="panic-scroll"
       >

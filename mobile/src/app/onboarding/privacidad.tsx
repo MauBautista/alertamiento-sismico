@@ -27,7 +27,7 @@ import { getGpsConsent, markOnboardingDone, setGpsConsent } from "@/services/onb
 import { decideConsent, fetchConsentStatus, needsConsent } from "@/services/privacy";
 import type { ConsentStatus } from "@/services/privacy";
 import { StateFrame } from "@/ui/StateFrame";
-import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export default function Privacidad() {
   const router = useRouter();
@@ -150,22 +150,35 @@ export default function Privacidad() {
         </StateFrame>
       </View>
 
-      <View style={styles.consent}>
+      {/* [T-6.20] LA FILA ES EL CONTROL, no el interruptor. En Android el
+          `hitSlop` solo lo honra una vista de React (`ReactViewGroup`): sobre un
+          `<Switch>` nativo se ignora en silencio —medido en el Pixel: un toque a
+          8 dp del borde no lo movió—. Así que el interruptor queda como
+          INDICADOR (`pointerEvents="none"`) y quien recibe el dedo es la fila,
+          con el alto del token. De paso es lo que hace todo el mundo: se pulsa
+          la línea entera, no el dibujo de 27 dp. */}
+      <Pressable
+        accessibilityRole="switch"
+        accessibilityState={{ checked: gps }}
+        onPress={() => {
+          const v = !gps;
+          setGps(v);
+          void setGpsConsent(v);
+        }}
+        style={styles.consent}
+        testID="gps-consent-row"
+      >
         <View style={{ flex: 1 }}>
           <Text style={styles.consentTitle}>Compartir GPS en emergencia</Text>
           <Text style={styles.consentSub}>Revocable en Cuenta · sin GPS se envía su zona</Text>
         </View>
         <Switch
-          hitSlop={slopHasta(touch.switchDp)}
-          onValueChange={(v) => {
-            setGps(v);
-            void setGpsConsent(v);
-          }}
+          pointerEvents="none"
           thumbColor={gps ? palette.ok : palette.fg3}
           trackColor={{ true: palette.card, false: palette.card }}
           value={gps}
         />
-      </View>
+      </Pressable>
 
       <Pressable
         accessibilityRole="button"
@@ -213,6 +226,7 @@ const styles = StyleSheet.create({
   bullet: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20, marginBottom: space[2] },
   digest: { color: palette.fg3, fontSize: fontSize.xs, marginTop: space[2] },
   consent: {
+    minHeight: touch.min,
     marginTop: space[4],
     flexDirection: "row",
     alignItems: "center",

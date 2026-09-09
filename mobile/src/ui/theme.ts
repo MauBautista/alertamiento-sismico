@@ -46,13 +46,6 @@ export const space = {
  */
 export const touch = {
   min: toNumber(tokens.touch.min),
-  /**
-   * Alto que Android le da a un `<Switch>`: **27 dp medidos con `uiautomator`
-   * en el Pixel 8 Pro**. No lo decide nuestro estilo —el control es nativo y
-   * `minHeight` no mueve su área—, así que la holgura se calcula desde aquí y
-   * el número viaja con su procedencia en vez de estar puesto a ojo.
-   */
-  switchDp: 27,
 } as const;
 
 export function slopHasta(altoVisible: number): {

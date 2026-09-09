@@ -20,6 +20,9 @@
 //     de una fila densa (los chips LLAMAR/VERIFICAR de un pase de lista de 200
 //     personas), donde crecer el botón empujaría la lista fuera de pantalla.
 //     El alto visible se lo pasa su propio estilo, no una estimación a ojo.
+//     Solo vale sobre una vista de React: Android IGNORA el `hitSlop` de un
+//     control nativo, y por eso un `<Switch>` no puede ser el objetivo (ver
+//     `CLASES`).
 //
 // LA LISTA DE EXCEPCIONES SE COMPARA POR IGUALDAD, nunca por contención: si
 // alguien arregla una entrada, este test se pone rojo y le obliga a borrar su
@@ -141,14 +144,17 @@ function declaraAltoSuficiente(cuerpo: string): boolean {
  * Pixel: el interruptor de GPS del aviso de privacidad medía **27 dp** y el
  * campo del código de sitio, **46.7**.
  *
- * `Switch` es nativo: su alto lo decide Android y `minHeight` no mueve su área,
- * así que su ÚNICA salida es la holgura (`touch.switchDp` lleva el número con
- * su procedencia). Los otros dos aceptan las dos formas.
+ * **`Switch` no puede ser el objetivo táctil.** En Android el `hitSlop` solo lo
+ * honra una vista de React (`ReactHitSlopView`, que implementa `ReactViewGroup`)
+ * y sobre un interruptor NATIVO se ignora **en silencio**: medido en el Pixel,
+ * un toque a 8 dp de su borde no lo movió, con la holgura declarada en el
+ * código. Así que el interruptor queda de INDICADOR (`pointerEvents="none"`) y
+ * el objetivo es su fila, que entra en el censo como el `Pressable` que es.
  */
 const CLASES = [
-  { tag: "Pressable", soloHolgura: false },
-  { tag: "TextInput", soloHolgura: false },
-  { tag: "Switch", soloHolgura: true },
+  { tag: "Pressable", soloIndicador: false },
+  { tag: "TextInput", soloIndicador: false },
+  { tag: "Switch", soloIndicador: true },
 ] as const;
 
 /**
@@ -156,8 +162,8 @@ const CLASES = [
  * de línea intactos), para que los `ruta:línea` sigan siendo ciertos.
  *
  * Hace falta porque los comentarios de este árbol CITAN los controles de los
- * que hablan: el propio `theme.ts` explica por qué un `<Switch>` solo puede
- * cumplir con holgura, y el censo lo contaba como un interruptor sin arreglar.
+ * que hablan —`privacidad.tsx` explica en prosa por qué un `<Switch>` no puede
+ * recibir el dedo—, y el censo los contaba como controles sin arreglar.
  */
 function sinComentarios(texto: string): string {
   return texto
@@ -169,7 +175,7 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
   const out: Control[] = [];
   const ruta = relative(src, fuente.path);
   const texto = sinComentarios(fuente.text);
-  for (const { tag, soloHolgura } of CLASES) {
+  for (const { tag, soloIndicador } of CLASES) {
     const marca = `<${tag}`;
     let desde = 0;
     for (;;) {
@@ -187,6 +193,19 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
       const props = etiquetaDeApertura(texto, i + marca.length);
       const donde = `${ruta}:${linea}`;
 
+      if (soloIndicador) {
+        const indicador = /pointerEvents=("none"|{"none"})/.test(props);
+        out.push({
+          donde,
+          props,
+          cumple: indicador,
+          razon: indicador
+            ? "indicador: el objetivo es su fila"
+            : `${tag} recibe el dedo (en Android ignora hitSlop): pásalo a pointerEvents="none" y haz Pressable su fila`,
+        });
+        continue;
+      }
+
       const slop = valorDeProp(props, "hitSlop");
       if (slop !== null) {
         const derivado = /slopHasta\(/.test(slop);
@@ -196,10 +215,6 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
           cumple: derivado,
           razon: derivado ? "hitSlop derivado del token" : "hitSlop escrito a mano (usa slopHasta)",
         });
-        continue;
-      }
-      if (soloHolgura) {
-        out.push({ donde, props, cumple: false, razon: `${tag} sin hitSlop (su alto es nativo)` });
         continue;
       }
 
@@ -342,6 +357,19 @@ describe("censo táctil · el analizador caza lo que tiene que cazar", () => {
       SRC,
     );
     expect(malo.cumple).toBe(false);
+  });
+
+  it("un `<Switch>` que recibe el dedo se marca; de indicador, cumple", () => {
+    const malo = censarFuente(fuente("<Switch onValueChange={f} value={v} />"), SRC)[0];
+    expect(malo.cumple).toBe(false);
+    // …y tampoco cuela con holgura: en Android un control nativo la ignora.
+    const conHolgura = censarFuente(
+      fuente("<Switch hitSlop={slopHasta(27)} onValueChange={f} value={v} />"),
+      SRC,
+    )[0];
+    expect(conHolgura.cumple).toBe(false);
+    const bueno = censarFuente(fuente('<Switch pointerEvents="none" value={v} />'), SRC)[0];
+    expect(bueno.cumple).toBe(true);
   });
 
   it("un alto numérico por debajo del mínimo NO cuela", () => {
