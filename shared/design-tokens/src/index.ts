@@ -46,6 +46,21 @@ export const tokens = {
       a15: v("--tk-cyan-15"),
       a08: v("--tk-cyan-08"),
     },
+    /**
+     * [T-6.15] EL CIAN DE LA MARCA, con nombre propio. Vale lo mismo que
+     * `--tk-cyan` HOY y `designTokens.test.ts` lo ancla — pero son dos cosas
+     * distintas y hasta ahora compartían nombre, así que repintar la marca
+     * repintaba también el frente P del mapa, la capa del catálogo de
+     * referencia y el pill EDGE. Cinco significados en un token: al operador
+     * le tocaba adivinar cuál de ellos estaba mirando.
+     *
+     * `--tk-cyan` se queda como el acento OPERATIVO de la consola (57
+     * selectores: pestañas, foco, selección, botones). `--tk-brand` es lo que
+     * habla por la empresa, y hoy su único consumidor con color es la hoja del
+     * Hosted UI de Cognito (T-6.08) — la primera pantalla que ve un operador y
+     * la única del repo donde el cian NO significa un estado.
+     */
+    brand: v("--tk-brand"),
     status: {
       normal: v("--tk-status-normal"),
       warning: v("--tk-status-warning"),
