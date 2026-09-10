@@ -32,7 +32,10 @@ que interiorizar:
    espaciado nuevo se escribe a mano en un `.css` o un `.tsx`: **entra por el token o no entra**.
 3. `takab-docs/design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md` y `NOTAS-DE-DISENO.md`.
 4. `takab-docs/design/edge-panel/VERIFICACION-T-2-23.md` — las 10 escenas y las 3 densidades.
-5. `takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md` — las 12 pantallas y los dos perfiles.
+5. `takab-docs/design/app/ESPECIFICACION-APP-MOVIL.md` — las 21 pantallas y los dos perfiles.
+   <!-- [T-6.26] Decía 12. La spec declara 21 en su §7 desde que se escribió, así que
+        el prompt mandaba auditar nueve pantallas menos de las que existen. Un
+        encargo que cuenta mal el alcance produce una auditoría que se cree completa. -->
 6. `takab-docs/RBAC-TAKAB.md` — qué ve cada rol. **Una mejora visual que enseñe de más es un
    fallo de seguridad, no un fallo de diseño.**
 
@@ -174,7 +177,7 @@ Cada ítem: veredicto **VERDE / AMARILLO / ROJO**, evidencia `ruta:línea`, y un
 
 ## 6 · Checklist de auditoría · App móvil
 
-- [ ] **M1** · Las 12 pantallas de la especificación contra lo construido en
+- [ ] **M1** · Las 21 pantallas de la especificación contra lo construido en
       `mobile/src/features/`: cuáles existen, cuáles divergen, cuáles faltan.
 - [ ] **M2** · Los dos perfiles (Ocupante y Brigada): ¿la diferencia se nota al abrir la app?
 - [ ] **M3** · `screenStateCensus.test.ts`: qué estados cubre y cuáles no.

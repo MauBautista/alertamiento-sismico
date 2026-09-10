@@ -1,0 +1,56 @@
+{
+  "version": 1,
+  "tarea": "T-6.26",
+  "que_es": [
+    "LOS CUATRO VEREDICTOS DEL DICTAMEN ESTRUCTURAL, y cómo se dicen en cada",
+    "superficie. El valor crudo sale del CHECK de `dictamens.status` (db/schema.sql)",
+    "y lo firma un inspector; a partir de ahí lo leen DOS públicos muy distintos:",
+    "",
+    "  · el OPERADOR (consola SOC y app táctica), que conoce el vocabulario",
+    "    técnico y necesita el veredicto tal cual para decidir;",
+    "  · el OCUPANTE, que sólo quiere saber si puede volver a su casa o a su",
+    "    oficina, y para quien `inhabit_monitor` no significa absolutamente nada.",
+    "",
+    "Los dos registros son legítimos y por eso están los dos aquí: lo que NO es",
+    "legítimo es que cada pantalla se invente el suyo, ni que a alguien le llegue",
+    "el identificador crudo. La línea de tiempo del ocupante imprimía",
+    "`Firmado (inhabit_monitor)` hasta T-6.26.",
+    "",
+    "Este fichero es JSON y cada superficie guarda su COPIA, comprobada contra él",
+    "por igualdad en los dos sentidos — mismo patrón y misma razón que",
+    "`estados.json`: `web/` y `mobile/` son dos builds distintos y ninguno puede",
+    "importar el módulo del otro."
+  ],
+  "orden": ["normal_operation", "inhabit_monitor", "restricted", "no_inhabit_inspect"],
+  "veredictos": {
+    "normal_operation": {
+      "operador": "OPERACIÓN NORMAL",
+      "ocupante": "EDIFICIO APROBADO PARA REINGRESO",
+      "tono": "ok",
+      "habitable": true
+    },
+    "inhabit_monitor": {
+      "operador": "HABITAR · MONITOREO",
+      "ocupante": "REINGRESO APROBADO · BAJO MONITOREO",
+      "tono": "warn",
+      "habitable": true
+    },
+    "restricted": {
+      "operador": "ACCESO RESTRINGIDO",
+      "ocupante": "REINGRESO RESTRINGIDO",
+      "tono": "warn",
+      "habitable": false
+    },
+    "no_inhabit_inspect": {
+      "operador": "NO HABITAR · INSPECCIÓN",
+      "ocupante": "NO HABITABLE · REQUIERE INSPECCIÓN",
+      "tono": "crit",
+      "habitable": false
+    }
+  },
+  "desconocido": [
+    "Un status que no esté aquí NO se degrada a «operación normal»: se enseña en",
+    "ámbar y, al ocupante, como «DICTAMEN TÉCNICO EMITIDO» sin prometer nada.",
+    "Inventarle un significado a un valor que no entendemos es la regla de oro 7."
+  ]
+}

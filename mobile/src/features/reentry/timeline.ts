@@ -2,6 +2,8 @@
 // datos del servidor (mobile-state: incidente + dictamen + check-in propio).
 // El paso "Reingreso autorizado" JAMÁS se marca done aquí: cuando el backend
 // emite reentry_approved esta pantalla deja de existir (la fase manda).
+import { textoOcupante } from "@/features/dictamen/veredicto";
+
 export type TimelineStep = {
   key: string;
   label: string;
@@ -32,14 +34,16 @@ export function reentryTimeline(args: {
     ? {
         key: "dictamen",
         label: "Dictamen técnico · inspector",
-        detail: `Firmado (${args.dictamenStatus ?? "sin estado"}).`,
+        // [T-6.26] Traducido, no crudo: aquí se imprimía `Firmado
+        // (inhabit_monitor)` a quien sólo quiere saber si puede volver a su casa.
+        detail: `Firmado · ${textoOcupante(args.dictamenStatus)}.`,
         state: "done",
       }
     : args.dictamenStatus !== null
       ? {
           key: "dictamen",
           label: "Dictamen técnico · inspector",
-          detail: `Evaluación en curso (${args.dictamenStatus}).`,
+          detail: "Evaluación en curso.",
           state: "current",
         }
       : {
