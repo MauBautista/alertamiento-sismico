@@ -102,7 +102,7 @@ const REGLAS = [
   [
     ".submitButton-customizable",
     {
-      "background-color": t["--tk-cyan"],
+      "background-color": t["--tk-brand"],
       color: t["--tk-navy-900"],
       "font-weight": "700",
     },
@@ -130,7 +130,7 @@ const REGLAS = [
   // hará falta `.redirect-customizable a`, que no se escribe aquí porque una
   // clase que la API no acepte tumba la hoja ENTERA. Se decide en el `apply`,
   // que es donde un rechazo es barato y se ve.
-  [".redirect-customizable", { color: t["--tk-cyan"] }],
+  [".redirect-customizable", { color: t["--tk-brand"] }],
 ];
 
 const css =

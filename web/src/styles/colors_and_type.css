@@ -6,23 +6,60 @@
    clases de tipografía que consumen esos tokens.
    ========================================================================== */
 
-/* ---- Web fonts ---------------------------------------------------------- */
-/* Geist — local variable font (brand-supplied) */
+/* ---- Fuentes ------------------------------------------------------------
+   [T-6.15] TODAS ALOJADAS. Un SOC con salida restringida no puede perder la
+   fuente en la que se leen sus cifras, y la de este producto ya venía perdida
+   por otra razón: aquí había dos `@import url(https://fonts.googleapis.com/…)`
+   —JetBrains Mono y Saira Condensed— escritos DESPUÉS del `@font-face` de
+   Geist. Un `@import` sólo es válido al principio de la hoja, así que los dos
+   eran letra muerta: medido en el navegador el 2026-09-10, la consola NO PEDÍA
+   Google Fonts ni una sola vez, `document.fonts` sólo tenía Geist, y las cifras
+   se pintaban con el monoespaciado que tocara al sistema.
+
+   Geist — variable, entregada por la marca. */
 @font-face {
   font-family: 'Geist';
-  src: url('./fonts/Geist_wght_.ttf') format('truetype-variations'),
-       url('./fonts/Geist_wght_.ttf') format('truetype');
+  src:
+    url('./fonts/Geist_wght_.ttf') format('truetype-variations'),
+    url('./fonts/Geist_wght_.ttf') format('truetype');
   font-weight: 100 900;
   font-style: normal;
   font-display: swap;
 }
-/* JetBrains Mono via Google Fonts */
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 
-/* Aero Sans-Serif is BRAND-ONLY (logo wordmark, hero section headers).
-   No exact public match — closest substitution = Saira Condensed (geometric,
-   slightly condensed, all-caps friendly). FLAGGED in README. */
-@import url('https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&display=swap');
+/* JetBrains Mono — variable (wght 100–800), subsets latin y latin-ext. Es LA
+   FUENTE DEL DATO: cifras tabulares para que una columna de PGA se lea como
+   columna. SIL Open Font License 1.1, que viaja con ella en
+   `./fonts/OFL-JetBrainsMono.txt`. Dos caras con `unicode-range` para no cargar
+   el subset extendido en la pantalla que no lo necesita. */
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/jetbrains-mono-var-latin.woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('./fonts/jetbrains-mono-var-latin-ext.woff2') format('woff2-variations');
+  font-weight: 100 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB,
+    U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Saira Condensed NO se aloja, y no es un olvido: `--tk-font-brand` lo consume
+   UNA sola regla de esta hoja (`.tk-display, .tk-h1`) y NINGÚN marcado de la
+   consola usa esas clases. Alojar una familia entera para una regla que nadie
+   alcanza sería pagar peso por nada; el token sigue existiendo para móvil y
+   landing, que sí la usan y ya la alojan por su cuenta. */
 
 /* ==========================================================================
    SEMANTIC TYPE STYLES

@@ -121,6 +121,60 @@ const AA = 4.5;
 const FONDOS = ["--tk-surface-0", "--tk-surface-1", "--tk-surface-2"] as const;
 const TEXTOS = ["--tk-fg-1", "--tk-fg-2", "--tk-fg-3"] as const;
 
+/* =====================================================================
+   [T-6.15] LA MARCA Y EL ACENTO OPERATIVO SON DOS COSAS
+   ===================================================================== */
+
+describe("[T-6.15] el cian de la MARCA tiene nombre propio", () => {
+  it("`--tk-brand` existe y vale HOY lo mismo que el acento operativo", () => {
+    // Mismo valor a propósito: la ficha no repinta nada, separa dos nombres que
+    // estaban pegados. El día que la marca cambie, cambiará SOLA.
+    expect(cssVariables["--tk-brand"]).toBe(cssVariables["--tk-cyan"]);
+  });
+
+  it("la hoja del login de Cognito —la única superficie de MARCA con color— cita `--tk-brand`", () => {
+    const gen = readFileSync(
+      path.resolve(
+        process.cwd(),
+        "..",
+        "shared",
+        "design-tokens",
+        "scripts",
+        "gen-cognito-css.mjs",
+      ),
+      "utf8",
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(gen).toContain('t["--tk-brand"]');
+    expect(
+      gen.includes('t["--tk-cyan"]'),
+      "el login es MARCA: si vuelve a citar el cian operativo, repintar un pill EDGE le cambiaría el botón",
+    ).toBe(false);
+  });
+
+  it("el pill EDGE y el catálogo se quedan en el acento OPERATIVO", () => {
+    // U-43: «el cian de marca transporta cinco significados». Estas superficies
+    // siguen en `--tk-cyan` —que a partir de aquí SIGNIFICA acento operativo— y
+    // por eso ya no las mueve un cambio de marca.
+    const css = hojasSinComentarios()
+      .map((h) => h.css)
+      .join("\n");
+    for (const sel of [".soc-pill--edge", ".triage-catalog__hd:hover"]) {
+      const escapado = sel.replace(/[.*+?^${}()|[\]\\:]/g, "\\$&");
+      const re = new RegExp(`${escapado}[^{}]*\\{[^}]*var\\(--tk-cyan`);
+      expect(re.test(css), `${sel} dejó de citar el acento operativo`).toBe(true);
+    }
+  });
+
+  it("y NINGUNA hoja de la consola cita `--tk-brand`: repintar la marca no la toca", () => {
+    const infractoras = hojasSinComentarios()
+      .filter((h) => h.css.includes("--tk-brand"))
+      .map((h) => h.nombre);
+    expect(infractoras).toEqual([]);
+  });
+});
+
 describe("design tokens · contraste WCAG AA (rótulos de 8–10 px)", () => {
   it.each(TEXTOS.flatMap((fg) => FONDOS.map((bg) => [fg, bg] as const)))(
     "%s sobre %s alcanza AA",

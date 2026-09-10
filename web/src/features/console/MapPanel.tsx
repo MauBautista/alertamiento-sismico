@@ -62,6 +62,22 @@ type SourceData = Parameters<maplibregl.GeoJSONSource["setData"]>[0];
 
 export const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 
+/**
+ * [T-6.15] LA PILA DE FUENTES DE LOS GLIFOS DEL MAPA, dicha en voz alta.
+ *
+ * Ninguna capa la declaraba, así que MapLibre usaba su defecto de
+ * especificación —`["Open Sans Regular", "Arial Unicode MS Regular"]`— y
+ * `openfreemap` NO SIRVE ese par: medido el 2026-09-10, tres rangos en 404 por
+ * sesión (`0-255`, `8704-8959` y `9472-9727`, que son justo el latín y los dos
+ * bloques donde viven `◐`, `◇` y `✳`). El estilo de openfreemap sirve
+ * `Noto Sans Regular`, que responde 200.
+ *
+ * No es cosmético: los tres rangos que fallaban son los del rótulo del sitio,
+ * el glifo de enlace y el glifo de sacudida que T-6.09 y T-6.10 pusieron en el
+ * mapa precisamente para que el daltónico no dependiera del matiz.
+ */
+export const TEXT_FONT = ["Noto Sans Regular"];
+
 /** Estilo de EMERGENCIA 100% local (T-1.50): si los tiles remotos no llegan
  * (sin internet, CDN caído), el mapa base degrada a fondo navy PERO las capas
  * GeoJSON de sitios siguen pintando — las estaciones jamás desaparecen. El
@@ -529,6 +545,7 @@ export default function MapPanel({
         layout: {
           visibility: "none",
           "text-field": ["get", "label"],
+          "text-font": TEXT_FONT,
           "text-size": 9,
           "text-offset": [0, -0.8],
           "text-allow-overlap": true,
@@ -607,6 +624,7 @@ export default function MapPanel({
         source: "sites",
         layout: {
           "text-field": ["get", "link_glyph"],
+          "text-font": TEXT_FONT,
           "text-size": 11,
           "text-offset": [0.9, -0.9],
           "text-allow-overlap": true,
@@ -628,6 +646,7 @@ export default function MapPanel({
         source: "sites",
         layout: {
           "text-field": ["get", "felt_glyph"],
+          "text-font": TEXT_FONT,
           "text-size": 12,
           "text-offset": [-0.85, 0.85],
           "text-allow-overlap": true,
@@ -650,6 +669,7 @@ export default function MapPanel({
         source: "sites",
         layout: {
           "text-field": ["get", "demo_glyph"],
+          "text-font": TEXT_FONT,
           "text-size": 9,
           "text-letter-spacing": 0.14,
           "text-offset": [0, 1.7],
@@ -683,6 +703,7 @@ export default function MapPanel({
         source: "epicenters",
         layout: {
           "text-field": "✳",
+          "text-font": TEXT_FONT,
           "text-size": 20,
           "text-allow-overlap": true,
           "text-ignore-placement": true,
@@ -695,6 +716,7 @@ export default function MapPanel({
         source: "epicenters",
         layout: {
           "text-field": ["get", "label"],
+          "text-font": TEXT_FONT,
           "text-size": 11,
           "text-offset": [0, 1.5],
           "text-anchor": "top",
@@ -720,6 +742,7 @@ export default function MapPanel({
         source: "catalog",
         layout: {
           "text-field": "◇",
+          "text-font": TEXT_FONT,
           "text-size": ["case", ["get", "selected"], 26, 18],
           "text-allow-overlap": true,
           "text-ignore-placement": true,
@@ -736,6 +759,7 @@ export default function MapPanel({
         source: "catalog",
         layout: {
           "text-field": ["get", "label"],
+          "text-font": TEXT_FONT,
           "text-size": 10,
           "text-offset": [0, 1.4],
           "text-anchor": "top",
