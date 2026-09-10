@@ -7,6 +7,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { timeAgoLabel } from "./timeAgo";
 
 /** Tic de reloj para la edad del banner stale (30 s es suficiente para
@@ -41,6 +43,12 @@ export function StateFrame(props: {
   children: React.ReactNode;
 }) {
   const nowMs = useNowMs(props.nowMs);
+  // [T-6.24 · U-33] La franja de dato retenido es el PRIMER hijo del marco, y
+  // el marco es la raíz de la pantalla: sin esto se dibujaba en y=0, o sea
+  // ENCIMA del reloj y los iconos de Android. Medido en un Pixel 8 Pro con la
+  // red cortada 105 s: la única señal de que el dato estaba viejo era una tira
+  // fina cruzada sobre la barra de estado.
+  const insets = useSafeAreaInsets();
   if (props.loading) {
     return (
       <View style={styles.center} testID="state-loading">
@@ -76,7 +84,7 @@ export function StateFrame(props: {
   return (
     <View style={styles.wrap}>
       {props.staleSinceMs !== null ? (
-        <View style={styles.staleBanner} testID="state-stale">
+        <View style={[styles.staleBanner, { marginTop: insets.top }]} testID="state-stale">
           <Text style={styles.staleText}>
             DATOS RETENIDOS · {timeAgoLabel(props.staleSinceMs, nowMs)} · sin conexión
           </Text>

@@ -52,6 +52,7 @@ export default function Inicio() {
           onOpenDirectorio={() => router.push("/(occupant)/directorio")}
           onOpenPanic={() => router.push("/panic")}
           onOpenRutas={() => router.push("/(occupant)/rutas")}
+          staleSinceMs={staleSinceMs}
         />
       ) : null}
     </StateFrame>
