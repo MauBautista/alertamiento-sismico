@@ -662,11 +662,17 @@ describe("TenantsPage · búsqueda local del catálogo (T-2.51)", () => {
     expect(mocks.useTenants).toHaveBeenCalledWith();
   });
 
-  it("el contador pasa a MOSTRANDO n DE N mientras se filtra", () => {
+  // [T-6.12] El contador es ahora la primitiva de KPI (cifra + rótulo). Lo que
+  // se defiende sigue siendo lo mismo: al filtrar, la cifra NO baja en silencio
+  // — dice de cuántos está mostrando cuántos.
+  it("el contador declara el recorte de la búsqueda en vez de bajar en silencio", () => {
     renderPage();
-    expect(screen.getByText("2 TENANT(S) VISIBLES")).toBeTruthy();
+    const kpi = () => screen.getByTestId("tenant-count");
+    expect(within(kpi()).getByText("2")).toBeTruthy();
+    expect(within(kpi()).getByText("TENANT(S) VISIBLES")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Buscar cliente"), { target: { value: "Salud" } });
-    expect(screen.getByText("MOSTRANDO 1 DE 2")).toBeTruthy();
+    expect(within(kpi()).getByText("1 DE 2")).toBeTruthy();
+    expect(within(kpi()).getByText("TENANT(S) TRAS LA BÚSQUEDA")).toBeTruthy();
   });
 
   it("sin coincidencias lo DICE en vez de dejar la columna en blanco", () => {

@@ -172,17 +172,7 @@ export default function IncidentTable({
           Incidentes Abiertos
           <span className="soc-incidents__count">{incidents.length} ACTIVOS</span>
         </h3>
-        <div
-          style={{
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            color: "var(--tk-fg-3)",
-            fontSize: 11,
-            fontFamily: "var(--tk-font-mono)",
-            letterSpacing: "0.04em",
-          }}
-        >
+        <div className="soc-incidents__toolbar">
           <label className="soc-incidents__order">
             <span className="soc-meta">ORDEN</span>
             <select
@@ -316,7 +306,6 @@ export default function IncidentTable({
           {authBadge != null && (
             <span
               className="soc-pill soc-pill--ok"
-              style={{ fontSize: 9 }}
               title={authBadge.title}
               data-testid="auth-badge"
             >

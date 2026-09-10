@@ -75,14 +75,12 @@ export default function QuorumNodes({
           </div>
         </div>
         {eventState === "ready" && corroborated && (
-          <span className="soc-pill soc-pill--ok" style={{ fontSize: 9 }}>
+          <span className="soc-pill soc-pill--ok">
             <Check size={11} aria-hidden /> CONFIRMADO · {view.countedNodes} estaciones
           </span>
         )}
         {eventState === "ready" && !corroborated && (
-          <span className="soc-pill soc-pill--warn" style={{ fontSize: 9 }}>
-            SIN CORROBORAR POR QUÓRUM
-          </span>
+          <span className="soc-pill soc-pill--warn">SIN CORROBORAR POR QUÓRUM</span>
         )}
       </div>
 

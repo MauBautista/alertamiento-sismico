@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSessionStore } from "../../auth/session.store";
@@ -231,7 +231,11 @@ describe("TriagePage", () => {
   it("muestra la cuenta de lo realmente cargado", () => {
     mocks.useTriage.mockReturnValue(triageData());
     render(pageAt());
-    expect(screen.getByText(/1 INCIDENTES CARGADOS/)).toBeTruthy();
+    // [T-6.12] La cuenta es el DATO de la pantalla y va en la primitiva de KPI:
+    // la cifra en el escalón de la métrica, el rótulo en el piso.
+    const kpi = screen.getByTestId("triage-count");
+    expect(within(kpi).getByText("1")).toBeTruthy();
+    expect(within(kpi).getByText(/INCIDENTES CARGADOS/)).toBeTruthy();
   });
 
   // [T-2.59] Misma familia que la tira de KPI de la flota: este rótulo vive

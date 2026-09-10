@@ -128,6 +128,15 @@ export default function AuditPage() {
         staleSince={staleSince}
         className="audit__frame"
       >
+        {/* [T-6.12] `/audit` era la única de las seis pantallas SIN un dato que
+            mirar: el rótulo más grande era su propio nombre (26 px) y el
+            siguiente medía 13. El recuento ya existía, en 10 px y al pie de la
+            página; sube aquí, en la misma primitiva de KPI que el resto, y
+            DENTRO del marco —que es quien sabe si hay dato que contar. */}
+        <div className="soc-kpi" data-testid="audit-count">
+          <span className="soc-kpi__value">{data.rows.length}</span>
+          <span className="soc-kpi__label">REGISTRO(S) CARGADO(S)</span>
+        </div>
         <div className="audit__tablewrap">
           <table className="audit__table">
             <thead>
@@ -165,7 +174,6 @@ export default function AuditPage() {
           ) : (
             <span className="soc-meta">FIN DE LA BITÁCORA VISIBLE</span>
           )}
-          <span className="soc-meta">{data.rows.length} REGISTRO(S) CARGADO(S)</span>
         </div>
       </StateFrame>
     </section>

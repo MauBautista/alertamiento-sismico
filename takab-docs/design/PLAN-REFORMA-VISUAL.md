@@ -1086,7 +1086,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **Verificación:** web 2 216 tests, `tsc`, `eslint`, `prettier` y `vite build` limpios; los tres
     criterios ejercidos en un navegador real contra `make soc-local`, con capturas.
 
-### [ ] T-6.12 · **El dato es lo más grande de cada pantalla** — `SOFTWARE`
+### [x] T-6.12 · **El dato es lo más grande de cada pantalla** — `SOFTWARE`
 
 > En `/triage`, `/tenants` y `/audit` el título gana al dato; los KPI miden 15 px en una pantalla y
 > 28 en otra; 59 declaraciones bajo el piso tipográfico y cuatro tamaños inline que escapan a los
@@ -1100,9 +1100,64 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — alturas fijadas por `layoutInvariants` en los bloques que se toquen; se actualizan con captura antes y después.
 - **Objetivo:** títulos de pantalla en un escalón menor que la métrica principal; el mismo KPI con el mismo token en todas las pantallas; ningún tamaño por debajo del piso ni escrito inline; el prefijo de estado del banner de simulacro (ARMADO / EN CURSO) en el escalón legible a distancia, sin robar alto al mapa.
 - **Criterios de aceptación:**
-  - [ ] En las seis pantallas, el rótulo más grande es un dato o el estado, nunca el nombre de la pantalla.
-  - [ ] Cero `fontSize` inline y cero declaraciones bajo el piso en `web/src`.
-  - [ ] La tira de simulacro sigue por debajo del alto que fija `drill.spec.ts`.
+  - [x] En las seis pantallas, el rótulo más grande es un dato o el estado, nunca el nombre de la pantalla. **Medido en navegador real** (`make soc-local`, 1920×1080, `takab_superadmin`), barriendo TODO elemento visible con texto propio y quedándose con el mayor:
+
+    | pantalla | antes | después |
+    |---|---|---|
+    | `/console` | 28 px · `soc-alert__pga-value` (dato) pero el KPI en 15 | 28 px · `soc-alert__pga-value` |
+    | `/fleet` | 28 px · `fleet__kpi-val` (título en 26) | 28 px · `fleet__kpi-val` (título en 22) |
+    | `/triage` | **26 px · `h1.triage__title`** | 28 px · `soc-kpi__value` «4» |
+    | `/tenants` | **26 px · `h1.mt__title`** | 28 px · `soc-kpi__value` «28» |
+    | `/audit` | **26 px · `h1.audit__title`** (el segundo mayor medía 13) | 28 px · `soc-kpi__value` «50» |
+    | `/building` | **20 px · `h1.bld__title`** | 28 px · nombre del sitio |
+
+  - [x] Cero `fontSize` inline y cero declaraciones bajo el piso en `web/src`. Eran **64** declaraciones bajo el piso (47 de 9 px, 13 de 9.5 y 4 de 8.5 — la ficha decía 59 porque contaba con `font-size:` y no con el atajo `font:`) y **6** tamaños inline (cuatro `soc-pill` de 9 px, un objeto `style` de 11 y un `fontSize="8"` en el `<text>` de `TimeAxis`, que ningún censo de hoja podía ver). `typeScale.test.ts` barre ambas cosas.
+  - [x] La tira de simulacro sigue por debajo del alto que fija `drill.spec.ts`: `drill-idle` mide **34 px** (tope 60) en los tres viewports, antes y después — el prefijo de estado sólo se monta cuando hay simulacro. **Ejercido con un simulacro real en `soc-local`** (1920×1080): ARMADO a T+2 min y luego EN CURSO sobre `Sitio Dev Puebla` (`POST /api/drills` → 201). Los dos banners miden **52 px**, con el estado en **16 px** sobre un detalle de 13 — se distinguen por CUERPO y no sólo por matiz —, la frase de seguridad viaja literal («🔶 SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL · 1 SITIO(S) · 0/0 ACUSADOS · 1 SIN COMANDO EMITIDO») y el mapa se queda en **476 px** con el banner en pantalla. Se cerró con TERMINAR (200) y se verificó que no queda nada armado ni en curso: un simulacro colgado sobrevive a `make soc-local` y ensucia los e2e de la sesión siguiente.
+- **Cómo se cerró (2026-09-10, SESIÓN 2):**
+  - **El piso tiene nombre: `--tk-text-min` (10 px).** No es un escalón nuevo: vale lo mismo que
+    `--tk-text-2xs`, el más bajo de la escala, y el censo ancla esa igualdad. Lo que retira es la
+    costumbre de inventar números — convivían **tres** pisos (8.5, 9 y 9.5 px) sin que ninguno
+    estuviera declarado en ninguna parte. Mismo patrón que `--tk-touch-min` (T-6.20).
+  - **Los títulos de pantalla bajan a `--tk-text-xl` (22 px)** —los cinco visibles; el de
+    `/console` es de lector de pantalla (`.soc-vh`, 1×1) y nunca compitió— y la métrica principal
+    sube a `--tk-text-2xl` (28 px), que es el escalón que la alerta ya usaba para el PGA.
+  - **El KPI es UNA primitiva.** `.soc-kpi` (cifra + rótulo) pasa a pintar los contadores de
+    `/triage`, `/tenants` y `/audit`, que hasta ahora eran rótulos de 10 px: el recuento de la
+    bitácora vivía además **al pie de la página**. Los tres siguen DENTRO de su marco (o tras la
+    puerta de T-2.59, en triage), así que `serverDataCensus` no gana una exención.
+  - **La única excepción está medida y declarada.** La tira del wall no es la cifra grande de una
+    pantalla: son once indicadores en una banda **sobre el mapa**. Con 28 px la banda se parte en
+    filas y el mapa cae de 405 a 381 px en 1280×800, bajo el piso de 400 que defienden
+    `layout.spec.ts:70` y `smoke.spec.ts:50`. Su cifra queda en `--tk-text-md` (16 px), que además
+    retira el **15 px suelto** que había —15 no es ningún escalón de la escala—, y
+    `typeScale.test.ts` la ancla como la única bajada permitida.
+  - **`var(--f-ui)` NUNCA existió, y se citaba 15 veces en `soc-tabs.css`.** Un `font:` con una
+    `var()` sin resolver es *invalid at computed-value time*: la declaración **entera** se cae,
+    tamaño y peso incluidos. Medido en el navegador: `.soc-demo-mode__txt` pedía `700 12px/1` y
+    pintaba **16 px / 400**, el heredado del `<body>`; igual `.notifychain__*` y `.triage-tasa__*`.
+    La guarda vieja (`designTokens.test.ts:475`) sólo miraba las `var(--tk-*)`, así que este
+    agujero le pasaba por debajo. `typeScale.test.ts` la cierra para **cualquier** prefijo.
+  - **ARMADO / EN CURSO** salen a `.soc-drill__estado` en `--tk-text-md`: se distinguían a
+    distancia sólo por el matiz —cian contra ámbar—, que es justo lo que un daltónico no tiene. La
+    frase de seguridad («ESTO NO ES UNA ALERTA REAL») se conserva palabra por palabra.
+  - **Trampa medida, y cara:** al añadir el token, el `tokens.css` que servía el dev server ya
+    llevaba arriba media hora y **no lo recogió**. `--tk-text-min` resolvía a vacío en el
+    navegador, así que las 64 declaraciones nuevas caían enteras y los rótulos heredaban 16 px: la
+    banda del wall creció un 69 % y el mapa perdió hasta 71 px. La primera medición «después» era
+    de una hoja rota. Se caza con una sonda de una línea
+    (`getComputedStyle(document.documentElement).getPropertyValue('--tk-text-min')`), y se arregla
+    reiniciando vite tras regenerar los tokens.
+  - **Y quedaba una regresión real de 8 px** cuando la hoja ya se aplicaba: con el rótulo en 10 px,
+    «MOSTRANDO 44 DE 44 · DE LAS CUALES 20 SIMULADAS» se partía en **cuatro líneas** dentro de un
+    grupo de 156 px y fijaba el alto de la banda entera (405 → 397). No era la cifra: era que un
+    rótulo de 10 px envuelve donde uno de 9.5 no lo hacía. Se resuelve como ya lo resuelve la
+    banda bajo `max-height: 800px` —se desplaza, no se apila— y el mapa vuelve a 405 px, el mismo
+    valor que en `main`.
+  - **E2E: sin regresión, con control A/B.** Los 9 rojos de `npm run e2e` son **idénticos** a los
+    de `main` en el mismo stack y el mismo minuto (`layout.spec:19` ×3, `layout.spec:70/108` y
+    `smoke.spec:50` en 1440×900, `screens.spec:508` ×3). Los provoca la franja de alerta viva del
+    seed (`AVISO SÍSMICO · UMBRAL INSTRUMENTAL`), que tapa los botones de capas del mapa y le
+    quita alto: es un hallazgo previo a esta ficha y no se toca aquí.
 
 ### [ ] T-6.13 · **Una tabla, una tarjeta, un botón** — `SOFTWARE`
 
