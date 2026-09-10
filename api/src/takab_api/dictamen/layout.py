@@ -19,6 +19,17 @@ from fpdf.enums import XPos, YPos
 
 _FONTS = Path(__file__).parent / "fonts"
 
+#: [T-6.33] El logotipo de la cabecera, en su variante POSITIVA. Es el único
+#: destino de la marca en positivo del repo, y no es un capricho: éste es el
+#: único PAPEL BLANCO que el producto entrega, y va firmado. Sobre blanco, la
+#: variante negativa —la de la consola, el panel y la app— se perdería.
+#: Lo deriva `shared/brand/generar.py` como los otros catorce; aquí no se edita.
+LOGOTIPO = _FONTS.parent / "marca" / "logotipo.png"
+
+#: Ancho impreso de la marca, en mm. La caja de cabecera da hasta el filete de
+#: y=26 y el subtítulo tiene que caber debajo.
+_LOGO_MM = 34.0
+
 #: Paleta del PDF (RGB). Deliberadamente sobria: un dictamen no es un tablero.
 INK = (20, 24, 30)
 MUTED = (110, 120, 132)
@@ -49,6 +60,10 @@ class TakabPDF(FPDF):
         self.folio = folio
         self.subtitle = subtitle
         self.degraded = False
+        # Misma regla que la tipografía: si el arte no viajó con el paquete el
+        # documento SALE IGUAL, con la palabra compuesta. Una exportación de
+        # evidencia no puede caerse por un adorno.
+        self.sin_marca = not LOGOTIPO.exists()
         self.set_margins(MARGIN, 18, MARGIN)
         self.set_auto_page_break(auto=True, margin=20)
         self._install_fonts()
@@ -75,9 +90,18 @@ class TakabPDF(FPDF):
     # --- chasis ---------------------------------------------------------------
 
     def header(self) -> None:  # noqa: D102 - contrato de fpdf2
-        self.set_font(self.body_font, "B", 9)
-        self.set_text_color(*INK)
-        self.cell(0, 5, self.text_of("TAKAB AILERT"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        if self.sin_marca:
+            # Respaldo: la palabra compuesta con la tipografía del documento, que
+            # es lo que este encabezado llevaba antes de T-6.33.
+            self.set_font(self.body_font, "B", 9)
+            self.set_text_color(*INK)
+            self.cell(0, 5, self.text_of("TAKAB AILERT"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        else:
+            # `x`/`y` explícitos: `header()` corre en CADA página y el cursor no
+            # llega aquí en el mismo sitio en todas. fpdf2 embebe el PNG una sola
+            # vez y lo reutiliza, así que repetirlo no engorda el documento.
+            self.image(str(LOGOTIPO), x=MARGIN, y=10, w=_LOGO_MM)
+            self.set_y(20)
         self.set_font(self.body_font, "", 7.5)
         self.set_text_color(*MUTED)
         self.cell(0, 4, self.text_of(self.subtitle), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -93,7 +117,12 @@ class TakabPDF(FPDF):
         self.ln(1)
         self.set_font(self.body_font, "", 7)
         self.set_text_color(*MUTED)
-        left = f"{self.folio} · EVIDENCIA INMUTABLE"
+        # [T-6.33] El NOMBRE, en texto y en todas las páginas. La cabecera pasó a
+        # llevar el logotipo como arte, y un lector de pantalla —o un `pdftotext`
+        # de la contraparte que revisa el dictamen— no lee un PNG. En un
+        # documento firmado, de quién es la firma no puede vivir sólo en una
+        # imagen. Antes estaba únicamente arriba; ahora está en cada pie.
+        left = f"TAKAB AILERT · {self.folio} · EVIDENCIA INMUTABLE"
         if self.degraded:
             # No se calla: un dictamen al que le faltan caracteres tiene que decirlo.
             left += " · TIPOGRAFÍA DEGRADADA (fuente Unicode ausente)"
