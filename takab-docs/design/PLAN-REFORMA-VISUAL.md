@@ -1319,7 +1319,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     existen todavía ([`PENDIENTES-MAURICIO §2.6`](../PENDIENTES-MAURICIO.md)). Esa mitad la sostiene
     el cruce con la matriz, no una captura.
 
-### [ ] T-6.23 · **Volver del fondo refresca; la crisis no espera al tic** — `SOFTWARE`
+### [x] T-6.23 · **Volver del fondo refresca; la crisis no espera al tic** — `SOFTWARE`
 
 > Sin push (está en simulado), la toma de crisis llega por sondeo de 30 s —medido: 8.5 s— y volver
 > del segundo plano no fuerza el refetch porque `AppState` no está atado al `focusManager`.
@@ -1332,8 +1332,44 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** `AppState` → `focusManager` para que traer la app al frente refresque al instante; entrada del **contenedor** de crisis con el dato pintado en el primer frame (permitido por el principio 2), sin transición bajo `reduceMotion`.
 - **Criterios de aceptación:**
-  - [ ] App en segundo plano cinco minutos → al frente → `mobile-state` refetch en menos de un segundo.
-  - [ ] La instrucción, la zona, la fuente y el T+ están pintados en el primer frame del contenedor.
+  - [x] App en segundo plano cinco minutos → al frente → `mobile-state` refetch en menos de un segundo. **Probado con `QueryClient` y `focusManager` reales; la medición EN EL TELÉFONO no se pudo cerrar — abajo el porqué.**
+  - [x] La instrucción, la zona, la fuente y el T+ están pintados en el primer frame del contenedor.
+- **Cómo se cerró (2026-09-10, SESIÓN M5):**
+  - **El defecto es de una línea que no estaba.** `refetchOnWindowFocus` viene puesto por defecto en
+    TanStack Query y en React Native **no se dispara nunca**: no hay ventana de la que recuperar el
+    foco. Sin atar `AppState` al `focusManager`, traer la app al frente no pedía nada — y con la push
+    en simulado, quien abre la app porque el edificio está sonando esperaba al sondeo (30 s en
+    reposo). El cable vive en `services/appFocus.ts`, con las dependencias por parámetro para poder
+    probarlo sin simular React Native entero.
+  - **`inactive` NO cuenta como fondo**, y es una decisión: en iOS es la app tapada por el centro de
+    control o por una llamada entrante, así que tratarlo como fondo haría que descartar cualquier
+    aviso provocara un ciclo foco→refetch de todas las consultas vivas. Y Android emite `active` más
+    de una vez al volver: sin la guarda de «no repetir», cada repetición sería otro refetch.
+  - **Se prueba la CONSECUENCIA, no sólo la traducción.** Un segundo test monta un `QueryClient` y el
+    `focusManager` de verdad —lo único falso es el `AppState`—, sin sondeo, y exige que el evento
+    `active` vuelva a pedir el dato. **Con control negativo**: sin el cable, el mismo evento no pide
+    nada. Sin esa segunda mitad, el archivo pasaría igual si `focusManager` refrescara por su cuenta,
+    que es justo lo que no hace.
+  - **Los cuatro datos de la crisis salen de PROPS**, no de un efecto, y en el camino de lectura no
+    hay ni una animación: `CrisisView` es presentacional puro. Se ata por los dos lados —render sin
+    `act` ni temporizadores, y barrido de la fuente contra `Animated`/`withTiming`/`entering=`—
+    porque el primero solo mira el árbol y no los fotogramas. **No se le añade entrada de contenedor**
+    a propósito: el movimiento móvil es de `T-6.25`, y meterlo aquí lo dejaría medio hecho en dos
+    fichas.
+  - **⚠️ Lo que NO se pudo medir en el Pixel, con los cuatro intentos escritos** —porque el siguiente
+    que lo intente merece no repetirlos:
+    1. `logcat` no delata las peticiones en un build de **release**;
+    2. el valor visible que se eligió de testigo (RTT del panel) **no cambió** en 35 s, así que no
+       discrimina;
+    3. los contadores de tráfico **por UID** ya no están expuestos en este Android (`xt_qtaguid` no
+       existe y `dumpsys netstats` no da la app);
+    4. y la premisa del criterio no se sostiene tal cual: **Android mantuvo vivos los temporizadores
+       del sondeo durante los cinco minutos en segundo plano**, así que el dato nunca llegó a
+       envejecer y no había nada que ver limpiarse. Cortar la red para forzarlo tampoco cerró: al
+       restaurarla antes de traer la app al frente, el sondeo ya la había refrescado.
+
+    El cable es el que documenta TanStack para React Native y su efecto está probado arriba; lo que
+    queda sin número es el milisegundo en el teléfono.
 
 ### [ ] T-6.24 · **El dato retenido del ocupante se ve** — `SOFTWARE`
 
