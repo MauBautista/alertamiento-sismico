@@ -1940,3 +1940,54 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **Verificación:** `pytest edge/tests/` completo en verde en modo simulado (el gate #3 no se
     ejerce); `ruff check` y `ruff format --check` limpios. El Pi de Puebla NO se redesplegó: el
     cambio llega con el siguiente despliegue del edge, junto con T-6.27…T-6.30.
+
+---
+
+## 10 · Cierre — cómo terminó
+
+> Escrito el **2026-09-10**, con las **33 fichas en `[x]`** y cero criterios sin marcar. Este
+> apartado no reescribe nada de lo de arriba: las tres tandas se quedan tal como se planificaron
+> el 2026-09-06, porque el plan es un documento de decisión y no una hoja de estado.
+
+**Las tres tandas, cerradas.** 31 fichas planificadas —11 + 15 + 5— y **dos más abiertas durante
+la propia ejecución**, que es lo que suele pasar cuando se mide en vez de leer:
+
+| Tanda | Fichas | Estado |
+|---|---|---|
+| 1 · lo que impide presentar | `T-6.17` `T-6.19` `T-6.01` `T-6.02` `T-6.03` `T-6.04` `T-6.05` `T-6.20` `T-6.27` `T-6.28` `T-6.29` | **11/11** |
+| 2 · lo que mejora la venta | `T-6.06` `T-6.07` `T-6.08` `T-6.09` `T-6.10` `T-6.11` `T-6.14` `T-6.16` `T-6.18` `T-6.21` `T-6.22` `T-6.23` `T-6.24` `T-6.30` `T-6.31` | **15/15** |
+| 3 · lo que es gusto | `T-6.12` `T-6.13` `T-6.15` `T-6.25` `T-6.26` | **5/5** |
+| Abiertas al ejecutar | `T-6.32` (el mapa en un portátil de 900 px) · `T-6.33` (el dictamen firmado sin marca) | **2/2** |
+
+`EXPOSICIÓN-UI` (§1) queda satisfecha: sus nueve fichas están cerradas y ninguna esperó a un humano
+ni a una ventana de AWS.
+
+**Lo que la ejecución encontró y la auditoría no.** Vale la pena dejarlo escrito, porque es el
+argumento a favor de medir cada ficha en vez de darla por entendida:
+
+- **`var(--f-ui)` nunca existió** y se citaba 15 veces (T-6.12). Un `font:` con una `var()` sin
+  resolver tira la declaración **entera**: el banner del modo demostración pedía `700 12px/1` y
+  pintaba 16 px normales.
+- **Las dos familias de Google Fonts jamás cargaron** (T-6.15): los `@import` iban después de un
+  `@font-face` y un `@import` sólo vale al principio de la hoja. Las cifras del SOC llevaban desde
+  siempre en el monoespaciado que tocara al sistema.
+- **Los glifos del mapa daban tres 404 por sesión** (T-6.15), justo en los rangos del rótulo del
+  sitio y de los glifos de sacudida que T-6.09 y T-6.10 pusieron ahí para no depender del matiz.
+- **La regla «conocido y falló ⇒ retenido» estaba copiada en cinco sitios**, no en dos (T-6.13).
+- **El mapa caía bajo su umbral en 1440×900 y 1600×900** (T-6.32), por un píxel y por nueve.
+- **El único papel blanco que el producto entrega firmado no llevaba marca** (T-6.33).
+
+**Lo que queda fuera, y de quién es.** Nada de esto es una ficha a medias: son cosas que esta
+reforma no podía cerrar sola.
+
+| Cabo suelto | De quién es |
+|---|---|
+| **U-47** · el gabinete de Puebla sirve una release anterior a los commits de marca | del despliegue del edge (`deploy/edge/deploy.sh`), antes de la próxima demo |
+| Capturas **en vivo** de crisis y alarma del móvil (T-6.21 las declara pendientes) | de una corrida de `make cloud-staging-incident`, que es una acción hacia afuera |
+| La landing sirve sus propios `favicon.png` y `og-*.png`, que **no** derivan de `shared/brand` | de una ficha propia si algún día divergen; hoy no molestan a nadie |
+| El informe de auditoría **no se actualiza** | por decisión suya: «el estado VIVO de cada hallazgo será su ficha, no este documento» |
+
+**Y una trampa que mordió tres veces en la misma sesión**, por si la siguiente evita el peaje:
+cualquier barrido estructural del marcado —un censo, un codemod— tiene que **enmascarar los
+comentarios antes de contar etiquetas**. Un `<style>` citado en prosa (T-6.07), un `<Tabs.Screen>`
+(T-6.22) y un `<div>` (T-6.13) descuadraron tres recuentos distintos.

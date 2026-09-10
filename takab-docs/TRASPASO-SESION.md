@@ -4,7 +4,10 @@
 > reconstruirlo leyendo commits**. No sustituye a `TASKS.md` (qué construir) ni a
 > `PENDIENTES-MAURICIO.md` (qué está bloqueado en una persona): es **el estado y el método**.
 >
-> **Última sesión:** 2026-08-10 → 2026-08-14 · **once lotes, todos por PR con los siete checks.**
+> **Última sesión:** 2026-09-06 → 2026-09-10 · **la reforma visual**: auditoría de las tres
+> superficies y sus **33 fichas cerradas**, todas por PR con los siete checks
+> ([`design/PLAN-REFORMA-VISUAL.md § 10`](design/PLAN-REFORMA-VISUAL.md)). La anterior fue
+> 2026-08-10 → 2026-08-14 · once lotes.
 
 ---
 
@@ -159,6 +162,13 @@ resolver** en vez de callarlo.
 ---
 
 ## 5 · Por dónde seguir
+
+**La reforma visual está cerrada y no hay que reabrirla.** Sus 33 fichas viven en el
+`BLOQUE VII` de `TASKS.md`, todas en `[x]`, y el detalle de cada medición en
+`design/PLAN-REFORMA-VISUAL.md`. Lo que dejó fuera —y de quién es— está en el § 10 de ese plan; en
+resumen: el gabinete de Puebla sirve una release anterior a los commits de marca (se arregla
+desplegando el edge antes de la próxima demo) y faltan las capturas en vivo de las pantallas de
+crisis del móvil, que piden una corrida de `make cloud-staging-incident`.
 
 **Software abierto:** ver `TASKS.md`, que está al día. Las candidatas naturales al arrancar:
 `T-2.143` (la baja hecha en Cognito no arranca el reloj de la PII), `T-2.84.e`, `T-2.72.a`, y las

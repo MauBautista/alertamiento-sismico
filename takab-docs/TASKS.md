@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **345** · `[x]` **295** · `[~]` **10** · `[ ]` **40**
+**Conteo de tareas:** total **378** · `[x]` **328** · `[~]` **10** · `[ ]` **40**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13217,6 +13217,248 @@ esa ficha vaya en la tercera tanda y no antes. Ninguna otra ficha del bloque sal
   divergencia era real y el arreglo vale —el próximo permiso que se desincronice puede gatear algo
   que sí se pinte, y ya no podrá—, pero el daño concreto que se le atribuyó **no existía**.
 ---
+
+## BLOQUE VII · REFORMA VISUAL — las tres superficies, ya cerrada
+
+**Por qué existe este bloque, y por qué llega entero en `[x]`.** La auditoría UI/UX del
+**2026-09-06** ([`design/INFORME-UIUX.md`](design/INFORME-UIUX.md), plan en
+[`design/PLAN-REFORMA-VISUAL.md`](design/PLAN-REFORMA-VISUAL.md)) midió las tres superficies del
+producto —consola SOC, app móvil y panel LAN del gabinete— y sacó 47 hallazgos. Su plan decidió
+**no** insertar las fichas aquí mientras se ejecutaban, para no mover el backlog con 31 tareas que
+iban a durar cuatro días. Se ejecutaron entre el 6 y el 10 de septiembre y **se cerraron todas**.
+Este bloque las trae ahora, cerradas, porque un backlog que no sabe que algo ocurrió acaba
+proponiéndolo otra vez.
+
+**Qué ordenaba, y en qué se distingue del Bloque VI.** Aquél ordena *no afirmar lo que nadie
+acreditó*; éste ordena *que la pantalla diga lo que el sistema sabe, y que se lea*. Se repartió en
+tres tandas por consecuencia y no por gusto: lo que impide presentar (11 fichas), lo que mejora la
+venta (15) y lo que es gusto (5). Dos más salieron de la propia ejecución —`T-6.32` y `T-6.33`—,
+que es lo que suele pasar cuando cada ficha se mide en vez de darse por entendida.
+
+**Todas las dependencias del bloque son internas** (`T-6.19` y `T-6.29` esperaban a `T-6.17`;
+`T-6.13` a `T-6.12`) y ninguna esperó a una persona ni a una ventana de AWS. La única relación
+hacia fuera se escribe aquí para que se vea al planificar: `T-6.06` deja preparados los vacíos con
+su causa **antes de** `T-2.87` y `T-2.89`, que son quienes activarán el alcance por rol; no la
+bloquean ni la bloqueó.
+
+**Lo que este bloque NO cerró**, y de quién es: el gabinete de Puebla sirve una release anterior a
+los commits de marca, y eso se arregla desplegando el edge antes de la próxima demo; y las capturas
+en vivo de las pantallas de crisis del móvil esperan una corrida de `make cloud-staging-incident`,
+que es una acción hacia afuera. Los dos están escritos en el apartado de cierre del plan.
+
+## Fase 6.0 · Reforma visual — que la pantalla diga lo que el sistema sabe
+
+> **De dónde sale esta fase.** De la auditoría del **2026-09-06**
+> ([`design/INFORME-UIUX.md`](design/INFORME-UIUX.md)). 47 ítems sobre tres superficies con
+> licencia distinta: consola AMPLIA, móvil MEDIA y panel del gabinete ESTRECHA —el panel se audita
+> contra su propia especificación, no se reimagina.
+>
+> **El criterio de cierre no fue «implementado».** Cada ficha exigía las tres cosas: implementado,
+> con test, **y ejercido al menos una vez fuera de los tests** — en un navegador de verdad, en el
+> Pixel 8 Pro real o contra el gabinete simulado. Por eso varias fichas contradicen su propia
+> premisa: al medir, el defecto resultó ser otro.
+>
+> **Cerrada entera el 2026-09-10.** El detalle de cada una —qué se midió, con qué número y qué
+> trampa costó una corrida— vive en su ficha del plan; aquí queda el registro.
+
+
+### [x] T-6.01 · La escena vive en el shell: alerta, simulacro, mantenimiento y demo en las seis pantallas — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 1. Una tabla `SCENE_PRECEDENCE` (alerta real > simulacro > mantenimiento > demo > normal) en el mismo espíritu que `STATE_PRECEDENCE`, una franja de una línea en el shell que la pinta en las seis rutas, y un censo que impida a cualquier pantalla decidir la escena por su cuenta. La excepción escrita se conserva: el mantenimiento **no** se degrada bajo alerta.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.01.
+
+### [x] T-6.02 · Ningún distintivo afirma lo que la consola no sabe; ningún enlace promete lo que el rol no tiene — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 1. Retirar el distintivo o respaldarlo con un dato real del token (`iss` del pool); condicionar el enlace a `allowed_routes`; dar `title` a todo botón apagado.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.02.
+
+### [x] T-6.03 · Dar de alta un sitio dice y elige en qué cliente se escribe — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 1. Para roles internos, un selector de cliente en el alta de estación con rótulo permanente «escribiendo en …»; para roles de tenant, el rótulo solo.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.03.
+
+### [x] T-6.04 · La marca DEMO llega a todo lo que pinta un sitio — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 1. Una sola función, consumida por todos: donde hay un sitio simulado hay cinta, con la misma forma en el mapa, la flota, la cola, el triage, el detalle y los KPI.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.04.
+
+### [x] T-6.05 · El gate del LOGIN DEV lo lee un test bloqueante — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 1. Que un `true` tecleado en el Dockerfile, o un `ARG` homónimo añadido de buena fe, pongan el job `web` en rojo; y que el e2e desplegado asercione la ausencia del texto «LOGIN DEV» en el DOM de la entrada.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.05.
+
+### [x] T-6.06 · Los vacíos dicen la causa real; la cola declara `error` y `stale`; ninguna caja en blanco — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 2. Que el vacío diga si es por tenant o por alcance, derivado de `useSiteScope()`; que la cola tenga sus cuatro estados; que ningún `emptyText` esté vacío.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.06.
+
+### [x] T-6.07 · El arranque no tiene silencios — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 2. Una marca de arranque en el HTML con la marca; un splash con `role="status"` que a partir del umbral dice qué espera; la landing que declara «su sesión expiró» cuando esa es la causa; cero texto de ingeniero.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.07.
+
+### [x] T-6.08 · El login se ve TAKAB — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola (+ terraform) · tanda 2. Logo del paquete de marca y hoja CSS generada desde los tokens para los dos pools (consola y ocupantes), sabiendo antes si el pool está en Hosted UI clásico o en «managed login» (el repo no lo declara).
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.08.
+
+### [x] T-6.09 · Contraste AA donde hay texto, y forma donde solo había color — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 2. Cero nodos `color-contrast` en las seis pantallas con datos sembrados; un glifo propio para `watch` en el mapa; `/building` en `axe.spec`; `color-contrast` como regla observada por pantalla y bloqueante donde ya está en cero.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.09.
+
+### [x] T-6.10 · Movimiento honesto: se detiene, se declara y se apaga — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 2. Bajo reducción no queda ninguna transición viva; todo latido late por edad del dato y se congela al envejecer; una fila nueva se anuncia con rótulo `NUEVO` (portador) y entrada del contenedor con el dato ya pintado; el banner de simulacro gana una trama de galones que deriva mientras la lectura es fresca y se congela al retenerse; `transition: all` enumera propiedades; las duraciones usan el token.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.10.
+
+### [x] T-6.11 · El aviso de privacidad es una franja, no un panel — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 2. Una sola línea con el rótulo, la versión y dos acciones; el texto largo en el modal que ya existe. Sigue siendo no bloqueante y no modal (`T-2.79`).
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.11.
+
+### [x] T-6.12 · El dato es lo más grande de cada pantalla — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 3. Títulos de pantalla en un escalón menor que la métrica principal; el mismo KPI con el mismo token en todas las pantallas; ningún tamaño por debajo del piso ni escrito inline; el prefijo de estado del banner de simulacro (ARMADO / EN CURSO) en el escalón legible a distancia, sin robar alto al mapa.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.12.
+
+### [x] T-6.13 · Una tabla, una tarjeta, un botón — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 3. `Table`, `Card` y `Button` en `components/` con contrato; las tres tablas fuera de `.soc-table` migradas una por sesión; el cálculo de stale extraído a una función única.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.13.
+
+### [x] T-6.14 · El flujo alerta → dictamen no pierde el contexto — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 2. Volver al riel al terminar en triage (o abrir el dictamen sin abandonar `/console`), desarmar la comparativa al apagar el histórico y declararla mientras está armada, y una entrada a la ficha del edificio desde `SiteCard` y desde el triage.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.14.
+
+### [x] T-6.15 · La consola no depende de internet para su fuente ni para su mapa — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · tanda 3. JetBrains Mono alojada como ya lo está Geist; un estado declarado del mapa cuando los tiles no llegan (nunca un lienzo vacío); un nombre de token para la marca distinto del cian de estado.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.15.
+
+### [x] T-6.16 · El reporte de simulacro se puede entregar a Protección Civil — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Costura · tanda 2. Cabecera con el nombre del cliente y del sitio, línea de cierre (`stop_reason` legible: manual, ventana cumplida, cancelado, abortado por alerta real) y, por cada sitio sin acuse, la causa que la consola ya conoce.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.16.
+
+### [x] T-6.17 · El rechazo y el aborto de un simulacro viajan a la nube y a las superficies — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Costura · tanda 1. Que la nube sepa, por acuse del gabinete, si el simulacro está sonando, fue rechazado o fue abortado, y que `MobileDrillOut` y `DrillOut` lo expongan.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.17.
+
+### [x] T-6.18 · Los dos arneses vuelven a ejercer lo que prometen — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Costura · tanda 2. Que cada corrida del sembrador use un incidente fresco (y limpie el anterior) y que el SOC local entregue los comandos firmados al gabinete simulado.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.18.
+
+### [x] T-6.19 · La franja de simulacro dice la verdad, en todas las pestañas y para el brigadista — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 1. La franja distingue «SIMULACRO EN CURSO» (al menos un gabinete acusó) de «SIMULACRO ANUNCIADO · ningún gabinete lo ejecuta» (todos rechazados o sin comando); vive en el layout de las dos pestañeras, no en INICIO; el brigadista la ve encima de su panel junto con el modo demostración; la forma la separa de la franja de reingreso (regla lateral gruesa y glifo, no relleno sólido) y ninguna de las dos depende del matiz. Sin bucles de animación: una entrada y una salida, ninguna si `reduceMotion`.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.19.
+
+### [x] T-6.20 · Todo objetivo táctil de una pantalla de vida cumple el mínimo — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 1. Ningún control por debajo del mínimo; el botón de pánico anclado al tercio inferior (cambio de posición, no de paso del flujo; si el revisor lo considera reordenamiento, va a ficha propia).
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.20.
+
+### [x] T-6.21 · Las pantallas de crisis y alarma salen del token — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 2. Cero literales en `mobile/src`; la paridad web ↔ móvil deja de ser cierta solo en `theme.ts`.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.21.
+
+### [x] T-6.22 · Las pestañas del brigadista siguen a sus acciones — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 2. Pestañas derivadas de `allowed_actions`, nunca de una lista por rol; RUTAS y DIRECTORIO disponibles al táctico.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.22.
+
+### [x] T-6.23 · Volver del fondo refresca; la crisis no espera al tic — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 2. `AppState` → `focusManager` para que traer la app al frente refresque al instante; entrada del **contenedor** de crisis con el dato pintado en el primer frame (permitido por el principio 2), sin transición bajo `reduceMotion`.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.23.
+
+### [x] T-6.24 · El dato retenido del ocupante se ve — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 2. La franja retenida respeta el área segura; la tarjeta de estado retenida cambia de tono (borde y rótulo en retenido, no verde vivo) y dice desde cuándo; el texto sigue siendo el portador.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.24.
+
+### [x] T-6.25 · Movimiento móvil: se consulta la preferencia, el hold tiene portador, el panel late y se detiene — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 3. Un hook de movimiento reducido equivalente al de la consola; el hold de pánico cuenta en texto («MANTENGA · 2 · 1 · CONFIRMADO»); el panel táctico late mientras llegan frames y se congela cuando envejecen, con el pill LIVE / SIN CANAL como portador. Nada en `CrisisView`.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.25.
+
+### [x] T-6.26 · Ningún identificador crudo en pantalla; el prompt cuenta lo que hay — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Móvil · tanda 3. Un diccionario de veredictos legibles compartido con la consola (que ya los rotula); el prompt corregido a 21.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.26.
+
+### [x] T-6.27 · CONSOLA sin pliegue a 1080p; CAMPO con ondas legibles — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Panel · tanda 1. Acotar la bitácora y las filas de la columna derecha para que el documento quepa en la resolución objetivo; en CAMPO, subir el mínimo de la fila de ondas o mover la nota al rótulo superior cuando el carril no dé para las dos. Ni un cambio de jerarquía, color ni texto.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.27.
+
+### [x] T-6.28 · Las escenas de demostración no afirman lo que el gabinete no puede hacer; el checklist dice lo que hay — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Panel · tanda 1. `simulacro` sin `siren_sounding`; `prueba_actuadores` se conserva como prueba terminada y gana una hermana `_en_curso` con `siren_reason:'test'` para el banner cian; la escena demo del simulacro deja de usar `elapsed_s`/`total_s`; `?mode=` valida contra las tres densidades; el checklist se extiende a las 13 escenas y describe la tarjeta de resultado. **Decisión de producto pendiente** (registrar en `DECISIONES-MAURICIO.md`): si un voceo por jack debe reflejarse en la línea de estado y con qué palabra, porque hoy «SONANDO» significa relé.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.28.
+
+### [x] T-6.29 · El panel pinta el aborto cuando ocurre — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Panel · tanda 1. Leer `st.drill.aborted` y `abort_reason`; el banner ámbar pasa a «SIMULACRO ABORTADO — …» con la razón y se mantiene un tiempo declarado bajo la alerta real, sin tapar nada de la precedencia §9.1. Sin animación.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.29.
+
+### [x] T-6.30 · El pulso de vida se pinta y se detiene — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Panel · tanda 2. Dar fondo al halo con el color del punto y aplicar `tk-pulse` solo con `conn.kind === 'live'`. Sin keyframes nuevos; `prefers-reduced-motion` ya lo apaga; el texto «PANEL EN VIVO» / «DATO RETENIDO DESDE …» porta el mismo estado.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.30.
+
+### [x] T-6.31 · Variables que existen; MURO que se lee entero — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Panel · tanda 2. Usar los tokens que existen; en `:1188` conmutar la clase con `classList.toggle` en vez de reasignar `className`; en `body.mode-muro`, dos reglas para `.relay .rl` y `.relay .re`, sin tocar CONSOLA ni CAMPO.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.31.
+
+### [x] T-6.32 · El mapa aguanta en un portátil de 900 px de alto — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Consola · abierta al ejecutar. Que `.soc-stage` pase de 400 px en toda la matriz de viewports, no sólo en 1280×800 y 1920×1080.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.32.
+
+### [x] T-6.33 · El dictamen firmado lleva la marca, en positivo — `SOFTWARE` · **CERRADA 2026-09-10**
+
+> Costura (API) · abierta al ejecutar. Que el único papel blanco que el producto entrega firmado lleve el logotipo, y que el nombre siga siendo texto extraíble.
+>
+> Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.33.
 
 ## RUTA CRÍTICA
 
