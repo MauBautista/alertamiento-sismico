@@ -594,11 +594,11 @@ def test_resumen_dice_que_no_acredita_cuando_se_saltan_todos(
     resumen_gate_hardware: Callable[..., str],
 ) -> None:
     linea = resumen_gate_hardware(
-        total=5, seleccionados=5, saltados=5, endpoint="192.168.3.92:18000"
+        total=5, seleccionados=5, saltados=5, endpoint="192.168.1.107:18000"
     )
     assert linea == (
         "GATE #3 (hardware): 5/5 tests SALTADOS — Shake no alcanzable en "
-        "192.168.3.92:18000. Esta suite NO acredita el gate #3."
+        "192.168.1.107:18000. Esta suite NO acredita el gate #3."
     )
 
 
@@ -613,7 +613,7 @@ def test_resumen_intermedio_lo_dice_tal_cual(
     resumen_gate_hardware: Callable[..., str],
 ) -> None:
     linea = resumen_gate_hardware(
-        total=5, seleccionados=5, saltados=2, endpoint="192.168.3.92:18000"
+        total=5, seleccionados=5, saltados=2, endpoint="192.168.1.107:18000"
     )
     assert "2/5 SALTADOS" in linea
     assert "3/5 ejecutados" in linea
@@ -790,7 +790,7 @@ def test_el_mismo_motivo_en_otro_archivo_no_esta_declarado(
     censo no reconozca deja el censo mudo — pero el skip sigue apareciendo en los
     reportes, y ahí no hay sintaxis que valga.
     """
-    motivo = "Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)"
+    motivo = "Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)"
     stats = {
         "skipped": [
             _ReporteFalso(
@@ -806,7 +806,7 @@ def test_el_mismo_motivo_en_otro_archivo_no_esta_declarado(
 def test_los_skips_declarados_no_ensucian(
     skips_huerfanos: Callable[[dict[str, list]], list[tuple[str, str]]],
 ) -> None:
-    sin_shake = "Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)"
+    sin_shake = "Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)"
     stats = {
         "skipped": [
             _ReporteFalso(
@@ -842,7 +842,7 @@ def test_el_veredicto_no_depende_de_si_el_shake_responde(
     Lo declarado PUEDE saltarse, no TIENE que saltarse. Por eso no se compara contra
     un número esperado de skips: eso sí dependería del hardware.
     """
-    motivo = "Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)"
+    motivo = "Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)"
     sin_shake = {
         "skipped": [
             _ReporteFalso(
@@ -884,7 +884,7 @@ def test_un_test_nuevo_en_un_archivo_YA_declarado_no_hereda_el_permiso(
     Por eso la declaración del gate #3 no es (archivo, motivo) sino (archivo, motivo,
     IDS): saltarse tiene permiso; saltarse SIN estar en el registro, no.
     """
-    motivo = "Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)"
+    motivo = "Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)"
     intruso = "tests/test_signal_hardware.py::test_features_nuevo_sin_registrar"
     stats = {
         "skipped": [
@@ -913,7 +913,7 @@ def test_un_sexto_gate_en_el_archivo_declarado_rompe_el_BUILD(tmp_path: Path) ->
     (tmp_path / "test_signal_hardware.py").write_text(
         "import pytest\n"
         "\n"
-        "_MOTIVO = 'Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)'\n"
+        "_MOTIVO = 'Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)'\n"
         "\n"
         "\n"
         "def test_compute_features_on_real_packet_is_sane():\n"
@@ -941,7 +941,7 @@ def test_los_cinco_del_registro_siguen_pudiendo_saltarse(
     skips_huerfanos: Callable[[dict[str, list]], list[tuple[str, str]]],
 ) -> None:
     """(b) La declaración por ids no puede convertirse en un freno de mano."""
-    motivo = "Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)"
+    motivo = "Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)"
     stats = {
         "skipped": [
             _ReporteFalso(
@@ -983,7 +983,7 @@ def test_el_veredicto_por_ids_tampoco_depende_del_shake(
     cinco (registro ⊆ registro): mismo veredicto verde. Un sexto sin registrar rompe
     en los dos escenarios en cuanto se salta, que es cuando el gate queda mudo.
     """
-    motivo = "Raspberry Shake no alcanzable en 192.168.3.92:18000 (gate #3 hardware)"
+    motivo = "Raspberry Shake no alcanzable en 192.168.1.107:18000 (gate #3 hardware)"
     con_shake = {"passed": [_ReporteFalso(f"tests/{t}") for t in GATES_HARDWARE]}
     sin_shake = {
         "skipped": [

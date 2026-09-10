@@ -117,7 +117,7 @@ hoja de acuse no puede llegar a la rama que queremos leer.
    control solo existe para esos roles.
 2. **En el gabinete:** aserta el contacto de **alerta** del WR-1 — botón de prueba del propio
    receptor. **Sin** armar el modo prueba.
-3. **Comprueba que la alerta viaja:** el panel del gabinete (`http://192.168.3.91:8080`) debe
+3. **Comprueba que la alerta viaja:** el panel del gabinete (`http://192.168.1.105:8080`) debe
    mostrar `siren_sounding: true`, y la app debe entrar en toma de crisis.
 4. **En la app:** abre el control táctico y **silencia**. Desliza para confirmar.
 5. **Lee la hoja.** Esto es lo que se acredita.

@@ -16,7 +16,7 @@ import pytest
 from takab_edge.contracts import WaveformPacket
 from takab_edge.signal import classic_sta_lta, compute_features, integrate
 
-SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "192.168.3.92")
+SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "192.168.1.107")
 SHAKE_PORT = int(os.environ.get("TAKAB_SHAKE_PORT", "18000"))
 SHAKE_STATION = os.environ.get("TAKAB_SHAKE_STATION", "R4F74")
 
