@@ -130,7 +130,7 @@ sudo flock -n -E 9 /var/lib/takab/gpio.lock true; echo "flock=$?"   # -> 9 (toma
 > ```
 > `finished_at: None` = la prueba de ACTUADORES no ha corrido, diga lo que diga el recuerdo.
 
-Abre el panel en un navegador de la LAN: **`http://192.168.3.91:8080`** y pulsa la prueba de
+Abre el panel en un navegador de la LAN: **`http://192.168.1.105:8080`** y pulsa la prueba de
 actuadores. El resultado por relé aparece en la tarjeta «Última prueba de actuadores».
 
 > **🔊 ESTO SUENA.** La prueba local de actuación **hace sonar la sirena y destellar el estrobo** —

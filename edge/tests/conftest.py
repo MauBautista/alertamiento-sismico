@@ -161,7 +161,7 @@ _LLAMADAS_DE_RED_PUNTEADAS = frozenset(
 _MARCAS_CONDICIONALES = frozenset({"skipif", "skipIf"})
 
 #: Endpoint por defecto del Shake — los mismos valores que leen los módulos gated.
-_SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "192.168.3.92")
+_SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "192.168.1.107")
 _SHAKE_PORT = os.environ.get("TAKAB_SHAKE_PORT", "18000")
 
 _RE_ENDPOINT = re.compile(r"no alcanzable en (\S+)")
