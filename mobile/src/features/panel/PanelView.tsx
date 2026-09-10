@@ -6,22 +6,19 @@ import type { ActuatorGroup, FeatureRow, MobileSiteHealthOut } from "@takab/sdk"
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { timeAgoLabel } from "@/ui/timeAgo";
+
+import { LatidoPunto } from "./LatidoPunto";
+import { estadoPill, type LivePill } from "./livePill";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { fmtMetric, upsLabel } from "./health";
 
-export type LivePill = "ready" | "connecting" | "closed";
+// [T-6.25] El tipo y su lectura viven en `livePill.ts`: qué dice el pill
+// depende de la EDAD del último frame, no sólo del socket, y eso se prueba
+// aparte. Se reexporta para no romper a quien ya importaba el tipo de aquí.
+export type { LivePill } from "./livePill";
 
-const PILL_COLOR: Record<LivePill, string> = {
-  ready: palette.ok,
-  connecting: palette.warn,
-  closed: palette.crit,
-};
-const PILL_LABEL: Record<LivePill, string> = {
-  ready: "LIVE",
-  connecting: "RECONECTANDO…",
-  closed: "SIN CANAL LIVE",
-};
+const TONE_PILL = { ok: palette.ok, warn: palette.warn, crit: palette.crit } as const;
 
 const GROUP_COLOR = { critical: palette.crit, warning: palette.warn, ok: palette.ok } as const;
 
@@ -56,13 +53,18 @@ export function PanelView(props: {
   onOpenDictamen?: () => void;
 }) {
   const h = props.health;
+  // [T-6.25] Qué dice el pill —y si late— sale de la edad del último frame, no
+  // sólo del socket: un canal abierto por el que no llega nada no es un canal
+  // vivo, y esta misma pantalla ya lo sabía dos tarjetas más abajo.
+  const pill = estadoPill(props.live, props.featuresAtMs, props.nowMs);
   return (
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
       <View style={styles.headerRow}>
         <Text style={styles.eyebrow}>{props.siteName.toUpperCase()} · DASHBOARD</Text>
-        <View style={[styles.pill, { borderColor: PILL_COLOR[props.live] }]}>
-          <Text style={[styles.pillText, { color: PILL_COLOR[props.live] }]} testID="live-pill">
-            {PILL_LABEL[props.live]}
+        <View style={[styles.pill, { borderColor: TONE_PILL[pill.tone] }]}>
+          <LatidoPunto color={TONE_PILL[pill.tone]} late={pill.late} />
+          <Text style={[styles.pillText, { color: TONE_PILL[pill.tone] }]} testID="live-pill">
+            {pill.label}
           </Text>
         </View>
       </View>
@@ -187,6 +189,8 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2, flexShrink: 1 },
   pill: {
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderRadius: radius.pill,
     paddingHorizontal: space[2],

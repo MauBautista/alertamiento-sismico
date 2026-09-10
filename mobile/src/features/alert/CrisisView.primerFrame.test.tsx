@@ -41,6 +41,15 @@ describe("[T-6.23] la crisis se lee desde el primer frame", () => {
     expect(v.getByText(/T\+/)).toBeTruthy();
   });
 
+  it("[T-6.25] y el CONTENEDOR tampoco: cero animaciones en `crisis.tsx`", () => {
+    // Criterio explícito de T-6.25: la ficha del movimiento móvil no toca esta
+    // pantalla. Es la única de la app donde una animación puede costar
+    // segundos de lectura a alguien que tiene que salir del edificio.
+    const ruta = readFileSync(resolve(__dirname, "..", "..", "app", "crisis.tsx"), "utf8");
+    expect(ruta).not.toMatch(/\bAnimated\b/);
+    expect(ruta).not.toMatch(/useSharedValue|withTiming|withSpring|entering=/);
+  });
+
   it("y el camino de lectura no anima nada por su cuenta", () => {
     // Si mañana alguien mete una entrada a la vista —en vez de al contenedor—,
     // el caso de arriba seguiría verde: `render` devuelve el árbol, no los
