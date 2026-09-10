@@ -181,6 +181,14 @@ export const tokens = {
     "3xl": v("--tk-text-3xl"),
     "4xl": v("--tk-text-4xl"),
     "5xl": v("--tk-text-5xl"),
+    /**
+     * [T-6.12] EL PISO. No es un escalón más: es el NOMBRE del más bajo, para
+     * que «¿cuál es el rótulo más pequeño que se puede pintar?» tenga respuesta
+     * y no tres. Antes convivían 8.5, 9 y 9.5 px en 64 declaraciones escritas a
+     * mano, ninguna declarada en ninguna parte. Vale lo mismo que `2xs` a
+     * propósito y `typeScale.test.ts` lo ancla: el piso no puede irse solo.
+     */
+    min: v("--tk-text-min"),
   },
   tracking: {
     tight: v("--tk-tracking-tight"),

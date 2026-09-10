@@ -165,11 +165,19 @@ export default function TriagePage() {
                 puerta anunciaba "0 INCIDENTES CARGADOS" junto al propio mensaje
                 de error. Cero incidentes tras un sismo es la afirmación más
                 tranquilizadora de esta pantalla: no se hace sin dato (G7). */}
-            <span className="soc-meta">
-              {triage.loading || triage.error !== null
-                ? "SIN DATO · HISTORIAL NO DISPONIBLE"
-                : `${triage.rows.length} INCIDENTES CARGADOS · MÁS RECIENTES PRIMERO`}
-            </span>
+            {/* [T-6.12] El dato de esta pantalla es CUÁNTOS incidentes hay, y se
+                pintaba en el rótulo de 10 px mientras el nombre de la pantalla
+                medía 26. Pasa a la misma primitiva de KPI que usan el wall y la
+                flota: la cifra en el escalón de la métrica y el rótulo en el
+                piso. La puerta de T-2.59 se conserva intacta. */}
+            {triage.loading || triage.error !== null ? (
+              <span className="soc-meta">SIN DATO · HISTORIAL NO DISPONIBLE</span>
+            ) : (
+              <div className="soc-kpi" data-testid="triage-count">
+                <span className="soc-kpi__value">{triage.rows.length}</span>
+                <span className="soc-kpi__label">INCIDENTES CARGADOS · MÁS RECIENTES PRIMERO</span>
+              </div>
+            )}
             {deepLinkMiss && (
               <span className="soc-meta triage__deeplink-miss" role="status">
                 EL INCIDENTE SOLICITADO NO ESTÁ EN LA PÁGINA CARGADA

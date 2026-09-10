@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuditRowOut } from "@takab/sdk";
@@ -85,9 +85,15 @@ describe("AuditPage · la bitácora se lee, no se toca", () => {
     expect(labels.some((l) => /BORRAR|ELIMINAR|EDITAR|NUEVO/i.test(l))).toBe(false);
   });
 
+  // [T-6.12] El recuento pasó del pie de la página a la cabecera del resultado y
+  // de un rótulo de 10 px a la primitiva de KPI (cifra + rótulo, dos elementos).
+  // Lo que defiende este test no cambia: la cifra es lo CARGADO, nunca un total
+  // inventado — la paginación es keyset y no hay COUNT que preguntar.
   it("no inventa un total: la paginación es keyset, no hay COUNT", () => {
     render(<AuditPage />);
-    expect(screen.getByText(/1 REGISTRO\(S\) CARGADO\(S\)/)).toBeTruthy();
+    const kpi = screen.getByTestId("audit-count");
+    expect(within(kpi).getByText("1")).toBeTruthy();
+    expect(within(kpi).getByText("REGISTRO(S) CARGADO(S)")).toBeTruthy();
     expect(screen.getByText("FIN DE LA BITÁCORA VISIBLE")).toBeTruthy();
   });
 });

@@ -309,7 +309,6 @@ export default function DetailPanel({
           </div>
           <span
             className={`soc-pill ${liveFresh ? "soc-pill--ok" : ""}`}
-            style={{ fontSize: 9 }}
             data-testid="features-live-pill"
           >
             <span className={`soc-dot ${liveFresh ? "soc-dot--pulse" : ""}`} />{" "}

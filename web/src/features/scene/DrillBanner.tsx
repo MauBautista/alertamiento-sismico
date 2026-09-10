@@ -162,9 +162,14 @@ function RunningBanner({
       data-testid="drill-banner"
     >
       <AlertTriangle size={16} aria-hidden />
+      {/* [T-6.12] El ESTADO se separa del detalle. Antes toda la línea iba al
+          mismo cuerpo de 12 px y «ARMADO» y «EN CURSO» sólo se distinguían a
+          distancia por el matiz —cian contra ámbar—, que es justo lo que un
+          daltónico no tiene. Ahora el estado va un escalón por encima y con su
+          propia regla; el resto de la línea no crece. */}
+      <span className="soc-drill__estado">🔶 SIMULACRO EN CURSO</span>{" "}
       <span>
-        🔶 SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL · {siteCount} SITIO(S) · {ack} · TERMINA{" "}
-        {utcClock(endsAt)} UTC
+        — ESTO NO ES UNA ALERTA REAL · {siteCount} SITIO(S) · {ack} · TERMINA {utcClock(endsAt)} UTC
       </span>
       {canStop && (
         <button
@@ -202,8 +207,9 @@ function ArmedBanner({
   return (
     <div className="soc-drill soc-drill--armed" role="status" data-testid="drill-armed">
       <CalendarClock size={16} aria-hidden />
+      <span className="soc-drill__estado">SIMULACRO ARMADO</span>{" "}
       <span>
-        SIMULACRO ARMADO · PROGRAMADO PARA {utcClock(scheduledAt)} UTC · {siteCount} SITIO(S)
+        · PROGRAMADO PARA {utcClock(scheduledAt)} UTC · {siteCount} SITIO(S)
         {note ? ` · ${note}` : ""}
       </span>
       {canAct && (

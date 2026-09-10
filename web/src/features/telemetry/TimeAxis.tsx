@@ -30,7 +30,6 @@ export default function TimeAxis({ timestamps, width }: TimeAxisProps) {
             x={Math.min(Math.max(x, 18), width - 18)}
             y="12"
             textAnchor="middle"
-            fontSize="8"
             fill="rgba(160,200,220,0.7)"
           >
             {utcClock(ts)}

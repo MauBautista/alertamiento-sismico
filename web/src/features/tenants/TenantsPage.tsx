@@ -343,11 +343,20 @@ export default function TenantsPage() {
         <div className="mt__grid">
           <nav className="mt__list" aria-label="Tenants">
             <div className="mt__list-hd">
-              <span className="soc-meta">
-                {search.trim() === ""
-                  ? `${data.tenants.length} TENANT(S) VISIBLES`
-                  : `MOSTRANDO ${visibleTenants.length} DE ${data.tenants.length}`}
-              </span>
+              {/* [T-6.12] Misma primitiva que el wall y la flota: la cifra manda
+                  y el rótulo explica. El recorte de la búsqueda se sigue
+                  DECLARANDO —un contador que baja sin decir por qué es un dato
+                  falso (la regla de `KpiStrip`)—, ahora dentro del propio KPI. */}
+              <div className="soc-kpi" data-testid="tenant-count">
+                <span className="soc-kpi__value">
+                  {search.trim() === ""
+                    ? data.tenants.length
+                    : `${visibleTenants.length} DE ${data.tenants.length}`}
+                </span>
+                <span className="soc-kpi__label">
+                  {search.trim() === "" ? "TENANT(S) VISIBLES" : "TENANT(S) TRAS LA BÚSQUEDA"}
+                </span>
+              </div>
               {canManageTenants && (
                 <button
                   type="button"
