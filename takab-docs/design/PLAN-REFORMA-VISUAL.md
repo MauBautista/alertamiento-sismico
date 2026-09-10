@@ -1437,7 +1437,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     con `top: 42`, que es lo que devuelve el Pixel 8 Pro de verdad: así un test que mida posiciones
     mide algo parecido a lo que se ve.
 
-### [ ] T-6.25 · **Movimiento móvil: se consulta la preferencia, el hold tiene portador, el panel late y se detiene** — `SOFTWARE`
+### [x] T-6.25 · **Movimiento móvil: se consulta la preferencia, el hold tiene portador, el panel late y se detiene** — `SOFTWARE`
 
 > `AccessibilityInfo.isReduceMotionEnabled` no se consulta en ninguna parte; el relleno del hold
 > de pánico es el único estado que vive solo en el movimiento; el panel táctico ya dice «Frame
@@ -1451,9 +1451,37 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** un hook de movimiento reducido equivalente al de la consola; el hold de pánico cuenta en texto («MANTENGA · 2 · 1 · CONFIRMADO»); el panel táctico late mientras llegan frames y se congela cuando envejecen, con el pill LIVE / SIN CANAL como portador. Nada en `CrisisView`.
 - **Criterios de aceptación:**
-  - [ ] Con movimiento reducido activo, el hold sigue siendo usable por su cuenta textual.
-  - [ ] El latido del panel se detiene al superar el umbral de edad y el pill lo dice.
-  - [ ] Cero animaciones nuevas en `crisis.tsx` ni `CrisisView.tsx`.
+  - [x] Con movimiento reducido activo, el hold sigue siendo usable por su cuenta textual.
+  - [x] El latido del panel se detiene al superar el umbral de edad y el pill lo dice.
+  - [x] Cero animaciones nuevas en `crisis.tsx` ni `CrisisView.tsx`.
+- **Cómo se cerró (2026-09-10, SESIÓN M7):**
+  - **Dos premisas de la ficha habían caducado, y conviene decirlo.** `useReduceMotion` ya existía
+    —lo trajo `T-6.19`—, sólo que lo miraba una sola superficie; y el token de latido tampoco hay
+    que estrenarlo: `--tk-dur-pulse` entró con `T-6.10` para el halo de la consola, y el latido del
+    panel táctico es el MISMO hecho en la otra superficie. Dos tokens para el mismo período serían
+    dos ritmos que divergen.
+  - **El hold de pánico tenía un defecto más grave que el que la ficha fichaba.** No es sólo que el
+    relleno fuera el único portador: **la confirmación colgaba del callback de la animación**. Una
+    animación no es un reloj —el sistema puede recortarla, y con la reducción puesta lo correcto es
+    no animar— así que el voto de pánico dependía de la decoración. Ahora manda un temporizador, la
+    barra acompaña, y el texto cuenta: `MANTENGA · 2 · 1 · CONFIRMADO`. Con reducción activa el hold
+    **tarda exactamente lo mismo** (la protección anti-accidente no se acorta) y la cuenta sigue.
+  - **El pill del panel afirmaba «LIVE» sobre un canal mudo.** Salía del estado del socket y nada
+    más, mientras la misma pantalla imprimía «Frame recibido hace X» dos tarjetas más abajo: dos
+    afirmaciones sobre el mismo hecho, y la grande era la optimista. Ahora la lectura vive en
+    `livePill.ts` y depende de la EDAD del último frame — con el umbral en **5 s**, que son cinco
+    frames de 1 s: bastante para no parpadear con el jitter de una red móvil y poco para que «LIVE»
+    siga queriendo decir algo. Y distingue lo que no es lo mismo: `CANAL ABIERTO · SIN FRAMES`
+    (jamás llegó uno) frente a `LIVE · SIN FRAMES RECIENTES` (llegó y envejeció).
+  - **Con movimiento reducido el punto se queda quieto y ENCENDIDO.** Apagarlo sería perder el
+    estado, no respetarlo; el portador es el rótulo del pill.
+  - **La crisis no se toca, y hay guarda.** El barrido de `T-6.23` sobre `CrisisView.tsx` se extiende
+    a `crisis.tsx`: es la única pantalla de la app donde una animación puede costarle segundos de
+    lectura a alguien que tiene que salir del edificio.
+  - **Ejercido en el Pixel:** el hold, con sesión de ocupante real — a mitad del mantenido la
+    pantalla escribe `MANTENGA · 1` bajo el rótulo, con el relleno por la mitad. El latido del panel
+    queda probado en tests (`livePill` + `LatidoPunto`) y **no se capturó en el teléfono**: vive en
+    el perfil táctico, cuyo login exige un TOTP que teclea una persona.
 
 ### [ ] T-6.26 · **Ningún identificador crudo en pantalla; el prompt cuenta lo que hay** — `SOFTWARE`
 

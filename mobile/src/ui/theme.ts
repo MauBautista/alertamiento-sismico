@@ -33,6 +33,16 @@ export const emergency = {
   veil: tokens.color.emergency.veil,
 } as const;
 
+/**
+ * [T-6.25] El PERÍODO del latido de dato vivo. No se estrena token: `--tk-dur-pulse`
+ * ya existe en el paquete desde T-6.10 —lo usa el halo de la consola— y el
+ * latido del panel táctico es exactamente el mismo hecho en la otra superficie.
+ * Un segundo token para el mismo período serían dos ritmos que divergen.
+ */
+export const motion = {
+  pulseMs: toNumber(tokens.motion.durPulse),
+} as const;
+
 export const fontSize = {
   /** [T-6.22] 10 px. Ya existía en el paquete (`--tk-text-2xs`) y el tema móvil
    *  no lo exponía; lo estrena la barra TÁCTICA, que con siete pestañas tiene
