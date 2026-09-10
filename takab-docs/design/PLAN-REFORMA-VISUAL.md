@@ -1266,7 +1266,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - [ ] Captura antes y después de crisis, alarma y acuse: idénticas.
   - [ ] `make drift` cubre el paquete y el nuevo test móvil lo consume.
 
-### [ ] T-6.22 · **Las pestañas del brigadista siguen a sus acciones** — `SOFTWARE`
+### [x] T-6.22 · **Las pestañas del brigadista siguen a sus acciones** — `SOFTWARE`
 
 > `inspector` ve LISTA sin `roster_read`, `building_admin` ve TRIAGE y cámara sin
 > `damage_report_submit` ni `evidence_upload`; el táctico no tiene RUTAS ni DIRECTORIO, que RBAC
@@ -1280,8 +1280,44 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** pestañas derivadas de `allowed_actions`, nunca de una lista por rol; RUTAS y DIRECTORIO disponibles al táctico.
 - **Criterios de aceptación:**
-  - [ ] `inspector` no ve LISTA; `building_admin` no ve TRIAGE; ambos ven RUTAS y DIRECTORIO.
-  - [ ] Un test cruza las pestañas visibles con la matriz de RBAC para los cuatro roles tácticos.
+  - [x] `inspector` no ve LISTA; `building_admin` no ve TRIAGE; ambos ven RUTAS y DIRECTORIO.
+  - [x] Un test cruza las pestañas visibles con la matriz de RBAC para los cuatro roles tácticos.
+- **Cómo se cerró (2026-09-10, SESIÓN M4):**
+  - **La pestaña cuelga de la acción, y cada una DECLARA de cuál.** El layout enumeraba cinco
+    pantallas iguales para los cuatro roles y el reparto no era el de RBAC. Ahora sale de
+    `auth/pestanasTacticas.ts`, donde `requiere: null` no significa «sin gate» sino «de todo el
+    perfil, y alguien lo escribió» — sin esa obligación, la pestaña siguiente entra sin gate y nadie
+    lo nota, que es justo como llegaron aquí LISTA y TRIAGE. Default-deny: sin `allowed_actions` sólo
+    quedan las incondicionales, porque lo contrario es la pestaña que aparece cuando llega `/me` y
+    para entonces el táctico ya pulsó.
+  - **El cruce con RBAC no copia la matriz: la lee.** `tabs-tacticas-rbac.test.ts` carga
+    `shared/fixtures/rbac-matrix.json` —que `export_rbac_matrix.py` genera de `auth/matrix.py` y
+    `make drift` vigila— y compara pestaña a pestaña para los cuatro roles. Si mañana el inspector
+    gana `roster_read` en el servidor, la pestaña aparece y el test sigue verde sin tocar nada.
+  - **RUTAS y DIRECTORIO son EL MISMO módulo que los del ocupante**, no una copia:
+    `export { default } from "../(occupant)/rutas"`. Se probó primero a extraerlos a `@/features/…`
+    y **se revirtió con razón medida**: `screenStateCensus` decide si una ruta «posee dato de
+    servidor» mirando sólo el fichero de la ruta, así que mover el cuerpo fuera hacía desaparecer la
+    exigencia de declarar los cuatro estados — un agujero silencioso en una guarda compartida. Un
+    test nuevo exige que esos dos ficheros sigan siendo **una sola línea**.
+  - **Y el agujero queda escrito, no cerrado a medias.** Enseñarle al censo que renderizar una
+    productora es invocarla es correcto, pero arrastra a la población `_layout.tsx` (excluible: un
+    layout es marco, no pantalla) **y CUENTA**, que lleva `empty={false}` a fuego porque una sesión
+    autenticada siempre tiene perfil. Probarle un vacío que no puede tener sería fabricarlo: es otra
+    ficha.
+  - **Medido en el Pixel 8 Pro, y tres veces, porque las dos primeras me dieron la razón equivocada.**
+    Con siete pestañas cada hueco mide **64 dp** (448 dp de ancho). `uiautomator dump` decía que
+    «DIRECTORIO» ocupaba 54 dp y cabía; **la captura decía «DIRECTO…»** — el volcado devuelve el
+    texto, no lo pintado. Bajar sólo el tracking a 0.4 tampoco bastó. Entra con el cuerpo al `2xs`
+    (10 px) que **ya existía en el paquete** y el tema móvil no exponía: no es un token nuevo. El
+    objetivo táctil no se toca — **64 × 48.7 dp** por pestaña, sobre el mínimo de 48 de T-6.20.
+  - **Ejercido con sesión real:** brigadista dentro (TOTP tecleado por una persona; Maestro no lo
+    genera), las siete pestañas a la vista, y RUTAS y DIRECTORIO abriendo y **declarando su vacío**
+    («Su edificio aún no publica rutas ni manuales.») en vez de una pantalla en blanco.
+  - **Lo que NO se pudo ejercer en el teléfono, y por qué:** el reparto por rol. El único usuario
+    táctico sembrado es **brigadista**, que tiene las dos acciones; `inspector` y `building_admin` no
+    existen todavía ([`PENDIENTES-MAURICIO §2.6`](../PENDIENTES-MAURICIO.md)). Esa mitad la sostiene
+    el cruce con la matriz, no una captura.
 
 ### [ ] T-6.23 · **Volver del fondo refresca; la crisis no espera al tic** — `SOFTWARE`
 
