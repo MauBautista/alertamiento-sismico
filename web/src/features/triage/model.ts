@@ -19,6 +19,14 @@ export type DictamenStatus =
 
 export type VerdictKind = "ok" | "warn" | "crit";
 
+/**
+ * [T-6.26] El REGISTRO DEL OPERADOR de los cuatro veredictos. La fuente de
+ * verdad es `shared/glossary/dictamen.json`, que trae también el registro del
+ * OCUPANTE —`inhabit_monitor` no significa nada para quien sólo quiere saber si
+ * puede volver a su casa, y la app se lo dice de otra forma—. Los dos registros
+ * son legítimos; lo que no lo es es que cada pantalla se invente el suyo.
+ * `model.test.ts` compara esta copia contra el JSON en los dos sentidos.
+ */
 const VERDICT: Record<DictamenStatus, { label: string; kind: VerdictKind }> = {
   normal_operation: { label: "OPERACIÓN NORMAL", kind: "ok" },
   inhabit_monitor: { label: "HABITAR · MONITOREO", kind: "warn" },

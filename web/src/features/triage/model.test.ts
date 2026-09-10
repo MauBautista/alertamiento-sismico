@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import type { DictamenOut, EvidenceObject, QuorumVoteOut, SeismicEventOut } from "@takab/sdk";
 
@@ -14,6 +16,7 @@ import {
   miniseedState,
   BACKFILL_WINDOW_MS,
   quorumView,
+  SIGNABLE_STATUS,
   verdictOf,
   durationOf,
   insufficientData,
@@ -417,5 +420,42 @@ describe("insufficientData (T-1.52 · basis v2)", () => {
     ).toBe(false);
     expect(insufficientData({ ...base, basis: {} } as never)).toBe(false);
     expect(insufficientData(null)).toBe(false);
+  });
+});
+
+/* =====================================================================
+   [T-6.26] LA COPIA DE LA CONSOLA CONTRA EL GLOSARIO COMPARTIDO
+   =====================================================================
+   Los mismos cuatro valores los rotulan la consola (registro del OPERADOR) y la
+   app del ocupante (registro del OCUPANTE), cada una en su build. Los dos
+   registros son legítimos; que diverjan en silencio no. La fuente es
+   `shared/glossary/dictamen.json` y esto la ata por igualdad, en los dos
+   sentidos — mismo patrón que `estadoGlosario.test.ts`. */
+describe("[T-6.26] los veredictos salen del glosario compartido", () => {
+  const glosario = JSON.parse(
+    readFileSync(resolve(process.cwd(), "..", "shared", "glossary", "dictamen.json"), "utf8"),
+  ) as {
+    orden: string[];
+    veredictos: Record<string, { operador: string; tono: string }>;
+  };
+
+  it("los cuatro status firmables son los del glosario, en su orden", () => {
+    expect([...SIGNABLE_STATUS]).toEqual(glosario.orden);
+  });
+
+  it("cada rótulo del operador es EL DEL GLOSARIO, byte a byte", () => {
+    for (const s of glosario.orden) {
+      expect(verdictOf(s).label).toBe(glosario.veredictos[s].operador);
+    }
+  });
+
+  it("y el tono también, para que el semáforo diga lo mismo en las dos superficies", () => {
+    for (const s of glosario.orden) {
+      expect(verdictOf(s).kind).toBe(glosario.veredictos[s].tono);
+    }
+  });
+
+  it("el glosario no trae ninguno que la consola no conozca", () => {
+    expect(Object.keys(glosario.veredictos).sort()).toEqual([...SIGNABLE_STATUS].sort());
   });
 });

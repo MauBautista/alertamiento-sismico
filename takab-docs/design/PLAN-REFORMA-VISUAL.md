@@ -1483,7 +1483,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     queda probado en tests (`livePill` + `LatidoPunto`) y **no se capturó en el teléfono**: vive en
     el perfil táctico, cuyo login exige un TOTP que teclea una persona.
 
-### [ ] T-6.26 · **Ningún identificador crudo en pantalla; el prompt cuenta lo que hay** — `SOFTWARE`
+### [x] T-6.26 · **Ningún identificador crudo en pantalla; el prompt cuenta lo que hay** — `SOFTWARE`
 
 > La línea de tiempo del ocupante imprime `inhabit_monitor` tras el check-in; el prompt de esta
 > auditoría cuenta 12 pantallas donde la spec declara 21.
@@ -1496,8 +1496,29 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** un diccionario de veredictos legibles compartido con la consola (que ya los rotula); el prompt corregido a 21.
 - **Criterios de aceptación:**
-  - [ ] Ningún valor de enum del dictamen llega al ocupante sin traducir.
-  - [ ] El prompt y la spec coinciden en el número de pantallas.
+  - [x] Ningún valor de enum del dictamen llega al ocupante sin traducir.
+  - [x] El prompt y la spec coinciden en el número de pantallas.
+- **Cómo se cerró (2026-09-10, SESIÓN M8):**
+  - **Había TRES juegos de rótulos para los mismos cuatro valores**, y uno de ellos era el valor
+    crudo: la consola tenía el suyo (`OPERACIÓN NORMAL`, `HABITAR · MONITOREO`…), el certificado del
+    ocupante otro (`EDIFICIO APROBADO PARA REINGRESO`…) y la línea de tiempo imprimía
+    `Firmado (inhabit_monitor)` a quien sólo quiere saber si puede volver a su casa.
+  - **Los dos registros son legítimos y por eso el glosario trae los dos.** El operador conoce el
+    vocabulario técnico y necesita el veredicto tal cual; el ocupante no. Lo que no es legítimo es
+    que cada pantalla se invente el suyo — `shared/glossary/dictamen.json` los declara juntos, con
+    su tono y si es habitable.
+  - **Copia por superficie, comprobada por igualdad EN LOS DOS SENTIDOS.** `web/` y `mobile/` son dos
+    builds distintos y ninguno puede importar el módulo del otro; es el mismo patrón —y la misma
+    razón física— que `estadoGlosario` con `estados.json`. La dirección «el glosario no trae ninguno
+    que aquí falte» es la que importa: sin ella, añadir un quinto veredicto dejaría a la app
+    enseñando el texto de reserva para siempre y en silencio.
+  - **Un status desconocido no se degrada NI se imprime crudo.** Las dos formas de fallar aquí son
+    inventarle un significado a lo que no entendemos —`normal_operation` por defecto— y enseñar el
+    identificador; la segunda era la que había. Ahora dice «DICTAMEN TÉCNICO EMITIDO», que no promete
+    nada.
+  - **Y el prompt de la auditoría contaba 12 pantallas donde la spec declara 21** desde que se
+    escribió: un encargo que cuenta mal el alcance produce una auditoría que se cree completa. Queda
+    corregido, con la razón al lado.
 
 ## 9 · Fichas · Panel LAN del gabinete
 

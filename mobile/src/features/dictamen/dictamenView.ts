@@ -4,12 +4,11 @@
 // posterior al evento" — jamás preliminar (§2.1-A); aquí no se muestra magnitud.
 import type { MobileDictamenOut } from "@takab/sdk";
 
-const STATUS_TITLE: Record<string, string> = {
-  normal_operation: "EDIFICIO APROBADO PARA REINGRESO",
-  inhabit_monitor: "REINGRESO APROBADO · BAJO MONITOREO",
-  restricted: "REINGRESO RESTRINGIDO",
-  no_inhabit_inspect: "NO HABITABLE · REQUIERE INSPECCIÓN",
-};
+import { textoOcupante } from "./veredicto";
+
+// [T-6.26] Los títulos ya no viven aquí: son los del glosario compartido
+// (`shared/glossary/dictamen.json`), y el certificado y la línea de tiempo del
+// ocupante tienen que decir lo MISMO del mismo veredicto.
 
 export type CertificateView = {
   title: string;
@@ -26,7 +25,7 @@ export function certificateView(d: MobileDictamenOut): CertificateView | null {
     return null;
   }
   return {
-    title: STATUS_TITLE[d.status ?? ""] ?? "DICTAMEN TÉCNICO",
+    title: textoOcupante(d.status),
     habitable: d.habitable,
     // Folio corto legible (el UUID completo va en el PDF).
     folio: `${d.folio.slice(0, 8).toUpperCase()}`,
