@@ -120,6 +120,10 @@ jobs:
       # (salida determinista, comparación byte a byte). Sin este paso, la consola y
       # la app móvil pueden pintar colores distintos sin que nada lo detecte — el
       # gate existía desde T-2.01 pero no lo invocaba nadie. Sin dependencias: node puro.
+      # [T-6.08] Son DOS hojas: la de custom properties de la consola y la del
+      # Hosted UI de Cognito, que lleva los colores resueltos a literales porque
+      # esa API no acepta `var()`. La segunda es la que más se puede pudrir sin
+      # que nadie lo vea: nadie abre el login de AWS al revisar un PR.
       - name: Drift gate · design-tokens
         run: npm run check
         working-directory: shared/design-tokens

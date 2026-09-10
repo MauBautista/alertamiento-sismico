@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "types": "src/index.ts",
   "scripts": {
-    "gen": "node scripts/gen-css.mjs",
-    "check": "node scripts/gen-css.mjs --check"
+    "gen": "node scripts/gen-css.mjs && node scripts/gen-cognito-css.mjs",
+    "gen:cognito": "node scripts/gen-cognito-css.mjs",
+    "check": "node scripts/gen-css.mjs --check && node scripts/gen-cognito-css.mjs --check"
   }
 }

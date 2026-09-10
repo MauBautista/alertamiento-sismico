@@ -164,6 +164,19 @@ def main() -> None:
     # aquí sería lo que diverge dentro de seis meses.
     guarda(por_alto(iso_neg, 96), RAIZ / "edge/takab_edge/local_api/isotipo.png")
 
+    print("login de Cognito (infra):")
+    # [T-6.08] El imagotipo de la pantalla del Hosted UI CLÁSICO, que Terraform
+    # sube con `aws_cognito_user_pool_ui_customization`.
+    #
+    # DOS RESTRICCIONES DE LA API, no gustos: el fichero no puede pasar de
+    # 100 KB y sólo admite PNG/JPG. 560 px de ancho es el doble del hueco real
+    # (la banda da ~350 px y la hoja generada deja el logo al 70 %), así que se
+    # ve nítido en pantalla densa y entra de sobra bajo el límite.
+    #
+    # Va el NEGATIVO porque la hoja pinta la banda con `--tk-surface-1`: sobre
+    # ese navy, el positivo desaparece.
+    guarda(por_ancho(imago_neg, 560), RAIZ / "infra/terraform/modules/identity/logo-cognito.png")
+
     print("app movil:")
     # iOS: SIN alfa (ver cabecera).
     guarda(sobre(NAVY, encaja(iso_neg, 1024, 0.62)), RAIZ / "mobile/assets/images/icon.png", rgb=True)
