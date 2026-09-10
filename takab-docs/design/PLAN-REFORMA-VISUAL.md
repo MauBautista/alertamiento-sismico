@@ -736,7 +736,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     criterios ejercidos en un navegador real sobre el build de producción (bundle cortado, scripting
     apagado, `/me` colgado y `/me` en 401), con capturas.
 
-### [ ] T-6.08 · **El login se ve TAKAB** — `SOFTWARE` + `TERRAFORM`
+### [~] T-6.08 · **El login se ve TAKAB** — `SOFTWARE` + `TERRAFORM`
 
 > No existe `aws_cognito_user_pool_ui_customization`: el operador teclea contraseña y TOTP en la
 > pantalla de fábrica de AWS, en inglés, entre dos pantallas con imagotipo TAKAB. **No se propone
@@ -750,9 +750,60 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** logo del paquete de marca y hoja CSS generada desde los tokens para los dos pools (consola y ocupantes), sabiendo antes si el pool está en Hosted UI clásico o en «managed login» (el repo no lo declara).
 - **Criterios de aceptación:**
-  - [ ] La pantalla de Cognito muestra el imagotipo y los colores de superficie, borde y acento del paquete.
-  - [ ] El CSS subido es salida de un generador; un test falla si diverge de `tokens.json`.
-  - [ ] Captura antes y después en el informe de la sesión; los textos siguen siendo los de Cognito (no se pueden cambiar) y se dice.
+  - [~] La pantalla de Cognito muestra el imagotipo y los colores de superficie, borde y acento del paquete. **Escrito y previsualizado; lo enseña el `apply`.**
+  - [x] El CSS subido es salida de un generador; un test falla si diverge de `tokens.json`.
+  - [~] Captura antes y después en el informe de la sesión; los textos siguen siendo los de Cognito (no se pueden cambiar) y se dice. **Hay previsualización local; la captura de la pantalla real es del `apply`.**
+- **Cómo va (2026-09-09, SESIÓN C8 · la primera de las dos: generador. El `apply` es de Mauricio y
+  está fichado en [`PENDIENTES-MAURICIO.md §2.3`](../PENDIENTES-MAURICIO.md)):**
+  - **La pregunta que la ficha dejaba abierta se contestó sin credenciales.** «Hosted UI clásico o
+    managed login» decide qué API viste la pantalla: la v1 se viste con `SetUICustomization` (CSS +
+    logo) y la v2 la ignora entera. Se resolvió pidiendo la propia pantalla de los dos dominios con
+    `curl`: devuelven `<title>Signin</title>` y marcado con `banner-customizable`, que es el
+    **clásico**. Y se deja de heredar: los dos dominios declaran ahora `managed_login_version = 1`,
+    porque con la v2 esta hoja se ignoraría **en silencio** y el login volvería al gris.
+  - **La lista de clases está MEDIDA, no copiada de la documentación.** `SetUICustomization` rechaza
+    la hoja ENTERA si cita una clase que no conoce, y ese rechazo llegaría en la ventana de AWS de
+    otra persona. La lista sale de la hoja que Cognito sirve
+    (`.../css/cognito-login.css`): son **quince**. Casi se quedan en trece: un barrido con
+    `\.[a-zA-Z]+-customizable` se deja fuera `passwordCheck-notValid` y `passwordCheck-valid` por el
+    guion de en medio — y son justo las dos de la pantalla de contraseña nueva, la primera que ve un
+    operador dado de alta.
+  - **El generador, y por qué tiene que serlo.** Cognito no acepta custom properties, así que la
+    hoja lleva los colores resueltos a literales. Escrita a mano son doce hexes en un fichero que
+    nadie abre: el día que la marca cambie de navy, la consola se entera y el login no.
+    `gen-cognito-css.mjs` los deriva de `tokens.json`, su `--check` entra en `npm run check` —o sea
+    en `make drift` y en el paso de CI que ya existía— y `hosted_ui_branding.tftest.hcl` cruza la
+    hoja contra el paquete **en los dos sentidos**: cada token tiene que aparecer, y cada `#rrggbb`
+    de la hoja tiene que existir en `tokens.json`. Las dos direcciones comprobadas por mutación.
+  - **La hoja sale SIN COMENTARIOS, y no es descuido.** No está verificado que la API los acepte, y
+    quien hace el `apply` es una persona con una ventana abierta: un rechazo ahí le cuesta la
+    ventana. La procedencia vive en el generador y en el terraform que la sube.
+  - **Medido antes y después, en contraste (previsualización local con la hoja real de Cognito):**
+
+    | Elemento | De fábrica | Con la hoja |
+    |---|---|---|
+    | texto del campo | 7.46 ✓ | **14.27** ✓ |
+    | rótulo de campo | 7.46 ✓ | **8.87** ✓ |
+    | botón `Sign in` | 4.56 ✓ | **7.54** ✓ |
+    | mensaje de error | **4.24 ✗** | **7.01** ✓ |
+    | contraseña válida | **2.47 ✗** | **9.59** ✓ |
+    | contraseña NO válida | 4.55 ✓ | **7.01** ✓ |
+    | descripción y texto legal | 7.46 ✓ | 5.69 ✓ |
+    | «Forgot your password?» | 4.56 ✓ | **3.51 ✗** |
+
+    **De dos fallos AA a uno**, y el que queda es el único que la API no deja alcanzar con una clase
+    pelada: `redirect-customizable` vale sólo `text-align: center` en la hoja de Cognito y el color
+    del enlace lo pone el `a` de Bootstrap. La regla se escribe igual —si la clase está en el propio
+    enlace, lo arregla—; si no, hace falta `.redirect-customizable a`, y eso se prueba **en el
+    `apply`**, donde un rechazo es barato porque hay alguien mirando. Está escrito en la ficha de
+    pendientes como lo único que hay que mirar ese día.
+  - **El logo se DERIVA, como el resto de la identidad.** `shared/brand/generar.py` emite el
+    imagotipo negativo a 560 px (42 KB; el tope duro de la API son 100 KB, y el test lo vigila).
+    Correr el generador entero no movió ningún otro byte: la derivación es determinista.
+  - **Lo que NO está hecho y por qué:** el `apply` —no hay sesión de AWS en esta máquina— y con él
+    la captura de la pantalla real. Lo que hay es una previsualización montada con la hoja que
+    Cognito sirve de verdad y el logo real; sirve para decidir antes de gastar la ventana, no para
+    afirmar cómo quedó.
 
 ### [x] T-6.09 · **Contraste AA donde hay texto, y forma donde solo había color** — `SOFTWARE`
 

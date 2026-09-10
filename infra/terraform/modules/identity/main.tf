@@ -92,9 +92,51 @@ resource "aws_cognito_user_group" "this" {
   description  = each.value
 }
 
+# [T-6.08] LA PANTALLA DONDE EL OPERADOR TECLEA LA CONTRASEÑA ES DE AWS.
+#
+# Entre dos pantallas con imagotipo TAKAB, el login era el gris de fábrica de
+# Cognito, en inglés. No se propone un formulario propio —eso mueve el segundo
+# factor fuera del pool, que es justo donde la regla de oro 8 lo quiere— sino
+# vestir el que hay.
+#
+# QUÉ EXPERIENCIA SIRVE ESTE DOMINIO, medido y no supuesto. Cognito tiene dos:
+# el Hosted UI CLÁSICO (v1), que se viste con `SetUICustomization` —CSS de una
+# lista cerrada de clases + un logo—, y `managed login` (v2), que ignora esa API
+# entera y se configura con `aws_cognito_managed_login_branding`. El módulo no
+# lo declaraba, así que el valor lo decidía el default de AWS. Comprobado el
+# 2026-09-09 pidiendo la propia pantalla de los DOS dominios sin credenciales:
+#
+#   curl -L 'https://takab-dev-<cuenta>.auth.us-east-2.amazoncognito.com/login?...'
+#
+# devuelve el HTML del clásico —`<title>Signin</title>` y marcado con
+# `banner-customizable`—, y lo mismo el de ocupantes. Así que se DECLARA la
+# versión en vez de heredarla: el día que alguien la mueva a 2 desde la consola
+# de AWS, esta hoja dejaría de aplicarse EN SILENCIO y el login volvería al gris
+# sin que nada se pusiera rojo.
+
 resource "aws_cognito_user_pool_domain" "this" {
-  domain       = "takab-dev-${var.account_id}"
+  domain                = "takab-dev-${var.account_id}"
+  user_pool_id          = aws_cognito_user_pool.this.id
+  managed_login_version = 1
+}
+
+# La hoja y el logo son SALIDA DE GENERADORES, no ficheros escritos a mano:
+# `shared/design-tokens/scripts/gen-cognito-css.mjs` resuelve los tokens a
+# literales (Cognito no acepta custom properties) y `shared/brand/generar.py`
+# deriva el imagotipo. Los dos entran en `make drift`, y
+# `tests/hosted_ui_branding.tftest.hcl` cruza la hoja contra `tokens.json`.
+#
+# Sin `client_id` la personalización es del POOL entero (`ALL`), que es lo que
+# hace falta: sobre este pool cuelgan el cliente web y el táctico móvil, y los
+# dos enseñan la misma pantalla.
+resource "aws_cognito_user_pool_ui_customization" "this" {
   user_pool_id = aws_cognito_user_pool.this.id
+  css          = file("${path.module}/cognito-hosted-ui.generated.css")
+  image_file   = filebase64("${path.module}/logo-cognito.png")
+
+  # La API exige que el dominio EXISTA antes de aceptar la personalización, y
+  # Terraform no puede inferir esa dependencia: no hay referencia entre los dos.
+  depends_on = [aws_cognito_user_pool_domain.this]
 }
 
 resource "aws_cognito_user_pool_client" "web" {
@@ -547,8 +589,20 @@ resource "aws_cognito_user_group" "occupants_occupant" {
 }
 
 resource "aws_cognito_user_pool_domain" "occupants" {
-  domain       = "takab-dev-occupants-${var.account_id}"
+  domain                = "takab-dev-occupants-${var.account_id}"
+  user_pool_id          = aws_cognito_user_pool.occupants.id
+  managed_login_version = 1
+}
+
+# [T-6.08] El ocupante entra por aquí desde la app, y es el que MENOS contexto
+# tiene para saber si esa pantalla es del edificio o de un tercero. Misma hoja y
+# mismo logo: dos pantallas de login distintas serían dos marcas.
+resource "aws_cognito_user_pool_ui_customization" "occupants" {
   user_pool_id = aws_cognito_user_pool.occupants.id
+  css          = file("${path.module}/cognito-hosted-ui.generated.css")
+  image_file   = filebase64("${path.module}/logo-cognito.png")
+
+  depends_on = [aws_cognito_user_pool_domain.occupants]
 }
 
 # App client móvil del pool de ocupantes: PKCE por deep link de la app.
