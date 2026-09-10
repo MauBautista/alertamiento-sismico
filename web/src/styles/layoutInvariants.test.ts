@@ -484,7 +484,11 @@ describe("breakpoints — los tokens mandan y las @media los citan literales", (
   });
 
   it("con poco alto se recortan paddings — el mapa no vuelve a su piso de 280 px", () => {
-    const short = mediaBody(SOC, "(max-height: 800px)");
+    // [T-6.32] El corte subió de 800 a 1000 px: cortando en 800, un portátil de
+    // 900 px de alto —el más común— no recibía NADA de este alivio y el mapa
+    // caía a 399 px con el umbral en 400. Quién es el corte y por qué, en
+    // `altoDePortatil.test.ts`.
+    const short = mediaBody(SOC, "(max-height: 1000px)");
     expect(short).not.toBe("");
     // `padding` es un atajo de hasta cuatro valores: `/padding:\s*8px/` lo
     // satisfacía `padding: 8px 40px`, que no recorta ni un píxel en horizontal.
@@ -866,7 +870,7 @@ describe("[D3] el banner de privacidad no le roba el alto a la pantalla", () => 
   it("la hoja del banner entra DESPUÉS de soc.css: sin eso la regla es letra muerta", () => {
     // La trampa de T-2.58, aplicada al revés. `.soc-app > .soc-main` (0,2,0) le
     // gana a `.soc-main` (0,1,0) por especificidad, pero la corrección de
-    // `row-gap` compite contra `@media (max-height: 800px) { .soc-main { gap } }`
+    // `row-gap` compite contra `@media (max-height: 1000px) { .soc-main { gap } }`
     // y una @media NO añade especificidad: el orden de import es parte del
     // arreglo, no un detalle de main.tsx.
     const main = readFileSync(resolve(process.cwd(), "src", "main.tsx"), "utf8");

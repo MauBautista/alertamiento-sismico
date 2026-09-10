@@ -1210,6 +1210,51 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **`--tk-brand` separa dos cosas que compartían nombre.** `--tk-cyan` es el acento **operativo** de la consola —57 selectores: pestañas, foco, selección, botones— y también era el cian de la marca, así que repintar la marca repintaba el frente P, el catálogo y el pill EDGE. El token nuevo vale lo mismo **hoy** (el censo lo ancla) y su único consumidor con color es la hoja del login de Cognito, que es la única superficie del repo donde el cian habla por la empresa y no por un estado. La hoja generada no cambió ni un byte: **no hace falta re-aplicar nada en AWS**.
   - **Censo nuevo:** `web/src/styles/sinInternet.test.ts` — ninguna hoja cita un host externo, **ningún `@import`** (que es la trampa que dejó muertas las dos importaciones), las dos familias que la consola pinta tienen `@font-face` con fichero local que existe en disco, la del dato es variable `100 800` y la licencia viaja con ella.
 
+### [x] T-6.32 · **El mapa aguanta en un portátil de 900 px de alto** — `SOFTWARE`
+
+> Ficha ABIERTA DURANTE LA EJECUCIÓN, no en la auditoría del 2026-09-06: salió de correr la
+> matriz de viewports al cerrar la tanda 3. El bloque de alivio que protege el alto del mapa
+> cortaba en 800 px, así que un portátil de 900 —el más común— no recibía nada de él y tampoco
+> tenía el aire de un 1080.
+
+- **Superficie:** Consola · **Sesión:** C32
+- **Componente:** web (`styles/soc.css`, `styles/layoutInvariants.test.ts`) · **Depende de:** nada · **Prioridad: MEDIA**
+- **Cierra:** los 3 rojos de `npm run e2e` que quedaban tras la tanda 3
+- **Tests de censo que toca:** `web/src/styles/layoutInvariants.test.ts` (cita el corte literal en dos sitios).
+- **Token nuevo:** sí — el corte de ALTO, que hasta ahora era el único número de `@media` sin token (los tres de ancho ya lo tenían).
+- **Cambia algo que un test defiende hoy:** sí — `layoutInvariants` busca el bloque por su prelude literal.
+- **Objetivo:** que `.soc-stage` pase de 400 px en toda la matriz de viewports, no sólo en 1280×800 y 1920×1080.
+- **Criterios de aceptación:**
+  - [x] `.soc-stage` por encima de 400 px en las cuatro ventanas medidas. **Medido contra `make soc-local`**, antes → después:
+
+    | ventana | topbar | KPIs | cola | **mapa** |
+    |---|---|---|---|---|
+    | 1280×800 | 52 | 59 | 137 | **438 → 438** |
+    | 1440×900 | 64 → 52 | 77 → 59 | 224 → 137 | **399 → 538** |
+    | 1600×900 | 64 → 52 | 77 → 59 | 224 → 137 | **391 → 538** |
+    | 1920×1080 | 64 | 48 | 224 | **600 → 600** (intacto) |
+
+  - [x] 1920×1080 no se mueve ni un píxel: la línea base del producto es el muro, y esto es una degradación, no un rediseño.
+  - [x] `npm run e2e` sin un solo rojo.
+- **Cómo se cerró (2026-09-10, SESIÓN 2):**
+  - **El corte de alto pasa de 800 a 1000 px y gana token**, `--tk-bp-alto-corto`. Era el único
+    número de `@media` de la hoja sin uno: los tres de ancho (`--tk-bp-md/lg/xl`) ya lo tenían y
+    los cruzaba un test, precisamente porque una custom property **no es válida en el prelude de
+    una `@media`** y el píxel tiene que ir literal.
+  - **Por qué 1000 y no 900.** 900 dejaría el corte pegado al caso que se arregla: cualquier
+    ventana de 901 px volvería al agujero. 1000 cubre la banda entera de portátil y sigue dejando
+    1080 fuera, que es donde el alivio sería un rediseño y no una degradación.
+  - **Fallaba por UN píxel** en 1440×900 y por nueve en 1600×900, que es exactamente por lo que
+    llevaba meses sin verse: quien mira una captura no distingue 399 de 401.
+  - **El precio, declarado:** en un portátil de 900 px la tira de KPIs se desplaza en horizontal en
+    vez de partirse en dos filas. Es el trato que ese bloque ya llevaba escrito desde T-2.57 —«un
+    contador cortado es peor que uno al que hay que desplazarse»—, que ahora se aplica también
+    donde hacía falta.
+  - **Censo nuevo:** `web/src/styles/altoDePortatil.test.ts` — el token trae el valor que la hoja
+    lleva escrito, la hoja declara **un solo** corte de alto (dos serían dos alivios que se pisan
+    según el orden), el corte cubre 900 y deja fuera 1080, y el bloque sigue recortando sin
+    reordenar nada.
+
 ## 8 · Fichas · App móvil
 
 ### [x] T-6.19 · **La franja de simulacro dice la verdad, en todas las pestañas y para el brigadista** — `SOFTWARE`

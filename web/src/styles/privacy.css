@@ -25,7 +25,7 @@
    El arreglo vive aquí y no en `soc.css` (hoja compartida con otro trabajo).
    Puede vivir aquí porque `main.tsx` importa esta hoja la ÚLTIMA y porque
    `.soc-app > .soc-main` (0,2,0) le gana a `.soc-main` (0,1,0) — incluso al
-   `gap` de `@media (max-height: 800px)`, ya que una @media no añade
+   `gap` de `@media (max-height: 1000px)`, ya que una @media no añade
    especificidad (la trampa de T-2.58, esta vez a favor).
 
    El `>` acota al <main> del SHELL: el <main> interno de la consola es

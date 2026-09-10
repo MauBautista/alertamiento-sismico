@@ -316,6 +316,15 @@ export const tokens = {
     md: v("--tk-bp-md"),
     lg: v("--tk-bp-lg"),
     xl: v("--tk-bp-xl"),
+    /**
+     * [T-6.32] EL CORTE DE ALTO. Los tres de arriba son de ANCHO; éste dice a
+     * partir de qué alto de ventana la consola recorta para que el mapa no baje
+     * de su piso. Cortaba en 800 px y dejaba fuera al portátil de 900 —el más
+     * común—, donde el mapa medía 399 con el umbral en 400. No es válido en el
+     * prelude de una `@media`, así que en la hoja va literal y
+     * `altoDePortatil.test.ts` cruza los dos.
+     */
+    altoCorto: v("--tk-bp-alto-corto"),
   },
   z: {
     mapOverlay: v("--tk-z-map-overlay"),
