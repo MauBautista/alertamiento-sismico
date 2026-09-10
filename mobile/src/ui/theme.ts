@@ -17,6 +17,22 @@ export const palette = {
   crit: tokens.color.status.critical,
 } as const;
 
+/**
+ * [T-6.21] LAS DOS PIELES DE EMERGENCIA A PANTALLA COMPLETA, desde el paquete.
+ *
+ * Eran 43 literales repartidos por cinco ficheros —con ámbares que no existían
+ * en `tokens.json`— y por eso las dos pantallas de VIDA eran las únicas fuera
+ * del drift gate: se podía cambiar la marca entera y no se enteraban. Se
+ * nombran por TONO y no por pantalla porque el ámbar lo comparten el repliegue
+ * sísmico y la alarma del inmueble: dos sucesos distintos con la misma piel.
+ */
+export const emergency = {
+  red: tokens.color.emergency.red,
+  amber: tokens.color.emergency.amber,
+  onDark: tokens.color.emergency.onDark,
+  veil: tokens.color.emergency.veil,
+} as const;
+
 export const fontSize = {
   /** [T-6.22] 10 px. Ya existía en el paquete (`--tk-text-2xs`) y el tema móvil
    *  no lo exponía; lo estrena la barra TÁCTICA, que con siete pestañas tiene

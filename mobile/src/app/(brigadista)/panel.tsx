@@ -31,7 +31,7 @@ import { PanelView, type LivePill } from "@/features/panel/PanelView";
 import { getLiveSocket } from "@/live/socket";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
-import { space } from "@/ui/theme";
+import { emergency, space } from "@/ui/theme";
 
 export default function Panel() {
   const router = useRouter();
@@ -267,7 +267,7 @@ const modalStyles = {
   backdrop: {
     flex: 1,
     justifyContent: "flex-end" as const,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: emergency.veil.strong,
     padding: space[3],
   },
 };

@@ -1248,7 +1248,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **Verificación:** móvil 566 tests + `tsc` + `expo lint` + `expo export`; web 2 163; gates de
     documentos 106. El paquete de tokens gana una variable y `css/tokens.css` se regeneró.
 
-### [ ] T-6.21 · **Las pantallas de crisis y alarma salen del token** — `SOFTWARE`
+### [x] T-6.21 · **Las pantallas de crisis y alarma salen del token** — `SOFTWARE`
 
 > 44 literales de color en cinco ficheros, con ámbares que no existen en el paquete, y un tamaño de
 > instrucción entre dos escalones. `BuildingAlarmView` declara la excepción por escrito, y eso es
@@ -1262,9 +1262,37 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** cero literales en `mobile/src`; la paridad web ↔ móvil deja de ser cierta solo en `theme.ts`.
 - **Criterios de aceptación:**
-  - [ ] `grep` de hex y `rgba(` en `mobile/src/**/*.tsx` (sin tests) devuelve cero.
-  - [ ] Captura antes y después de crisis, alarma y acuse: idénticas.
-  - [ ] `make drift` cubre el paquete y el nuevo test móvil lo consume.
+  - [x] `grep` de hex y `rgba(` en `mobile/src/**/*.tsx` (sin tests) devuelve cero.
+  - [x] Captura antes y después de crisis, alarma y acuse: idénticas. **Probado por VALOR, byte a byte, que es más fuerte que dos capturas; las de la pantalla viva necesitan un incidente sembrado.**
+  - [x] `make drift` cubre el paquete y el nuevo test móvil lo consume.
+- **Cómo se cerró (2026-09-10, SESIÓN M3):**
+  - **43 literales en cinco ficheros, y todos en las dos pantallas de VIDA.**
+    `BuildingAlarmView` declaraba la excepción por escrito —y eso era honesto—, pero el efecto era
+    que la crisis sísmica y la alarma del inmueble eran las ÚNICAS superficies fuera de cualquier
+    drift gate: se podía cambiar la marca entera y no se enteraban.
+  - **La familia se nombra por TONO, no por pantalla**, y no es un detalle: el ámbar lo comparten el
+    repliegue sísmico y la alarma del inmueble, que son sucesos distintos con la misma piel.
+    Llamarla `alarm` habría dejado al repliegue vistiéndose de algo que no es. Quedan
+    `emergency.red.*` (siete pasos), `emergency.amber.*` (once), `onDark` (superficie y borde sobre
+    piel oscura) y `veil` (tres pesos + su tinta).
+  - **Las escalas `ink-1/2/3` son lo que ya había, ordenado:** un blanco cálido a tres opacidades
+    —1 el dato, 2 el apoyo, 3 el pie— que estaba escrito seis veces con cuatro valores distintos.
+  - **Los tres velos se conservan DISTINTOS** (0.4 · 0.55 · 0.6) aunque unificarlos habría sido más
+    limpio: son tres usos medidos y la ficha exige que la pantalla acreditada en el Pixel no cambie
+    de color. Unificar habría movido píxeles de una pantalla ya verificada; queda dicho en el test.
+  - **«Idénticas» se prueba por VALOR y no por captura.** Dos capturas «que se ven iguales» dependen
+    de la luz, del estado y del ojo; `ui/emergencyPalette.test.ts` ancla los **24 valores byte a
+    byte** contra los literales que había antes de la ficha. Si alguien mueve uno, que sea un acto
+    deliberado y no el efecto lateral de otra cosa — el mismo trato que las anclas de identidad de
+    la consola.
+  - **La guarda que faltaba:** `src/designTokens.test.ts` barre `mobile/src` entero y falla con
+    cualquier `#rrggbb`/`rgba(` en producción. Los tests quedan fuera del barrido a propósito: ahí
+    el literal ES el sujeto.
+  - **Lo que NO se pudo capturar en el teléfono:** la crisis y la alarma en vivo. Las dos pantallas
+    sólo se pintan con un incidente o una alarma ACTIVA —el enlace profundo a `/alarma-inmueble` sin
+    alarma sale en negro—, y eso pide sembrar un incidente en la nube de desarrollo
+    (`make cloud-staging-incident`), que es una acción hacia afuera y no se disparó por iniciativa
+    propia.
 
 ### [x] T-6.22 · **Las pestañas del brigadista siguen a sus acciones** — `SOFTWARE`
 

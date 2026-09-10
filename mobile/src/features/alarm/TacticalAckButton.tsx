@@ -25,7 +25,7 @@
 // dispararía el escalado por un fallo de permisos.
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { fontSize, radius, space } from "@/ui/theme";
+import { emergency, fontSize, radius, space } from "@/ui/theme";
 
 import { AMBAR_CLARO } from "./BuildingAlarmView";
 
@@ -74,7 +74,7 @@ export function TacticalAckButton({
         testID="tactical-ack"
       >
         {enviando ? (
-          <ActivityIndicator color="#2A1A00" />
+          <ActivityIndicator color={emergency.amber.onStrip} />
         ) : (
           <Text style={styles.botonTexto}>ESTOY ATENDIENDO</Text>
         )}
@@ -103,21 +103,21 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   botonOcupado: { opacity: 0.7 },
-  botonTexto: { color: "#2A1A00", fontSize: 18, fontWeight: "800", letterSpacing: 1 },
+  botonTexto: { color: emergency.amber.onStrip, fontSize: 18, fontWeight: "800", letterSpacing: 1 },
   pie: {
-    color: "rgba(255,246,230,0.7)",
+    color: emergency.amber.ink3,
     fontSize: fontSize.xs,
     textAlign: "center",
     marginTop: space[2],
   },
   error: {
-    color: "#FF9B8A",
+    color: emergency.amber.error,
     fontSize: fontSize.xs,
     textAlign: "center",
     marginTop: space[2],
   },
   acusado: {
-    borderColor: "rgba(255,206,58,0.5)",
+    borderColor: emergency.amber.accent50,
     borderWidth: 1,
     borderRadius: radius.md,
     paddingVertical: space[3],
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
   },
   acusadoTitulo: { color: AMBAR_CLARO, fontSize: fontSize.sm, fontWeight: "800", letterSpacing: 1 },
   acusadoDetalle: {
-    color: "rgba(255,246,230,0.75)",
+    color: emergency.amber.ink2,
     fontSize: fontSize.xs,
     textAlign: "center",
     marginTop: space[1],

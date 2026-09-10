@@ -65,7 +65,7 @@ import { useQueueStore } from "@/offline/queue.store";
 import { drainQueue } from "@/offline/sync";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
-import { fontSize, palette, radius, space, touch } from "@/ui/theme";
+import { emergency, fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 /** Sin sitio vigilado no hay incidente al que atribuir la foto: se DICE. */
 const SIN_SITIO =
@@ -297,7 +297,7 @@ const styles = StyleSheet.create({
     padding: space[4],
     gap: space[2],
     alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: emergency.veil.soft,
   },
   shutter: {
     minHeight: touch.min,
@@ -330,10 +330,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: space[3],
     bottom: space[3],
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: emergency.veil.base,
     padding: space[2],
     borderRadius: radius.sm,
     gap: 2,
   },
-  watermarkText: { color: "#fff", fontSize: fontSize.xs, fontWeight: "600" },
+  watermarkText: { color: emergency.veil.ink, fontSize: fontSize.xs, fontWeight: "600" },
 });
