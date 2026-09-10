@@ -73,6 +73,60 @@ export const tokens = {
        * opuestos. Cian es la agenda.
        */
       maintenance: v("--tk-status-maintenance"),
+    },
+    /**
+     * [T-6.21] LAS DOS PIELES DE EMERGENCIA A PANTALLA COMPLETA.
+     *
+     * Vivían como 43 literales en cinco ficheros de `mobile/src` —con ámbares
+     * que no existían en el paquete— y por eso las dos pantallas de VIDA eran
+     * las únicas fuera de cualquier drift gate: se podía cambiar la marca
+     * entera y estas dos no se enteraban.
+     *
+     * Se nombran por TONO y no por pantalla a propósito: el ámbar lo comparten
+     * el repliegue sísmico y la alarma del inmueble, que son sucesos distintos
+     * con la misma piel. Los valores son los ACTUALES, byte a byte: la pantalla
+     * acreditada en el Pixel no cambia de color con esta ficha.
+     *
+     * Las escalas `ink-1/2/3` son un blanco cálido a tres opacidades —lo que
+     * había, ordenado—: 1 es el dato, 2 el apoyo, 3 el pie.
+     */
+    emergency: {
+      red: {
+        bg: v("--tk-emg-red-bg"),
+        ink: v("--tk-emg-red-ink"),
+        ink1: v("--tk-emg-red-ink-1"),
+        ink2: v("--tk-emg-red-ink-2"),
+        ink3: v("--tk-emg-red-ink-3"),
+        eyebrow: v("--tk-emg-red-eyebrow"),
+        meta: v("--tk-emg-red-meta"),
+      },
+      amber: {
+        bg: v("--tk-emg-amber-bg"),
+        strip: v("--tk-emg-amber-strip"),
+        onStrip: v("--tk-emg-amber-on-strip"),
+        accent: v("--tk-emg-amber-accent"),
+        accent50: v("--tk-emg-amber-accent-50"),
+        ink1: v("--tk-emg-amber-ink-1"),
+        ink2: v("--tk-emg-amber-ink-2"),
+        ink3: v("--tk-emg-amber-ink-3"),
+        eyebrow: v("--tk-emg-amber-eyebrow"),
+        meta: v("--tk-emg-amber-meta"),
+        error: v("--tk-emg-amber-error"),
+      },
+      /** Superficie y borde tenues SOBRE una piel oscura (píldoras, separadores). */
+      onDark: {
+        surface: v("--tk-on-dark-surface"),
+        border: v("--tk-on-dark-border"),
+      },
+      /** Velos sobre foto o vídeo. Tres pesos porque hay tres usos medidos. */
+      veil: {
+        soft: v("--tk-veil-soft"),
+        base: v("--tk-veil"),
+        strong: v("--tk-veil-strong"),
+        /** Tinta sobre un velo: blanco PURO, no `fg-1`. La marca de agua
+         *  forense se lee sobre vídeo, donde el gris del tema se apaga. */
+        ink: v("--tk-veil-ink"),
+      },
       normal15: v("--tk-status-normal-15"),
       normal08: v("--tk-status-normal-08"),
       warning15: v("--tk-status-warning-15"),

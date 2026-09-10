@@ -22,7 +22,7 @@
 import { type ReactNode } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { emergency, fontSize, palette, radius, space } from "@/ui/theme";
 
 /** Hora de reloj (HH:MM) del instante en que se ordenó la sirena.
  *
@@ -99,15 +99,15 @@ export function BuildingAlarmView({ sinceLabel, zoneName, slotAcuse }: BuildingA
   );
 }
 
-const AMBAR = "#E8A700";
+const AMBAR = emergency.amber.strip;
 /** Exportado para que el acuse (`TacticalAckButton`) no copie el hex.
  *  No sale de `@takab/design-tokens` porque el ámbar de esta pantalla no está en la
  *  paleta: es una excepción local declarada, y **una sola definición** es lo que evita
  *  que las dos mitades de la misma pantalla acaben con ámbares distintos. */
-export const AMBAR_CLARO = "#FFCE3A";
+export const AMBAR_CLARO = emergency.amber.accent;
 
 const styles = StyleSheet.create({
-  wrap: { flex: 1, backgroundColor: "#1C1404" },
+  wrap: { flex: 1, backgroundColor: emergency.amber.bg },
   strip: {
     backgroundColor: AMBAR,
     paddingTop: 56,
@@ -115,13 +115,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[4],
     alignItems: "center",
   },
-  stripEyebrow: { color: "#2A1A00", fontSize: fontSize.xs, fontWeight: "700", letterSpacing: 2 },
-  stripTitle: { color: "#2A1A00", fontSize: 24, fontWeight: "700", letterSpacing: 1, marginTop: space[1] },
+  stripEyebrow: { color: emergency.amber.onStrip, fontSize: fontSize.xs, fontWeight: "700", letterSpacing: 2 },
+  stripTitle: { color: emergency.amber.onStrip, fontSize: 24, fontWeight: "700", letterSpacing: 1, marginTop: space[1] },
   body: { flex: 1, paddingHorizontal: space[5], paddingBottom: 40, paddingTop: space[4] },
   hero: { alignItems: "center", marginTop: space[3] },
   acuse: { marginTop: space[4] },
   actionEyebrow: {
-    color: "rgba(255,240,210,0.65)",
+    color: emergency.amber.eyebrow,
     fontSize: 10,
     letterSpacing: 2,
     marginBottom: space[2],
@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   detail: {
-    color: "rgba(255,246,230,0.78)",
+    color: emergency.amber.ink2,
     fontSize: fontSize.sm,
     lineHeight: 20,
     textAlign: "center",
@@ -144,21 +144,21 @@ const styles = StyleSheet.create({
   zonePill: {
     marginTop: space[4],
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: emergency.onDark.border,
     borderRadius: radius.pill,
     paddingHorizontal: space[3],
     paddingVertical: space[1],
   },
-  zonePillText: { color: "rgba(255,246,230,0.85)", fontSize: fontSize.xs, letterSpacing: 1.5 },
+  zonePillText: { color: emergency.amber.ink1, fontSize: fontSize.xs, letterSpacing: 1.5 },
   since: {
     marginTop: "auto",
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.10)",
+    borderTopColor: emergency.onDark.surface,
     paddingTop: space[4],
   },
   sinceEyebrow: {
-    color: "rgba(255,235,190,0.7)",
+    color: emergency.amber.meta,
     fontSize: 10,
     letterSpacing: 2,
     textAlign: "center",
@@ -173,14 +173,14 @@ const styles = StyleSheet.create({
   sourcePill: {
     marginTop: space[2],
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: emergency.onDark.border,
     borderRadius: radius.pill,
     paddingHorizontal: space[3],
     paddingVertical: space[1],
   },
-  sourceText: { color: "rgba(255,246,230,0.85)", fontSize: 10, letterSpacing: 1.5 },
+  sourceText: { color: emergency.amber.ink1, fontSize: 10, letterSpacing: 1.5 },
   sourceDetail: {
-    color: "rgba(255,246,230,0.7)",
+    color: emergency.amber.ink3,
     fontSize: fontSize.xs,
     marginTop: space[1],
     textAlign: "center",

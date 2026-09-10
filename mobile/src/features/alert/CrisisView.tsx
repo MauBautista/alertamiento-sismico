@@ -4,7 +4,7 @@
 // preliminar. Presentacional puro: todo entra por props (testeable).
 import { StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { emergency, fontSize, palette, radius, space } from "@/ui/theme";
 
 import { ALERT_SOURCE_CARRIES_ETA, formatElapsed } from "./machine";
 import type { SourceLabel } from "./source";
@@ -21,29 +21,29 @@ export type CrisisViewProps = {
 const VARIANTS = {
   evacuate: {
     strip: palette.crit,
-    stripText: "#FFFFFF",
-    bg: "#160808",
+    stripText: emergency.red.ink,
+    bg: emergency.red.bg,
     instruction: "EVACÚE\nAHORA",
     detail: "Diríjase a su ruta de evacuación.\nNo use elevadores.",
-    accent: "#FFFFFF",
+    accent: emergency.red.ink,
   },
   shelter: {
-    strip: "#E8A700",
-    stripText: "#2A1A00",
-    bg: "#1C1404",
+    strip: emergency.amber.strip,
+    stripText: emergency.amber.onStrip,
+    bg: emergency.amber.bg,
     instruction: "REPLIÉGUESE",
     detail: "Diríjase a su zona de seguridad.\nAléjese de ventanas y cristales.",
-    accent: "#FFCE3A",
+    accent: emergency.amber.accent,
   },
   // Sin política de zona definida (o sin zona): la instrucción DEFAULT del MVP
   // — jamás adivinar evacuar/replegar por el teléfono.
   none: {
     strip: palette.crit,
-    stripText: "#FFFFFF",
-    bg: "#160808",
+    stripText: emergency.red.ink,
+    bg: emergency.red.bg,
     instruction: "PROTÉJASE",
     detail: "Aléjese de ventanas y objetos que puedan caer.\nSiga las indicaciones de su brigada.",
-    accent: "#FFFFFF",
+    accent: emergency.red.ink,
   },
 } as const;
 
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
   body: { flex: 1, paddingHorizontal: space[5], paddingBottom: 40, paddingTop: space[4] },
   hero: { alignItems: "center", marginTop: space[3] },
   actionEyebrow: {
-    color: "rgba(255,220,220,0.65)",
+    color: emergency.red.eyebrow,
     fontSize: 10,
     letterSpacing: 2,
     marginBottom: space[2],
@@ -114,7 +114,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   detail: {
-    color: "rgba(255,240,240,0.75)",
+    color: emergency.red.ink2,
     fontSize: fontSize.sm,
     lineHeight: 20,
     textAlign: "center",
@@ -123,27 +123,27 @@ const styles = StyleSheet.create({
   zonePill: {
     marginTop: space[4],
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: emergency.onDark.border,
     borderRadius: radius.pill,
     paddingHorizontal: space[3],
     paddingVertical: space[1],
   },
-  zonePillText: { color: "rgba(255,240,240,0.85)", fontSize: fontSize.xs, letterSpacing: 1.5 },
+  zonePillText: { color: emergency.red.ink1, fontSize: fontSize.xs, letterSpacing: 1.5 },
   elapsed: {
     marginTop: "auto",
     alignItems: "center",
     borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.10)",
+    borderTopColor: emergency.onDark.surface,
     paddingTop: space[4],
   },
   elapsedEyebrow: {
-    color: "rgba(255,200,200,0.7)",
+    color: emergency.red.meta,
     fontSize: 10,
     letterSpacing: 2,
     textAlign: "center",
   },
   elapsedValue: {
-    color: "#FFFFFF",
+    color: emergency.red.ink,
     fontSize: 48,
     fontWeight: "700",
     fontVariant: ["tabular-nums"],
@@ -152,11 +152,11 @@ const styles = StyleSheet.create({
   sourcePill: {
     marginTop: space[2],
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: emergency.onDark.border,
     borderRadius: radius.pill,
     paddingHorizontal: space[3],
     paddingVertical: space[1],
   },
-  sourceText: { color: "rgba(255,240,240,0.85)", fontSize: 10, letterSpacing: 1.5 },
-  sourceDetail: { color: "rgba(255,240,240,0.7)", fontSize: fontSize.xs, marginTop: space[1] },
+  sourceText: { color: emergency.red.ink1, fontSize: 10, letterSpacing: 1.5 },
+  sourceDetail: { color: emergency.red.ink3, fontSize: fontSize.xs, marginTop: space[1] },
 });
