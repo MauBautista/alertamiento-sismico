@@ -33,8 +33,18 @@ function vistasImportadas(texto: string, vistas = new Set<string>(), hondura = 0
   if (hondura > 4) {
     return [...vistas];
   }
+  const destinos: string[] = [];
   for (const m of texto.matchAll(/from "@\/features\/([^"]+)"/g)) {
-    const rel = `features/${m[1]}.tsx`;
+    destinos.push(`features/${m[1]}.tsx`);
+  }
+  // [T-6.22] Y una ruta que REEXPORTA otra: las dos pestañas que el táctico
+  // estrenó (`rutas`, `directorio`) son el MISMO módulo que las del ocupante,
+  // no una copia. Sin seguir el salto, este barrido las acusaría de no reservar
+  // la banda superior — cuando la reserva está donde siempre estuvo.
+  for (const m of texto.matchAll(/from "\.\.\/(\([a-z]+\)\/[a-z]+)"/g)) {
+    destinos.push(`app/${m[1]}.tsx`);
+  }
+  for (const rel of destinos) {
     if (vistas.has(rel)) {
       continue;
     }

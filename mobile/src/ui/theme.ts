@@ -18,6 +18,10 @@ export const palette = {
 } as const;
 
 export const fontSize = {
+  /** [T-6.22] 10 px. Ya existía en el paquete (`--tk-text-2xs`) y el tema móvil
+   *  no lo exponía; lo estrena la barra TÁCTICA, que con siete pestañas tiene
+   *  64 dp por hueco y a 11 px recorta «DIRECTORIO». No es un token nuevo. */
+  xxs: toNumber(tokens.fontSize["2xs"]),
   xs: toNumber(tokens.fontSize.xs),
   sm: toNumber(tokens.fontSize.sm),
   base: toNumber(tokens.fontSize.base),
