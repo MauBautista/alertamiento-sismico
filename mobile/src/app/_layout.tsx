@@ -1,10 +1,11 @@
 // Layout raíz: SDK configurado una sola vez + bootstrap de sesión desde el
 // almacén seguro + providers (TanStack Query). El tema visual sale de
 // @takab/design-tokens (misma fuente que la consola, T-2.01).
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
+import { AppState } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { bootstrapSession } from "@/auth/useAuth";
@@ -12,6 +13,7 @@ import { CrisisWatcher } from "@/features/alert/CrisisWatcher";
 import { OfflineSyncGate } from "@/offline/OfflineSyncGate";
 import { useWatchedSiteId } from "@/services/mySite";
 import { registerDeviceForPush } from "@/services/push";
+import { wireAppStateToFocus } from "@/services/appFocus";
 import { configureApiClient } from "@/services/sdk";
 import { palette } from "@/ui/theme";
 
@@ -28,6 +30,18 @@ export default function RootLayout() {
   useEffect(() => {
     void bootstrapSession();
   }, []);
+
+  // [T-6.23 · U-36] Traer la app al frente REFRESCA.
+  //
+  // `refetchOnWindowFocus` viene puesto por defecto y en React Native no se
+  // dispara nunca: no hay ventana. Sin este cable, con la push en simulado, un
+  // ocupante que abre la app porque el edificio está sonando esperaba al
+  // siguiente sondeo —30 s en reposo— para ver la toma de crisis.
+  //
+  // Va en el layout RAÍZ y una sola vez: el foco es del proceso, no de una
+  // pantalla, y suscribirlo por pantalla dispararía un refetch por cada una
+  // que estuviera montada.
+  useEffect(() => wireAppStateToFocus(AppState, focusManager), []);
 
   // [T-2.04] Registro del token push al quedar autenticado (best-effort:
   // sin permiso devuelve 'no-permission' y el onboarding 0.2 lo hace visible;
