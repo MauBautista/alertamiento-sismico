@@ -34,6 +34,14 @@ const TONE_COLOR: Record<HealthTone, string> = {
   crit: palette.crit,
 };
 
+/** `HH:MM` local — la hora en que se supo por última vez. */
+function fmtHora(epochMs: number): string {
+  return new Date(epochMs).toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function fmtFecha(iso: string): string {
   return new Date(iso).toLocaleString("es-MX", {
     day: "2-digit",
@@ -52,6 +60,17 @@ export function HomeView(props: {
   data: MobileStateOut;
   brigadistas: DirectoryEntryOut[];
   nowMs: number;
+  /**
+   * [T-6.24 · U-33] Epoch ms del dato cuando YA ES VIEJO, o `null` si es fresco.
+   *
+   * La tarjeta de estado se pintaba SIEMPRE con el tono de `site_health`, que
+   * describe el gabinete y no sabe nada de si esta lectura llegó hace un
+   * segundo o hace diez minutos. Medido con la red cortada 105 s: «SEGURO»
+   * seguía en verde vivo e intacto, y la única señal era una franja fina
+   * dibujada encima de la barra de estado de Android. El umbral estaba bien; la
+   * jerarquía no — que es exactamente lo que persigue la regla de oro 7.
+   */
+  staleSinceMs?: number | null;
   onOpenRutas: () => void;
   onOpenDirectorio: () => void;
   onOpenPanic?: () => void;
@@ -59,6 +78,12 @@ export function HomeView(props: {
   const { data } = props;
   const banner = healthBanner(data.site_health, props.nowMs);
   const chip = wr1Chip(data.site_health);
+  // Retenido MANDA sobre el tono del gabinete: un verde vivo afirma «esto es de
+  // ahora», y con el dato viejo eso es falso aunque el edificio esté bien. El
+  // texto sigue siendo el portador —el tono solo acompaña—, así que el rótulo
+  // no cambia y debajo se dice desde cuándo.
+  const retenido = props.staleSinceMs ?? null;
+  const tono = retenido !== null ? "warn" : banner.tone;
   return (
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
       <Text style={styles.eyebrow}>{data.site_name.toUpperCase()}</Text>
@@ -81,16 +106,22 @@ export function HomeView(props: {
         </View>
       ) : null}
 
-      <View
-        style={[styles.statusCard, { borderColor: TONE_COLOR[banner.tone] }]}
-      >
-        <Text
-          style={[styles.statusLabel, { color: TONE_COLOR[banner.tone] }]}
-          testID="estado"
-        >
+      <View style={[styles.statusCard, { borderColor: TONE_COLOR[tono] }]}>
+        <Text style={[styles.statusLabel, { color: TONE_COLOR[tono] }]} testID="estado">
           {banner.label}
         </Text>
         <Text style={styles.statusDetail}>{banner.detail}</Text>
+        {retenido !== null ? (
+          <Text style={styles.statusRetenido} testID="estado-retenido">
+            {/* DESDE CUÁNDO, no cuánto hace. `props.nowMs` es el instante de la
+                CONSULTA —ya viejo cuando el dato lo está—, así que una edad
+                calculada con él dice «hace segundos» mientras la franja de
+                arriba dice «hace 1 min»: dos edades del mismo hecho, y la de la
+                tarjeta siempre la más corta. Medido en el Pixel. Una hora fija
+                no puede envejecer mal. */}
+            DATO RETENIDO · desde {fmtHora(retenido)} · sin conexión
+          </Text>
+        ) : null}
         {chip ? (
           <View style={styles.chip} testID="wr1-chip">
             <Text style={styles.chipText}>{chip}</Text>
@@ -236,6 +267,13 @@ const styles = StyleSheet.create({
   },
   statusLabel: { fontSize: fontSize.xl, fontWeight: "800", letterSpacing: 2 },
   statusDetail: { color: palette.fg2, fontSize: fontSize.sm },
+  statusRetenido: {
+    color: palette.warn,
+    fontSize: fontSize.xs,
+    fontWeight: "700",
+    letterSpacing: 1,
+    marginTop: space[1],
+  },
   chip: {
     alignSelf: "flex-start",
     borderColor: palette.borderStrong,

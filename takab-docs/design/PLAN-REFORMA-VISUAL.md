@@ -1371,7 +1371,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     El cable es el que documenta TanStack para React Native y su efecto está probado arriba; lo que
     queda sin número es el milisegundo en el teléfono.
 
-### [ ] T-6.24 · **El dato retenido del ocupante se ve** — `SOFTWARE`
+### [x] T-6.24 · **El dato retenido del ocupante se ve** — `SOFTWARE`
 
 > Con WiFi y datos apagados 105 s, la única señal fue una franja fina dibujada encima de la barra
 > de estado de Android mientras «SEGURO» seguía verde e intacto. El umbral (tres sondeos perdidos)
@@ -1385,8 +1385,29 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — los tests de estados de las pantallas que afirman el literal de la franja.
 - **Objetivo:** la franja retenida respeta el área segura; la tarjeta de estado retenida cambia de tono (borde y rótulo en retenido, no verde vivo) y dice desde cuándo; el texto sigue siendo el portador.
 - **Criterios de aceptación:**
-  - [ ] Sin red 105 s, «SEGURO» no se ve verde vivo: la tarjeta declara retenido con su hora.
-  - [ ] La franja no se superpone al reloj ni a los iconos del sistema.
+  - [x] Sin red 105 s, «SEGURO» no se ve verde vivo: la tarjeta declara retenido con su hora.
+  - [x] La franja no se superpone al reloj ni a los iconos del sistema.
+- **Cómo se cerró (2026-09-10, SESIÓN M6):**
+  - **La franja se dibujaba en y=0, o sea encima del reloj de Android**, porque es el primer hijo del
+    marco y el marco es la raíz de la pantalla. Ahora consulta el inset seguro. Verificado en el
+    Pixel con la red cortada: la franja arranca bajo la barra de estado y el reloj, la batería y los
+    iconos se leen enteros.
+  - **La tarjeta pintaba SIEMPRE el tono de `site_health`**, que describe el gabinete y no sabe nada
+    de si esta lectura llegó hace un segundo o hace diez minutos. Con dato retenido pasa a ámbar
+    —borde y rótulo— y añade su línea. **El rótulo sigue diciendo SEGURO**: el edificio está bien, y
+    lo que no se puede afirmar es que eso sea de ahora; cambiarlo sería inventar un estado del
+    inmueble. El tono acompaña; el texto es el portador.
+  - **Y la captura destapó un defecto que el arreglo mismo introducía.** La primera versión ponía
+    «DATO RETENIDO · hace segundos» mientras la franja de arriba decía «hace 1 min»: dos edades del
+    mismo hecho, y la de la tarjeta siempre la más corta — porque su `nowMs` es el instante de la
+    CONSULTA, que ya es viejo justo cuando el dato lo está. Se cambia a **desde cuándo** (hora fija,
+    que es lo que pedía el criterio): una hora no puede envejecer mal. Medido después: franja «hace
+    1 min», tarjeta «desde 10:59 p.m.», reloj del teléfono 11:01. Concuerdan.
+  - **⚠️ Consultar el inset rompió 115 pruebas de golpe**: `react-native-safe-area-context` lanza si
+    nadie montó su provider, y desde que el marco lo consulta eso alcanza a todo test que renderice
+    una pantalla. Se simula el módulo en el arranque de jest —lo que recomienda la propia librería—
+    con `top: 42`, que es lo que devuelve el Pixel 8 Pro de verdad: así un test que mida posiciones
+    mide algo parecido a lo que se ve.
 
 ### [ ] T-6.25 · **Movimiento móvil: se consulta la preferencia, el hold tiene portador, el panel late y se detiene** — `SOFTWARE`
 

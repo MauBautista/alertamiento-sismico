@@ -5,6 +5,8 @@ import type { MobileStateOut } from "@takab/sdk";
 import { fireEvent, render } from "@testing-library/react-native";
 import { Linking } from "react-native";
 
+import { palette } from "@/ui/theme";
+
 import { healthBanner, wr1Chip } from "./health";
 import { HomeView } from "./HomeView";
 
@@ -174,5 +176,79 @@ describe("health — mapeo puro del estado del servidor", () => {
     expect(wr1Chip({ ...base })).toMatch(/SASMEX WR-1/);
     expect(wr1Chip({ ...base, has_wr1: false })).toBeNull();
     expect(wr1Chip({ ...base, status: "SIN ENLACE" })).toBeNull();
+  });
+});
+
+/** Color efectivo de un nodo, aplanando el array de estilos de RN. */
+function color(nodo: { props: { style?: unknown } }): string | undefined {
+  const estilos = [nodo.props.style].flat(3) as (Record<string, unknown> | undefined)[];
+  let c: string | undefined;
+  for (const e of estilos) {
+    if (e && typeof e === "object" && typeof e.color === "string") c = e.color;
+  }
+  return c;
+}
+
+describe("[T-6.24 · U-33] la tarjeta no afirma una frescura que no tiene", () => {
+  // Medido en un Pixel 8 Pro con WiFi y datos apagados 105 s: la única señal de
+  // que la lectura estaba retenida era una franja fina dibujada ENCIMA de la
+  // barra de estado de Android, mientras la tarjeta seguía diciendo SEGURO en
+  // verde e intacta. El umbral (tres sondeos perdidos) estaba bien; la
+  // jerarquía no — y eso es la regla de oro 7 en una pantalla de vida.
+  it("con dato fresco el caso sano no cambia: SEGURO en verde y sin línea de más", async () => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={state()} nowMs={NOW} {...NOOP} staleSinceMs={null} />,
+    );
+    expect(color(v.getByTestId("estado"))).toBe(palette.ok);
+    expect(v.queryByTestId("estado-retenido")).toBeNull();
+  });
+
+  it("con dato RETENIDO deja de ser verde vivo", async () => {
+    const v = await render(
+      <HomeView
+        brigadistas={[]}
+        data={state()}
+        nowMs={NOW}
+        {...NOOP}
+        staleSinceMs={NOW - 105_000}
+      />,
+    );
+    expect(color(v.getByTestId("estado"))).toBe(palette.warn);
+    expect(color(v.getByTestId("estado"))).not.toBe(palette.ok);
+  });
+
+  it("y lo DICE con desde cuándo: el tono acompaña, el texto es el portador", async () => {
+    const v = await render(
+      <HomeView
+        brigadistas={[]}
+        data={state()}
+        nowMs={NOW}
+        {...NOOP}
+        staleSinceMs={NOW - 105_000}
+      />,
+    );
+    expect(v.getByTestId("estado-retenido")).toHaveTextContent(/DATO RETENIDO/);
+    expect(v.getByTestId("estado-retenido")).toHaveTextContent(/sin conexión/);
+    // DESDE CUÁNDO (hora fija), no «hace N»: el `nowMs` de esta tarjeta es el
+    // instante de la CONSULTA, ya viejo cuando el dato lo está, así que una
+    // edad calculada con él sale más corta que la de la franja de arriba —
+    // dos edades del mismo hecho. Medido en el Pixel: «hace segundos» contra
+    // «hace 1 min».
+    expect(v.getByTestId("estado-retenido")).toHaveTextContent(/desde \d{1,2}:\d{2}/);
+  });
+
+  it("el rótulo NO miente en la otra dirección: sigue diciendo SEGURO", async () => {
+    // El edificio está bien; lo que no se puede afirmar es que eso sea de ahora.
+    // Cambiar «SEGURO» por otra cosa sería inventar un estado del inmueble.
+    const v = await render(
+      <HomeView
+        brigadistas={[]}
+        data={state()}
+        nowMs={NOW}
+        {...NOOP}
+        staleSinceMs={NOW - 600_000}
+      />,
+    );
+    expect(v.getByTestId("estado")).toHaveTextContent("SEGURO");
   });
 });
