@@ -13,6 +13,7 @@
 
 import type { NotificationJobOut } from "@takab/sdk";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import { latenciaLegible, utcStamp } from "../../lib/time";
 import { useNotifyChain } from "./useNotifyChain";
@@ -56,13 +57,7 @@ export default function NotifyChain({ incidentId }: { incidentId: string }) {
   const hay = chain.items.length > 0;
 
   return (
-    <div className="soc-card" data-testid="notify-chain">
-      <div className="soc-card__hd">
-        <div>
-          <div>Cadena de aviso</div>
-          <div className="soc-card__sub">QUIÉN LO RECIBIÓ · CUÁNTO TARDÓ</div>
-        </div>
-      </div>
+    <Card title="Cadena de aviso" sub="QUIÉN LO RECIBIÓ · CUÁNTO TARDÓ" testId="notify-chain">
       <StateFrame
         label="CADENA DE AVISO"
         loading={chain.loading}
@@ -117,6 +112,6 @@ export default function NotifyChain({ incidentId }: { incidentId: string }) {
           })}
         </ul>
       </StateFrame>
-    </div>
+    </Card>
   );
 }

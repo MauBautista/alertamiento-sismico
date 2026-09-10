@@ -1,5 +1,7 @@
 import { useState } from "react";
 
+import Button from "../../components/Button";
+import Table from "../../components/Table";
 import StateFrame from "../../components/StateFrame";
 import { useNow } from "../../lib/useNow";
 import { utcStamp } from "../../lib/time";
@@ -89,12 +91,9 @@ export default function AuditPage() {
         {field("from", "Desde (UTC)", "datetime-local")}
         {field("to", "Hasta (UTC)", "datetime-local")}
         <div className="audit__actions">
-          <button type="submit" className="soc-btn">
-            APLICAR
-          </button>
-          <button
-            type="button"
-            className="soc-btn soc-btn--secondary"
+          <Button type="submit">APLICAR</Button>
+          <Button
+            variant="secondary"
             disabled={!isFiltering(draft) && !isFiltering(filters)}
             // [T-2.59] Un botón apagado y mudo obliga a adivinar en mitad de un
             // turno (regla de oro 7). Aquí el motivo es siempre el mismo y cabe
@@ -110,7 +109,7 @@ export default function AuditPage() {
             }}
           >
             LIMPIAR
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -138,7 +137,7 @@ export default function AuditPage() {
           <span className="soc-kpi__label">REGISTRO(S) CARGADO(S)</span>
         </div>
         <div className="audit__tablewrap">
-          <table className="audit__table">
+          <Table densa sticky>
             <thead>
               <tr>
                 <th scope="col">FECHA · UTC</th>
@@ -159,18 +158,13 @@ export default function AuditPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         </div>
         <div className="audit__more">
           {data.hasMore ? (
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
-              disabled={data.loadingMore}
-              onClick={data.loadMore}
-            >
+            <Button variant="secondary" disabled={data.loadingMore} onClick={data.loadMore}>
               {data.loadingMore ? "CARGANDO…" : "CARGAR MÁS"}
-            </button>
+            </Button>
           ) : (
             <span className="soc-meta">FIN DE LA BITÁCORA VISIBLE</span>
           )}

@@ -2,6 +2,7 @@ import { ChevronRight, Mail, MessageCircle, Smartphone, Webhook } from "lucide-r
 
 import type { NotifyChannelOut } from "@takab/sdk";
 
+import Card from "../../components/Card";
 import { channelRealityOf } from "./model";
 import type { ChannelDraft, ChannelKey, ChannelReality } from "./model";
 
@@ -95,17 +96,15 @@ export default function NotificationChannels({
   }
 
   return (
-    <div className="soc-card">
-      <div className="soc-card__hd">
-        <div>
-          <div>Canales de notificación · Cascada de respaldo</div>
-          <div className="soc-card__sub">
-            SI EL EDGE NO ALCANZA RED, LA NUBE DISPARA TODOS EN PARALELO (FAIL-OPEN)
-          </div>
-        </div>
-        <span className="soc-bacnet">⬢ ORDEN Y TIEMPOS FIJOS</span>
-      </div>
-
+    <Card
+      title="Canales de notificación · Cascada de respaldo"
+      sub="SI EL EDGE NO ALCANZA RED, LA NUBE DISPARA TODOS EN PARALELO (FAIL-OPEN)"
+      aside={
+        <>
+          <span className="soc-bacnet">⬢ ORDEN Y TIEMPOS FIJOS</span>
+        </>
+      }
+    >
       <div className="mt-channels">
         {drafts.map((d) => {
           const { label, sub, placeholder, Icon } = META[d.key];
@@ -177,6 +176,6 @@ export default function NotificationChannels({
           )}
         </span>
       </div>
-    </div>
+    </Card>
   );
 }

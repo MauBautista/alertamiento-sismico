@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link, Navigate } from "react-router";
+import { Navigate } from "react-router";
 
+import { ButtonLink } from "../components/Button";
 import { landingPath } from "../app/landing";
 import { useSessionStore } from "../auth/session.store";
 import { SplashScreen } from "./StatusScreens";
@@ -28,9 +29,9 @@ export default function AuthCallbackPage() {
         <div className="soc-screen__panel">
           <h1 className="soc-screen__title">ERROR DE LOGIN</h1>
           <p className="soc-screen__error">{error}</p>
-          <Link className="soc-btn soc-btn--secondary" to="/">
+          <ButtonLink variant="secondary" to="/">
             VOLVER AL INICIO
-          </Link>
+          </ButtonLink>
         </div>
       </div>
     );

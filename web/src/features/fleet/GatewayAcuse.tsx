@@ -11,6 +11,7 @@
 // a la base de datos.
 
 import { useState } from "react";
+import Button from "../../components/Button";
 
 import type { GatewayRowOut } from "@takab/sdk";
 
@@ -20,9 +21,8 @@ function Copyable({ label, value }: { label: string; value: string }) {
     <div className="acuse__row">
       <span className="acuse__label">{label}</span>
       <code className="acuse__value">{value}</code>
-      <button
-        type="button"
-        className="soc-btn soc-btn--secondary"
+      <Button
+        variant="secondary"
         onClick={() => {
           // `clipboard` no existe en contextos no seguros (http://) ni en jsdom: el
           // acuse sigue siendo útil sin él, así que se degrada en silencio.
@@ -33,7 +33,7 @@ function Copyable({ label, value }: { label: string; value: string }) {
         }}
       >
         {copied ? "COPIADO" : "COPIAR"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -70,9 +70,7 @@ export default function GatewayAcuse({ gateway, siteName, onDone }: GatewayAcuse
       )}
 
       <div className="fleet__formactions">
-        <button type="button" className="soc-btn" onClick={onDone}>
-          CONTINUAR
-        </button>
+        <Button onClick={onDone}>CONTINUAR</Button>
       </div>
     </div>
   );

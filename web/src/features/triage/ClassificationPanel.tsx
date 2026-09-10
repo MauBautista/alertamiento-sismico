@@ -13,6 +13,7 @@
 //     caen los que nadie miró: ésos no tienen fila, y la tarjeta de la tasa los
 //     cuenta aparte.
 
+import { staleDeLectura } from "../../components/staleDeLectura";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { utcClock } from "../../lib/time";
@@ -26,16 +27,23 @@ export function ClassificationPanel({ incidentId }: { incidentId: string }) {
   const puede = useSessionStore((s) => s.me?.allowed_actions.classify_incident === true);
   const { items, current, loading, readError, updatedAt, refetch, clasificar, pending } =
     useClassification(incidentId);
+  // [T-6.13] La misma regla que la franja de escena: si ya hubo clasificación,
+  // el fallo de lectura NO la borra — la marca como retenida (regla de oro 7).
+  const lectura = staleDeLectura(
+    readError ? "no se pudo leer la clasificación" : null,
+    items.length > 0,
+    updatedAt,
+  );
 
   return (
     <StateFrame
       label="CLASIFICACIÓN"
       loading={loading}
-      error={readError && items.length === 0 ? "no se pudo leer la clasificación" : null}
+      error={lectura.error}
       onRetry={refetch}
       empty={items.length === 0 && !puede}
       emptyText="SIN CLASIFICAR"
-      staleSince={readError && items.length > 0 ? updatedAt : null}
+      staleSince={lectura.staleSince}
     >
       <div className="triage-clasif" data-testid="classification-panel">
         <div className="triage-clasif__actual" data-testid="classification-current">
@@ -90,16 +98,21 @@ export function tasaLegible(v: number | null | undefined): string {
 
 export function FalsePositiveRate() {
   const { stats, loading, readError, updatedAt, refetch } = useClassificationStats();
+  const lectura = staleDeLectura(
+    readError ? "no se pudo leer la tasa" : null,
+    stats !== null,
+    updatedAt,
+  );
 
   return (
     <StateFrame
       label="FALSOS POSITIVOS"
       loading={loading}
-      error={readError && stats === null ? "no se pudo leer la tasa" : null}
+      error={lectura.error}
       onRetry={refetch}
       empty={stats !== null && stats.total === 0}
       emptyText="SIN INCIDENTES EN LA VENTANA"
-      staleSince={readError && stats !== null ? updatedAt : null}
+      staleSince={lectura.staleSince}
     >
       {stats !== null && stats.total > 0 ? (
         <div className="triage-tasa" data-testid="false-positive-rate">

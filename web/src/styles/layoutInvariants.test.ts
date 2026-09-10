@@ -382,7 +382,12 @@ const MUST_HAVE_RULES = [
   "mt-edit",
   "mt-edit__field",
   "mt-edit__warn",
-  "audit__table",
+  // [T-6.13] Era `audit__table`: la bitácora tenía su PROPIO sistema de tabla,
+  // copia divergente de `.soc-table`. Se retiró en favor de la primitiva
+  // (`Table densa sticky`), y lo único suyo que sobrevive —sus columnas no
+  // parten— cuelga ahora del marco. `primitivasCensus.test.ts` vigila que la
+  // clase vieja no reaparezca ni en la hoja ni en el marcado.
+  "audit__frame",
   "audit__filters",
   "enroll__code",
   "enroll__fresh",

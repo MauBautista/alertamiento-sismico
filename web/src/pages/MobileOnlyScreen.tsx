@@ -1,3 +1,4 @@
+import Button from "../components/Button";
 import { useSessionStore } from "../auth/session.store";
 
 /** Rol autenticado pero sin superficie web (allowed_routes = []): brigadista,
@@ -13,9 +14,9 @@ export default function MobileOnlyScreen() {
           El rol <span className="soc-mono">{me?.role}</span> opera desde la app móvil. Esta consola
           es solo para roles con acceso SOC.
         </p>
-        <button type="button" className="soc-btn soc-btn--secondary" onClick={() => void logout()}>
+        <Button variant="secondary" onClick={() => void logout()}>
           CERRAR SESIÓN
-        </button>
+        </Button>
       </div>
     </div>
   );

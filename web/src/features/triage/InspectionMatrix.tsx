@@ -7,6 +7,7 @@
 // El encabezado dice explícitamente que NO es un dictamen. Un cuadro con semáforos
 // junto a un panel de dictámenes se confunde solo si nadie lo desmiente.
 
+import Card from "../../components/Card";
 import { PRIORITY_LABEL } from "./priority";
 import type { PriorityRow } from "./priority";
 import SiteLabel from "../../components/SiteLabel";
@@ -24,15 +25,12 @@ export default function InspectionMatrix({ rows, selectedId, onSelect }: Inspect
     return null;
   }
   return (
-    <div className="soc-card inspection" data-testid="inspection-matrix">
-      <div className="soc-card__hd">
-        <div>
-          <div>Prioridad sugerida de inspección</div>
-          <div className="soc-card__sub">
-            SACUDIDA MEDIDA × CRITICIDAD DEL INMUEBLE · {rows.length} SITIOS DEL MISMO EVENTO
-          </div>
-        </div>
-      </div>
+    <Card
+      title="Prioridad sugerida de inspección"
+      sub={<>SACUDIDA MEDIDA × CRITICIDAD DEL INMUEBLE · {rows.length} SITIOS DEL MISMO EVENTO</>}
+      className="inspection"
+      testId="inspection-matrix"
+    >
       <p className="inspection__disclaimer" data-testid="inspection-disclaimer">
         NO ES UN DICTAMEN. Es un orden de atención derivado de dos hechos. El dictamen de cada sitio
         vive en su propia cadena, append-only y firmada por un inspector.
@@ -58,6 +56,6 @@ export default function InspectionMatrix({ rows, selectedId, onSelect }: Inspect
           </li>
         ))}
       </ul>
-    </div>
+    </Card>
   );
 }

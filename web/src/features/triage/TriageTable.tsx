@@ -1,3 +1,4 @@
+import Table from "../../components/Table";
 import SevTag from "../../components/SevTag";
 import { utcStamp } from "../../lib/time";
 import { epicenterKindOf, magnitudeOf } from "./model";
@@ -34,7 +35,7 @@ export interface TriageTableProps {
  */
 export default function TriageTable({ rows, selectedId, onSelect }: TriageTableProps) {
   return (
-    <table role="grid" className="soc-table triage-table">
+    <Table grid className="triage-table">
       <thead>
         <tr>
           <th style={{ width: "24%" }}>Fecha · ID</th>
@@ -106,6 +107,6 @@ export default function TriageTable({ rows, selectedId, onSelect }: TriageTableP
           );
         })}
       </tbody>
-    </table>
+    </Table>
   );
 }

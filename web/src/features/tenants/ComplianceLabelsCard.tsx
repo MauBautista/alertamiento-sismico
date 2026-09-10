@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { TenantOut } from "@takab/sdk";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import {
   COMPLIANCE_CATALOG,
@@ -79,16 +80,12 @@ export default function ComplianceLabelsCard({ tenant, canEdit }: ComplianceLabe
           : null;
 
   return (
-    <div className="soc-card" data-testid="compliance-card">
-      <div className="soc-card__hd">
-        <div>
-          <div>Marco normativo declarado</div>
-          <div className="soc-card__sub" data-testid="compliance-provenance">
-            DECLARACIÓN DEL CLIENTE · TAKAB NO LA VERIFICA NI LA CERTIFICA
-          </div>
-        </div>
-      </div>
-
+    <Card
+      title="Marco normativo declarado"
+      sub="DECLARACIÓN DEL CLIENTE · TAKAB NO LA VERIFICA NI LA CERTIFICA"
+      subTestId="compliance-provenance"
+      testId="compliance-card"
+    >
       <StateFrame
         label="MARCO DECLARADO"
         loading={data.loading}
@@ -192,6 +189,6 @@ export default function ComplianceLabelsCard({ tenant, canEdit }: ComplianceLabe
           {mut.error}
         </p>
       )}
-    </div>
+    </Card>
   );
 }

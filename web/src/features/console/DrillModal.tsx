@@ -24,6 +24,7 @@ import { useMemo, useState } from "react";
 import { listSitesSitesGet } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
+import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 import StateFrame from "../../components/StateFrame";
 import type { StartDrillInput } from "./useActiveDrill";
@@ -196,9 +197,8 @@ export default function DrillModal({ pending, error, onSubmit, onClose }: DrillM
                       </span>
                     )}
                   </label>
-                  <button
-                    type="button"
-                    className="soc-btn soc-btn--secondary"
+                  <Button
+                    variant="secondary"
                     aria-label={`BORRAR ${p.name}`}
                     disabled={plantillas.pending}
                     onClick={() => {
@@ -207,7 +207,7 @@ export default function DrillModal({ pending, error, onSubmit, onClose }: DrillM
                     }}
                   >
                     BORRAR
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -251,14 +251,13 @@ export default function DrillModal({ pending, error, onSubmit, onClose }: DrillM
               placeholder="P.EJ. MACROSIMULACRO SEPTIEMBRE"
               onChange={(e) => setNombreNuevo(e.target.value)}
             />
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
+            <Button
+              variant="secondary"
               disabled={plantillas.pending}
               onClick={guardarComoPlantilla}
             >
               GUARDAR
-            </button>
+            </Button>
           </div>
           {plantillas.mutationError !== null && (
             <p className="soc-user__error" role="alert">
@@ -375,17 +374,12 @@ export default function DrillModal({ pending, error, onSubmit, onClose }: DrillM
         )}
 
         <div className="soc-drillform__actions">
-          <button type="button" className="soc-btn soc-btn--secondary" onClick={onClose}>
+          <Button variant="secondary" onClick={onClose}>
             VOLVER
-          </button>
-          <button
-            type="button"
-            className="soc-btn soc-btn--primary"
-            disabled={pending}
-            onClick={submit}
-          >
+          </Button>
+          <Button variant="primary" disabled={pending} onClick={submit}>
             {scheduling ? "PROGRAMAR SIMULACRO" : "INICIAR AHORA"}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

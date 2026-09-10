@@ -21,6 +21,7 @@ import {
 import { useState } from "react";
 import { Link } from "react-router";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import { utcClock } from "../../lib/time";
 import NotCalibratedBadge from "../telemetry/NotCalibratedBadge";
@@ -219,16 +220,12 @@ export default function DetailPanel({
       </header>
 
       {/* [T-2.46] Enlace con el gabinete ================================ */}
-      <div className="soc-card" data-testid="link-card">
-        <div className="soc-card__hd">
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Wifi size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-              Enlace con el Gabinete
-            </div>
-            <div className="soc-card__sub">ESTADO DERIVADO EN NUBE · EDAD DEL LATIDO</div>
-          </div>
-        </div>
+      <Card
+        title="Enlace con el Gabinete"
+        icon={<Wifi size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />}
+        sub="ESTADO DERIVADO EN NUBE · EDAD DEL LATIDO"
+        testId="link-card"
+      >
         <StateFrame
           label="ENLACE"
           loading={link?.loading ?? false}
@@ -295,26 +292,25 @@ export default function DetailPanel({
             </>
           )}
         </StateFrame>
-      </div>
+      </Card>
 
       {/* Features 1 s (vista segura) =================================== */}
-      <div className="soc-card">
-        <div className="soc-card__hd">
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Activity size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-              Sensor RS4D · Features Live
-            </div>
-            <div className="soc-card__sub">FEATURES 1 s · SEEDLINK TCP · 100 SPS EN EDGE</div>
-          </div>
-          <span
-            className={`soc-pill ${liveFresh ? "soc-pill--ok" : ""}`}
-            data-testid="features-live-pill"
-          >
-            <span className={`soc-dot ${liveFresh ? "soc-dot--pulse" : ""}`} />{" "}
-            {liveFresh ? "LIVE" : "SIN LIVE"}
-          </span>
-        </div>
+      <Card
+        title="Sensor RS4D · Features Live"
+        icon={<Activity size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />}
+        sub="FEATURES 1 s · SEEDLINK TCP · 100 SPS EN EDGE"
+        aside={
+          <>
+            <span
+              className={`soc-pill ${liveFresh ? "soc-pill--ok" : ""}`}
+              data-testid="features-live-pill"
+            >
+              <span className={`soc-dot ${liveFresh ? "soc-dot--pulse" : ""}`} />{" "}
+              {liveFresh ? "LIVE" : "SIN LIVE"}
+            </span>
+          </>
+        }
+      >
         <StateFrame
           label="FEATURES DEL SITIO"
           loading={features.loading}
@@ -377,20 +373,16 @@ export default function DetailPanel({
             FEATURES 1 s · PROCESAMIENTO EDGE
           </div>
         </StateFrame>
-      </div>
+      </Card>
 
       {/* Incidente enfocado (T-1.50): trigger/evento/edad — sin magnitud ni
           countdown (blueprint §14) ===================================== */}
-      <div className="soc-card" data-testid="incident-card">
-        <div className="soc-card__hd">
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <AlertTriangle size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-              Incidente
-            </div>
-            <div className="soc-card__sub">CANAL DE DISPARO · EVENTO · ESTADO</div>
-          </div>
-        </div>
+      <Card
+        title="Incidente"
+        icon={<AlertTriangle size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />}
+        sub="CANAL DE DISPARO · EVENTO · ESTADO"
+        testId="incident-card"
+      >
         {/* [T-2.55] Antes esta card COPIABA a mano el marcado interno del
             StateFrame (`.soc-stateframe--status` + `data-state="empty"`). Dos
             copias del mismo contrato divergen a la primera: se usa el
@@ -451,20 +443,19 @@ export default function DetailPanel({
             </div>
           )}
         </StateFrame>
-      </div>
+      </Card>
 
       {/* Actuadores y acciones (ACKs reales), AGRUPADOS por canal ======= */}
-      <div className="soc-card">
-        <div className="soc-card__hd">
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <ToggleRight size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-              Automatización y Actuadores (BMS)
-            </div>
-            <div className="soc-card__sub">ÚLTIMO ESTADO POR CANAL · TRAZA EXPANDIBLE</div>
-          </div>
-          <span className="soc-bacnet">⬢ BACnet®</span>
-        </div>
+      <Card
+        title="Automatización y Actuadores (BMS)"
+        icon={<ToggleRight size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />}
+        sub="ÚLTIMO ESTADO POR CANAL · TRAZA EXPANDIBLE"
+        aside={
+          <>
+            <span className="soc-bacnet">⬢ BACnet®</span>
+          </>
+        }
+      >
         <StateFrame
           label="ACCIONES DEL INCIDENTE"
           loading={actions.loading}
@@ -530,19 +521,15 @@ export default function DetailPanel({
             })}
           </div>
         </StateFrame>
-      </div>
+      </Card>
 
       {/* Relés del gabinete (config activa; caché compartida con /fleet) = */}
-      <div className="soc-card" data-testid="relays-card">
-        <div className="soc-card__hd">
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Cpu size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-              Relés del Gabinete
-            </div>
-            <div className="soc-card__sub">CONFIG ACTIVA DE RELAYS · ARMADO POR ENLACE</div>
-          </div>
-        </div>
+      <Card
+        title="Relés del Gabinete"
+        icon={<Cpu size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />}
+        sub="CONFIG ACTIVA DE RELAYS · ARMADO POR ENLACE"
+        testId="relays-card"
+      >
         {/* M-6 (T-1.58): 4 estados — un 500 de /fleet/gateways NO es "config no
             visible"; el empty queda para lo genuinamente invisible (sin rule_set,
             sin gateway del sitio o rol sin /fleet, donde error llega null). */}
@@ -564,23 +551,20 @@ export default function DetailPanel({
         >
           <RelayGrid relays={relays.relays ?? []} />
         </StateFrame>
-      </div>
+      </Card>
 
       {/* CCTV ONVIF (T-1.50): SIEMPRE visible — aquí VA la cámara cuando
           exista el hardware. Empty-state honesto, jamás video fingido. ==== */}
-      <div className="soc-card">
-        <div className="soc-card__hd">
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <Video size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />
-              Verificación Visual · CCTV ONVIF
-            </div>
-            <div className="soc-card__sub">
-              PROFILE S · RTSP/H.264 · CONTEO DE PERSONAS (FUTURO)
-            </div>
-          </div>
-          <span className="soc-bacnet">⬢ ONVIF</span>
-        </div>
+      <Card
+        title="Verificación Visual · CCTV ONVIF"
+        icon={<Video size={14} aria-hidden style={{ color: "var(--tk-cyan)" }} />}
+        sub="PROFILE S · RTSP/H.264 · CONTEO DE PERSONAS (FUTURO)"
+        aside={
+          <>
+            <span className="soc-bacnet">⬢ ONVIF</span>
+          </>
+        }
+      >
         {/* [T-2.55] El vacío pasa por StateFrame como el de cualquier otra
             card. No hay integración ONVIF: `empty` es SIEMPRE cierto, y decirlo
             con el mismo componente que el resto evita que un día alguien lea
@@ -595,7 +579,7 @@ export default function DetailPanel({
             {null}
           </StateFrame>
         </div>
-      </div>
+      </Card>
     </aside>
   );
 }

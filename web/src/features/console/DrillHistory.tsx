@@ -11,6 +11,7 @@ import { useState } from "react";
 
 import type { DrillOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
 import { useSessionStore } from "../../auth/session.store";
 import Modal from "../../components/Modal";
 import StateFrame from "../../components/StateFrame";
@@ -72,15 +73,15 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
       <div className="soc-drillhist" data-testid="drill-history">
         <div className="soc-drillhist__tabs">
           {KIND_TABS.map((t) => (
-            <button
+            <Button
+              variant="ghost"
+              className={kind === t.value ? "is-on" : undefined}
               key={t.value}
-              type="button"
-              className={`soc-btn soc-btn--ghost${kind === t.value ? " is-on" : ""}`}
               aria-pressed={kind === t.value}
               onClick={() => setKind(t.value)}
             >
               {t.label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -116,18 +117,16 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
                       ? `${d.sites.length} SITIO(S) APUNTADO(S) · AÚN NO EJECUTADO`
                       : ackSummary(d)}
                   </p>
-                  <button
-                    type="button"
-                    className="soc-btn soc-btn--ghost"
+                  <Button
+                    variant="ghost"
                     aria-expanded={open === d.drill_id}
                     onClick={() => setOpen((cur) => (cur === d.drill_id ? null : d.drill_id))}
                   >
                     DETALLE · {d.sites.length} SITIO(S)
-                  </button>
+                  </Button>
                   {canExport && !pendingSchedule && (
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--ghost"
+                    <Button
+                      variant="ghost"
                       data-testid={`drill-export-${d.drill_id}`}
                       disabled={report.pendingId === d.drill_id}
                       // La pestaña se reserva AQUÍ, dentro del gesto: la URL
@@ -136,7 +135,7 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
                       onClick={() => report.exportar(d.drill_id, openPendingDownload())}
                     >
                       {report.pendingId === d.drill_id ? "GENERANDO…" : "EXPORTAR REPORTE"}
-                    </button>
+                    </Button>
                   )}
                   {open === d.drill_id && (
                     <ul className="soc-drillhist__sites" data-testid={`drill-sites-${d.drill_id}`}>
@@ -183,14 +182,9 @@ export default function DrillHistory({ onClose }: { onClose: () => void }) {
             </p>
           )}
           {history.hasMore && (
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
-              disabled={history.loadingMore}
-              onClick={history.loadMore}
-            >
+            <Button variant="secondary" disabled={history.loadingMore} onClick={history.loadMore}>
               CARGAR MÁS
-            </button>
+            </Button>
           )}
         </StateFrame>
       </div>

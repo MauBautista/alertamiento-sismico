@@ -9,6 +9,8 @@
 
 import type { RuleSetOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
+import Card from "../../components/Card";
 import { utcStamp } from "../../lib/time";
 import { useRuleSetRollback } from "./useRuleSetRollback";
 
@@ -25,17 +27,17 @@ export default function RuleSetHistory({
   const porId = new Map(versions.map((v) => [v.rule_set_id, v.version]));
 
   return (
-    <div className="soc-card rs-hist" data-testid="rule-set-history">
-      <div className="soc-card__hd">
-        <div>
-          <div>Historial de umbrales</div>
-          <div className="soc-card__sub">
-            VOLVER ATRÁS CREA UNA VERSIÓN NUEVA QUE DECLARA A CUÁL VUELVE
-          </div>
-        </div>
-        <span className="soc-bacnet">⬢ {versions.length} VERSIÓN(ES)</span>
-      </div>
-
+    <Card
+      title="Historial de umbrales"
+      sub="VOLVER ATRÁS CREA UNA VERSIÓN NUEVA QUE DECLARA A CUÁL VUELVE"
+      aside={
+        <>
+          <span className="soc-bacnet">⬢ {versions.length} VERSIÓN(ES)</span>
+        </>
+      }
+      className="rs-hist"
+      testId="rule-set-history"
+    >
       {rollback.error !== null && (
         <p className="soc-user__error" role="alert">
           {rollback.conflict
@@ -56,9 +58,8 @@ export default function RuleSetHistory({
               {/* La activa no ofrece volver a sí misma: el servidor lo rechaza
                   con 409, y un botón que solo puede fallar es una trampa. */}
               {canEdit && !v.is_active && activa !== null && (
-                <button
-                  type="button"
-                  className="soc-btn soc-btn--ghost"
+                <Button
+                  variant="ghost"
                   disabled={rollback.pendingId === v.rule_set_id}
                   title={
                     rollback.pendingId === v.rule_set_id
@@ -70,7 +71,7 @@ export default function RuleSetHistory({
                   }
                 >
                   {rollback.pendingId === v.rule_set_id ? "VOLVIENDO…" : `VOLVER A v${v.version}`}
-                </button>
+                </Button>
               )}
             </li>
           );
@@ -80,6 +81,6 @@ export default function RuleSetHistory({
       {anteriores.length === 0 && (
         <p className="soc-meta">SIN VERSIONES ANTERIORES · ESTA ES LA PRIMERA</p>
       )}
-    </div>
+    </Card>
   );
 }

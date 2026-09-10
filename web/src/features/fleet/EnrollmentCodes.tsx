@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { SiteOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 import { useNow } from "../../lib/useNow";
@@ -130,9 +131,9 @@ export default function EnrollmentCodes({ site, onClose }: EnrollmentCodesProps)
             estación. Nunca concede otro rol (lo fija la base de datos).
           </p>
         </div>
-        <button type="button" className="soc-btn soc-btn--secondary" onClick={onClose}>
+        <Button variant="secondary" onClick={onClose}>
           VOLVER
-        </button>
+        </Button>
       </header>
 
       <form className="enroll__form" data-testid="enrollment-form" onSubmit={submit}>
@@ -155,9 +156,9 @@ export default function EnrollmentCodes({ site, onClose }: EnrollmentCodesProps)
             onChange={(e) => setMaxUses(e.target.value)}
           />
         </label>
-        <button type="submit" className="soc-btn" disabled={create.isPending || usesInvalid}>
+        <Button type="submit" disabled={create.isPending || usesInvalid}>
           {create.isPending ? "GENERANDO…" : "GENERAR CÓDIGO"}
-        </button>
+        </Button>
       </form>
 
       {WINDOWS[windowIdx].hours === null && (
@@ -178,20 +179,12 @@ export default function EnrollmentCodes({ site, onClose }: EnrollmentCodesProps)
           <span className="soc-meta">ENTRÉGALO AHORA · NO SE VOLVERÁ A DESTACAR</span>
           <code className="enroll__code">{fresh}</code>
           <div className="enroll__freshactions">
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
-              onClick={() => void navigator.clipboard?.writeText(fresh)}
-            >
+            <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(fresh)}>
               COPIAR
-            </button>
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
-              onClick={() => setFresh(null)}
-            >
+            </Button>
+            <Button variant="secondary" onClick={() => setFresh(null)}>
               OCULTAR
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -221,22 +214,20 @@ export default function EnrollmentCodes({ site, onClose }: EnrollmentCodesProps)
                 {!c.active && " · REVOCADO"}
               </span>
               <div className="enroll__rowactions">
-                <button
-                  type="button"
-                  className="soc-btn soc-btn--secondary"
+                <Button
+                  variant="secondary"
                   onClick={() => setRevealed(revealed === c.code ? null : c.code)}
                 >
                   {revealed === c.code ? "OCULTAR" : "VER"}
-                </button>
+                </Button>
                 {c.active && (
-                  <button
-                    type="button"
-                    className="soc-btn soc-btn--secondary"
+                  <Button
+                    variant="secondary"
                     disabled={revoke.isPending}
                     onClick={() => revoke.mutate({ siteId: site.site_id, code: c.code })}
                   >
                     REVOCAR
-                  </button>
+                  </Button>
                 )}
               </div>
             </li>

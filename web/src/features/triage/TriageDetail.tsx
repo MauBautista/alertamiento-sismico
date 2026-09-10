@@ -10,6 +10,8 @@ import {
 import { useState } from "react";
 import { Link } from "react-router";
 
+import Button from "../../components/Button";
+import Card from "../../components/Card";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
@@ -315,16 +317,15 @@ export default function TriageDetail({
         onRetry={detail.refetch}
       />
 
-      <div className="soc-card">
-        <div className="soc-card__hd">
-          <div>
-            <div>Evidencia archivada</div>
-            <div className="soc-card__sub">
-              INMUTABLE · SIN PODA POR RETENCIÓN · SÓLO EVENTOS CONFIRMADOS
-            </div>
-          </div>
-          <span className="soc-bacnet">⬢ {countOf(evidence)} OBJETOS</span>
-        </div>
+      <Card
+        title="Evidencia archivada"
+        sub="INMUTABLE · SIN PODA POR RETENCIÓN · SÓLO EVENTOS CONFIRMADOS"
+        aside={
+          <>
+            <span className="soc-bacnet">⬢ {countOf(evidence)} OBJETOS</span>
+          </>
+        }
+      >
         <StateFrame
           label="EVIDENCIA"
           loading={evidence.loading}
@@ -369,7 +370,7 @@ export default function TriageDetail({
               ))}
           </p>
         )}
-      </div>
+      </Card>
 
       {/* [T-2.40] La bitácora existe para reconstruir lo ocurrido; contarla en un
           número desperdiciaba precisamente eso. */}
@@ -385,19 +386,16 @@ export default function TriageDetail({
       )}
 
       <footer className="triage-detail__actions">
-        <button
-          type="button"
-          className="soc-btn soc-btn--secondary"
+        <Button
+          variant="secondary"
           disabled={!mseed.enabled || detail.downloadPending}
           title={mseed.hint}
           onClick={() => miniseed && detail.downloadEvidence(miniseed.evidence_id)}
         >
           <FileDown size={13} aria-hidden /> {mseed.label}
-        </button>
-        <button
-          type="button"
-          className="soc-btn soc-btn--primary"
-          // [T-2.43] Se retira el gate `head === null`, espejo del que ya se quitó en la
+        </Button>
+        <Button
+          variant="primary" // [T-2.43] Se retira el gate `head === null`, espejo del que ya se quitó en la
           // API: un incidente sin dictamen YA tiene hechos que reportar —lo medido,
           // quién acusó, qué estaciones corroboraron— y el documento se rotula como
           // preliminar. El gate dejaba sin evidencia exportable justo el caso en que
@@ -407,7 +405,7 @@ export default function TriageDetail({
           onClick={() => detail.generatePdf()}
         >
           <Printer size={13} aria-hidden /> DICTAMEN PDF
-        </button>
+        </Button>
       </footer>
 
       {/* [T-2.82] Entre el PDF y la firma: son los dos actos que este apartado
@@ -451,15 +449,10 @@ export default function TriageDetail({
               </p>
             )}
 
-            <div className="soc-card">
-              <div className="soc-card__hd">
-                <div>
-                  <div>Firma del dictamen</div>
-                  <div className="soc-card__sub">
-                    ACTO PROFESIONAL DEL INSPECTOR · INSERTA UNA VERSIÓN NUEVA
-                  </div>
-                </div>
-              </div>
+            <Card
+              title="Firma del dictamen"
+              sub="ACTO PROFESIONAL DEL INSPECTOR · INSERTA UNA VERSIÓN NUEVA"
+            >
               <select
                 className="soc-select"
                 aria-label="Status del dictamen a firmar"
@@ -486,7 +479,7 @@ export default function TriageDetail({
                   {detail.signError}
                 </p>
               )}
-            </div>
+            </Card>
 
             <div className="triage-detail__chain">
               <ShieldCheck size={11} aria-hidden />

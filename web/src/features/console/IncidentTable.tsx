@@ -8,6 +8,7 @@ import { useMemo, useRef, useState } from "react";
 
 import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
+import Table from "../../components/Table";
 import type { AuthBadge } from "../../auth/authEvidence";
 import ConfirmButton from "../../components/ConfirmButton";
 import SevTag from "../../components/SevTag";
@@ -228,7 +229,7 @@ export default function IncidentTable({
         emptyText="SIN INCIDENTES ABIERTOS EN EL ALCANCE"
         staleSince={queueStaleSince}
       >
-        <table className="soc-table">
+        <Table>
           <thead>
             <tr>
               <th style={{ width: "26%" }}>Sitio</th>
@@ -288,7 +289,7 @@ export default function IncidentTable({
               );
             })}
           </tbody>
-        </table>
+        </Table>
       </StateFrame>
 
       {distanceUnavailable && (

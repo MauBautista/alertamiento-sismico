@@ -5,6 +5,7 @@ import { Link } from "react-router";
 
 import type { GatewayConfigStateOut, GatewayHealthOut, MaintenanceWindowOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
 import Sparkline from "../../components/Sparkline";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
@@ -118,14 +119,9 @@ export default function SiteCard({
           {RETIRADO}
           {cabinet.siteStatus === "retired" ? " · LA ESTACIÓN TAMBIÉN" : ""}
           {onRestore && (
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
-              disabled={restoring}
-              onClick={onRestore}
-            >
+            <Button variant="secondary" disabled={restoring} onClick={onRestore}>
               RESTAURAR
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -306,14 +302,14 @@ export default function SiteCard({
       {(onEdit || onRetire) && !retired && (
         <div className="fleet-card__admin" data-testid="card-admin">
           {onEdit && (
-            <button type="button" className="soc-btn soc-btn--secondary" onClick={onEdit}>
+            <Button variant="secondary" onClick={onEdit}>
               EDITAR GABINETE
-            </button>
+            </Button>
           )}
           {onRetire && (
-            <button type="button" className="soc-btn soc-btn--secondary" onClick={onRetire}>
+            <Button variant="secondary" onClick={onRetire}>
               RETIRAR
-            </button>
+            </Button>
           )}
         </div>
       )}
