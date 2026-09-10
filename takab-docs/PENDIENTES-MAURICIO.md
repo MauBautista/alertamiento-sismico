@@ -250,23 +250,14 @@ transitar**, así que una métrica que nunca arranca deja la alarma **nacida** e
 aparcada. **Si no llega el correo de `ok_actions` en ~15 min, la métrica nunca empezó.**
 
 ### 2.3 · [`T-2.87`](TASKS.md) · Apply de Cognito
-> **Entra aquí también `T-6.08` (login con marca), que ya está escrito y probado en local.** El
-> módulo `identity` sube ahora una hoja y un imagotipo al Hosted UI de los DOS pools
-> (`aws_cognito_user_pool_ui_customization`), y declara `managed_login_version = 1` en los dos
-> dominios. Comprobado sin credenciales el 2026-09-09 —pidiendo la propia pantalla— que los dos
-> sirven el Hosted UI **clásico**; si algún día valieran 2, esa hoja se ignoraría entera y el login
-> volvería al gris sin que nada se pusiera rojo.
+> ~~**Entra aquí también `T-6.08` (login con marca).**~~ — ✅ **APLICADO el 2026-09-10.** Apply
+> acotado a los cuatro recursos (2 to add, 0 to change, 0 to destroy) y verificado contra los dos
+> dominios reales: fondo navy, imagotipo y botón cian en los dos pools, CSS `20260910031042`. Lo que
+> esta viñeta mandaba mirar —el enlace «Forgot your password?»— salió **cian** (7.54:1): la clase
+> `redirect-customizable` está en el propio enlace, así que la regla llega y no hizo falta el
+> selector descendiente. **Cero fallos AA en el login.**
 >
-> **Qué mirar cuando se aplique, y es UNA cosa:** el enlace **«Forgot your password?»**. La clase
-> `redirect-customizable` es lo único que la API deja tocar ahí, y en la hoja de Cognito vale sólo
-> `text-align: center` — el color del enlace lo pone el `a` de Bootstrap. Si tras el apply el enlace
-> se ve **cian**, está resuelto. Si se ve **azul apagado**, mide 3.51:1 sobre el navy (hoy, sobre el
-> blanco de fábrica, mide 4.56) y hay que probar `.redirect-customizable a { color: … }` **en esa
-> misma ventana**: una clase que la API no acepte tumba la hoja ENTERA, y ahí el rechazo es barato
-> porque hay alguien mirando.
->
-> Y una captura de la pantalla real, antes y después: lo que hay hoy es una **previsualización
-> local** montada con la hoja que Cognito sirve de verdad, no la pantalla desplegada.
+> Lo que sigue pendiente de `T-2.87` es lo que ya estaba: esta ficha no lo toca.
 
 ### 2.4 · [`T-2.88`](TASKS.md) · Rol CI OIDC endurecido *(cierra también `T-1.44`)*
 ### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced` — **va en la ventana A**

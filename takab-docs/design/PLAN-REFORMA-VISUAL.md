@@ -736,7 +736,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     criterios ejercidos en un navegador real sobre el build de producción (bundle cortado, scripting
     apagado, `/me` colgado y `/me` en 401), con capturas.
 
-### [~] T-6.08 · **El login se ve TAKAB** — `SOFTWARE` + `TERRAFORM`
+### [x] T-6.08 · **El login se ve TAKAB** — `SOFTWARE` + `TERRAFORM`
 
 > No existe `aws_cognito_user_pool_ui_customization`: el operador teclea contraseña y TOTP en la
 > pantalla de fábrica de AWS, en inglés, entre dos pantallas con imagotipo TAKAB. **No se propone
@@ -750,11 +750,32 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** no.
 - **Objetivo:** logo del paquete de marca y hoja CSS generada desde los tokens para los dos pools (consola y ocupantes), sabiendo antes si el pool está en Hosted UI clásico o en «managed login» (el repo no lo declara).
 - **Criterios de aceptación:**
-  - [~] La pantalla de Cognito muestra el imagotipo y los colores de superficie, borde y acento del paquete. **Escrito y previsualizado; lo enseña el `apply`.**
+  - [x] La pantalla de Cognito muestra el imagotipo y los colores de superficie, borde y acento del paquete.
   - [x] El CSS subido es salida de un generador; un test falla si diverge de `tokens.json`.
-  - [~] Captura antes y después en el informe de la sesión; los textos siguen siendo los de Cognito (no se pueden cambiar) y se dice. **Hay previsualización local; la captura de la pantalla real es del `apply`.**
-- **Cómo va (2026-09-09, SESIÓN C8 · la primera de las dos: generador. El `apply` es de Mauricio y
-  está fichado en [`PENDIENTES-MAURICIO.md §2.3`](../PENDIENTES-MAURICIO.md)):**
+  - [x] Captura antes y después en el informe de la sesión; los textos siguen siendo los de Cognito (no se pueden cambiar) y se dice.
+- **APLICADA Y VERIFICADA EN LA NUBE (2026-09-10).** `terraform apply` acotado a los cuatro recursos
+  de esta ficha: **2 to add, 0 to change, 0 to destroy** — los dos dominios no traían diferencia, lo
+  que confirma desde el estado lo que ya decía la pantalla: están en Hosted UI clásico. Medido
+  después contra los DOS dominios reales, con un `client_id` de verdad y navegador:
+
+  | | pool consola | pool ocupantes |
+  |---|---|---|
+  | fondo | `rgb(14, 35, 54)` | `rgb(14, 35, 54)` |
+  | imagotipo presente | sí | sí |
+  | botón `Sign in` | cian sobre navy | cian sobre navy |
+  | CSS en el pool | 929 B · versión `20260910031042` | 929 B · misma versión |
+
+  **Y la incógnita que quedaba se resolvió a favor.** La ficha salía con un riesgo declarado: si
+  `redirect-customizable` estuviera en un contenedor, «Forgot your password?» se quedaría en 3.51:1.
+  La pantalla real dice que **la clase está en el propio enlace** (`a.redirect-customizable`), así
+  que la regla llega: el enlace mide `rgb(0, 191, 255)` — **7.54:1**. La previsualización local se
+  había equivocado ahí, y por eso la comprobación tenía que ser contra la pantalla desplegada.
+  **Cero fallos AA en el login**, y dos de los que había de fábrica (mensaje de error 4.24, aviso de
+  contraseña válida 2.47) quedan cerrados.
+  **Los textos siguen siendo los de Cognito y en inglés** —`Sign in with your email and password`,
+  `Email`, `Password`, `Sign in`—: la API viste, no traduce. Cambiarlos exige el formulario propio
+  que esta ficha decidió NO hacer.
+- **Cómo se hizo (2026-09-09, SESIÓN C8 · generador y terraform):**
   - **La pregunta que la ficha dejaba abierta se contestó sin credenciales.** «Hosted UI clásico o
     managed login» decide qué API viste la pantalla: la v1 se viste con `SetUICustomization` (CSS +
     logo) y la v2 la ignora entera. Se resolvió pidiendo la propia pantalla de los dos dominios con
@@ -800,10 +821,11 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **El logo se DERIVA, como el resto de la identidad.** `shared/brand/generar.py` emite el
     imagotipo negativo a 560 px (42 KB; el tope duro de la API son 100 KB, y el test lo vigila).
     Correr el generador entero no movió ningún otro byte: la derivación es determinista.
-  - **Lo que NO está hecho y por qué:** el `apply` —no hay sesión de AWS en esta máquina— y con él
-    la captura de la pantalla real. Lo que hay es una previsualización montada con la hoja que
-    Cognito sirve de verdad y el logo real; sirve para decidir antes de gastar la ventana, no para
-    afirmar cómo quedó.
+  - **Lo que la previsualización NO podía decir, y acertó en no afirmarlo.** Se montó con la hoja
+    real de Cognito y el logo real, pero el MARCADO era una reconstrucción — y en el único punto en
+    que se apartó del real (dónde cuelga `redirect-customizable`) la conclusión salía al revés. Una
+    previsualización sirve para decidir antes de gastar la ventana; la pantalla desplegada es la que
+    responde.
 
 ### [x] T-6.09 · **Contraste AA donde hay texto, y forma donde solo había color** — `SOFTWARE`
 
