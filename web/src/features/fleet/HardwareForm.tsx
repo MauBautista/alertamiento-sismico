@@ -13,6 +13,7 @@ import { useState } from "react";
 
 import type { EquipmentProfile, GatewayOut, SiteOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
 import { EQUIPMENT_ALL, EQUIPMENT_FIELDS } from "./equipment";
 import { siteLabelText } from "./datosDeDemostracion";
 
@@ -135,9 +136,7 @@ export default function HardwareForm({
             <span>{label}</span>
           </label>
         ))}
-        <button
-          type="button"
-          className="soc-btn"
+        <Button
           disabled={submitting || gw.serial.trim() === ""}
           onClick={() =>
             onCreateGateway({
@@ -148,7 +147,7 @@ export default function HardwareForm({
           }
         >
           AÑADIR GABINETE
-        </button>
+        </Button>
       </fieldset>
 
       <fieldset className="fleet__coords">
@@ -211,9 +210,7 @@ export default function HardwareForm({
           Sin procedencia, el PGA/PGV del sitio se presenta en unidades relativas. No hay casilla de
           “calibrado”: hay que nombrar de dónde sale la respuesta instrumental.
         </p>
-        <button
-          type="button"
-          className="soc-btn"
+        <Button
           disabled={submitting || sensor.model.trim() === ""}
           onClick={() =>
             onCreateSensor({
@@ -225,7 +222,7 @@ export default function HardwareForm({
           }
         >
           AÑADIR SENSOR
-        </button>
+        </Button>
       </fieldset>
 
       {error !== null && (
@@ -235,9 +232,9 @@ export default function HardwareForm({
       )}
 
       <div className="fleet__formactions">
-        <button type="button" className="soc-btn soc-btn--secondary" onClick={onDone}>
+        <Button variant="secondary" onClick={onDone}>
           VOLVER
-        </button>
+        </Button>
       </div>
     </div>
   );

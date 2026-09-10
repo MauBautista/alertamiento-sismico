@@ -12,6 +12,8 @@ import { listSitesSitesGet } from "@takab/sdk";
 import type { GatewayOut, GatewayRowOut, SiteOut } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
+import Button from "../../components/Button";
+import Table from "../../components/Table";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import EnrollmentCodes from "./EnrollmentCodes";
@@ -209,9 +211,7 @@ function FleetAdminPanel() {
       <header className="fleet__adminhd">
         <h2>{isInternal ? "ESTACIONES · TODOS LOS CLIENTES" : "ESTACIONES DEL TENANT"}</h2>
         {editing.kind === "none" && (
-          <button type="button" className="soc-btn" onClick={() => setEditing({ kind: "new" })}>
-            NUEVA ESTACIÓN
-          </button>
+          <Button onClick={() => setEditing({ kind: "new" })}>NUEVA ESTACIÓN</Button>
         )}
       </header>
 
@@ -252,7 +252,7 @@ function FleetAdminPanel() {
           emptyText="SIN ESTACIONES · CREA LA PRIMERA"
         >
           <div className="fleet__adminscroll">
-            <table className="fleet__admintable">
+            <Table densa>
               <thead>
                 <tr>
                   <th>CÓDIGO</th>
@@ -284,44 +284,40 @@ function FleetAdminPanel() {
                     <td className="soc-mono">{formatPoint({ lat: site.lat, lon: site.lon })}</td>
                     <td className="soc-mono">{site.criticality.toUpperCase()}</td>
                     <td className="fleet__rowactions">
-                      <button
-                        type="button"
-                        className="soc-btn soc-btn--secondary"
+                      <Button
+                        variant="secondary"
                         onClick={() => setEditing({ kind: "edit", site })}
                       >
                         EDITAR
-                      </button>
-                      <button
-                        type="button"
-                        className="soc-btn soc-btn--secondary"
+                      </Button>
+                      <Button
+                        variant="secondary"
                         onClick={() => setEditing({ kind: "hardware", site })}
                       >
                         HARDWARE
-                      </button>
+                      </Button>
                       {canEnroll && (
-                        <button
-                          type="button"
-                          className="soc-btn soc-btn--secondary"
+                        <Button
+                          variant="secondary"
                           onClick={() => setEditing({ kind: "enrollment", site })}
                         >
                           CÓDIGOS
-                        </button>
+                        </Button>
                       )}
                       {/* Retiro lógico: la fila sobrevive porque su evidencia la
                         referencia. [T-2.36] Doble fricción en el diálogo. */}
-                      <button
-                        type="button"
-                        className="soc-btn soc-btn--secondary"
+                      <Button
+                        variant="secondary"
                         disabled={retire.isPending}
                         onClick={() => setEditing({ kind: "retire", site })}
                       >
                         RETIRAR
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </div>
           {error !== null && (
             <p className="soc-stateframe__error" role="alert" data-testid="fleet-admin-error">

@@ -9,6 +9,7 @@
 import { BookOpen, ChevronDown } from "lucide-react";
 import { useState } from "react";
 
+import Table from "../../components/Table";
 import StateFrame from "../../components/StateFrame";
 import { useCatalog } from "./useCatalog";
 
@@ -52,7 +53,7 @@ export default function CatalogPanel() {
           empty={catalog.items.length === 0}
           emptyText="CATÁLOGO SIN SEMBRAR (db/seeds/reference_earthquakes.sql)"
         >
-          <table className="soc-table triage-catalog__table">
+          <Table className="triage-catalog__table">
             <thead>
               <tr>
                 <th>Fecha UTC</th>
@@ -82,7 +83,7 @@ export default function CatalogPanel() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </Table>
         </StateFrame>
       )}
     </section>

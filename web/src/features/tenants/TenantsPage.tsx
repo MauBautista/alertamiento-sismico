@@ -1,7 +1,8 @@
 import { ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router";
 
+import Button, { ButtonLink } from "../../components/Button";
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
@@ -510,26 +511,25 @@ export default function TenantsPage() {
                     {isDedicated(selected) ? "TENANT DEDICADO" : "TENANT LÓGICO"}
                   </span>
                   {canManageFleet && (
-                    <Link
+                    <ButtonLink
+                      variant="secondary"
                       to={newSiteHref(selected.tenant_id)}
-                      className="soc-btn soc-btn--secondary"
                       data-testid="tenant-new-site-link"
                       title={`Abre el alta de estación escribiendo en ${selected.name}`}
                     >
                       NUEVA ESTACIÓN AQUÍ
-                    </Link>
+                    </ButtonLink>
                   )}
                   {canManageTenants && (
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
+                    <Button
+                      variant="secondary"
                       onClick={() => {
                         updateTenant.reset();
                         setEditingTenant((v) => !v);
                       }}
                     >
                       {editingTenant ? "CERRAR FICHA" : "EDITAR FICHA"}
-                    </button>
+                    </Button>
                   )}
                 </div>
               </header>
@@ -574,16 +574,15 @@ export default function TenantsPage() {
                     SIN RULE_SET ACTIVO · EL GABINETE APLICA SUS DEFAULTS — AJUSTA Y PUBLICA v1
                   </p>
                 )}
-                <div className="soc-card">
-                  <div className="soc-card__hd">
-                    <div>
-                      <div>Umbrales de disparo local</div>
-                      <div className="soc-card__sub">
-                        EDGE GATEWAY · config.edge.thresholds · v{ruleSet?.version ?? "—"}
-                      </div>
-                    </div>
-                    <span className="soc-bacnet">⬢ EDGE · REGLAS LOCALES</span>
-                  </div>
+                <Card
+                  title="Umbrales de disparo local"
+                  sub={<>EDGE GATEWAY · config.edge.thresholds · v{ruleSet?.version ?? "—"}</>}
+                  aside={
+                    <>
+                      <span className="soc-bacnet">⬢ EDGE · REGLAS LOCALES</span>
+                    </>
+                  }
+                >
                   <div className="mt-sliders">
                     {SLIDERS.map((s) => (
                       <ThresholdSlider
@@ -602,7 +601,7 @@ export default function TenantsPage() {
                       />
                     ))}
                   </div>
-                </div>
+                </Card>
 
                 <NotificationChannels
                   drafts={drafts}

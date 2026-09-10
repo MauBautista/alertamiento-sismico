@@ -13,6 +13,7 @@
 
 import { useState } from "react";
 
+import Button from "../../components/Button";
 import { useSessionStore } from "../../auth/session.store";
 import DrillHistory from "./DrillHistory";
 import DrillModal from "./DrillModal";
@@ -36,23 +37,18 @@ export default function DrillControls() {
         )}
         {/* Mientras no se sabe si hay uno en curso, no se ofrece arrancar otro. */}
         {canStart && !loading && drill === null && (
-          <button
-            type="button"
-            className="soc-btn soc-btn--ghost"
+          <Button
+            variant="ghost"
             disabled={pending}
             onClick={() => setModalOpen(true)}
             title="Banner NO-real + voceo en los gabinetes elegidos; cero relés"
           >
             INICIAR SIMULACRO
-          </button>
+          </Button>
         )}
-        <button
-          type="button"
-          className="soc-btn soc-btn--ghost"
-          onClick={() => setHistoryOpen(true)}
-        >
+        <Button variant="ghost" onClick={() => setHistoryOpen(true)}>
           HISTORIAL
-        </button>
+        </Button>
       </div>
 
       {modalOpen && (

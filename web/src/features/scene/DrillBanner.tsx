@@ -29,6 +29,8 @@
 import { AlertTriangle, CalendarClock } from "lucide-react";
 import { useMemo } from "react";
 
+import Button from "../../components/Button";
+import { staleDeLectura } from "../../components/staleDeLectura";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { utcClock } from "../../lib/time";
@@ -58,8 +60,7 @@ export default function DrillBanner({ data, scene }: { data: ActiveDrillData; sc
   // "Conocido" = hay algo que el servidor ya nos dijo alguna vez. Con eso el
   // fallo degrada a RETENIDO; sin eso, el fallo ES el estado.
   const known = drill !== null || armed !== null;
-  const frameError = readError !== null && !known ? readError : null;
-  const staleSince = readError !== null && known ? updatedAt : null;
+  const { error: frameError, staleSince } = staleDeLectura(readError, known, updatedAt);
   // La excepción escrita, leída de la tabla: el simulacro es lo ÚNICO que se
   // degrada bajo la alerta real.
   const dominated = scene === "alert" && DEGRADES_UNDER_ALERT.drill;
@@ -172,14 +173,9 @@ function RunningBanner({
         — ESTO NO ES UNA ALERTA REAL · {siteCount} SITIO(S) · {ack} · TERMINA {utcClock(endsAt)} UTC
       </span>
       {canStop && (
-        <button
-          type="button"
-          className="soc-btn soc-btn--secondary"
-          disabled={pending}
-          onClick={onStop}
-        >
+        <Button variant="secondary" disabled={pending} onClick={onStop}>
           TERMINAR
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -214,10 +210,8 @@ function ArmedBanner({
       </span>
       {canAct && (
         <>
-          <button
-            type="button"
-            className="soc-btn soc-btn--primary"
-            /* Antes de la hora el botón está a la vista pero inerte: el aviso es
+          <Button
+            variant="primary" /* Antes de la hora el botón está a la vista pero inerte: el aviso es
                la información, el disparo es el acto. Se habilita a T−0 y sigue
                siendo un clic humano — nunca un temporizador. */
             disabled={!due || pending}
@@ -229,15 +223,10 @@ function ArmedBanner({
             onClick={onRun}
           >
             EJECUTAR AHORA
-          </button>
-          <button
-            type="button"
-            className="soc-btn soc-btn--secondary"
-            disabled={pending}
-            onClick={onCancel}
-          >
+          </Button>
+          <Button variant="secondary" disabled={pending} onClick={onCancel}>
             CANCELAR
-          </button>
+          </Button>
         </>
       )}
     </div>

@@ -605,6 +605,32 @@ body {
 }
 .soc-table tr:last-child td { border-bottom: none; }
 .soc-table tr:hover td { background: rgba(0, 191, 255, 0.04); }
+
+/* [T-6.13] LA TABLA DENSA — la que vive dentro de una tarjeta y no en una
+   pantalla entera. Sustituye a `fleet__admintable`, `bld__table` y
+   `audit__table`, que eran tres copias de la canónica con el padding apretado
+   y que habían divergido en el cuerpo (11, 11 y 11.5 px) sin que nadie lo
+   decidiera. Ahora la densidad es UNA y el cuerpo, el escalón de la escala.
+   `vertical-align: top` entra aquí porque la celda apretada es justamente la
+   que lleva texto largo (el DETALLE de la bitácora). */
+.soc-table--densa { font-size: var(--tk-text-xs); }
+.soc-table--densa th {
+  font-size: var(--tk-text-min);
+  letter-spacing: 0.1em;
+  text-transform: none;
+  padding: 7px 10px 8px;
+  border-top: none;
+  background: transparent;
+}
+.soc-table--densa td { padding: 7px 10px; vertical-align: top; color: var(--tk-fg-2); }
+
+/* La bitácora es la única lista que no cabe NUNCA: su cabecera se queda. */
+.soc-table--sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--tk-surface-2);
+}
 .soc-table__site { display: flex; align-items: center; gap: 10px; font-weight: 500; }
 .soc-mono { font-family: var(--tk-font-mono); font-size: 12px; font-variant-numeric: tabular-nums; }
 .soc-table__pga { color: var(--tk-status-warning); font-weight: 600; }
@@ -748,6 +774,14 @@ body {
   color: var(--tk-fg-1);
   font-weight: 600;
   margin-bottom: 10px;
+  gap: 8px;
+}
+/* [T-6.13] La fila del icono y el título. Era un `style` en línea repetido en
+   las veintiuna cabeceras del árbol: un flex escrito a mano cada vez, fuera del
+   alcance de cualquier censo de la hoja. */
+.soc-card__title {
+  display: flex;
+  align-items: center;
   gap: 8px;
 }
 .soc-card__sub {

@@ -24,6 +24,7 @@
 
 import { EyeOff } from "lucide-react";
 
+import { staleDeLectura } from "../../components/staleDeLectura";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
@@ -46,19 +47,27 @@ export default function DemoModeBanner({ data }: { data: DemoModeData }) {
   const restante =
     activo && demo?.expires_at != null ? (Date.parse(demo.expires_at) - now) / 1000 : 0;
 
+  // [T-6.13] La misma regla que el simulacro y el mantenimiento, con lo que
+  // aquí cuenta como conocido: que la nube nos haya respondido alguna vez.
+  const { error: frameError, staleSince } = staleDeLectura(
+    readError ? "no se pudo leer el modo demostración" : null,
+    demo !== null,
+    updatedAt,
+  );
+
   return (
     <StateFrame
       label="MODO DEMOSTRACIÓN"
       className="soc-drill__frame"
       loading={loading}
-      error={readError && demo === null ? "no se pudo leer el modo demostración" : null}
+      error={frameError}
       onRetry={refetch}
       empty={!activo}
       // Sólo se lee cuando la ausencia es VIEJA: «apagado — así estaba a las
       // hh:mm UTC; desde entonces no se ha podido confirmar». Fresca, no se pinta.
       emptyText="MODO DEMOSTRACIÓN APAGADO"
       silentEmpty
-      staleSince={readError && demo !== null ? updatedAt : null}
+      staleSince={staleSince}
     >
       {activo ? (
         <div className="soc-demo-mode" role="status" data-testid="demo-mode-banner">

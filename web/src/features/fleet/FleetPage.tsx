@@ -1,5 +1,6 @@
 import { useState } from "react";
 
+import Button from "../../components/Button";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
@@ -261,13 +262,9 @@ export default function FleetPage() {
               ? "LOS RÓTULOS DE ABAJO SON EL ÚLTIMO DATO CONOCIDO, NO EL DE AHORA"
               : "PUEDE HABER GABINETES CON LA ALARMA MUDA Y SIN RÓTULO"}
           </span>
-          <button
-            type="button"
-            className="soc-btn soc-btn--secondary"
-            onClick={maintenance.refetch}
-          >
+          <Button variant="secondary" onClick={maintenance.refetch}>
             REINTENTAR VENTANAS
-          </button>
+          </Button>
         </div>
       )}
 

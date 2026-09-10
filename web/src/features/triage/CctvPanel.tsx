@@ -8,6 +8,7 @@
 // lo leyeran cada uno a su manera acabarían discrepando, y aquí el que discrepa lleva una
 // firma debajo.
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import type { CctvState } from "./useCctv";
 
@@ -38,13 +39,12 @@ export default function CctvPanel({
   const evac = d?.evacuacion ?? null;
 
   return (
-    <div className="soc-card cctv" data-testid="cctv-panel">
-      <div className="soc-card__hd">
-        <div>
-          <div>Evacuación observada</div>
-          <div className="soc-card__sub">CCTV · AFORO EN EL PUNTO DE REUNIÓN</div>
-        </div>
-      </div>
+    <Card
+      title="Evacuación observada"
+      sub="CCTV · AFORO EN EL PUNTO DE REUNIÓN"
+      className="cctv"
+      testId="cctv-panel"
+    >
       <StateFrame
         label="EVACUACIÓN OBSERVADA"
         loading={cctv.loading}
@@ -148,6 +148,6 @@ export default function CctvPanel({
           </div>
         )}
       </StateFrame>
-    </div>
+    </Card>
   );
 }

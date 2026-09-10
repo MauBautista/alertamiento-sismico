@@ -1,5 +1,6 @@
 import { GitCommitVertical, RotateCcw, UploadCloud } from "lucide-react";
 
+import Button from "../../components/Button";
 import ConfirmButton from "../../components/ConfirmButton";
 import type { SyncStatus } from "./model";
 
@@ -129,15 +130,14 @@ export default function SyncFooter({
       )}
 
       <div style={{ display: "flex", gap: 8 }}>
-        <button
-          type="button"
-          className="soc-btn soc-btn--secondary"
+        <Button
+          variant="secondary"
           disabled={!dirty || pending}
           title={titles.reset}
           onClick={onReset}
         >
           <RotateCcw size={12} aria-hidden /> RESTAURAR
-        </button>
+        </Button>
         <ConfirmButton
           label="APLICAR Y SINCRONIZAR"
           icon={<UploadCloud size={12} aria-hidden />}

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import Button from "../components/Button";
 import { utcClock } from "../lib/time";
 
 export interface StateFrameProps {
@@ -180,9 +181,9 @@ export default function StateFrame({
       >
         <span className="soc-stateframe__error">{error}</span>
         {onRetry && (
-          <button type="button" className="soc-btn soc-btn--secondary" onClick={onRetry}>
+          <Button variant="secondary" onClick={onRetry}>
             REINTENTAR
-          </button>
+          </Button>
         )}
       </div>
     );

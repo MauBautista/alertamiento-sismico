@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import type { QuorumView } from "./model";
 
@@ -65,25 +66,27 @@ export default function QuorumNodes({
   onRetry,
 }: QuorumNodesProps) {
   return (
-    <div className="soc-card">
-      <div className="soc-card__hd">
-        <div>
-          <div>Regla de quórum · Offsets por nodo</div>
-          <div className="soc-card__sub">
-            CORROBORACIÓN MULTI-SENSOR · VENTANA CONSCIENTE DE LA DISTANCIA
-            {minNodes !== null && ` · MÍNIMO CONFIGURADO HOY: ${minNodes}`}
-          </div>
-        </div>
-        {eventState === "ready" && corroborated && (
-          <span className="soc-pill soc-pill--ok">
-            <Check size={11} aria-hidden /> CONFIRMADO · {view.countedNodes} estaciones
-          </span>
-        )}
-        {eventState === "ready" && !corroborated && (
-          <span className="soc-pill soc-pill--warn">SIN CORROBORAR POR QUÓRUM</span>
-        )}
-      </div>
-
+    <Card
+      title="Regla de quórum · Offsets por nodo"
+      sub={
+        <>
+          CORROBORACIÓN MULTI-SENSOR · VENTANA CONSCIENTE DE LA DISTANCIA
+          {minNodes !== null && ` · MÍNIMO CONFIGURADO HOY: ${minNodes}`}
+        </>
+      }
+      aside={
+        <>
+          {eventState === "ready" && corroborated && (
+            <span className="soc-pill soc-pill--ok">
+              <Check size={11} aria-hidden /> CONFIRMADO · {view.countedNodes} estaciones
+            </span>
+          )}
+          {eventState === "ready" && !corroborated && (
+            <span className="soc-pill soc-pill--warn">SIN CORROBORAR POR QUÓRUM</span>
+          )}
+        </>
+      }
+    >
       {/* [T-2.84.c] Era un `<div className="soc-stateframe" data-state="empty">`
           copiado a mano: mismas clases, mismo atributo, precedencia propia. Una
           copia del marco es una precedencia paralela que `T-2.79.d` no podría
@@ -128,6 +131,6 @@ export default function QuorumNodes({
           </div>
         </StateFrame>
       )}
-    </div>
+    </Card>
   );
 }

@@ -16,6 +16,7 @@ import {
   isSimulatedAction,
 } from "@takab/sdk";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import { latenciaLegible, utcStamp } from "../../lib/time";
 
@@ -215,19 +216,22 @@ export function transcurrido(openedAt: string | null, ts: string): number | null
 
 export default function IncidentTimeline({ actions, openedAt, onRetry }: IncidentTimelineProps) {
   return (
-    <div className="soc-card timeline" data-testid="incident-timeline">
-      <div className="soc-card__hd">
-        <div>
-          <div>Bitácora del incidente</div>
-          <div className="soc-card__sub">APPEND-ONLY · SIN PODA POR RETENCIÓN</div>
-        </div>
-        {/* `?? 0` habría dicho "0 ACCIONES REGISTRADAS" con la consulta fallida:
+    <Card
+      title="Bitácora del incidente"
+      sub="APPEND-ONLY · SIN PODA POR RETENCIÓN"
+      aside={
+        <>
+          {/* `?? 0` habría dicho "0 ACCIONES REGISTRADAS" con la consulta fallida:
             afirmar que no pasó nada cuando lo que ocurre es que no se sabe es
             exactamente lo que prohíbe la regla de oro 7. */}
-        <span className="soc-bacnet">
-          ⬢ {actions.data === undefined ? "S/D" : actions.data.length} ACCIONES REGISTRADAS
-        </span>
-      </div>
+          <span className="soc-bacnet">
+            ⬢ {actions.data === undefined ? "S/D" : actions.data.length} ACCIONES REGISTRADAS
+          </span>
+        </>
+      }
+      className="timeline"
+      testId="incident-timeline"
+    >
       <StateFrame
         label="BITÁCORA"
         loading={actions.loading}
@@ -270,6 +274,6 @@ export default function IncidentTimeline({ actions, openedAt, onRetry }: Inciden
           })}
         </ol>
       </StateFrame>
-    </div>
+    </Card>
   );
 }

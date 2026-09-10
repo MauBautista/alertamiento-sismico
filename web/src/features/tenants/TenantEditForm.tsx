@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Button from "../../components/Button";
 
 import type { TenantOut, TenantUpdate } from "@takab/sdk";
 
@@ -133,9 +134,8 @@ export default function TenantEditForm({
       )}
 
       <div className="mt-edit__actions">
-        <button
+        <Button
           type="submit"
-          className="soc-btn"
           disabled={pending || !dirty || invalid}
           title={
             pending
@@ -148,16 +148,15 @@ export default function TenantEditForm({
           }
         >
           {pending ? "GUARDANDO…" : "GUARDAR FICHA"}
-        </button>
-        <button
-          type="button"
-          className="soc-btn soc-btn--secondary"
+        </Button>
+        <Button
+          variant="secondary"
           disabled={pending}
           title={pending ? "Guardando…" : undefined}
           onClick={onCancel}
         >
           CANCELAR
-        </button>
+        </Button>
       </div>
     </form>
   );

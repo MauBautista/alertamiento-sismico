@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { TenantOut } from "@takab/sdk";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import { useVisibilityGrants, useVisibilityMutations } from "./useVisibility";
 
@@ -45,16 +46,11 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
   }
 
   return (
-    <div className="soc-card" data-testid="visibility-card">
-      <div className="soc-card__hd">
-        <div>
-          <div>Visibilidad entre clientes</div>
-          <div className="soc-card__sub">
-            QUÉ PUEDE VER {grantee.name.toUpperCase()} DE OTROS CLIENTES
-          </div>
-        </div>
-      </div>
-
+    <Card
+      title="Visibilidad entre clientes"
+      sub={<>QUÉ PUEDE VER {grantee.name.toUpperCase()} DE OTROS CLIENTES</>}
+      testId="visibility-card"
+    >
       <StateFrame
         label="VISIBILIDAD"
         loading={data.loading}
@@ -136,6 +132,6 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
           Conceder
         </button>
       </form>
-    </div>
+    </Card>
   );
 }

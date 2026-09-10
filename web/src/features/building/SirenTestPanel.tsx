@@ -9,6 +9,7 @@
 
 import { Siren } from "lucide-react";
 
+import Button from "../../components/Button";
 import ConfirmButton from "../../components/ConfirmButton";
 import { utcClock } from "../../lib/time";
 import type { SirenPhase, SirenTestData } from "./useSirenTest";
@@ -75,9 +76,9 @@ export default function SirenTestPanel({ siren, canTest }: SirenTestPanelProps) 
           />
         )}
         {(siren.phase === "expired" || siren.phase === "rejected" || siren.phase === "failed") && (
-          <button type="button" className="soc-btn soc-btn--secondary" onClick={siren.reset}>
+          <Button variant="secondary" onClick={siren.reset}>
             DESCARTAR
-          </button>
+          </Button>
         )}
       </div>
     </section>

@@ -22,6 +22,7 @@ import { useState } from "react";
 
 import type { EquipmentProfile, GatewayOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
 import { EQUIPMENT_FIELDS, equipmentOf } from "./equipment";
 
 export interface GatewayEditValues {
@@ -125,12 +126,10 @@ export default function GatewayForm({
       )}
 
       <div className="fleet__formactions">
-        <button type="button" className="soc-btn soc-btn--secondary" onClick={onCancel}>
+        <Button variant="secondary" onClick={onCancel}>
           CANCELAR
-        </button>
-        <button
-          type="button"
-          className="soc-btn"
+        </Button>
+        <Button
           disabled={submitting || values.serial.trim() === ""}
           onClick={() =>
             onSubmit({
@@ -141,7 +140,7 @@ export default function GatewayForm({
           }
         >
           {submitting ? "GUARDANDO…" : "GUARDAR GABINETE"}
-        </button>
+        </Button>
       </div>
     </div>
   );

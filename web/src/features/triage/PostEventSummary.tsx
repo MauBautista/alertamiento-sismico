@@ -10,6 +10,7 @@
 // POR QUÉ: un "0 s de aviso" sin explicación se lee como un fallo del sistema, cuando
 // casi siempre significa que ese incidente ni siquiera vino de SASMEX.
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import type { ForensicsOut } from "@takab/sdk";
 import type { ForensicsState } from "./useForensics";
@@ -122,15 +123,12 @@ export function catalogView(f: ForensicsOut): { value: string; note?: string } {
 export default function PostEventSummary({ forensics }: { forensics: ForensicsState }) {
   const f = forensics.data;
   return (
-    <div className="soc-card postevent" data-testid="post-event-summary">
-      <div className="soc-card__hd">
-        <div>
-          <div>Resumen post-evento</div>
-          <div className="soc-card__sub">
-            DESEMPEÑO DE LA RED · CORRELACIÓN CON EL CATÁLOGO DE REFERENCIA
-          </div>
-        </div>
-      </div>
+    <Card
+      title="Resumen post-evento"
+      sub="DESEMPEÑO DE LA RED · CORRELACIÓN CON EL CATÁLOGO DE REFERENCIA"
+      className="postevent"
+      testId="post-event-summary"
+    >
       <StateFrame
         label="RESUMEN POST-EVENTO"
         loading={forensics.loading}
@@ -179,6 +177,6 @@ export default function PostEventSummary({ forensics }: { forensics: ForensicsSt
           </div>
         )}
       </StateFrame>
-    </div>
+    </Card>
   );
 }

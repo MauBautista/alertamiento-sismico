@@ -19,6 +19,7 @@ import { useState } from "react";
 
 import type { SiteOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
 import MapPointPicker from "./MapPointPicker";
 import BuildingTypeField from "./BuildingTypeField";
 import { DEFAULT_PICK, isValidPoint, parseLatLonPair } from "./geo";
@@ -291,12 +292,12 @@ export default function SiteForm({
       )}
 
       <div className="fleet__formactions">
-        <button type="submit" className="soc-btn" disabled={!canSubmit} title={submitTitle}>
+        <Button type="submit" disabled={!canSubmit} title={submitTitle}>
           {submitting ? "GUARDANDO…" : editing ? "GUARDAR CAMBIOS" : "CREAR ESTACIÓN"}
-        </button>
-        <button type="button" className="soc-btn soc-btn--secondary" onClick={onCancel}>
+        </Button>
+        <Button variant="secondary" onClick={onCancel}>
           CANCELAR
-        </button>
+        </Button>
       </div>
     </form>
   );

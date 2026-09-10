@@ -1159,7 +1159,7 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
     seed (`AVISO SÍSMICO · UMBRAL INSTRUMENTAL`), que tapa los botones de capas del mapa y le
     quita alto: es un hallazgo previo a esta ficha y no se toca aquí.
 
-### [ ] T-6.13 · **Una tabla, una tarjeta, un botón** — `SOFTWARE`
+### [x] T-6.13 · **Una tabla, una tarjeta, un botón** — `SOFTWARE`
 
 > Tres sistemas de clases de tabla, dieciocho `soc-card` a mano en un fichero, 72 `soc-btn` sueltos
 > en 30 ficheros, siete productores de pill, y la regla «conocido ⇒ stale» copiada en dos banners.
@@ -1172,9 +1172,17 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 - **Cambia algo que un test defiende hoy:** sí — tests de pantalla que afirman clases.
 - **Objetivo:** `Table`, `Card` y `Button` en `components/` con contrato; las tres tablas fuera de `.soc-table` migradas una por sesión; el cálculo de stale extraído a una función única.
 - **Criterios de aceptación:**
-  - [ ] Ninguna pantalla declara una tabla, tarjeta o botón fuera de la primitiva.
-  - [ ] `cssContract` en verde con las clases viejas retiradas de las hojas.
-  - [ ] `DrillBanner` y `MaintenanceBanner` consumen la misma función de stale.
+  - [x] Ninguna pantalla declara una tabla, tarjeta o botón fuera de la primitiva. Lo vigila `web/src/primitivasCensus.test.ts`, que barre TODO `.ts`/`.tsx` de producción y exige que `<table`, `soc-card` y `soc-btn` sólo aparezcan en su propio fichero de `components/`. Migradas: **6 tablas**, **21 tarjetas** y **72 botones en 30 ficheros**.
+  - [x] `cssContract` en verde con las clases viejas retiradas de las hojas — y también `layoutInvariants`, cuya lista explícita de «clases que DEBEN tener regla» citaba `audit__table`. La entrada no se borró: se sustituyó por `audit__frame`, que es lo único de la bitácora que no era ni densidad ni cabecera fija (sus columnas no parten).
+  - [x] `DrillBanner` y `MaintenanceBanner` consumen la misma función de stale — **y otros tres sitios más**. La ficha contaba dos; el censo, escrito para cazar la FORMA (`readError … ? updatedAt : null`) y no los nombres, encontró **cinco**: los tres banners de la franja de escena y las dos mitades de `ClassificationPanel`.
+- **Cómo se cerró (2026-09-10, SESIÓN 2):**
+  - **`components/Table.tsx`.** Seis `<table>` en el árbol y **tres sistemas de clases**: `fleet__admintable`, `bld__table` y `audit__table` redeclaraban `width`, `border-collapse`, el `th` y el `td` con valores casi iguales. *Casi*: los tres divergían en el cuerpo —11, 11 y 11.5 px— sin que nadie lo hubiera decidido, y ninguno heredaba el `tr:hover` ni el `tr:last-child` de la canónica. Lo que de verdad las distinguía cabe en dos modificadores: **`densa`** (la tabla que vive dentro de una tarjeta y no en una pantalla entera) y **`sticky`** (la bitácora, la única lista que no cabe nunca). Las tres hojas viejas se retiraron.
+  - **`components/Card.tsx`.** Veintiuna tarjetas repetían la misma cabecera de tres niveles; las seis que llevan icono lo colocaban con un `style` en línea —una fila de flex escrita a mano, invisible a cualquier censo de la hoja, la misma familia que cazó T-6.12—. Ahora la fila es la clase `.soc-card__title` y el título, el icono, la procedencia y lo que va a la derecha entran por parámetro.
+  - **`components/Button.tsx`.** 72 sitios escribían la variante a mano en el `className`. Dos exportaciones y no una prop, porque el producto tiene dos cosas distintas: el `<button>` que HACE algo y el `<Link>` que LLEVA a algún sitio —un enlace se abre en otra pestaña, se copia y entra en el historial; un botón no—. `type="button"` es el defecto **a propósito**: el de HTML es `submit`.
+  - **`components/staleDeLectura.ts`.** «Si nunca supimos nada, el fallo ES el estado; si ya supimos algo, el fallo no lo borra: lo marca como RETENIDO con la hora de la última lectura buena» (regla de oro 7). Vive en `components/` y no en `features/scene/` porque no era de la escena: dos de sus cinco usos estaban en triage.
+  - **Un defecto colateral de T-6.12, cazado con el navegador y no con un test:** en `/building` el código y las coordenadas quedaban pegados al nombre del sitio sin ni un espacio —«SITIO DEV PUEBLAsite-dev · 19.0414, -98.2063», el nombre acaba en x=262 y el código empieza en x=262—. `.bld__sub` es un `<span>`, así que su `margin-top` de 3 px no hacía nada; pasaba desapercibido mientras los dos medían lo mismo y se volvió ilegible al subir el nombre al escalón de la métrica. Un `display: block` y el margen escrito hace tiempo por fin se aplica.
+  - **Trampa medida:** el codemod contaba `<div>` para encontrar el cierre de cada tarjeta y se descuadró en `QuorumNodes.tsx` — había un `<div className="soc-stateframe">` **citado dentro de un comentario**. Tercera vez que la misma trampa muerde en esta sesión (T-6.07 con `<style>`, T-6.22 con `<Tabs.Screen>`): **cualquier barrido estructural del marcado tiene que enmascarar los comentarios antes de contar.**
+  - **E2E: sin regresión.** Los 9 rojos de `npm run e2e` son los mismos nueve que ya daba `main` (comprobado con un control A/B en T-6.12): los provoca la franja de alerta viva del seed. El árbol adelgazó: **534 líneas nuevas contra 609 retiradas** y el bundle bajó de 470,5 a 465,5 kB.
 
 ### [ ] T-6.15 · **La consola no depende de internet para su fuente ni para su mapa** — `SOFTWARE`
 

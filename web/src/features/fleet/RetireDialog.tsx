@@ -29,6 +29,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 
+import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 
 export interface RetireDialogProps {
@@ -163,17 +164,16 @@ export default function RetireDialog({
         )}
 
         <div className="retire__actions">
-          <button type="button" className="soc-btn" onClick={onCancel} disabled={pending}>
+          <Button onClick={onCancel} disabled={pending}>
             CANCELAR
-          </button>
-          <button
-            type="button"
-            className="soc-btn soc-btn--danger"
+          </Button>
+          <Button
+            variant="danger"
             disabled={!ready}
             onClick={() => onConfirm({ confirmValue: typed.trim(), retireCode: code })}
           >
             {pending ? "RETIRANDO…" : `RETIRAR ${copy.what.toUpperCase()}`}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

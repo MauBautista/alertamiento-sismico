@@ -7,6 +7,7 @@
 import { ChevronDown, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import Button from "../components/Button";
 import { useSessionStore } from "../auth/session.store";
 import { useProfile, useProfileMutation } from "../auth/useProfile";
 
@@ -91,22 +92,16 @@ export default function OperatorMenu() {
             }}
           />
           <div className="soc-user__row">
-            <button
-              type="button"
-              className="soc-btn soc-btn--primary"
+            <Button
+              variant="primary"
               disabled={save.isPending || draft.replace(/\s+/g, " ").trim() === ""}
               onClick={submit}
             >
               {save.isPending ? "GUARDANDO…" : "GUARDAR"}
-            </button>
-            <button
-              type="button"
-              className="soc-btn"
-              onClick={() => void logout()}
-              aria-label="Cerrar sesión"
-            >
+            </Button>
+            <Button onClick={() => void logout()} aria-label="Cerrar sesión">
               <LogOut size={12} /> SALIR
-            </button>
+            </Button>
           </div>
           {save.isError && (
             <p className="soc-user__error" role="alert">

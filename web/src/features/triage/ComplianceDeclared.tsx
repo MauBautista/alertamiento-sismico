@@ -5,6 +5,7 @@
 // borra al compilar, así que no crea arista en tiempo de ejecución.
 import type { ComplianceDocOut } from "@takab/sdk";
 
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import type { ForensicsState } from "./useForensics";
 
@@ -58,16 +59,12 @@ export default function ComplianceDeclared({
   const unreadable = doc?.unreadable ?? null;
 
   return (
-    <div className="soc-card" data-testid="declared-card">
-      <div className="soc-card__hd">
-        <div>
-          <div>Marco normativo declarado</div>
-          <div className="soc-card__sub" data-testid="declared-provenance">
-            DECLARACIÓN DEL CLIENTE · TAKAB NO LA VERIFICA NI LA CERTIFICA
-          </div>
-        </div>
-      </div>
-
+    <Card
+      title="Marco normativo declarado"
+      sub="DECLARACIÓN DEL CLIENTE · TAKAB NO LA VERIFICA NI LA CERTIFICA"
+      subTestId="declared-provenance"
+      testId="declared-card"
+    >
       {missing ? (
         <p className="cmp-unreadable" role="note">
           MARCO DECLARADO NO DISPONIBLE · este servidor no lo publica todavía. No se afirma nada
@@ -106,6 +103,6 @@ export default function ComplianceDeclared({
           {doc.notes.join(" ")}
         </p>
       )}
-    </div>
+    </Card>
   );
 }

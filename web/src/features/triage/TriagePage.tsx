@@ -2,6 +2,7 @@ import { Search } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
+import Button from "../../components/Button";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
@@ -200,15 +201,15 @@ export default function TriagePage() {
             />
           </StateFrame>
           {triage.hasMore && (
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary triage__more"
+            <Button
+              variant="secondary"
+              className="triage__more"
               onClick={triage.loadMore}
               disabled={triage.loadingMore}
               title={triage.loadingMore ? "Cargando…" : undefined}
             >
               {triage.loadingMore ? "CARGANDO MÁS…" : "CARGAR MÁS"}
-            </button>
+            </Button>
           )}
           <InspectionMatrix
             rows={matrix}

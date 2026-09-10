@@ -16,6 +16,7 @@ import { useParams } from "react-router";
 import { getSiteSitesSiteIdGet } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 
+import Table from "../../components/Table";
 import StateFrame from "../../components/StateFrame";
 import SevTag from "../../components/SevTag";
 import { useSessionStore } from "../../auth/session.store";
@@ -230,7 +231,7 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
             emptyText="SIN INCIDENTES REGISTRADOS"
             staleSince={incidentsStale}
           >
-            <table className="bld__table">
+            <Table densa>
               <thead>
                 <tr>
                   <th>APERTURA (UTC)</th>
@@ -251,7 +252,7 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </Table>
           </StateFrame>
         </div>
       </div>

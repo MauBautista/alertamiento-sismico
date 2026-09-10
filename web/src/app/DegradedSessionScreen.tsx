@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import Button from "../components/Button";
 import logoTakab from "../assets/imagotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
 import { retryDelayMs } from "./degradedRetry";
@@ -130,17 +131,12 @@ export default function DegradedSessionScreen() {
 
         {error ? <p className="soc-screen__error">{error}</p> : null}
 
-        <button
-          type="button"
-          className="soc-btn soc-btn--primary"
-          disabled={retrying}
-          onClick={() => void reintentar()}
-        >
+        <Button variant="primary" disabled={retrying} onClick={() => void reintentar()}>
           {retrying ? "REINTENTANDO…" : "REINTENTAR AHORA"}
-        </button>
-        <button type="button" className="soc-btn soc-btn--secondary" onClick={() => void logout()}>
+        </Button>
+        <Button variant="secondary" onClick={() => void logout()}>
           CERRAR SESIÓN
-        </button>
+        </Button>
       </div>
     </div>
   );

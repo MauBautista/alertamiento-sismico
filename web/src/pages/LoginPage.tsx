@@ -1,6 +1,7 @@
 import { type FormEvent, useState } from "react";
 import { Navigate, useLocation } from "react-router";
 
+import Button from "../components/Button";
 import { getEnv } from "../app/env";
 import { landingPath } from "../app/landing";
 import logoTakab from "../assets/imagotipo-takab-ailert.png";
@@ -68,13 +69,9 @@ function DevLoginPanel() {
           onChange={(e) => setTenantId(e.target.value)}
         />
       </label>
-      <button
-        type="submit"
-        className="soc-btn soc-btn--secondary"
-        disabled={status === "authenticating"}
-      >
+      <Button variant="secondary" type="submit" disabled={status === "authenticating"}>
         ENTRAR COMO ROL
-      </button>
+      </Button>
       {error ? <p className="soc-screen__error">{error}</p> : null}
     </form>
   );
@@ -130,9 +127,8 @@ export default function LoginPage() {
           </p>
         ) : null}
         {cognitoConfigured() ? (
-          <button
-            type="button"
-            className="soc-btn soc-btn--primary"
+          <Button
+            variant="primary"
             disabled={status === "authenticating"}
             onClick={() => {
               setCognitoError(null);
@@ -142,7 +138,7 @@ export default function LoginPage() {
             }}
           >
             ENTRAR CON COGNITO
-          </button>
+          </Button>
         ) : (
           /* [T-6.07] Esto lo lee quien está de turno, no quien desplegó. Decía
              «Cognito no configurado (VITE_COGNITO_*)»: nombra un proveedor de

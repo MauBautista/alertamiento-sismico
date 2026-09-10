@@ -29,6 +29,8 @@
 
 import { ShieldOff } from "lucide-react";
 
+import Button from "../../components/Button";
+import { staleDeLectura } from "../../components/staleDeLectura";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { endClock, muteAckLine, muteHeadline, muteOutcome } from "../console/maintenance";
@@ -42,8 +44,7 @@ export default function MaintenanceBanner({ data }: { data: MaintenanceData }) {
   // "Conocido" = el servidor ya nos dijo algo alguna vez. Con eso el fallo
   // degrada a RETENIDO; sin eso, el fallo ES el estado.
   const known = items.length > 0;
-  const frameError = readError !== null && !known ? readError : null;
-  const staleSince = readError !== null && known ? updatedAt : null;
+  const { error: frameError, staleSince } = staleDeLectura(readError, known, updatedAt);
 
   return (
     <StateFrame
@@ -85,15 +86,14 @@ export default function MaintenanceBanner({ data }: { data: MaintenanceData }) {
               · {muteAckLine(w)} · TERMINA {endClock(w)} UTC · MOTIVO: {w.reason}
             </span>
             {canClose && (
-              <button
-                type="button"
-                className="soc-btn soc-btn--secondary"
+              <Button
+                variant="secondary"
                 disabled={pending}
                 onClick={() => close(w.window_id)}
                 title="Reabre la vigilancia AHORA: si alguna alarma quedó disparada, su correo sale"
               >
                 REABRIR VIGILANCIA
-              </button>
+              </Button>
             )}
           </div>
         ))}

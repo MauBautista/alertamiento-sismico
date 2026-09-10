@@ -2,6 +2,8 @@ import { useState } from "react";
 
 import type { SiteOut, TenantOut, UserOut } from "@takab/sdk";
 
+import Button from "../../components/Button";
+import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
@@ -111,26 +113,26 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
   }
 
   return (
-    <div className="soc-card users" data-testid="users-card">
-      <div className="soc-card__hd">
-        <div>
-          <div>Usuarios del cliente</div>
-          <div className="soc-card__sub">
-            QUIÉN ENTRA A {tenant.name.toUpperCase()} · ROL, ALCANCE Y SUPERFICIE
-          </div>
-        </div>
-        {data.backend !== null && (
-          <span
-            className={`soc-pill soc-pill--${data.backend === "cognito" ? "ok" : "crit"}`}
-            data-testid="users-backend"
-          >
-            {data.backend === "cognito"
-              ? "DIRECTORIO COGNITO"
-              : "DIRECTORIO SIMULADO · NADA SE ESCRIBE DE VERDAD"}
-          </span>
-        )}
-      </div>
-
+    <Card
+      title="Usuarios del cliente"
+      sub={<>QUIÉN ENTRA A {tenant.name.toUpperCase()} · ROL, ALCANCE Y SUPERFICIE</>}
+      aside={
+        <>
+          {data.backend !== null && (
+            <span
+              className={`soc-pill soc-pill--${data.backend === "cognito" ? "ok" : "crit"}`}
+              data-testid="users-backend"
+            >
+              {data.backend === "cognito"
+                ? "DIRECTORIO COGNITO"
+                : "DIRECTORIO SIMULADO · NADA SE ESCRIBE DE VERDAD"}
+            </span>
+          )}
+        </>
+      }
+      className="users"
+      testId="users-card"
+    >
       <p className="users__note">
         La contraseña temporal la genera y envía Cognito: TAKAB no la fija, no la ve y no la
         muestra. Toda alta, cambio de rol o baja queda en la bitácora con tu firma.
@@ -156,18 +158,16 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                 </span>
               </div>
               <div className="users__rowactions">
-                <button
-                  type="button"
-                  className="soc-btn soc-btn--secondary"
+                <Button
+                  variant="secondary"
                   disabled={busy}
                   title={busy ? "Operación en curso…" : undefined}
                   onClick={() => (editing === user.username ? setEditing(null) : startEdit(user))}
                 >
                   {editing === user.username ? "CERRAR" : "EDITAR"}
-                </button>
-                <button
-                  type="button"
-                  className="soc-btn soc-btn--secondary"
+                </Button>
+                <Button
+                  variant="secondary"
                   disabled={busy}
                   title={busy ? "Operación en curso…" : undefined}
                   onClick={() =>
@@ -178,7 +178,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                   }
                 >
                   {user.enabled ? "DESHABILITAR" : "HABILITAR"}
-                </button>
+                </Button>
               </div>
 
               {editing === user.username && (
@@ -246,9 +246,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                         {site.code} · {siteLabelText(site.name, site.code)}
                       </label>
                     ))}
-                    <button
-                      type="button"
-                      className="soc-btn"
+                    <Button
                       disabled={busy}
                       title={busy ? "Operación en curso…" : undefined}
                       onClick={() =>
@@ -261,37 +259,34 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                       }
                     >
                       GUARDAR ALCANCE
-                    </button>
+                    </Button>
                   </fieldset>
 
                   <div className="users__rowactions">
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
+                    <Button
+                      variant="secondary"
                       disabled={busy}
                       title={busy ? "Operación en curso…" : undefined}
                       onClick={() => action.mutate({ username: user.username, action: "reset" })}
                     >
                       RESTABLECER CONTRASEÑA
-                    </button>
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
+                    </Button>
+                    <Button
+                      variant="secondary"
                       disabled={busy}
                       title={busy ? "Operación en curso…" : undefined}
                       onClick={() => action.mutate({ username: user.username, action: "resend" })}
                     >
                       REENVIAR INVITACIÓN
-                    </button>
-                    <button
-                      type="button"
-                      className="soc-btn soc-btn--secondary"
+                    </Button>
+                    <Button
+                      variant="secondary"
                       disabled={busy}
                       title={busy ? "Operación en curso…" : undefined}
                       onClick={() => remove.mutate(user.username)}
                     >
                       DAR DE BAJA
-                    </button>
+                    </Button>
                   </div>
                   <p className="soc-meta">
                     DESHABILITAR es reversible y conserva la cuenta; DAR DE BAJA la elimina del
@@ -376,9 +371,8 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
             </select>
           </label>
           <div className="users__rowactions">
-            <button
+            <Button
               type="submit"
-              className="soc-btn"
               disabled={create.isPending || draft.email.trim() === ""}
               title={
                 create.isPending
@@ -389,17 +383,16 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
               }
             >
               {create.isPending ? "CREANDO…" : "CREAR E INVITAR"}
-            </button>
-            <button
-              type="button"
-              className="soc-btn soc-btn--secondary"
+            </Button>
+            <Button
+              variant="secondary"
               onClick={() => {
                 create.reset();
                 setCreating(false);
               }}
             >
               CANCELAR
-            </button>
+            </Button>
           </div>
           <p className="soc-meta">
             El alcance nace en TODO EL CLIENTE y se acota después, por estación. Nace así porque un
@@ -407,10 +400,8 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
           </p>
         </form>
       ) : (
-        <button type="button" className="soc-btn" onClick={() => setCreating(true)}>
-          + NUEVO USUARIO
-        </button>
+        <Button onClick={() => setCreating(true)}>+ NUEVO USUARIO</Button>
       )}
-    </div>
+    </Card>
   );
 }
