@@ -9,6 +9,7 @@ NUNCA escriba un número donde no hubo medición.
 from __future__ import annotations
 
 import hashlib
+import pathlib
 from datetime import UTC, datetime
 
 import pytest
@@ -178,6 +179,60 @@ def test_sin_la_fuente_degrada_pero_NO_falla(monkeypatch: pytest.MonkeyPatch) ->
     assert pdf.degraded
     # Y lo declara en el pie: perder caracteres en silencio sería peor que degradar.
     assert "?" in pdf.text_of("Δt")
+
+
+# ---- la marca ----------------------------------------------------------------
+
+
+def test_el_logotipo_viaja_con_el_paquete() -> None:
+    """El dictamen es el ÚNICO papel blanco que el producto entrega firmado, y salía
+    con la palabra «TAKAB AILERT» compuesta en DejaVu — la tipografía de respaldo del
+    documento, no la de la marca. El logotipo va en su variante POSITIVA porque el
+    papel es blanco: la negativa, que es la de toda la interfaz, desaparecería."""
+    pdf = layout.TakabPDF("TKB-TEST", "sub")
+    assert not pdf.sin_marca, "el logotipo no se empaquetó con `takab_api.dictamen`"
+    assert layout.LOGOTIPO.exists()
+
+
+def test_sin_el_logotipo_el_dictamen_SIGUE_saliendo(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Misma regla que la tipografía: una exportación de evidencia no puede caerse por
+    un adorno. Sin el fichero, la cabecera vuelve a la palabra compuesta."""
+    monkeypatch.setattr(layout, "LOGOTIPO", layout.Path("/no/existe.png"))
+    pdf = layout.TakabPDF("TKB-TEST", "sub")
+    assert pdf.sin_marca
+    assert render(model()).startswith(b"%PDF")
+
+
+def test_el_logotipo_ES_el_maestro_positivo_de_shared_brand() -> None:
+    """Una copia a mano diverge. `shared/brand/generar.py` deriva este fichero como
+    deriva los catorce restantes, y aquí se cruza que sea el mismo arte: si alguien
+    lo sustituye por otro PNG, esto se pone rojo."""
+    generador = (
+        pathlib.Path(__file__).resolve().parents[3] / "shared" / "brand" / "generar.py"
+    ).read_text(encoding="utf-8")
+    assert "logotipo-positivo.png" in generador
+    assert "dictamen/marca" in generador
+
+
+def test_el_papel_del_dictamen_pide_el_POSITIVO_y_no_el_negativo() -> None:
+    """La tinta del maestro positivo es navy sobre transparente y el papel es blanco.
+    El negativo —el de la consola, el panel y la app— es tinta casi blanca: sobre este
+    papel se perdería. Se comprueba midiendo la luminancia del arte que se empaqueta,
+    no leyendo su nombre de fichero."""
+    from PIL import Image
+
+    im = Image.open(layout.LOGOTIPO).convert("RGBA")
+    px = im.load()
+    ancho, alto = im.size
+    opacos = [
+        (px[x, y][0], px[x, y][1], px[x, y][2])
+        for y in range(0, alto, max(1, alto // 80))
+        for x in range(0, ancho, max(1, ancho // 80))
+        if px[x, y][3] >= 32
+    ]
+    assert opacos, "el logotipo empaquetado no tiene un solo píxel opaco"
+    medio = sum(0.2126 * r + 0.7152 * g + 0.0722 * b for r, g, b in opacos) / len(opacos) / 255
+    assert medio < 0.5, f"la tinta empaquetada es clara ({medio:.2f}): es el NEGATIVO"
 
 
 # ---- las dos variantes -------------------------------------------------------

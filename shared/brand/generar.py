@@ -109,6 +109,7 @@ def por_alto(arte: Image.Image, alto: int) -> Image.Image:
 
 def main() -> None:
     iso_neg = maestro("isotipo-negativo.png")
+    logo_pos = maestro("logotipo-positivo.png")
     logo_neg = maestro("logotipo-negativo.png")
     imago_neg = maestro("imagotipo-negativo.png")
 
@@ -176,6 +177,20 @@ def main() -> None:
     # Va el NEGATIVO porque la hoja pinta la banda con `--tk-surface-1`: sobre
     # ese navy, el positivo desaparece.
     guarda(por_ancho(imago_neg, 560), RAIZ / "infra/terraform/modules/identity/logo-cognito.png")
+
+    print("dictamen (api):")
+    # [T-6.33] EL ÚNICO DESTINO EN POSITIVO, y por eso lleva explicación.
+    #
+    # El PDF del dictamen es el único PAPEL BLANCO que el producto entrega, y va
+    # firmado. Todo lo demás de esta lista se pinta sobre el navy del sistema, y
+    # ahí manda el negativo; aquí manda el contrario. Medido: la tinta del
+    # positivo sobre `#0E2336` da 1.04:1 —invisible— y la del negativo sobre
+    # blanco, otro tanto al revés. `sistema-de-identidad.png` lo dice igual: los
+    # positivos se presentan sobre blanco, los negativos sobre la placa navy.
+    #
+    # 800 px de ancho para ~34 mm de caja impresa: algo más del doble a 300 ppp,
+    # que es lo que hace falta para que no se vea blando en papel.
+    guarda(por_ancho(logo_pos, 800), RAIZ / "api/src/takab_api/dictamen/marca/logotipo.png")
 
     print("app movil:")
     # iOS: SIN alfa (ver cabecera).

@@ -354,6 +354,42 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
   - **Verificación:** suite `api` completa en verde (incluidos los 4 tests nuevos del sembrador) y
     `demo/tests` con 43; `ruff check` y `ruff format --check` limpios.
 
+### [x] T-6.33 · **El dictamen firmado lleva la marca, en positivo** — `SOFTWARE`
+
+> Ficha ABIERTA DURANTE EL CIERRE. Salió de una pregunta de Mauricio sobre qué variante del
+> logotipo usar: al medirlo se vio que la respuesta era «la negativa en todo» **salvo en un sitio**,
+> y que ese sitio no llevaba marca ninguna.
+
+- **Superficie:** Costura (API) · **Sesión:** X33
+- **Componente:** api (`dictamen/layout.py`, `dictamen/marca/`), `shared/brand/generar.py` · **Depende de:** nada · **Prioridad: BAJA**
+- **Cierra:** nada de la auditoría — es una omisión encontrada al cerrarla
+- **Tests de censo que toca:** `api/tests/dictamen/test_pdf.py` (gana cuatro pruebas de marca), `test_avisos_impresos.py` (su guarda de no-vacuidad se apoyaba en el texto de la cabecera).
+- **Token nuevo:** no.
+- **Cambia algo que un test defiende hoy:** sí — la cabecera dejaba de imprimir «TAKAB AILERT» como texto.
+- **Objetivo:** que el único papel blanco que el producto entrega firmado lleve el logotipo, y que el nombre siga siendo texto extraíble.
+- **Criterios de aceptación:**
+  - [x] El PDF sale con el logotipo en la cabecera de cada página. **Ejercido fuera de los tests:** dictamen técnico real renderizado (96 132 bytes, 2 páginas) y rasterizado con `pdftoppm`; el logotipo se lee y el filete y el subtítulo no se movieron.
+  - [x] «TAKAB AILERT» sigue siendo **texto**, no sólo arte: `pdftotext` lo encuentra **dos veces**, una por página.
+  - [x] Sin el fichero, el dictamen SALE IGUAL con la palabra compuesta.
+- **Cómo se cerró (2026-09-10, SESIÓN 2):**
+  - **Es el único destino de la marca en POSITIVO del repo, y por eso lleva explicación escrita en
+    `generar.py`.** Todo lo demás —consola, panel, iconos de la app, login de Cognito— se pinta
+    sobre el navy del sistema y ahí manda el negativo. Medido: la tinta del positivo sobre
+    `#0E2336` da **1.04:1**, invisible; `sistema-de-identidad.png` lo dice igual (los positivos se
+    presentan sobre blanco, los negativos sobre la placa navy). El PDF es blanco: manda el otro.
+  - **El logotipo no se copia a mano: lo deriva `generar.py`** a
+    `api/src/takab_api/dictamen/marca/logotipo.png`, 800 px de ancho para una caja impresa de
+    34 mm (algo más del doble a 300 ppp). Un test cruza que el generador siga citando el maestro
+    positivo y ese destino: una copia a mano diverge.
+  - **Y el nombre BAJA al pie, en texto y en todas las páginas.** La cabecera pasó a llevar arte, y
+    un lector de pantalla —o el `pdftotext` de la contraparte que revisa el dictamen— no lee un
+    PNG. En un documento firmado, de quién es la firma no puede vivir sólo en una imagen. Esto
+    además mantiene en verde la guarda de no-vacuidad del espía de render, que se apoyaba
+    precisamente en esa cadena.
+  - **Misma regla que la tipografía:** si el arte no viajó con el paquete, `sin_marca` lo detecta y
+    la cabecera vuelve a la palabra compuesta. Una exportación de evidencia no puede caerse por un
+    adorno (y `pyproject.toml` gana `marca/*.png` en `package-data` para que viaje).
+
 ## 7 · Fichas · Consola SOC
 
 ### [x] T-6.01 · **La escena vive en el shell: alerta, simulacro, mantenimiento y demo en las seis pantallas** — `SOFTWARE`
