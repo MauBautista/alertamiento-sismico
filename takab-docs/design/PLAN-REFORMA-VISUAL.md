@@ -160,6 +160,9 @@ Un plan de rediseño sin lista de descartes es una lista de deseos.
 3. **No animar nada en el camino de lectura de una alerta.** `AlertBanner`, `#banner-alert` y
    `CrisisView` están limpios y ninguna ficha los toca. La única animación nueva en el panel es el
    latido que la spec ya declara, y solo si se detiene cuando el dato envejece.
+   **Revocado por [`D-30`](../DECISIONES-MAURICIO.md) el 2026-09-11:** el camino de lectura se anima
+   con condiciones —texto legible desde el primer frame, portador no-movimiento, se detiene por
+   estado, respeta `reduced-motion`— y lo ejecuta `T-7.19` del Bloque VIII.
 4. **No migrar a Reanimated «porque está instalado».** Lo que falta en el móvil es el portador de
    estado y la consulta de `reduceMotion`, no una librería. Migrar es rendimiento, no diseño.
 5. **No subir el alto de la tira de simulacro de la consola.** El e2e la fija por debajo del

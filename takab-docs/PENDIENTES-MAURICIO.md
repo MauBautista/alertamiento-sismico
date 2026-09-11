@@ -9,13 +9,24 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-01 · **26 puntos abiertos** (§2: 12 · §3: 5 · §4: 6 · §5: 3),
+> **Última actualización:** 2026-09-11 · **31 puntos abiertos** (§2: 13 · §3: 7 · §4: 8 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
 > **El conteo se puede rehacer, y por eso se dice cómo:** cuenta un `###` salvo que su título
 > esté tachado o lleve ✅. Única excepción, el **§4.3** — su ✅ dice que la compra está
 > *autorizada*, no hecha. (La tabla de decisiones de la §1 también lleva ✅ y no son puntos.)
+>
+> ## Lo que cambió el 2026-09-11
+>
+> Entraron **cuatro**, todos del plan del prototipo funcional (y la §3 se recontó con la regla
+> de esta cabecera: tenía seis abiertos, no cinco)
+> ([`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md), Bloque VIII de `TASKS.md`), y
+> ninguno es código: la **clave de OpenRouter** y su tope (§2.13), la **sesión de demostración**
+> con el WR-1 y el Pixel (§3.7), el **consentimiento** para que las fotos del brigadista lleguen a
+> la IA (§4.7) y los **datos del membrete** (§4.8). Y una que ya estaba cambia de urgencia: el
+> §4.4 (FCM real) deja de ser «para la tienda» — sin él la app se entera de la alerta por sondeo,
+> hasta 30 s después de la sirena, y `T-7.03` lo necesita en la primera fase.
 >
 > ## Lo que cambió el 2026-09-01
 >
@@ -430,6 +441,16 @@ takab_api.ops.prune_cctv`, sin `--apply`) para ver el censo con los ojos, y solo
 > tabla queda **deshabilitada** y el job no toca un byte, así que se puede desplegar antes de
 > decidir — igual que el de PII.
 
+### 2.13 · [`T-7.26`](TASKS.md) · Clave de OpenRouter en Secrets Manager y tope mensual
+
+La capa narrativa existe desde `T-2.42`, lista y apagada; encenderla en la nube exige tres cosas
+que solo Mauricio puede poner: **una cuenta de OpenRouter con crédito**, su **clave** en Secrets
+Manager como `takab/dev/openrouter` (con `!` desde su terminal — nunca pegada en el chat ni en un
+fichero del repo, regla de oro 6) y un **tope mensual** en el panel de OpenRouter, además del tope
+por tenant que ya aplica la API (`ai_monthly_cap_usd`, 10 USD en dev). Modelo recomendado:
+`anthropic/claude-sonnet-5` (admite imágenes, que `D-32` necesita); `anthropic/claude-haiku-4.5`
+si el coste manda. Un informe completo cuesta del orden de centavos.
+
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
 > `G-04` (relés reales, latencia <100 ms acreditada) sigue abierto **desde el hito de la Fase 1**.
@@ -804,6 +825,15 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > (c) fotos del gabinete instalado si algún día hay sesión — entran por `astro:assets`.
 > Nada usa los mockups de `takab-docs/design/` como si fueran el producto.
 
+### 3.7 · [`T-7.07`](TASKS.md), [`T-7.09`](TASKS.md), [`T-7.28`](TASKS.md) · Sesión de demostración con el WR-1 y el Pixel
+
+El guion del prototipo se ejecuta **con el radio de verdad**: el modo prueba del WR-1 tiene que
+estar **desarmado** (con él armado no hay incidente ni push, y nadie ve el error), el modo
+demostración apagado, y los destinatarios de la cascada del tenant tienen que ser **propios**,
+porque una alerta real suena y notifica de verdad. Hace falta el Pixel por USB (enrolado como
+ocupante) y, si lo hay, un segundo dispositivo como brigadista. Se repite en F7 dos veces con
+cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
+
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 
 ### 4.1 · [`T-2.96`](TASKS.md) · `GATE-LEGAL` · marco normativo citable
@@ -953,6 +983,21 @@ Nunca en un gabinete ya en servicio salvo ventana avisada y aceptada por el clie
 > 3. Decide el número de WhatsApp para `wa.me` (¿asumes tú el ruido de prospectos ahí?) y ponlo
 >    en `landing/src/config.ts` (`WHATSAPP_URL`); con la cadena vacía el botón NO se renderiza
 >    a propósito — un canal que no existe no se muestra.
+
+### 4.7 · [`T-7.27`](TASKS.md) · Consentimiento para que las fotos del brigadista lleguen a la IA (`D-32`)
+
+`D-32` decidió que la IA vea las fotos del reporte de daños. La transferencia a un tercero fuera
+del país está permitida **con condiciones** (`RESIDENCIA-DE-DATOS-TAKAB.md §6.3`), y la que falta
+es contractual: una cláusula en el contrato con el cliente y el aviso en la cámara forense del
+móvil. El software pone el aviso; la cláusula la redacta quien redacte el contrato. Hasta
+entonces, el prototipo lo enseña con el tenant de demostración.
+
+### 4.8 · [`T-7.21`](TASKS.md) · Datos del membrete: razón social, domicilio y firmante
+
+El membrete único de los documentos (dictamen, reporte de simulacro, informe del evento y la hoja
+en blanco de `shared/brand/membrete/`) necesita la **razón social** exacta, el **domicilio** que
+deba aparecer al pie, la **clasificación** del documento (público, confidencial) y quién **firma**
+por TAKAB. Nada de esto está en el repositorio, y no debe inventarse.
 
 ## 5 · CIERRE DEL PROYECTO
 

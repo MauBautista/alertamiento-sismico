@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **378** · `[x]` **328** · `[~]` **10** · `[ ]` **40**
+**Conteo de tareas:** total **406** · `[x]` **328** · `[~]` **10** · `[ ]` **68**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13460,6 +13460,517 @@ que es una acción hacia afuera. Los dos están escritos en el apartado de cierr
 >
 > Detalle, medición y trampas: `design/PLAN-REFORMA-VISUAL.md` § T-6.33.
 
+## BLOQUE VIII · PROTOTIPO FUNCIONAL — lo que se enseña a un cliente, de punta a punta
+
+**Por qué existe este bloque.** El Bloque VII dejó las tres superficies diciendo lo que el sistema
+sabe. Este bloque ordena lo siguiente: **que lo que el código promete esté corriendo en el
+sistema desplegado**, que el guion completo de una presentación —SOC en reposo, movimiento
+aislado sin WR-1, pulso del WR-1 con alerta en gabinete y móvil, análisis, epicentro, reporte—
+se ejecute de verdad con el gabinete de Puebla y el Pixel, y que encima de eso se construya lo
+que hace la demostración memorable: la vida del sismo animada en la consola, una red de
+estaciones de referencia, el papel oficial, la sismología visual y la redacción asistida por IA.
+El plan de detalle, con el objetivo ejecutable de cada fase, los subagentes y las plantillas de
+sesión, vive en [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md); aquí están las
+fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
+[`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
+
+**El orden es de criticidad, no de gusto**, y se ejecuta en ocho fases: conformidad (F0), el
+guion de punta a punta con lo que hay (F1), datos demo (F2), la vida del sismo (F3), papel
+oficial (F4), sismología visual (F5), IA asesora (F6) y ensayo general (F7). F5 y F6 pueden
+solaparse; F4 no va antes que F3 porque el informe necesita los datos por estación.
+
+**Relaciones hacia fuera del bloque, escritas donde se planifica.** Cuatro fichas ejecutan o
+completan tareas de otros bloques y lo declaran como dependencia: `T-7.02` ejecuta `T-3.11.c`
+(el worker de backfill nunca estuvo en el compose de la nube y sin él la evidencia no llega) y
+la dejará en `[x]` al terminar; `T-7.06` ejecuta `T-2.89` (encender `console_scope_enforced`,
+que `D-18` ya decidió) y la dejará en `[x]` igual; `T-7.24` ejecuta `T-3.09` (mini-ShakeMap, con la arquitectura de `D-08`); y
+`T-7.25` cubre la mitad USGS de `T-3.13` (la mitad SSN sigue bloqueada por atribución, `D-06`).
+Dos más se apoyan en fichas ajenas sin depender de ellas: `T-7.07` toma el procedimiento de
+alerta real del runbook de `T-2.95`, y `T-7.26` deja escrito el registro de procedencia que
+`T-3.01` pide. Ninguna ficha de este bloque espera a un gate físico; lo que espera a una
+persona está en [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) (§2.13, §3.7, §4.7, §4.8).
+
+**Tres invariantes que este bloque no negocia**, porque cada una se midió como riesgo real al
+planificarlo: los simuladores **jamás publican `takab/events`** (un `LocalEvent` simulado abre
+incidentes, el motor forma cuórum con estaciones que no midieron nada y la nube manda un
+comando firmado al gabinete real); la reproducción histórica **se rotula como reproducción** en
+todas las superficies y el catálogo conserva su procedencia real; y **nada de la §14 del
+blueprint se deroga** salvo la viñeta `[DIFERIDO · mini-ShakeMap]`, dentro de `T-7.24` — las
+cinco viñetas `[INVARIANTE · …]` (T-MINUS, magnitud preliminar, streaming crudo continuo, IA en
+la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
+
+## Fase 7.0 · Prototipo funcional — de la conformidad al ensayo general
+
+> **De dónde sale esta fase.** Del encargo del 2026-09-11 tras cerrar la reforma visual y
+> desplegar `main` en la nube. Se planificó con tres barridos del repositorio y uno de diseño;
+> los hechos que cambiaron las premisas (la IA ya existe apagada, nada cierra un incidente en
+> producción, el push está simulado en la nube, el motor de cuórum manda comandos) están en el
+> plan con su cita.
+>
+> **El criterio de cierre de cada ficha es el del Bloque VII:** implementada, con test, **y
+> ejercida al menos una vez fuera de los tests** — navegador real, Pi real, Pixel real. Cada
+> fase tiene además un objetivo ejecutable (un bloque de comandos que devuelve 0) que se corre
+> en `/loop` hasta que pasa.
+
+### [ ] T-7.01 · **Censo de conformidad: lo que está en código está en el sistema** — `SOFTWARE`
+- **Componente:** deploy · api · docs · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** un informe con veredicto por pieza, derivado de comandos y no de lectura, que
+  diga qué parte del código no corre en el sistema desplegado.
+- **Criterios de aceptación:**
+  - [ ] `api/tests/test_compose_cubre_los_workers.py`: deriva del árbol todo módulo
+    `takab_api.*` ejecutable (`__main__.py`) y exige que cada uno tenga servicio en
+    `deploy/cloud/docker-compose.yml` **o** figure en una lista «no residente, con razón»
+    (`billing`, `ops.prune_pii`, `ops.restore_check`…). Hoy pone en rojo a `backfill`.
+  - [ ] `deploy/cloud/conformidad.sh` + `make cloud-conformidad`: `/api/health.build == HEAD`,
+    esquema `al_dia`, compose cubre los workers, toda variable que `Settings` exige en la nube
+    está en el heredoc de `deploy.sh`, cola de backfill vacía, release del Pi = `HEAD`, APK del
+    Pixel construido de `HEAD`, `terraform plan` sin cambios, banderas leídas del sistema
+    (`console_scope_enforced`, OpenRouter, proveedor de push, `command_enabled`/`audio_*` vía
+    `/api/status`).
+  - [ ] `takab-docs/INFORME-CONFORMIDAD-DEMO.md` con 🟢/🟡/🔴 por pieza y la evidencia
+    (comando + salida). Un 🔴 nombra la ficha que lo cierra.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.02 · **El worker de backfill corre en la nube** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** deploy · api · **Depende de:** T-3.11.c · **Prioridad:** F0 · crítica
+- **Objetivo:** que el miniSEED de un evento confirmado llegue a S3 y a `evidence_objects`, y
+  que el espectrograma de un reporte generado en la nube deje de salir vacío. Ejecuta y cierra
+  `T-3.11.c`, que se marca `[x]` en el mismo commit.
+- **Criterios de aceptación:**
+  - [ ] Servicio `backfill` en `docker-compose.yml` con la misma imagen y `db-ingest.env`;
+    `deploy.sh` lo levanta y `conformidad.sh` lo ve.
+  - [ ] Prueba viva tras el despliegue: un evento (`soc-local` → nube o pulso real) deja fila en
+    `evidence_objects` y objeto en S3; `POST /incidents/{id}/report` trae espectrograma.
+  - [ ] La cola `takab-dev-q-backfill` queda en 0 mensajes tras drenar el atasco histórico.
+- **Tests de censo que toca:** `test_compose_cubre_los_workers` · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.03 · **La push llega de verdad al teléfono** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** infra · deploy · mobile · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** que el gabinete dispare y el Pixel vibre por push real, no por sondeo.
+- **Criterios de aceptación:**
+  - [ ] Con `push_fcm_service_account_json` en `local.auto.tfvars` (Mauricio, §4.4 de
+    pendientes) el módulo `push` crea la platform application y `deploy.sh` exporta
+    `TAKAB_API_PUSH_FCM_APPLICATION_ARN`; `api/tests/notify/test_push_provider_en_nube.py`
+    prueba que el entorno de despliegue elige `SnsPushProvider`.
+  - [ ] `google-services.json` en la app (gitignored), rebuild, token registrado en
+    `POST /me/push-tokens`; un incidente real deja `notification_jobs.status='sent'`.
+  - [ ] **Respaldo declarado y medido** si las credenciales no llegan: app en primer plano y
+    sondeo, con el tiempo hasta la pantalla de crisis escrito en el runbook.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.04 · **Censo de solapes y de flujo con la alerta en pantalla** — `SOFTWARE`
+- **Componente:** web · edge · mobile · **Depende de:** — · **Prioridad:** F0 · alta
+- **Objetivo:** afirmar «nada se encima» con las escenas que la demo va a mostrar, no con la
+  consola en reposo.
+- **Criterios de aceptación:**
+  - [ ] `web/e2e/layout.spec.ts` deja de tolerar que la alerta «no esté»: sobre `soc-local`
+    con `:9100/sasmex` se fuerzan `alert` y `review` y se barren 6 pantallas × 3 viewports; un
+    par de elementos visibles con texto que se interseca (salvo ancestro/descendiente) es fallo.
+  - [ ] Panel del gabinete: 13 escenas × 3 modos con el mismo criterio, solo contra
+    `127.0.0.1`.
+  - [ ] Pixel: `uiautomator` **filtrado a rótulos de la app** (el teléfono es personal) en
+    crisis, check-in y táctico.
+  - [ ] Conteo de clics de los tres flujos (alerta→dictamen, alta de sitio, simulacro) contra
+    `design/INFORME-UIUX.md §3`; cada hallazgo nace como criterio de `T-7.05`.
+- **Tests de censo que toca:** `layout.spec` · **Token nuevo:** no · **Cambia algo que un
+  test defiende hoy:** sí — `layout.spec.ts` toleraba la ausencia de la alerta.
+
+### [ ] T-7.05 · **Correcciones del censo de solapes y flujo** — `SOFTWARE`
+- **Componente:** según hallazgos · **Depende de:** T-7.04 · **Prioridad:** F0 · alta
+- **Objetivo:** cerrar lo que `T-7.04` midió, ficha por ficha, con captura antes y después.
+- **Criterios de aceptación:**
+  - [ ] Los criterios se escriben al cerrar `T-7.04`, uno por hallazgo, con su pantalla y
+    viewport.
+  - [ ] Ningún valor nuevo fuera de `shared/design-tokens/tokens.json`.
+- **Tests de censo que toca:** los que cada hallazgo nombre · **Token nuevo:** solo si falta ·
+  **Cambia algo que un test defiende hoy:** se declara por hallazgo.
+
+### [ ] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** deploy · web · **Depende de:** T-2.89 · **Prioridad:** F0 · media
+- **Objetivo:** que el despliegue diga lo mismo que el código y que `D-18` decidió. Ejecuta y
+  cierra `T-2.89`.
+- **Criterios de aceptación:**
+  - [ ] `TAKAB_API_CONSOLE_SCOPE_ENFORCED=true` en el heredoc de `deploy.sh`; redeploy.
+  - [ ] `web/e2e/scope.spec.ts` contra la nube con un usuario con `site_scope`
+    (`make cloud-users`): distintivo en la barra, subconjunto en el mapa.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.07 · **El runbook de la demostración y su guion ejecutable** — `SOFTWARE` + `FÍSICO`
+- **Componente:** deploy · docs · **Depende de:** T-7.02 · **Prioridad:** F1 · crítica
+- **Objetivo:** que los cuatro actos se ejecuten con el WR-1 real, el gabinete de Puebla y el
+  Pixel, con evidencia por acto, y que un script diga si el sistema está listo antes de tocar
+  el radio.
+- **Criterios de aceptación:**
+  - [ ] `takab-docs/runbooks/RUNBOOK-demo-cliente.md`: precondiciones, los cuatro actos con
+    comandos, limpieza y una tabla **Registro** (fecha, duración, captura por acto).
+  - [ ] `deploy/demo/guion.sh --preflight`: modo prueba del WR-1 desarmado
+    (`/api/status.test_mode.active == false`), modo demostración apagado (`D-27` suprime push
+    y comandos), destinatarios de la cascada del tenant **propios**, `audio_siren_enabled`
+    decidido, equipo en `192.168.1.0/24`, Pixel enrolado como ocupante.
+  - [ ] `guion.sh --check`: espera el pulso y afirma en el plazo escrito: incidente
+    `trigger=sasmex` abierto, `mobile-state.phase == alert_active`, relés `reported` en
+    `/api/status`, PDF del reporte con al menos una imagen.
+  - [ ] Limpieza: `/api/reset` del enclavado, clasificación `prueba`, cierre (hasta `T-7.13`,
+    por SQL como `infra/scripts/sql/staging-incident/reset.sql`).
+  - [ ] Se apoya en `RUNBOOK-gate-hw-movil-y-voceo.md §B`: una alerta real suena y notifica de
+    verdad, y el runbook obliga a avisar antes.
+- **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:**
+  no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO`
+- **Componente:** edge · web · api · **Depende de:** T-7.07 · **Prioridad:** F1 · alta
+- **Objetivo:** que mover el sensor con la mano produzca un aviso en el panel y en la consola,
+  un evento en la nube, y **ningún** movimiento de relé (política de `T-2.32`).
+- **Criterios de aceptación:**
+  - [ ] Panel: tier `watch`/`restricted` visible y relés en reposo; consola: escena `notice`
+    con «SOLO AVISO, SIN ACTUACIÓN»; nube: incidente `local_threshold`.
+  - [ ] Captura de las tres superficies en el Registro; si alguna miente, la corrección nace
+    como criterio aquí.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.09 · **Actos 3 y 4 en el Pixel: crisis en segundos y liberación acreditada** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · **Depende de:** T-7.03 · **Prioridad:** F1 · crítica
+- **Objetivo:** que el teléfono entre en crisis en menos de cinco segundos tras el pulso y que
+  el flujo dictamen → liberación, nunca acreditado, se acredite.
+- **Criterios de aceptación:**
+  - [ ] `screenrecord` + `getevent` en el Pixel real: tiempo pulso → pantalla de crisis escrito
+    en el Registro; sin push real, el respaldo de `T-7.03` medido y declarado.
+  - [ ] `mobile/.maestro/03-dictamen-liberacion.yaml` acreditado con un inspector firmando en
+    la consola; `01a-crisis.yaml` re-acreditado.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.10 · **Purga operativa de la nube dev con respaldo y huella** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** db · deploy · **Depende de:** T-7.07 · **Prioridad:** F2 · alta
+- **Objetivo:** borrar lo recopilado de julio a septiembre conservando lo que la regla de oro
+  11 protege, con un respaldo verificado antes.
+- **Criterios de aceptación:**
+  - [ ] `db/maintenance/2026-09-xx_purge_operativa_demo.sql` calcado del precedente del
+    2026-07-10: superusuario, `session_replication_role=replica`, purga incidentes y su familia
+    (acciones, clasificaciones, dictámenes, evidencia, notificaciones), eventos y votos,
+    telemetría (`waveform_features_1s`, `device_health`, `rule_evaluations`), simulacros,
+    check-ins y reportes de daños; **conserva** `audit_log`, `actuation_records`, tenants,
+    sitios, gateways, sensores, usuarios, `gateway_catalog_state` y el catálogo.
+  - [ ] `demo/tests/test_purge_demo.py` sobre una base efímera: lo que queda y lo que no;
+    idempotente al correrla dos veces.
+  - [ ] En la nube: `takab-YYYY-MM-DD.dump` + huella antes; conteos después en el Registro.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.11 · **La red de demostración: tres estaciones simuladas con latido** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** db · edge · infra · web · **Depende de:** T-7.10 · **Prioridad:** F2 · alta
+- **Objetivo:** que `/fleet` muestre cuatro estaciones operativas —Puebla real y Tlaxcala,
+  CDMX y Toluca simuladas— con cinta DEMO en las tres simuladas (`D-31`).
+- **Criterios de aceptación:**
+  - [ ] `db/seeds/demo_red.sql`: `site-sim-101` Tlaxcala (gobierno), `site-sim-102` CDMX
+    (hospital), `site-sim-103` Toluca (industrial), `gw-sim-0101..0103`, `SIM101..103` sin
+    calibración; nombres ficticios y presentables que no usurpan ninguna institución real;
+    `tenant-dev` y `site-dev` con `name` presentable. `make cloud-demo-red` idempotente y
+    `cloud-demo-red-down`, **fuera** de `deploy.sh`.
+  - [ ] Tres cosas IoT con certificado (`infra/scripts/provision_gateway.sh`).
+  - [ ] `edge/simulators/fleet.py --stations-file --tenant --no-events` publica latido y
+    features y **jamás `takab/events`** (test que lo fija); corre como unidad systemd
+    (`takab-fleet-sim`) en el Pi 4 o en el portátil, con el coste medido.
+  - [ ] `web/src/siteDemoCensus.test.ts` declara el segundo seed; `/fleet` con 4 OPERATIVOS.
+- **Tests de censo que toca:** `siteDemoCensus`, `edge/tests/test_fleet_sim.py` · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_fleet_sim` fija
+  `tenant-dev`/`SIM001` y `siteDemoCensus` afirma que solo existe `sim_fleet.sql`.
+
+### [ ] T-7.12 · **El catálogo con procedencia real: consulta viva a USGS** — `SOFTWARE`
+- **Componente:** api · db · **Depende de:** — · **Prioridad:** F2 · alta
+- **Objetivo:** que las filas del catálogo que la demostración va a reproducir pinten su cifra
+  con procedencia `confirmado`, porque se consultó la fuente de verdad y quedó grabado.
+- **Criterios de aceptación:**
+  - [ ] Consulta al FDSN de USGS grabada como fixture con fecha
+    (`api/tests/incident/fixtures/usgs-consulta-YYYY-MM-DD.json`).
+  - [ ] Las filas USGS de 2017-09-19, 1999-06-15, 2022-09-19, 2017-09-08 y 1985-09-19 ganan
+    `consulted_at`, `review_status='confirmado'` y `provider_event_id`; entra el 2023-12-07
+    M5.7 (Huehuetlán el Chico) con su gemelo SSN si existe.
+  - [ ] `ssn_catalog.json` y `db/seeds/reference_earthquakes.sql` cambian **juntos** con la
+    nota de ratificación de `T-1.46`; `GET /catalog/earthquakes` y la línea del dictamen
+    pintan la cifra.
+  - [ ] Nada de historial fabricado: ningún incidente con fecha anterior a su corrida real.
+- **Tests de censo que toca:** `test_procedencia`, `test_catalog_line` · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** sí — los tests que afirman que todas las filas
+  del catálogo degradan a `sin_dato_externo`.
+
+### [ ] T-7.13 · **El incidente tiene fases y se cierra** — `SOFTWARE`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F3 · crítica
+- **Objetivo:** que un incidente pase a revisión cuando la sacudida concluye y se cierre por
+  una causa auditada, nunca por un cronómetro del cliente (`D-33`).
+- **Criterios de aceptación:**
+  - [ ] `run_lifecycle_pass` en el worker `takab_api.incident`: `open/acked → in_review`
+    cuando el último tier del sitio es `normal` y han pasado `dictamen_settle_s` **y**
+    `alert_hold_min_s` (nuevo, `TAKAB_API_`) desde la apertura; `→ closed` por clasificación
+    `falso_positivo`/`prueba`/`reproduccion`, por dictamen firmado o por
+    `incident_review_ttl_s` (horas, nuevo). Siempre vía `transition_incident` con actor
+    `system:incident`, fila en `incident_actions` y frame por el canal live.
+  - [ ] `POST /incidents/{id}/classification` cierra el incidente cuando la clasificación es
+    terminal; `real` lo deja en revisión hasta el dictamen firmado.
+  - [ ] Idempotente y sin tocar cerrados; `api/tests/incident/test_lifecycle_pass.py` y
+    `tests/api/test_classification_cierra.py` escritos primero.
+- **Tests de censo que toca:** `test_lifecycle` (gana un llamador) · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** sí — la clasificación deja de ser inerte.
+
+### [ ] T-7.14 · **La reproducción histórica se arma en la nube y viaja como atributo** — `SOFTWARE`
+- **Componente:** api · db · **Depende de:** T-7.12 · **Prioridad:** F3 · crítica
+- **Objetivo:** que un pulso real del WR-1 en un tenant con reproducción armada produzca el
+  epicentro y la magnitud de un sismo real del catálogo, desplazados a hoy y rotulados como
+  reproducción, sin crear un solo incidente ni voto de cuórum.
+- **Criterios de aceptación:**
+  - [ ] Migración `0063`: tabla `demo_replay` (tenant, `catalog_key`, `armed_until`,
+    `armed_by`; vencimiento obligatorio como `demo_mode`), `reproduccion` en el CHECK de
+    `incident_classifications`, y una función SECURITY DEFINER que enlaza un evento a un
+    incidente (como `relocate_incident_epicenter`).
+  - [ ] `POST`/`DELETE /demo-mode/replay` solo para `takab_superadmin` y solo en tenants con
+    sitios DEMO; auditado.
+  - [ ] Al abrir un incidente `sasmex` con reproducción armada, el worker crea `EVT-REP-…` en
+    `seismic_events` (`source='external'`, magnitud, epicentro y profundidad del catálogo,
+    `meta.reproduccion={catalog_key,t0_real,t0_demo}`, `meta.node_count`) y lo enlaza; **jamás
+    crea incidentes ni `quorum_votes`** (test que lo fija).
+  - [ ] Plan de arribos por estación como función pura (`replay/plan.py`: v_p y v_s del
+    `rule_set`, distancia hipocentral de `geo.py`), con espejo en
+    `edge/simulators/replay.py` y test de igualdad entre los dos (como ATTEN-LAW);
+    `GET /incidents/{id}/reproduccion` lo expone. Valores de referencia para el 19-S-2017:
+    onda S en Puebla +19.6 s, Tlaxcala +25.3 s, CDMX +32.1 s, Toluca +38.7 s.
+- **Tests de censo que toca:** `test_forensics`, `test_catalog_line` · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.15 · **Las estaciones simuladas sienten la onda: `fleet.py --replay --armar`** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** T-7.11, T-7.14 · **Prioridad:** F3 · crítica
+- **Objetivo:** que las tres estaciones simuladas publiquen features en rampa en su arribo,
+  ancladas al pulso real del WR-1, sin publicar un solo evento.
+- **Criterios de aceptación:**
+  - [ ] `--armar` sondea `http://192.168.1.105:8080/api/status` en la LAN (sin JWT) y fija
+    `t0` al ver `sasmex_active`; `--t0 now` como disparo manual.
+  - [ ] Por estación: STA/LTA bajo umbral antes de `t_arribo`, PGA de `pga_law_g` después,
+    decayendo; latido intacto; **nunca `takab/events`**; `test_cloud_streaming_crudo` sigue
+    verde (features acotadas por esquema).
+  - [ ] Ensayable en local con `edge/simulators/wr1.py` y el modo spool de `demo/`.
+- **Tests de censo que toca:** `test_fleet_sim`, `test_cloud_streaming_crudo` · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.16 · **La escena ANALIZANDO se deriva del estado** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-7.13 · **Prioridad:** F3 · alta
+- **Objetivo:** que la consola diga «SISMO CONCLUIDO · ANALIZANDO · DICTAMEN PRELIMINAR EN
+  00:47» sin tocar la tabla de escenas que un censo clava.
+- **Criterios de aceptación:**
+  - [ ] `alertKind` devuelve `alert | notice | review` según `incident.state === "in_review"`;
+    `sceneAlert` sigue eligiendo el crítico más nuevo (un WR-1 nuevo gana a una revisión).
+    `SCENE_PRECEDENCE` no cambia.
+  - [ ] Banner de revisión en `features/scene/` con contador de **texto** hasta el preliminar,
+    luego «DICTAMEN PRELIMINAR EMITIDO · EPICENTRO …» con enlace a triage; pasada la retención
+    sin clasificar, texto fechado en pasado. Sin animación.
+  - [ ] `sceneCensus.test.ts` (lectores y pintores) y `statePrecedenceCensus` actualizados en
+    el mismo commit con la razón escrita.
+- **Tests de censo que toca:** `sceneCensus`, `statePrecedenceCensus` · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** sí — la firma de `alertKind`.
+
+### [ ] T-7.17 · **Cómo lo detectó cada estación** — `SOFTWARE`
+- **Componente:** api · web · **Depende de:** T-7.14 · **Prioridad:** F3 · alta
+- **Objetivo:** una tabla por estación con lo medido y lo esperado, en el muro, en triage y en
+  el PDF.
+- **Criterios de aceptación:**
+  - [ ] `GET /incidents/{id}/estaciones`: sitio (siempre por `SiteLabel`), sensor, distancia
+    al epicentro, pico medido de `waveform_features_1s`, `t_arribo` medido (primer segundo
+    sobre umbral) y teórico (plan), tier alcanzado por el gabinete real, `counted`.
+  - [ ] `EstacionesTable` con `StateFrame` (loading/error/empty/stale) en `DetailPanel` del
+    muro y en triage, en orden de arribo; sustituye a `QuorumNodes` cuando hay reproducción.
+  - [ ] Sección «Red de estaciones» en el PDF con los mismos datos.
+- **Tests de censo que toca:** `serverDataCensus`, `siteDemoCensus`, `primitivasCensus`,
+  `typeScale` · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.18 · **Las ondas llegan a cada estación en el mapa** — `SOFTWARE`
+- **Componente:** web · api · **Depende de:** T-7.14 · **Prioridad:** F3 · alta
+- **Objetivo:** que el frente P/S que el mapa ya sabe animar se dispare con el epicentro
+  reproducido y que cada estación anuncie su arribo, y que todo se apague bajo movimiento
+  reducido y con la edad.
+- **Criterios de aceptación:**
+  - [ ] `MapEpicenter.reproduccion: bool` en `/telemetry/map/state` (SDK regenerado con
+    `make drift`) y una **tercera rama explícita** en `isLocalized` de `wavefront.ts`, que hoy
+    rechaza `external`; chip «REPRODUCCIÓN» junto al epicentro.
+  - [ ] Ráfaga de arribo por estación anclada a `t_arribo` (campo `felt_at` en el snapshot),
+    con token nuevo `--tk-dur-arrival`; `reduced-motion` ⇒ anillo estático y leyenda;
+    `WAVE_MAX_AGE_S` no se extiende.
+  - [ ] `motionInvariants` (duración por token, selector en el grupo `animation: none`),
+    `wavefront.test.ts` y `motion.spec.ts` con una aserción nueva.
+- **Tests de censo que toca:** `motionInvariants`, `wavefront.test`, `motion.spec` ·
+  **Token nuevo:** sí, `--tk-dur-arrival` · **Cambia algo que un test defiende hoy:** sí —
+  `isLocalized` rechazaba `external`.
+
+### [ ] T-7.19 · **La alerta se anima y se detiene** — `SOFTWARE`
+- **Componente:** web · edge · mobile · **Depende de:** T-7.13 · **Prioridad:** F3 · alta
+- **Objetivo:** ejecutar `D-30`: el camino de lectura de la alerta gana movimiento con
+  condiciones —texto legible desde el primer frame, portador no-movimiento, se detiene por
+  estado, respeta `reduced-motion`— en el muro, el panel y el móvil.
+- **Criterios de aceptación:**
+  - [ ] Muro: la carcasa `.soc-alert` gana un halo `soc-alert-pulse` (`--tk-dur-alerta`) solo
+    con `alertKind === "alert"`; el texto no se mueve; la **línea** de escena de las otras
+    cinco rutas sigue inmóvil (`layoutInvariants`).
+  - [ ] Panel: `#banner-alert` ya parpadea (`tk-blink`); se verifica que cesa al cambiar de
+    escena y que `reduced-motion` lo apaga.
+  - [ ] Móvil: `CrisisView` con halo respirando (`Animated`, `useReduceMotion`), que se detiene
+    en `shaking_concluded`; **re-acreditado en el Pixel real** con captura y `screenrecord`.
+  - [ ] `PLAN-REFORMA-VISUAL.md §5.3` anotado como revocado por `D-30`.
+- **Tests de censo que toca:** `motionInvariants`, `layoutInvariants`, `motion.spec`, jest de
+  `CrisisView` · **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende
+  hoy:** sí — el selector nuevo tiene que entrar en el grupo `animation: none`.
+
+### [ ] T-7.20 · **Epicentro y estaciones en el muro, de punta a punta** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-7.16, T-7.17, T-7.18 · **Prioridad:** F3 · alta
+- **Objetivo:** que al concluir la sacudida el muro muestre el epicentro con su procedencia y
+  la tabla por estación en orden de arribo, y que un e2e lo ejerza entero.
+- **Criterios de aceptación:**
+  - [ ] Tarjeta «EPICENTRO · REPRODUCCIÓN 19-09-2017 · M7.1 · CONFIRMADO POR LA FUENTE · USGS»
+    y `EstacionesTable` reveladas con `soc-row-in`; el panel del gabinete muestra la
+    comparativa que ya existe (§7.5 de su spec).
+  - [ ] `web/e2e/vida_del_sismo.spec.ts` sobre `soc-local`: `:9100/sasmex` + `fleet --replay`
+    en modo spool ⇒ alerta con halo → revisión con contador → epicentro y tabla → cierre por
+    clasificación y halo detenido.
+- **Tests de censo que toca:** `serverDataCensus` · **Token nuevo:** no · **Cambia algo que
+  un test defiende hoy:** no.
+
+### [ ] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE`
+- **Componente:** api · shared · **Depende de:** — · **Prioridad:** F4 · alta
+- **Objetivo:** que dictamen, reporte de simulacro e informe compartan cabecera, pie e
+  identidad, y que exista una hoja membretada en blanco para lo que el sistema no genera.
+- **Criterios de aceptación:**
+  - [ ] `takab_api/documentos/membrete.py::MembretePDF`, promoción de `TakabPDF`: tipo de
+    documento, folio, fecha UTC, `build`, página x/y, sha256 en el pie, franja «EVIDENCIA
+    INMUTABLE», logotipo positivo sobre blanco, paleta de `shared/brand/generar.py`, tamaño
+    Carta. `TakabPDF` y `drill_report.py` heredan.
+  - [ ] Censo: toda subclase de `FPDF` en `api/src` deriva de `MembretePDF`.
+  - [ ] `shared/brand/membrete/carta.pdf` y `carta.svg` generados por `generar.py`.
+  - [ ] `api/tests/documentos/test_membrete.py`: `pdftotext` encuentra folio, página y el
+    nombre como texto extraíble; los tests de marca de `test_pdf.py` actualizados.
+- **Tests de censo que toca:** `test_pdf` (pie) · **Token nuevo:** no · **Cambia algo que un
+  test defiende hoy:** sí — los tests que fijan el pie de `layout.py`.
+
+### [ ] T-7.22 · **El informe del evento con todos los datos e imágenes** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.17, T-7.21 · **Prioridad:** F4 · alta
+- **Objetivo:** que `POST /incidents/{id}/report` entregue el documento que el cliente se
+  lleva: estaciones, epicentro con procedencia, cronología, daños del brigadista con fotos,
+  y las secciones que F5 y F6 rellenan.
+- **Criterios de aceptación:**
+  - [ ] Sección «Red de estaciones»: mapa estático **vectorial con fpdf** (sin peticiones
+    externas) + tabla de arribos; leyenda «REPRODUCCIÓN» obligatoria si el evento la lleva.
+  - [ ] Línea de epicentro con procedencia (existe `catalog_line`); cronología desde
+    `incident_actions`; reporte de daños del brigadista con fotos redimensionadas y embebidas.
+  - [ ] Sección de mapa de intensidad que dice «NO DISPONIBLE · SIN MAGNITUD» hasta `T-7.24`;
+    narrativa tal como está hasta `T-7.27`.
+  - [ ] Espía del render por sección; `report_rate_*` sin tocar.
+- **Tests de censo que toca:** contrato de narrativa (la prosa no toca el veredicto) · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.23 · **Panel SISMÓGRAFO en el gabinete: trazas, espectrograma y helicorder** — `SOFTWARE`
+- **Componente:** edge · docs · **Depende de:** — · **Prioridad:** F5 · media
+- **Objetivo:** una vista del panel al estilo de StationView, propia, sin logo ajeno y sin
+  pedir nada a internet, con su coste medido en el Pi 4.
+- **Criterios de aceptación:**
+  - [ ] **Primero la spec:** sección nueva en `design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md`
+    (vista `?view=sismografo`; no rediseña §9).
+  - [ ] `/api/spectrogram` (`scipy.signal.spectrogram` sobre el anillo de 60 s, matriz `uint8`
+    acotada, cadencia 1 Hz) y `/api/helicorder` (1–6 h del anillo miniSEED, min/máx a 1 Hz);
+    tarjeta de estación (red.estación.loc.canal, sensibilidad, fuente de calibración).
+  - [ ] `reduced-motion` respetado; cero recursos externos; coste medido con `top -bn3` y
+    `curl -w time_total` en el Pi real y escrito en la spec.
+  - [ ] `edge/tests/test_local_api_sismografo.py` y `test_panel_render_census` verdes; nada
+    de esto toca la ruta de disparo.
+- **Tests de censo que toca:** `test_panel_render_census` · **Token nuevo:** no · **Cambia
+  algo que un test defiende hoy:** no.
+
+### [ ] T-7.24 · **Mini-ShakeMap por evento** — `SOFTWARE` + `DECISIÓN`
+- **Componente:** api · web · docs · **Depende de:** T-3.09, T-7.14 · **Prioridad:** F5 · media
+- **Objetivo:** ejecutar `T-3.09` con la arquitectura de `D-08`: tres capas que no se mezclan,
+  procedencia pintada distinto, `SIN COBERTURA` como estado, sin microservicio.
+- **Criterios de aceptación:**
+  - [ ] Commit de derogación: derogar explícitamente la viñeta `[DIFERIDO · mini-ShakeMap]`
+    de `BLUEPRINT §14` —**esa viñeta y ninguna otra**— y partir la viñeta de `CLAUDE.md §8`
+    sin borrarla, con la razón escrita. Las cinco viñetas `[INVARIANTE · …]` de la §14
+    (T-MINUS, magnitud preliminar, streaming crudo continuo, IA en la ruta de disparo, tocar
+    el Shake OS) **no se tocan**; la matriz se regenera en el mismo commit.
+  - [ ] Cálculo por evento en el worker de incidentes (numpy): capa estimada de ATTEN-LAW,
+    puntos observados de features y votos, residuo, `SIN COBERTURA` fuera del radio;
+    `GET /incidents/{id}/shakemap` GeoJSON con `measured`/`modeled`.
+  - [ ] Capa y leyenda en MapLibre pintadas distinto por procedencia (test sobre el DOM), con
+    tokens semánticos `--tk-mmi-*` para la escala; en el PDF, dibujo vectorial con fpdf.
+  - [ ] Degradado y declarado cuando no hay magnitud; `DIF-shakemap.a` de la matriz se
+    sustituye por la guarda nueva.
+- **Tests de censo que toca:** `MapPanel.test` (`:417`), `test_matriz_trazabilidad`,
+  `test_docs_consistency` · **Token nuevo:** sí, `--tk-mmi-*` · **Cambia algo que un test
+  defiende hoy:** sí — la guarda «la consola no promete una escala de intensidad».
+
+### [ ] T-7.25 · **Consulta a la fuente tras el evento: USGS** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-3.13, T-7.13 · **Prioridad:** F5 · media
+- **Objetivo:** que un evento real se correlacione con el catálogo vivo de USGS y su
+  procedencia pase de `consultando` a `preliminar` o `confirmado`, sin inventar nada cuando
+  no hay red. Cubre la mitad USGS de `T-3.13`; la mitad SSN sigue bloqueada por atribución.
+- **Criterios de aceptación:**
+  - [ ] Paso del worker al entrar en revisión: consulta FDSN por ventana temporal y caja
+    geográfica; escribe `reference_earthquakes` (`source='USGS'`, `consulted_at`,
+    `review_status`, `provider_event_id`); el worker es el único escritor.
+  - [ ] Sin red o sin coincidencia: `consultando` / `sin_dato_externo` / `sin_correlacion`,
+    declarados; jamás una cifra sin fuente.
+  - [ ] Tests con respuestas grabadas (`respx`), sin red en CI; el reporte dice que el SSN no
+    se consulta y por qué.
+- **Tests de censo que toca:** `test_procedencia` (estados intactos) · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.26 · **OpenRouter encendido en la nube** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · deploy · **Depende de:** T-7.22 · **Prioridad:** F6 · media
+- **Objetivo:** que la capa narrativa que ya existe redacte de verdad, con su coste contado,
+  su tope y su procedencia registrada, y que su ausencia se declare.
+- **Criterios de aceptación:**
+  - [ ] Secreto `takab/dev/openrouter` en Secrets Manager (Mauricio); `deploy.sh` exporta
+    `TAKAB_API_OPENROUTER_ENABLED=true`, `_MODEL=anthropic/claude-sonnet-5`, `_SECRET_ID`;
+    `ai_monthly_cap_usd` en 10 para dev.
+  - [ ] Latencia real del modelo **medida** antes de decidir: `openrouter_timeout_s` sube o la
+    generación sale de la petición con sondeo; el respaldo determinista sigue declarándose.
+  - [ ] Registro de procedencia que `T-3.01` pide: modelo, versión del prompt y hash de la
+    salida en `audit_log` (`narrative_generated`); coste desde `usage` a `ai_spend`.
+  - [ ] Control negativo: con la clave revocada el reporte dice «NARRATIVA DEGRADADA».
+- **Tests de censo que toca:** `tests/narrative` · **Token nuevo:** no · **Cambia algo que un
+  test defiende hoy:** no.
+
+### [ ] T-7.27 · **La IA ve el evento completo, con las fotos del brigadista** — `SOFTWARE`
+- **Componente:** api · mobile · docs · **Depende de:** T-7.26 · **Prioridad:** F6 · media
+- **Objetivo:** ejecutar `D-32`: la IA recibe la tabla por estación, la reproducción, la
+  cronología, las categorías de daño y las fotos, y devuelve prosa rotulada que jamás toca el
+  veredicto.
+- **Criterios de aceptación:**
+  - [ ] Prompts v2 en el mismo consumidor; fotos como contenido multimodal (máximo seis,
+    redimensionadas a 1024 px, leídas de S3); al arrancar se comprueba que el modelo admite
+    imágenes (`/api/v1/models`, `input_modalities`) y si no, fail-open al determinista.
+  - [ ] `redact.py` amplía la redacción; el brigadista aparece por rol; el guardrail de cifras
+    cubre las de estación; secciones rotuladas «REDACTADO CON ASISTENCIA DE IA · NO ES EL
+    VEREDICTO».
+  - [ ] Contrato intacto: la prosa nunca cita magnitud sin procedencia ni afirma «detectó» sin
+    fila; `tests/narrative` con respuestas grabadas que incluyen imagen.
+  - [ ] Adenda en `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` y aviso en la cámara forense del móvil;
+    el consentimiento contractual queda en pendientes (§4.7).
+- **Tests de censo que toca:** contrato de narrativa, `test_docs_consistency` · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO`
+- **Componente:** todas · **Depende de:** T-7.20, T-7.22 · **Prioridad:** F7 · alta
+- **Objetivo:** que la presentación se haya ejecutado dos veces entera antes de tener un
+  cliente delante, con tiempos, capturas y un plan para cada cosa que puede fallar.
+- **Criterios de aceptación:**
+  - [ ] `guion.sh --full` dos veces con tiempos por acto en el Registro; cada corrida se
+    clasifica `reproduccion` y queda como historial honesto.
+  - [ ] Plan B escrito: sin internet (el edge protege y el panel cuenta la historia), sin push
+    (app en primer plano), sin IA (determinista declarado), sin tiles (`FALLBACK_STYLE`).
+  - [ ] Lista «lo que NO debe decirse» actualizada; paquete de capturas y vídeo;
+    `INFORME-CONFORMIDAD-DEMO.md` re-corrido sin rojos; veredicto de flujos con Mauricio
+    delante.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
 ## RUTA CRÍTICA
 
 > **Desde el 2026-09-02 hay DOS rutas, y confundirlas es un error de planificación con precio.**
@@ -13467,7 +13978,9 @@ que es una acción hacia afuera. Los dos están escritos en el apartado de cierr
 > hacia **poder enseñar el producto** es otra —el Bloque VI—, es más corta, y **no está bloqueada
 > en nadie**: sus cinco ítems críticos son software. Una demo no necesita `G-04`; necesita no
 > afirmar lo que `G-04` todavía no acreditó. Ver
-> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) §1.
+> [`PLAN-V1-COMERCIAL.md`](PLAN-V1-COMERCIAL.md) §1. Y desde el 2026-09-11 hay una tercera, la del
+> **prototipo funcional delante de un cliente**: el Bloque VIII, planificado en
+> [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md), cuya primera fase tampoco espera a nadie.
 
 **Hacia "producción con un cliente real", la ruta crítica es:**
 

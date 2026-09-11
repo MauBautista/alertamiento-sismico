@@ -12,9 +12,10 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-07 · **29 decisiones** · 23 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-11 · **33 decisiones** · 26 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
-> 2026-08-30, 1 el 2026-09-07), 6 delegadas (3 el 2026-08-12, 3 el 2026-09-02).
+> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**), 7 delegadas (3 el 2026-08-12, 3 el 2026-09-02,
+> 1 el 2026-09-11).
 >
 > **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
 > 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
@@ -78,6 +79,10 @@
 | [D-27](#d-27) | Modo demostración: **por cliente, con vencimiento**, y **lo real lo apaga** | 2026-09-02 | delegada |
 | [D-28](#d-28) | La **tipología del inmueble sugiere** un umbral; no lo resuelve | 2026-09-02 | delegada |
 | [D-29](#d-29) | El voceo por jack **se declara aparte** en el panel: `VOCEO: SIMULACRO\|PRUEBA\|ACTIVO`; `SIRENA` sigue siendo el relé | 2026-09-07 | Mauricio |
+| [D-30](#d-30) | La alerta **se anima** — texto quieto, portador no-movimiento, se detiene por estado, respeta `reduced-motion`; revoca el §5.3 del plan de reforma visual | 2026-09-11 | Mauricio |
+| [D-31](#d-31) | Red de demostración en la nube dev: tres estaciones simuladas **rotuladas DEMO**, latido y features **jamás eventos**, retirada escrita | 2026-09-11 | Mauricio |
+| [D-32](#d-32) | La IA ve los datos del evento sin PII **y las fotos del brigadista**; consentimiento contractual pendiente | 2026-09-11 | Mauricio |
+| [D-33](#d-33) | El incidente tiene fases: la alerta se apaga **por estado**, el registro se cierra por clasificación, dictamen firmado o TTL de horas; `reproduccion` como clasificación y atributo | 2026-09-11 | delegada |
 
 ---
 
@@ -1464,3 +1469,187 @@ sirena—, el segmento sobra y se quita; `SIRENA` no habrá cambiado de signific
 momento. Lo que **no** cambia en ninguna revocación: `SONANDO` jamás puede afirmarse con el
 relé en reposo.
 
+---
+
+<a id="d-30"></a>
+
+## D-30 · La alerta **se anima** — con condiciones que no se negocian
+
+**Fecha:** 2026-09-11 · **Ficha:** `T-7.19` · **Estado:** vigente · **Quién:** Mauricio
+
+### El problema
+
+El plan de la reforma visual decidió (§5.3 de `design/PLAN-REFORMA-VISUAL.md`) **no animar nada
+en el camino de lectura de una alerta**: `AlertBanner` en la consola, `#banner-alert` en el panel
+y `CrisisView` en el móvil. La razón era buena —ninguna animación puede retrasar la lectura de la
+instrucción de la que depende si alguien corre o se protege— y el informe llamó «ejemplar» a la
+pantalla de crisis del ocupante, acreditada en el Pixel. Para el prototipo funcional Mauricio
+pidió lo contrario: que al detectar por el WR-1 la alerta **se vea viva** durante unos minutos y
+que deje de estarlo cuando el operador la clasifique o expire.
+
+### La decisión
+
+**Se revoca el §5.3 y se anima el camino de lectura, con cuatro condiciones que sí se conservan:**
+
+1. **El texto no se mueve.** La instrucción y el sitio son legibles desde el primer frame; lo que
+   se anima es la carcasa (halo, borde, fondo), nunca la tipografía ni su posición.
+2. **Siempre hay un portador que no es movimiento.** El estado se lee también con la animación
+   apagada: texto, color, glifo.
+3. **Se detiene por estado, no por cronómetro del cliente.** La animación vive mientras el
+   incidente está en `open`/`acked`; en `in_review` y `closed` no existe (`D-33`).
+4. **`prefers-reduced-motion` la apaga** y el selector entra en el grupo `animation: none` que
+   `motionInvariants.test.ts` vigila.
+
+### Por qué
+
+- Lo que la prohibición protegía era la **lectura**, no la quietud. Las cuatro condiciones
+  protegen la lectura igual y devuelven lo que la demostración necesita: que se note, desde el
+  fondo de una sala, que algo está pasando.
+- El panel del gabinete **ya parpadeaba** (`tk-blink` sobre `#banner-alert`, declarado en su spec);
+  la prohibición allí era «no añadir», y esta decisión no añade: verifica que cesa y que se apaga
+  con movimiento reducido.
+- El móvil cambia una pantalla **acreditada en el Pixel**, así que `T-7.19` la re-acredita con
+  captura y `screenrecord`; no se da por buena por haber pasado antes.
+
+### Cómo se revocaría
+
+Si una prueba con personas mostrara que el halo distrae de la instrucción, se quita el halo y las
+cuatro condiciones ya garantizan que no se pierde nada. Lo que **no** cambia en ninguna revocación:
+el texto de la alerta jamás se anima y jamás depende del movimiento para leerse.
+
+---
+
+<a id="d-31"></a>
+
+## D-31 · Una red de demostración en la nube dev — **temporal, rotulada y con retirada escrita**
+
+**Fecha:** 2026-09-11 · **Ficha:** `T-7.11`, `T-7.14` · **Estado:** vigente · **Quién:** Mauricio
+
+### El problema
+
+Desde `T-1.47` la nube desplegada siembra **solo la flota real**: un tenant, un sitio en Puebla, un
+gabinete. La flota simulada de veinte sitios (`sim_fleet.sql`) «jamás se aplica al entorno
+desplegado». Para enseñar el producto hace falta ver una **red**: estaciones que laten, ondas que
+llegan a cada una en su momento, un cuórum que se forma. Con un solo gabinete la consola enseña un
+punto.
+
+### La decisión
+
+**Se levantan tres estaciones simuladas en la nube dev** —Tlaxcala, CDMX y Toluca; Puebla sigue
+siendo el gabinete real— con estas reglas:
+
+1. **Prefijos `site-sim-`/`gw-sim-`/`SIM`**, para que la cinta DEMO salga sola en toda superficie
+   que pinte un sitio (`T-6.04`), y nombres ficticios presentables que **no usurpan** ninguna
+   institución real.
+2. **Publican latido y features, jamás `takab/events`.** Un evento simulado abriría incidentes,
+   el motor formaría cuórum con estaciones que no midieron nada y la nube mandaría un comando
+   firmado al gabinete real. La regla se fija con un test.
+3. **La reproducción histórica solo se arma en tenants con sitios DEMO**, con vencimiento
+   obligatorio como el modo demostración, y todo lo que produce lleva `meta.reproduccion`.
+4. **Se retira antes del primer cliente de pago** con `make cloud-demo-red-down`, y la semilla
+   vive fuera de `deploy.sh` para que un redeploy no la reponga por accidente.
+
+### Por qué
+
+- Es la excepción más pequeña que enseña una red: tres sitios, no veinte; latido y features, no
+  eventos.
+- El rótulo DEMO **no se negocia** aunque sea menos vistoso: enseñar tres sitios simulados sin
+  cinta enseñaría «sin cinta ⇒ real», y eso ya se midió como daño (`U-07`).
+- La purga que la precede es **operativa, no total**: se van incidentes y telemetría, se quedan
+  `audit_log` y la bitácora física de los relés, porque borrar lo que un relé hizo no es limpiar,
+  es perder evidencia.
+
+### Cómo se revocaría
+
+`make cloud-demo-red-down` y borrar la ventana de reproducción. Lo que **no** cambia en ninguna
+revocación: ningún sitio simulado pierde su cinta y ningún simulador publica eventos.
+
+---
+
+<a id="d-32"></a>
+
+## D-32 · La IA ve los datos del evento **y las fotos del brigadista**
+
+**Fecha:** 2026-09-11 · **Ficha:** `T-7.27` · **Estado:** vigente · **Quién:** Mauricio
+
+### El problema
+
+La capa narrativa existe desde `T-2.42`, lista y apagada, y redacta prosa **alrededor** del
+veredicto a partir de datos estructurados que pasan por una redacción de PII. Encenderla manda
+datos del incidente a OpenRouter (Estados Unidos) y al proveedor del modelo. La pregunta era
+cuánto puede ver: solo cifras y categorías, o también las fotografías que el brigadista toma en
+el táctico.
+
+### La decisión
+
+**Ve las dos cosas.** Datos estructurados sin PII —cifras por estación, catálogo y epicentro con
+su procedencia, cronología, categorías de daño; el brigadista aparece por **rol**, nunca por
+nombre— **y las fotos del reporte de daños**, con estas condiciones: como máximo seis por
+reporte, redimensionadas a 1024 px, leídas de S3 por la API; el modelo tiene que declarar que
+admite imágenes y, si no, la capa cae al determinista y lo dice; la cámara forense del móvil
+avisa de que la foto puede analizarse con IA; `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` gana la adenda;
+y la **cláusula de consentimiento contractual** queda en pendientes hasta que exista.
+
+### Por qué
+
+- Lo que la IA aporta al informe es la lectura de lo que **no está en las cifras**: una grieta,
+  un plafón caído, una ruta bloqueada. Sin fotos redacta lo que ya dice la tabla.
+- El coste es marginal (seis imágenes son unos miles de tokens) y el riesgo está acotado por
+  contrato: la prosa **jamás toca el veredicto**, la clasificación ni el tier
+  (`tests/narrative/test_contract.py`), y se rotula como redactada con asistencia.
+- La transferencia a un tercero **está permitida con condiciones** por la ley mexicana (§6.3 del
+  documento de residencia); la condición que falta es contractual, no técnica, y por eso está en
+  pendientes y no bloquea el prototipo.
+
+### Cómo se revocaría
+
+Quitar las fotos del `content` multimodal y dejar la redacción de datos estructurados: un
+interruptor, no un rediseño. Lo que **no** cambia en ninguna revocación: nombres, teléfonos y
+correos no viajan, y la IA no decide nada.
+
+---
+
+<a id="d-33"></a>
+
+## D-33 · El incidente tiene fases; la alerta se apaga **por estado** y el registro se cierra por causa
+
+**Fecha:** 2026-09-11 · **Ficha:** `T-7.13`, `T-7.14`, `T-7.16` · **Estado:** vigente · **Quién:** delegada (Mauricio: «que con el tiempo desaparezca o que el operador la clasifique»)
+
+### El problema
+
+En producción **nada cierra un incidente**: `close_resolved` y `transition_incident` existen sin
+llamador, no hay TTL, el ACK deja el banner puesto y la clasificación no cambia el estado. Un
+incidente abierto en julio sigue siendo «la alerta» en septiembre. Mauricio pidió que la alerta
+dure unos minutos y desaparezca sola o por acción del operador; hacerlo con un cronómetro en el
+cliente habría sido convertir el tiempo en el único portador de estado y pintar como vigente lo
+que el servidor ya no sabe.
+
+### La decisión
+
+1. **Tres fases con significado fijo:** `open`/`acked` es ALERTA (halo y faro vivos);
+   `in_review` es ANALIZANDO (quieto, con contador de texto hasta el dictamen preliminar);
+   `closed` está fuera de las escenas.
+2. **El worker de incidentes mueve las fases**, nunca el cliente: a `in_review` cuando el último
+   tier del sitio vuelve a `normal` y han pasado el `settle` del dictamen y un mínimo nuevo
+   (`alert_hold_min_s`, los «unos minutos»); a `closed` por clasificación terminal
+   (`falso_positivo`, `prueba`, `reproduccion`), por dictamen firmado, o por un TTL de **horas**
+   en revisión (`incident_review_ttl_s`), siempre auditado en `incident_actions`.
+3. **`reproduccion` entra en el catálogo de clasificación** —una corrida de demostración no es
+   ni una prueba del gabinete ni un falso positivo— y viaja además como **atributo** del evento
+   (`meta.reproduccion`), no como estado de procedencia: la cifra reproducida es la del catálogo,
+   con su procedencia real.
+
+### Por qué
+
+- Es lo que Mauricio pidió, con la única corrección que la regla de oro 7 exige: **la escena se
+  apaga por lo que el servidor sabe**, no por lo que el reloj del navegador supone.
+- Cerrar por TTL de horas, y no de minutos, evita esconder un evento real que nadie clasificó; el
+  TTL es la red de seguridad, la clasificación es la vía normal.
+- Un sexto estado de procedencia tocaría seis pines de tests y el JSON que lee el panel sin build;
+  un atributo ortogonal no toca nada de eso y dice lo mismo.
+
+### Cómo se revocaría
+
+Si un cliente exigiera que ningún incidente se cierre sin clasificación humana, se pone
+`incident_review_ttl_s` a cero y el TTL desaparece; las otras dos vías siguen. Lo que **no**
+cambia en ninguna revocación: el cliente jamás cierra ni apaga una alerta por cronómetro propio.
