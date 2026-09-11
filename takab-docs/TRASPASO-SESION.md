@@ -4,10 +4,12 @@
 > reconstruirlo leyendo commits**. No sustituye a `TASKS.md` (qué construir) ni a
 > `PENDIENTES-MAURICIO.md` (qué está bloqueado en una persona): es **el estado y el método**.
 >
-> **Última sesión:** 2026-09-06 → 2026-09-10 · **la reforma visual**: auditoría de las tres
-> superficies y sus **33 fichas cerradas**, todas por PR con los siete checks
-> ([`design/PLAN-REFORMA-VISUAL.md § 10`](design/PLAN-REFORMA-VISUAL.md)). La anterior fue
-> 2026-08-10 → 2026-08-14 · once lotes.
+> **Última sesión:** 2026-09-11 · **planificación del prototipo funcional**: ocho fases y 28
+> fichas `T-7.xx` en el Bloque VIII de `TASKS.md`, con objetivo ejecutable por fase y plantilla
+> de sesión ([`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md)). **La siguiente sesión
+> empieza por la Fase 0 pegando la plantilla del §8 de ese plan.** La anterior fue 2026-09-06 →
+> 2026-09-10 · la reforma visual, 33 fichas cerradas
+> ([`design/PLAN-REFORMA-VISUAL.md § 10`](design/PLAN-REFORMA-VISUAL.md)).
 
 ---
 
