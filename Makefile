@@ -2,7 +2,7 @@
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
         objetos \
-        cloud-images cloud-deploy cloud-apply cloud-allow-my-ip restore-drill \
+        cloud-images cloud-deploy cloud-conformidad cloud-apply cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
 
 API_DIR := api
@@ -316,6 +316,15 @@ cloud-images:
 cloud-deploy:
 	@CLOUD_TAG=$(CLOUD_TAG) AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
 		TF_DEV=$(TF_DEV) bash deploy/cloud/deploy.sh
+
+# [T-7.01] Censo de conformidad: ¿lo que está en código está en el sistema? SOLO
+# LEE (health, `compose ps` por SSM, SQS, `terraform plan`, alarmas, release del Pi,
+# APK del Pixel) y sale 0 únicamente con todo VERDE; refresca la tabla de
+# takab-docs/INFORME-CONFORMIDAD-DEMO.md entre sus marcadores. Un NO MEDIDO cuenta
+# como fallo salvo `CONFORMIDAD_FLAGS=--permitir-no-medido`.
+cloud-conformidad:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) TF_DEV=$(TF_DEV) \
+		bash deploy/cloud/conformidad.sh --informe takab-docs/INFORME-CONFORMIDAD-DEMO.md $(CONFORMIDAD_FLAGS)
 
 # [T-2.171] `terraform apply` con las mismas guardas que un despliegue, porque es
 # un despliegue: cambia infraestructura viva. Es el que menos se deja guardar
