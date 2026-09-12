@@ -62,26 +62,26 @@ La regenera `make cloud-conformidad`. Lo de aquí abajo entre marcadores es la �
 arriba es la interpretación y no se regenera.
 
 <!-- conformidad:inicio -->
-_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-12T13:18:24Z · HEAD `721c17a` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
+_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-12T20:54:06Z · HEAD `40c9b2f` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
 
 | Pieza | Veredicto | Evidencia |
 |---|---|---|
-| build de la nube | 🟢 VERDE | /api/health.build=721c17a == HEAD |
+| build de la nube | 🟢 VERDE | /api/health.build=40c9b2f == HEAD |
 | esquema de la nube | 🟢 VERDE | estado=al_dia aplicada=0062_simulacro_aborto_por_sitio == última migración del repo (0062_simulacro_aborto_por_sitio) |
-| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :721c17a) |
-| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.48s |
+| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :40c9b2f) |
+| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: [32m[32m[1m14 passed[0m[32m in 0.30s[0m[0m |
 | entorno que la nube exige | 🟢 VERDE | todo en el heredoc de deploy.sh/takab-secrets.sh: Settings.REQUERIDOS_EN_PRODUCCION (8 nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL |
 | bandera TAKAB_API_PUSH_FCM_APPLICATION_ARN | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (push real por FCM: T-7.03) |
 | bandera TAKAB_API_OPENROUTER_ENABLED | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (decisión de la demo) |
 | bandera TAKAB_API_CONSOLE_SCOPE_ENFORCED | 🟢 VERDE | exportada en deploy.sh · definida en /etc/takab/cloud.env de la instancia |
-| cola de backfill | 🔴 ROJO | takab-dev-q-backfill: 0 visibles, 0 en vuelo · takab-dev-q-backfill-dlq: 1 → sin consumidor hasta que el servicio backfill corra en la nube (T-7.02); si la DLQ tiene mensajes, mirarlos antes de purgar |
+| cola de backfill | 🟢 VERDE | takab-dev-q-backfill: 0 visibles (0 en vuelo) · takab-dev-q-backfill-dlq: 0 |
 | terraform plan | 🟢 VERDE | sin cambios: código == estado == AWS |
-| alarmas de CloudWatch | 🔴 ROJO | en ALARM: takab-dev-dlq-telemetry → atender antes de la demo (una alarma que grita durante la demo es la que nadie mira) |
-| release activa del Pi | 🟢 VERDE | release 20260910T222639Z-f19aa06: nada de lo que el gabinete ejecuta cambió desde f19aa06 (HEAD 721c17a) |
-| modo prueba del Pi | ⚪ NO MEDIDO | /api/status sin test_mode.active |
-| APK del Pixel | 🟢 VERDE | com.takab.ailert 0.1.0 instalado 2026-09-12 06:29:45 ≥ último cambio de mobile/ (d608685 2026-09-10T04:48:30-06:00) |
+| alarmas de CloudWatch | 🟢 VERDE | ninguna alarma en ALARM |
+| release activa del Pi | 🔴 ROJO | release 20260910T222639Z-f19aa06; desde f19aa06 cambiaron 14 ficheros de lo que el gabinete ejecuta (último: 9e67b25 2026-09-12T14:13:34-06:00) → bash deploy/edge/deploy.sh |
+| modo prueba del Pi | 🟢 VERDE | test_mode.active=false · audio.profile: {"applied":{},"rejected":{},"test_tone":true} |
+| APK del Pixel | ⚪ NO MEDIDO | sin teléfono por USB (adb get-state: nada); conecta el Pixel con depuración USB |
 
-**RESUMEN:** 9 VERDE · 2 AMARILLO · 2 ROJO · 1 NO MEDIDO
+**RESUMEN:** 10 VERDE · 2 AMARILLO · 1 ROJO · 1 NO MEDIDO
 <!-- conformidad:fin -->
 
 **Dos apostillas a esa corrida, medidas después de generarla.** El «no medido» del modo prueba del gabinete era un defecto del propio script —leía la bandera con una expresión que trata el `false` como ausente, así que el caso bueno salía sin medir— y quedó corregido; a mano, el modo prueba está **desarmado**, que es lo que la demostración necesita. Y la cola de mensajes muertos del backfill creció a cuatro al desplegar el worker: no son evidencia perdida, son los informes en PDF que la propia API escribe bajo el mismo prefijo y que el worker no sabe reconocer (`T-7.05`, H-2).
@@ -142,19 +142,28 @@ Dos pulsos seguidos sin cerrar enseñan **una** alerta.
 
 ---
 
-## 5 · Lo único que la fase dejó a medias por una credencial
+## 5 · Tres tropiezos del propio despliegue, y lo que enseñan
 
-**Las correcciones están en `main` y NO en la nube.** El despliegue murió al renovar el estado de
-terraform con `InvalidGrantException`: la caché de la sesión de AWS estaba rancia. Y conviene
-subrayar cómo se ve ese fallo, porque engaña: `aws sts get-caller-identity` **responde
-correctamente** con la cuenta, así que cualquier comprobación basada en él da un falso positivo;
-el que falla es terraform. La salida es renovar la sesión **cerrándola primero** — `aws sso logout`
-y después `aws sso login` — y repetir `make cloud-images && make cloud-deploy`, que con la caché
-de imágenes caliente es cuestión de minutos.
+Ninguno era del producto; los tres son del camino por el que el producto llega al sistema, y los
+tres se ven igual: algo que parece estar bien y no lo está.
 
-Hasta que eso ocurra, la nube corre el commit anterior: tiene el worker de evidencia y el alcance
-por rol, que es lo que esta fase le añadió de fondo, pero **no** las correcciones visuales ni el
-contrato del latido. El censo lo dirá en rojo mientras sea así, que es exactamente su trabajo.
+**La sesión de AWS caducada que responde que sí.** El despliegue murió al leer el estado de
+terraform. Lo que engaña es el diagnóstico: `aws sts get-caller-identity` **devuelve la cuenta
+correctamente**, así que cualquier comprobación basada en él dice que la sesión está sana; el que
+falla es terraform. Y volver a entrar sin cerrar sesión primero no la arregla.
+
+**La guarda de rama que protege de verdad.** El despliegue a la nube y al gabinete exigen estar en
+la rama principal, y abortaron cuando el árbol estaba en otra. Es molesto y es correcto: lo que se
+despliega tiene que ser lo que la integración vio. Ese mismo día un commit de documentación se
+empujó directo a la rama principal saltándose las nueve comprobaciones —la protección no alcanza a
+los administradores y el aviso llega **después**—, así que la lección es al revés de lo que parece:
+la guarda del despliegue es la que queda, y conviene crear la rama **antes** de comitear.
+
+**El censo ensucia el árbol y la siguiente release hereda la mancha.** `make cloud-conformidad`
+reescribe la tabla de este documento, así que deja el árbol modificado; el despliegue al gabinete
+etiqueta su release con el estado del árbol y la marcó como sucia, pese a que este documento **no
+viaja al gabinete** y el código instalado corresponde exactamente a su commit. Una release que no
+se puede reconstruir a partir de un commit no sirve como evidencia: se redesplegó desde limpio.
 
 ---
 

@@ -80,7 +80,11 @@ FILAS=()
 # registrar <VERDE|AMARILLO|ROJO|NO MEDIDO> <pieza> <evidencia>
 registrar() {
   local v="$1" pieza="$2" ev
-  ev="$(printf '%s' "$3" | tr -s '\n\t' '  ')"
+  # La evidencia se aplana Y se despinta: varias piezas citan la salida de otra
+  # herramienta (pytest, terraform) que colorea cuando cree que hay terminal, y
+  # esos escapes acababan CRUDOS en la tabla del informe — ilegibles en markdown
+  # y capaces de romper una celda si traen el separador dentro.
+  ev="$(printf '%s' "$3" | tr -s '\n\t' '  ' | sed -E 's/\x1B\[[0-9;]*[A-Za-z]//g')"
   case "$v" in
   VERDE) N_VERDE=$((N_VERDE + 1)) ;;
   AMARILLO) N_AMARILLO=$((N_AMARILLO + 1)) ;;
