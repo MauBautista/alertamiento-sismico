@@ -62,10 +62,26 @@ La regenera `make cloud-conformidad`. Lo de aquí abajo entre marcadores es la �
 arriba es la interpretación y no se regenera.
 
 <!-- conformidad:inicio -->
-_Pendiente de la primera corrida completa con credenciales de AWS renovadas; la pasada del 2026-09-11
-(solo lectura, `--permitir-no-medido`) dio **4 VERDE · 5 AMARILLO · 3 ROJO · 2 NO MEDIDO**: los tres
-rojos son el compose sin `backfill`, la cola de backfill con 42 mensajes y la alarma de la DLQ de
-telemetría; los dos no medidos son el Pi, entonces fuera de la red._
+_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-12T13:18:24Z · HEAD `721c17a` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
+
+| Pieza | Veredicto | Evidencia |
+|---|---|---|
+| build de la nube | 🟢 VERDE | /api/health.build=721c17a == HEAD |
+| esquema de la nube | 🟢 VERDE | estado=al_dia aplicada=0062_simulacro_aborto_por_sitio == última migración del repo (0062_simulacro_aborto_por_sitio) |
+| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :721c17a) |
+| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.48s |
+| entorno que la nube exige | 🟢 VERDE | todo en el heredoc de deploy.sh/takab-secrets.sh: Settings.REQUERIDOS_EN_PRODUCCION (8 nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL |
+| bandera TAKAB_API_PUSH_FCM_APPLICATION_ARN | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (push real por FCM: T-7.03) |
+| bandera TAKAB_API_OPENROUTER_ENABLED | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (decisión de la demo) |
+| bandera TAKAB_API_CONSOLE_SCOPE_ENFORCED | 🟢 VERDE | exportada en deploy.sh · definida en /etc/takab/cloud.env de la instancia |
+| cola de backfill | 🔴 ROJO | takab-dev-q-backfill: 0 visibles, 0 en vuelo · takab-dev-q-backfill-dlq: 1 → sin consumidor hasta que el servicio backfill corra en la nube (T-7.02); si la DLQ tiene mensajes, mirarlos antes de purgar |
+| terraform plan | 🟢 VERDE | sin cambios: código == estado == AWS |
+| alarmas de CloudWatch | 🔴 ROJO | en ALARM: takab-dev-dlq-telemetry → atender antes de la demo (una alarma que grita durante la demo es la que nadie mira) |
+| release activa del Pi | 🟢 VERDE | release 20260910T222639Z-f19aa06: nada de lo que el gabinete ejecuta cambió desde f19aa06 (HEAD 721c17a) |
+| modo prueba del Pi | ⚪ NO MEDIDO | /api/status sin test_mode.active |
+| APK del Pixel | 🟢 VERDE | com.takab.ailert 0.1.0 instalado 2026-09-12 06:29:45 ≥ último cambio de mobile/ (d608685 2026-09-10T04:48:30-06:00) |
+
+**RESUMEN:** 9 VERDE · 2 AMARILLO · 2 ROJO · 1 NO MEDIDO
 <!-- conformidad:fin -->
 
 ---
