@@ -9,13 +9,22 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-11 · **31 puntos abiertos** (§2: 13 · §3: 7 · §4: 8 · §5: 3),
+> **Última actualización:** 2026-09-12 · **31 puntos abiertos** (§2: 12 · §3: 8 · §4: 8 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
 > **El conteo se puede rehacer, y por eso se dice cómo:** cuenta un `###` salvo que su título
 > esté tachado o lleve ✅. Única excepción, el **§4.3** — su ✅ dice que la compra está
 > *autorizada*, no hecha. (La tabla de decisiones de la §1 también lleva ✅ y no son puntos.)
+>
+> ## Lo que cambió el 2026-09-12
+>
+> Salieron **dos**, las dos sin gastar una ventana tuya: el **§2.11** (el worker de backfill ya
+> corre en la nube y la cadena de evidencia funciona de punta a punta) y la mitad desplegable del
+> **§2.5** (el alcance por rol está encendido; falta comprobarlo por rol, que va con la sesión de
+> consola del acto 4). Y el **§4.4** (credenciales de FCM) sube de urgencia: sin él, la app se
+> entera de una alerta por sondeo — medido en el Pixel real, **21 s** con la app delante y sin
+> límite con la app en segundo plano.
 >
 > ## Lo que cambió el 2026-09-11
 >
@@ -271,7 +280,19 @@ aparcada. **Si no llega el correo de `ok_actions` en ~15 min, la métrica nunca 
 > Lo que sigue pendiente de `T-2.87` es lo que ya estaba: esta ficha no lo toca.
 
 ### 2.4 · [`T-2.88`](TASKS.md) · Rol CI OIDC endurecido *(cierra también `T-1.44`)*
-### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced` — **va en la ventana A**
+### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced` — **ENCENDIDO el 2026-09-12; falta verificarlo por rol**
+
+> **✅ Lo que ya está hecho, y no necesitó ventana tuya.** [`T-7.06`](TASKS.md) exportó la bandera
+> en el despliegue y la nube corre con el alcance impuesto desde el 2026-09-12. Antes de encenderlo
+> se comprobó contra el pool real que **nadie se queda sin estaciones**: de los ocho usuarios,
+> siete traen alcance total y el único acotado es un brigadista, que es superficie móvil. Y la
+> suite **no se puso en rojo**, porque lo que cambió fue el despliegue y no el valor por defecto
+> del código: los dos tests HTTP siguen fijando la conducta que el código trae de fábrica.
+>
+> **Lo que falta, y es tuyo a medias:** la prueba entre clientes contra el entorno desplegado. No se
+> puede correr con lo que hay: ese test entra con el login de desarrollo, que producción no sirve
+> —y un test bloqueante se encarga de que siga sin servirlo—. Necesita una sesión real de Cognito,
+> que es la que ya trae el acto 4 de la demostración; se cierra allí, contigo delante.
 > **La única brecha multi-tenant viva en producción.** Tiene **secuencia obligada** —invertirla
 > deja a cada `soc_operator` con cero estaciones—: primero recorrer los `scope_gap` del
 > `audit_log`, luego asignar alcance, y **encenderlo al final**.
@@ -372,15 +393,14 @@ corrido**. El occupant necesita código de enrolamiento.
 > **Trampa ya pagada que aplica aquí:** jamás subas `index.html` a mano antes del apply — el
 > etag del objeto histórico haría que un apply posterior lo REVIRTIERA al bootstrap.
 
-### 2.11 · Redesplegar la nube con el **worker de backfill** — hoy esa cola no la consume nadie
+### 2.11 · ~~Redesplegar la nube con el **worker de backfill**~~ — ✅ **HECHO el 2026-09-12**
 
-> **Hallazgo del 2026-09-01, y es el que rompe el CCTV de punta a punta.** El
-> `docker-compose.yml` de la nube levanta siete servicios y **ninguno corre
-> `python -m takab_api.backfill`**. Nunca lo tuvo — `git log -S backfill` sobre ese fichero
-> sale vacío. Ficha: [`T-3.11.c`](TASKS.md).
-
-**Va después del código, no antes.** Esta línea existe para que el redespliegue no se pierda
-cuando el servicio esté escrito; el trabajo previo es software y no te bloquea a ti.
+> **Hallazgo del 2026-09-01**, cerrado por [`T-7.02`](TASKS.md) sin que hiciera falta una ventana
+> tuya: el servicio entró en el compose y se desplegó con el resto. Al arrancar drenó los **65**
+> mensajes que la cola llevaba acumulados, el gabinete subió sus **siete** evidencias pendientes y
+> el worker las registró ligadas a su incidente. Antes de ese día el bucket de evidencia no tenía
+> **ni una sola forma de onda**, y eso era lo que dejaba vacío el espectrograma del dictamen en la
+> nube. Lo que sigue pendiente del CCTV no es esto: era su primer eslabón.
 
 Lo que la cola `takab-dev-q-backfill` deja de recibir **dos veces**, y por eso duele el doble:
 

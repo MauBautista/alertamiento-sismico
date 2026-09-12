@@ -148,7 +148,7 @@ class Element {
     (this.listeners[type] = this.listeners[type] || []).push(fn);
   }
   getContext() {
-    return makeCtx();
+    return makeCtx(this.attrs.id || this.tagName);
   }
   getBoundingClientRect() {
     return { width: this.clientWidth, height: this.clientHeight, top: 0, left: 0 };
@@ -158,26 +158,67 @@ class Element {
 /* Contexto 2D de mentira: registra que se llamó y devuelve lo mínimo con
    sentido. El test NO afirma píxeles (sería frágil y no dice nada operativo);
    afirma que el dibujo CORRE SIN REVENTAR y qué textos se estampan — que es
-   donde el canvas sí comunica ("SIN SEÑAL DEL SENSOR", "PUNTO 0 FIJADO"…). */
+   donde el canvas sí comunica ("SIN SEÑAL DEL SENSOR", "PUNTO 0 FIJADO"…).
+   [T-7.05 · P-2] Y ahora también DÓNDE. No son píxeles: es la geometría que el
+   panel PIDE (los extremos de cada trazo, la caja de cada relleno, la línea
+   base de cada texto), que es lo único que hace falta para responder «¿pinta
+   algo dentro de la banda de rótulos del carril?» — la pregunta de U-10, que
+   hasta aquí solo sabía contestar un navegador de verdad. Un rasterizador aquí
+   sería fingir una medida; una lista de órdenes con sus coordenadas es
+   exactamente lo que el panel dijo. */
 const CANVAS_TEXT = [];
-function makeCtx() {
+const CANVAS_OPS = [];
+function makeCtx(lienzo) {
   const noop = () => {};
-  return {
+  /* El trazo se acumula como el de un canvas real: `beginPath` abre, los
+     `moveTo`/`lineTo` encadenan y `stroke()` es el que pinta. Registrar el
+     `lineTo` sin esperar al `stroke` delataría como tinta un camino que nadie
+     llegó a pintar. */
+  let camino = [];
+  let cursor = null;
+  const ctx = {
     setTransform: noop,
     clearRect: noop,
-    beginPath: noop,
-    moveTo: noop,
-    lineTo: noop,
-    stroke: noop,
-    arc: noop,
+    beginPath: () => {
+      camino = [];
+      cursor = null;
+    },
+    moveTo: (x, y) => {
+      cursor = [x, y];
+    },
+    lineTo: (x, y) => {
+      if (cursor) camino.push([cursor[0], cursor[1], x, y]);
+      cursor = [x, y];
+    },
+    stroke: () => {
+      for (const s of camino) {
+        CANVAS_OPS.push({ lienzo, op: 'stroke', x0: s[0], y0: s[1], x1: s[2], y1: s[3], lw: ctx.lineWidth, alpha: ctx.globalAlpha, color: String(ctx.strokeStyle) });
+      }
+    },
+    arc: (cx, cy, r) => {
+      camino.push([cx - r, cy - r, cx + r, cy + r]);
+      cursor = null;
+    },
     fill: noop,
-    fillRect: noop,
-    strokeRect: noop,
+    fillRect: (x, y, w, h) => {
+      CANVAS_OPS.push({ lienzo, op: 'fillRect', x0: x, y0: y, x1: x + w, y1: y + h, alpha: ctx.globalAlpha, color: String(ctx.fillStyle) });
+    },
+    strokeRect: (x, y, w, h) => {
+      CANVAS_OPS.push({ lienzo, op: 'strokeRect', x0: x, y0: y, x1: x + w, y1: y + h, alpha: ctx.globalAlpha, color: String(ctx.strokeStyle) });
+    },
     closePath: noop,
     setLineDash: noop,
     save: noop,
     restore: noop,
-    fillText: (t) => CANVAS_TEXT.push(String(t)),
+    fillText: (t, x, y) => {
+      CANVAS_TEXT.push(String(t));
+      /* La caja del texto se deriva del cuerpo declarado en `ctx.font`: un
+         glifo se pinta HACIA ARRIBA de su línea base, así que la tinta ocupa
+         desde `y - cuerpo` hasta `y` (la cota alta: el descendente se ignora
+         porque lo que se persigue es lo que sube hacia el rótulo). */
+      const cuerpo = parseFloat((/(\d+(?:\.\d+)?)px/.exec(String(ctx.font)) || [0, 0])[1]) || 0;
+      CANVAS_OPS.push({ lienzo, op: 'fillText', txt: String(t), x0: x, y0: y - cuerpo, x1: x + String(t).length * cuerpo * 0.6, y1: y, alpha: ctx.globalAlpha, color: String(ctx.fillStyle) });
+    },
     measureText: (t) => ({ width: String(t).length * 6 }),
     strokeStyle: '',
     fillStyle: '',
@@ -186,6 +227,7 @@ function makeCtx() {
     font: '',
     globalAlpha: 1,
   };
+  return ctx;
 }
 
 /* --------- parser de HTML suficiente para el esqueleto del panel --------- */
@@ -283,6 +325,7 @@ process.on('unhandledRejection', (err) => {
  */
 async function render(cfg) {
   CANVAS_TEXT.length = 0;
+  CANVAS_OPS.length = 0;
   REJECTIONS.length = 0;
   const { root: body, byId, withData } = parseBody(html);
 
@@ -293,6 +336,18 @@ async function render(cfg) {
     .filter((x) => x !== 'pin' || true);
   const missing = declaredIds.filter((i) => !byId[i]);
   if (missing.length) return { fatal: 'ids no parseados: ' + missing.join(',') };
+
+  /* [T-7.05 · P-2] `sizes: {"wave-canvas": [412, 468]}` le da a un elemento la
+     geometría que el caso quiera. Sin esto todo mide 900×420 y un test sobre la
+     geometría del lienzo estaría afirmando sobre un tamaño que no existe en
+     ningún gabinete: el que importa es el de CAMPO, y su alto lo declara la
+     hoja (`body.mode-campo #waves-wrap{min-height:468px}`). Quien lo pide lo
+     leyó de ahí; el arnés no lo inventa. */
+  for (const [id, wh] of Object.entries(cfg.sizes || {})) {
+    if (!byId[id]) return { fatal: 'sizes: el panel no tiene #' + id };
+    byId[id].clientWidth = wh[0];
+    byId[id].clientHeight = wh[1];
+  }
 
   const errors = [];
   const fetches = [];
@@ -318,11 +373,31 @@ async function render(cfg) {
     addEventListener: () => {},
   };
 
+  /* [T-7.05] Este mini-DOM no tiene motor de estilo ni de layout: toda custom
+     property sale SIN VALOR por defecto, igual que en un navegador donde nadie
+     la declaró — que es lo que pasa en MURO y en CONSOLA, donde `--lane-band`
+     no se declara y `laneBand()` cae a 0.
+     `cfg.customProps` DECLARA las que el caso quiera, y el test las saca de la
+     HOJA en vez de teclearlas: es lo que permite ejercitar la geometría de
+     CAMPO (`body.mode-campo #lanes{--lane-band:48px}`) sin un navegador. El
+     arnés no inventa el valor; lo recibe de quien lo leyó del CSS.
+     Se CUENTAN las llamadas: `laneBand()` vive dentro de `requestAnimationFrame`
+     y leer el estilo calculado una vez por fotograma —60 veces por segundo, con
+     el árbol sucio de `renderLanes()`— es lo que corrigió T-7.05. Contarlas es
+     la única forma de que el arreglo tenga una prueba que falle si se deshace. */
+  let computedStyleCalls = 0;
+  const CUSTOM = cfg.customProps || {};
+  const getComputedStyle = () => {
+    computedStyleCalls += 1;
+    return { getPropertyValue: (prop) => (CUSTOM[prop] === undefined ? '' : String(CUSTOM[prop])) };
+  };
+
   const Reloj = cfg.now ? frozenDate(cfg.now) : Date;
 
   const sandbox = {
     document,
     window: windowObj,
+    getComputedStyle,
     location: { search: cfg.search || '' },
     performance: { now: () => Reloj.now() },
     console: { log: () => {}, warn: () => {}, error: () => {} },
@@ -399,10 +474,30 @@ async function render(cfg) {
   /* El PIN se teclea DESPUÉS de cargar (vive en memoria, jamás se guarda). */
   if (cfg.pin !== undefined) byId['pin'].value = cfg.pin;
 
+  /* [T-7.05] Rompe un dibujo A PROPÓSITO. Es la única forma de ejercitar el
+     `catch` de `frame()`, que hasta esta ficha estaba VACÍO: de los cuatro
+     lienzos del fotograma sólo el de ondas se limpia solo (`fitCanvas()` hace
+     su `clearRect` al entrar), así que la brújula y el mapa se quedaban con el
+     fotograma anterior intacto y el panel seguía pareciendo vivo. El script del
+     panel corre EN ESTE contexto, así que sus `function` de primer nivel son
+     propiedades del global y `frame()` resuelve el nombre al llamarlo:
+     sustituirla aquí es sustituir la que se va a ejecutar. */
+  if (cfg.breakDraw) {
+    sandbox[cfg.breakDraw] = () => {
+      throw new Error('dibujo roto a propósito · ' + cfg.breakDraw);
+    };
+  }
+
   /* Un frame: ejercita drawWaves/drawRose (y el mapa si el overlay está abierto). */
   const runFrame = () => {
     const fn = rafs.shift();
     if (!fn) return;
+    /* [T-7.05 · P-2] La geometría que se devuelve es la del ÚLTIMO fotograma.
+       Acumularla entre fotogramas mezclaría dos estados —el panel arranca en la
+       variante A y el caso puede conmutar a la B, que reparte los carriles
+       1:3:1:1— y cualquier afirmación sobre las pistas estaría comparando las
+       órdenes de un reparto contra la geometría del otro. */
+    if (cfg.canvasOps) CANVAS_OPS.length = 0;
     try {
       fn();
     } catch (err) {
@@ -410,6 +505,10 @@ async function render(cfg) {
     }
   };
   runFrame();
+  /* `frames` pide más fotogramas SIN tocar nada entre medias: es el escenario
+     en el que el panel está quieto delante de un operador, que es el 99.9 % de
+     su vida y donde se mide el coste por fotograma. */
+  for (let i = 1; i < (cfg.frames || 1); i++) runFrame();
 
   /* --------- interacción: los clics que pide la configuración --------- */
   const clickById = (id) => {
@@ -505,6 +604,15 @@ async function render(cfg) {
        + dotColor`), y sin esto el censo de campos sin camino de render leía como
        "no se pinta" un campo que sí cambia de color. */
     css: el.style.cssText || '',
+    /* [T-7.05 · P-2] Las TRES formas de declarar un cuerpo inline, que es lo que
+       mata en silencio a una regla `body.mode-*`: el atributo `style=` del
+       marcado, el `style.cssText` que escribe el JS y la propiedad suelta
+       `style.font`/`style.fontSize`. Van juntas porque el censo que las vigila
+       se deriva de la hoja y no sabe de antemano cuál de las tres usó quien
+       escribió el elemento. */
+    inline: el.attrs.style || '',
+    font: el.style.font || '',
+    fontSize: el.style.fontSize || '',
     kids: depth > 0 ? el.children.map((c) => dump(c, depth - 1)) : [],
   });
 
@@ -515,6 +623,10 @@ async function render(cfg) {
   return {
     tree: dump(body, 12),
     canvasText: CANVAS_TEXT.slice(),
+    /* La geometría del canvas SOLO va de vuelta si se pide: son ~200 órdenes
+       por fotograma y el censo de render hace ~120 casos en un lote. */
+    canvasOps: cfg.canvasOps ? CANVAS_OPS.slice() : undefined,
+    computedStyleCalls,
     fetches,
     pendingTimeouts: timeouts.length,
     errors: errors.concat(REJECTIONS),

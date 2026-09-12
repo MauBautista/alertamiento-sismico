@@ -765,3 +765,34 @@ describe("sitesToFeatureCollection · la marca de demostración", () => {
     expect(fc.features.filter((f) => f.properties.demo === true)).toEqual([]);
   });
 });
+
+/**
+ * [T-7.05 · C-1] CAPAS VA PRIMERA EN LA COLUMNA DE LEYENDAS.
+ *
+ * Con alerta en pantalla, `soc.css` le resta a `.soc-map__legends` el alto que
+ * reserva la pila de alertas: la banda pasa de 376 / 447 / 447 px a 136 / 236 /
+ * 298 (medido en Chromium con las hojas y las fuentes reales, para los tres altos
+ * de escenario que sirve la consola). Lo que no cabe sigue ahí, pero scrolleando.
+ *
+ * Cuál de las tres leyendas se va, entonces, lo decide el ORDEN DEL MARCADO y no
+ * la hoja: el contenedor scrollea desde arriba, así que la primera es la que
+ * siempre está a la vista. CAPAS tiene que ser esa porque es el único CONTROL del
+ * grupo —el criterio C-1 exige que sus cuatro botones respondan a
+ * `elementFromPoint`—; las otras dos son lectura. Reordenar estos tres bloques
+ * dejaría los botones fuera de la banda con la hoja intacta y con el barrido del
+ * e2e en verde: no habría solape que medir, simplemente no estarían.
+ */
+describe("[T-7.05] el orden de las leyendas decide qué sobrevive a la banda corta", () => {
+  it("CAPAS es la primera leyenda de la columna", () => {
+    const { container } = render(
+      <MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />,
+    );
+    const columna = container.querySelector(".soc-map__legends");
+    expect(columna, "no hay columna de leyendas que ordenar").not.toBeNull();
+    const primera = columna!.firstElementChild;
+    expect(
+      primera?.getAttribute("data-testid"),
+      "la primera leyenda de la columna no es CAPAS: con la banda corta de una alerta, sus botones quedan fuera de vista",
+    ).toBe("map-layers");
+  });
+});

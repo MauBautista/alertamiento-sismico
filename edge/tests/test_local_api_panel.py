@@ -22,10 +22,12 @@ o renombrado en `LocalDashboard.status()` rompe aquí hasta que el panel lo mire
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -3150,58 +3152,92 @@ def test_la_bitacora_no_puede_comerse_la_columna():
 
 
 def test_en_CAMPO_los_rotulos_de_cada_carril_no_se_pisan():
-    """U-10: en CAMPO los dos rótulos de una pista de onda se superponían.
+    """U-10 · P-2: en CAMPO los dos rótulos de una pista se superponen. TODAVÍA.
 
-    Medido con Chromium a 412×915 sobre `?demo=reposo&mode=campo`: cada `.lane`
-    medía 31.5 px, el rótulo superior ocupaba de 8 a 21 px y la nota inferior de
-    16 a 26 — **6 px de solape**, con el nombre del canal encima de su propia
-    nota. El técnico en campo es justo quien no puede volver a la oficina a
-    comprobarlo.
+    **Por qué este test daba verde con dos píxeles de solape medidos.** Derivaba
+    la zona del rótulo superior como `top + font-size` —la caja de LÍNEA del
+    nombre del canal, 13 px—. Los glifos no se pintan ahí: se pintan en el área
+    de contenido de la fuente, que para JetBrains Mono a 13 px mide 17. Con
+    `top:7px` el canal ocupa 7→24 y no 7→20; y la nota tampoco empieza donde el
+    test creía, porque su propia tinta sale 1.5 px por encima de su caja. El
+    censo de T-7.04 lo midió en Chromium: `.lane .ch` ∩ `.lane .note` = 48 px²
+    (24×2) **en los cuatro carriles de las quince escenas**, con la guarda en
+    verde. El mismo error contaminaba el suelo que deriva: `nota_top +
+    nota_alto` es la caja de línea de la nota, no su tinta.
 
-    La aritmética se DERIVA de la hoja y del `laneGrow()` del propio panel, no
-    se teclea: si mañana alguien sube la tipografía del canal o mete una quinta
+    Y faltaba la mitad del hallazgo. Los dos rótulos flotan SOBRE `#wave-canvas`,
+    que dibuja cada pista de `y0 + LANE_PAD` a `y0 + lh - LANE_PAD`: la traza
+    los cruza de punta a punta y la nota se lee encima de la onda. Esto lo cierra
+    `test_en_CAMPO_la_traza_no_se_dibuja_encima_de_los_rotulos`; aquí se fija la
+    parte que es DOM puro, con la aritmética de la tinta.
+
+    La aritmética se DERIVA de la hoja y del `laneGrow()` del propio panel, no se
+    teclea: si mañana alguien sube la tipografía del canal o mete una quinta
     pista, este test lo caza en vez de quedarse anclado a un número viejo.
     """
-    html = _INDEX.read_text("utf-8")
+    # El `top` de un absoluto se mide desde la caja de RELLENO, así que el borde
+    # superior del carril lo desplaza todo un píxel.
+    borde = _px(_regla(".lane"), "border-top") or 0.0
 
-    # El peor caso no es el reparto uniforme: la variante B reparte [1,3,1,1],
-    # así que la pista pequeña se lleva 1/6 del alto, no 1/4.
-    grow = re.search(r"function laneGrow\(\)\{[^}]*?\[([0-9,\s]+)\][^}]*?\[([0-9,\s]+)\]", html)
-    assert grow, "no se pudo leer `laneGrow()`: el reparto de las pistas cambió de forma"
-    repartos = [[int(n) for n in g.replace(" ", "").split(",")] for g in grow.groups()]
-    peor = max(sum(r) / min(r) for r in repartos)  # cuántas pistas "cabe" la más pequeña
-
-    # Zona que ocupa cada rótulo dentro de la pista, leída de la hoja.
-    arriba = _px(_regla(".lane .top"), "top") or 0
-    ch = re.search(r"font:\s*\d+\s+([0-9.]+)px", _regla(".lane .ch"))
-    assert ch, "`.lane .ch` dejó de declarar su tamaño en el atajo `font:`"
-    zona_arriba = arriba + float(ch.group(1))
+    fs_ch, lh_ch = _tipo(_regla(".lane .ch"))
+    assert fs_ch is not None and lh_ch is not None, "`.lane .ch` perdió su tipografía"
+    arriba = _px(_regla(".lane .top"), "top") or 0.0
+    # Tinta del nombre del canal, de su borde superior al inferior.
+    canal_hasta = borde + arriba + fs_ch * lh_ch + _desborde(fs_ch, lh_ch)
 
     campo_note = _regla("body.mode-campo .lane .note").replace(" ", "")
     assert "bottom:auto" in campo_note and "top:" in campo_note, (
         "en CAMPO la nota sigue anclada al BORDE INFERIOR de la pista. Con una "
-        "pista corta se sube sobre el rótulo del canal: es el solape de 6 px "
-        "que midió U-10. Va debajo del rótulo superior, no contra el suelo."
+        "pista corta se sube sobre el rótulo del canal: es el solape que midió "
+        "U-10. Va debajo del rótulo superior, no contra el suelo."
     )
     nota_top = _px(campo_note, "top")
-    assert nota_top is not None and nota_top >= zona_arriba, (
-        f"la nota de CAMPO empieza en {nota_top}px y el rótulo del canal llega "
-        f"hasta {zona_arriba}px: se siguen pisando."
+    assert nota_top is not None, "la nota de CAMPO perdió su `top`"
+    fs_nota, lh_nota = _tipo(_regla(".lane .note"))
+    assert fs_nota is not None and lh_nota is not None, "`.lane .note` perdió su tipografía"
+    nota_desde = borde + nota_top - _desborde(fs_nota, lh_nota)
+
+    assert nota_desde >= canal_hasta + _HOLGURA, (
+        f"la tinta del canal llega a {canal_hasta:.1f}px del carril y la de la nota "
+        f"empieza en {nota_desde:.1f}px: se siguen pisando (P-2, 48 px² × 4 carriles × "
+        f"15 escenas). `body.mode-campo .lane .note` necesita `top` ≥ "
+        f"{canal_hasta + _HOLGURA + _desborde(fs_nota, lh_nota) - borde:.1f}px."
     )
 
-    nota_alto = float(re.search(r"font:\s*\d+\s+([0-9.]+)px", _regla(".lane .note")).group(1))
-    minimo = nota_top + nota_alto  # lo que la pista más pequeña TIENE que medir
+    # La banda de rótulos que la hoja reserva tiene que caber la tinta de la nota,
+    # porque es la que el canvas respeta (ver el test de la traza).
+    banda = _px(_regla("body.mode-campo #lanes"), "--lane-band")
+    assert banda is not None, (
+        "CAMPO no declara `--lane-band`: sin ella el canvas no sabe dónde acaban "
+        "los rótulos y vuelve a dibujar la traza encima (U-10)."
+    )
+    nota_hasta = borde + nota_top + fs_nota * lh_nota + _desborde(fs_nota, lh_nota)
+    assert banda >= nota_hasta, (
+        f"`--lane-band` reserva {banda:g}px y la tinta de la nota llega a "
+        f"{nota_hasta:.1f}px: la traza se dibujaría sobre el último renglón."
+    )
+
+    # El peor caso no es el reparto uniforme: la variante B reparte [1,3,1,1],
+    # así que la pista pequeña se lleva 1/6 del alto, no 1/4.
+    html = _INDEX.read_text("utf-8")
+    grow = re.search(r"function laneGrow\(\)\{[^}]*?\[([0-9,\s]+)\][^}]*?\[([0-9,\s]+)\]", html)
+    assert grow, "no se pudo leer `laneGrow()`: el reparto de las pistas cambió de forma"
+    repartos = [[int(n) for n in g.replace(" ", "").split(",")] for g in grow.groups()]
+    peor = max(sum(r) / min(r) for r in repartos)  # cuántas pistas "cabe" la más pequeña
 
     suelo = _px(_regla("body.mode-campo #waves-wrap"), "min-height")
     assert suelo is not None, (
         "`body.mode-campo #waves-wrap` perdió su `min-height`: sin suelo, la "
         "fila de ondas vuelve a los 126 px medidos y las pistas a 31.5."
     )
+    pad = _lane_pad()
+    minimo = banda + pad + _TRAZO_MIN  # rótulos + traza legible + aire inferior
     pista_menor = suelo / peor
     assert pista_menor >= minimo, (
-        f"con {suelo}px de ondas, la pista más pequeña de la variante B mide "
-        f"{pista_menor:.1f}px y sus rótulos necesitan {minimo:.1f}px. Sube el "
-        f"`min-height` de `body.mode-campo #waves-wrap` a {minimo * peor:.0f}px."
+        f"con {suelo:g}px de ondas, la pista más pequeña de la variante B mide "
+        f"{pista_menor:.1f}px: {banda:g}px de rótulos + {pad:g}px de aire dejan "
+        f"{pista_menor - banda - pad:.1f}px de traza y hacen falta {_TRAZO_MIN:g}. "
+        f"Sube el `min-height` de `body.mode-campo #waves-wrap` a {minimo * peor:.0f}px."
     )
 
     # Y la fila tiene que poder CRECER hasta ese suelo: con la horquilla vieja
@@ -3211,4 +3247,813 @@ def test_en_CAMPO_los_rotulos_de_cada_carril_no_se_pisan():
         "`body.mode-campo #col-izq` volvió a acotar la fila de ondas por arriba: "
         "el `min-height` del wrap se recorta contra el `overflow:hidden` de la "
         "tarjeta y las pistas no crecen. Mismo patrón que `#rose-wrap` en T-2.30."
+    )
+
+
+def test_en_CAMPO_la_traza_no_se_dibuja_encima_de_los_rotulos():
+    """La otra mitad de U-10: la onda pasaba por debajo del nombre y de la nota.
+
+    Los rótulos del carril son DOM flotando sobre `#wave-canvas`; el barrido de
+    solapes no puede verlo porque el texto de un canvas no está en el DOM (así
+    lo declara el propio helper del censo). Medido a ojo en
+    `panel_reposo_campo.png`: la nota impresa SOBRE la envolvente.
+
+    El reparto lo manda la hoja y el canvas lo obedece: `--lane-band` reserva la
+    cabecera del carril y `drawWaves()` arranca la traza debajo. Aquí se
+    comprueba ese cableado —que existe y que es el CSS quien lo dicta—, porque
+    el mini-DOM del arnés no tiene motor de layout y no puede medir píxeles.
+    """
+    html = _INDEX.read_text("utf-8")
+
+    assert re.search(r"function laneBand\(\)", html), (
+        "desapareció `laneBand()`: sin él el canvas no lee la banda de rótulos "
+        "y vuelve a dibujar la traza sobre el nombre del canal."
+    )
+    cuerpo = re.search(r"function laneBand\(\)\{([\s\S]*?)\n\}", html)
+    assert cuerpo and "--lane-band" in cuerpo.group(1), (
+        "`laneBand()` dejó de leer `--lane-band`: el alto de los rótulos volvería "
+        "a estar tecleado en el JS y divergiría de la hoja a la primera."
+    )
+
+    dibujo = re.search(r"function drawWaves\(\)\{([\s\S]*?)\n\}\n", html)
+    assert dibujo, "no se pudo leer `drawWaves()`"
+    assert "laneBand()" in dibujo.group(1), (
+        "`drawWaves()` dejó de consultar la banda de rótulos: la traza vuelve a "
+        "ocupar el carril entero y se pinta bajo el texto (U-10)."
+    )
+    assert re.search(r"Math\.max\(\s*LANE_PAD\s*,\s*band\s*\)", dibujo.group(1)), (
+        "el techo de la traza dejó de ser `Math.max(LANE_PAD, band)`: sin ese "
+        "máximo, MURO y CONSOLA (sin banda) perderían su aire superior o CAMPO "
+        "dejaría de respetar los rótulos."
+    )
+    assert not re.search(r"lh/2\s*-\s*\d", dibujo.group(1)), (
+        "volvió la aritmética vieja `half = lh/2 - 6`, que centra la traza en el "
+        "carril entero e ignora la banda de rótulos."
+    )
+
+
+# ------------------------- [T-7.05] la tinta desborda su propia caja de línea
+#
+# `P-1` y `P-2` del censo de `T-7.04` (lote B, 2026-09-11), medidos con
+# Chromium sobre `?demo=<escena>&mode=<modo>`:
+#
+#   · MURO 1920×1080 — `#tierline span.seclabel` «Estado del inmueble»
+#     (36,107 152×14) ∩ `span#tier-label` (36,119 845×93) = 304 px².
+#   · CAMPO × 4 carriles — `.lane .ch` «EHZ» (143,1143 24×17) ∩ `.lane .note`
+#     (143,1158 156×13) = 48 px² en cada carril.
+#
+# Es el MISMO error de aritmética dos veces. `line-height` fija la caja de
+# LÍNEA; los glifos se pintan en el ÁREA DE CONTENIDO de la fuente (ascendente
+# + descendente), que es más alta. Con `line-height:1` —o 1.05— la tinta sale
+# de su caja por arriba y por abajo, y el vecino, colocado contando la caja de
+# línea, queda dentro de esa zona. Hoy los trazos no llegan a tocarse
+# (mayúsculas sin descendentes bajo versalitas), pero el sitio por donde un
+# descendente pasaría ya está compartido: es exactamente lo que la trampa `T-3`
+# del censo explica de `Range.getClientRects()`, y la medida es honesta.
+#
+# El factor no se supone y su herramienta SÍ está en el árbol:
+# `edge/tests/panel_tinta.mjs` mide el área de contenido de las caras y los
+# cuerpos que el panel declara, contra las fuentes empaquetadas en
+# `local_api/fonts/`. Medido el 2026-09-12 con Chromium 149: el factor va de
+# 1.2727 (Geist 600 a 11 px) a **1.32** (JetBrains Mono a 100 px) — no es
+# constante porque Chromium redondea ascendente y descendente a píxeles enteros
+# por cuerpo. Se toma el MÁXIMO: una cota alta exige más separación de la
+# necesaria, que es el lado seguro para una guarda.
+_INK = 1.32
+
+#: Chromium redondea ascendente y descendente a píxeles enteros POR TAMAÑO, y
+#: el sobrante no se reparte simétricamente (medido en el rótulo de 11 px del
+#: tier: 2 px por arriba y 1 por abajo, no 1.5 y 1.5). Dos píxeles de holgura
+#: cubren ese reparto sin convertir la guarda en una lotería de redondeos.
+_HOLGURA = 2.0
+
+
+def _desborde(fs: float, lh: float | None) -> float:
+    """Cuánta tinta se sale de la caja de línea POR CADA LADO.
+
+    `lh is None` es `line-height:normal`: el navegador usa como caja de línea el
+    propio área de contenido de la fuente, así que no desborda nada.
+    """
+    if lh is None:
+        return 0.0
+    return max(0.0, (_INK - lh) * fs) / 2
+
+
+def _tipo(cuerpo: str) -> tuple[float | None, float | None]:
+    """`(font-size, line-height)` de una regla, venga del atajo `font:` o suelto.
+
+    El atajo gana como punto de partida y las declaraciones sueltas lo pisan,
+    que es el orden en el que la cascada las aplica dentro de una misma regla.
+    """
+    fs: float | None = None
+    lh: float | None = None
+    atajo = re.search(r"(?:^|;)\s*font\s*:\s*[^;]*?(\d+(?:\.\d+)?)px(?:\s*/\s*([0-9.]+))?", cuerpo)
+    if atajo:
+        fs = float(atajo.group(1))
+        lh = float(atajo.group(2)) if atajo.group(2) else None
+    suelto = _px(cuerpo, "font-size")
+    if suelto is not None:
+        fs = suelto
+    interlineado = re.search(r"(?:^|;)\s*line-height\s*:\s*([0-9.]+)\s*(?:;|$)", cuerpo)
+    if interlineado:
+        lh = float(interlineado.group(1))
+    return fs, lh
+
+
+#: Alto mínimo de traza útil en la pista más pequeña de CAMPO, en px. No es un
+#: gusto: por debajo de un escalón de §10.2 (24 px, ±12 de excursión) la
+#: envolvente de un canal deja de distinguirse de la línea base y el técnico de
+#: pie ya no puede decir si el sensor está viendo algo. Hoy la pista de CAMPO
+#: mide 54 px con los rótulos encima, así que de traza limpia quedan ~20.
+_TRAZO_MIN = 24.0
+
+
+def _lane_pad() -> float:
+    """`LANE_PAD` del panel: el aire entre la traza y el borde de su pista.
+
+    Se lee del JS en vez de teclearlo porque es la misma constante que decide
+    dónde acaba la traza: si alguien la cambia, el suelo de la pista en CAMPO
+    tiene que moverse con ella.
+    """
+    m = re.search(r"const LANE_PAD\s*=\s*([0-9.]+)\s*;", _INDEX.read_text("utf-8"))
+    assert m, "el panel perdió `LANE_PAD`: la traza vuelve a pegarse al borde del carril"
+    return float(m.group(1))
+
+
+def _estilo_inline(patron: str) -> str:
+    """El atributo `style=` de un elemento del marcado, localizado por `patron`."""
+    m = re.search(patron, _hoja())
+    assert m, f"el marcado del panel perdió el elemento que busca `{patron}`"
+    return m.group(1)
+
+
+def _efectivo(selector_base: str, modo: str) -> tuple[float | None, float | None]:
+    """Tipografía que un elemento tiene DE VERDAD en un modo, por la cascada.
+
+    Primero la regla base, después la del modo, que la pisa propiedad a
+    propiedad. Un `style=` inline en el marcado ganaría a las dos —por eso
+    existe `test_ninguna_regla_de_modo_la_mata_un_style_inline`, que prohíbe
+    justo eso para los elementos que un modo redimensiona.
+    """
+    fs, lh = _tipo(_regla(selector_base))
+    cuerpo = re.search(
+        r"(?:^|[};])\s*body\.mode-" + modo + r"\s+" + re.escape(selector_base) + r"\s*\{([^}]*)\}",
+        re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8")),
+        re.M,
+    )
+    if cuerpo:
+        fs_m, lh_m = _tipo(cuerpo.group(1))
+        if fs_m is not None:
+            fs = fs_m
+        if lh_m is not None:
+            lh = lh_m
+    return fs, lh
+
+
+def _estilo_del_panel() -> str:
+    """Sólo el `<style>` del panel, sin comentarios: la hoja, y nada más.
+
+    Importa el recorte. `body.mode-muro` aparece también en el marcado (un
+    comentario que explica por qué la visibilidad de `#muro-extra` va por CSS) y
+    en la prosa del `<script>`; un barrido sobre el fichero entero acabaría
+    leyendo una llave de JavaScript como el cuerpo de una regla.
+    """
+    hoja = _hoja()
+    ini = hoja.index("<style>") + len("<style>")
+    return hoja[ini : hoja.index("</style>", ini)]
+
+
+def _redimensiona_el_modo() -> dict[str, set[str]]:
+    """Censo DERIVADO: qué selectores le cambia el CUERPO una regla de modo.
+
+    Hasta T-7.05 esto era una tupla tecleada a mano con cuatro identificadores, y
+    la hoja declara NUEVE reglas de cuerpo por modo: las cinco que faltaban
+    (`.relay .rs`, `.relay .rl`, `.relay .re`, `.lane .ch`, `.lane .peak`)
+    llevaban desde T-2.30 sin vigilancia ninguna. Un censo enumerado a mano
+    acaba divergiendo — es la doctrina de la casa y aquí ya había divergido—,
+    así que se lee de donde vive la verdad.
+
+    Devuelve `{selector: {modos que lo redimensionan}}`.
+    """
+    censo: dict[str, set[str]] = {}
+    for m in re.finditer(
+        r"(?:^|[};])\s*body\.mode-([a-z]+)\s+([^{}]+?)\s*\{([^}]*)\}",
+        _estilo_del_panel(),
+        re.M,
+    ):
+        if re.search(r"(?:^|;)\s*font(?:-size)?\s*:", m.group(3)):
+            censo.setdefault(m.group(2).strip(), set()).add(m.group(1))
+    return censo
+
+
+def _nodos(tree: dict) -> list[dict]:
+    """Todos los nodos del árbol renderizado, en un plano."""
+    plano = [tree]
+    for kid in tree.get("kids", ()):
+        plano.extend(_nodos(kid))
+    return plano
+
+
+def test_ninguna_regla_de_modo_la_mata_un_style_inline(tmp_path):
+    """Una declaración inline gana a `body.mode-muro …`: la regla queda MUERTA.
+
+    Y muere en silencio. No hay error de consola, no hay test que caiga, el
+    selector sigue en la hoja para que cualquiera lo lea y crea que se aplica:
+    sólo se ve midiendo con un navegador, que es como se encontró
+    (`getComputedStyle(#tier-sub).fontSize` = `12px` en MURO a 1920×1080, con
+    `body.mode-muro #tier-sub{font-size:24px}` declarado desde T-2.30).
+
+    Esta guarda no mira el tamaño: mira la MECÁNICA. Si un elemento al que un
+    modo le cambia el cuerpo declara un cuerpo inline, el modo no manda.
+
+    Dos cosas cambiaron en T-7.05, y las dos por el mismo motivo —lo que se
+    enumera a mano diverge—:
+
+    · El censo se DERIVA de la hoja (`_redimensiona_el_modo()`). La tupla
+      tecleada tenía cuatro identificadores y la hoja declara NUEVE reglas de
+      cuerpo por modo: las cinco de clase (`.relay .rs`, `.relay .rl`,
+      `.relay .re`, `.lane .ch`, `.lane .peak`) nunca estuvieron vigiladas.
+    · El inline se mira sobre el árbol RENDERIZADO, no sobre el marcado. Cinco
+      de los nueve elementos no existen en el marcado: los fabrica el JS, y ahí
+      el cuerpo se declara con `style.cssText` o con `style.fontSize`, que un
+      barrido del atributo `style=` no veía ni podía ver.
+    """
+    censo = _redimensiona_el_modo()
+    assert censo, (
+        "ninguna regla `body.mode-*` declara ya un cuerpo: o la hoja cambió de "
+        "forma o `_redimensiona_el_modo()` dejó de reconocerla. Un censo vacío "
+        "deja esta guarda pasando mirando al vacío."
+    )
+
+    nodos = _nodos(_render(tmp_path)["tree"])
+    muertas: dict[str, str] = {}
+    huerfanos: list[str] = []
+    for selector in sorted(censo):
+        clave = selector.split()[-1]
+        if clave.startswith("#"):
+            alcanzados = [n for n in nodos if n["id"] == clave[1:]]
+        elif clave.startswith("."):
+            alcanzados = [n for n in nodos if clave[1:] in (n["cls"] or "").split()]
+        else:
+            alcanzados = [n for n in nodos if n["tag"].lower() == clave.lower()]
+        if not alcanzados:
+            huerfanos.append(selector)
+            continue
+        for nodo in alcanzados:
+            declarado = "; ".join(x for x in (nodo["inline"], nodo["css"]) if x)
+            suelto = nodo["font"] or nodo["fontSize"]
+            if suelto or re.search(r"(?:^|[;\s])font(?:-size)?\s*:", declarado):
+                muertas[selector] = (declarado + "; " + suelto).strip("; ")
+
+    assert not huerfanos, (
+        f"la hoja redimensiona por modo selectores que nadie pinta: {huerfanos}. "
+        "O el elemento se renombró y la regla quedó huérfana, o el render de "
+        "prueba dejó de llegar a esa zona — y entonces la guarda no vigila nada."
+    )
+    assert not muertas, (
+        "estos elementos declaran su cuerpo inline, así que la regla de su modo "
+        f"NO se aplica nunca: {muertas}. El tamaño base va en la hoja "
+        "(`#tier-sub{font-size:13px}`), no en el atributo ni en `style.cssText`."
+    )
+
+
+def test_en_MURO_el_tier_de_72px_no_se_mete_en_el_rotulo_de_su_seccion():
+    """P-1: el tier de sala desborda su caja de línea y cae en «ESTADO DEL INMUEBLE».
+
+    Con `line-height:1.05` la caja de línea del tier medía 75.6 px para un área
+    de contenido de 93: **9 px por arriba y 8.4 por abajo**. El `gap:8px` de la
+    columna no los absorbe, así que la tinta del tier entraba 2 px en el rótulo
+    de sección (304 px² = 152×2) y rozaba también el subtítulo por debajo.
+
+    El interlineado no es la salida, y la cuenta cabe en una línea: de los
+    escalones de §10.2 (`1.1 · 1.25 · 1.45 · 1.0`), 1.1 da 79.2 y 1.25 da 90 —
+    ninguno contiene los 93—; sólo 1.45 (104.4) los contendría, y es el
+    interlineado de PROSA. Se reserva el desbordamiento con margen, del escalón
+    de 8 px de la escala de espaciado, y la columna izquierda lo absorbe sin
+    scroll porque la fila de ondas es `1fr` (E8: MURO cabe en 1080).
+
+    Medido después del arreglo con `edge/tests/panel_barrido.mjs` en las 14
+    escenas a 1920×1080: 0 parejas de texto solapadas y `scrollHeight` = 1080.
+    """
+    hueco = _px(
+        _estilo_inline(
+            r'<div style="([^"]*)">\s*<span class="seclabel"[^>]*>Estado del inmueble</span>'
+        ),
+        "gap",
+    )
+    assert hueco is not None, "la columna del tier perdió el `gap` que separa sus tres líneas"
+
+    fs_sec, lh_sec = _tipo(_regla(".seclabel"))
+    assert fs_sec is not None, "`.seclabel` dejó de declarar su tamaño"
+
+    fs_tier, lh_tier = _efectivo("#tier-label", "muro")
+    assert fs_tier is not None and lh_tier is not None, "MURO perdió la tipografía del tier"
+    assert lh_tier in (1.1, 1.25, 1.45, 1.0), (
+        f"el interlineado del tier de MURO ({lh_tier:g}) no es un escalón de §10.2 "
+        "(`1.1 · 1.25 · 1.45 · 1.0`)"
+    )
+
+    # El subtítulo queda debajo con el MISMO hueco: se exige contra el vecino
+    # que más tinta saca de su caja, para que un solo margen valga a los dos.
+    # Se lee por CASCADA, no del `style=`: en MURO el subtítulo mide 24 px, y
+    # leerlo del marcado (12) daría un desborde que no es el que se pinta.
+    fs_sub, lh_sub = _efectivo("#tier-sub", "muro")
+    assert fs_sub is not None, "`#tier-sub` no declara su cuerpo en ninguna regla"
+    vecinos = {
+        "«Estado del inmueble»": _desborde(fs_sec, lh_sec),
+        "`#tier-sub`": _desborde(fs_sub, lh_sub),
+    }
+
+    muro = _regla("body.mode-muro #tier-label")
+    margen = _px(muro, "margin-block") or 0.0
+    separacion = hueco + margen
+    exigido = _desborde(fs_tier, lh_tier) + max(vecinos.values()) + _HOLGURA
+    assert separacion >= exigido, (
+        f"el tier de MURO ({fs_tier:g}px/{lh_tier:g}) saca "
+        f"{_desborde(fs_tier, lh_tier):.1f}px de tinta fuera de su caja por cada lado y sus "
+        f"vecinos otros {max(vecinos.values()):.1f}px; con gap {hueco:g}px + margen "
+        f"{margen:g}px sólo hay {separacion:g}px de separación y hacen falta "
+        f"{exigido:.1f}px. Es P-1: 304 px² dentro del rótulo de sección. "
+        f"Sube `margin-block` en `body.mode-muro #tier-label` a "
+        f"{max(0.0, exigido - hueco):.1f}px o más."
+    )
+
+    # …y que MURO siga cabiendo en 1080: la fila de ondas es la elástica, así
+    # que el tier crece contra ella y no contra el scroll de `#grid` (E8).
+    filas = re.search(r"grid-template-rows:([^;}]+)", _regla("#col-izq"))
+    assert filas and "1fr" in filas.group(1), (
+        "`#col-izq` dejó de tener una fila elástica: el margen del tier pasaría "
+        "a estirar `#grid` y MURO dejaría de caber en 1080 sin scroll (E8)."
+    )
+
+
+#: Ancho ÚTIL de la nota del carril y avance por carácter, en CAMPO y en el
+#: teléfono de referencia —el Pixel 8 Pro de 412 px con el que se midió U-10—.
+#: Se miden con `node edge/tests/panel_tinta.mjs`, que los imprime junto a
+#: `_INK`; no se teclean. El avance es 6.00 px porque la nota va en JetBrains
+#: Mono a 10 px y la caja monoespaciada de esa cara es 0.6 em — y por eso los
+#: dos números están atados a la huella de `jbmono.woff2` por
+#: `test_el_factor_de_tinta_esta_atado_a_las_fuentes_que_se_midieron`: si la
+#: pila tipográfica cambia, esta cuenta deja de valer y aquella guarda manda a
+#: volver a medir.
+_NOTA_ANCHO_PX = 366.0
+_NOTA_AVANCE_PX = 6.0
+
+
+def test_en_CAMPO_la_nota_del_carril_es_UNA_linea_por_construccion(tmp_path):
+    """La banda de rótulos da por hecho que la nota mide un renglón. Que lo mida.
+
+    `--lane-band` reserva una altura FIJA y `drawWaves()` arranca la traza justo
+    debajo. Si la nota envuelve, su segundo renglón cae FUERA de la banda y la
+    onda vuelve a pasarle por encima: el defecto U-10 otra vez, y sólo en el
+    teléfono angosto, que es donde nadie mira. `nowrap` lo hace imposible; la
+    elipsis DECLARA la poda en vez de esconder el resto bajo la onda.
+
+    La segunda mitad de la guarda —que ninguna nota desborde— se midió mal dos
+    veces y ésta es la tercera:
+
+    · Miraba sólo LITERALES (`note.textContent = '…'`). De las tres notas que el
+      panel escribe, una se CONSTRUYE por concatenación («rms N counts · salud
+      X»): el regex capturaba `'rms '`, cuatro caracteres, y daba por medida una
+      rama que no había medido. Ahora las notas se leen del árbol RENDERIZADO —
+      se pinta cada rama y se mide lo que quedó escrito—, así que da igual cómo
+      se construya el texto.
+    · El límite era 54 caracteres y salía de un ancho de carril de «334 px» que
+      nadie volvió a medir. Medido de verdad (`node edge/tests/panel_tinta.mjs`):
+      el ancho útil de la nota es 366 px en el Pixel 8 Pro y el avance de la
+      cara es 6.00 px, o sea 61 caracteres. La nota más larga de hoy mide 54.
+
+    Lo que esta guarda NO afirma, y hay que decirlo: en un teléfono de 360 px el
+    ancho útil baja a 314 px y sólo caben 52, así que ahí la nota de saturación
+    (54) la recorta la elipsis. Es una poda DECLARADA, no un solape: `nowrap`
+    impide el segundo renglón y U-10 no se reabre. Queda fichado como tal.
+    """
+    nota = _regla(".lane .note").replace(" ", "")
+    assert "white-space:nowrap" in nota, (
+        "`.lane .note` puede envolver: su segundo renglón sale de `--lane-band` y "
+        "la traza se dibuja encima (U-10). En un teléfono de 360 px pasa con la "
+        "nota de saturación, que es la más larga."
+    )
+    assert "text-overflow:ellipsis" in nota and "overflow:hidden" in nota, (
+        "sin elipsis, `nowrap` esconde el final de la nota sin decirlo. La poda "
+        "se declara: es la diferencia entre un dato recortado y un dato perdido."
+    )
+    assert "right:" in nota, (
+        "un absoluto con sólo `left` se encoge a su contenido y `text-overflow` "
+        "no recorta nada: la nota se saldría del carril en silencio."
+    )
+
+    # Las RAMAS que el panel tiene para escribir la nota. Se cuentan sobre el
+    # fuente para que añadir una cuarta rompa aquí en vez de pasar sin medir.
+    sitios = re.findall(r"note\.textContent\s*=\s*([^;]+);", _INDEX.read_text("utf-8"))
+    prefijos = [re.match(r"\s*'([^']*)'", s) for s in sitios]
+    assert len(sitios) == 3 and all(prefijos), (
+        f"el panel escribe la nota del carril en {len(sitios)} sitios y esta guarda "
+        "ejercita 3. Añade el caso que falta abajo (y vuelve a medir el ancho con "
+        f"`node edge/tests/panel_tinta.mjs`). Sitios: {sitios}"
+    )
+
+    # Un render por rama. La tercera se pinta en su PEOR caso: `rms` a fondo de
+    # escala de un ADC de 24 bits (7 dígitos) y salud de tres cifras con decimal
+    # — que es todo lo que esa plantilla puede llegar a medir.
+    mudo = _base()
+    mudo["signal"] = {"channels": {}, "last_received_at": None, "stale_after_s": 5.0}
+    topado = _base()
+    topado["signal"]["channels"] = {
+        c: _channel(0.05, clipping=True) for c in ("EHZ", "ENZ", "ENN", "ENE")
+    }
+    peor = _base()
+    for canal in peor["signal"]["channels"].values():
+        canal["rms"] = 8_388_607.0
+        canal["health_score"] = 100.0
+
+    escritas: list[str] = []
+    for st in (mudo, topado, peor):
+        arbol = _render(tmp_path, status=st)["tree"]
+        escritas += [
+            n["txt"] for n in _nodos(arbol) if "note" in (n["cls"] or "").split() and n["txt"]
+        ]
+    assert escritas, "ningún carril escribió su nota: el render no llegó a `renderLanes()`"
+
+    sin_pintar = [
+        m.group(1) for m in prefijos if not any(t.startswith(m.group(1)) for t in escritas)
+    ]
+    assert not sin_pintar, (
+        f"estas ramas de la nota no se llegaron a pintar: {sin_pintar}. La guarda "
+        "estaría midiendo dos de tres y la que falta es justo la que puede crecer."
+    )
+
+    caben = int(_NOTA_ANCHO_PX // _NOTA_AVANCE_PX)
+    larga = max(escritas, key=len)
+    assert len(larga) <= caben, (
+        f"la nota más larga del panel ({larga!r}) mide {len(larga)} caracteres y en "
+        f"el carril de CAMPO caben {caben} ({_NOTA_ANCHO_PX:g}px / {_NOTA_AVANCE_PX:g}px "
+        "por carácter). La elipsis se la comería. Acórtala, o vuelve a medir el "
+        "carril con `node edge/tests/panel_tinta.mjs` si la hoja cambió."
+    )
+
+
+def test_los_ticks_de_saturacion_cuelgan_del_techo_de_la_TRAZA():
+    """Un canal topado se marca sobre su traza, no sobre el nombre del canal.
+
+    `y0` es el borde del carril; `yTop`, el techo de la traza. En CAMPO median
+    48 px de diferencia —la banda de rótulos—, así que con `y0` los ticks rojos
+    de saturación caen justo encima del nombre del canal y de la nota que dice
+    «SATURACIÓN DEL ADC»: tinta de canvas bajo texto del DOM, que es el defecto
+    que esta ficha cierra. Colgados de `yTop` siguen cumpliendo §6.2 («sobre las
+    trazas, no en una leyenda aparte») en las tres densidades.
+
+    Ninguna escena de demostración enciende `clipping`, así que esto no se ve
+    en `?demo=`: se ve en un gabinete con el ADC topado. Por eso la decisión
+    lleva guarda.
+    """
+    html = _INDEX.read_text("utf-8")
+    dibujo = re.search(r"function drawWaves\(\)\{([\s\S]*?)\n\}\n", html)
+    assert dibujo, "no se pudo leer `drawWaves()`"
+    tick = re.search(r"m\.clipping\)\{[^}]*?fillRect\(px,\s*([A-Za-z0-9_]+)\s*\+", dibujo.group(1))
+    assert tick, "los ticks de saturación cambiaron de forma: revisa a qué se anclan"
+    assert tick.group(1) == "yTop", (
+        f"los ticks de saturación cuelgan de `{tick.group(1)}`: con `y0` caen dentro "
+        "de la banda de rótulos en CAMPO, encima del nombre del canal y de su nota."
+    )
+
+
+def _modelo_de_pistas(alto: float, banda: float, variante: str = "A") -> list[tuple[float, float]]:
+    """Las PISTAS —el rectángulo pintable de cada carril— derivadas del panel.
+
+    Los tres ingredientes salen del propio `index.html`, no de aquí: los canales
+    (`const CH`), el aire de la pista (`const LANE_PAD`) y el reparto de alto de
+    cada variante (`laneGrow()`). El alto total y la banda los pone quien llama,
+    y también los lee: de `body.mode-campo #waves-wrap{min-height}` y de
+    `body.mode-campo #lanes{--lane-band}`.
+
+    La fórmula (`yTop = y0 + max(PAD, banda)`) se repite aquí a propósito: es la
+    afirmación de la guarda. Si alguien la cambia en el panel este modelo deja de
+    casar y el test cae — que es exactamente lo que tiene que pasar cuando se
+    mueve la geometría que sostiene U-10.
+    """
+    html = _INDEX.read_text("utf-8")
+    canales = re.search(r"const CH = \[([^\]]*)\];", html)
+    pad = re.search(r"const LANE_PAD = ([0-9.]+);", html)
+    grow = re.search(
+        r"laneGrow\(\)\{ return S\.variant === 'A' \? \[([0-9,]+)\] : \[([0-9,]+)\]", html
+    )
+    assert canales and pad and grow, (
+        "el panel cambió de forma: este modelo lee `const CH`, `const LANE_PAD` y "
+        "`laneGrow()` para no teclear la geometría que vigila"
+    )
+    lane_pad = float(pad.group(1))
+    grows = [float(g) for g in (grow.group(1) if variante == "A" else grow.group(2)).split(",")]
+    assert len(grows) == len(canales.group(1).split(",")), (
+        f"`laneGrow()` reparte {len(grows)} carriles y `CH` declara "
+        f"{len(canales.group(1).split(','))}: uno de los dos se quedó atrás"
+    )
+    tot = sum(grows)
+    pistas, y0 = [], 0.0
+    for g in grows:
+        lh = alto * g / tot
+        pistas.append((y0 + max(lane_pad, banda), y0 + lh - lane_pad))
+        y0 += lh
+    return pistas
+
+
+def _waveform_llena(muestras: int = 600) -> dict:
+    """Un paquete de forma de onda que SATURA la escala de los cuatro canales.
+
+    Amplitudes enormes a propósito: la traza se recorta contra `mid ± half`, así
+    que así se ejercita el peor caso —la envolvente pegada al techo y al suelo de
+    su pista— que es justo el que se saldría si el techo estuviera mal puesto.
+    """
+    serie = [(-1) ** i * 4_000_000 for i in range(muestras)]
+    return {
+        "cursor": muestras,
+        "reset": False,
+        "sample_rate": 100,
+        "channels": {
+            c: {"samples": serie, "encoding": "raw"} for c in ("EHZ", "ENZ", "ENN", "ENE")
+        },
+    }
+
+
+@pytest.mark.parametrize("variante", ["A", "B"])
+def test_en_CAMPO_ninguna_orden_de_dibujo_entra_en_la_banda_de_rotulos(tmp_path, variante):
+    """U-10, tercer residuo: los marcadores SASMEX/TIER cruzaban la banda entera.
+
+    La banda de rótulos de cada carril es DOM —el nombre del canal, el pico, el
+    piso de escala y la nota— y el lienzo se pinta por debajo. Todo lo que el
+    canvas estampe ahí sale encima de un texto que el operador tiene que leer:
+    es U-10. T-7.05 lo cerró para la traza (`yTop` en vez de `y0`) y para los
+    ticks de saturación, y dejó vivos los MARCADORES, que se pintaban de `0` a
+    `h` —el alto completo del lienzo, o sea las cuatro bandas— con el rótulo
+    «SASMEX» clavado en la línea base `y=12`. Medido en CAMPO 412×915 con
+    `?demo=alerta`: 194 px de tinta cian dentro de la banda del primer carril y
+    los glifos dentro de la caja de `.lane .scale`.
+
+    La guarda no mira píxeles: mira las ÓRDENES de dibujo que el panel emite
+    (`canvasOps` del arnés) y exige que todas caigan dentro de alguna pista. Es
+    más fuerte que vigilar los marcadores, porque cubre también la reja del
+    carril, la traza, las líneas de umbral y los ticks — cualquier capa futura
+    hereda la guarda sin que nadie se acuerde de escribirla.
+
+    Se corren las DOS variantes: la B reparte los carriles 1:3:1:1 y dibuja por
+    otra rama (envolvente rellena + pico retenido), así que una sola variante
+    dejaría la mitad del dibujo sin vigilar.
+    """
+    banda = _px(_regla("body.mode-campo #lanes"), "--lane-band")
+    alto = _px(_regla("body.mode-campo #waves-wrap"), "min-height")
+    assert banda and alto, (
+        "CAMPO dejó de declarar `--lane-band` o el alto de `#waves-wrap`: sin uno "
+        "de los dos esta guarda no tiene geometría que vigilar"
+    )
+
+    st = _base()
+    st["sasmex_active"] = True  # ⇒ marcador SASMEX en el primer fotograma
+    st["signal"]["channels"]["ENN"] = _channel(0.05, clipping=True)  # ⇒ ticks de saturación
+    out = _render(
+        tmp_path,
+        status=st,
+        waveform=_waveform_llena(),
+        canvasOps=True,
+        customProps={"--lane-band": f"{banda:g}px"},
+        sizes={"wave-canvas": [412, alto]},
+        clicks=[] if variante == "A" else ["data:variant:B"],
+        finalFrame=True,
+    )
+    ordenes = [o for o in out["canvasOps"] if o["lienzo"] == "wave-canvas"]
+
+    # Control positivo: sin marcador dibujado esta guarda pasaría vacía.
+    assert any(o.get("txt") == "SASMEX" for o in ordenes), (
+        "el fotograma no estampó ningún marcador SASMEX: la guarda estaría "
+        f"pasando sobre un lienzo sin la capa que vigila. Órdenes: {len(ordenes)}"
+    )
+    assert any(o["op"] == "fillRect" for o in ordenes), (
+        "el fotograma no pintó los ticks de saturación: el canal topado no llegó"
+    )
+
+    pistas = _modelo_de_pistas(alto, banda, variante)
+    holgura = 1.0  # el trazo se ensancha con `lineWidth`; 1 px cubre el más grueso
+
+    def dentro(o: dict) -> bool:
+        arriba, abajo = min(o["y0"], o["y1"]), max(o["y0"], o["y1"])
+        return any(arriba >= t - holgura and abajo <= b + holgura for t, b in pistas)
+
+    fuera = [o for o in ordenes if not dentro(o)]
+    assert not fuera, (
+        f"en CAMPO (variante {variante}) {len(fuera)} órdenes de dibujo se salen de "
+        f"su pista y entran en la banda de rótulos de {banda:g}px. Pistas={pistas}. "
+        f"Las tres primeras: {fuera[:3]}. Es U-10: tinta de canvas debajo de un "
+        "texto del DOM. Acota la capa a `yTop`/`yBot`, como la traza."
+    )
+
+
+def test_la_banda_de_rotulos_se_lee_una_vez_por_CAMBIO_y_no_por_fotograma(tmp_path):
+    """`laneBand()` vive dentro de `requestAnimationFrame`. No puede leer estilo ahí.
+
+    Sin caché, cada fotograma pedía un estilo calculado: 60 por segundo en el
+    Chromium de un Pi 4 que sostiene un monitor de sala 24/7, y justo después de
+    que `renderLanes()` reconstruyera los cuatro carriles, o sea con el árbol de
+    estilo sucio. Medido en un portátil (Chromium 149, 2000 iteraciones): 0.95 µs
+    con el árbol limpio, ~1.0 µs marginal con el árbol sucio. Es poco —lo que
+    fuerza el layout de verdad cada fotograma es el `clientWidth` de
+    `fitCanvas()`— y por eso la cifra se escribe en vez de venderse: lo que se
+    corrige es la forma, leer 60 veces por segundo algo que sólo cambia cuando
+    cambia el modo.
+
+    La guarda cuenta LLAMADAS, no regexea el caché: diez fotogramas seguidos sin
+    tocar nada no pueden costar diez lecturas.
+    """
+    out = _render(tmp_path, frames=10)
+    assert out["computedStyleCalls"] <= 2, (
+        f"diez fotogramas quietos costaron {out['computedStyleCalls']} lecturas de estilo "
+        "calculado: `laneBand()` volvió a leer la hoja dentro del bucle de "
+        "`requestAnimationFrame`."
+    )
+    # …y que se lea alguna vez: un caché que nunca consulta la hoja tendría la
+    # banda tecleada en el JS, que es justo lo que `--lane-band` vino a evitar.
+    assert out["computedStyleCalls"] >= 1, (
+        "nadie leyó `--lane-band`: el alto de los rótulos volvió a estar tecleado "
+        "en el JS y divergirá de la hoja a la primera."
+    )
+
+
+def test_un_dibujo_roto_limpia_los_lienzos_y_DECLARA_la_averia(tmp_path):
+    """El `catch` de `frame()` estaba vacío: la brújula se quedaba congelada y viva.
+
+    De los cuatro lienzos del fotograma sólo el de ondas se limpia solo
+    (`fitCanvas()` hace su `clearRect` al entrar). Si algo revienta dentro de
+    `drawWaves()`, `drawRose()` y los del mapa NO llegan a correr y conservan
+    intacto lo que pintaron en el fotograma anterior, mientras el resto del panel
+    sigue refrescándose a 1 Hz y parece sano: un dato congelado presentado como
+    vivo, que es la regla de oro 7 del revés. Y no lo veía nadie — ni la consola
+    del navegador, ni el canal `errors[]` de este arnés.
+
+    Se rompe el dibujo A PROPÓSITO (`breakDraw`) y se exige que la avería se
+    ESCRIBA en los lienzos. Sin la declaración, este test no tiene de dónde
+    agarrarse: con el `catch` vacío, `canvasText` sale igual que en un panel sano
+    menos lo que ya no se pintó.
+    """
+    sano = _render(tmp_path)
+    assert not any("FALLO DE DIBUJO" in t for t in sano["canvasText"]), (
+        "un panel sano no puede declarar una avería de dibujo"
+    )
+
+    roto = _render(tmp_path, breakDraw="drawWaves")
+    avisos = [t for t in roto["canvasText"] if "FALLO DE DIBUJO" in t]
+    assert len(avisos) >= 2, (
+        "un dibujo roto dejó los lienzos como estaban y sin decir nada: "
+        f"canvasText={roto['canvasText'][:8]}. Tienen que limpiarse TODOS y "
+        "declarar la avería, no heredar el último fotograma."
+    )
+    assert "SIN TRAZA" in avisos[0], f"la declaración no dice que no hay traza: {avisos[0]!r}"
+    # …y el panel sigue vivo: un lienzo roto no puede parar el resto.
+    assert roto["errors"] == [], roto["errors"]
+
+
+def test_el_factor_de_tinta_esta_atado_a_las_fuentes_que_se_midieron():
+    """`_INK` se midió contra ESTOS dos ficheros de fuente. Si cambian, no vale.
+
+    §10.3 de la especificación deja la decisión de fuentes explícitamente
+    abierta, así que la pila tipográfica del panel puede cambiar cualquier día.
+    El día que cambie, las tres guardas de tinta seguirían en verde midiendo una
+    fuente que ya nadie sirve — y esa es la peor clase de test: el que pasa
+    porque mira al sitio equivocado.
+
+    Se ata el número a la huella de los dos ficheros empaquetados. Si alguien
+    los cambia, esta guarda cae y manda a re-medir con
+    `node edge/tests/panel_tinta.mjs` (que imprime el factor y sale por el
+    máximo). No es una prueba de la fuente: es el recordatorio, en el sitio
+    donde se puede hacer daño.
+    """
+    fuentes = _INDEX.parent / "fonts"
+    huellas = {
+        "geist.ttf": "ab491eb63bca7372",
+        "jbmono.woff2": "ff7a45dc16e68bbb",
+    }
+    for nombre, esperada in huellas.items():
+        fichero = fuentes / nombre
+        assert fichero.exists(), (
+            f"el panel dejó de empaquetar `{nombre}`: si ahora usa la pila del "
+            "sistema, `_INK` mide una fuente que no se pinta."
+        )
+        real = hashlib.sha256(fichero.read_bytes()).hexdigest()[:16]
+        assert real == esperada, (
+            f"`{nombre}` cambió ({real} ≠ {esperada}): `_INK = {_INK}` se midió contra "
+            "la fuente anterior. Vuelve a medir con `node edge/tests/panel_tinta.mjs` "
+            "y actualiza el factor Y esta huella."
+        )
+
+    # …y que la hoja siga sirviéndolas: una @font-face que apunte a otro sitio
+    # deja los ficheros intactos y la medida igual de inválida.
+    hoja = _hoja()
+    for nombre in huellas:
+        assert f"fonts/{nombre}" in hoja, f"la hoja dejó de cargar `fonts/{nombre}`"
+
+
+# ------------------------------------------------------- defectos FICHADOS
+#
+# Defectos REALES, medidos, que esta ficha NO cierra. Hasta T-7.05 vivían como
+# dos constantes de módulo que nadie referenciaba al final de este fichero, y
+# eso no es fichar: es esconder. Ahora cada uno es un TEST, y hace dos cosas que
+# una constante no puede hacer:
+#
+#  1. AVISA en cada corrida (`FichaAbierta`, en el resumen de warnings de
+#     pytest), con su medida y con el comando exacto que lo vuelve a enseñar.
+#  2. Vigila su propia CAUSA. El test pasa mientras el mecanismo que produce el
+#     defecto siga en la hoja, y CAE el día que alguien lo arregle — diciendo
+#     que la ficha está cerrada y que hay que borrarla. Sin eso, una ficha
+#     sobrevive a su defecto y acaba mintiendo en la dirección contraria.
+
+
+class FichaAbierta(UserWarning):
+    """Defecto medido que la ficha en curso NO cierra. Sale en cada corrida."""
+
+
+def _fichar(texto: str) -> None:
+    warnings.warn(texto, FichaAbierta, stacklevel=2)
+
+
+def test_FICHADO_en_CAMPO_el_pico_del_carril_se_pisa_con_la_escala():
+    """ABIERTO: `.lane .peak` ∩ `.lane .scale` en el teléfono, en 13 de 14 escenas.
+
+    Medida (2026-09-12, `node edge/tests/panel_barrido.mjs "" campo`): 1372.9 px²
+    en el primer carril y 1056 px² en cada uno de los otros tres; en `alerta`,
+    con los picos ya crecidos, 1515.9 px². Son 4 parejas por escena en 12
+    escenas, 5 en `arranque_frio` y 0 en `sin_senal`: 53 en la corrida completa.
+
+    Es ANTERIOR a T-7.05 —contra `git show HEAD:…/index.html` eran 16 parejas por
+    escena— y de la familia de U-10, pero no se arregla con la banda: los dos
+    rótulos viven en la MISMA línea del carril, uno anclado a la izquierda y el
+    otro a la derecha, y a 386 px de carril no caben los dos. Cerrarlo es decidir
+    qué pierde sitio en un teléfono —las unidades, el piso de escala o el
+    STA/LTA—, y eso es producto, no maquetación.
+
+    El criterio de verificación de T-7.05 dice «0 parejas en MURO y CAMPO». En
+    MURO se cumple (0 en las 14, y `scrollHeight` = 1080 exacto); en CAMPO NO, y
+    por esto.
+    """
+    _fichar(
+        "T-7.05 · FICHADO ABIERTO · CAMPO 412×915: `.lane .peak` se pisa con "
+        "`.lane .scale` (1372.9 px² el primer carril, 1056 px² los otros tres; "
+        "1515.9 px² en `alerta`) en 13 de las 14 escenas. Anterior a T-7.05. "
+        'Reprodúcelo: node edge/tests/panel_barrido.mjs "" campo'
+    )
+
+    # La CAUSA: dos absolutos en la misma línea, uno desde cada borde. Ninguno
+    # de los dos conoce el ancho del otro, así que nada puede impedir el solape.
+    fila = _regla(".lane .top").replace(" ", "")
+    escala = _regla(".lane .scale").replace(" ", "")
+    cerrada = (
+        "position:absolute" not in fila
+        or "position:absolute" not in escala
+        or "left:" not in fila
+        or "right:" not in escala
+        or _px(fila, "top") != _px(escala, "top")
+    )
+    assert not cerrada, (
+        "el pico y la escala ya no son dos absolutos anclados a bordes opuestos de "
+        "la misma línea: el defecto que esta ficha declara ABIERTO está CERRADO. "
+        'Vuelve a medir con `node edge/tests/panel_barrido.mjs "" campo` y, si '
+        "da 0 parejas, borra esta ficha y corrige el criterio de T-7.05."
+    )
+
+
+def test_FICHADO_en_CONSOLA_de_900px_el_tierline_se_aplasta_y_no_se_ve_nada():
+    """ABIERTO, y el más grave: en un portátil desaparece el ESTADO DEL INMUEBLE.
+
+    Medida (2026-09-12, `node edge/tests/panel_barrido.mjs "" consola`, 1440×900):
+    `#tierline` se aplasta a 2 px y entre **15 y 73** textos quedan RECORTADOS
+    ENTEROS por el `overflow:hidden` de sus tarjetas — 15 en `arranque_frio`, que
+    es el mínimo, 73 en `simulacro_abortado`, 787 sumando las 14 escenas. (La
+    versión anterior de esta ficha decía «entre 44 y 73»: el mínimo estaba mal
+    contado.) Entre los recortados: el ESTADO DEL INMUEBLE, el subtítulo de la
+    sirena y los cinco relés con su estado. Están en el DOM, el lector de
+    pantalla los canta, y el operador no ve ninguno.
+
+    La causa es mecánica: `#col-izq` reparte `auto minmax(240px,1fr) auto` y
+    `#tierline` declara `overflow:hidden`, que pone su contribución mínima en
+    CERO. A 544 px de columna la fila de ondas (240 de mínimo) y la de
+    estadística se lo llevan todo y al tier no le queda nada.
+
+    Es ANTERIOR a T-7.05 (mismas cifras contra `git show HEAD:…/index.html`) y es
+    más grande que esta ficha: tocarlo es decidir el reparto de la columna entera
+    de CONSOLA.
+    """
+    _fichar(
+        "T-7.05 · FICHADO ABIERTO · CONSOLA 1440×900 (un portátil, no un caso "
+        "raro): `#tierline` mide 2 px y entre 15 y 73 textos quedan recortados "
+        "enteros — con ellos el ESTADO DEL INMUEBLE, el subtítulo de la sirena y "
+        "los cinco relés. Anterior a T-7.05. Reprodúcelo: "
+        'node edge/tests/panel_barrido.mjs "" consola'
+    )
+
+    filas = re.search(r"grid-template-rows:([^;}]+)", _regla("#col-izq"))
+    assert filas, "`#col-izq` dejó de repartir su columna por filas"
+    primera = filas.group(1).split()[0]
+    tier = _regla("#tierline").replace(" ", "")
+    cerrada = primera != "auto" or "overflow:hidden" not in tier
+    assert not cerrada, (
+        "la fila del tier ya no es un `auto` con un hijo `overflow:hidden`: el "
+        "defecto que esta ficha declara ABIERTO está CERRADO. Vuelve a medir con "
+        '`node edge/tests/panel_barrido.mjs "" consola` y, si `#tierline` ya '
+        "tiene alto, borra esta ficha."
     )

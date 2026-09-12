@@ -13,7 +13,8 @@ import { useState } from "react";
 
 import type { EquipmentProfile, GatewayOut, SiteOut } from "@takab/sdk";
 
-import Button from "../../components/Button";
+import Button, { ButtonLink } from "../../components/Button";
+import { consoleSiteHref } from "./consoleSiteHref";
 import { EQUIPMENT_ALL, EQUIPMENT_FIELDS } from "./equipment";
 import { siteLabelText } from "./datosDeDemostracion";
 
@@ -231,10 +232,32 @@ export default function HardwareForm({
         </p>
       )}
 
-      <div className="fleet__formactions">
+      <div className="fleet__formactions" data-testid="hardware-formactions">
         <Button variant="secondary" onClick={onDone}>
           VOLVER
         </Button>
+        {/* [T-7.05 · C-4] EL CAMINO A MONITOREO, EN EL PUNTO DONDE EL ALTA TERMINA.
+            El censo de flujos de `T-7.04` midió el alta completa en 8 clics desde el
+            wall, y el octavo —la pestaña Monitoreo— aterrizaba en una consola sin nada
+            seleccionado: la estación recién nacida había que buscarla entre N pins, un
+            clic más y con el cliente delante. El mecanismo ya existía (`?sitio=`,
+            T-6.14) y aquí se enlaza.
+            Esta fila, y no el acuse del gabinete: allí el enlace era una salida de un
+            solo sentido en mitad del alta, que se llevaba por delante los únicos tres
+            UUID que el runbook necesita y el paso del sensor (ver `GatewayAcuse.tsx`).
+            Aquí no queda nada detrás que perder.
+            El rótulo dice MONITOREO y no «el mapa» a propósito: `?sitio=` abre la
+            FICHA lateral de la estación; el mapa no centra ni resalta su pin —
+            `MapPanel` no recibe hoy sitio seleccionado alguno (`MapPanelProps`,
+            `features/console/MapPanel.tsx`)—. Prometer foco en el mapa sería una
+            promesa que la pantalla de destino no cumple. */}
+        <ButtonLink
+          variant="secondary"
+          to={consoleSiteHref(site.site_id)}
+          data-testid="hardware-ver-en-monitoreo"
+        >
+          VER LA ESTACIÓN EN MONITOREO
+        </ButtonLink>
       </div>
     </div>
   );

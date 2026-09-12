@@ -84,6 +84,12 @@ export default function TriagePage() {
   const detail = useIncidentDetail(
     current?.incident.incident_id ?? null,
     current?.incident.event_id ?? null,
+    // [T-7.05 · C-3] El `opened_at` que la tabla ya tiene cargado: es el ancla
+    // de la ventana en la que la pasada automática del dictamen todavía puede
+    // escribir, y sin él el detalle no sabría cuándo dejar de preguntar. No abre
+    // ninguna consulta nueva: sale de `/incidents`, la misma de la que sale todo
+    // lo demás de esta pantalla.
+    current ? { openedAt: current.incident.opened_at } : null,
   );
   const forensics = useForensics(current?.incident.incident_id ?? null);
   // [T-3.12.c] CCTV: misma cadencia y mismo reloj de frescura que forensics.

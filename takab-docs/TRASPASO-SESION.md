@@ -4,11 +4,28 @@
 > reconstruirlo leyendo commits**. No sustituye a `TASKS.md` (qué construir) ni a
 > `PENDIENTES-MAURICIO.md` (qué está bloqueado en una persona): es **el estado y el método**.
 >
-> **Última sesión:** 2026-09-11 · **planificación del prototipo funcional**: ocho fases y 28
-> fichas `T-7.xx` en el Bloque VIII de `TASKS.md`, con objetivo ejecutable por fase y plantilla
-> de sesión ([`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md)). **La siguiente sesión
-> empieza por la Fase 0 pegando la plantilla del §8 de ese plan.** La anterior fue 2026-09-06 →
-> 2026-09-10 · la reforma visual, 33 fichas cerradas
+> **Última sesión:** 2026-09-11 → 2026-09-12 · **el prototipo funcional**: se planificó (ocho fases
+> y 28 fichas `T-7.xx` en el Bloque VIII, [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md))
+> y se ejecutó su **Fase F0**, la de conformidad
+> ([`INFORME-CONFORMIDAD-DEMO.md`](INFORME-CONFORMIDAD-DEMO.md)). **La siguiente sesión empieza por la
+> Fase F1 pegando su plantilla del §8 del plan**: el guion de la demostración de punta a punta, que es
+> físico y secuencial —WR-1, gabinete y teléfono— y no lleva subagentes.
+>
+> **Lo que F0 dejó funcionando y no funcionaba:** el worker de evidencia corre en la nube y la cadena
+> gabinete → permiso → subida firmada → S3 → registro **funciona por primera vez de punta a punta**
+> (siete formas de onda archivadas; antes había cero en toda la historia del sistema). Lo que dejó a
+> medias, con su razón: el aviso real al teléfono (faltan credenciales de Firebase; el respaldo por
+> sondeo está **medido en 21 s** con la app delante y es **ilimitado** en segundo plano), el barrido
+> del teléfono y la comprobación por rol del alcance.
+>
+> **Y la lección de método, que vale para cualquier fase:** las correcciones se revisaron con un lector
+> adversario por área, cuyo trabajo era refutar. Rechazó **las cinco**. El peor defecto no estaba en lo
+> mal arreglado sino en lo que parecía bien: una reserva de alto que **recortaba la alerta en silencio**
+> y dejaba fuera de pantalla la línea de atribución, con la hoja de estilos afirmando por escrito lo
+> contrario. Tres rondas después, la tercera midió lo que las dos anteriores suponían y encontró que
+> **un criterio de la propia ficha era falso**. Se enmendó la ficha, no la cifra.
+>
+> La anterior fue 2026-09-06 → 2026-09-10 · la reforma visual, 33 fichas cerradas
 > ([`design/PLAN-REFORMA-VISUAL.md § 10`](design/PLAN-REFORMA-VISUAL.md)).
 
 ---

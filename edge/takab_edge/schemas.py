@@ -11,6 +11,7 @@ Regenerar: `uv run --directory edge python -m takab_edge.schemas`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -102,7 +103,21 @@ from takab_edge.contracts import (
 #: Ojo al lado de la nube: `canonical_key` DEBE crecer con el enum — un `mode` que el
 #: esquema acepta y la nube no sabe convertir en key devuelve «payload inválido» y el
 #: gabinete se queda esperando un grant que no llega.
-SCHEMA_VERSION = "1.14.0"
+#: 1.15.0 (T-7.05·H-1): sube por TRES cambios de contrato que ya estaban en el árbol
+#: y que viajaron bajo el número anterior. Eso último es el defecto que esta versión
+#: cierra, y merece nombre propio: el 2026-09-10 un latido de arranque de `gw-dev-0001`
+#: acabó en `takab-dev-dlq-telemetry` porque el gabinete corría el esquema relajado y la
+#: nube seguía sirviendo la imagen con el estrecho — y **los dos ficheros decían
+#: `1.14.0`**, así que el desfase era indetectable por construcción. Lo que cambió:
+#:   · `health_snapshot.packet_loss_pct` admite `null` (`d67d079`, T-5.24, 2026-09-03).
+#:     RELAJACIÓN: un payload 1.14.0 sigue validando contra 1.15.0, pero **al revés no**
+#:     — una nube ≤1.14.0 rechaza el `null`, que es exactamente lo que pasó. Un consumidor
+#:     viejo con un emisor nuevo es el sentido peligroso de este cambio.
+#:   · `actuation_record.ActuationCause` gana `lan_drill_voice` (`a3413eb`, T-5.17).
+#:     ADITIVO: enum ampliado.
+#:   · `lora_secondary_state` gana `pending` (`ce1db6d`, T-5.25). ADITIVO: clave opcional.
+#: La guarda que impide repetirlo está abajo: `HUELLA_POR_VERSION`.
+SCHEMA_VERSION = "1.15.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -126,6 +141,42 @@ def schema_for(name: str, model: type[BaseModel]) -> dict:
     schema["$id"] = f"https://takab.mx/schemas/{name}/v{SCHEMA_VERSION}"
     schema["version"] = SCHEMA_VERSION
     return schema
+
+
+def huella_del_contenido() -> str:
+    """SHA-256 de lo que los esquemas DICEN, ignorando `$id` y `version`.
+
+    Es la guarda contra el defecto que costó el incidente del 2026-09-10: entre
+    `1.14.0` y `1.15.0` tres contratos cambiaron sin que el número se moviera, así
+    que gabinete y nube podían servir esquemas distintos declarando el mismo. La
+    versión no se defiende sola —es un literal que nadie está obligado a tocar—;
+    esto la ata al contenido.
+
+    Se excluyen `$id` y `version` a propósito: si entraran, la huella cambiaría al
+    subir la versión y la comprobación sería circular (cualquier bump la
+    «arreglaría»). Lo que se quiere es lo contrario: **tocar un contrato sin subir
+    la versión rompe**, y la única salida cómoda es subirla y anotar el porqué en
+    el registro de arriba.
+    """
+    h = hashlib.sha256()
+    for name in sorted(MODELS):
+        cuerpo = schema_for(name, MODELS[name])
+        cuerpo.pop("$id", None)
+        cuerpo.pop("version", None)
+        h.update(name.encode())
+        h.update(json.dumps(cuerpo, sort_keys=True, ensure_ascii=False).encode())
+    return h.hexdigest()
+
+
+#: Huella del contenido por versión declarada. Añadir una entrada es el gesto que
+#: `edge/tests/test_schemas.py` obliga a hacer cuando un contrato cambia: pisar la
+#: huella de una versión ya publicada en vez de añadir la nueva es posible, pero es
+#: un acto explícito y revisable, con el registro de cambios dos pantallas arriba.
+#: Se guardan también las anteriores: son el registro de qué se publicó bajo cada
+#: número, que es justo lo que no existía cuando el desfase pasó desapercibido.
+HUELLA_POR_VERSION: dict[str, str] = {
+    "1.15.0": "11d28237b98491a9eaaf1fb600ed88c74a38d31ae3d5c36bc9bb07c0f66a57b0",
+}
 
 
 def output_dir() -> Path:

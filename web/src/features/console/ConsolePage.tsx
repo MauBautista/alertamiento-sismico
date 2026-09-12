@@ -251,7 +251,15 @@ function ConsoleWall() {
             hideNoLink={hideNoLink}
             onToggleHideNoLink={() => setHideNoLink((v) => !v)}
           />
-          <div className="soc-stage">
+          {/* [T-7.05] `data-alert` es el interruptor de la PARTICIÓN de la
+              columna derecha: con él puesto, las leyendas del mapa restan de su
+              tope el alto que reserva la pila de alertas (`soc.css`, geografía
+              de sobrepuestos) y dejan de quedarse debajo de la tarjeta. Sale de
+              la MISMA condición que monta `<AlertBanner>` —igual que
+              `data-detail` y por la misma razón— para que reserva y tarjeta no
+              puedan separarse: reservar sin tarjeta le quita 240 px de banda a
+              las leyendas a cambio de nada. */}
+          <div className="soc-stage" data-alert={String(critical !== null)}>
             <MapPanel
               sites={mapSites}
               epicenters={map.epicenters}

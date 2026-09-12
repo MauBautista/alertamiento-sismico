@@ -69,6 +69,19 @@ export default function GatewayAcuse({ gateway, siteName, onDone }: GatewayAcuse
         </p>
       )}
 
+      {/* [T-7.05 · C-4] AQUÍ NO HAY SALIDA AL MAPA, Y ES UNA DECISIÓN.
+          El primer intento puso el enlace a `/console?sitio=` en esta misma fila. Es
+          el único sitio del producto donde existen los tres UUID del `edge.env` —no
+          se imprimen en ninguna otra pantalla, y `editing` es estado local de
+          `FleetAdmin`: al navegar, el acuse no vuelve—, así que un clic al lado de
+          CONTINUAR los perdía para siempre y mandaba a buscarlos a la base de datos,
+          que es justo lo que este acuse existe para evitar.
+          Abrirlo en otra pestaña NO es el arreglo: la sesión vive en `sessionStorage`
+          (`auth/userManager.ts`, `auth/devToken.ts`) y `target="_blank"` implica
+          `noopener`, así que la pestaña nueva arranca anónima y aterriza en el login.
+          Y el alta tampoco ha terminado aquí: CONTINUAR lleva al SENSOR, y una ficha
+          de Monitoreo abierta antes de ese paso sale SIN CALIBRAR.
+          El enlace vive donde el alta acaba: `HardwareForm`, junto a VOLVER. */}
       <div className="fleet__formactions">
         <Button onClick={onDone}>CONTINUAR</Button>
       </div>

@@ -133,6 +133,9 @@
   --tk-grid-gutter: 24px;
   --tk-sidebar-w: 360px;
   --tk-detail-w: 380px;
+  --tk-alert-reserve: 250px;
+  --tk-alert-floor: 116px;
+  --tk-legend-floor: 102px;
   --tk-bp-md: 1280px;
   --tk-bp-lg: 1600px;
   --tk-bp-xl: 1920px;
