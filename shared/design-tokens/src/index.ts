@@ -300,6 +300,57 @@ export const tokens = {
     gridGutter: v("--tk-grid-gutter"),
     sidebarW: v("--tk-sidebar-w"),
     detailW: v("--tk-detail-w"),
+    /**
+     * [T-7.05] EL ALTO QUE LA PILA DE ALERTAS RESERVA en la columna derecha del
+     * escenario. No es el alto de la tarjeta —eso lo decide su contenido— sino la
+     * banda que las leyendas del mapa le CEDEN mientras hay alerta, para que las
+     * dos cajas particionen la columna en vez de encimarse (74 160 px² medidos por
+     * el censo de T-7.04).
+     *
+     * Es una RESERVA, no un recorte: la tarjeta nunca encoge dentro de ella (ver
+     * `flex-shrink: 0` en `soc.css`), así que lo que no quepa scrollea en vez de
+     * clipar. Los 250 px salen de una MEDIDA: la tarjeta completa —tira, nombre
+     * del sitio a TRES renglones, identificador del evento, caja de PGA y fila de
+     * atribución con la píldora AUTORIZA EVACUAR— mide 242 px de caja de borde en
+     * Chromium con estas hojas, en una pila de 360 px; más un escalón del sistema
+     * (`--tk-space-2`, 8 px) de holgura. Con 240 px la reserva se quedaba DOS
+     * píxeles corta y ese caso —que es un nombre de sitio realista— nacía con la
+     * fila de atribución fuera de la banda. Un nombre a CUATRO renglones en un
+     * escenario estrecho (pila de 276 px) llega a 277 y esos 27 px sí se leen
+     * scrolleando: es lo que se eligió frente a quitarle otra banda a las leyendas
+     * en TODOS los altos.
+     */
+    alertReserve: v("--tk-alert-reserve"),
+    /**
+     * [T-7.05] EL PISO DE LA BANDA DE ALERTA. Por debajo de ~402 px de escenario
+     * la reserva entera ya no cabe junto al piso de las leyendas, y entonces es la
+     * alerta la que cede —scrolleando, sin recortarse—. Este es el punto donde deja
+     * de ceder: 116 px. Sale de una resta, no de un gusto — es exactamente lo que
+     * queda cuando el escenario está en su mínimo declarado:
+     *
+     *     min-height(.soc-stage) 280 − 2 de borde − 60 de anclajes − 102 de CAPAS
+     *
+     * y cubre lo medido para la tira + el nombre a dos renglones + el identificador
+     * del evento (111 px en Chromium). Si alguien sube un piso o baja el
+     * `min-height` del escenario, las dos bandas volverían a encimarse: lo vigila
+     * `web/src/styles/layoutInvariants.test.ts`.
+     */
+    alertFloor: v("--tk-alert-floor"),
+    /**
+     * [T-7.05] EL PISO DE LA BANDA DE LEYENDAS, y la razón de que exista: sin él,
+     * `calc(100% - 60px - var(--tk-alert-reserve))` se va a NEGATIVO por debajo de
+     * ~300 px de escenario, CSS lo clampa a 0 y la columna entera —CAPAS incluida,
+     * que es el control del mapa y no una leyenda de lectura— desaparece sin decir
+     * nada (medido: a 290 px de escenario, 0 px de alto y 0 de 5 botones de capa
+     * respondiendo a `elementFromPoint`). Los 102 px son la caja de CAPAS medida
+     * en Chromium con el marcado real de `MapPanel` —título, la fila de los cinco
+     * conmutadores y la nota «SIN FRENTE ACTIVO», que es el estado por defecto—:
+     * 100 px a los anchos de escenario que la consola sirve. De esos, 60 son lo
+     * único que es un CONTROL (título + botonera) y por eso es lo que el barrido de
+     * `layoutInvariants.test.ts` defiende alto por alto; el resto de la columna, y
+     * la nota cuando envuelve en un escenario estrecho, se alcanza scrolleando.
+     */
+    legendFloor: v("--tk-legend-floor"),
   },
   /**
    * [T-2.55] Cortes de degradación de la consola. El objetivo del producto sigue

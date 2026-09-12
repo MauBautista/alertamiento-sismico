@@ -256,13 +256,20 @@ describe("TriagePage", () => {
   it("selecciona la primera fila por defecto y monta el detalle", () => {
     mocks.useTriage.mockReturnValue(triageData());
     render(pageAt());
-    expect(mocks.useIncidentDetail).toHaveBeenCalledWith(ROWS[0].incident.incident_id, "evt-1");
+    // [T-7.05 · C-3] El tercer argumento no es decoración: es el ANCLA de la
+    // ventana en la que el detalle sigue preguntando por el dictamen
+    // (`dictamenRefresh.ts`). Si la página dejara de pasarlo, el detalle se
+    // quedaría sin suelo de refresco y nadie se enteraría: el rótulo saldría
+    // igual de bien mientras el canal live estuviera vivo.
+    expect(mocks.useIncidentDetail).toHaveBeenCalledWith(ROWS[0].incident.incident_id, "evt-1", {
+      openedAt: ROWS[0].incident.opened_at,
+    });
   });
 
   it("sin filas no pide detalle de nada", () => {
     mocks.useTriage.mockReturnValue(triageData({ rows: [] }));
     render(pageAt());
-    expect(mocks.useIncidentDetail).toHaveBeenCalledWith(null, null);
+    expect(mocks.useIncidentDetail).toHaveBeenCalledWith(null, null, null);
   });
 });
 

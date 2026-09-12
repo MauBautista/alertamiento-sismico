@@ -340,6 +340,100 @@ body {
    Las dos pilas superiores se acotan a 46 % del ancho cada una: con eso NO
    PUEDEN solaparse por aritmética, sin importar el viewport. Es lo que
    `e2e/layout.spec.ts` comprueba midiendo `boundingBox` de verdad.
+
+   [T-7.05] ESO RESOLVIÓ EL ANCHO Y NO EL ALTO. La columna derecha la comparten
+   la pila de alertas (arriba) y las leyendas con la botonera de CAPAS (abajo), y
+   sus dos topes de alto —`calc(100% - 28px)` aquí y `calc(100% - 60px)` allí— se
+   calcularon contra una pila VACÍA de ≈60 px, que era el estado en el que se
+   midió T-2.55: con la tarjeta real —de 198 a 242 px según cuántos renglones se
+   lleve el nombre del sitio— suman más que el escenario y no PARTICIONAN nada. El censo de T-7.04 lo midió con la escena `alert` FORZADA:
+   `.soc-stage__overlays` ∩ `.soc-map__legends` = 74 160 px² a 1280×800 y a
+   1440×900 (34 200 a 1920×1080), 9 parejas de texto y controles encimados en los
+   dos primeros —la mayor, el botón CATÁLOGO debajo del nombre del sitio, 821 px²—
+   y la botonera de CAPAS sin responder al ratón debajo de la tarjeta.
+
+   Con alerta en pantalla la columna se PARTE, y otra vez por aritmética: la pila
+   de arriba no pasa de `--tk-alert-reserve` (R) y las leyendas restan esa misma
+   reserva de su tope. Entonces el borde inferior de la alerta (14 + R) queda
+   10 px por encima del superior de las leyendas (60 + R − 36), sea cual sea el
+   alto del escenario y mida lo que mida la tarjeta. Ceden las leyendas y no la
+   alerta: la banda que les queda la scrollean —con CAPAS arriba del todo, que
+   es el control— porque una alerta a medio leer no es una alerta.
+
+   NINGUNA DE LAS DOS CAJAS ENCOGE DENTRO DE SU BANDA, y eso hay que escribirlo
+   en la hoja porque el defecto por omisión no avisa: la tarjeta es un ítem flex
+   con `overflow: hidden`, así que su tamaño mínimo automático resuelve a 0
+   (CSS Flexbox §4.5) y, sin `flex-shrink: 0`, el tope no la scrollea: la ENCOGE
+   y la CLIPA, y la pila ni siquiera saca barra —su `scrollHeight` acaba
+   igualando al `clientHeight`—. Medido en Chromium con estas hojas: con un
+   nombre de sitio de tres renglones en una pila estrecha (escenario de 600×438)
+   la tarjeta natural es de 253 px y se pintaba a 240, con la fila de atribución
+   de la fuente y la píldora AUTORIZA EVACUAR fuera y sin nada que lo dijera. Es el desenlace que prohíben la regla de oro 7 y el precedente de
+   «la app le atribuía a SASMEX alertas que SASMEX no dio». Con `flex-shrink: 0`
+   en los hijos de las dos pilas, lo que no cabe desborda y se scrollea, que es
+   lo que esta hoja lleva afirmando desde T-2.55. Y se scrollea DE VERDAD, que no
+   es lo mismo que declararlo: la pila tiene `pointer-events: none` y sólo sus
+   hijos lo recuperan, así que el scroll dependía de que la rueda sobre la
+   TARJETA llegara a su antecesor scrolleable. Medido con la rueda en el centro de
+   la tarjeta (escenario de 600×438, nombre a cuatro renglones, contenido de 264
+   en una banda de 250): `scrollTop` 0 → 14 y la fila de atribución entra entera.
+
+   LO QUE SIGUE ABIERTO, y se escribe para no venderlo cerrado: ese scroll lo
+   ANUNCIA la barra del sistema, y no todas las plataformas pintan una hasta que
+   se scrollea (las barras superpuestas de macOS, y las de este Chromium sin
+   cabeza, no reservan canal). Por eso la reserva se dimensionó para que el peor
+   nombre de sitio REALISTA quepa entero —ver el porqué de los 250 px en el
+   paquete de tokens— y el scroll quede para lo excepcional: un nombre a cuatro
+   renglones o una ventana más baja que ningún portátil que la consola sirve. Un
+   indicador propio de «hay más abajo» en la tarjeta sería el cierre completo y
+   no entra en esta ficha.
+
+   Y LA PARTICIÓN DEGRADA, no se cae de golpe. `calc(100% - 60px - R)` es
+   negativo por debajo de 60 + R de escenario, y CSS clampa eso a 0: a
+   290 px la columna de leyendas medía 0 px de alto y los cinco botones de capa
+   dejaban de responder a `elementFromPoint` —desaparecidos, sin aviso—, y el
+   `min-height: 280px` del escenario alcanza ese rango. Ahora cada banda
+   tiene un PISO y es la alerta la que devuelve lo que no puede quedarse:
+
+       banda de alerta    A(H) = clamp(Af, H − 60 − Lf, R)
+       banda de leyendas  L(H) = max(Lf, H − 60 − R)
+
+   con Af = 116 y Lf = 102 px (los pisos, en el paquete de tokens, con su
+   derivación). A + L ≤ H − 60 —la condición de no encimarse— se cumple para
+   todo H ≥ 60 + Af + Lf = 278, que es EXACTAMENTE la caja de relleno del
+   escenario en su `min-height` declarado (280 − 2 de borde). Los tres pisos no
+   son tres gustos: son una identidad que `layoutInvariants.test.ts` comprueba
+   contra la propia hoja, alto por alto.
+
+   El interruptor lo escribe `ConsolePage` con la MISMA condición que monta la
+   tarjeta (`data-alert`, costura asserada en `ConsolePage.test.tsx`) y la
+   aritmética la vigila `layoutInvariants.test.ts`: jsdom no mide y el e2e no
+   corre en CI. Sin alerta no se pierde ni un píxel de leyenda.
+
+   Medido en Chromium con estas hojas y estas fuentes, para los tres altos de
+   escenario que la consola sirve (438, 538 y 600 px) y con el nombre de sitio en
+   su peor caso REALISTA —tres renglones, «UNIVERSIDAD NACIONAL AUTÓNOMA DE
+   MÉXICO · TORRE DE RECTORÍA», tarjeta de 242 px de caja de borde—: el solape
+   pasa de 74 160 / 63 720 / 41 400 px² a 0, la tarjeta se pinta ENTERA en los
+   tres (242 de 242, con su fila de atribución dentro de la banda y sin barra de
+   scroll) y los cinco botones de capa responden a `elementFromPoint` en su
+   centro, 5 de 5.
+
+   LO QUE SE CEDE, y se cede a los tres altos: la banda de las leyendas pasa de
+   376 / 447 / 447 px a 126 / 226 / 288, y la columna entera —las tres leyendas en
+   su estado por defecto— mide 482 px de contenido. O sea que a NINGUNO de los
+   tres altos entra completa: el pie de la última leyenda, con su interruptor de
+   CATÁLOGO HISTÓRICO, queda tras el scroll de la columna. Medido con el marcado
+   real de `MapPanel`: a 438 y a 280 px de escenario ese interruptor no responde a
+   `elementFromPoint` sin scrollear y SÍ responde con la columna al fondo — se
+   alcanza, no se pierde. Ya se recortaba contra el pie del escenario ANTES de
+   esta ficha (§2 del censo, `normal_1280x800_console.png`), y es lo que se elige
+   perder frente a una alerta a medio leer: la botonera de CAPAS, que es el
+   control, va primera en la columna y por eso nunca es lo que se va.
+
+   Y en el suelo del rango, medido igual: a 290 y a 280 px de escenario la columna
+   de leyendas pasa de 0 px y 0 de 5 botones de capa alcanzables a 102 px con los
+   5 alcanzables, y la tarjeta —que ahí ya no cabe— scrollea sin recortarse.
    ===================================================================== */
 .soc-stage__overlays {
   position: absolute;
@@ -358,6 +452,35 @@ body {
   pointer-events: none;
 }
 .soc-stage__overlays > * { pointer-events: auto; }
+/* [T-7.05] Y NADA DE LA PILA ENCOGE. Va aquí, en la pila y no en `.soc-alert`,
+   porque la promesa es de la pila: lo que se le meta dentro se lee entero o se
+   scrollea, nunca se recorta. Sin esto, cualquier hijo con `overflow: hidden`
+   —la tarjeta de alerta lo tiene, por el radio de sus esquinas— resuelve su
+   tamaño mínimo automático a 0 y el `max-height` de arriba deja de ser una
+   reserva para convertirse en una guillotina. */
+.soc-stage__overlays > * { flex-shrink: 0; }
+
+/* [T-7.05] La partición de la columna derecha, encendida por la alerta. Las dos
+   reglas van juntas a propósito: por separado ninguna de las dos dice nada — la
+   promesa es que la reserva que una toma es la que la otra resta. */
+.soc-stage[data-alert="true"] .soc-stage__overlays {
+  /* A(H) = clamp(piso, H − 60 − piso de leyendas, reserva). El término de en
+     medio es lo que la columna PUEDE darle sin dejar a las leyendas por debajo
+     de su piso; el `clamp` lo acota por arriba con la reserva (caso normal) y
+     por abajo con el piso de la alerta (escenarios muy bajos). */
+  max-height: clamp(
+    var(--tk-alert-floor),
+    calc(100% - 60px - var(--tk-legend-floor)),
+    var(--tk-alert-reserve)
+  );
+}
+.soc-stage[data-alert="true"] .soc-map__legends {
+  /* L(H) = max(piso, H − 60 − reserva). El `max` es lo que impide que un
+     escenario bajo mande el `calc` a negativo y CSS lo clampe a 0: la columna
+     de leyendas nunca desaparece; lo que no quepa por debajo de CAPAS se
+     alcanza scrolleando. */
+  max-height: max(var(--tk-legend-floor), calc(100% - 60px - var(--tk-alert-reserve)));
+}
 
 .soc-map__status {
   position: absolute;
@@ -1276,9 +1399,15 @@ body {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
-  /* [T-2.55] El tope se calcula contra la esquina ARRIBA-DERECHA, que es de la
-     pila de alertas: sin él, tres leyendas abiertas trepaban hasta meterse
-     debajo de la alerta sísmica. Con el tope, la última leyenda scrollea. */
+  /* [T-2.55 · rectificado en T-7.05] El tope se calcula contra la esquina
+     ARRIBA-DERECHA, que es de la pila de alertas: sin él, tres leyendas abiertas
+     trepaban hasta meterse debajo de la alerta sísmica. Los 60 px son 14 de
+     anclaje de esa pila + 36 de éste + 10 de separación, y sólo bastan con la
+     pila VACÍA —el estado en el que se midió T-2.55—. El alto que ocupa la
+     tarjeta lo resta la regla `.soc-stage[data-alert="true"]` de la geografía de
+     sobrepuestos, más arriba en esta hoja, CON UN PISO: esa resta a pelo se va a
+     negativo por debajo de 60 + la reserva y CSS la clampa a 0, o sea la columna
+     entera desaparecida. Con el tope, la última leyenda scrollea. */
   max-height: calc(100% - 60px);
   max-width: 46%;
   overflow-y: auto;
@@ -1287,6 +1416,13 @@ body {
   position: static;
   bottom: auto;
   right: auto;
+  /* [T-7.05] Hoy ninguna leyenda encoge —tienen `overflow: visible`, así que su
+     tamaño mínimo automático es su contenido— y por eso la columna scrollea de
+     verdad. Se escribe igualmente: el día que una leyenda gane un
+     `overflow: hidden` (una tabla, un recorte de texto) la columna pasaría a
+     recortarlas en silencio, que es el defecto que esta ficha vino a cerrar del
+     otro lado de la partición. CAPAS va primera y es la que nunca se va. */
+  flex-shrink: 0;
 }
 
 /* Glifo del enlace en la leyenda: mismo ancho que el swatch de color para que
@@ -1364,6 +1500,21 @@ body {
    permite: una segunda excepción pone el censo en rojo. */
 .soc-kpis .soc-kpi__value {
   font-size: var(--tk-text-md);
+  /* [T-7.05] Y la misma excepción, por la misma razón, para el INTERLINEADO: el
+     de la primitiva (snug) sube la caja de línea de la cifra 4 px y el hueco de
+     abajo otros 3, y en esta banda esos 7 px salen del mapa —dos veces si la tira
+     envuelve—. La cifra del muro se queda en interlineado de dato con su hueco de
+     1 px, y la banda mide lo mismo que antes de esta ficha: 42 px, medidos en
+     Chromium con estas hojas y estas fuentes. Lo que queda ahí es un roce de
+     10 px² (10 × 1) entre la tinta de la cifra y la del rótulo: por debajo de la
+     tolerancia del barrido (w > 1 y h > 1), y por eso el censo de T-7.04 midió
+     CERO parejas en `/console` en los 3 viewports y las 2 escenas. Es una
+     excepción MEDIDA, no heredada: el día que suba el escalón de esta tira hay
+     que volver a medirla —a 28 px ese mismo roce son los 3 px de C-2—. */
+  line-height: var(--tk-leading-data);
+}
+.soc-kpis .soc-kpi {
+  gap: 1px;
 }
 .soc-kpis {
   display: flex;
@@ -1392,10 +1543,21 @@ body {
   letter-spacing: 0.12em;
   color: var(--tk-fg-3);
 }
+/* [T-7.05] El hueco entre la cifra y su rótulo sube de 1 px al escalón más
+   pequeño del sistema. `Range.getClientRects` —lo que mide el barrido de
+   `e2e/layout.spec.ts`— devuelve el ÁREA DE CONTENIDO de la fuente, no la caja de
+   línea: la cifra de 28 px ocupa 37 de tinta potencial (1.321 ×, medido) y con
+   `line-height: 1` desbordaba ≈4.5 px por abajo, así que el rótulo, a 1 px, caía
+   dentro. Medido por el censo de T-7.04: 51 px² en `/triage` y 102 px² en
+   `/tenants` y `/audit`, en los tres viewports y en las dos escenas. Hoy no se
+   toca tinta porque los valores son dígitos; un «0.31 g» sí tocaría.
+   Después, medido en Chromium con la hoja y la fuente reales: 0 px², con 3 px de
+   aire entre las dos tintas, a cambio de 10 px de alto de la pareja (42 → 52) en
+   las tres pestañeras. El muro no los paga: ver su excepción, más arriba. */
 .soc-kpi {
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: var(--tk-space-1);
   min-width: 0;
 }
 /* [T-6.12] La primitiva de KPI pinta su cifra en el escalón de la MÉTRICA: el
@@ -1404,7 +1566,11 @@ body {
 .soc-kpi__value {
   font: 700 var(--tk-text-2xl) var(--tk-font-mono);
   font-variant-numeric: tabular-nums;
-  line-height: 1;
+  /* [T-7.05] `line-height: 1` no contenía la tinta de la fuente (1.321 × el
+     tamaño): la otra mitad del arreglo del hueco de arriba. Snug deja el desborde
+     en ≈1 px, que el hueco de 4 absorbe con margen. El `font:` de la línea de
+     arriba resetea el interlineado, así que esto tiene que ir DESPUÉS. */
+  line-height: var(--tk-leading-snug);
 }
 .soc-kpi__label {
   font: 600 var(--tk-text-min) var(--tk-font-ui);

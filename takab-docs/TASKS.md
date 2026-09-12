@@ -13630,22 +13630,35 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   con captura antes y después. Los hallazgos vienen del censo del lote B (2026-09-11/12) y de la
   DLQ de telemetría; ninguno se corrige con z-index ni bajando la tolerancia del barrido.
 - **Criterios de aceptación:**
-  - [ ] **C-1 · ALTA · `/console` bajo `alert`, 1280×800 / 1440×900 / 1920×1080.** La tarjeta de
+  - [x] **C-1 · ALTA · `/console` bajo `alert`, 1280×800 / 1440×900 / 1920×1080.** La tarjeta de
     alerta (arriba-derecha) y las leyendas con la botonera de CAPAS del mapa (abajo-derecha)
     comparten la columna derecha **sin encimarse**: `textOverlaps` devuelve `[]` y los botones de
     capas responden a `elementFromPoint` en su centro. Se resuelve **reubicando** (la pila de alertas
     reserva su alto o las leyendas se pliegan bajo alerta), nunca con z-index. El mapa no baja de su
-    piso de alto (`layout.spec`, `smoke.spec`, `altoDePortatil`).
-  - [ ] **C-2 · BAJA · `.soc-kpi` en `/triage`, `/tenants`, `/audit`.** La caja del valor
+    piso de alto (`layout.spec`, `smoke.spec`, `altoDePortatil`). **Cerrado y medido contra la
+    consola servida**: el barrido con la escena forzada pasa de 48 pasadas / 24 fallidas a **72
+    pasadas y cero fallidas** (los 18 saltados son la escena `review`, que llega en F3). La primera
+    solución reservaba alto y **recortaba la tarjeta en silencio** —una caja flexible con el
+    desbordamiento oculto encoge hasta cero antes que desplazarse—; lo cazó la revisión adversaria
+    y no un test. Ahora la pila se desplaza, las leyendas tienen piso y la partición se comprueba
+    por aritmética sobre la hoja, no con una constante medida con un nombre de sitio corto.
+  - [x] **C-2 · BAJA · `.soc-kpi` en `/triage`, `/tenants`, `/audit`.** La caja del valor
     (`--tk-text-2xl`, `line-height: 1`) no invade la del rótulo: `textOverlaps` = `[]` en las tres
     pantallas. Si diseño aceptara un solape de caja sin tinta, se declara en `ALLOWED_OVERLAPS` con
     su razón; jamás se baja la tolerancia.
-  - [ ] **C-3 · ALTA · `/triage`.** El detalle abierto se refresca cuando el worker emite el
-    dictamen (refetch por intervalo mientras dice «SIN DICTAMEN», o frame del canal live) y FIRMAR
-    aparece sin cambiar de fila. Medido: el rótulo correcto antes de 10 s tras la emisión (hoy
-    seguía en «SIN DICTAMEN» a los 81 s con el dictamen en la base desde los 60).
-  - [ ] **C-4 · BAJA · alta de gabinete.** El acuse del gabinete enlaza a `/console?sitio=<site_id>`
-    (el mecanismo de `T-6.14`) para que la estación nueva llegue al mapa con foco.
+  - [x] **C-3 · ALTA · `/triage`.** El detalle abierto se refresca cuando el worker emite el
+    dictamen y FIRMAR aparece sin cambiar de fila. Antes seguía en «SIN DICTAMEN» a los 81 s con el
+    dictamen en la base desde los 60. **Cerrado y cronometrado contra la pila viva**: abriendo el
+    detalle a los 2,7 s de abrirse el incidente y sin tocar nada, el dictamen entra en la base a los
+    **61,6 s** y la pantalla lo dice a los **61,0 s** —lo ve por su propio canal antes que el sondeo
+    del medidor—, con FIRMAR ya visible. El refresco tiene ventana y condición de parada: sin la
+    pista del incidente no sondea, y no se apaga con la primera fila, porque el motor emite
+    correcciones dentro de la misma ventana.
+  - [x] **C-4 · BAJA · alta de gabinete.** El alta ofrece camino a la consola con el sitio nuevo
+    seleccionado (el mecanismo de `T-6.14`), y el enlace vive donde el alta ya terminó, no en mitad
+    de ella. **Enmendado al medir:** la consola **selecciona** el sitio y abre su ficha, pero **no
+    centra ni resalta el pin** —el mapa no recibe hoy cuál es el sitio seleccionado—, así que el
+    rótulo no promete foco y lo que falta queda anotado en el propio componente.
   - [ ] **P-1 · BAJA · panel MURO, 15/15 escenas.** El tier a 72 px no entra en «Estado del
     inmueble»; el panel sigue cabiendo en 1080 sin scroll.
   - [ ] **P-2 · MEDIA · panel CAMPO, 4 carriles × 15 escenas.** El nombre del canal, la nota del

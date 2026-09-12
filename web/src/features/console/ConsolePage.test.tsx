@@ -463,6 +463,92 @@ describe("costura marcado↔hoja: el interruptor `data-detail` (T-2.64.c)", () =
   });
 });
 
+/**
+ * [T-7.05 · C-1] La otra mitad de la partición de la columna derecha.
+ *
+ * La regla `.soc-stage[data-alert="true"]` de `soc.css` resta la reserva de la
+ * alerta al tope de las leyendas, y `src/styles/layoutInvariants.test.ts` vigila esa
+ * aritmética. Pero sólo lee el TEXTO de la hoja: si el atributo no se emite —o se
+ * emite con otro valor, o colgado de otro elemento— la regla no se enciende NUNCA y
+ * la tarjeta vuelve a caer encima de la botonera de CAPAS (74 160 px² medidos por el
+ * censo de T-7.04) sin que una sola aserción se entere. Es exactamente el agujero
+ * que T-2.64.c dejó abierto con `data-detail` y que este fichero cerró.
+ *
+ * El bicondicional es lo que se afirma: el atributo y la tarjeta montada salen de la
+ * MISMA condición (`critical`, ConsolePage.tsx), y las dos divergencias posibles son
+ * daño real — reserva puesta sin tarjeta (las leyendas pierden 240 px de banda para
+ * nada) o tarjeta sin reserva (vuelve el solape de C-1).
+ */
+describe("costura marcado↔hoja: el interruptor `data-alert` (T-7.05)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStoreForTests();
+    useSessionStore.setState({ status: "authenticated", idToken: "tok" });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData());
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+  });
+
+  function stage(container: HTMLElement): HTMLElement {
+    const el = container.querySelector<HTMLElement>(".soc-stage");
+    if (el === null) throw new Error("no hay .soc-stage en el árbol renderizado");
+    return el;
+  }
+
+  function expectReservaYTarjetaDeAcuerdo(container: HTMLElement): void {
+    const emitido = stage(container).getAttribute("data-alert");
+    const montada = screen.queryByTestId("alert-banner") !== null;
+    expect(
+      emitido,
+      'el escenario no emite `data-alert`: la regla `.soc-stage[data-alert="true"]` no se enciende nunca',
+    ).not.toBeNull();
+    expect(
+      emitido,
+      montada
+        ? "hay tarjeta de alerta y las leyendas NO le restan su banda: vuelve el solape de C-1"
+        : "el escenario reserva la banda de la alerta sin tarjeta que meter dentro: 240 px de leyendas a cambio de nada",
+    ).toBe(montada ? "true" : "false");
+  }
+
+  it("con incidente crítico el escenario declara la reserva: `true`", () => {
+    const { container } = render(page());
+    expect(screen.getByTestId("alert-banner")).toBeInTheDocument();
+    expect(stage(container).getAttribute("data-alert")).toBe("true");
+    expectReservaYTarjetaDeAcuerdo(container);
+  });
+
+  it("sin incidente que abra escena de alerta, las leyendas recuperan su columna", () => {
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [] }));
+    const { container } = render(page());
+    expect(screen.queryByTestId("alert-banner")).toBeNull();
+    expect(stage(container).getAttribute("data-alert")).toBe("false");
+    expectReservaYTarjetaDeAcuerdo(container);
+  });
+
+  it("un incidente que NO define escena de alerta tampoco reserva banda", () => {
+    // `sceneAlert` elige el incidente crítico abierto: un `warning` no viste la
+    // tarjeta y por tanto no puede robarle alto a las leyendas.
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [{ ...INCIDENT, severity: "warning" }] }),
+    );
+    const { container } = render(page());
+    expectReservaYTarjetaDeAcuerdo(container);
+    expect(stage(container).getAttribute("data-alert")).toBe("false");
+  });
+
+  it("el marcado casa con el selector LITERAL de la hoja", () => {
+    const { container } = render(page());
+    // Escrito igual que en `soc.css`. Un `data-alert="on"`, o el atributo en el
+    // `.soc-wall` en vez de en el escenario, dejaría la regla (0,2,0) sin aplicar
+    // y ni el test del valor ni el de la hoja lo verían.
+    expect(
+      container.querySelector('.soc-stage[data-alert="true"] > .soc-stage__overlays > .soc-alert'),
+      'el marcado no satisface `.soc-stage[data-alert="true"] > .soc-stage__overlays`',
+    ).not.toBeNull();
+  });
+});
+
 describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
   it("two-step → POST → navega a /triage con el incidente preseleccionado", async () => {
     resetSessionStoreForTests();

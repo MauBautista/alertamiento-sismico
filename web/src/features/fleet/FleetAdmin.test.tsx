@@ -55,7 +55,11 @@ const SITE: SiteOut = {
 const GATEWAY_ROW = {
   gateway_id: "g-new",
   tenant_id: "t-1",
-  site_id: "s-1",
+  // [T-7.05 · C-4] DISTINTO del `site_id` de `SITE` a propósito, y no porque la API
+  // pueda devolver otra cosa (devuelve el sitio padre): con el mismo literal en los
+  // dos lados, toda aserción sobre "de dónde sale el sitio" pasa también con el
+  // cableado equivocado. Separarlos es lo único que hace que las de abajo midan.
+  site_id: "s-gw-respuesta",
   serial: "TKB-0007",
   fw_version: null,
   iot_thing: "gw-dev-0007",
@@ -397,6 +401,23 @@ describe("FleetAdmin", () => {
     expect(acuse).toHaveTextContent("TAKAB_EDGE_GATEWAY_ID");
     expect(acuse).toHaveTextContent(GATEWAY_ROW.gateway_id);
     expect(acuse).toHaveTextContent(GATEWAY_ROW.tenant_id);
+    // [T-7.05 · C-4] Los identificadores son los DEL GABINETE RECIÉN CREADO, no los
+    // de la fila que estaba seleccionada. Se puede afirmar porque los dos `site_id`
+    // son distintos (ver `GATEWAY_ROW`): con el acuse leyendo la fila, esto falla.
+    expect(GATEWAY_ROW.site_id).not.toBe(SITE.site_id);
+    expect(acuse).toHaveTextContent(GATEWAY_ROW.site_id);
+    // Y de aquí NO se sale a ningún sitio: los tres UUID del `edge.env` no se pintan
+    // en ninguna otra pantalla y `editing` es estado local, así que una salida de un
+    // solo sentido junto a CONTINUAR los perdería (`GatewayAcuse.test.tsx`).
+    expect(within(acuse).queryAllByRole("link")).toEqual([]);
+
+    // El camino a Monitoreo está donde el alta acaba: al continuar, en el formulario
+    // de hardware, y apuntando al SITIO que se está dando de alta.
+    fireEvent.click(within(acuse).getByRole("button", { name: "CONTINUAR" }));
+    expect(await screen.findByTestId("hardware-ver-en-monitoreo")).toHaveAttribute(
+      "href",
+      `/console?sitio=${SITE.site_id}`,
+    );
   });
 
   it("[T-2.31] desmarcar actuadores del sitio viaja en equipment", async () => {

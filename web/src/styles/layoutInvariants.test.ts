@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { cssVariables } from "@takab/design-tokens";
+import { cssVariables, toNumber } from "@takab/design-tokens";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -584,6 +584,417 @@ describe("colisiones de sobrepuestos — se resuelven REUBICANDO, no con z-index
     expect(declValue(rulesFor(ALL_BASE, '.soc-wall[data-state="stale"]'), "padding-top")).toBe(
       "26px",
     );
+  });
+});
+
+/**
+ * [T-7.05 · C-1] LA COLUMNA DERECHA SE PARTE CUANDO HAY ALERTA.
+ *
+ * T-2.55 le dio un dueño a cada esquina y acotó las dos pilas superiores al 46 %
+ * de ANCHO: por eso arriba-izquierda y arriba-derecha no pueden tocarse, y la
+ * no-superposición es aritmética. En VERTICAL no hizo lo mismo. Los dos topes de
+ * alto de la columna derecha —`calc(100% - 28px)` en la pila de alertas y
+ * `calc(100% - 60px)` en las leyendas— se calcularon contra una pila VACÍA (≈60 px)
+ * y suman bastante más que el escenario en cuanto la tarjeta existe: no PARTICIONAN
+ * nada.
+ *
+ * Medido por el censo de T-7.04 con la escena `alert` FORZADA (2026-09-11,
+ * `/console`, superadmin): `.soc-stage__overlays` ∩ `.soc-map__legends` = 74 160 px²
+ * a 1280×800 y a 1440×900 y 34 200 px² a 1920×1080; 9 parejas de texto y controles
+ * encimados en los dos primeros viewports —la mayor, el botón CATÁLOGO bajo el
+ * nombre del sitio, 821 px²— y 2 en el tercero.
+ *
+ * La partición se escribe como la del ancho, con aritmética. Con alerta en pantalla
+ * cada banda queda acotada por lo que la hoja declara:
+ *
+ *     banda de alerta    A(H) = clamp(Af, H − K − Lf, R)
+ *     banda de leyendas  L(H) = max(Lf, H − K − R)
+ *
+ * donde H es el alto de la CAJA DE RELLENO del escenario (las dos cajas son
+ * absolutas y su `100%` se resuelve contra ella, no contra la caja de borde),
+ * K = 14 de anclaje de la pila + 36 del de las leyendas + 10 de separación, R la
+ * reserva y Af / Lf los pisos de cada banda. Nada de z-index: dos cajas que se
+ * tapan siguen tapándose aunque una gane la disputa del pintado — es lo que ya dice
+ * el mensaje de `e2e/layout.spec.ts`.
+ *
+ * ESTE BLOQUE SE REESCRIBIÓ ENTERO tras una revisión adversaria, porque la primera
+ * versión afirmaba en prosa lo que no comprobaba y se apoyaba en constantes medidas
+ * en el caso MÁS FÁVORABLE:
+ *
+ *  · afirmaba que la pila «scrollea lo que no quepa» leyendo su `overflow-y: auto`.
+ *    Es cierto como texto e inerte como comportamiento: la tarjeta es un ítem flex
+ *    con `overflow: hidden`, su tamaño mínimo automático resuelve a 0 (Flexbox §4.5)
+ *    y ENCOGÍA antes de desbordar. Medido en Chromium: con un nombre de sitio de
+ *    tres renglones en un escenario de 600×438 la tarjeta natural es de 253 px y se
+ *    pintaba a 240, con la fila de atribución de la fuente fuera y sin barra ni en
+ *    la tarjeta ni en la pila. El test pasaba con el defecto puesto.
+ *  · ataba la reserva a UNA medida de la tarjeta con el nombre corto del arnés
+ *    («Sitio Sim 001 Puebla», un renglón). Aquí la constante es la del peor caso
+ *    realista medido, y es lo que el nombre de la constante dice.
+ *  · decía cubrir «cualquier alto» y calculaba `K − top − bottom`, una constante que
+ *    no depende de H: pasaba igual con la banda de leyendas en negativo. Ahora las
+ *    dos expresiones de la hoja se EVALÚAN, alto por alto, sobre todo el rango.
+ *
+ * jsdom no mide y el e2e no corre en CI: esta aritmética es lo único que la vigila.
+ */
+describe("[T-7.05] la columna derecha se PARTICIONA cuando hay alerta", () => {
+  const ALERTA = '.soc-stage[data-alert="true"]';
+  const pilaBase = rulesFor(ALL_BASE, ".soc-stage__overlays");
+  const leyendasBase = rulesFor(ALL_BASE, ".soc-map__legends");
+  const pilaAlerta = rulesFor(ALL_BASE, `${ALERTA} .soc-stage__overlays`);
+  const leyendasAlerta = rulesFor(ALL_BASE, `${ALERTA} .soc-map__legends`);
+
+  /**
+   * MEDIDAS EN CHROMIUM con estas hojas y estas fuentes (2026-09-12, arnés
+   * `playwright` sobre `tokens.css` + `colors_and_type.css` + `soc.css`). Cada una
+   * dice EN QUÉ CASO se tomó, porque el defecto que este bloque vino a cerrar era
+   * exactamente una medida tomada en el caso más corto y usada como si fuera el
+   * tope.
+   */
+  /** Tarjeta completa —tira, nombre de sitio a TRES renglones («UNIVERSIDAD
+   * NACIONAL AUTÓNOMA DE MÉXICO · TORRE DE RECTORÍA»), identificador del evento,
+   * caja de PGA y fila de atribución con la píldora AUTORIZA EVACUAR— en una pila
+   * de 360 px. CAJA DE BORDE: 242 px. La de un renglón mide 198 y la de dos 220;
+   * atar la reserva a esas era el defecto. */
+  const TARJETA_MAS_ALTA_MEDIDA = 242;
+  /** La BOTONERA de CAPAS —título y la fila de los cinco conmutadores de capa, que
+   * es lo único de esa caja que es un CONTROL—: 60 px, y no depende del ancho. Es
+   * lo que la columna de leyendas no puede perder nunca; por eso el barrido de
+   * altos se hace contra esto y no contra la caja entera. */
+  const BOTONERA_DE_CAPAS_MEDIDA = 60;
+  /** La caja de CAPAS COMPLETA en su estado por defecto (`waves: true` sin frente
+   * activo, o sea con su nota «SIN FRENTE ACTIVO · …»): 100 px a los anchos de
+   * escenario que la consola sirve. A 600 px de ancho esa nota envuelve un renglón
+   * más y la caja llega a 121: su última línea queda tras el scroll de la columna,
+   * que es lo aceptable — una nota explicativa, no un control. */
+  const CAJA_DE_CAPAS_MEDIDA = 100;
+  /** La CABEZA de la tarjeta: tira (36) + nombre de sitio a dos renglones (62) +
+   * identificador del evento (13) = 111 px. Es lo mínimo que deja saber QUÉ pasa y
+   * DÓNDE; por debajo de eso la banda de alerta no puede bajar. */
+  const CABEZA_DE_ALERTA_MEDIDA = 111;
+  /** Altos de escenario que la consola sirve de verdad, en CAJA DE BORDE
+   * (`altoDePortatil.test.ts`, 2026-09-10: 438 px a 1280×800, 538 a 1440×900 y a
+   * 1600×900, 600 a 1920×1080). */
+  const ALTOS_REALES_DE_ESCENARIO = [438, 538, 600];
+
+  /**
+   * El valor de un token, en píxeles. Se resuelve DENTRO de cada test y nunca en el
+   * cuerpo del `describe`: una excepción ahí tumba el fichero entero a «0 test» —
+   * el fallo más caro de leer que hay, porque no señala ninguna aserción—.
+   */
+  function token(nombre: string): number {
+    const bruto = (cssVariables as Record<string, string>)[nombre];
+    expect(bruto, `el token \`${nombre}\` no existe en el paquete de tokens`).toMatch(/^\d+px$/);
+    return toNumber(bruto);
+  }
+
+  /**
+   * EVALÚA una expresión de la hoja para un alto de contenedor dado.
+   *
+   * No es un capricho de ingeniería: es la diferencia entre comprobar la partición y
+   * describirla. Un regex sobre `max-height` sólo dice que la cadena tiene la forma
+   * esperada; esto calcula lo que el navegador resolvería para CADA alto, incluido
+   * el clampeo a 0 de un `max-height` negativo, que es por donde desaparecían las
+   * leyendas enteras sin decir nada.
+   *
+   * Cubre el subconjunto que estas dos reglas usan —`var()`, `%`, `px`, `calc()`,
+   * `min()`, `max()`, `clamp()` y las cuatro operaciones— y LANZA ante cualquier
+   * otra cosa: una expresión que este evaluador no entienda tiene que poner el test
+   * en rojo, no colarse con un valor inventado.
+   */
+  function resolver(expresion: string, alto: number): number {
+    let texto = expresion;
+    for (let vuelta = 0; texto.includes("var(") && vuelta < 8; vuelta += 1) {
+      texto = texto.replace(/var\(\s*(--[a-z0-9-]+)\s*\)/gi, (_todo, nombre: string) => {
+        const bruto = (cssVariables as Record<string, string>)[nombre];
+        if (bruto === undefined) throw new Error(`la hoja cita var(${nombre}), que no existe`);
+        return bruto;
+      });
+    }
+    texto = texto
+      .replace(/(\d+(?:\.\d+)?)%/g, (_todo, n: string) => String((Number(n) * alto) / 100))
+      .replace(/(\d+(?:\.\d+)?)px/g, "$1");
+
+    const piezas = texto.match(/\d+(?:\.\d+)?|[-+*/(),]|[a-z]+/gi) ?? [];
+    let i = 0;
+    const mirar = () => piezas[i];
+    const comer = (que?: string) => {
+      const t = piezas[i];
+      if (que !== undefined && t !== que)
+        throw new Error(`esperaba «${que}» y vino «${t ?? "fin"}»`);
+      i += 1;
+      return t;
+    };
+    function suma(): number {
+      let v = producto();
+      while (mirar() === "+" || mirar() === "-")
+        v = comer() === "+" ? v + producto() : v - producto();
+      return v;
+    }
+    function producto(): number {
+      let v = unario();
+      while (mirar() === "*" || mirar() === "/") v = comer() === "*" ? v * unario() : v / unario();
+      return v;
+    }
+    function unario(): number {
+      if (mirar() === "-") {
+        comer();
+        return -unario();
+      }
+      return atomo();
+    }
+    function atomo(): number {
+      const t = comer();
+      if (t === undefined) throw new Error("expresión incompleta");
+      if (t === "(") {
+        const v = suma();
+        comer(")");
+        return v;
+      }
+      if (/^\d/.test(t)) return Number(t);
+      if (t === "calc" || t === "min" || t === "max" || t === "clamp") {
+        comer("(");
+        const args = [suma()];
+        while (mirar() === ",") {
+          comer(",");
+          args.push(suma());
+        }
+        comer(")");
+        if (t === "calc") return args[0];
+        if (t === "min") return Math.min(...args);
+        if (t === "max") return Math.max(...args);
+        // clamp(MIN, VALOR, MAX) ≡ max(MIN, min(VALOR, MAX)).
+        return Math.max(args[0], Math.min(args[1], args[2]));
+      }
+      throw new Error(`token no soportado en la expresión de la hoja: «${t}»`);
+    }
+    const valor = suma();
+    if (i !== piezas.length)
+      throw new Error(`sobra «${piezas.slice(i).join(" ")}» en la expresión`);
+    // Un `max-height` negativo NO es un elemento que se salga: CSS lo clampa a 0 y
+    // la caja desaparece. Modelarlo es lo que hace que el piso sea comprobable.
+    return Math.max(0, valor);
+  }
+
+  /** La banda que la hoja le concede a cada caja para un alto de escenario dado. */
+  function bandaDeAlerta(alto: number): number {
+    return resolver(declValue(pilaAlerta, "max-height") ?? "", alto);
+  }
+  function bandaDeLeyendas(alto: number): number {
+    return resolver(declValue(leyendasAlerta, "max-height") ?? "", alto);
+  }
+
+  /**
+   * El alto de la CAJA DE RELLENO del escenario para un alto de caja de borde: es
+   * contra ella contra la que resuelven su `100%` las dos cajas absolutas. El borde
+   * se lee de la hoja y no se supone: si `.soc-stage` engordase su borde, el margen
+   * de la partición encogería sin que nadie lo dijera.
+   */
+  const escenario = rulesFor(ALL_BASE, ".soc-stage");
+  function relleno(cajaDeBorde: number): number {
+    const borde = /^(\d+(?:\.\d+)?)px\b/.exec(declValue(escenario, "border") ?? "");
+    expect(
+      borde,
+      "`.soc-stage` ya no declara un borde en px: el `100%` de las dos cajas cambia de base",
+    ).not.toBeNull();
+    return cajaDeBorde - 2 * Number(borde![1]);
+  }
+
+  it("la reserva cabe la tarjeta MÁS ALTA medida, no la más corta", () => {
+    // El defecto anterior ataba la reserva a los 215 px de la tarjeta con el nombre
+    // del arnés, de UN renglón. Un nombre de sitio real de tres renglones la lleva a
+    // 242 y, con la reserva por debajo, la tarjeta nace con la fila de atribución
+    // fuera de la banda.
+    expect(
+      token("--tk-alert-reserve"),
+      `la reserva no cabe la tarjeta más alta medida (${TARJETA_MAS_ALTA_MEDIDA} px, nombre de sitio a tres renglones)`,
+    ).toBeGreaterThanOrEqual(TARJETA_MAS_ALTA_MEDIDA);
+  });
+
+  it("NADA de la pila de alertas encoge: la reserva es una reserva, no una guillotina", () => {
+    // ESTE es el test que faltaba. `overflow-y: auto` en la pila no prueba NADA por
+    // sí solo: la tarjeta tiene `overflow: hidden` (lo pide el radio de sus
+    // esquinas), así que su tamaño mínimo automático resuelve a 0 y, con
+    // `flex-shrink` en su valor por defecto, un `max-height` en la pila la encoge y
+    // la clipa en vez de desbordarla. La pila entonces ni siquiera saca barra.
+    expect(
+      declValue(rulesFor(ALL_BASE, ".soc-alert"), "overflow"),
+      "si la tarjeta dejara de recortar su propio contenido, esta prueba estaría vigilando un peligro que ya no existe: revísala antes de borrarla",
+    ).toBe("hidden");
+    expect(
+      declValue(rulesFor(ALL_BASE, ".soc-stage__overlays > *"), "flex-shrink"),
+      "sin `flex-shrink: 0` la tarjeta ENCOGE dentro de la reserva y se recorta en silencio: la atribución de la fuente y la píldora AUTORIZA EVACUAR quedan fuera sin barra que lo diga",
+    ).toBe("0");
+    // Y sólo ENTONCES el desbordamiento es un scroll y no un recorte.
+    expect(declValue(pilaBase, "overflow-y")).toBe("auto");
+  });
+
+  it("y tampoco encogen las leyendas: ceden scrolleando, con CAPAS arriba del todo", () => {
+    expect(
+      declValue(rulesFor(ALL_BASE, ".soc-map__legends .soc-map__legend"), "flex-shrink"),
+      "una leyenda que encoja convierte el scroll de la columna en un recorte: es el mismo defecto del otro lado de la partición",
+    ).toBe("0");
+    expect(declValue(leyendasBase, "overflow-y")).toBe("auto");
+  });
+
+  it("cada banda tiene un PISO, y vale lo que mide la caja que protege", () => {
+    expect(
+      token("--tk-legend-floor"),
+      `el piso de las leyendas no cabe la caja de CAPAS medida (${CAJA_DE_CAPAS_MEDIDA} px a los anchos que la consola sirve): el control del mapa nacería recortado`,
+    ).toBeGreaterThanOrEqual(CAJA_DE_CAPAS_MEDIDA);
+    expect(
+      token("--tk-alert-floor"),
+      `el piso de la alerta no cabe su cabeza medida (${CABEZA_DE_ALERTA_MEDIDA} px: tira + nombre a dos renglones + identificador del evento)`,
+    ).toBeGreaterThanOrEqual(CABEZA_DE_ALERTA_MEDIDA);
+  });
+
+  it("PARA CADA ALTO del rango las dos bandas caben, y ninguna se anula", () => {
+    // El barrido es el test; la aritmética de la cabecera es sólo su explicación.
+    // Se recorre píxel a píxel desde el `min-height` declarado del escenario —el
+    // alto más bajo que la hoja se permite a sí misma— hasta muy por encima del
+    // monitor más alto que la consola sirve. Con la versión anterior de estas dos
+    // reglas el barrido muere en el primer alto: a 290 px de caja de borde
+    // `calc(100% - 60px - 250px)` es negativo, CSS lo clampa a 0 y la columna de
+    // leyendas desaparece ENTERA, CAPAS incluida (medido en Chromium: 0 px de alto,
+    // 0 de 4 botones respondiendo a `elementFromPoint`).
+    const arriba = toNumber(declValue(pilaBase, "top") ?? "");
+    const abajo = toNumber(declValue(leyendasBase, "bottom") ?? "");
+    const minimo = toNumber(declValue(escenario, "min-height") ?? "");
+    const topeDeLaPila = declValue(pilaAlerta, "max-height") ?? "";
+    const topeDeLasLeyendas = declValue(leyendasAlerta, "max-height") ?? "";
+
+    const fallos: string[] = [];
+    for (let cajaDeBorde = minimo; cajaDeBorde <= 1400; cajaDeBorde += 1) {
+      const H = relleno(cajaDeBorde);
+      const A = resolver(topeDeLaPila, H);
+      const L = resolver(topeDeLasLeyendas, H);
+      if (L < BOTONERA_DE_CAPAS_MEDIDA)
+        fallos.push(
+          `a ${cajaDeBorde} px de escenario las leyendas se quedan en ${L} px y la botonera de CAPAS mide ${BOTONERA_DE_CAPAS_MEDIDA}: el control del mapa desaparece`,
+        );
+      if (A < CABEZA_DE_ALERTA_MEDIDA)
+        fallos.push(
+          `a ${cajaDeBorde} px de escenario la alerta se queda en ${A} px (su cabeza mide ${CABEZA_DE_ALERTA_MEDIDA})`,
+        );
+      if (arriba + A > H - abajo - L)
+        fallos.push(
+          `a ${cajaDeBorde} px de escenario la alerta acaba en ${arriba + A} y las leyendas empiezan en ${H - abajo - L}: se enciman`,
+        );
+    }
+    expect(fallos.slice(0, 5).join("\n"), `${fallos.length} altos rotos`).toBe("");
+  });
+
+  it("y el rango llega hasta el `min-height` que el propio escenario declara", () => {
+    // La garantía anterior no vale nada si empieza por encima del alto que la hoja
+    // se permite: es lo que pasaba con el `PISO_DEL_MAPA = 400` de la versión
+    // anterior, que dejaba fuera precisamente el tramo donde las leyendas se
+    // anulaban. Los tres pisos no son tres gustos: son una identidad con el
+    // `min-height` del escenario, y aquí se comprueba contra la hoja.
+    const arriba = toNumber(declValue(pilaBase, "top") ?? "");
+    const abajo = toNumber(declValue(leyendasBase, "bottom") ?? "");
+    const separacion = 10;
+    const minimo = relleno(toNumber(declValue(escenario, "min-height") ?? ""));
+    expect(
+      token("--tk-alert-floor") + token("--tk-legend-floor") + arriba + abajo + separacion,
+      "los dos pisos más los anclajes no caben en el escenario mínimo: por debajo de ese alto las dos bandas se encimarían",
+    ).toBeLessThanOrEqual(minimo);
+  });
+
+  it("a los altos REALES de escenario la tarjeta entra ENTERA y las leyendas siguen siendo una banda", () => {
+    // El otro lado del criterio C-1: las leyendas tienen que seguir alcanzables, no
+    // sólo dejar de estar tapadas. Y la tarjeta, entera: a estos tres altos no debe
+    // depender del scroll ni siquiera en el peor nombre de sitio realista.
+    for (const alto of ALTOS_REALES_DE_ESCENARIO) {
+      const H = relleno(alto);
+      expect(
+        bandaDeAlerta(H),
+        `a ${alto} px de escenario la tarjeta más alta medida (${TARJETA_MAS_ALTA_MEDIDA} px) nacería con scroll`,
+      ).toBeGreaterThanOrEqual(TARJETA_MAS_ALTA_MEDIDA);
+      expect(
+        bandaDeLeyendas(H),
+        `a ${alto} px de escenario la caja de CAPAS (${CAJA_DE_CAPAS_MEDIDA} px) no cabe en la banda de leyendas`,
+      ).toBeGreaterThanOrEqual(CAJA_DE_CAPAS_MEDIDA);
+      // Y el interruptor de CATÁLOGO HISTÓRICO, que vive al PIE de la última
+      // leyenda, queda fuera de la banda a estos altos: se alcanza scrolleando la
+      // columna. Medido en Chromium con el marcado real de `MapPanel`
+      // (2026-09-12): a 438 y a 280 px de escenario `elementFromPoint` sobre su
+      // centro NO lo devuelve sin scrollear y SÍ lo devuelve con la columna al
+      // fondo. Que la columna sea scrolleable de verdad es lo que asegura el
+      // `flex-shrink: 0` de las leyendas, dos pruebas más arriba.
+    }
+  });
+
+  it("la partición NO se resuelve con z-index: ninguna de las dos reglas lo toca", () => {
+    // La negación va sobre `SOC` entero (base y @media): subir un z-index aquí sería
+    // exactamente el atajo que el mensaje de `e2e/layout.spec.ts` prohíbe.
+    const pila = rulesFor(SOC, `${ALERTA} .soc-stage__overlays`);
+    const leyendas = rulesFor(SOC, `${ALERTA} .soc-map__legends`);
+    expect(pila, "la regla de la pila bajo alerta no existe: la negación pasaría vacía").not.toBe(
+      "",
+    );
+    expect(
+      leyendas,
+      "la regla de las leyendas bajo alerta no existe: la negación pasaría vacía",
+    ).not.toBe("");
+    expect(pila).not.toMatch(/z-index/);
+    expect(leyendas).not.toMatch(/z-index/);
+  });
+});
+
+/**
+ * [T-7.05 · C-2] LA CIFRA DEL KPI NO PUEDE ENTRAR EN LA CAJA DE SU RÓTULO.
+ *
+ * `Range.getClientRects` —lo que mide el barrido de `e2e/layout.spec.ts`— devuelve
+ * el ÁREA DE CONTENIDO de la fuente (ascendente + descendente), no la caja de línea.
+ * Medido por el censo de T-7.04: un valor de 28 px con `line-height: 1` ocupa 37 px
+ * de tinta potencial, o sea 1.321 × el tamaño, y desborda ≈4.5 px por arriba y por
+ * abajo. Con `.soc-kpi { gap: 1px }` el rótulo caía dentro: 51 px² en `/triage` y
+ * 102 px² en `/tenants` y `/audit`, en los tres viewports y en las dos escenas.
+ *
+ * Hoy no se toca ninguna tinta porque los valores son dígitos —sin descendentes—,
+ * pero es la zona donde un «0.31 g» o un «p95» SÍ tocaría el rótulo. Por eso el
+ * arreglo va en la geometría y no en bajar la tolerancia del barrido.
+ */
+describe("[T-7.05] la tinta del valor del KPI no alcanza a su rótulo", () => {
+  /**
+   * Cuánto mide la caja de tinta de la fuente de datos por cada píxel de tamaño.
+   * MEDIDO, no supuesto: 37 px de caja para un valor de 28 px (`/triage`,
+   * `[data-testid=triage-count] .soc-kpi__value`, 1440×900).
+   */
+  const TINTA_POR_PX = 37 / 28;
+
+  /** El valor de un token dimensional citado por la hoja (`var(--tk-…)`). */
+  function tokenDe(valor: string | null, prop: string): number {
+    const m = /^var\(\s*(--tk-[a-z0-9-]+)\s*\)$/.exec(valor ?? "");
+    expect(m, `${prop} no sale de un token del design system: «${valor}»`).not.toBeNull();
+    return toNumber((cssVariables as Record<string, string>)[m![1]]);
+  }
+
+  it("la primitiva: con su interlineado y su hueco, el desborde no llega al rótulo", () => {
+    const valor = rulesFor(ALL_BASE, ".soc-kpi__value");
+    const interlineado = tokenDe(declValue(valor, "line-height"), "el interlineado del valor");
+    const tamano = toNumber(cssVariables["--tk-text-2xl"]);
+    const hueco = tokenDe(declValue(rulesFor(ALL_BASE, ".soc-kpi"), "gap"), "el hueco del KPI");
+    // Lo que la tinta sobresale de su caja de línea, por abajo.
+    const desborde = ((TINTA_POR_PX - interlineado) * tamano) / 2;
+    expect(
+      desborde,
+      `la tinta del valor baja ${desborde.toFixed(2)} px de su caja de línea y el rótulo está a ${hueco}`,
+    ).toBeLessThanOrEqual(hueco);
+  });
+
+  it("y la tira del MURO no crece ni un píxel: sigue en interlineado de dato y hueco de 1", () => {
+    // [T-6.12 · T-6.32] El alto de esa banda se lo come el mapa, y ya costó dos
+    // regresiones. La excepción es medible: a 16 px la tinta desborda ≈2.6 px y el
+    // censo de T-7.04 midió CERO parejas en `/console` en los 3 viewports y las 2
+    // escenas. Si alguien sube el escalón de la tira, esta excepción hay que
+    // volver a medirla — no heredarla.
+    const muro = rulesFor(ALL_BASE, ".soc-kpis .soc-kpi__value");
+    expect(declValue(muro, "line-height")).toBe("var(--tk-leading-data)");
+    expect(toNumber(cssVariables["--tk-leading-data"])).toBe(1);
+    expect(declValue(rulesFor(ALL_BASE, ".soc-kpis .soc-kpi"), "gap")).toBe("1px");
+    // Y su cifra sigue siendo la excepción de tamaño que `typeScale.test.ts` permite.
+    expect(declValue(muro, "font-size")).toBe("var(--tk-text-md)");
   });
 });
 

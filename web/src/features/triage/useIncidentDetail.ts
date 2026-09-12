@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
+import { useEffect } from "react";
 
 import {
   downloadEvidenceEvidenceEvidenceIdDownloadPost,
@@ -9,11 +10,24 @@ import {
   listEvidenceIncidentsIncidentIdEvidenceGet,
   listIncidentActionsIncidentsIncidentIdActionsGet,
   signDictamenIncidentsIncidentIdDictamensPost,
+  TOPIC_INCIDENTS,
 } from "@takab/sdk";
-import type { DictamenOut, EventDetailOut, EvidenceObject, IncidentActionOut } from "@takab/sdk";
+import type {
+  DictamenOut,
+  EventDetailOut,
+  EvidenceObject,
+  IncidentActionFrame,
+  IncidentActionOut,
+} from "@takab/sdk";
 
 import { openPendingDownload, type PendingDownload } from "../../lib/download";
 import { useNow } from "../../lib/useNow";
+import { useLiveSocket } from "../../live/socket";
+import {
+  dictamenRefetchMs,
+  type DictamenChainRow,
+  type IncidentRefreshHint,
+} from "./dictamenRefresh";
 import { staleSinceOf } from "./staleness";
 
 class DetailRequestError extends Error {
@@ -128,19 +142,57 @@ export interface IncidentDetailData {
 export function useIncidentDetail(
   incidentId: string | null,
   eventId: string | null,
+  /**
+   * [T-7.05 · C-3] La FILA del incidente: `opened_at` es el ancla de la ventana
+   * en la que la pasada automática todavía puede escribir (`dictamenRefresh.ts`).
+   *
+   * OBLIGATORIO, y ése es todo el punto. Con un `= null` por defecto, el
+   * llamador que no supiera de esto se llevaba la rama sin ventana —sondeo cada
+   * 5 s sobre dos endpoints, sin condición de parada— sin que nada se pusiera
+   * rojo (revisión adversaria f0r2 · nº3). Ahora el que no tenga la fila tiene
+   * que escribir `null` y con eso está diciendo, a sabiendas, «sin suelo de
+   * refresco: me fío del canal live».
+   */
+  incident: IncidentRefreshHint | null,
 ): IncidentDetailData {
   const qc = useQueryClient();
+  const socket = useLiveSocket();
   const enabled = incidentId !== null;
+
+  // Un único "ahora" para toda la pantalla: fecha la edad de los cuatro
+  // recursos (`staleSinceOf`) y acota la ventana del sondeo del dictamen.
+  const now = useNow(30_000);
+
+  /**
+   * [T-7.05 · C-3] EL SUELO DEL REFRESCO MIENTRAS LA PASADA AUTOMÁTICA ESCRIBE.
+   *
+   * Se evalúa en forma de función a propósito: react-query la vuelve a llamar
+   * con el estado ACTUAL de la consulta cada vez que reinstala el temporizador,
+   * así que en cuanto la cadena queda firmada el propio intervalo se apaga —sin
+   * un render de más ni una condición duplicada fuera del hook.
+   *
+   * El corte por ventana usa el `now` de `useNow(30_000)`, o sea que puede
+   * llegar hasta 30 s tarde. Cabe de sobra: `DICTAMEN_WATCH_MS` ya lleva el
+   * doble del lookback del worker como holgura.
+   */
+  const cadencia = (cadena: readonly DictamenChainRow[] | undefined) =>
+    dictamenRefetchMs({ incidentId, incident, dictamens: cadena, now });
 
   const dictamens = useQuery({
     queryKey: ["dictamens", incidentId],
     queryFn: () => fetchDictamens(incidentId as string),
     enabled,
+    refetchInterval: (query) => cadencia(query.state.data),
   });
   const actions = useQuery({
     queryKey: ["incident-actions", incidentId],
     queryFn: () => fetchActions(incidentId as string),
     enabled,
+    // La bitácora acompaña a la cadena en la MISMA ventana: la pasada de
+    // dictamen escribe las dos cosas (el INSERT en `dictamens` y su
+    // `incident_actions` de kind `dictamen`), y refrescar una sin la otra deja
+    // la pantalla diciendo dos cosas distintas del mismo hecho.
+    refetchInterval: () => cadencia(dictamens.data),
   });
   const evidence = useQuery({
     queryKey: ["evidence", incidentId],
@@ -152,6 +204,40 @@ export function useIncidentDetail(
     queryFn: () => fetchEventDetail(eventId as string),
     enabled: enabled && eventId !== null,
   });
+
+  /**
+   * [T-7.05 · C-3] EL CAMINO BUENO: el canal live, que llega en <1 s.
+   *
+   * La pasada de dictamen no sólo INSERTA en `dictamens`: deja su huella en
+   * `incident_actions` con kind `dictamen` (api · `dictamen/service.py`). El
+   * trigger `trg_incident_actions_notify` (migración 0004) lanza el NOTIFY y el
+   * hub lo reparte como `incident_action` por el topic `incidents`, ya filtrado
+   * por RLS. O sea: el servidor YA estaba avisando y esta pantalla era la única
+   * que no escuchaba — `useMapState`, `liveHealth.store` y `useActiveDrill` sí.
+   *
+   * Se invalida, no se fusiona: al revés que `useIncidentActions` del wall, aquí
+   * el frame no basta para pintar (la CADENA de dictámenes no viaja en él), así
+   * que lo que hace es preguntar. Y la cadena sólo se re-consulta cuando la
+   * acción ES un dictamen; la bitácora, con cualquiera de este incidente.
+   */
+  useEffect(() => {
+    if (!socket || incidentId === null) {
+      return undefined;
+    }
+    return socket.subscribe(TOPIC_INCIDENTS, (frame) => {
+      if (frame.type !== "incident_action") {
+        return;
+      }
+      const action = frame as IncidentActionFrame;
+      if (action.incident_id !== incidentId) {
+        return;
+      }
+      void qc.invalidateQueries({ queryKey: ["incident-actions", incidentId] });
+      if (action.kind === "dictamen") {
+        void qc.invalidateQueries({ queryKey: ["dictamens", incidentId] });
+      }
+    });
+  }, [socket, incidentId, qc]);
 
   const signMutation = useMutation({
     mutationFn: async (vars: { status: string; notes: string | null }) => {
@@ -217,10 +303,6 @@ export function useIncidentDetail(
   });
 
   const exportError = pdfMutation.error?.message ?? downloadMutation.error?.message ?? null;
-
-  // Un único "ahora" para los cuatro recursos: nada los refresca solo en esta
-  // pantalla, así que envejecen juntos y tienen que decirlo juntos.
-  const now = useNow(30_000);
 
   const wrap = <T>(q: UseQueryResult<T>, isEnabled: boolean): Resource<T> => ({
     data: q.data,

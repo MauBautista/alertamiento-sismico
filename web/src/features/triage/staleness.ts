@@ -10,12 +10,21 @@
 /**
  * Cuándo se declara viejo el dato que el inspector lee antes de firmar.
  *
- * MEDIDO, y es lo que fija el número: en esta consola NADA refresca sola esa
- * pantalla. `lib/queryClient.ts` desactiva `refetchOnWindowFocus` (es un
- * videowall, no un escritorio) y ninguna de las consultas del triage lleva
- * `refetchInterval`; la única vía de refresco es montar la pantalla o pulsar
- * REINTENTAR. Es decir: los ocho marcos envejecen A LA MISMA VELOCIDAD desde
- * que se abrió el detalle.
+ * MEDIDO, y es lo que fija el número: en esta consola casi NADA refresca sola
+ * esa pantalla. `lib/queryClient.ts` desactiva `refetchOnWindowFocus` (es un
+ * videowall, no un escritorio) y la vía normal de refresco es montar la
+ * pantalla o pulsar REINTENTAR. Es decir: los marcos envejecen A LA MISMA
+ * VELOCIDAD desde que se abrió el detalle.
+ *
+ * [T-7.05 · C-3] CON UNA EXCEPCIÓN ACOTADA, y conviene saber que existe: la
+ * CADENA DE DICTÁMENES y la BITÁCORA sí se refrescan solas mientras la pasada
+ * automática del dictamen todavía pueda escribirles —o sea: cadena sin firmar y
+ * el incidente dentro de la ventana del worker; `dictamenRefresh.ts` dice
+ * exactamente hasta cuándo y por qué—, porque el defecto que medía C-3 era
+ * precisamente esa pantalla quedándose en «SIN DICTAMEN» para siempre. No toca
+ * este umbral: mientras esas dos se están confirmando cada pocos segundos NO
+ * están viejas, y cuando el sondeo se apaga vuelven a envejecer con el reloj de
+ * todos.
  *
  * De ahí las dos decisiones:
  *

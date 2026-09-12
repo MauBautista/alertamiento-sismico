@@ -1,3 +1,10 @@
+// Los estados de los CUATRO recursos del detalle (loading/error/empty/stale,
+// firma, exportaciones). El tercer argumento de `useIncidentDetail` va `null` en
+// todo el fichero a propósito: sin la fila del incidente no hay ventana de
+// sondeo —ver `dictamenRefresh.ts`— y estas pruebas quedan sin temporizadores,
+// que es lo que quieren. El sondeo, su ventana y su parada se prueban aparte,
+// en `dictamenRefresh.test.ts` y `TriageDetailRefresh.test.tsx`.
+
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -18,6 +25,12 @@ const mocks = vi.hoisted(() => ({
   resolve: vi.fn(),
   fail: vi.fn(),
   openPendingDownload: vi.fn(),
+  // [T-7.05] El hook ya se suscribe al topic del canal live para enterarse del
+  // dictamen (`incident_action` de kind `dictamen`). Este `vi.mock` SUSTITUYE
+  // el SDK entero —sin `importOriginal`—, así que una constante del protocolo
+  // que falte aquí no es un `undefined`: es el fichero ENTERO sin cargar en
+  // cuanto alguien la toque fuera del callback. Mismo valor que `ws.ts`.
+  TOPIC_INCIDENTS: "incidents",
 }));
 
 vi.mock("@takab/sdk", () => mocks);
@@ -61,13 +74,13 @@ beforeEach(() => {
 
 describe("useIncidentDetail", () => {
   it("sin incidente seleccionado no pide nada", () => {
-    renderHook(() => useIncidentDetail(null, null), { wrapper });
+    renderHook(() => useIncidentDetail(null, null, null), { wrapper });
     expect(mocks.listDictamensIncidentsIncidentIdDictamensGet).not.toHaveBeenCalled();
     expect(mocks.getEventEventsEventIdGet).not.toHaveBeenCalled();
   });
 
   it("carga cadena, bitácora, evidencia y el evento con sus quorum_votes", async () => {
-    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1", null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toHaveLength(1));
     expect(result.current.event.data?.event_id).toBe("evt-1");
     expect(mocks.listDictamensIncidentsIncidentIdDictamensGet).toHaveBeenCalledWith({
@@ -76,7 +89,7 @@ describe("useIncidentDetail", () => {
   });
 
   it("incidente sin event_id no pide el evento (no hay quórum que mostrar)", async () => {
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toHaveLength(1));
     expect(mocks.getEventEventsEventIdGet).not.toHaveBeenCalled();
     expect(result.current.event.data).toBeUndefined();
@@ -85,7 +98,7 @@ describe("useIncidentDetail", () => {
 
   it("un 500 en la cadena se convierte en estado error", async () => {
     mocks.listDictamensIncidentsIncidentIdDictamensGet.mockResolvedValue(FAIL(500));
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.error).toMatch(/dictamens.*500/));
   });
 
@@ -93,7 +106,7 @@ describe("useIncidentDetail", () => {
     mocks.signDictamenIncidentsIncidentIdDictamensPost.mockResolvedValue(
       OK({ ...DICTAMEN, dictamen_id: "d-2", signed_by: "u-1" }),
     );
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
 
     mocks.listDictamensIncidentsIncidentIdDictamensGet.mockClear();
@@ -112,7 +125,7 @@ describe("useIncidentDetail", () => {
 
   it("un 403 al firmar queda como signError, no tumba el panel", async () => {
     mocks.signDictamenIncidentsIncidentIdDictamensPost.mockResolvedValue(FAIL(403));
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.sign("restricted", null));
     await waitFor(() => expect(result.current.signError).toMatch(/403/));
@@ -123,7 +136,7 @@ describe("useIncidentDetail", () => {
     mocks.generateReportIncidentsIncidentIdReportPost.mockResolvedValue(
       OK({ evidence_id: "e-1", url: "https://s3/report.pdf?sig=x", expires_in: 300 }),
     );
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.generatePdf());
     // La pestaña se reserva ANTES de que salga la petición: si se abriera en el
@@ -137,7 +150,7 @@ describe("useIncidentDetail", () => {
     mocks.downloadEvidenceEvidenceEvidenceIdDownloadPost.mockResolvedValue(
       OK({ url: "https://s3/eq.mseed?sig=y", expires_in: 300 }),
     );
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.downloadEvidence("e-9"));
     await waitFor(() =>
@@ -152,7 +165,7 @@ describe("useIncidentDetail", () => {
     // [T-6.16] Antes se cerraba la pestaña. Una que aparece y desaparece no le
     // dice nada a quien acaba de pulsar el botón; ahora explica por qué.
     mocks.generateReportIncidentsIncidentIdReportPost.mockResolvedValue(FAIL(503));
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     act(() => result.current.generatePdf());
     await waitFor(() => expect(result.current.exportError).toMatch(/503/));
@@ -167,11 +180,11 @@ describe("useIncidentDetail · cada recurso lleva SU EDAD [T-2.82.a]", () => {
     // `dataUpdatedAt` es 0 mientras no llega nada: calcular la frescura a ciegas
     // diría "viejo desde 1970" en un panel que ni siquiera tiene dato del que
     // hablar. Inventar una edad es la misma mentira que ocultarla.
-    const vacio = renderHook(() => useIncidentDetail(null, null), { wrapper });
+    const vacio = renderHook(() => useIncidentDetail(null, null, null), { wrapper });
     expect(vacio.result.current.dictamens.staleSince).toBeNull();
     expect(vacio.result.current.event.staleSince).toBeNull();
 
-    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1", null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     expect(result.current.dictamens.staleSince).toBeNull();
     expect(result.current.evidence.staleSince).toBeNull();
@@ -182,7 +195,7 @@ describe("useIncidentDetail · cada recurso lleva SU EDAD [T-2.82.a]", () => {
     // refresca solo (`refetchOnWindowFocus:false`, sin `refetchInterval`): la
     // hora es el contenido, «viejo» a secas no le sirve al que va a firmar.
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1", null), { wrapper });
     await waitFor(() => expect(result.current.event.data).toBeDefined());
     const llegada = result.current.dictamens.staleSince;
     expect(llegada).toBeNull();
@@ -201,7 +214,7 @@ describe("useIncidentDetail · cada recurso lleva SU EDAD [T-2.82.a]", () => {
 describe("useIncidentDetail · cada recurso lleva SU estado (regla de oro 7)", () => {
   it("un 403 en evidencia NO se presenta como 'sin evidencia': queda como error propio", async () => {
     mocks.listEvidenceIncidentsIncidentIdEvidenceGet.mockResolvedValue(FAIL(403));
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.evidence.error).toMatch(/403/));
     expect(result.current.evidence.data).toBeUndefined();
     // …y no contamina el estado del dictamen, que sí cargó.
@@ -211,20 +224,20 @@ describe("useIncidentDetail · cada recurso lleva SU estado (regla de oro 7)", (
 
   it("un 500 en la bitácora NO se presenta como '0 acciones'", async () => {
     mocks.listIncidentActionsIncidentsIncidentIdActionsGet.mockResolvedValue(FAIL(500));
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.actions.error).toMatch(/500/));
     expect(result.current.actions.data).toBeUndefined();
   });
 
   it("un 500 en el evento NO se presenta como 'incidente sin evento'", async () => {
     mocks.getEventEventsEventIdGet.mockResolvedValue(FAIL(500));
-    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1", null), { wrapper });
     await waitFor(() => expect(result.current.event.error).toMatch(/500/));
     expect(result.current.event.disabled).toBe(false);
   });
 
   it("sin evento asociado el recurso queda DISABLED, no en error", async () => {
-    const { result } = renderHook(() => useIncidentDetail("i-1", null), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", null, null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     expect(result.current.event.disabled).toBe(true);
     expect(result.current.event.error).toBeNull();
@@ -232,7 +245,7 @@ describe("useIncidentDetail · cada recurso lleva SU estado (regla de oro 7)", (
   });
 
   it("refetch reintenta TODOS los recursos, no sólo la cadena", async () => {
-    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1"), { wrapper });
+    const { result } = renderHook(() => useIncidentDetail("i-1", "evt-1", null), { wrapper });
     await waitFor(() => expect(result.current.dictamens.data).toBeDefined());
     vi.clearAllMocks();
     mocks.listDictamensIncidentsIncidentIdDictamensGet.mockResolvedValue(OK({ items: [DICTAMEN] }));
