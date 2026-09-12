@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **406** · `[x]` **328** · `[~]` **10** · `[ ]` **68**
+**Conteo de tareas:** total **406** · `[x]` **331** · `[~]` **13** · `[ ]` **62**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -10984,7 +10984,11 @@ sirena.
 - [x] La salida de vídeo deja fila en `audit_log` **en la subida**, no solo en la descarga
       (`D-14`: auditada igual que un comando de actuador).
 
-### [ ] T-3.11.c · El worker de backfill **no está en la nube desplegada** — `SOFTWARE` + `GATE-AWS`
+### [x] T-3.11.c · El worker de backfill **no está en la nube desplegada** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-12 por `T-7.02`**
+> **Cerrada desplegándolo, y la medición vale la pena.** El servicio entró en el compose de la nube el 2026-09-12; al
+> arrancar drenó los **65** mensajes que la cola llevaba acumulados y el gabinete subió sus **siete** evidencias, que el
+> worker registró ligándolas a su incidente. Antes de ese día el bucket de evidencia tenía 19 objetos y **ni una sola
+> forma de onda**. Lo que queda de la cadena del CCTV sigue donde estaba: este servicio era su primer eslabón.
 > **Descubierto el 2026-09-01**, revisando qué le falta al CCTV para existir fuera de los tests.
 > `deploy/cloud/docker-compose.yml` levanta siete servicios —`api`, `ingest-events`,
 > `ingest-telemetry`, `incident-engine`, `notify`, `commands`, `console`— y **ninguno corre
@@ -13482,8 +13486,9 @@ solaparse; F4 no va antes que F3 porque el informe necesita los datos por estaci
 **Relaciones hacia fuera del bloque, escritas donde se planifica.** Cuatro fichas ejecutan o
 completan tareas de otros bloques y lo declaran como dependencia: `T-7.02` ejecuta `T-3.11.c`
 (el worker de backfill nunca estuvo en el compose de la nube y sin él la evidencia no llega) y
-la dejará en `[x]` al terminar; `T-7.06` ejecuta `T-2.89` (encender `console_scope_enforced`,
-que `D-18` ya decidió) y la dejará en `[x]` igual; `T-7.24` ejecuta `T-3.09` (mini-ShakeMap, con la arquitectura de `D-08`); y
+la dejará en `[x]` al terminar; `T-7.06` **adelanta** `T-2.89` (encender
+`console_scope_enforced`, que `D-18` ya decidió) sin cerrarla, porque comprobarla por rol exige
+una sesión real de Cognito que llega con `T-7.09`; `T-7.24` ejecuta `T-3.09` (mini-ShakeMap, con la arquitectura de `D-08`); y
 `T-7.25` cubre la mitad USGS de `T-3.13` (la mitad SSN sigue bloqueada por atribución, `D-06`).
 Dos más se apoyan en fichas ajenas sin depender de ellas: `T-7.07` toma el procedimiento de
 alerta real del runbook de `T-2.95`, y `T-7.26` deja escrito el registro de procedencia que
@@ -13512,41 +13517,67 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > fase tiene además un objetivo ejecutable (un bloque de comandos que devuelve 0) que se corre
 > en `/loop` hasta que pasa.
 
-### [ ] T-7.01 · **Censo de conformidad: lo que está en código está en el sistema** — `SOFTWARE`
+### [x] T-7.01 · **Censo de conformidad: lo que está en código está en el sistema** — `SOFTWARE` · **CERRADA 2026-09-12**
 - **Componente:** deploy · api · docs · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** un informe con veredicto por pieza, derivado de comandos y no de lectura, que
   diga qué parte del código no corre en el sistema desplegado.
 - **Criterios de aceptación:**
-  - [ ] `api/tests/test_compose_cubre_los_workers.py`: deriva del árbol todo módulo
+  - [x] `api/tests/test_compose_cubre_los_workers.py`: deriva del árbol todo módulo
     `takab_api.*` ejecutable (`__main__.py`) y exige que cada uno tenga servicio en
     `deploy/cloud/docker-compose.yml` **o** figure en una lista «no residente, con razón»
     (`billing`, `ops.prune_pii`, `ops.restore_check`…). Hoy pone en rojo a `backfill`.
-  - [ ] `deploy/cloud/conformidad.sh` + `make cloud-conformidad`: `/api/health.build == HEAD`,
+  - [x] `deploy/cloud/conformidad.sh` + `make cloud-conformidad`: `/api/health.build == HEAD`,
     esquema `al_dia`, compose cubre los workers, toda variable que `Settings` exige en la nube
     está en el heredoc de `deploy.sh`, cola de backfill vacía, release del Pi = `HEAD`, APK del
     Pixel construido de `HEAD`, `terraform plan` sin cambios, banderas leídas del sistema
-    (`console_scope_enforced`, OpenRouter, proveedor de push, `command_enabled`/`audio_*` vía
-    `/api/status`).
-  - [ ] `takab-docs/INFORME-CONFORMIDAD-DEMO.md` con 🟢/🟡/🔴 por pieza y la evidencia
+    (`console_scope_enforced`, OpenRouter, proveedor de push). **Corregido al medir:** las
+    banderas del gabinete (`command_enabled`, `instrumental_actuation`, `audio_*`) **no viajan
+    en `/api/status`** —el panel no las expone, y por eso el script las lee del `edge.env` por
+    ssh—; lo que sí lee del panel es el modo prueba del WR-1, que es la bandera que puede
+    arruinar una demostración en silencio.
+  - [x] `takab-docs/INFORME-CONFORMIDAD-DEMO.md` con 🟢/🟡/🔴 por pieza y la evidencia
     (comando + salida). Un 🔴 nombra la ficha que lo cierra.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.02 · **El worker de backfill corre en la nube** — `SOFTWARE` + `GATE-AWS`
+> **Cómo se cerró.** Primera corrida completa el 2026-09-12 sobre el commit ya desplegado:
+> 9 verdes, 2 ámbares, 2 rojos y un «no medido» que resultó ser un defecto del propio script
+> —leía la bandera del modo prueba con una expresión que trata el `false` como ausente, así que
+> el caso bueno salía sin medir—, corregido en el mismo día. Los dos rojos no eran del censo
+> sino del sistema, y cada uno nombra su ficha: la cola de mensajes muertos del backfill y la
+> alarma de la de telemetría. El detalle y su interpretación viven en
+> [`INFORME-CONFORMIDAD-DEMO.md`](INFORME-CONFORMIDAD-DEMO.md).
+
+### [x] T-7.02 · **El worker de backfill corre en la nube** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-12**
 - **Componente:** deploy · api · **Depende de:** T-3.11.c · **Prioridad:** F0 · crítica
 - **Objetivo:** que el miniSEED de un evento confirmado llegue a S3 y a `evidence_objects`, y
   que el espectrograma de un reporte generado en la nube deje de salir vacío. Ejecuta y cierra
   `T-3.11.c`, que se marca `[x]` en el mismo commit.
 - **Criterios de aceptación:**
-  - [ ] Servicio `backfill` en `docker-compose.yml` con la misma imagen y `db-ingest.env`;
+  - [x] Servicio `backfill` en `docker-compose.yml` con la misma imagen y `db-ingest.env`;
     `deploy.sh` lo levanta y `conformidad.sh` lo ve.
-  - [ ] Prueba viva tras el despliegue: un evento (`soc-local` → nube o pulso real) deja fila en
-    `evidence_objects` y objeto en S3; `POST /incidents/{id}/report` trae espectrograma.
-  - [ ] La cola `takab-dev-q-backfill` queda en 0 mensajes tras drenar el atasco histórico.
+  - [x] Prueba viva tras el despliegue: las **siete** evidencias que el gabinete tenía
+    pendientes (de 20 h a 11,7 días) subieron a S3 y el worker las registró una a una en
+    `evidence_objects`, ligadas a su incidente, con cero rechazos y cero descartes.
+  - [~] Que el espectrograma de un informe generado en la nube deje de salir vacío **se verifica
+    donde se ejerce el PDF**: hasta hoy no había una sola forma de onda archivada, así que la
+    precondición no existía; pedir el informe exige una sesión real de consola, que es lo que
+    trae el acto 4 de `T-7.09` y lo que `T-7.22` convierte en criterio.
+  - [x] La cola `takab-dev-q-backfill` queda en 0 mensajes tras drenar el atasco histórico
+    (65 mensajes drenados).
 - **Tests de censo que toca:** `test_compose_cubre_los_workers` · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.03 · **La push llega de verdad al teléfono** — `SOFTWARE` + `GATE-AWS`
+> **Cómo se cerró, y la trampa que casi lo hace pasar por avería.** Al desplegar el worker,
+> drenó los 65 mensajes y publicó los permisos… y durante media hora no subió nada: el panel
+> seguía diciendo siete pendientes. No era un defecto: el gabinete pide sus permisos **al
+> reconectar**, lo había hecho 24 minutos antes de que el worker existiera, y un permiso vence
+> en 30 segundos. Bastó reiniciar el servicio del gabinete —que con el dueño de los pines
+> traspasado (`D-04`) no mueve un relé— para que pidiera de nuevo y subiera las siete en tres
+> minutos. Quien repita esto en otro sitio: el síntoma de «los permisos se conceden y nada
+> sube» casi siempre es esta carrera, no un permiso de IAM.
+
+### [~] T-7.03 · **La push llega de verdad al teléfono** — `SOFTWARE` + `GATE-AWS` · **BLOQUEADA en las credenciales de Firebase**
 - **Componente:** infra · deploy · mobile · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** que el gabinete dispare y el Pixel vibre por push real, no por sondeo.
 - **Criterios de aceptación:**
@@ -13556,25 +13587,40 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     prueba que el entorno de despliegue elige `SnsPushProvider`.
   - [ ] `google-services.json` en la app (gitignored), rebuild, token registrado en
     `POST /me/push-tokens`; un incidente real deja `notification_jobs.status='sent'`.
-  - [ ] **Respaldo declarado y medido** si las credenciales no llegan: app en primer plano y
-    sondeo, con el tiempo hasta la pantalla de crisis escrito en el runbook.
+  - [x] **Respaldo declarado y medido** si las credenciales no llegan: medido el 2026-09-12
+    con el APK de `HEAD` en el Pixel real y un incidente de crisis abierto en la nube — con la
+    app **en primer plano y en reposo**, la pantalla de crisis apareció **21 s** después de que
+    se abriera el incidente (el sondeo en reposo es de 30 s), y quedó grabada en vídeo. **En
+    segundo plano no hay sondeo**: el tiempo es ilimitado hasta que la persona abre la app, que
+    es exactamente lo que la push resolvería. Va al runbook de la demostración (`T-7.07`).
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.04 · **Censo de solapes y de flujo con la alerta en pantalla** — `SOFTWARE`
+### [~] T-7.04 · **Censo de solapes y de flujo con la alerta en pantalla** — `SOFTWARE` · **CONSOLA Y PANEL MEDIDOS · falta el teléfono**
 - **Componente:** web · edge · mobile · **Depende de:** — · **Prioridad:** F0 · alta
 - **Objetivo:** afirmar «nada se encima» con las escenas que la demo va a mostrar, no con la
   consola en reposo.
 - **Criterios de aceptación:**
-  - [ ] `web/e2e/layout.spec.ts` deja de tolerar que la alerta «no esté»: sobre `soc-local`
-    con `:9100/sasmex` se fuerzan `alert` y `review` y se barren 6 pantallas × 3 viewports; un
-    par de elementos visibles con texto que se interseca (salvo ancestro/descendiente) es fallo.
-  - [ ] Panel del gabinete: 13 escenas × 3 modos con el mismo criterio, solo contra
-    `127.0.0.1`.
-  - [ ] Pixel: `uiautomator` **filtrado a rótulos de la app** (el teléfono es personal) en
-    crisis, check-in y táctico.
-  - [ ] Conteo de clics de los tres flujos (alerta→dictamen, alta de sitio, simulacro) contra
-    `design/INFORME-UIUX.md §3`; cada hallazgo nace como criterio de `T-7.05`.
+  - [x] `web/e2e/layout.spec.ts` deja de tolerar que la alerta «no esté»: sobre `soc-local`
+    con `:9100/sasmex` se fuerza `alert` y se barren 6 pantallas × 3 viewports; un par de
+    elementos visibles con texto que se interseca (salvo ancestro/descendiente) es fallo. La
+    escena `review` **no existe todavía** —llega con `T-7.16`— y queda declarada como pendiente
+    en el propio spec, no fingida inyectando marcado.
+  - [x] Panel del gabinete: **15** escenas × 3 modos con el mismo criterio, solo contra
+    `127.0.0.1`. Eran 15 y no 13: `simulacro_abortado` y `prueba_actuadores_en_curso` entraron
+    después de escribir esta ficha, y el barrido las lee del propio HTML servido en vez de una
+    lista tecleada.
+  - [~] Pixel: `uiautomator` **filtrado a rótulos de la app** (el teléfono es personal) en
+    crisis, check-in y táctico. **Pendiente, y con dos razones medidas el 2026-09-12:** el
+    teléfono se desconectó del USB a mitad de la sesión; y el volcado **no funciona en una
+    pantalla con contador vivo** —la de crisis redibuja el tiempo transcurrido cada segundo, la
+    ventana nunca queda en reposo y el volcado falla en silencio, que se lee como «la pantalla
+    no llegó»—. Se cierra en `T-7.09`, que es donde el teléfono se ejercita de verdad, midiendo
+    con grabación de pantalla y fotogramas como se hizo con el respaldo del push.
+  - [x] Conteo de clics de los tres flujos (alerta→dictamen, alta de sitio, simulacro) contra
+    `design/INFORME-UIUX.md §3`; cada hallazgo nace como criterio de `T-7.05`. Salieron dos que
+    la auditoría visual no podía ver porque no cronometró: el detalle de triage que nunca se
+    refresca (C-3) y el alta que llega al mapa sin foco (C-4).
 - **Tests de censo que toca:** `layout.spec` · **Token nuevo:** no · **Cambia algo que un
   test defiende hoy:** sí — `layout.spec.ts` toleraba la ausencia de la alerta.
 
@@ -13625,14 +13671,25 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   **Cambia algo que un test defiende hoy:** sí — el piso de alto del mapa si la partición reserva
   alto, y el esquema `health_snapshot`.
 
-### [ ] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS`
+### [~] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **ENCENDIDO · falta verificarlo por rol**
 - **Componente:** deploy · web · **Depende de:** T-2.89 · **Prioridad:** F0 · media
-- **Objetivo:** que el despliegue diga lo mismo que el código y que `D-18` decidió. Ejecuta y
-  cierra `T-2.89`.
+- **Objetivo:** que el despliegue diga lo mismo que el código y que `D-18` decidió. **Adelanta
+  `T-2.89` pero no la cierra:** aquella pide además comprobar por rol contra el pool real y una
+  prueba entre clientes contra el entorno desplegado, y las dos exigen una sesión de Cognito de
+  verdad (el login de desarrollo no existe en producción, y un test lo defiende).
 - **Criterios de aceptación:**
-  - [ ] `TAKAB_API_CONSOLE_SCOPE_ENFORCED=true` en el heredoc de `deploy.sh`; redeploy.
-  - [ ] `web/e2e/scope.spec.ts` contra la nube con un usuario con `site_scope`
-    (`make cloud-users`): distintivo en la barra, subconjunto en el mapa.
+  - [x] `TAKAB_API_CONSOLE_SCOPE_ENFORCED=true` en el heredoc de `deploy.sh`; redeploy.
+  - [x] Antes de encender, comprobado contra el pool real que **nadie se queda sin estaciones**:
+    de los ocho usuarios, siete traen alcance total y el único acotado es un brigadista, que es
+    superficie móvil. La secuencia obligada de `T-2.89` («asignar alcance y **entonces**
+    encender») se cumple por vacuidad: no hay a quién asignárselo todavía.
+  - [x] Tras el redespliegue, la consola desplegada pasa sus comprobaciones de punta a punta
+    (12 en verde, incluida la que exige que producción **no** sirva el login de desarrollo).
+  - [~] `web/e2e/scope.spec.ts` contra la nube con un usuario con `site_scope`
+    (`make cloud-users`): distintivo en la barra, subconjunto en el mapa. **No se puede correr
+    tal cual:** ese spec entra con el login de desarrollo, que producción no sirve. Necesita
+    sesión real de Cognito, que es la que trae `T-7.09`; hasta entonces el alcance está
+    encendido y sin verificar por rol, que es mejor que apagado y sin verificar.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
