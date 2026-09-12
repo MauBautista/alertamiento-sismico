@@ -8,63 +8,188 @@
 //   · `.mt__list` sin scroll bajo `body { overflow: hidden }` ⇒ los últimos
 //     clientes FÍSICAMENTE inalcanzables (T-2.51)
 //   · el control de simulacro robándole el alto al mapa (T-1.62)
+//
+// [T-7.04] Y la ESCENA se fuerza. Hasta esta ficha el test de los sobrepuestos
+// decía que la alerta «puede no estar» y medía los que estuvieran: con el stack
+// en reposo pasaba en verde sin haber visto jamás la tarjeta roja, que es la que
+// se va a enseñar. Ahora el barrido corre dos veces —escena `normal` y escena
+// `alert` forzada por el WR-1 simulado (`escena.ts`)— sobre las seis pantallas,
+// y en `alert` exige la alerta ANTES de medir (control positivo). El criterio
+// también cambia de «estos seis selectores» a «todo texto visible y todo
+// control»: un solape nuevo entre dos elementos que nadie nombró aquí falla
+// igual. La escena `review` se declara pendiente con su razón, no se finge.
 import { expect, test } from "@playwright/test";
 
-import { boxOf, devLogin, expectNoHorizontalOverflow, gotoScreen, overlapArea } from "./helpers";
+import { PENDING_SCENES, expectScene, forceScene, type ForcedScene } from "./escena";
+import {
+  MATRIX_SCREENS,
+  boxOf,
+  devLogin,
+  expectNoHorizontalOverflow,
+  formatOverlap,
+  gotoScreen,
+  overlapArea,
+  settle,
+  textOverlaps,
+  type AllowedOverlap,
+} from "./helpers";
+
+/**
+ * Parejas que PUEDEN pisarse, cada una con su razón. Vacía a propósito: hoy no
+ * hay ningún solape deliberado entre dos elementos con texto. Si aparece uno
+ * (un distintivo que va encima de otro rótulo por diseño), se añade aquí con
+ * los dos selectores y el porqué — nunca subiendo un z-index en la hoja para
+ * que «gane» uno de los dos.
+ */
+const ALLOWED_OVERLAPS: readonly AllowedOverlap[] = [];
+
+/** Escenas que el arnés fuerza hoy, en el orden en que se barren. */
+const SCENES: readonly ForcedScene[] = ["normal", "alert"];
 
 test.beforeEach(async ({ page }) => {
   await devLogin(page);
 });
 
-test("los sobrepuestos del escenario no se pisan entre sí", async ({ page }) => {
-  await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
-  await expect(page.locator(".soc-stage")).toBeVisible();
+test.describe("[T-7.04] nada se encima, con la escena PUESTA", () => {
+  for (const scene of SCENES) {
+    test.describe(`escena ${scene}`, () => {
+      let forced = "";
 
-  // Se miden TODOS los que estén visibles. Los condicionales (alerta sísmica,
-  // badge de mapa degradado) pueden no estar según el estado del stack local:
-  // `boxOf` devuelve null y quedan fuera. Lo que este test garantiza es que NO
-  // PUEDEN chocar los que sí estén — no que estén todos.
-  const named: [string, ReturnType<typeof page.locator>][] = [
-    ["pila de alertas (arriba-derecha)", page.locator(".soc-stage__overlays")],
-    ["estado del mapa (arriba-izquierda)", page.locator(".soc-map__degraded")],
-    ["leyendas (abajo-derecha)", page.locator(".soc-map__legends")],
-    ["atribución (abajo-izquierda)", page.locator(".soc-map__attribution")],
-    ["datos retenidos", page.locator(".soc-wall > .soc-stateframe__stale")],
-    // [T-2.59] El control NATIVO de MapLibre no estaba en esta lista, y por eso
-    // se coló: se ancla abajo-DERECHA, que es la esquina de las leyendas, y las
-    // pisaba 2853 px² (357×8) en los tres viewports. Hoy va desactivado
-    // (`attributionControl: false`) porque duplicaba unos créditos que este
-    // panel ya pinta; si alguien lo reactiva, que choque aquí y no en el muro.
-    [
-      "atribución nativa de MapLibre (abajo-derecha)",
-      page.locator(".maplibregl-ctrl-bottom-right"),
-    ],
-  ];
+      test.beforeAll(async () => {
+        // El camino real tarda: contacto → edge → bridge → motor → incidente.
+        test.setTimeout(150_000);
+        forced = await forceScene(scene);
+      });
 
-  const boxes: [string, Awaited<ReturnType<typeof boxOf>>][] = [];
-  for (const [label, locator] of named) boxes.push([label, await boxOf(locator)]);
-  const present = boxes.filter((entry): entry is [string, NonNullable<(typeof entry)[1]>] => {
-    return entry[1] !== null;
+      // Sin `afterAll` que devuelva el reposo: tras un test fallido Playwright
+      // RENUEVA el worker y el `afterAll` del viejo (cerrar incidentes) corre en
+      // carrera con el `beforeAll` del nuevo (forzar alerta). El reposo se
+      // restaura en el último test del barrido, que además lo VERIFICA.
+      if (scene === "alert") {
+        test("los sobrepuestos del escenario no se pisan entre sí (con la alerta PRESENTE)", async ({
+          page,
+        }) => {
+          await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+          await expect(page.locator(".soc-stage")).toBeVisible();
+          await settle(page);
+          await expectScene(page, "alert", "/console");
+
+          // [T-7.04] Antes: «los condicionales pueden no estar». Ahora la pila
+          // de alertas ES la razón del test y se exige; siguen siendo
+          // condicionales sólo los que dependen de la red (mapa degradado) o del
+          // reloj (datos retenidos).
+          const required: [string, ReturnType<typeof page.locator>][] = [
+            ["pila de alertas (arriba-derecha)", page.locator(".soc-stage__overlays")],
+            ["tarjeta de alerta", page.locator(".soc-stage__overlays .soc-alert")],
+            ["leyendas (abajo-derecha)", page.locator(".soc-map__legends")],
+            ["atribución (abajo-izquierda)", page.locator(".soc-map__attribution")],
+          ];
+          const optional: [string, ReturnType<typeof page.locator>][] = [
+            ["estado del mapa (arriba-izquierda)", page.locator(".soc-map__degraded")],
+            ["datos retenidos", page.locator(".soc-wall > .soc-stateframe__stale")],
+            // [T-2.59] El control NATIVO de MapLibre se ancla abajo-DERECHA, la
+            // esquina de las leyendas, y las pisaba 2853 px² (357×8). Hoy va
+            // desactivado (`attributionControl: false`); si alguien lo
+            // reactiva, que choque aquí y no en el muro.
+            [
+              "atribución nativa de MapLibre (abajo-derecha)",
+              page.locator(".maplibregl-ctrl-bottom-right"),
+            ],
+          ];
+
+          const present: [string, NonNullable<Awaited<ReturnType<typeof boxOf>>>][] = [];
+          for (const [label, locator] of required) {
+            const box = await boxOf(locator);
+            expect(
+              box,
+              `bajo escena alert falta «${label}»: el test no mide lo que promete`,
+            ).not.toBeNull();
+            present.push([label, box!]);
+          }
+          for (const [label, locator] of optional) {
+            const box = await boxOf(locator);
+            if (box !== null) present.push([label, box]);
+          }
+
+          for (let i = 0; i < present.length; i += 1) {
+            for (let j = i + 1; j < present.length; j += 1) {
+              const [labelA, a] = present[i];
+              const [labelB, b] = present[j];
+              // La tarjeta vive DENTRO de la pila: ancestro y descendiente no chocan.
+              if (labelA.startsWith("pila") && labelB.startsWith("tarjeta")) continue;
+              expect(
+                overlapArea(a, b),
+                `"${labelA}" y "${labelB}" se solapan: se resuelve REUBICANDO uno, no subiendo su z-index`,
+              ).toBe(0);
+            }
+          }
+
+          // Las dos pilas superiores están acotadas al 46 % cada una: la
+          // no-colisión es aritmética. Se comprueba el ancho real por si alguien
+          // quita el tope.
+          const stage = await boxOf(page.locator(".soc-stage"));
+          const overlays = await boxOf(page.locator(".soc-stage__overlays"));
+          expect(stage).not.toBeNull();
+          expect(overlays).not.toBeNull();
+          expect(overlays!.width).toBeLessThanOrEqual(stage!.width * 0.47 + 1);
+        });
+      }
+
+      for (const screen of MATRIX_SCREENS) {
+        test(`${screen.path} · ningún texto visible pisa a otro`, async ({ page }, testInfo) => {
+          await gotoScreen(page, screen.path, screen.label);
+          await settle(page);
+          await expectScene(page, scene, screen.path);
+
+          const pairs = await textOverlaps(page, ALLOWED_OVERLAPS);
+          await testInfo.attach(`solapes-${scene}-${screen.path.replace(/\W+/g, "-")}.json`, {
+            body: JSON.stringify(
+              { scene, forced, viewport: page.viewportSize(), path: screen.path, pairs },
+              null,
+              2,
+            ),
+            contentType: "application/json",
+          });
+          expect(
+            pairs.map(formatOverlap),
+            `${pairs.length} pareja(s) de texto/controles encimados en ${screen.path} bajo escena ${scene}`,
+          ).toEqual([]);
+        });
+      }
+    });
+  }
+
+  test.describe("escena review", () => {
+    // Declarada, no fingida: cuando T-7.16 la traiga, `ForcedScene` la admite,
+    // `forceScene` aprende a producirla y estos seis dejan de ser fixme.
+    for (const screen of MATRIX_SCREENS) {
+      test.fixme(
+        `${screen.path} · ningún texto visible pisa a otro`,
+        { annotation: { type: "pendiente", description: PENDING_SCENES.review } },
+        async () => {
+          throw new Error(PENDING_SCENES.review);
+        },
+      );
+    }
   });
 
-  for (let i = 0; i < present.length; i += 1) {
-    for (let j = i + 1; j < present.length; j += 1) {
-      const [labelA, a] = present[i];
-      const [labelB, b] = present[j];
-      expect(
-        overlapArea(a, b),
-        `"${labelA}" y "${labelB}" se solapan: se resuelve REUBICANDO uno, no subiendo su z-index`,
-      ).toBe(0);
-    }
-  }
-
-  // Las dos pilas superiores están acotadas al 46 % cada una: la no-colisión es
-  // aritmética. Se comprueba el ancho real por si alguien quita el tope.
-  const stage = await boxOf(page.locator(".soc-stage"));
-  const overlays = await boxOf(page.locator(".soc-stage__overlays"));
-  if (stage !== null && overlays !== null) {
-    expect(overlays.width).toBeLessThanOrEqual(stage.width * 0.47 + 1);
-  }
+  test.describe("de vuelta al reposo", () => {
+    test("cerrada la alerta, la consola vuelve a `normal` (y el stack queda en reposo)", async ({
+      page,
+    }) => {
+      // Cierre + re-armado + control positivo del reposo: la franja tiene que
+      // DEJAR de decir alerta cuando el incidente se cierra, en el mismo
+      // sondeo con el que la anunció. Y quien corra un spec después de éste
+      // (drill.spec asume que ninguna alerta real aborta simulacros) encuentra
+      // el stack como lo dejó `make soc-local`.
+      test.setTimeout(90_000);
+      await forceScene("normal");
+      await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+      await settle(page);
+      await expectScene(page, "normal", "/console");
+      await expect(page.getByTestId("alert-banner")).toHaveCount(0);
+    });
+  });
 });
 
 test("el mapa conserva su alto: nadie se lo roba", async ({ page }) => {
@@ -165,15 +290,7 @@ test("el último cliente de la lista es visible Y clicable", async ({ page }) =>
 });
 
 test.describe("sin desborde horizontal en ninguna pantalla", () => {
-  const SCREENS = [
-    { path: "/console", label: "01 Monitoreo en Vivo" },
-    { path: "/fleet", label: "02 Flota Edge" },
-    { path: "/triage", label: "03 Evaluación Estructural" },
-    { path: "/tenants", label: "04 Multi-Tenant" },
-    { path: "/audit", label: "05 Auditoría" },
-  ];
-
-  for (const screen of SCREENS) {
+  for (const screen of MATRIX_SCREENS) {
     test(screen.path, async ({ page }) => {
       await gotoScreen(page, screen.path, screen.label);
       await expectNoHorizontalOverflow(page);
