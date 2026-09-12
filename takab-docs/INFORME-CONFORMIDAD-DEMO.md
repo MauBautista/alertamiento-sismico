@@ -142,7 +142,23 @@ Dos pulsos seguidos sin cerrar enseñan **una** alerta.
 
 ---
 
-## 5 · Cómo terminó la fase
+## 5 · Lo único que la fase dejó a medias por una credencial
+
+**Las correcciones están en `main` y NO en la nube.** El despliegue murió al renovar el estado de
+terraform con `InvalidGrantException`: la caché de la sesión de AWS estaba rancia. Y conviene
+subrayar cómo se ve ese fallo, porque engaña: `aws sts get-caller-identity` **responde
+correctamente** con la cuenta, así que cualquier comprobación basada en él da un falso positivo;
+el que falla es terraform. La salida es renovar la sesión **cerrándola primero** — `aws sso logout`
+y después `aws sso login` — y repetir `make cloud-images && make cloud-deploy`, que con la caché
+de imágenes caliente es cuestión de minutos.
+
+Hasta que eso ocurra, la nube corre el commit anterior: tiene el worker de evidencia y el alcance
+por rol, que es lo que esta fase le añadió de fondo, pero **no** las correcciones visuales ni el
+contrato del latido. El censo lo dirá en rojo mientras sea así, que es exactamente su trabajo.
+
+---
+
+## 6 · Cómo terminó la fase
 
 **Cerradas:** el censo de conformidad y su informe; el worker de evidencia corriendo en la nube (y con
 él la tarea que llevaba meses abierta); las correcciones de todo lo que el censo midió, en las tres
