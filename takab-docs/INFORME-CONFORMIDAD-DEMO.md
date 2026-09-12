@@ -139,3 +139,41 @@ Dos pulsos seguidos sin cerrar enseñan **una** alerta.
   volcado se filtra a rótulos de la app y lo hace el integrador).
 - La **hora exacta del último despliegue** de cada pieza: la nube dice su build, el Pi su release, el
   APK su fecha; ninguno dice cuándo se decidió.
+
+---
+
+## 5 · Cómo terminó la fase
+
+**Cerradas:** el censo de conformidad y su informe; el worker de evidencia corriendo en la nube (y con
+él la tarea que llevaba meses abierta); las correcciones de todo lo que el censo midió, en las tres
+superficies. **A medias, con su razón escrita:** el aviso real al teléfono, bloqueado en credenciales
+de Firebase, con el respaldo medido en 21 s; el barrido del teléfono, porque se desconectó del USB; y
+la comprobación por rol del alcance, que exige una sesión real de Cognito y llega con el acto 4 de la
+demostración.
+
+**Lo que la fase encontró y nadie había pedido buscar.** Seis cosas, y ninguna salió de leer código:
+
+1. El worker de evidencia **nunca había corrido**: 65 mensajes esperando y cero formas de onda
+   archivadas en la historia del sistema.
+2. Los permisos se concedían y el gabinete no subía nada. **No era una avería**, era una carrera: el
+   gabinete pide al reconectar y un permiso vence en 30 s.
+3. El aviso al teléfono estaba **simulado** en la nube, y con la app en segundo plano no hay sondeo:
+   el plazo no es largo, es infinito.
+4. El gabinete estaba **ciego** en la red de desarrollo porque su configuración apunta al sensor por
+   dirección fija.
+5. Un latido con «sin dato» **moría en la cola de mensajes muertos** y dejaba una alarma encendida, que
+   es peor que apagada: una alarma que lleva días gritando ya no avisa de nada.
+6. El propio censo tenía un defecto que daba «no medido» justo en el caso bueno.
+
+**Y una lección de método que vale más que cualquiera de las seis.** Las correcciones se revisaron con
+un lector adversario por área, cuyo trabajo era refutar y no felicitar. **Rechazó las cinco.** El peor
+defecto que encontró no estaba en lo que se arregló mal, sino en lo que parecía bien arreglado: la
+solución al solape reservaba altura para la tarjeta de alerta y la **recortaba en silencio**, dejando
+fuera de pantalla la línea que dice quién originó la alerta. Ningún test lo veía, la hoja de estilos
+afirmaba por escrito lo contrario, y habría llegado a una demostración delante de un cliente.
+
+Tres rondas después, la tercera midió lo que las dos anteriores habían supuesto y encontró que **un
+criterio de la propia ficha era falso**: pedía «cero solapes» en una superficie donde nadie había
+contado. Se enmendó la ficha en lugar de maquillar la cifra, y el residuo quedó vigilado por una prueba
+que avisa en cada corrida y que **cae el día que alguien lo arregle**, para que una ficha no sobreviva a
+su defecto.
