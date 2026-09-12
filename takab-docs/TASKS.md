@@ -13608,6 +13608,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     no hay medida —así lo emite el gabinete al arrancar y así llegó a la DLQ de telemetría el
     2026-09-10— en el esquema compartido, en el validador de ingesta, en la base y en el tipo TS
     regenerado (`make drift`); test con la carga exacta que fue a la DLQ.
+  - [ ] **H-2 · el worker de backfill rechaza los PDF de la propia API.** Al desplegarlo
+    (2026-09-12) drenó 65 mensajes y mandó 4 a su DLQ: notificaciones `ObjectCreated` de S3 por
+    los `report-technical-*.pdf` que `POST /incidents/{id}/report` escribe bajo `evidence/`. Un
+    objeto que no es `.mseed` del prefijo de evidencia se reconoce y se descarta con acuse (o los
+    reportes se escriben en otro prefijo); test con la notificación exacta de la DLQ; la DLQ de
+    backfill no vuelve a recibir un PDF.
   - [ ] Verificación: `npx playwright test e2e/layout.spec.ts` sin fallos (solo los 18 `fixme` de
     `review`); el barrido del panel da 0 parejas en MURO y CAMPO; capturas antes/después en la PR.
   - [ ] Declarado fuera de esta ficha: el sello de build del APK (va a `T-7.09`), los rótulos DEMO

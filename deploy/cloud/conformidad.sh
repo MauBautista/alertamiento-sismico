@@ -438,7 +438,9 @@ pieza_pi_status() {
     registrar "NO MEDIDO" "$pieza" "$PI_PANEL/api/status no contesta (equipo fuera de la LAN del gabinete)"
     return
   fi
-  activo="$(jq -r '.test_mode.active // "desconocido"' <<<"$st")"
+  # OJO: `//` de jq trata `false` como ausente y devolvía "desconocido" con el modo
+  # prueba DESARMADO (medido el 2026-09-12): el caso bueno salía NO MEDIDO.
+  activo="$(jq -r 'if (.test_mode.active|type) == "boolean" then (.test_mode.active|tostring) else "desconocido" end' <<<"$st")"
   restante="$(jq -r '.test_mode.remaining_s // "?"' <<<"$st")"
   audio="$(jq -r 'if .audio == null then "audio: sección ausente" else "audio.profile: " + ((.audio.profile.name // .audio.profile.id // (.audio.profile | tostring)) | tostring) end' <<<"$st" 2>/dev/null || echo "audio: ilegible")"
   case "$activo" in
