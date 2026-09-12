@@ -15,6 +15,7 @@
     },
     "android": {
       "package": "com.takab.ailert",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#0B1D3A",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
