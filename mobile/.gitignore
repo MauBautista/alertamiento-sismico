@@ -42,3 +42,12 @@ example
 # generated native folders
 /ios
 /android
+
+# [T-7.03] Credenciales de Firebase. Las DOS, y por razones distintas:
+#   google-services.json      — configuración nativa de FCM; identifica el proyecto.
+#   *-firebase-adminsdk-*.json — CLAVE PRIVADA de la cuenta de servicio, la que
+#                                firma en nombre del proyecto. Jamás en git (regla
+#                                de oro 6); su sitio es `local.auto.tfvars`, que
+#                                también está ignorado, o un gestor de secretos.
+google-services.json
+*-firebase-adminsdk-*.json

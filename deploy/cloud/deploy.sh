@@ -75,6 +75,20 @@ TAKAB_API_CONSOLE_SCOPE_ENFORCED=true
 # de SNS tiene permitido salir y la comparacion que descarta un sobre firmado que
 # venga de otro topic. Sin esta linea, POST /api/ops/alerts/sns responde 503 y lo
 # grita en el log — y la suscripcion HTTPS de Terraform no se puede confirmar.
+# [T-7.03] Push REAL al telefono. Sin estas dos lineas la API construye el
+# proveedor SIMULADO —lo decide build_push_provider mirando si hay ARN— y cada
+# aviso queda en notification_jobs con estado 'simulated' y sent_at en NULL: la
+# app solo se entera por sondeo, que con la pantalla apagada NO CORRE. Medido el
+# 2026-09-12 antes de cablearlas: 21 s con la app delante, sin plazo con la app
+# detras. Se DERIVAN del terraform (tf devuelve cadena vacia si la platform
+# application no existe, y entonces la API vuelve sola al simulado, que es la
+# degradacion correcta). El ARN es un identificador publico de AWS, no un secreto.
+#
+# Y los acentos invertidos de este comentario se fueron por una razon medida: en
+# un heredoc SIN comillas el shell los EJECUTA, comentario incluido. Lo caza
+# test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar.
+TAKAB_API_PUSH_FCM_APPLICATION_ARN=$(tf push_fcm_application_arn)
+TAKAB_API_PUSH_APNS_APPLICATION_ARN=$(tf push_apns_application_arn)
 TAKAB_API_OPS_ALERT_TOPIC_ARN=$(tf ops_topic_arn)
 # [T-2.162] El MISMO plazo que anuncia el correo de la alarma. Se DERIVA del
 # terraform, no se teclea: si divergieran, el aviso prometeria un plazo que la API
