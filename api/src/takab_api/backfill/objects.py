@@ -10,6 +10,13 @@
   verifica el sha256 REAL del objeto contra la key y se registra
   ``evidence_objects`` linkeando el incidente por ``event_uuid`` (el evento
   pudo llegar por el MISMO backfill: si aún no está, RETRY vía SQS).
+- ``evidence/…`` que no sea ninguno de los anteriores (T-7.05·H-2): si tiene
+  autor declarado en ``_AJENOS_CONOCIDOS`` lo escribió la propia API (informes,
+  reporte de simulacro, foto del ocupante) y el bucket notifica el prefijo
+  entero, así que se **acusa y se descarta** con su motivo en el log. Si NO lo
+  tiene, ``REJECT``: nadie decidió que eso viviera ahí y el único canal vigilado
+  para «que alguien mire esto» es la cola de mensajes muertos. Ver
+  ``_reconocer_ajeno``.
 """
 
 from __future__ import annotations
@@ -67,8 +74,100 @@ def process_s3_object(
         nombre = key.rsplit("/", 1)[-1]
         if nombre.startswith(("cctv-", "still-")):
             return _process_cctv(conn, bucket, key, s3_client=s3_client)
-        return _process_evidence(conn, bucket, key, s3_client=s3_client)
+        if nombre.endswith(".mseed"):
+            return _process_evidence(conn, bucket, key, s3_client=s3_client)
+        return _reconocer_ajeno(key)
     return ObjectResult(Outcome.REJECT, f"key sin ruta conocida: {key!r}")
+
+
+#: Lo que la PROPIA API escribe bajo `evidence/`, por el nombre del objeto y con
+#: su autor al lado: el censo de lo que alguien YA decidió que vive ahí. Es lo que
+#: separa «esto lo escribió el informe del incidente» —se acusa y se borra— de
+#: «esto no sé quién lo puso», que se RECHAZA y acaba en la cola de mensajes
+#: muertos con su motivo (ver `_reconocer_ajeno`). Dar de alta un productor nuevo
+#: es añadir su línea aquí; no hacerlo no lo esconde, lo delata.
+#:
+#: No se enumera a ciegas: `test_el_censo_de_ajenos_se_DERIVA_del_codigo_que_escribe`
+#: barre el AST del paquete —menos `backfill/`, que es este worker— buscando las
+#: keys `evidence/…` que la API construye, y exige que cada una esté cubierta
+#: aquí. Un renombrado en `reports.py`, `drills.py` o `mobile_incident.py`, o un
+#: productor nuevo en cualquier módulo, se cae en CI y no en la DLQ.
+#:
+#: `reporte.pdf` es un nombre completo y los otros dos son prefijos; `startswith`
+#: sirve para los tres.
+_AJENOS_CONOCIDOS: tuple[tuple[str, str], ...] = (
+    # api/src/takab_api/routers/reports.py — report-{technical,executive}-{ts}.pdf
+    ("report-", "informe del incidente (POST /incidents/{id}/report)"),
+    # api/src/takab_api/routers/drills.py — evidence/{tenant}/drills/{id}/reporte.pdf
+    ("reporte.pdf", "reporte de simulacro (POST /drills/{id}/report)"),
+    # api/src/takab_api/routers/mobile_incident.py — photo-{evidence_id}.jpg
+    ("photo-", "foto que sube el ocupante desde la app"),
+)
+
+
+def _reconocer_ajeno(key: str) -> ObjectResult:
+    """Un objeto del prefijo `evidence/` que **no es de este worker** (T-7.05·H-2).
+
+    Bajo `evidence/` escriben CINCO cosas y solo dos son suyas: el miniSEED del
+    gabinete (`{sha}.mseed`) y los clips y capturas del CCTV (`cctv-`/`still-`).
+    Las otras tres las escribe la propia API —el informe del incidente, el
+    reporte de simulacro y la foto que sube el ocupante—, y el bucket notifica el
+    prefijo ENTERO (`infra/terraform/modules/storage`, `filter_prefix`), así que
+    sus `ObjectCreated` aterrizan en esta cola igual que los del gabinete.
+
+    Hasta hoy caían en `_process_evidence`, que los llamaba *key malformada* y
+    los mandaba a la cola de mensajes muertos: al desplegar el worker el
+    2026-09-12 drenó 65 mensajes y **4 informes acabaron en
+    `takab-dev-q-backfill-dlq`**. Nada estaba roto — el PDF era bueno, la
+    notificación era buena y el destinatario simplemente era otro.
+
+    Y el daño no es el ruido: una DLQ que se llena de objetos sanos deja de ser
+    una señal. La alarma que la vigila no distingue un PDF correcto de un
+    miniSEED de evidencia que se perdió de verdad, y el segundo es el que hay
+    que ver. Por eso «conocido y no mío» se **acusa** (se borra de la cola) y se
+    registra con su nombre, en vez de rechazarse.
+
+    **Y por eso mismo «no sé de quién es esto» NO se acusa: `REJECT`.** El
+    reconocimiento de los ajenos es por DESCARTE —todo lo que no sea `.mseed` ni
+    CCTV—, así que un productor nuevo del prefijo entraría por esta misma puerta
+    sin que nadie lo hubiera decidido. La primera versión de este arreglo lo
+    descartaba con un `logger.warning` y devolvía `OK`, confiando en que
+    «alguien se enterará». No hay nadie: en todo `infra/terraform/` existe **un
+    solo** `aws_cloudwatch_log_metric_filter` (`iot_rule_errors`,
+    `modules/observability/main.tf`) y no cubre a este worker, que además corre
+    en docker compose sobre el EC2 (`deploy/cloud/docker-compose.yml`) — el
+    WARNING se moría en `docker logs` del host. Un aviso que nadie vigila es un
+    `OK` con mala conciencia, y esta ingesta ya tiene un canal desplegado,
+    durable y con alarma para «que alguien mire esto»: la DLQ, que
+    `takab-dev-dlq-backfill` vigila contra el tópico SNS de operación.
+
+    El precio de la elección es simétrico y está medido: los tres autores de
+    `_AJENOS_CONOCIDOS` cubren el 100 % de lo que la API escribe hoy bajo
+    `evidence/` (`test_el_censo_de_ajenos_se_DERIVA_del_codigo_que_escribe`), así que la
+    DLQ sigue sin recibir un PDF — que es el criterio de la ficha — y a la vez
+    conserva la señal para el productor que aparezca mañana. Darlo de alta es
+    una línea en el censo de arriba; hasta que alguien la escriba, su objeto se
+    queda en la cola con su motivo, que es exactamente lo que se quiere.
+
+    Lo que sigue yendo a la DLQ, y debe: un `.mseed` con la key mal formada, con
+    el sha que no cuadra o con tenant ajeno. Ahí sí hay algo que mirar.
+    """
+    nombre = key.rsplit("/", 1)[-1]
+    for marca, autor in _AJENOS_CONOCIDOS:
+        if nombre.startswith(marca):
+            razon = f"objeto ajeno al backfill bajo evidence/ — {autor}: {key}"
+            # Rutina con autor conocido: INFO. Si esto gritara, cada informe que
+            # firma el SOC dejaría un aviso y el aviso dejaría de significar algo
+            # —la misma erosión que la DLQ llena de PDF, una capa más arriba—.
+            logger.info("backfill descarta con acuse: %s", razon)
+            return ObjectResult(Outcome.OK, razon)
+
+    razon = f"objeto DESCONOCIDO bajo evidence/, sin autor declarado: {key}"
+    # El log acompaña; lo que AVISA es la DLQ (ver docstring). Si algún día este
+    # rechazo se vuelve rutina, la salida es declarar su autor en
+    # `_AJENOS_CONOCIDOS`, no bajarle el volumen aquí.
+    logger.warning("backfill NO reconoce el objeto y lo rechaza: %s", razon)
+    return ObjectResult(Outcome.REJECT, razon)
 
 
 # ------------------------------------------------------------------- NDJSON

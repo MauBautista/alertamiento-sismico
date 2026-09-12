@@ -143,6 +143,19 @@ canvas{display:block}
 #col-der{display:grid;grid-template-rows:minmax(240px,1fr) auto auto auto auto max-content;gap:12px;min-height:0;overflow-y:auto}
 #tierline{display:flex;align-items:stretch;background:var(--tk-surface-1);border:1px solid var(--tk-border);border-left:4px solid var(--tk-fg-3);border-radius:8px;overflow:hidden}
 #tier-label{font:700 28px/1.1 var(--f-ui);letter-spacing:-0.01em}
+/* [T-7.05] En la HOJA, no en el `style=` del marcado: inline ganaba a
+   `body.mode-muro #tier-sub` y el monitor de sala se quedaba en 12 px. 13 px es
+   el escalón de §10.2 (12 no lo era). */
+#tier-sub{font-size:13px;color:var(--tk-fg-2)}
+/* [T-7.05] Mismo defecto que `#tier-sub`, encontrado por la misma guarda: el
+   reloj llevaba `style="font-weight:700;font-size:16px"` en el marcado, así que
+   `body.mode-muro #hdr-clock` llevaba sin poder aplicarse desde que se escribió.
+   El tamaño base baja a la hoja y el escalón de sala pasa de 34 px —que no
+   estaba en §10.2— a 28, que sí. No a 40: medido con `panel_barrido.mjs`, con
+   40 la cabecera crece 30 px, se los quita a la tarjeta de ondas y el eje de
+   tiempo («−60 s … AHORA») queda RECORTADO por su `overflow:hidden` en la
+   escena `sin_senal`. Con 28 la cabecera crece 14 y no se recorta nada. */
+#hdr-clock{font-weight:700;font-size:16px}
 #relays{flex:1 1 auto;display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-left:1px solid var(--tk-border)}
 .relay{padding:12px 14px;display:flex;flex-direction:column;gap:7px;border-right:1px solid rgba(240,242,245,0.06)}
 .relay .rl{font:600 10px/1 var(--f-ui);letter-spacing:0.12em;color:var(--tk-fg-3)}
@@ -158,7 +171,21 @@ canvas{display:block}
 .lane .unit{font:500 10px/1 var(--f-ui);letter-spacing:0.08em;color:var(--tk-fg-3)}
 .lane .peak{font:400 11px/1 var(--f-data);color:var(--tk-fg-2)}
 .lane .scale{position:absolute;right:10px;top:7px;font:400 10px/1 var(--f-data);color:var(--tk-fg-3)}
-.lane .note{position:absolute;left:10px;bottom:6px;font:400 10px/1 var(--f-data)}
+/* [T-7.05] Un SOLO renglón, y no por gusto: en CAMPO la banda `--lane-band`
+   reserva la altura de esta nota, y una nota que envuelve saca su segundo
+   renglón fuera de la banda — debajo vuelve a pasar la traza, que es el defecto
+   U-10 otra vez.
+   Las cifras, medidas con `node edge/tests/panel_tinta.mjs` (que las imprime) y
+   no estimadas: el ancho ÚTIL de la nota —el carril menos los 10 px de cada
+   lado— es 366 px en un Pixel 8 Pro (412 de viewport) y 314 px en un teléfono
+   de 360; el avance de JetBrains Mono a 10 px es 6.00 px por carácter, o sea
+   61 y 52 caracteres. La nota más larga (`SATURACIÓN DEL ADC · EL CANAL ESTÁ
+   TOPADO, NO MIDIENDO`) mide 54: entra en el Pixel con 42 px de sobra y en el
+   de 360 la recorta la elipsis por dos caracteres. Esa poda es DECLARADA —se ve
+   el `…`— y sigue siendo un renglón; envolver, en cambio, escondía el resto
+   debajo de la onda. La cuenta la vigila
+   `test_en_CAMPO_la_nota_del_carril_es_UNA_linea_por_construccion`. */
+.lane .note{position:absolute;left:10px;right:10px;bottom:6px;font:400 10px/1 var(--f-data);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .stat-card{padding:14px;display:flex;flex-direction:column;gap:11px}
 .bar{position:relative;height:10px;background:var(--tk-surface-0);border:1px solid var(--tk-border)}
@@ -205,7 +232,31 @@ body.mode-muro #actionbar{display:none}
 body.mode-muro #grid{grid-template-columns:minmax(0,1fr);min-width:0}
 body.mode-muro #col-der{display:none}
 body.mode-muro #stats{display:none}
-body.mode-muro #tier-label{font-size:72px;line-height:1.05}
+/* [T-7.05 · P-1] El margen NO es decorativo: es el desbordamiento de la propia
+   tinta. Geist pinta sus glifos en un área de contenido de 93 px cuando el
+   cuerpo es 72 —medido en Chromium contra la fuente EMPAQUETADA del panel
+   (`fonts/geist.ttf`), no supuesto— y la caja de LÍNEA que fija `line-height`
+   es más baja: con 1.1 mide 79.2, así que la tinta sale ~7 px por arriba y por
+   abajo. El `gap:8px` de la columna no los absorbe: medido con
+   `panel_barrido.mjs` en las 14 escenas de `SCENES` a 1920×1080, el tier
+   entraba 2 px en «ESTADO DEL INMUEBLE» —304.2 px², el número exacto que el
+   censo de T-7.04 apuntó como P-1— y rozaba el subtítulo por debajo.
+   El interlineado NO es la salida y la cuenta es esta: 1.1 (ajustado) da 79.2 y
+   1.25 (cómodo) 90, ninguno contiene los 93; el único escalón de §10.2 que los
+   contendría es 1.45 (104.4), que es el interlineado de PROSA y separaría los
+   tres renglones del tier 25 px más en un rótulo de sala. Se reserva el
+   desborde con margen, en el escalón de 8 px de la escala de espaciado. 1.1 es
+   además el interlineado que el tier ya declara en su regla base: MURO sube el
+   cuerpo, no cambia el ritmo.
+   La columna izquierda lo absorbe sin scroll porque la fila de ondas es `1fr`
+   — medido: `documentElement.scrollHeight` = 1080 en 1920×1080. */
+body.mode-muro #tier-label{font-size:72px;line-height:1.1;margin-block:8px}
+/* [T-7.05 · P-1] Esta regla estaba MUERTA: el subtítulo llevaba
+   `style="font-size:12px"` en el marcado y lo inline gana a cualquier selector,
+   así que el monitor de sala pintaba a 12 px la línea que dice si la sirena
+   suena y si SASMEX está activo — medido con `getComputedStyle` en MURO a
+   1920×1080: `12px`. El tamaño base se declara ahora en la hoja (`#tier-sub`,
+   junto a `#tier-label`) para que el modo pueda pisarlo. */
 body.mode-muro #tier-sub{font-size:24px}
 body.mode-muro .relay .rs{font-size:28px}
 /* [T-6.31] …y con quién va ese ACTIVADO. El estado crecía a 28 px y el
@@ -217,7 +268,7 @@ body.mode-muro .relay .re{font-size:14px}
 body.mode-muro .lane .ch{font-size:22px}
 body.mode-muro .lane .peak{font-size:18px}
 body.mode-muro #muro-extra{display:flex}
-body.mode-muro #hdr-clock{font-size:34px}
+body.mode-muro #hdr-clock{font-size:28px}
 
 /* --- modo CAMPO: <1024, una columna, objetivos táctiles ≥48px --- */
 body.mode-campo #grid{grid-template-columns:minmax(0,1fr);min-width:0;max-width:560px;margin:0 auto}
@@ -239,13 +290,30 @@ body.mode-campo #tierline{flex-direction:column}
 /* [T-2.30] En campo #col-der pasa a filas auto: sin un mínimo, #rose-wrap
    (flex:1 + min-height:0) colapsaba a 0 y la brújula JAMÁS se pintaba en teléfono. */
 body.mode-campo #rose-wrap{min-height:240px}
-/* 216 px = 36 px para la pista MÁS PEQUEÑA por seis: el reparto de la
-   variante B es [1,3,1,1], así que la pequeña se lleva 1/6 del alto, no 1/4.
-   36 px caben el rótulo superior (hasta 20) y la nota reubicada (22–32). */
-body.mode-campo #waves-wrap{min-height:216px}
-/* La nota baja del suelo de la pista a debajo del rótulo: contra el suelo se
-   sube sobre el nombre del canal en cuanto la pista es corta (U-10). */
-body.mode-campo .lane .note{bottom:auto;top:22px}
+/* [T-7.05 · P-2] Los 216 px de T-6.27 salían de una cuenta que medía la caja de
+   LÍNEA de cada rótulo y no su TINTA: el nombre del canal a 13 px ocupa 17, así
+   que llegaba a 24 y no a 20, y la nota, colocada en 22, se le metía 2 px dentro
+   —48 px² por carril, en los cuatro carriles de las 14 escenas—. Y faltaba
+   la otra mitad de U-10: los dos rótulos flotan sobre `#wave-canvas`, que
+   dibujaba la traza de punta a punta del carril y se leía DEBAJO del texto.
+   Ahora en CAMPO la cabecera del carril es una banda propia, y los dos valores
+   que se eligen caen en escalones de la escala de espaciado de §10.2
+   (`4 · 8 · 12 · 16 · 24 · 32 · 48 · 64`), que es una LISTA, no «múltiplos de 4»:
+     nota    32 px → su tinta va de 31.4 a 44.6 (el canal acaba en 23.1; con el
+             escalón anterior, 24, la nota empezaría en 23.4 y se metería dentro)
+     banda   48 px (la reserva que `laneBand()` le pasa a `drawWaves()`; 32+13.2
+             de tinta de la nota piden 44.6, y el escalón que los cubre es 48)
+     traza   la pista más pequeña de la variante B (1/6 del alto) deja
+             468/6 − 48 − 6 = 24 px, el mínimo legible que fija la guarda.
+   El suelo de 468 px NO es un escalón de espaciado y no puede serlo: no es un
+   hueco elegido sino el producto `6 × (48 + 6 + 24)` que la banda impone. Se
+   escribe entero porque `min-height` no acepta la cuenta.
+   MURO y CONSOLA no declaran banda: sus carriles miden 144 y 60 px (96 y 40 el
+   más pequeño de la variante B, medidos), y ahí los rótulos siguen flotando
+   sobre la onda, que es lo que esas densidades quieren. */
+body.mode-campo #waves-wrap{min-height:468px}
+body.mode-campo #lanes{--lane-band:48px}
+body.mode-campo .lane .note{bottom:auto;top:32px}
 body.mode-campo #actionbar{order:-1;border-top:none;border-bottom:1px solid var(--tk-border-strong)}
 body.mode-campo .btn{min-height:56px;justify-content:center}
 body.mode-campo #pin{min-height:48px;flex:1 1 160px;font-size:18px}
@@ -312,7 +380,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
     <span class="pill" id="pill-live" aria-live="polite"><span class="dot" id="pill-live-dot"><span class="halo"></span></span><span id="pill-live-txt">CONECTANDO…</span></span>
     <span class="pill" id="pill-cloud"><span class="dot" id="pill-cloud-dot"></span><span id="pill-cloud-txt">ENLACE NUBE · S/D</span></span>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
-      <span class="mono" id="hdr-clock" style="font-weight:700;font-size:16px">--:--:-- UTC</span>
+      <span class="mono" id="hdr-clock">--:--:-- UTC</span>
       <span class="meta" id="hdr-meta">CADENCIA 1000 ms · config S/D</span>
     </div>
     <div style="display:flex;gap:4px" role="group" aria-label="Modo de densidad">
@@ -380,7 +448,7 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
       <div style="padding:14px 20px;display:flex;flex-direction:column;gap:8px;min-width:340px">
         <span class="seclabel" style="color:var(--tk-fg-3)">Estado del inmueble</span>
         <span id="tier-label">—</span>
-        <span class="mono" id="tier-sub" style="font-size:12px;color:var(--tk-fg-2)">—</span>
+        <span class="mono" id="tier-sub">—</span>
       </div>
       <div id="relays"></div>
     </div>
@@ -2220,16 +2288,64 @@ function windowOf(c){
   }
   return {min: out, max: outMax, clip, avail};
 }
+/* [T-7.05 · P-2] El aire entre la traza y el borde de su pista. Sin él la
+   envolvente se come la línea divisoria y dos canales se leen como uno. */
+const LANE_PAD = 6;
+/* [T-7.05 · P-2] La cabecera que los rótulos del carril RESERVAN, leída de la
+   hoja (`--lane-band`) y no tecleada aquí: el alto de esa banda lo decide el
+   CSS que coloca el nombre del canal y la nota, así que tenerlo dos veces es
+   tenerlo mal el día que uno de los dos se mueva. En CAMPO vale 48 px; en MURO
+   y CONSOLA no está declarada (los rótulos flotan sobre la onda a propósito) y
+   `getPropertyValue` devuelve '' → 0.
+   Se lee una vez por CAMBIO, no una vez por fotograma. `drawWaves()` corre
+   dentro de `requestAnimationFrame`, así que la versión sin caché pedía un
+   estilo calculado 60 veces por segundo en el Chromium de un Pi 4 que sostiene
+   un monitor de sala 24/7 —y justo después de que `renderLanes()` reconstruyera
+   los cuatro carriles, o sea con el árbol de estilo sucio—. Medido en este
+   portátil (Chromium 149 headless, 2000 iteraciones): 0.95 µs por lectura con
+   el árbol limpio y ~1.0 µs marginal con el árbol sucio, contra 0.35 µs que
+   cuesta comparar la clave. Es poco —el que fuerza el layout de verdad en cada
+   fotograma es el `clientWidth` de `fitCanvas()`— y por eso la cifra se escribe
+   aquí en vez de venderse como una optimización: lo que se corrige es la FORMA,
+   leer 60 veces por segundo un valor que solo puede cambiar cuando cambia el
+   modo. La clave del caché ES la única entrada que puede cambiar la respuesta:
+   la clase de `body` (que es donde vive `mode-campo`, y `render()` la reescribe
+   entera) y el ancho del viewport (que hoy no entra en la regla, pero entraría
+   sola el día que alguien la meta en una `@media`). El número de carriles no
+   está en la clave porque no puede estar en la respuesta: una custom property
+   declarada sobre `#lanes` no depende de sus hijos, y `renderLanes()` vacía ese
+   nodo pero no lo sustituye. */
+let bandaCache = {clave: null, px: 0};
+function laneBand(){
+  const clave = document.body.className + '|' + window.innerWidth;
+  if (clave !== bandaCache.clave){
+    const v = parseFloat(getComputedStyle($('lanes')).getPropertyValue('--lane-band'));
+    bandaCache = {clave, px: v > 0 ? v : 0};
+  }
+  return bandaCache.px;
+}
 function drawWaves(){
   const el = $('wave-canvas'); const ctx = fitCanvas(el); if (!ctx) return;
   const {x, w, h} = ctx;
   const st = S.status; const grows = laneGrow(); const tot = grows.reduce((a,b)=>a+b,0);
+  const band = laneBand();
   const th = st && st.thresholds;
   let y0 = 0;
+  /* [T-7.05 · P-2] Las PISTAS: el rectángulo en el que se puede pintar dentro de
+     cada carril, una vez descontada la banda de rótulos. Se junta aquí porque lo
+     necesitan DOS capas: las trazas (dentro de este bucle) y los marcadores
+     verticales de SASMEX/tier (después, y a lo alto de las cuatro). */
+  const pistas = [];
   CH.forEach((c, i) => {
-    const lh = h*grows[i]/tot, mid = y0+lh/2, half = lh/2-6;
+    const lh = h*grows[i]/tot;
+    /* techo de la traza: el aire de la pista, o la banda de rótulos si la hay.
+       El `Math.max(2, …)` sólo actúa si un viewport imposible deja la pista más
+       corta que su cabecera: es preferible una traza apretada a ninguna. */
+    const yTop = y0 + Math.max(LANE_PAD, band), yBot = y0 + lh - LANE_PAD;
+    const mid = (yTop+yBot)/2, half = Math.max(2, (yBot-yTop)/2);
+    pistas.push({yTop, yBot});
     x.strokeStyle = 'rgba(240,242,245,0.06)'; x.lineWidth = 1;
-    for (let g2 = 1; g2 < 4; g2++){ const gx = w*g2/4; x.beginPath(); x.moveTo(gx,y0); x.lineTo(gx,y0+lh); x.stroke(); }
+    for (let g2 = 1; g2 < 4; g2++){ const gx = w*g2/4; x.beginPath(); x.moveTo(gx,yTop); x.lineTo(gx,yBot); x.stroke(); }
     x.strokeStyle = 'rgba(240,242,245,0.10)'; x.beginPath(); x.moveTo(0,mid); x.lineTo(w,mid); x.stroke();
     const b = buf[c];
     if (b.count === 0){
@@ -2292,23 +2408,49 @@ function drawWaves(){
       x.beginPath(); x.moveTo(0,mid-ph); x.lineTo(w,mid-ph); x.moveTo(0,mid+ph); x.lineTo(w,mid+ph); x.stroke();
       x.setLineDash([]); x.globalAlpha = 1;
     }
-    /* ticks de saturación desde las FEATURES (clipping por canal) */
+    /* ticks de saturación desde las FEATURES (clipping por canal).
+       [T-7.05 · P-2] Cuelgan de `yTop`, el techo de la TRAZA, y no de `y0`, el
+       borde del carril. No es una reubicación estética: en CAMPO `y0+1` cae
+       dentro de la banda de rótulos, o sea encima del nombre del canal y de la
+       nota que dice «SATURACIÓN DEL ADC» — tinta de canvas bajo texto del DOM,
+       que es exactamente el defecto U-10 que esta ficha cierra. Colgados del
+       techo de la traza siguen cumpliendo §6.2 («sobre las trazas, no en una
+       leyenda aparte») en las tres densidades: sin banda `yTop` vale
+       `y0 + LANE_PAD`, o sea 6 px más abajo que antes, dentro del mismo carril. */
     const m = st && st.signal && st.signal.channels && st.signal.channels[c];
-    if (m && m.clipping){ x.fillStyle = C.crit; for (let px = w-60; px < w; px += 3) x.fillRect(px, y0+1, 1, 5); }
+    if (m && m.clipping){ x.fillStyle = C.crit; for (let px = w-60; px < w; px += 3) x.fillRect(px, yTop+1, 1, 5); }
     y0 += lh;
   });
-  /* marcas verticales: SASMEX + transición de tier */
+  /* marcas verticales: SASMEX + transición de tier.
+     [T-7.05 · P-2] Van POR PISTA, no de 0 a `h`, y el rótulo baja al techo de la
+     primera pista. Es el TERCER residuo de U-10 y el más caro de los tres: la
+     línea de alto completo cruzaba las cuatro bandas de rótulos y el rótulo
+     «SASMEX» se estampaba con la línea base en y=12, o sea DENTRO de la banda,
+     encima del nombre del canal y del piso de escala. Medido en CAMPO 412×915
+     con `?demo=alerta`: 194 px de tinta cian dentro de la banda del primer
+     carril, con los glifos de «SASMEX» dentro de la caja de `.lane .scale`.
+     Es el mismo argumento que bajó los ticks de saturación de `y0` a `yTop`
+     —tinta de canvas bajo texto del DOM— aplicado a la capa de encima. */
   const nowT = Date.now()/1000;
+  if (!pistas.length) return;
+  /* El cuerpo del rótulo se declara UNA vez y se usa dos: la línea base cae un
+     cuerpo por debajo del techo de la pista, así que la tinta del glifo empieza
+     exactamente en `yTop` y no un píxel más arriba. Teclear el 9 dos veces es
+     lo que deja que un cambio de cuerpo devuelva el rótulo a la banda. */
+  const CUERPO_MARCA = 9;
+  const yRotulo = pistas[0].yTop + CUERPO_MARCA;
   S.markers.forEach(mk => {
     const age = nowT - mk.t; if (age < 0 || age > 60) return;
     const px = w*(1 - age/60);
     x.strokeStyle = mk.kind === 'sasmex' ? C.cyan : C.crit;
     x.lineWidth = mk.kind === 'sasmex' ? 1.5 : 1;
     if (mk.kind === 'tier') x.setLineDash([3,3]);
-    x.beginPath(); x.moveTo(px,0); x.lineTo(px,h); x.stroke(); x.setLineDash([]);
+    x.beginPath();
+    pistas.forEach(p => { x.moveTo(px,p.yTop); x.lineTo(px,p.yBot); });
+    x.stroke(); x.setLineDash([]);
     x.fillStyle = mk.kind === 'sasmex' ? C.cyan : C.crit;
-    x.font = "700 9px 'JetBrains Mono',monospace";
-    x.fillText(mk.kind === 'sasmex' ? 'SASMEX' : 'TIER', Math.min(w-44, px+3), 12);
+    x.font = "700 " + CUERPO_MARCA + "px 'JetBrains Mono',monospace";
+    x.fillText(mk.kind === 'sasmex' ? 'SASMEX' : 'TIER', Math.min(w-44, px+3), yRotulo);
   });
 }
 function drawRose(){
@@ -2635,8 +2777,37 @@ function frame(){
       const since = (performance.now() - (S.lastGoodAt || performance.now()))/1000;
       $('wr1-left').textContent = Math.max(0, Math.ceil(base - since)) + ' s RESTANTES';
     }
-  } catch (err){ /* un canvas roto no detiene el panel */ }
+  } catch (err){ declararDibujoRoto(err); }
   S.raf = requestAnimationFrame(frame);
+}
+/* [T-7.05] Un canvas roto no detiene el panel — pero tampoco puede quedarse
+   callado con el ÚLTIMO fotograma en pantalla. Éste era un `catch` vacío, y de
+   los cuatro dibujos del fotograma sólo el primero se limpia solo: `fitCanvas()`
+   hace el `clearRect` al entrar, así que si revienta `drawWaves()` el lienzo de
+   ondas queda en blanco, pero `drawRose()`, `drawGeoMap()` y `drawCmpChart()`
+   ya no llegan a correr y CONSERVAN intacto lo que pintaron en el fotograma
+   anterior: una brújula y un mapa de sacudida congelados, presentados como
+   vivos, mientras el resto del panel sigue refrescándose a 1 Hz y parece sano.
+   Eso es la regla de oro 7 del revés — «mostrar un dato congelado como si fuera
+   live es peor que mostrar sin datos»—, y el único canal que lo delataba era
+   una excepción que nadie escuchaba. Ahora los lienzos se limpian y DECLARAN la
+   avería, el fallo se registra en consola y queda en `S.drawError` para que el
+   arnés pueda verlo. Los del mapa sólo si están abiertos: ocultos miden cero y
+   `fitCanvas()` devuelve null, que es lo correcto —nadie los está mirando—. Cada
+   lienzo va en su propio `try`: que uno no se deje limpiar no puede impedir que
+   los demás se limpien. */
+const DIBUJO_ROTO = 'FALLO DE DIBUJO DEL PANEL · SIN TRAZA';
+function declararDibujoRoto(err){
+  S.drawError = {at: performance.now(), msg: (err && err.message) || String(err)};
+  try { console.error('panel: ' + DIBUJO_ROTO, err); } catch (e){ /* sin consola */ }
+  ['wave-canvas','rose-canvas','map-canvas','cmp-canvas'].forEach(id => {
+    try {
+      const c = fitCanvas($(id)); if (!c) return;   /* fitCanvas LIMPIA al entrar */
+      c.x.fillStyle = C.crit; c.x.font = "700 13px 'Geist',system-ui"; c.x.textAlign = 'center';
+      c.x.fillText(DIBUJO_ROTO, c.w/2, c.h/2);
+      c.x.textAlign = 'left';
+    } catch (e){ /* ese lienzo no se deja ni limpiar: los otros sí */ }
+  });
 }
 
 /* ============================== interacción ============================== */

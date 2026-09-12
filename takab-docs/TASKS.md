@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **406** · `[x]` **331** · `[~]` **13** · `[ ]` **62**
+**Conteo de tareas:** total **406** · `[x]` **332** · `[~]` **13** · `[ ]` **61**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13624,7 +13624,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `layout.spec` · **Token nuevo:** no · **Cambia algo que un
   test defiende hoy:** sí — `layout.spec.ts` toleraba la ausencia de la alerta.
 
-### [ ] T-7.05 · **Correcciones del censo de solapes y flujo** — `SOFTWARE`
+### [x] T-7.05 · **Correcciones del censo de solapes y flujo** — `SOFTWARE` · **CERRADA 2026-09-12**
 - **Componente:** web · edge · api · shared · **Depende de:** T-7.04 · **Prioridad:** F0 · alta
 - **Objetivo:** cerrar lo que `T-7.04` midió con la alerta en pantalla, un criterio por hallazgo,
   con captura antes y después. Los hallazgos vienen del censo del lote B (2026-09-11/12) y de la
@@ -13659,30 +13659,77 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     de ella. **Enmendado al medir:** la consola **selecciona** el sitio y abre su ficha, pero **no
     centra ni resalta el pin** —el mapa no recibe hoy cuál es el sitio seleccionado—, así que el
     rótulo no promete foco y lo que falta queda anotado en el propio componente.
-  - [ ] **P-1 · BAJA · panel MURO, 15/15 escenas.** El tier a 72 px no entra en «Estado del
-    inmueble»; el panel sigue cabiendo en 1080 sin scroll.
-  - [ ] **P-2 · MEDIA · panel CAMPO, 4 carriles × 15 escenas.** El nombre del canal, la nota del
-    carril y la traza no comparten píxeles (`min-height` del carril): es la parte medible de `U-10`.
+  - [x] **P-1 · BAJA · panel MURO, 15/15 escenas.** El tier a 72 px no entra en «Estado del
+    inmueble»; el panel sigue cabiendo en 1080 sin scroll — medido: cero parejas y la página mide
+    exactamente 1080 en las catorce escenas.
+  - [x] **P-2 · MEDIA · panel CAMPO, 4 carriles × 15 escenas.** El nombre del canal, la nota del
+    carril y la traza no comparten píxeles. **Y apareció un tercer residuo de `U-10` que la ficha no
+    nombraba**, del mismo origen y peor: las marcas verticales de SASMEX y de tier se dibujaban del
+    borde al borde del lienzo, cruzando las cuatro bandas de rótulos que esta misma ficha reserva.
+    Medido en un teléfono con la escena de alerta: **461 px de tinta dentro de la banda del primer
+    carril**, 229 de ellos del color de la marca. Ahora cada marca se dibuja por pista y su rótulo
+    cuelga del techo de la primera: quedan unos pocos subpíxeles del suavizado de bordes, cuatro
+    píxeles por debajo del rótulo más bajo. Lo fija una guarda que no mira píxeles sino **órdenes de
+    dibujo**, y exige que todas caigan dentro de alguna pista, así que cualquier capa futura la
+    hereda.
   - [ ] **H-1 · contrato del latido.** `health_snapshot` admite `packet_loss_pct: null` cuando aún
     no hay medida —así lo emite el gabinete al arrancar y así llegó a la DLQ de telemetría el
     2026-09-10— en el esquema compartido, en el validador de ingesta, en la base y en el tipo TS
-    regenerado (`make drift`); test con la carga exacta que fue a la DLQ.
+    regenerado (`make drift`), **y con la versión del paquete de contratos subida**: la relajación
+    anterior se había hecho sin subirla, que es exactamente lo que hizo indetectable el desfase entre
+    el gabinete y la nube. La prueba usa el cuerpo del mensaje **leído de la cola el 2026-09-12 antes
+    de drenarla**; la lectura se truncó a media lista de relés, así que el vector declara campo a
+    campo qué se leyó y qué se completó — ni el mensaje ni su volcado sobrevivieron, y ese fichero es
+    la única memoria del incidente. El vector entra **por el consumidor real**: con el esquema de
+    aquel día, traído de git y no transcrito, reproduce la razón del rechazo carácter por carácter y
+    acaba en la cola de mensajes muertos; con el de hoy entra y deja la fila con «sin dato».
   - [ ] **H-2 · el worker de backfill rechaza los PDF de la propia API.** Al desplegarlo
     (2026-09-12) drenó 65 mensajes y mandó 4 a su DLQ: notificaciones `ObjectCreated` de S3 por
     los `report-technical-*.pdf` que `POST /incidents/{id}/report` escribe bajo `evidence/`. Un
-    objeto que no es `.mseed` del prefijo de evidencia se reconoce y se descarta con acuse (o los
-    reportes se escriben en otro prefijo); test con la notificación exacta de la DLQ; la DLQ de
-    backfill no vuelve a recibir un PDF.
-  - [ ] Verificación: `npx playwright test e2e/layout.spec.ts` sin fallos (solo los 18 `fixme` de
-    `review`); el barrido del panel da 0 parejas en MURO y CAMPO; capturas antes/después en la PR.
-  - [ ] Declarado fuera de esta ficha: el sello de build del APK (va a `T-7.09`), los rótulos DEMO
-    apilados sobre Cholula (dato del seed: `T-7.11`), la píldora «CONECTADO» recortada sin elipsis
-    (se acepta, `W11`) y la doble fila del historial de simulacros (diseño de `T-2.48`).
+    objeto del prefijo de evidencia que no es forma de onda ni vídeo se reconoce **por su autor
+    declarado**: si se sabe de quién es —el informe que la propia API escribe y registra ella misma—
+    se descarta con acuse y no vuelve a la cola de mensajes muertos; si **no** se sabe, no se traga
+    en silencio, que sería un fallback declarándose correcto. Test con la notificación exacta que fue
+    a la cola.
+  - [x] Verificación **contra lo servido, no contra el marcado**: el barrido de la consola pasa de
+    48 pasadas con 24 fallos a **72 pasadas y cero fallos** (los 18 saltados son la escena `review`,
+    que llega en F3). El del panel, con la espera corregida —esperaba dos segundos fijos y las marcas
+    no aparecen hasta el tercero, así que la línea base anterior estaba tomada antes del sismo de la
+    escena—, da en sus 42 combinaciones: **muro, cero parejas**; **consola, cero parejas**; **campo,
+    53 parejas**, todas el mismo residuo de dos rótulos del carril, **anterior a esta ficha** (16 por
+    escena contra el commit de partida) y declarado abajo. El «cero en campo» de esta ficha no era un
+    criterio: era una cifra que nadie había medido.
+  - [x] Declarado fuera de esta ficha, con su medida: el sello de build del APK (va a `T-7.09`), los
+    rótulos DEMO apilados sobre Cholula (dato del seed: `T-7.11`), la píldora «CONECTADO» recortada
+    sin elipsis (se acepta, `W11`) y la doble fila del historial de simulacros (diseño de `T-2.48`).
+    Y dos que salieron al medir el panel, los dos **anteriores** a esta ficha y los dos **de
+    producto, no de maquetación**, porque exigen decidir qué cede sitio: en un teléfono, el pico del
+    carril y su escala son dos rótulos anclados a bordes opuestos de la misma línea y no caben los
+    dos; y en un portátil de 1440×900 la línea de tier del panel se aplasta a dos píxeles y recorta
+    entre 15 y 73 textos enteros, el estado del inmueble entre ellos, porque la columna izquierda
+    reparte su alto sin reservarle nada. Los dos quedan vigilados por una prueba que **avisa en cada
+    corrida** con su medida y el comando que la reproduce, y que **cae el día que alguien los
+    arregle** para que la ficha no sobreviva a su defecto.
 - **Tests de censo que toca:** `layoutInvariants`, `cssContract`, `motionInvariants` (si añade
   transición), `test_panel_render_census`, `test_local_api_panel`, tests del esquema compartido ·
-  **Token nuevo:** solo si la pila de alertas necesita reservar alto con nombre semántico ·
-  **Cambia algo que un test defiende hoy:** sí — el piso de alto del mapa si la partición reserva
-  alto, y el esquema `health_snapshot`.
+  **Token nuevo:** sí — la reserva de alto de la pila de alertas y el interlineado del KPI ·
+  **Cambia algo que un test defiende hoy:** sí — el barrido de solapes, el esquema del latido y la
+  versión del paquete de contratos.
+
+> **Cómo se cerró, y lo que costó.** Tres rondas, porque la primera no valía. Un revisor adversario
+> por área rechazó **las cinco**, y tenía razón: la solución al defecto grave reservaba alto para la
+> tarjeta de alerta y la **recortaba en silencio** —una caja flexible con el desbordamiento oculto
+> encoge hasta cero antes que desplazarse—, de modo que la línea que dice quién originó la alerta se
+> quedaba fuera de pantalla. Ningún test lo veía y la hoja afirmaba por escrito lo contrario. La
+> segunda ronda arregló eso y destapó más: un sondeo perpetuo escondido tras un valor por defecto, un
+> descarte que se declaraba correcto sin dejar rastro, y una consulta de estilos **sesenta veces por
+> segundo** dentro del bucle de dibujo del panel, en el Pi que sostiene un monitor de sala.
+>
+> La tercera midió lo que las dos anteriores habían supuesto, y ahí apareció lo más incómodo: **un
+> criterio de esta misma ficha era falso**. Decía «cero parejas en muro y campo» sin que nadie lo
+> hubiera medido; en campo hay 53, de un residuo anterior. Se enmendó la ficha en vez de maquillar la
+> cifra. Dos herramientas de barrido quedaron además corregidas en su punto ciego: esperaban un plazo
+> fijo y medían la escena **antes** de que apareciera lo que había que medir.
 
 ### [~] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **ENCENDIDO · falta verificarlo por rol**
 - **Componente:** deploy · web · **Depende de:** T-2.89 · **Prioridad:** F0 · media
