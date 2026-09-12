@@ -62,14 +62,14 @@ La regenera `make cloud-conformidad`. Lo de aquí abajo entre marcadores es la �
 arriba es la interpretación y no se regenera.
 
 <!-- conformidad:inicio -->
-_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-12T20:54:06Z · HEAD `40c9b2f` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
+_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-12T21:27:00Z · HEAD `0d3d0aa` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
 
 | Pieza | Veredicto | Evidencia |
 |---|---|---|
-| build de la nube | 🟢 VERDE | /api/health.build=40c9b2f == HEAD |
+| build de la nube | 🟢 VERDE | /api/health.build=0d3d0aa == HEAD |
 | esquema de la nube | 🟢 VERDE | estado=al_dia aplicada=0062_simulacro_aborto_por_sitio == última migración del repo (0062_simulacro_aborto_por_sitio) |
-| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :40c9b2f) |
-| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: [32m[32m[1m14 passed[0m[32m in 0.30s[0m[0m |
+| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :0d3d0aa) |
+| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.30s |
 | entorno que la nube exige | 🟢 VERDE | todo en el heredoc de deploy.sh/takab-secrets.sh: Settings.REQUERIDOS_EN_PRODUCCION (8 nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL |
 | bandera TAKAB_API_PUSH_FCM_APPLICATION_ARN | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (push real por FCM: T-7.03) |
 | bandera TAKAB_API_OPENROUTER_ENABLED | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (decisión de la demo) |
@@ -77,11 +77,11 @@ _Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-0
 | cola de backfill | 🟢 VERDE | takab-dev-q-backfill: 0 visibles (0 en vuelo) · takab-dev-q-backfill-dlq: 0 |
 | terraform plan | 🟢 VERDE | sin cambios: código == estado == AWS |
 | alarmas de CloudWatch | 🟢 VERDE | ninguna alarma en ALARM |
-| release activa del Pi | 🔴 ROJO | release 20260910T222639Z-f19aa06; desde f19aa06 cambiaron 14 ficheros de lo que el gabinete ejecuta (último: 9e67b25 2026-09-12T14:13:34-06:00) → bash deploy/edge/deploy.sh |
+| release activa del Pi | 🟢 VERDE | release 20260912T211956Z-0d3d0aa == HEAD |
 | modo prueba del Pi | 🟢 VERDE | test_mode.active=false · audio.profile: {"applied":{},"rejected":{},"test_tone":true} |
 | APK del Pixel | ⚪ NO MEDIDO | sin teléfono por USB (adb get-state: nada); conecta el Pixel con depuración USB |
 
-**RESUMEN:** 10 VERDE · 2 AMARILLO · 1 ROJO · 1 NO MEDIDO
+**RESUMEN:** 11 VERDE · 2 AMARILLO · 0 ROJO · 1 NO MEDIDO
 <!-- conformidad:fin -->
 
 **Dos apostillas a esa corrida, medidas después de generarla.** El «no medido» del modo prueba del gabinete era un defecto del propio script —leía la bandera con una expresión que trata el `false` como ausente, así que el caso bueno salía sin medir— y quedó corregido; a mano, el modo prueba está **desarmado**, que es lo que la demostración necesita. Y la cola de mensajes muertos del backfill creció a cuatro al desplegar el worker: no son evidencia perdida, son los informes en PDF que la propia API escribe bajo el mismo prefijo y que el worker no sabe reconocer (`T-7.05`, H-2).
@@ -167,7 +167,24 @@ se puede reconstruir a partir de un commit no sirve como evidencia: se redespleg
 
 ---
 
-## 6 · Cómo terminó la fase
+## 6 · El veredicto, tras desplegar
+
+**Cero rojos.** El censo, corrido con la nube y el gabinete en el **mismo commit**, da 11 verdes, dos
+ámbares y un «no medido». Los dos ámbares son decisiones conscientes —el aviso real al teléfono
+espera credenciales, la redacción asistida está apagada hasta su fase— y el no medido es el teléfono,
+desconectado del USB. Además, la consola desplegada pasa sus doce comprobaciones y la verificación
+completa del repositorio está en verde: 2 386 pruebas de consola, 1 510 del gabinete, 646 de la app y
+el resto.
+
+**Un falso rojo que valió la pena entender.** El censo marcó en rojo el commit desplegado porque había
+cambiado un fichero bajo la carpeta del despliegue… que **no viaja en ninguna imagen**: es la propia
+herramienta del censo. Clasifica por carpeta, y ahí se pasa de celoso. Se resolvió redesplegando —con
+la caché caliente son minutos— en vez de enseñarle una lista de excepciones, que es la clase de cosa
+que envejece mal y acaba tapando un rojo de verdad.
+
+---
+
+## 7 · Cómo terminó la fase
 
 **Cerradas:** el censo de conformidad y su informe; el worker de evidencia corriendo en la nube (y con
 él la tarea que llevaba meses abierta); las correcciones de todo lo que el censo midió, en las tres
