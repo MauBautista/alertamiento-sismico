@@ -94,6 +94,25 @@ services:
     entrypoint: ["python", "-m", "takab_api.commands"]
     command: []
 
+  # --- Backfill de evidencia (miniSEED del gabinete → S3 + evidence_objects) ----
+  # [T-7.02 · T-3.11.c] Consume takab-dev-q-backfill, que recibe DOS cosas: las
+  # peticiones de grant del gabinete (takab/backfill/request/+ → regla IoT) y la
+  # notificación de S3 del prefijo evidence/. AUSENTE desde el primer despliegue:
+  # el módulo existía, deploy.sh le exportaba sus dos colas y nadie lo arrancaba
+  # —42 mensajes envejeciendo sin tocar la DLQ el 2026-09-11, ninguna alarma, y
+  # el espectrograma del dictamen vacío en la nube—. Entorno preparado para un
+  # proceso que nadie arranca. `db-ingest.env` y no `db-app.env`: escribe
+  # evidence_objects de todos los tenants (invariante de la cabecera). Lo defiende
+  # api/tests/test_compose_cubre_los_workers.py, que deriva del árbol qué módulos
+  # son ejecutables y exige que cada uno tenga servicio aquí o razón escrita.
+  backfill:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    entrypoint: ["python", "-m", "takab_api.backfill"]
+    command: []
+
   # --- Consola SOC + TLS --------------------------------------------------------
   # Caddy termina TLS (Let's Encrypt sobre sslip.io) y sirve `web/dist`. El mismo
   # origen cubre REST y WebSocket: `liveWsUrl("/api")` ⇒ `wss://host/api/ws`, así que

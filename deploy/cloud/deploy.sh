@@ -62,6 +62,14 @@ TAKAB_API_BUILD_SHA=${CLOUD_TAG}
 # PutOpsMetrics del rol de instancia (modules/database): sin el, el worker
 # registra el fallo y sigue notificando, pero la alarma se queda ciega.
 TAKAB_API_OPS_METRICS_ENABLED=true
+# [T-7.06 · D-18 · T-2.89] Alcance por rol ENCENDIDO en la nube. El codigo lo trae en
+# False (settings.py) desde el cutover de T-2.54 y D-18 decidio encenderlo; hasta el
+# 2026-09-12 el despliegue no lo exportaba y la nube corria con el default: el codigo
+# decia una cosa y el sistema otra. Con True, un JWT de consola con custom:site_scope
+# distinto de '*' ve solo sus sitios (web/e2e/scope.spec.ts). Hoy todos los usuarios web
+# del pool traen '*', asi que encenderlo no recorta a nadie; recorta al primero que se
+# de de alta acotado.
+TAKAB_API_CONSOLE_SCOPE_ENFORCED=true
 # [T-2.78.a] Topic de on-call. NO es un secreto (identificador publico de AWS) y
 # NO es opcional: de este ARN salen la region del unico host al que el suscriptor
 # de SNS tiene permitido salir y la comparacion que descarta un sobre firmado que
@@ -411,6 +419,35 @@ if problemas:
 
 print("✓ API viva en " + repr(build) + ", esquema al día (" + repr(aplicada) + ")")
 ' "${CLOUD_TAG}"
+
+# [T-7.02 · T-3.11.c] Y que corra TODO lo que el compose declara, no solo la API.
+# El worker de backfill estuvo AUSENTE del compose desde el primer despliegue y
+# ningun gate lo dijo, porque ninguno comparaba lo DECLARADO con lo que CORRE.
+# Este lo hace: un servicio nuevo que muera al arrancar (SystemExit por una
+# variable que falta) o que alguien retire sin querer sale aqui, con su log, y no
+# como una cola que envejece en silencio. Se mira DESPUES de esperar a la API,
+# que es el tiempo que un worker con la imagen recien bajada tarda en morir si
+# va a morir. Lo que no arranca no se declara bueno.
+echo "→ verificando que corre todo lo que el compose declara"
+CORRIENDO=" \$(docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/deploy.env \
+  ps --services --filter status=running | tr '\n' ' ') "
+DECLARADOS="\$(docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/deploy.env \
+  config --services)"
+CAIDOS=""
+for _svc in \$DECLARADOS; do
+  case "\$CORRIENDO" in
+  *" \$_svc "*) ;;
+  *) CAIDOS="\$CAIDOS \$_svc" ;;
+  esac
+done
+if [ -n "\$CAIDOS" ]; then
+  echo "✗ servicios declarados en el compose que NO estan corriendo:\$CAIDOS" >&2
+  echo "  el despliegue NO se declara bueno; ultimas lineas de cada uno:" >&2
+  docker compose -f /opt/takab/cloud/docker-compose.yml --env-file /etc/takab/deploy.env \
+    logs --tail 40 \$CAIDOS >&2 || true
+  exit 1
+fi
+echo "✓ corren todos los servicios declarados:\$(echo \$DECLARADOS | tr '\n' ' ')"
 EOF
 )
 
