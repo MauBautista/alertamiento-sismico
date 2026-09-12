@@ -13579,14 +13579,45 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   test defiende hoy:** sí — `layout.spec.ts` toleraba la ausencia de la alerta.
 
 ### [ ] T-7.05 · **Correcciones del censo de solapes y flujo** — `SOFTWARE`
-- **Componente:** según hallazgos · **Depende de:** T-7.04 · **Prioridad:** F0 · alta
-- **Objetivo:** cerrar lo que `T-7.04` midió, ficha por ficha, con captura antes y después.
+- **Componente:** web · edge · api · shared · **Depende de:** T-7.04 · **Prioridad:** F0 · alta
+- **Objetivo:** cerrar lo que `T-7.04` midió con la alerta en pantalla, un criterio por hallazgo,
+  con captura antes y después. Los hallazgos vienen del censo del lote B (2026-09-11/12) y de la
+  DLQ de telemetría; ninguno se corrige con z-index ni bajando la tolerancia del barrido.
 - **Criterios de aceptación:**
-  - [ ] Los criterios se escriben al cerrar `T-7.04`, uno por hallazgo, con su pantalla y
-    viewport.
-  - [ ] Ningún valor nuevo fuera de `shared/design-tokens/tokens.json`.
-- **Tests de censo que toca:** los que cada hallazgo nombre · **Token nuevo:** solo si falta ·
-  **Cambia algo que un test defiende hoy:** se declara por hallazgo.
+  - [ ] **C-1 · ALTA · `/console` bajo `alert`, 1280×800 / 1440×900 / 1920×1080.** La tarjeta de
+    alerta (arriba-derecha) y las leyendas con la botonera de CAPAS del mapa (abajo-derecha)
+    comparten la columna derecha **sin encimarse**: `textOverlaps` devuelve `[]` y los botones de
+    capas responden a `elementFromPoint` en su centro. Se resuelve **reubicando** (la pila de alertas
+    reserva su alto o las leyendas se pliegan bajo alerta), nunca con z-index. El mapa no baja de su
+    piso de alto (`layout.spec`, `smoke.spec`, `altoDePortatil`).
+  - [ ] **C-2 · BAJA · `.soc-kpi` en `/triage`, `/tenants`, `/audit`.** La caja del valor
+    (`--tk-text-2xl`, `line-height: 1`) no invade la del rótulo: `textOverlaps` = `[]` en las tres
+    pantallas. Si diseño aceptara un solape de caja sin tinta, se declara en `ALLOWED_OVERLAPS` con
+    su razón; jamás se baja la tolerancia.
+  - [ ] **C-3 · ALTA · `/triage`.** El detalle abierto se refresca cuando el worker emite el
+    dictamen (refetch por intervalo mientras dice «SIN DICTAMEN», o frame del canal live) y FIRMAR
+    aparece sin cambiar de fila. Medido: el rótulo correcto antes de 10 s tras la emisión (hoy
+    seguía en «SIN DICTAMEN» a los 81 s con el dictamen en la base desde los 60).
+  - [ ] **C-4 · BAJA · alta de gabinete.** El acuse del gabinete enlaza a `/console?sitio=<site_id>`
+    (el mecanismo de `T-6.14`) para que la estación nueva llegue al mapa con foco.
+  - [ ] **P-1 · BAJA · panel MURO, 15/15 escenas.** El tier a 72 px no entra en «Estado del
+    inmueble»; el panel sigue cabiendo en 1080 sin scroll.
+  - [ ] **P-2 · MEDIA · panel CAMPO, 4 carriles × 15 escenas.** El nombre del canal, la nota del
+    carril y la traza no comparten píxeles (`min-height` del carril): es la parte medible de `U-10`.
+  - [ ] **H-1 · contrato del latido.** `health_snapshot` admite `packet_loss_pct: null` cuando aún
+    no hay medida —así lo emite el gabinete al arrancar y así llegó a la DLQ de telemetría el
+    2026-09-10— en el esquema compartido, en el validador de ingesta, en la base y en el tipo TS
+    regenerado (`make drift`); test con la carga exacta que fue a la DLQ.
+  - [ ] Verificación: `npx playwright test e2e/layout.spec.ts` sin fallos (solo los 18 `fixme` de
+    `review`); el barrido del panel da 0 parejas en MURO y CAMPO; capturas antes/después en la PR.
+  - [ ] Declarado fuera de esta ficha: el sello de build del APK (va a `T-7.09`), los rótulos DEMO
+    apilados sobre Cholula (dato del seed: `T-7.11`), la píldora «CONECTADO» recortada sin elipsis
+    (se acepta, `W11`) y la doble fila del historial de simulacros (diseño de `T-2.48`).
+- **Tests de censo que toca:** `layoutInvariants`, `cssContract`, `motionInvariants` (si añade
+  transición), `test_panel_render_census`, `test_local_api_panel`, tests del esquema compartido ·
+  **Token nuevo:** solo si la pila de alertas necesita reservar alto con nombre semántico ·
+  **Cambia algo que un test defiende hoy:** sí — el piso de alto del mapa si la partición reserva
+  alto, y el esquema `health_snapshot`.
 
 ### [ ] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** deploy · web · **Depende de:** T-2.89 · **Prioridad:** F0 · media
