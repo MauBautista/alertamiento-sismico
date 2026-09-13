@@ -135,8 +135,8 @@ Dos pulsos seguidos sin cerrar enseñan **una** alerta.
 - El **brigadista** en el pool táctico y los códigos de enrolamiento en Postgres (solo se contó el pool
   de ocupantes: 1 usuario).
 - **Texto en canvas o en SVG**, pseudo-elementos, menús abiertos, modales y roles distintos de
-  `takab_superadmin` en el barrido de solapes; y el **Pixel** en ese barrido (teléfono personal: el
-  volcado se filtra a rótulos de la app y lo hace el integrador).
+  `takab_superadmin` en el barrido de solapes. El **Pixel** sí entró, pero más tarde ese mismo día
+  (§7.1): cuando se escribió esta lista el teléfono estaba desconectado del USB.
 - La **hora exacta del último despliegue** de cada pieza: la nube dice su build, el Pi su release, el
   APK su fecha; ninguno dice cuándo se decidió.
 
@@ -169,6 +169,9 @@ se puede reconstruir a partir de un commit no sirve como evidencia: se redespleg
 
 ## 6 · El veredicto, tras desplegar
 
+> **Leído a posteriori:** este veredicto es el de la pasada del censo, por la mañana. Los dos ámbares
+> y el «no medido» se cerraron esa misma tarde — está contado en §7.1.
+
 **Cero rojos.** El censo, corrido con la nube y el gabinete en el **mismo commit**, da 11 verdes, dos
 ámbares y un «no medido». Los dos ámbares son decisiones conscientes —el aviso real al teléfono
 espera credenciales, la redacción asistida está apagada hasta su fase— y el no medido es el teléfono,
@@ -188,10 +191,46 @@ que envejece mal y acaba tapando un rojo de verdad.
 
 **Cerradas:** el censo de conformidad y su informe; el worker de evidencia corriendo en la nube (y con
 él la tarea que llevaba meses abierta); las correcciones de todo lo que el censo midió, en las tres
-superficies. **A medias, con su razón escrita:** el aviso real al teléfono, bloqueado en credenciales
-de Firebase, con el respaldo medido en 21 s; el barrido del teléfono, porque se desconectó del USB; y
-la comprobación por rol del alcance, que exige una sesión real de Cognito y llega con el acto 4 de la
-demostración.
+superficies. Y, esa misma tarde, **las tres que quedaban a medias**: el aviso real al teléfono, el
+barrido del teléfono y la comprobación por rol del alcance. La fase cierra sin nada a medias.
+
+### 7.1 · Las tres que se cerraron al final, y lo que costó cada una
+
+**El aviso al teléfono sonó, con la pantalla apagada.** Es el primer push entregado en la historia
+del producto: antes había cinco «simulados» y dos fallidos, y ninguno había despertado nada. El
+registro del teléfono deja la prueba que importa —pantalla apagada y bloqueada, la app **congelada**
+por el sistema— y el aviso la descongeló, encendió la pantalla y se pintó. Para llegar ahí hubo que
+cazar **tres defectos que ningún test podía ver sin un teléfono de verdad**:
+
+1. **El rol podía crear el destino pero no escribirle.** Amazon autoriza el envío a un teléfono
+   contra la *aplicación* de notificaciones, no contra el destino concreto, y el permiso solo
+   cubría lo segundo. Resultado: el destino se creaba sin problema y el envío rebotaba. Tres
+   intentos, aviso fallido, silencio.
+2. **El canal sísmico y la prioridad alta se perdían en la traducción.** El mensaje viajaba en el
+   formato antiguo, y al convertirlo se **descarta el bloque de Android entero** — justo donde
+   viven las dos cosas que distinguen una alerta de una notificación cualquiera: el canal que salta
+   el «No molestar» y suena con el tono de TAKAB, y la prioridad que entrega de inmediato aunque el
+   teléfono esté dormido. El aviso llegaba, sí, y se pintaba… en el canal de reserva y en prioridad
+   normal. Es la regla de oro 7 en su forma más cara: todo verde, y la alerta no era una alerta.
+3. **El error que se guardaba no servía para arreglar nada:** el nombre de la excepción, sin decir
+   qué llamada rebotó ni el motivo. Diagnosticarlo costó abrir una sesión contra el servidor.
+
+Y un cuarto, del propio banco de pruebas: **el arnés de staging no producía ningún aviso y nadie lo
+notaba**. Sus comandos mueven la fase que la app deduce **cuando pregunta**, y con la app detrás no
+pregunta nadie; se podía ensayar una crisis entera sin que sonara un teléfono. Ahora hay un comando
+que sí pide un pase de lista, y su prueba se escribe contra la consulta real del notificador.
+
+**El barrido del teléfono: 0 parejas encimadas**, en ocupante (inicio, crisis, check-in) y en
+brigadista (panel y sus seis pestañas). La herramienta habitual **no sirve en una pantalla viva** —
+espera a que la ventana quede quieta y la de crisis redibuja el cronómetro cada segundo, así que
+falla en silencio y se lee como «la pantalla no llegó». Y el filtro por aplicación no es cortesía:
+el teléfono es personal, y un volcado sin acotar arrastró la persiana de notificaciones del dueño.
+
+**El alcance por rol recorta de verdad**, medido con una sesión real de consola: con alcance total,
+dos inmuebles; acotado a Puebla, uno. **La primera medición dijo que no recortaba, y era falsa:**
+recargar la página no renueva la credencial —el navegador reutiliza la que ya tenía, con el permiso
+viejo dentro—. Hace falta pedir una nueva, y la renovación relee los atributos sin exigir otro
+código al operador.
 
 **Lo que la fase encontró y nadie había pedido buscar.** Seis cosas, y ninguna salió de leer código:
 
@@ -200,7 +239,7 @@ demostración.
 2. Los permisos se concedían y el gabinete no subía nada. **No era una avería**, era una carrera: el
    gabinete pide al reconectar y un permiso vence en 30 s.
 3. El aviso al teléfono estaba **simulado** en la nube, y con la app en segundo plano no hay sondeo:
-   el plazo no es largo, es infinito.
+   el plazo no es largo, es infinito. Cerrado esa misma tarde (§7.1), con tres defectos más debajo.
 4. El gabinete estaba **ciego** en la red de desarrollo porque su configuración apunta al sensor por
    dirección fija.
 5. Un latido con «sin dato» **moría en la cola de mensajes muertos** y dejaba una alarma encendida, que

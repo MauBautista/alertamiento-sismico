@@ -22,6 +22,7 @@ import json
 import pytest
 
 from takab_api.notify.push import (
+    FCM_V1_KEY,
     PUSH_CLASS_CRISIS,
     PUSH_CLASS_OPS,
     PUSH_CLASS_PANIC,
@@ -43,7 +44,7 @@ def _apns(push_class: str) -> dict:
 
 
 def _android(push_class: str) -> dict:
-    return json.loads(_payload(push_class)["GCM"])["android"]
+    return json.loads(_payload(push_class)["GCM"])[FCM_V1_KEY]["message"]["android"]
 
 
 def test_el_panico_despierta_como_una_crisis() -> None:

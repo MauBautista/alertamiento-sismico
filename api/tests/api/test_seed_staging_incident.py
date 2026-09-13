@@ -27,6 +27,7 @@ comparaba, y esa es la forma en que un espejo se separa.
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -35,6 +36,7 @@ from sqlalchemy import text
 import auth_utils as au
 from takab_api.auth import deps
 from takab_api.db.engine import get_engine
+from takab_api.notify.orchestrator import _HEADCOUNT_NOTIFY_SQL
 
 pytestmark = pytest.mark.anyio
 
@@ -216,6 +218,53 @@ async def test_crisis_vuelve_a_la_toma_de_crisis_tras_un_dictamen_firmado(
             )
         ).scalar_one()
     assert abiertos == 1
+
+
+async def test_el_pase_de_lista_es_lo_QUE_EL_NOTIFICADOR_BUSCA(
+    sitio_del_occupant, variables
+) -> None:
+    """[T-7.03] `headcount` existe para que suene un teléfono, no para mover la fase.
+
+    Los demás subcomandos mueven la fase que la app DERIVA al sondear
+    `mobile-state`, y eso no despierta a nadie: con la app detrás no hay sondeo.
+    El único camino a un push real es una fila de `incident_actions` de las dos
+    clases que el orquestador busca, y hasta esta ficha el sembrador no producía
+    ninguna: se podía «ensayar una crisis» entera sin que ningún teléfono
+    recibiera nada, y nada lo decía.
+
+    La afirmación se hace con el SQL DEL ORQUESTADOR, importado, no con una copia
+    del literal `'headcount_notify'`: el día que aquel cambie de clase, este test
+    se pone rojo en vez de seguir sembrando una acción que ya no mira nadie.
+    """
+    v = await _crisis(variables)
+    await _correr("headcount.sql", v)
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        filas = (
+            (
+                await conn.execute(
+                    text(
+                        _HEADCOUNT_NOTIFY_SQL.replace("%(since)s", ":desde").replace(
+                            "%(now)s", ":ahora"
+                        )
+                    ),
+                    {
+                        "desde": datetime.now(UTC) - timedelta(minutes=5),
+                        "ahora": datetime.now(UTC) + timedelta(minutes=5),
+                    },
+                )
+            )
+            .mappings()
+            .all()
+        )
+
+    nuestras = [f for f in filas if str(f["incident_id"]) == v["iid"]]
+    assert len(nuestras) == 1, (
+        "el notificador no ve la acción del sembrador: sin ella no encola push "
+        f"(vio {len(nuestras)} para el incidente {v['iid']})"
+    )
+    assert str(nuestras[0]["site_id"]) == SITE_X
 
 
 async def test_la_replica_del_script_no_se_separa_del_endpoint(

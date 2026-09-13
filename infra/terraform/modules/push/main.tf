@@ -81,10 +81,22 @@ resource "aws_iam_role_policy" "push" {
         Resource = concat(local.app_arns, local.endpoint_arns)
       },
       {
+        # [T-7.03] El recurso incluye la PLATFORM APPLICATION, no solo el endpoint.
+        #
+        # Medido contra la nube el 2026-09-12, con el primer push real de la
+        # historia del producto: SNS autoriza `Publish` a un endpoint de
+        # plataforma contra el ARN de su APLICACION, y devuelve
+        #
+        #   not authorized to perform: SNS:Publish on resource:
+        #   arn:aws:sns:...:app/GCM/takab-dev-fcm
+        #
+        # aunque el `TargetArn` de la llamada sea el del endpoint. Con solo los
+        # endpoints aqui, crear el endpoint funcionaba y publicar rebotaba: cada
+        # aviso moria en `failed` tras tres intentos y ningun telefono sonaba.
         Sid      = "PushPublish"
         Effect   = "Allow"
         Action   = ["sns:Publish"]
-        Resource = local.endpoint_arns
+        Resource = concat(local.app_arns, local.endpoint_arns)
       },
     ]
   })
