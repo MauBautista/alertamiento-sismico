@@ -108,6 +108,11 @@ export const PRODUCTORES_EXENTOS: Record<string, string> = {
     "generador de fixtures LOCAL (siembra un sismo de mentira en la base de " +
     "desarrollo); no se despliega ni corre contra producción, y sus dos kinds " +
     "son los que el propio ingest escribe.",
+  "infra/scripts/sql/staging-incident/headcount.sql":
+    "arnés de STAGING (T-7.03): pide un pase de lista para que el notificador " +
+    "encole un push real y suene un teléfono. No se despliega. Su único kind es " +
+    "`headcount_notify`, que ya produce `routers/mobile_incident.py` —está en el " +
+    "corpus y tiene rótulo en las dos superficies—: esto no estrena ninguno.",
 };
 
 // ---------------------------------------------------------------------------
