@@ -44,6 +44,60 @@ class Thresholds:
 DEFAULT_THRESHOLDS = Thresholds()
 
 
+#: De quién son los umbrales contra los que se clasificó la sacudida.
+#:
+#: [T-7.35] La distinción es la ficha entera: el papel decía «el umbral de
+#: actuación del inmueble» clasificando con la banda de fábrica. Ahora el origen
+#: viaja con los números y el documento lo imprime.
+ORIGEN_INMUEBLE = "inmueble"
+ORIGEN_REFERENCIA = "referencia"
+
+
+@dataclass(frozen=True)
+class UmbralComparacion:
+    """Los umbrales usados, de quién son y de qué versión salieron.
+
+    `rule_set_version` solo tiene sentido con `origen == ORIGEN_INMUEBLE`: es la
+    versión del `rule_set` que regía **en la apertura del incidente**, no la de
+    hoy. Un dictamen es un documento histórico; describirlo con la configuración
+    actual es el mismo defecto que la auditoría del 2026-09-13 encontró en la
+    calibración («se decide con el inventario de HOY»).
+    """
+
+    thresholds: Thresholds
+    origen: str
+    rule_set_version: int | None = None
+
+    def as_dict(self) -> dict:
+        """Forma plana para el `ReportModel`, que se serializa a JSON al firmar
+        su huella de contenido. La conversión vive AQUÍ, en un solo sitio."""
+        return {
+            "pga_watch_g": self.thresholds.pga_watch_g,
+            "pga_trip_g": self.thresholds.pga_trip_g,
+            "pgv_watch_cms": self.thresholds.pgv_watch_cms,
+            "pgv_trip_cms": self.thresholds.pgv_trip_cms,
+            "origen": self.origen,
+            "rule_set_version": self.rule_set_version,
+        }
+
+
+def umbral_desde_dict(d: dict | None) -> UmbralComparacion:
+    """El camino de vuelta. Sin dato (documentos anteriores a `T-7.35`) se
+    devuelve la banda de referencia DECLARADA, nunca umbrales inventados."""
+    if not d:
+        return UmbralComparacion(DEFAULT_THRESHOLDS, ORIGEN_REFERENCIA)
+    return UmbralComparacion(
+        thresholds_from_row(
+            d.get("pga_watch_g"),
+            d.get("pga_trip_g"),
+            d.get("pgv_watch_cms"),
+            d.get("pgv_trip_cms"),
+        ),
+        d.get("origen", ORIGEN_REFERENCIA),
+        rule_set_version=d.get("rule_set_version"),
+    )
+
+
 def thresholds_from_row(
     pga_watch_g: float | None,
     pga_trip_g: float | None,

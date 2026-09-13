@@ -38,7 +38,7 @@ from takab_api.dictamen.model import (
     VoteRow,
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
-from takab_api.forensics import build_forensics
+from takab_api.forensics import build_forensics, umbral_de_comparacion
 from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as qf
 from takab_api.schemas.forensics import ForensicsOut
@@ -52,7 +52,7 @@ MAX_FFT_SAMPLES = 6000
 
 _INCIDENT = text(
     """
-    SELECT i.incident_id, i.site_id, i.event_id, i.opened_at, i.closed_at,
+    SELECT i.incident_id, i.site_id, i.tenant_id, i.event_id, i.opened_at, i.closed_at,
            i.severity, i.state, i.trigger,
            s.name AS site_name, s.code AS site_code, s.criticality,
            ST_Y(s.geom::geometry)::float8 AS site_lat,
@@ -168,6 +168,14 @@ async def build_model(
     if forensics is None:  # pragma: no cover - el SELECT de arriba ya lo cubriría
         return None
 
+    # [T-7.35] La MISMA resolución que usó la banda, para poder imprimir contra
+    # qué números se comparó. Se pide a la misma función, no se recalcula: dos
+    # caminos para el mismo número acaban discrepando.
+    umbral = await umbral_de_comparacion(
+        conn, site_id=str(inc["site_id"]), tenant_id=str(inc["tenant_id"]), at=inc["opened_at"]
+    )
+    umbral_dict = umbral.as_dict()
+
     dictamen_rows = (await conn.execute(_DICTAMENS, {"id": incident_id})).all()
     dictamens = [
         DictamenRow(
@@ -226,6 +234,7 @@ async def build_model(
         peak_pgv_cms=forensics.peak_pgv_cms,
         peak_ts=forensics.peak_ts,
         felt_band=forensics.felt_band,
+        felt_thresholds=umbral_dict,
         calibrated=forensics.calibrated,
         lead_time_s=forensics.lead_time_s,
         lead_time_reason=forensics.lead_time_reason,

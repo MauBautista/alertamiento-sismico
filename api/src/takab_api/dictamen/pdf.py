@@ -43,7 +43,9 @@ from takab_api.dictamen.model import (
     huella_de_custodia,
     lead_time_text,
     num,
+    umbral_line,
 )
+from takab_api.felt import umbral_desde_dict
 
 _TRACE_H = 18.0
 _SKETCH_H = 78.0
@@ -444,6 +446,10 @@ def _intensity_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.field("PGV PICO", num(m.peak_pgv_cms, 2, "cm/s"))
     pdf.field("INSTANTE DEL PICO", f"{m.peak_ts:{TS_FMT}}" if m.peak_ts else "SIN DATO")
     pdf.field("BANDA", FELT_LABELS.get(m.felt_band, m.felt_band.upper()))
+    # [T-7.35] Contra qué números. Sin esta línea, «SACUDIDA FUERTE» es una
+    # palabra sin escala — y durante meses el rótulo atribuyó al inmueble un
+    # umbral que no era el suyo.
+    pdf.field("UMBRAL DE COMPARACIÓN", umbral_line(umbral_desde_dict(m.felt_thresholds)))
     pdf.callout(NO_MMI)
 
 
@@ -671,6 +677,7 @@ def _render_executive(m: ReportModel) -> bytes:
 
     pdf.section("", "QUÉ SIGNIFICA")
     pdf.para(FELT_LABELS.get(m.felt_band, m.felt_band.upper()))
+    pdf.para(umbral_line(umbral_desde_dict(m.felt_thresholds)), size=7, muted=True)
     if not m.calibrated:
         pdf.callout(NO_CALIBRATION, (196, 48, 43))
 

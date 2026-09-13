@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **411** · `[x]` **339** · `[~]` **12** · `[ ]` **60**
+**Conteo de tareas:** total **414** · `[x]` **340** · `[~]` **12** · `[ ]` **62**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14301,6 +14301,68 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_avisos_impresos` (el deslinde cambia de texto) · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_el_deslinde_dice_lo_que_
   tiene_que_decir` exigía que la constante empezara por «Dictamen operativo PRELIMINAR».
+
+### [x] T-7.35 · **La banda dice contra qué se comparó; el aviso no se presume** — `SOFTWARE` · **CERRADA 2026-09-13**
+- **Componente:** api · web · **Depende de:** T-7.34 · **Prioridad:** F1 · crítica
+- **Objetivo:** cerrar los dos defectos del dictamen que estaban vivos en el PDF de la
+  demostración (`A` y `B′` de la auditoría).
+- **Criterios de aceptación:**
+  - [x] **A · La banda se clasifica con los umbrales del INMUEBLE**, resueltos de la versión del
+    `rule_set` **vigente en la apertura del incidente** — no los de hoy, porque un dictamen es un
+    documento histórico y describirlo con la configuración actual es el defecto gemelo que la
+    auditoría encontró en la calibración. `rule_sets` guarda `version` y `created_at`: **sin
+    migración**. Precedencia sitio > cliente, la misma que el mapa del SOC.
+  - [x] **El rótulo deja de atribuir el umbral a nadie.** Decía «supera el umbral de actuación
+    del inmueble» y afirmaba dos cosas que no comprobaba: de quién era el umbral y que superarlo
+    acciona algo — desde `T-2.32` una detección instrumental sola NO mueve un relé.
+  - [x] **Una línea nueva declara los números y su procedencia** («PGA 0.070/0.100 g · PGV
+    4.0/7.0 cm/s · umbrales del inmueble v19, vigentes en la apertura»), y cuando no consta
+    configuración anterior al incidente lo **dice**: «banda de referencia». Sin esa línea,
+    «SACUDIDA FUERTE» es una palabra sin escala.
+  - [x] **Una sola resolución para las dos superficies**: la banda que calcula `forensics` y la
+    línea que imprime el dictamen salen de la misma función, así que no pueden discrepar.
+  - [x] **B′ · El tiempo de aviso no se presume.** `_lead_time` niega el aviso con razón propia
+    (`sin_sacudida`) cuando el pico de la ventana no superó el umbral de vigilancia del inmueble.
+    El reporte del acto 4 imprimía «TIEMPO DE AVISO GANADO · 149.2 s» tres líneas debajo de
+    «SACUDIDA LEVE»: presentaba como logro haber avisado de algo que él mismo declaraba no
+    significativo. **No se afirma que el pico no fuera sísmico** —eso pide forma de onda—, solo
+    lo que el documento ya imprimía.
+  - [x] **La divergencia del web queda DECLARADA, no arreglada a medias**: `feltLabelOf` ordena
+    la cola de triage con los umbrales de referencia porque la lista no recibe los de cada sitio.
+    Lo que ya no puede decir su comentario es que sea «la misma tabla de verdad que decide si el
+    gabinete actúa»: no lo es.
+  - [x] `pytest` de `api`: **3 286 pasadas**, 6 saltadas. Verificado además por render, en los
+    dos casos (con umbrales del inmueble y sin ellos).
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** sí — la fixture del `ReportModel` ahora EXIGE declarar contra qué se clasificó.
+
+### [ ] T-7.36 · **El disparo de APERTURA no se puede reconstruir** — `SOFTWARE` · **PIDE MIGRACIÓN**
+- **Componente:** api · db · **Depende de:** T-7.34 · **Prioridad:** F2 · alta
+- **Objetivo:** que el documento pueda decir qué abrió el incidente, y no lo que lo escaló.
+- **Criterios de aceptación:**
+  - [ ] Hoy **ningún sitio del esquema lo guarda**: el UPSERT de la ingesta sobrescribe
+    `incidents.trigger` con el de la última escalada y `summary` se fusiona perdiendo el valor
+    viejo. Es **latente** —el incidente del acto 3 abrió `sasmex` y no escaló—, pero muerde en
+    cuanto un sismo fuerte escala un incidente abierto por el SASMEX.
+  - [ ] Y muerde **más lejos de lo que parece**: el mismo campo alimenta la atribución de la
+    pantalla de crisis del móvil, donde ya hay precedente medido (`T-2.104`).
+  - [ ] Columna `opened_trigger` estampada por la BASE en el INSERT (no por cada escritor: hay
+    ~30 `INSERT INTO incidents` en el repo entre seeds, arneses y tests) y declarada inmutable.
+  - [ ] Migración idempotente, con su prueba de que una escalada posterior NO la toca.
+
+### [ ] T-7.37 · **Los umbrales del dictamen se congelan al EMITIR, no al ocurrir** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.35 · **Prioridad:** F2 · media
+- **Objetivo:** que dos exportaciones del mismo incidente en fechas distintas no puedan
+  clasificarlo contra números distintos.
+- **Criterios de aceptación:**
+  - [ ] `T-7.35` resuelve los umbrales **vigentes en la apertura**, que es correcto y suficiente
+    mientras `rule_sets` no se pode. Pero la resolución ocurre **al exportar**: si alguien borrara
+    versiones antiguas, un PDF regenerado el año que viene clasificaría contra otra banda.
+  - [ ] Congelarlos en `dictamens.basis` al emitir el dictamen (jsonb aditivo, append-only por
+    trigger, escrito por el rol interno ⇒ independiente de quién lea), arrastrándolos verbatim en
+    cada corrección: una corrección tres días después no puede reescribir qué umbral regía.
+  - [ ] ⚠️ La cabeza firmada por un inspector escribe `basis = {}` o `{"notes": …}`: el arrastre
+    tiene que recorrer la CADENA, no solo la cabeza, o la congelación se pierde al firmar.
 
 ## RUTA CRÍTICA
 
