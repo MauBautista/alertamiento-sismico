@@ -8,6 +8,7 @@ import { useEffect, useRef } from "react";
 
 import { useWatchedSiteId } from "@/services/mySite";
 
+import { salioDeLaCrisis } from "./salidaTactica";
 import { MOBILE_STATE_KEY, useAlertState } from "./useAlertState";
 
 // En primer plano las notificaciones también se muestran (la app puede estar
@@ -51,8 +52,15 @@ export function CrisisWatcher() {
 
   const alarmaDesde = data?.building_alarm?.since ?? null;
   useEffect(() => {
+    // [T-7.29] La toma se re-impone SIEMPRE… salvo que este táctico ya haya
+    // salido de ESTE episodio. Sin esa excepción, el botón de salir no serviría
+    // de nada: el efecto lo devolvería a /crisis en el render siguiente. La
+    // excepción es por incidente, así que una alerta NUEVA vuelve a tomar la
+    // pantalla aunque hubiera salido de la anterior.
     if (state === "alert_active" && pathname !== "/crisis") {
-      router.push("/crisis");
+      if (!salioDeLaCrisis(data?.incident?.incident_id ?? null)) {
+        router.push("/crisis");
+      }
       return;
     }
     // [T-2.06] Sacudida concluida sin check-in propio ⇒ toma de pantalla 1.4.
@@ -75,7 +83,7 @@ export function CrisisWatcher() {
     if (state !== null && state !== "building_alarm") {
       alarmaAnunciada.current = null; // la próxima activación vuelve a anunciarse
     }
-  }, [state, alarmaDesde, pathname, router]);
+  }, [state, alarmaDesde, pathname, router, data?.incident?.incident_id]);
 
   return null;
 }

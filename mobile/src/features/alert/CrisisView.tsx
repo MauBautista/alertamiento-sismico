@@ -2,7 +2,7 @@
 // la instrucción gigante ES la pantalla; abajo el T+ ascendente (dato real) y
 // la fuente etiquetada. PROHIBIDO cualquier cronómetro regresivo o magnitud
 // preliminar. Presentacional puro: todo entra por props (testeable).
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { emergency, fontSize, palette, radius, space } from "@/ui/theme";
 
@@ -16,6 +16,14 @@ export type CrisisViewProps = {
   source: SourceLabel;
   elapsedS: number;
   zoneName: string | null;
+  /** [T-7.29] Salida de la toma — SOLO para el perfil táctico.
+   *
+   * Ausente (el caso del ocupante) no se pinta nada: de una evacuación no se
+   * sale con el dedo. Presente, pinta el único control de esta pantalla. El
+   * brigadista es quien tiene que abrir TRIAGE, la lista o el directorio
+   * MIENTRAS la alerta sigue viva, y durante el ensayo del 2026-09-12 su
+   * teléfono le enseñaba «PROTÉJASE» y nada más. */
+  onSalir?: (() => void) | null;
 };
 
 const VARIANTS = {
@@ -47,7 +55,7 @@ const VARIANTS = {
   },
 } as const;
 
-export function CrisisView({ policy, source, elapsedS, zoneName }: CrisisViewProps) {
+export function CrisisView({ policy, source, elapsedS, zoneName, onSalir }: CrisisViewProps) {
   const variant = VARIANTS[policy ?? "none"];
   return (
     <View style={[styles.wrap, { backgroundColor: variant.bg }]}>
@@ -88,6 +96,25 @@ export function CrisisView({ policy, source, elapsedS, zoneName }: CrisisViewPro
               transporta ETA por dato. Con el flag en false, NADA se renderiza. */}
           {ALERT_SOURCE_CARRIES_ETA ? <View testID="eta-slot" /> : null}
         </View>
+
+        {onSalir ? (
+          <View style={styles.salida}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={onSalir}
+              style={styles.salidaBoton}
+              testID="crisis-salir-tactico"
+            >
+              <Text style={styles.salidaTexto}>SILENCIAR Y VOLVER AL PANEL</Text>
+            </Pressable>
+            {/* Salir de la PANTALLA no es que se acabó la alerta, y decirlo aquí
+                cuesta una línea: quien pulsa se lleva la franja de alerta viva a
+                todas las pestañas y puede volver tocándola. */}
+            <Text style={styles.salidaNota}>
+              La alerta sigue activa. Volverá a esta instrucción tocando la franja roja.
+            </Text>
+          </View>
+        ) : null}
       </View>
     </View>
   );
@@ -95,6 +122,29 @@ export function CrisisView({ policy, source, elapsedS, zoneName }: CrisisViewPro
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
+  // El objetivo táctil no baja del mínimo de T-6.20 (48 dp) ni con guantes:
+  // esto se pulsa en una evacuación, no en un escritorio.
+  salida: { marginTop: space[4], alignItems: "center" },
+  salidaBoton: {
+    minHeight: 52,
+    justifyContent: "center",
+    paddingHorizontal: space[5],
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: emergency.red.ink,
+  },
+  salidaTexto: {
+    color: emergency.red.ink,
+    fontSize: fontSize.sm,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  salidaNota: {
+    color: emergency.red.ink2,
+    fontSize: fontSize.xs,
+    marginTop: space[2],
+    textAlign: "center",
+  },
   strip: { paddingTop: 56, paddingBottom: space[3], paddingHorizontal: space[4], alignItems: "center" },
   stripEyebrow: { fontSize: fontSize.xs, fontWeight: "700", letterSpacing: 2, opacity: 0.85 },
   stripTitle: { fontSize: 24, fontWeight: "700", letterSpacing: 1, marginTop: space[1] },

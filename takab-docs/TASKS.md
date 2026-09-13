@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **406** · `[x]` **335** · `[~]` **12** · `[ ]` **59**
+**Conteo de tareas:** total **409** · `[x]` **337** · `[~]` **12** · `[ ]` **60**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14185,6 +14185,72 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - [ ] Lista «lo que NO debe decirse» actualizada; paquete de capturas y vídeo;
     `INFORME-CONFORMIDAD-DEMO.md` re-corrido sin rojos; veredicto de flujos con Mauricio
     delante.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [x] T-7.29 · **El táctico puede salir de la toma de crisis** — `SOFTWARE` · **CERRADA 2026-09-12 · medida con el WR-1 real**
+- **Componente:** mobile · **Depende de:** T-7.09 · **Prioridad:** F1 · alta
+- **Objetivo:** que el brigadista pueda trabajar en la app durante una alerta sin que la
+  pantalla de instrucción se la quite, y sin que salir signifique que la alerta terminó.
+- **Criterios de aceptación:**
+  - [x] **El defecto, medido en el acto 3 del 2026-09-12 con el radio real:** durante la alerta
+    la toma es TOTAL y se re-impone en cada render («de una evacuación no se sale con el dedo»).
+    Para el ocupante es exactamente lo que se quiere; para el brigadista —la persona que tiene
+    que abrir TRIAGE, la lista o el directorio— su teléfono enseñaba «PROTÉJASE» y nada más. La
+    app no estaba atascada: le hacía al brigadista lo que está pensado para el ocupante.
+  - [x] Botón `crisis-salir-tactico` («SILENCIAR Y VOLVER AL PANEL»), **solo con perfil
+    táctico**: calla el altavoz de ese teléfono —jamás la sirena del edificio— y lleva al panel.
+  - [x] La salida se recuerda **por incidente** (`features/alert/salidaTactica.ts`): una alerta
+    NUEVA vuelve a tomar la pantalla aunque hubiera salido de la anterior. Vive en memoria, así
+    que reabrir la app re-impone la toma — olvidar que salió cuesta un toque; recordarlo de más
+    cuesta que alguien no vea la instrucción.
+  - [x] `CrisisWatcher` respeta la salida. Sin esto el botón no haría nada: el efecto devolvía a
+    `/crisis` en el render siguiente.
+  - [x] **Franja `alerta-viva` en el layout táctico**, con relleno sólido y glifo de alerta:
+    salir de la pantalla no puede ser indistinguible de que el sismo terminó (regla de oro 7).
+    La franja ENTERA es el control táctil (48 dp) y devuelve a la instrucción.
+  - [x] Verificado en el Pixel real con una alerta viva: el botón aparece, lleva al panel, **no
+    rebota** a los 20 s, y la franja hace el viaje de vuelta.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** sí — `crisis-states.test.tsx` moqueaba `expo-router` sin `useRouter`.
+
+### [ ] T-7.30 · **La nube no se entera de que la sacudida terminó** — `SOFTWARE` · **DEFECTO MEDIDO**
+- **Componente:** edge · api · **Depende de:** — · **Prioridad:** F1 · crítica
+- **Objetivo:** que una transición de tier REAL llegue a `rule_evaluations` en la nube, que es
+  de donde la app deriva que la sacudida concluyó.
+- **Criterios de aceptación:**
+  - [ ] **El defecto, medido el 2026-09-12 con el WR-1 real:** `rule_evaluations` en la nube la
+    escriben ÚNICAMENTE los sembradores (`db/seeds/restore_drill.sql`, el arnés de staging).
+    **Ninguna ruta de ingesta la escribe.** El edge registra las transiciones de tier solo en
+    local (`rules/__init__.py`, para el panel). Como `mobile_site.py` deriva
+    `shaking_concluded` de la última `new_tier`, **un sismo real no puede producir esa fase
+    jamás**: el teléfono se queda en crisis, contando, hasta que alguien cierra el incidente a
+    mano. Es lo que pasó en el acto 3, y el síntoma que se ve es «la app no sale de la alerta».
+  - [ ] El edge publica la transición y la ingesta la persiste, con `gateway_id` real (hoy las
+    filas sembradas llevan uno aleatorio).
+  - [ ] Prueba de punta a punta: tier a `normal` en el gabinete ⇒ `phase == shaking_concluded`
+    por el endpoint, sin tocar la base a mano.
+  - [ ] Hasta entonces, el runbook de la demostración dice qué hacer (`conclude` del arnés) y
+    **por qué** — un paso manual escrito es mejor que un silencio.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [x] T-7.31 · **La cámara forense decía «no se pudo» y nada más** — `SOFTWARE` · **CERRADA 2026-09-12**
+- **Componente:** mobile · deploy · **Depende de:** T-7.07 · **Prioridad:** F1 · media
+- **Objetivo:** que un fallo al guardar evidencia diga POR QUÉ, y que el guion de la demostración
+  sepa mirar dentro del PDF.
+- **Criterios de aceptación:**
+  - [x] El `catch` de `camera.tsx` era **vacío**: la pantalla decía «No se pudo guardar la
+    evidencia en este teléfono» y en el registro no quedaba nada. Durante el acto 4 del
+    2026-09-12 eso dejó la sesión sin forma de distinguir un teléfono sin espacio (el Pixel iba
+    al 98 %) de una captura que reventó — y se arreglan distinto. Ahora nombra el error.
+  - [x] `guion.sh --reporte` buscaba el bucket en una **columna que no existe**
+    (`evidence_objects.bucket`): el bucket es un ajuste de la API, no un dato de la fila. El
+    síntoma era «no se pudo bajar el PDF de S3», que se lee como un problema de permisos.
+    Ahora se deriva de AWS y el guion **mira dentro del PDF**: 8 imágenes embebidas en el
+    reporte del acto 3.
+  - [x] Las fotos de brigada pasan de criterio ROJO a aviso: la autoridad es lo que lleva el PDF
+    dentro, que es lo que recibe el cliente. Exigirlas ponía en rojo un reporte entregable.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 

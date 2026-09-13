@@ -9,13 +9,14 @@
 // ocupante se quedaba mirando girar la pantalla que existe para decirle si
 // tiene que evacuar. Ahora los cuatro estados los declara `StateFrame`, igual
 // que en `triage.tsx` (T-2.108) y que en la consola.
-import { Redirect } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 
 import { useSessionStore } from "@/auth/session.store";
 import { CrisisView } from "@/features/alert/CrisisView";
 import { elapsedSeconds } from "@/features/alert/machine";
 import { sourceLabel } from "@/features/alert/source";
+import { marcarSalidaTactica } from "@/features/alert/salidaTactica";
 import { startAlertLoop, stopAlertLoop } from "@/features/alert/sound";
 import { useAlertState } from "@/features/alert/useAlertState";
 import { useWatchedSiteId } from "@/services/mySite";
@@ -33,6 +34,8 @@ const SIN_INCIDENTE = "El servidor no reporta ninguna alerta activa en su edific
 
 export default function Crisis() {
   const status = useSessionStore((s) => s.status);
+  const profile = useSessionStore((s) => s.profile);
+  const router = useRouter();
   const siteId = useWatchedSiteId();
   const { state, data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -78,6 +81,19 @@ export default function Crisis() {
   const sinSitio = siteId === null;
   const incident = data?.incident ?? null;
 
+  // [T-7.29] La salida es SOLO del perfil táctico, y se decide aquí —no en la
+  // vista— porque es una regla de producto, no de pintura: el ocupante no puede
+  // salir de una evacuación con el dedo, y el brigadista tiene trabajo que hacer
+  // dentro de la app mientras la alerta sigue viva.
+  const salir =
+    profile === "tactical"
+      ? () => {
+          stopAlertLoop(); // el altavoz de ESTE teléfono; la sirena del edificio no se toca
+          marcarSalidaTactica(incident?.incident_id ?? null);
+          router.replace("/(brigadista)/panel");
+        }
+      : null;
+
   return (
     <StateFrame
       empty={sinSitio || (data !== null && incident === null)}
@@ -91,6 +107,7 @@ export default function Crisis() {
         <CrisisView
           elapsedS={elapsedSeconds(incident.opened_at, nowMs)}
           policy={(data.my_zone?.evac_policy as "evacuate" | "shelter" | null) ?? null}
+          onSalir={salir}
           source={sourceLabel(incident)}
           zoneName={data.my_zone?.name ?? null}
         />

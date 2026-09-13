@@ -132,6 +132,25 @@ adb pull /sdcard/acto3.mp4 acto3.mp4
 
 ---
 
+## Entre el acto 3 y el acto 4 · **concluir la sacudida, a mano y con su razón**
+
+```bash
+AWS_PROFILE=takab-dev bash infra/scripts/seed_staging_incident.sh conclude
+```
+
+**Por qué hace falta un paso manual, medido el 2026-09-12 con el radio real:** la app deriva
+«sacudida concluida» de la última transición de nivel que haya en la nube, y **nadie la escribe
+ahí** — el gabinete registra sus transiciones solo en local y ninguna ruta de ingesta persiste
+`rule_evaluations`. Resultado: tras el pulso el teléfono se queda en la pantalla de crisis
+contando, y parece que la app se atascó. El defecto está fichado en `T-7.30`; hasta que se cierre,
+este comando es el que devuelve la app a la vida.
+
+Y dilo en voz alta delante del cliente, porque se ve: **durante la alerta el brigadista tampoco
+puede trabajar** — su teléfono enseña la instrucción, no las pestañas. Desde `T-7.29` tiene un
+botón para salir de esa pantalla, con una franja roja que le recuerda que la alerta sigue viva.
+
+---
+
 ## Acto 4 · Después de la sacudida
 
 **Qué se enseña, en este orden:**
