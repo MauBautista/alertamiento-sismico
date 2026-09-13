@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **414** · `[x]` **342** · `[~]` **11** · `[ ]` **61**
+**Conteo de tareas:** total **415** · `[x]` **342** · `[~]` **11** · `[ ]` **62**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14313,6 +14313,38 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_el_deslinde_dice_lo_que_
   tiene_que_decir` exigía que la constante empezara por «Dictamen operativo PRELIMINAR».
 
+### [ ] T-7.34 · **Las 19 contradicciones del dictamen** — `SOFTWARE` · **AUDITADO 2026-09-13**
+- **Componente:** api · **Depende de:** T-7.33 · **Prioridad:** F1 · crítica
+- **Objetivo:** que el documento oficial no afirme nada que el dato desmienta, ni se contradiga
+  con la consola sobre el mismo evento.
+- **Criterios de aceptación:**
+  - [x] **El censo existe:** [`AUDITORIA-DICTAMEN-2026-09-13.md`](AUDITORIA-DICTAMEN-2026-09-13.md).
+    Salió de barrer el generador entero con seis lentes tras encontrar «PRELIMINAR» cuatro veces
+    de una en una (`T-7.33`). **50 hallazgos propuestos · 32 sobrevivieron a tres escépticos
+    cada uno · 19 defectos distintos.**
+  - [x] **A · La banda de sacudida miente sobre de quién es el umbral.** CERRADO en `T-7.35`. El papel dice «supera el
+    umbral de actuación del inmueble» y `felt_band()` se llama SIN umbrales, o sea con los de
+    hospital por defecto — mientras el mapa del SOC sí los lee del `rule_set`. **La consola y el
+    dictamen firmado pueden decir lo contrario del mismo pico.** Vivo en la demostración: el
+    gabinete declara `pga_trip_g = 0.1` y el documento clasifica con 0.060.
+  - [ ] **B · El disparo de apertura y el tiempo de aviso salen de un campo que se REESCRIBE.**
+    `incidents.trigger` lo sobrescribe la última escalada; la prosa lo presenta como el origen y
+    el mismo campo decide el aviso ganado. Vivo: el reporte del acto 3 imprimió «149.2 s» para un
+    pulso manual.
+  - [ ] **C · «El valor evaluado fue 0.000 g» sin medición**, en un documento cuyo §5 dice «SIN
+    DATO». `rules.py` sustituye `None` por `0.0` y lo congela en el `basis`.
+  - [ ] Las diez contradicciones internas del §2 del informe (veredicto atribuido a las reglas,
+    fundamento «no guardado» habiéndolo, clip purgado anunciado como disponible, epicentro
+    relocalizado a mano descrito como centroide, las dos huellas que el papel promete iguales y
+    nunca lo son…).
+  - [ ] Las cuatro gráficas del §3 (espectro sobre el minuto ANTERIOR, onda cruda con la continua
+    dentro, barra de escala recortada con su rótulo, «100 sps» a fuego).
+  - [ ] **La guarda que faltaba:** el test que debía cazar las huellas distintas compara
+    `model()` **consigo mismo**. Cada arreglo entra con su prueba, y la prueba tiene que comparar
+    lo que el papel compara.
+- **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** sí — `test_los_dos_documentos_declaran_LA_MISMA_huella`
+  pasa hoy sobre el defecto.
 ### [x] T-7.35 · **La banda dice contra qué se comparó; el aviso no se presume** — `SOFTWARE` · **CERRADA 2026-09-13**
 - **Componente:** api · web · **Depende de:** T-7.34 · **Prioridad:** F1 · crítica
 - **Objetivo:** cerrar los dos defectos del dictamen que estaban vivos en el PDF de la
