@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **409** · `[x]` **337** · `[~]` **12** · `[ ]` **60**
+**Conteo de tareas:** total **410** · `[x]` **338** · `[~]` **12** · `[ ]` **60**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14251,6 +14251,29 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     reporte del acto 3.
   - [x] Las fotos de brigada pasan de criterio ROJO a aviso: la autoridad es lo que lleva el PDF
     dentro, que es lo que recibe el cliente. Exigirlas ponía en rojo un reporte entregable.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [x] T-7.32 · **Las tablas del dictamen salían pintadas de negro** — `SOFTWARE` · **CERRADA 2026-09-12**
+- **Componente:** api · **Depende de:** T-7.07 · **Prioridad:** F1 · alta
+- **Objetivo:** que el documento oficial se pueda LEER, no solo generar.
+- **Criterios de aceptación:**
+  - [x] **Medido en el reporte real del acto 4:** las tres tablas del dictamen —métricas por
+    canal, corroboración multi-estación y cadena de dictámenes— se imprimían como **barras
+    oscuras**. Los datos estaban dentro: `pdftotext` los sacaba enteros (EHZ 0.0000 g,
+    ENE 0.0015 g, …) y en el papel no se veía una sola cifra. Es lo primero que un cliente
+    abre, y habría llegado a la presentación.
+  - [x] **La causa no estaba en las tablas.** `fpdf2` guarda el color de relleno como ESTADO del
+    documento: el croquis de la §1 pinta el marcador del inmueble (`20,24,30`) y los vecinos
+    (`110,120,132`) y **nunca lo restauraba**, así que todo lo que se rellenara después —las
+    tablas, que vienen detrás— lo heredaba.
+  - [x] El relleno vuelve a blanco en cuanto una figura termina (`_relleno_por_defecto`), en el
+    croquis y en el espectrograma.
+  - [x] Lo fija `test_tablas_legibles.py`, que **no mira una tabla concreta sino el ESTADO**: en
+    el instante en que se abre una tabla, el relleno tiene que ser claro. Un elemento nuevo que
+    olvide restaurar el color vuelve a ponerlo en rojo. Con su control de ceguera.
+  - [x] Verificado por RENDER, no por lectura de texto: la página con las tablas, a 70 ppp,
+    antes y después.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 

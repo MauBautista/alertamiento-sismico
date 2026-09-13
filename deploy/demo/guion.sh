@@ -369,10 +369,22 @@ reporte() {
   bucket="${TAKAB_DEMO_BUCKET:-$(aws s3 ls 2>/dev/null | awk '/takab-dev-evidence/ { print $3; exit }')}"
   tmp="$(mktemp -t takab-reporte-XXXX.pdf)"
   if [ -n "$bucket" ] && aws s3 cp "s3://$bucket/$pdf" "$tmp" >/dev/null 2>&1; then
-    n="$(pdfimages -list "$tmp" 2>/dev/null | tail -n +3 | grep -c .)"
-    [ "${n:-0}" -gt 0 ] &&
-      verde "el PDF lleva $n imagen(es) EMBEBIDAS" ||
+    # Imágenes DISTINTAS, no apariciones: el membrete se repite en cada página y
+    # arrastra su máscara, así que un reporte de 4 páginas sin una sola gráfica
+    # ni foto contaba «8 imágenes embebidas» y se leía como que el documento va
+    # lleno. Medido el 2026-09-12 con el reporte del acto 4: las ocho eran el
+    # mismo objeto. Se cuentan objetos únicos de tipo `image` (la `smask` es la
+    # transparencia del anterior, no una imagen más).
+    local paginas
+    n="$(pdfimages -list "$tmp" 2>/dev/null | awk 'NR>2 && $3=="image" { print $9 }' | sort -u | grep -c .)"
+    paginas="$(pdfinfo "$tmp" 2>/dev/null | awk '/^Pages:/ { print $2 }')"
+    if [ "${n:-0}" -gt 1 ]; then
+      verde "el PDF lleva $n imágenes DISTINTAS en ${paginas:-?} páginas"
+    elif [ "${n:-0}" -eq 1 ]; then
+      aviso "el PDF lleva UNA sola imagen distinta en ${paginas:-?} páginas: es el membrete, no evidencia ni gráficas con datos"
+    else
       rojo "el PDF no lleva ninguna imagen dentro"
+    fi
   else
     aviso "no se pudo bajar el PDF de S3 para mirarlo por dentro"
   fi

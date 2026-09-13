@@ -103,6 +103,19 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.callout(NO_CALIBRATION, (196, 48, 43))
 
 
+#: [T-7.32] El relleno vuelve a BLANCO en cuanto una figura termina de usarlo.
+#:
+#: `fpdf2` guarda el color de relleno como ESTADO del documento: todo lo que se
+#: rellene después lo hereda. El croquis (§1) dejaba puesto el color del
+#: marcador —`20,24,30` para el inmueble, `110,120,132` para los vecinos—, así
+#: que las TRES tablas del dictamen, que vienen detrás, se imprimían como barras
+#: oscuras con el dato dentro, ilegible. Medido en el reporte real del acto 4 de
+#: la demostración, el 2026-09-12: `pdftotext` sacaba las cifras enteras y en el
+#: papel no se veía una sola.
+def _relleno_por_defecto(pdf: TakabPDF) -> None:
+    pdf.set_fill_color(255, 255, 255)
+
+
 def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("1", "CROQUIS DEL EVENTO")
     points: list[sketch.Point] = []
@@ -152,6 +165,7 @@ def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.cell(28, 3, pdf.text_of(p.label))
 
     # Barra de escala y norte: sin ellas el croquis invita a medir sobre el papel.
+    _relleno_por_defecto(pdf)
     pdf.set_draw_color(20, 24, 30)
     bar_y = top + _SKETCH_H - 6
     pdf.line(MARGIN + 5, bar_y, MARGIN + 5 + drawn.scale_bar_mm, bar_y)
@@ -368,6 +382,7 @@ def _spectrogram(pdf: TakabPDF, esp) -> None:  # noqa: ANN001 - Espectrograma
     pdf.set_draw_color(*RULE)
     pdf.rect(box.x, box.y, box.w, box.h)
     pdf.set_draw_color(20, 24, 30)
+    _relleno_por_defecto(pdf)
 
     # Los ejes, con su magnitud: sin ellas la figura es una mancha bonita.
     pdf.set_font(pdf.body_font, "", 6.0)
