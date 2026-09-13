@@ -20,11 +20,13 @@ from datetime import UTC, datetime, timedelta
 import boto3
 import psycopg
 import pytest
+from botocore.exceptions import ClientError
 from moto import mock_aws
 from psycopg.rows import dict_row
 
 from takab_api.notify.orchestrator import run_notify_pass
 from takab_api.notify.push import (
+    FCM_V1_KEY,
     PUSH_CLASS_CRISIS,
     PUSH_CLASS_OPS,
     PushDevice,
@@ -67,7 +69,7 @@ def test_payload_crisis_es_minimo_y_critico() -> None:
     # comprueba `test_censo_canales_y_sonidos.py`; esto fija que se PIDA.
     assert aps["sound"]["name"] == "alerta_sismica.wav"
 
-    gcm = json.loads(payload["GCM"])
+    gcm = json.loads(payload["GCM"])[FCM_V1_KEY]["message"]
     # `_v2` porque el sonido de un canal Android es inmutable tras crearlo: estrenar
     # tono obliga a estrenar id, o el teléfono que ya tenía el canal sigue con el viejo.
     assert gcm["android"]["notification"]["channel_id"] == "seismic_alert_v2"
@@ -84,7 +86,7 @@ def test_payload_ops_jamas_es_critico() -> None:
     aps = json.loads(payload["APNS"])["aps"]
     assert aps["interruption-level"] == "active"
     assert aps["sound"] == "default"
-    gcm = json.loads(payload["GCM"])
+    gcm = json.loads(payload["GCM"])[FCM_V1_KEY]["message"]
     assert gcm["android"]["notification"]["channel_id"] == "ops"
     assert gcm["android"]["priority"] == "normal"
 
@@ -146,6 +148,90 @@ def test_sns_provider_endpoint_deshabilitado_se_reporta() -> None:
     )
     assert outcome.delivered == 0
     assert outcome.disabled_ids == ["t9"]
+
+
+def test_el_error_de_sns_dice_QUE_llamada_falló_y_POR_QUÉ() -> None:
+    """[T-7.03] El diagnóstico tiene que caber en la fila del job.
+
+    Medido el 2026-09-12 contra la nube: el primer push real de la historia del
+    producto quedó en ``failed`` y lo único que quedó escrito fue
+    ``d219013d…: AuthorizationError`` — el nombre de la clase de excepción. Ni
+    qué llamada rebotó (crear el endpoint del dispositivo o publicar en él, que
+    son permisos distintos sobre recursos distintos) ni el motivo que da AWS.
+    Averiguarlo costó abrir una sesión SSM contra el host y leer el contenedor.
+
+    El código solo no basta: ``AuthorizationError`` lo devuelve SNS tanto cuando
+    falta el permiso como cuando la platform application no es de esta cuenta.
+    """
+
+    class _SnsQueNiega:
+        def create_platform_endpoint(self, **_: object) -> dict:
+            raise ClientError(
+                {
+                    "Error": {
+                        "Code": "AuthorizationError",
+                        "Message": "User: arn:aws:sts::1:assumed-role/x is not authorized to "
+                        "perform: SNS:CreatePlatformEndpoint",
+                    }
+                },
+                "CreatePlatformEndpoint",
+            )
+
+        def publish(self, **_: object) -> dict:  # pragma: no cover — no se llega
+            raise AssertionError("no debería publicarse si el endpoint no se creó")
+
+    provider = SnsPushProvider(
+        region="us-east-2", apns_application_arn="", fcm_application_arn="arn:app/GCM/x"
+    )
+    provider._client = lambda: _SnsQueNiega()  # type: ignore[method-assign]  # noqa: SLF001
+    outcome = provider.deliver(
+        [PushDevice(push_token_id="t1", token="tok", platform="android", endpoint_arn=None)],
+        build_push_payload(
+            push_class=PUSH_CLASS_CRISIS, site_id="S", incident_id="I", phase="alert_active"
+        ),
+    )
+
+    assert outcome.delivered == 0
+    (error,) = outcome.errors
+    assert "create_platform_endpoint" in error, f"no dice qué llamada falló: {error}"
+    assert "AuthorizationError" in error
+    assert "not authorized" in error, f"se perdió el motivo que da AWS: {error}"
+
+
+def test_el_error_al_PUBLICAR_no_se_confunde_con_el_de_crear() -> None:
+    """El control negativo del anterior: son dos permisos y dos recursos.
+
+    ``sns:CreatePlatformEndpoint`` se otorga sobre la platform application y
+    ``sns:Publish`` sobre el endpoint del dispositivo; un mensaje que no los
+    distinga manda a tocar la política equivocada.
+    """
+
+    class _SnsQuePublicaMal:
+        def create_platform_endpoint(self, **_: object) -> dict:
+            return {"EndpointArn": "arn:aws:sns:us-east-2:1:endpoint/GCM/takab-dev-fcm/abc"}
+
+        def publish(self, **_: object) -> dict:
+            raise ClientError(
+                {"Error": {"Code": "AuthorizationError", "Message": "no autorizado a SNS:Publish"}},
+                "Publish",
+            )
+
+    provider = SnsPushProvider(
+        region="us-east-2", apns_application_arn="", fcm_application_arn="arn:app/GCM/x"
+    )
+    provider._client = lambda: _SnsQuePublicaMal()  # type: ignore[method-assign]  # noqa: SLF001
+    outcome = provider.deliver(
+        [PushDevice(push_token_id="t2", token="tok", platform="android", endpoint_arn=None)],
+        build_push_payload(
+            push_class=PUSH_CLASS_CRISIS, site_id="S", incident_id="I", phase="alert_active"
+        ),
+    )
+
+    assert outcome.delivered == 0
+    (error,) = outcome.errors
+    assert "publish" in error and "create_platform_endpoint" not in error, error
+    # El endpoint SÍ se creó: se sella igual, o la próxima pasada volvería a crearlo.
+    assert outcome.created_arns == {"t2": "arn:aws:sns:us-east-2:1:endpoint/GCM/takab-dev-fcm/abc"}
 
 
 def test_sns_provider_sin_platform_application_reporta_error() -> None:
@@ -476,3 +562,37 @@ def test_dictamen_firmado_despacha_push_clase_ops(scenario) -> None:
         .fetchone()
     )
     assert job["status"] == "sent"
+
+
+def test_el_mensaje_de_android_viaja_en_forma_v1_y_no_en_la_heredada() -> None:
+    """[T-7.03] La forma es la diferencia entre una alerta y un aviso cualquiera.
+
+    Medido contra el Pixel el 2026-09-12 con el primer push real del producto:
+    con la carga heredada —`{"notification":…, "android":…, "data":…}`— SNS la
+    convierte a FCM v1 y DESCARTA el bloque `android` por el camino. El aviso
+    llegó y se pintó, sí, pero en `fcm_fallback_notification_channel` y en
+    prioridad normal: sin el canal que salta el No Molestar, sin el tono de
+    TAKAB y sin la entrega inmediata en Doze. Las tres cosas que hacen de un
+    push una ALERTA se perdían en silencio, y las pruebas de este fichero no lo
+    veían porque afirmaban sobre el diccionario que componemos, no sobre lo que
+    SNS entrega.
+
+    El envoltorio `fcmV1Message` es lo que hace que FCM reciba el mensaje tal
+    cual. Comprobado en el mismo teléfono: con él, `seismic_alert_v2`.
+    """
+    gcm = json.loads(
+        build_push_payload(
+            push_class=PUSH_CLASS_CRISIS, site_id="S1", incident_id="I1", phase="alert_active"
+        )["GCM"]
+    )
+    assert set(gcm) == {FCM_V1_KEY}, (
+        f"la carga de Android no va envuelta en {FCM_V1_KEY}: {sorted(gcm)}.\n"
+        "  Sin el envoltorio, SNS convierte desde la forma heredada y tira el\n"
+        "  bloque `android` — canal sísmico y prioridad alta incluidos."
+    )
+    mensaje = gcm[FCM_V1_KEY]["message"]
+    assert mensaje["android"]["notification"]["channel_id"] == "seismic_alert_v2"
+    assert mensaje["android"]["priority"] == "high"
+    # …y el resto del mensaje sigue estando donde FCM v1 lo busca.
+    assert mensaje["data"]["incident_id"] == "I1"
+    assert set(mensaje["notification"]) == {"title", "body"}

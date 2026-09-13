@@ -77,3 +77,40 @@ def test_con_ARN_el_proveedor_es_el_REAL_y_sin_el_el_simulado() -> None:
     simulado = build_push_provider(Settings())
     assert isinstance(simulado, SimulatedPushProvider)
     assert simulado.simulated is True
+
+
+#: El módulo de terraform que otorga los permisos de SNS al rol donde corre el
+#: worker de notify. La otra mitad de la costura: el despliegue puede pasar los
+#: ARN perfectamente y aun así no sonar un teléfono si el rol no puede publicar.
+PUSH_TF = RAIZ / "infra" / "terraform" / "modules" / "push" / "main.tf"
+
+
+def _politica() -> str:
+    return PUSH_TF.read_text(encoding="utf-8")
+
+
+def test_el_rol_puede_PUBLICAR_en_la_platform_application() -> None:
+    """[T-7.03] SNS autoriza el publish contra la APLICACIÓN, no contra el endpoint.
+
+    Medido contra la nube el 2026-09-12 con el primer push real del producto:
+
+        not authorized to perform: SNS:Publish on resource:
+        arn:aws:sns:us-east-2:…:app/GCM/takab-dev-fcm
+
+    …y eso pese a que la llamada lleva el `TargetArn` del endpoint del
+    dispositivo. Con el recurso acotado a `endpoint/*/takab-*/*`, crear el
+    endpoint funcionaba —ese permiso sí está sobre la aplicación— y publicar
+    rebotaba: el aviso agotaba sus tres intentos, quedaba en `failed` y ningún
+    teléfono sonaba. Verde en el despliegue, verde en el registro del token, y
+    silencio donde importa.
+    """
+    politica = _politica()
+    bloque = re.search(r'Sid\s*=\s*"PushPublish".*?\n      \},', politica, re.S)
+    assert bloque is not None, "desapareció el bloque PushPublish de la política de push"
+    recurso = re.search(r"Resource\s*=\s*(.+)", bloque.group(0))
+    assert recurso is not None and "app_arns" in recurso.group(1), (
+        "`sns:Publish` no incluye las platform applications "
+        f"({recurso.group(1).strip() if recurso else '?'}).\n"
+        "  Sin ellas TODO push falla con AuthorizationError aunque el endpoint\n"
+        "  del dispositivo se cree sin problema. Es el defecto que cerró T-7.03."
+    )

@@ -43,6 +43,7 @@
 #   conclude  tier `normal` (ts posterior)                          ⇒ shaking_concluded
 #   reentry   dictamen firmado `inhabit_monitor`                    ⇒ reentry_approved
 #   roster    N ocupantes sintéticos NO reportados (headcount 2.6 / flujo 05)
+#   headcount acción `headcount_notify` ⇒ PUSH real a los teléfonos del sitio
 #   reset     cierra el incidente                                   ⇒ idle
 #   status    solo imprime la fase derivada actual (no muta nada)
 #
@@ -69,9 +70,9 @@ DB_LOCAL_PORT="${DB_LOCAL_PORT:-5436}" # 5436: no choca con make db-tunnel(5434)
 
 SUB="${1:-crisis}"
 case "$SUB" in
-crisis | conclude | reentry | roster | reset | status) ;;
+crisis | conclude | reentry | roster | headcount | reset | status) ;;
 *)
-  echo "subcomando inválido: $SUB (usa crisis|conclude|reentry|roster|reset|status)" >&2
+  echo "subcomando inválido: $SUB (usa crisis|conclude|reentry|roster|headcount|reset|status)" >&2
   exit 2
   ;;
 esac
@@ -164,6 +165,11 @@ reentry)
   "${PSQL[@]}" "${V[@]}" -f "$SQL_DIR/reentry.sql"
   echo "  (nota: el push OPS real lo dispara la consola al firmar; por SQL la app"
   echo "   levanta reentry_approved en su próximo poll de mobile-state ≤ ~60 s)"
+  ;;
+headcount)
+  "${PSQL[@]}" "${V[@]}" -f "$SQL_DIR/headcount.sql"
+  echo '  ✓ pase de lista pedido ⇒ el worker notify lo convierte en un push OPS'
+  echo '    a los dispositivos del sitio en su siguiente pasada (sondea cada 2 s)'
   ;;
 roster)
   for i in $(seq 1 "$ROSTER_N"); do

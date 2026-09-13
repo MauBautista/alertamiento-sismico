@@ -21,10 +21,14 @@
 >
 > Salieron **dos**, las dos sin gastar una ventana tuya: el **§2.11** (el worker de backfill ya
 > corre en la nube y la cadena de evidencia funciona de punta a punta) y la mitad desplegable del
-> **§2.5** (el alcance por rol está encendido; falta comprobarlo por rol, que va con la sesión de
-> consola del acto 4). Y el **§4.4** (credenciales de FCM) sube de urgencia: sin él, la app se
-> entera de una alerta por sondeo — medido en el Pixel real, **21 s** con la app delante y sin
-> límite con la app en segundo plano.
+> **§2.5** (el alcance por rol está encendido).
+>
+> Y ese mismo día, ya por la tarde y **contigo delante**, se cerraron las dos mitades que
+> faltaban. El **§2.5** quedó **verificado por rol** con una sesión real de Cognito (2 sitios con
+> alcance total, 1 acotado a Puebla). Y el **§4.4** dejó de bloquear a Android: creaste el
+> proyecto de Firebase y el Pixel real **sonó con la pantalla apagada** — el primer push entregado
+> en la historia del producto, después de meses en que cada aviso quedaba en `simulated`. Ese
+> punto sigue abierto, pero ya **solo por iOS**.
 >
 > ## Lo que cambió el 2026-09-11
 >
@@ -280,7 +284,7 @@ aparcada. **Si no llega el correo de `ok_actions` en ~15 min, la métrica nunca 
 > Lo que sigue pendiente de `T-2.87` es lo que ya estaba: esta ficha no lo toca.
 
 ### 2.4 · [`T-2.88`](TASKS.md) · Rol CI OIDC endurecido *(cierra también `T-1.44`)*
-### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced` — **ENCENDIDO el 2026-09-12; falta verificarlo por rol**
+### 2.5 · [`T-2.89`](TASKS.md) · Encender `console_scope_enforced` — **ENCENDIDO y VERIFICADO POR ROL el 2026-09-12**
 
 > **✅ Lo que ya está hecho, y no necesitó ventana tuya.** [`T-7.06`](TASKS.md) exportó la bandera
 > en el despliegue y la nube corre con el alcance impuesto desde el 2026-09-12. Antes de encenderlo
@@ -289,10 +293,20 @@ aparcada. **Si no llega el correo de `ok_actions` en ~15 min, la métrica nunca 
 > suite **no se puso en rojo**, porque lo que cambió fue el despliegue y no el valor por defecto
 > del código: los dos tests HTTP siguen fijando la conducta que el código trae de fábrica.
 >
-> **Lo que falta, y es tuyo a medias:** la prueba entre clientes contra el entorno desplegado. No se
-> puede correr con lo que hay: ese test entra con el login de desarrollo, que producción no sirve
-> —y un test bloqueante se encarga de que siga sin servirlo—. Necesita una sesión real de Cognito,
-> que es la que ya trae el acto 4 de la demostración; se cierra allí, contigo delante.
+> **✅ Verificado por rol el 2026-09-12, contigo delante.** El spec no se podía correr tal cual
+> —entra con el login de desarrollo, que producción no sirve, y un test bloqueante se encarga de
+> que siga sin servirlo—, así que se hizo con una **sesión real de Cognito**: la consola desplegada
+> en un navegador de verdad, con tu segundo factor. El operador con alcance total ve **2 sitios**;
+> acotado a Puebla, **1**. El alcance quedó restaurado.
+>
+> **⚠️ La primera medición dio un falso NEGATIVO** y vale por sí sola: recargar la página **no
+> renueva el token** —la consola reutiliza el que tiene guardado en la sesión del navegador, con
+> el claim viejo dentro—, así que parecía que el alcance no recortaba nada. Hace falta un token
+> nuevo, y `REFRESH_TOKEN_AUTH` lo emite releyendo los atributos del usuario **sin pedir otro
+> código**.
+>
+> **Lo que sigue siendo tuyo:** la prueba **entre clientes** contra el entorno desplegado, que
+> necesita un segundo tenant con datos. Se cierra en el acto 4 de la demostración.
 > **La única brecha multi-tenant viva en producción.** Tiene **secuencia obligada** —invertirla
 > deja a cada `soc_operator` con cero estaciones—: primero recorrer los `scope_gap` del
 > `audit_log`, luego asignar alcance, y **encenderlo al final**.
@@ -967,7 +981,12 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
 > [`ENTREGA-Y-ACEPTACION-TAKAB.md`](ENTREGA-Y-ACEPTACION-TAKAB.md). **No antes**: un número falso
 > en un manual de emergencia es peor que una casilla vacía.
 
-### 4.4 · [`T-2.97`](TASKS.md) · `GATE-STORE` · APNs/FCM reales + tono de alerta
+### 4.4 · [`T-2.97`](TASKS.md) · `GATE-STORE` · APNs real + tono de alerta — **FCM ya está VIVO**
+
+> **✅ Android ya no espera a nada (2026-09-12, [`T-7.03`](TASKS.md)).** El proyecto de Firebase
+> existe, la platform application de SNS está creada con su cuenta de servicio y el Pixel real
+> **sonó con la pantalla apagada**: el primer push entregado en la historia del producto. Lo que
+> queda en esta ficha es **solo iOS**, que sí depende de la cuenta de Apple.
 > **✅ El tono está decidido: PROPIO, no el oficial de CIRES** —
 > [`D-19`](DECISIONES-MAURICIO.md#d-19). Reproducir el tono del SASMEX diría **por el altavoz** lo
 > contrario del deslinde que el sistema afirma por escrito, y ya hay precedente medido de esa clase

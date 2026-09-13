@@ -105,6 +105,11 @@ _DELIVERY_STYLE = {
 }
 
 
+#: Clave con la que SNS acepta un mensaje de FCM v1 SIN convertirlo (ver el
+#: comentario en `build_push_payload`, que es donde está medido por qué importa).
+FCM_V1_KEY = "fcmV1Message"
+
+
 def build_push_payload(
     *,
     push_class: str,
@@ -140,7 +145,23 @@ def build_push_payload(
         "priority": style["android_priority"],
         "notification": {"channel_id": style["channel_id"], **text},
     }
-    gcm = json.dumps({"notification": dict(text), "android": android, "data": data})
+    # [T-7.03] La forma v1 EXPLÍCITA, y no la heredada.
+    #
+    # Medido contra el Pixel el 2026-09-12, con el primer push real del producto:
+    # mandando `{"notification":…, "android":…, "data":…}` —la forma heredada—
+    # SNS la convierte a FCM v1 y por el camino DESCARTA el bloque `android`
+    # entero, que es donde viven las dos cosas que hacen de esto una alerta y no
+    # un aviso: el canal (`seismic_alert_v2`, el único que salta el No Molestar y
+    # suena con el tono de TAKAB) y la prioridad alta (la que entrega en Doze).
+    # El aviso llegó, se pintó… en `fcm_fallback_notification_channel` y en
+    # prioridad normal. Verde en el servidor, verde en el teléfono, y sin alerta.
+    #
+    # Envolverlo en `fcmV1Message` le entrega a FCM el mensaje v1 tal cual, sin
+    # conversión. Comprobado en el mismo teléfono: con esta forma el aviso cae en
+    # `seismic_alert_v2`; con la heredada, en el canal de reserva.
+    gcm = json.dumps(
+        {FCM_V1_KEY: {"message": {"notification": dict(text), "android": android, "data": data}}}
+    )
 
     return {
         "default": json.dumps(data),
@@ -198,6 +219,12 @@ class SnsPushProvider:
             if not application:
                 outcome.errors.append(f"{device.platform}: platform application no configurada")
                 continue
+            # [T-7.03] Qué llamada se está haciendo, para poder DECIRLO si rebota:
+            # crear el endpoint del dispositivo y publicar en él son permisos
+            # distintos sobre recursos distintos (`sns:CreatePlatformEndpoint`
+            # sobre la platform application; `sns:Publish` sobre el endpoint), y
+            # SNS devuelve `AuthorizationError` para los dos.
+            operacion = "create_platform_endpoint"
             try:
                 arn = device.endpoint_arn
                 if not arn:
@@ -205,18 +232,26 @@ class SnsPushProvider:
                         PlatformApplicationArn=application, Token=device.token
                     )["EndpointArn"]
                     outcome.created_arns[device.push_token_id] = arn
+                operacion = "publish"
                 client.publish(TargetArn=arn, MessageStructure="json", Message=message)
                 outcome.delivered += 1
             except ClientError as exc:
-                code = exc.response.get("Error", {}).get("Code", "")
+                error = exc.response.get("Error", {})
+                code = error.get("Code", "")
                 if code in ("EndpointDisabled", "InvalidParameter"):
                     # Token muerto/rotado: se revoca en DB; el dispositivo vivo
                     # re-registrará su token nuevo (upsert de /me/push-tokens).
                     outcome.disabled_ids.append(device.push_token_id)
                 else:
-                    outcome.errors.append(f"{device.push_token_id}: {code or exc}")
+                    # El código a secas no basta para arreglar nada: el mensaje
+                    # de AWS es el que nombra al principal y a la acción.
+                    detalle = error.get("Message") or ""
+                    outcome.errors.append(
+                        f"{device.push_token_id}: {operacion}: {code or exc}"
+                        + (f": {detalle}" if detalle else "")
+                    )
             except BotoCoreError as exc:
-                outcome.errors.append(f"{device.push_token_id}: {exc}")
+                outcome.errors.append(f"{device.push_token_id}: {operacion}: {exc}")
         return outcome
 
 

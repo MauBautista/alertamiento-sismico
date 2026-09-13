@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **406** · `[x]` **332** · `[~]` **13** · `[ ]` **61**
+**Conteo de tareas:** total **406** · `[x]` **335** · `[~]` **10** · `[ ]` **61**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13577,16 +13577,44 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > minutos. Quien repita esto en otro sitio: el síntoma de «los permisos se conceden y nada
 > sube» casi siempre es esta carrera, no un permiso de IAM.
 
-### [~] T-7.03 · **La push llega de verdad al teléfono** — `SOFTWARE` + `GATE-AWS` · **BLOQUEADA en las credenciales de Firebase**
+### [x] T-7.03 · **La push llega de verdad al teléfono** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-12 · sonó con la pantalla apagada**
 - **Componente:** infra · deploy · mobile · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** que el gabinete dispare y el Pixel vibre por push real, no por sondeo.
 - **Criterios de aceptación:**
-  - [ ] Con `push_fcm_service_account_json` en `local.auto.tfvars` (Mauricio, §4.4 de
+  - [x] Con `push_fcm_service_account_json` en `local.auto.tfvars` (Mauricio, §4.4 de
     pendientes) el módulo `push` crea la platform application y `deploy.sh` exporta
     `TAKAB_API_PUSH_FCM_APPLICATION_ARN`; `api/tests/notify/test_push_provider_en_nube.py`
     prueba que el entorno de despliegue elige `SnsPushProvider`.
-  - [ ] `google-services.json` en la app (gitignored), rebuild, token registrado en
+  - [x] `google-services.json` en la app (gitignored), rebuild, token registrado en
     `POST /me/push-tokens`; un incidente real deja `notification_jobs.status='sent'`.
+    Medido el 2026-09-12: `push_tokens` pasó de **0 filas en toda su historia** a un token
+    nativo de FCM de 142 caracteres con su inmueble, y el primer job de push del producto
+    llegó a `sent` (antes: 5 `simulated`, 2 `failed`, ni uno entregado).
+  - [x] **Sonó con la pantalla APAGADA**, que es lo único que prueba el canal: el registro del
+    teléfono dice `isLockScreen:true isScreenOn:false` en el instante de la entrega, la app
+    estaba **congelada** por el sistema (`freezing` de `ActivityManager`) y el push la
+    descongeló, encendió la pantalla y pintó el aviso. Con la app detrás no hay sondeo: sin
+    esto el aviso no existe.
+  - [x] **Tres defectos que solo aparecen con un teléfono de verdad**, cada uno con su prueba:
+    1. **El rol no podía publicar.** SNS autoriza el `Publish` a un endpoint de plataforma
+       **contra el ARN de la aplicación**, no contra el del endpoint, y la política solo
+       otorgaba el segundo: crear el endpoint funcionaba y publicar rebotaba con
+       `AuthorizationError`. Tres intentos, `failed`, y ningún teléfono. Lo fija
+       `test_el_rol_puede_PUBLICAR_en_la_platform_application`.
+    2. **El canal sísmico y la prioridad alta se perdían por el camino.** Con la carga
+       heredada, SNS la convierte a FCM v1 y **descarta el bloque `android` entero**: el aviso
+       llegó y se pintó en `fcm_fallback_notification_channel` y en prioridad normal — sin el
+       canal que salta el No Molestar, sin el tono de TAKAB y sin entrega inmediata en Doze.
+       Envuelto en `fcmV1Message` cae en `seismic_alert_v2`, comprobado en el mismo teléfono.
+       Lo fija `test_el_mensaje_de_android_viaja_en_forma_v1_y_no_en_la_heredada`.
+    3. **El error guardado no servía para arreglar nada:** decía `AuthorizationError` y ni qué
+       llamada rebotó ni el motivo de AWS. Averiguarlo costó una sesión SSM contra el host.
+       Ahora la fila nombra la operación y el mensaje.
+  - [x] **El arnés de staging no producía ningún push y nadie lo notaba.** Sus subcomandos
+    mueven la fase que la app **deriva al sondear**, y eso no despierta a nadie; el único
+    camino a un push real es una acción de incidente de las dos clases que busca el
+    notificador. Nace `headcount` (`infra/scripts/sql/staging-incident/headcount.sql`), y su
+    prueba afirma con el **SQL del orquestador importado**, no con una copia del literal.
   - [x] **Respaldo declarado y medido** si las credenciales no llegan: medido el 2026-09-12
     con el APK de `HEAD` en el Pixel real y un incidente de crisis abierto en la nube — con la
     app **en primer plano y en reposo**, la pantalla de crisis apareció **21 s** después de que
@@ -13596,7 +13624,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [~] T-7.04 · **Censo de solapes y de flujo con la alerta en pantalla** — `SOFTWARE` · **CONSOLA Y PANEL MEDIDOS · falta el teléfono**
+### [x] T-7.04 · **Censo de solapes y de flujo con la alerta en pantalla** — `SOFTWARE` · **CERRADA 2026-09-12 · consola, panel y teléfono**
 - **Componente:** web · edge · mobile · **Depende de:** — · **Prioridad:** F0 · alta
 - **Objetivo:** afirmar «nada se encima» con las escenas que la demo va a mostrar, no con la
   consola en reposo.
@@ -13610,13 +13638,16 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     `127.0.0.1`. Eran 15 y no 13: `simulacro_abortado` y `prueba_actuadores_en_curso` entraron
     después de escribir esta ficha, y el barrido las lee del propio HTML servido en vez de una
     lista tecleada.
-  - [~] Pixel: `uiautomator` **filtrado a rótulos de la app** (el teléfono es personal) en
-    crisis, check-in y táctico. **Pendiente, y con dos razones medidas el 2026-09-12:** el
-    teléfono se desconectó del USB a mitad de la sesión; y el volcado **no funciona en una
-    pantalla con contador vivo** —la de crisis redibuja el tiempo transcurrido cada segundo, la
-    ventana nunca queda en reposo y el volcado falla en silencio, que se lee como «la pantalla
-    no llegó»—. Se cierra en `T-7.09`, que es donde el teléfono se ejercita de verdad, midiendo
-    con grabación de pantalla y fotogramas como se hizo con el respaldo del push.
+  - [x] Pixel, **filtrado a lo que pinta la app** (el teléfono es personal): ocupante
+    (inicio, crisis, check-in) y brigadista (panel y sus seis pestañas) — **0 parejas
+    encimadas** en todas. Medido el 2026-09-12 con el mismo criterio que la consola.
+    **`uiautomator` no sirve aquí y `maestro hierarchy` sí:** aquel espera a que la ventana
+    quede en reposo y la pantalla de crisis redibuja el tiempo transcurrido cada segundo, así
+    que el volcado falla **en silencio** y se lee como «la pantalla no llegó». El filtro por
+    paquete tampoco es opcional: Maestro **no marca el paquete de cada nodo**, y un volcado sin
+    acotar arrastró la persiana de notificaciones personal del teléfono; el corte se hace por
+    `resource-id`, entrando en el subárbol de la app y saliendo en el de `systemui` — y
+    `android:id/content` **no es ajeno**, es el contenedor de la propia app.
   - [x] Conteo de clics de los tres flujos (alerta→dictamen, alta de sitio, simulacro) contra
     `design/INFORME-UIUX.md §3`; cada hallazgo nace como criterio de `T-7.05`. Salieron dos que
     la auditoría visual no podía ver porque no cronometró: el detalle de triage que nunca se
@@ -13731,7 +13762,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > cifra. Dos herramientas de barrido quedaron además corregidas en su punto ciego: esperaban un plazo
 > fijo y medían la escena **antes** de que apareciera lo que había que medir.
 
-### [~] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **ENCENDIDO · falta verificarlo por rol**
+### [x] T-7.06 · **`console_scope_enforced` encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-12 · verificado por rol con sesión real**
 - **Componente:** deploy · web · **Depende de:** T-2.89 · **Prioridad:** F0 · media
 - **Objetivo:** que el despliegue diga lo mismo que el código y que `D-18` decidió. **Adelanta
   `T-2.89` pero no la cierra:** aquella pide además comprobar por rol contra el pool real y una
@@ -13745,11 +13776,15 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     encender») se cumple por vacuidad: no hay a quién asignárselo todavía.
   - [x] Tras el redespliegue, la consola desplegada pasa sus comprobaciones de punta a punta
     (12 en verde, incluida la que exige que producción **no** sirva el login de desarrollo).
-  - [~] `web/e2e/scope.spec.ts` contra la nube con un usuario con `site_scope`
-    (`make cloud-users`): distintivo en la barra, subconjunto en el mapa. **No se puede correr
-    tal cual:** ese spec entra con el login de desarrollo, que producción no sirve. Necesita
-    sesión real de Cognito, que es la que trae `T-7.09`; hasta entonces el alcance está
-    encendido y sin verificar por rol, que es mejor que apagado y sin verificar.
+  - [x] Verificado **con sesión real de Cognito** el 2026-09-12, no con el spec: aquel entra
+    con el login de desarrollo, que producción no sirve —y un test bloqueante se ocupa de que
+    siga sin servirlo—. Se abrió la consola desplegada en un navegador de verdad, con el
+    segundo factor tecleado por Mauricio, y se midió contra la nube: el operador con alcance
+    total ve **2 sitios** y, acotado a Puebla, **1** (el de Puebla). Alcance restaurado al
+    terminar. **La primera medición dio un falso negativo:** recargar la página NO renueva el
+    token —la consola reutiliza el de `sessionStorage`, con el claim viejo dentro— y parecía
+    que el alcance no recortaba; hace falta un token nuevo, y el `REFRESH_TOKEN_AUTH` lo emite
+    releyendo los atributos **sin pedir otro código**.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
