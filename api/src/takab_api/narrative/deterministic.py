@@ -37,11 +37,21 @@ def _resumen(f: NarrativeFacts) -> str:
         if f.peak_pga_g is not None
         else "sin pico instrumental medido"
     )
+    # [T-7.33] El cierre también se DERIVA. Escrito a fuego, el mismo párrafo
+    # decía «firmado por un inspector» y, dos frases después, «este documento es
+    # preliminar»: el resumen ejecutivo se contradecía a sí mismo en cuanto
+    # alguien firmaba. Lo que no cambia —que no sustituye la evaluación
+    # estructural formal— se afirma en los dos casos.
+    cierre = (
+        "Este documento no sustituye una evaluación estructural formal."
+        if f.verdict_signed
+        else "Este documento es preliminar y no sustituye una evaluación estructural formal."
+    )
     return (
         f"Folio {f.folio}. El dictamen vigente es «{f.verdict_label}», {firmado}. "
         f"El incidente se abrió con severidad {f.severity} {pico}, "
         f"clasificado como {f.felt_label.lower()}. "
-        f"Este documento es preliminar y no sustituye una evaluación estructural formal."
+        f"{cierre}"
     )
 
 
