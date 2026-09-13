@@ -82,42 +82,20 @@ REGION="$(terraform -chdir="$TF_DIR" output -raw region 2>/dev/null || echo us-e
 echo "sitio=$SITE_ID  zona=$ZONE_ID  subcomando=$SUB"
 echo
 
-# --- Túnel SSM → BD (patrón idéntico a seed_mobile_users.sh) -------------------
-DB_ID="$(terraform -chdir="$TF_DIR" output -raw db_instance_id)"
-DB_IP="$(terraform -chdir="$TF_DIR" output -raw db_private_ip)"
-DB_SECRET="$(aws secretsmanager get-secret-value --secret-id takab/dev/db/superuser \
-  --region "$REGION" --query SecretString --output text)"
+# --- Túnel SSM → BD ------------------------------------------------------------
+# El bloque vive en `lib/tunel.sh` desde T-7.07: estaba copiado aquí y en
+# `seed_mobile_users.sh`, y el guion de la demostración iba a ser la tercera
+# copia. Las dos trampas que guarda (el plugin que sobrevive al padre y la espera
+# del puerto) están explicadas allí.
+# shellcheck source=lib/tunel.sh
+. "$(dirname "$0")/lib/tunel.sh"
+
+echo "Abriendo túnel SSM → puerto $DB_LOCAL_PORT…"
+abrir_tunel "$DB_LOCAL_PORT" "$REGION" || exit 1
+DB_SECRET="$(credenciales_db "$REGION")"
 DB_USER="$(jq -r .username <<<"$DB_SECRET")"
 DB_PASS="$(jq -r .password <<<"$DB_SECRET")"
 DB_NAME="$(jq -r .dbname <<<"$DB_SECRET")"
-
-echo "Abriendo túnel SSM → puerto $DB_LOCAL_PORT…"
-aws ssm start-session --region "$REGION" --target "$DB_ID" \
-  --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters "{\"host\":[\"$DB_IP\"],\"portNumber\":[\"5432\"],\"localPortNumber\":[\"$DB_LOCAL_PORT\"]}" \
-  >/dev/null 2>&1 &
-TUNNEL_PID=$!
-# `aws ssm` lanza session-manager-plugin como HIJO: matar solo al padre deja el
-# plugin vivo con el puerto tomado y la siguiente corrida no abre el túnel.
-_kill_tunnel() {
-  pkill -P "$TUNNEL_PID" 2>/dev/null || true
-  kill "$TUNNEL_PID" 2>/dev/null || true
-}
-trap _kill_tunnel EXIT
-
-ready=0
-for _ in $(seq 1 30); do
-  if (exec 3<>"/dev/tcp/127.0.0.1/$DB_LOCAL_PORT") 2>/dev/null; then
-    exec 3<&-
-    ready=1
-    break
-  fi
-  sleep 1
-done
-if [[ "$ready" != 1 ]]; then
-  echo "  ✗ el túnel no abrió. ¿La instancia está apagada? → make cloud-start" >&2
-  exit 1
-fi
 
 export PGPASSWORD="$DB_PASS"
 PSQL=(psql -h 127.0.0.1 -p "$DB_LOCAL_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -q)
@@ -188,6 +166,6 @@ echo
 echo "Fase derivada actual (réplica de mobile_site.py; la verdad es el endpoint):"
 "${PSQL[@]}" "${V[@]}" -tA -f "$SQL_DIR/phase.sql"
 
-_kill_tunnel
+cerrar_tunel
 trap - EXIT
 unset PGPASSWORD

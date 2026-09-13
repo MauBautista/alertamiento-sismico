@@ -6,11 +6,22 @@ appId: com.takab.ailert
 - launchApp:
     clearState: true
 - runFlow: shared/login-occupant.yaml
+# `clearState` borra TAMBIÉN el enrolamiento, así que sin esto la app se queda en
+# el asistente de configuración y Home no llega a pintarse nunca: la aserción de
+# abajo falla por una razón que no tiene nada que ver con el dictamen. Los otros
+# flujos que limpian estado ya lo hacían; este no, y era el segundo motivo por el
+# que nunca se acreditó.
+- runFlow: shared/enrolar-sitio.yaml
 
 # El occupant estaba en bloqueo de reingreso (1.5); al firmarse el dictamen
 # habitable, mobile-state pasa a reentry_approved y Home lo declara.
-- assertVisible:
-    id: "reentry-banner"
+# `extendedWaitUntil` y no `assertVisible: {timeout:}` — ese `timeout` NO existe
+# en `assertVisible` y Maestro rechaza el fichero ENTERO con «Unknown Property:
+# timeout» antes de ejecutar un solo paso. Por eso este flujo llevaba desde que
+# se escribió sin acreditarse: no fallaba una aserción, es que nunca cargó.
+- extendedWaitUntil:
+    visible:
+      id: "reentry-banner"
     timeout: 60000        # espera el push + re-lectura de mobile-state
 - assertVisible:
     text: ".*REINGRESO AUTORIZADO.*"
