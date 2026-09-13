@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **408** · `[x]` **336** · `[~]` **12** · `[ ]` **60**
+**Conteo de tareas:** total **409** · `[x]` **337** · `[~]` **12** · `[ ]` **60**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14232,6 +14232,25 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     por el endpoint, sin tocar la base a mano.
   - [ ] Hasta entonces, el runbook de la demostración dice qué hacer (`conclude` del arnés) y
     **por qué** — un paso manual escrito es mejor que un silencio.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [x] T-7.31 · **La cámara forense decía «no se pudo» y nada más** — `SOFTWARE` · **CERRADA 2026-09-12**
+- **Componente:** mobile · deploy · **Depende de:** T-7.07 · **Prioridad:** F1 · media
+- **Objetivo:** que un fallo al guardar evidencia diga POR QUÉ, y que el guion de la demostración
+  sepa mirar dentro del PDF.
+- **Criterios de aceptación:**
+  - [x] El `catch` de `camera.tsx` era **vacío**: la pantalla decía «No se pudo guardar la
+    evidencia en este teléfono» y en el registro no quedaba nada. Durante el acto 4 del
+    2026-09-12 eso dejó la sesión sin forma de distinguir un teléfono sin espacio (el Pixel iba
+    al 98 %) de una captura que reventó — y se arreglan distinto. Ahora nombra el error.
+  - [x] `guion.sh --reporte` buscaba el bucket en una **columna que no existe**
+    (`evidence_objects.bucket`): el bucket es un ajuste de la API, no un dato de la fila. El
+    síntoma era «no se pudo bajar el PDF de S3», que se lee como un problema de permisos.
+    Ahora se deriva de AWS y el guion **mira dentro del PDF**: 8 imágenes embebidas en el
+    reporte del acto 3.
+  - [x] Las fotos de brigada pasan de criterio ROJO a aviso: la autoridad es lo que lleva el PDF
+    dentro, que es lo que recibe el cliente. Exigirlas ponía en rojo un reporte entregable.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 

@@ -33,6 +33,7 @@
 #   TAKAB_DEMO_ESPERA_S    plazo de `--check`      (def. 45)
 #   TAKAB_DEMO_DESDE       desde cuándo cuenta un incidente (def. ahora)
 #   TAKAB_DEMO_INCIDENTE   incidente para `--reporte` (def. el último del sitio)
+#   TAKAB_DEMO_BUCKET      bucket de evidencia (def. el de este entorno en AWS)
 #
 # La red por defecto es `192.168.1.0/24` a propósito: es la red donde el equipo
 # se va a INSTALAR. Desde la de desarrollo hay que decirle dónde mirar con
@@ -347,9 +348,13 @@ reporte() {
     return 1
   fi
   verde "PDF del reporte: $pdf"
+  # Las fotos del brigadista se DECLARAN, no se exigen: la autoridad es lo que
+  # lleva el PDF dentro, que es lo que recibe el cliente. Medido el 2026-09-12:
+  # un reporte técnico sin una sola foto de brigada llevaba 8 imágenes embebidas
+  # (las gráficas), así que exigir fotos ponía en rojo un reporte entregable.
   [ "${fotos:-0}" -gt 0 ] &&
-    verde "$fotos foto(s) de evidencia colgando del incidente" ||
-    rojo "el incidente no tiene ni una foto: el reporte saldría sin imágenes"
+    verde "$fotos foto(s) de brigada colgando del incidente" ||
+    aviso "sin fotos de brigada en este incidente (el reporte llevará solo sus gráficas)"
 
   # La prueba de verdad es que el PDF LLEVE la imagen dentro, no que exista una
   # foto suelta en la base. Se baja y se cuentan sus imágenes embebidas.
@@ -358,7 +363,10 @@ reporte() {
     return
   fi
   local bucket tmp n
-  bucket="$(consulta "SELECT bucket FROM evidence_objects WHERE incident_id='$iid' AND kind='report_pdf' ORDER BY created_at DESC LIMIT 1")"
+  # El bucket NO es una columna de `evidence_objects` —eso costó un «no se pudo
+  # bajar el PDF» que parecía un problema de permisos—: es un ajuste de la API
+  # (`settings.evidence_bucket`). Se deriva de AWS, con override por entorno.
+  bucket="${TAKAB_DEMO_BUCKET:-$(aws s3 ls 2>/dev/null | awk '/takab-dev-evidence/ { print $3; exit }')}"
   tmp="$(mktemp -t takab-reporte-XXXX.pdf)"
   if [ -n "$bucket" ] && aws s3 cp "s3://$bucket/$pdf" "$tmp" >/dev/null 2>&1; then
     n="$(pdfimages -list "$tmp" 2>/dev/null | tail -n +3 | grep -c .)"

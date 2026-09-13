@@ -181,9 +181,16 @@ export default function Camera() {
         void drainQueue();
         setBusy(false);
         router.back();
-      } catch {
+      } catch (err) {
+        // [T-7.31] El `catch` vacío costó una sesión de demostración: la foto
+        // del brigadista no se guardaba y lo único que decía la pantalla —y lo
+        // único que quedaba en el registro— era «no se pudo». Sin el motivo no
+        // se puede distinguir un teléfono sin espacio de una captura que
+        // reventó, y las dos se arreglan de forma distinta.
         setBusy(false);
-        setCapturaError("No se pudo guardar la evidencia en este teléfono.");
+        const motivo = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+        console.warn("evidencia forense: no se pudo guardar", motivo);
+        setCapturaError(`No se pudo guardar la evidencia en este teléfono (${motivo}).`);
       }
     })();
   };
