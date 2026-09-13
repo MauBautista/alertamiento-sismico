@@ -14329,8 +14329,14 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     gabinete declara `pga_trip_g = 0.1` y el documento clasifica con 0.060.
   - [ ] **B · El disparo de apertura y el tiempo de aviso salen de un campo que se REESCRIBE.**
     `incidents.trigger` lo sobrescribe la última escalada; la prosa lo presenta como el origen y
-    el mismo campo decide el aviso ganado. Vivo: el reporte del acto 3 imprimió «149.2 s» para un
-    pulso manual.
+    el mismo campo decide el aviso ganado. **Latente**, no vivo: el incidente del acto 3 abrió con
+    `sasmex` y nunca escaló, así que su `trigger` no se reescribió. (La primera redacción de esta
+    ficha le atribuyó el «149.2 s» del reporte; se comprobó contra el dato y era falso.)
+  - [ ] **B′ · El papel presenta un «aviso ganado» de una sacudida que él mismo mide como leve.**
+    `_lead_time` toma como pico el máximo de la ventana haya habido sismo o no, así que en una
+    prueba o una falsa alarma mide ruido ambiente. **Esto sí está vivo, y en la misma página:**
+    «TIEMPO DE AVISO GANADO · 149.2 s» tres líneas debajo de «SACUDIDA LEVE (por debajo de los
+    umbrales del inmueble)».
   - [ ] **C · «El valor evaluado fue 0.000 g» sin medición**, en un documento cuyo §5 dice «SIN
     DATO». `rules.py` sustituye `None` por `0.0` y lo congela en el `basis`.
   - [ ] Las diez contradicciones internas del §2 del informe (veredicto atribuido a las reglas,

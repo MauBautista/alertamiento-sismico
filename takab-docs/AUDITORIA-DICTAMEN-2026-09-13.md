@@ -12,7 +12,7 @@
 > hallazgo pasó por **tres escépticos** con el encargo de refutarlo, cada uno con un ángulo
 > distinto: que la cadena llegue de verdad al papel, que el caso que la desmiente sea
 > alcanzable, y que no sea una ausencia honesta. **50 propuestos · 32 sobrevivieron · 18
-> refutados.** Los 32 se deduplican en **19 defectos distintos** (varias lentes encontraron el
+> refutados.** Los 32 se deduplican en **19 defectos distintos** (20 con el `B′` que salió al verificar el `B`) (varias lentes encontraron el
 > mismo).
 >
 > **Lo que NO es un hallazgo, y por eso no está aquí:** que el documento declare lo que le falta.
@@ -64,8 +64,25 @@ El mismo campo decide el **tiempo de aviso ganado**, así que un incidente **abi
 puede acabar imprimiendo «NO CALCULABLE · no aplica: el incidente no se disparó por SASMEX», o al
 revés: medir el aviso desde la detección local en uno que sí fue SASMEX.
 
-> **Está vivo en la demostración:** el reporte del acto 3 imprimió «Tiempo de aviso ganado:
-> 149.2 s» para un pulso manual de WR-1 — una cifra que no significa nada.
+> **Corrección (misma jornada).** Este informe atribuyó primero a este defecto el «Tiempo de aviso
+> ganado: 149.2 s» del reporte del acto 3. **Era falso y se comprobó contra el dato:** ese
+> incidente abrió con `trigger='sasmex'`, severidad `warning`, y **nunca se reescribió** (su
+> `summary` está vacío). Los 149.2 s son la fórmula haciendo lo que define —pico a las 03:30:32
+> menos apertura a las 03:28:03—. El defecto B es **latente**: el `UPDATE` existe y muerde en
+> cuanto un incidente escala de fuente. Lo que sí está vivo en ese PDF es el defecto **B′**.
+
+### B′ · El papel presenta un «aviso ganado» de una sacudida que él mismo mide como leve
+
+`forensics/__init__.py:141` · `dictamen/pdf.py:470`
+
+`_lead_time` toma como «pico» el máximo de la ventana del incidente **haya habido sismo o no**. En
+una alerta sin sacudida real —una prueba, una falsa alarma— ese máximo es ruido ambiente, y el
+documento imprime un tiempo de aviso ganado como si se hubiera advertido de algo.
+
+> **Está vivo en la demostración, y en la misma página:** el reporte del acto 3 imprime
+> «TIEMPO DE AVISO GANADO · 149.2 s» tres líneas debajo de «BANDA · SACUDIDA LEVE (por debajo de
+> los umbrales del inmueble)». Se presenta como logro haber avisado de algo que el propio
+> documento clasifica como no significativo.
 
 ### C · «El valor evaluado fue 0.000 g» cuando no hubo medición
 
