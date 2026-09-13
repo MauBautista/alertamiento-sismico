@@ -26,6 +26,7 @@ from takab_api.dictamen.model import (
     ABSENT,
     CENTROID_NOTE,
     DISCLAIMER,
+    DISCLAIMER_ESTADO,
     ENVELOPE_NOTE,
     FELT_LABELS,
     NARRATIVE_AI_NOTE,
@@ -58,8 +59,17 @@ def render(model: ReportModel, variant: str = "technical") -> bytes:
 # --- documento técnico --------------------------------------------------------
 
 
+def _firmado(m: ReportModel) -> bool:
+    """¿El dictamen vigente lleva firma? El encabezado y el deslinde salen de aquí."""
+    return bool(m.dictamens and m.dictamens[0].signed_by)
+
+
 def _render_technical(m: ReportModel) -> bytes:
-    pdf = TakabPDF(m.folio, f"DICTAMEN OPERATIVO PRELIMINAR · {m.site_name} ({m.site_code})")
+    # [T-7.33] El estado va DERIVADO, no escrito a fuego: el encabezado se
+    # repite en todas las páginas, y decía PRELIMINAR encima del banner que
+    # decía FIRMADO. En un papel con peso legal eso no es una errata.
+    estado = "FIRMADO" if _firmado(m) else "PRELIMINAR"
+    pdf = TakabPDF(m.folio, f"DICTAMEN OPERATIVO {estado} · {m.site_name} ({m.site_code})")
     pdf.seal(m.opened_at)
     pdf.add_page()
 
@@ -634,7 +644,7 @@ def _closing(pdf: TakabPDF, m: ReportModel) -> None:
     else:
         pdf.field("FIRMA", "PRELIMINAR · SIN FIRMA DE INSPECTOR")
     pdf.ln(2)
-    pdf.callout(DISCLAIMER, (20, 24, 30))
+    pdf.callout(f"{DISCLAIMER_ESTADO[_firmado(m)]} {DISCLAIMER}", (20, 24, 30))
 
 
 # --- documento ejecutivo ------------------------------------------------------
@@ -697,5 +707,5 @@ def _render_executive(m: ReportModel) -> bytes:
         pdf.callout(note)
 
     pdf.ln(3)
-    pdf.callout(DISCLAIMER, (20, 24, 30))
+    pdf.callout(f"{DISCLAIMER_ESTADO[_firmado(m)]} {DISCLAIMER}", (20, 24, 30))
     return bytes(pdf.output())

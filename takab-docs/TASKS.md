@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **410** · `[x]` **338** · `[~]` **12** · `[ ]` **60**
+**Conteo de tareas:** total **411** · `[x]` **339** · `[~]` **12** · `[ ]` **60**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14276,6 +14276,31 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     antes y después.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
+
+### [x] T-7.33 · **Un dictamen firmado se llamaba PRELIMINAR a sí mismo** — `SOFTWARE` · **CERRADA 2026-09-13**
+- **Componente:** api · **Depende de:** T-7.32 · **Prioridad:** F1 · alta
+- **Objetivo:** que el estado del documento salga del dato, en los TRES sitios que lo dicen con
+  palabras, y no escrito a fuego.
+- **Criterios de aceptación:**
+  - [x] **Medido en el reporte real, tras firmar el inspector:** el banner decía «DICTAMEN
+    FIRMADO», la §9 traía la fila `FIRMADO` sucediendo a la preliminar y la §14 nombraba a
+    quien firmó… y el **encabezado de las cuatro páginas** seguía diciendo «DICTAMEN OPERATIVO
+    PRELIMINAR», el deslinde de la §14 repetía «Dictamen operativo PRELIMINAR» justo debajo del
+    «FIRMÓ», y el resumen ejecutivo decía «firmado por un inspector» y dos frases después «este
+    documento es preliminar». El mismo papel se contradecía **tres veces**.
+  - [x] En un documento con peso legal eso no es una errata: es lo que un perito o una
+    aseguradora usan para discutir qué documento estaban leyendo.
+  - [x] Los tres se derivan ahora de si hay firma. El deslinde se parte en dos: lo INVARIANTE
+    queda en `DISCLAIMER` —que el censo de avisos impresos sigue exigiendo— y la frase de estado
+    en `DISCLAIMER_ESTADO`, que es un mapa por `firmado`.
+  - [x] `test_estado_del_documento.py` fija los tres, **cada uno con su control negativo**: sin
+    firma el documento sigue declarándose preliminar, y la fila PRELIMINAR de la cadena de la
+    §9 **no puede desaparecer** — es historia, dice qué se corrigió.
+  - [x] Verificado por render: encabezado «DICTAMEN OPERATIVO FIRMADO», §9 con las dos filas y
+    §14 con el deslinde correcto.
+- **Tests de censo que toca:** `test_avisos_impresos` (el deslinde cambia de texto) · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_el_deslinde_dice_lo_que_
+  tiene_que_decir` exigía que la constante empezara por «Dictamen operativo PRELIMINAR».
 
 ## RUTA CRÍTICA
 

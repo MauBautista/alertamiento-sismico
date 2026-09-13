@@ -18,6 +18,7 @@ from takab_api.dictamen import layout
 from takab_api.dictamen.model import (
     ABSENT,
     DISCLAIMER,
+    DISCLAIMER_ESTADO,
     ActionRow,
     ChannelRow,
     DictamenRow,
@@ -255,9 +256,19 @@ def test_el_deslinde_dice_lo_que_tiene_que_decir() -> None:
     variante donde toca, vive en `test_avisos_impresos.py`, que espía el punto por
     el que pasa todo el texto dibujado.
     """
-    assert DISCLAIMER.startswith("Dictamen operativo PRELIMINAR")
+    # [T-7.33] El deslinde se partió en dos: lo INVARIANTE (esta constante) y la
+    # frase que describe el ESTADO del documento, que ahora se deriva de si hay
+    # firma. Estaba escrita a fuego y llamaba PRELIMINAR a un dictamen firmado,
+    # en la misma página donde el banner decía FIRMADO.
+    assert "PRELIMINAR" not in DISCLAIMER, (
+        "el estado del documento volvió a la constante: escrito a fuego miente "
+        "en cuanto un inspector firma"
+    )
     assert "No sustituye la evaluación estructural formal" in DISCLAIMER
     assert "sin firma de ingeniería" in DISCLAIMER
+    # Y las dos frases de estado siguen existiendo, una por cada caso.
+    assert DISCLAIMER_ESTADO[False].startswith("Dictamen operativo PRELIMINAR")
+    assert "FIRMADO" in DISCLAIMER_ESTADO[True]
 
 
 def test_una_variante_desconocida_cae_al_tecnico() -> None:

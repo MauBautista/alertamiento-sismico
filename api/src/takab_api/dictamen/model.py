@@ -49,11 +49,21 @@ STATUS_ACTIONS: dict[str, tuple[str, ...]] = {
     ),
 }
 
+#: [T-7.33] Lo que el deslinde afirma SIEMPRE, firmado o no. La frase que
+#: describe el ESTADO del documento no vive aquí: se deriva de si hay firma
+#: (`pdf._closing`), porque escrita a fuego llamaba PRELIMINAR a un dictamen
+#: firmado, en la misma página en la que el banner decía FIRMADO.
 DISCLAIMER = (
-    "Dictamen operativo PRELIMINAR generado por TAKAB Ailert a partir de evidencia "
-    "instrumental. No sustituye la evaluación estructural formal ni certifica reingreso "
+    "No sustituye la evaluación estructural formal ni certifica reingreso "
     "seguro sin firma de ingeniería."
 )
+
+#: Las dos primeras frases del deslinde, según el documento tenga firma o no.
+DISCLAIMER_ESTADO = {
+    False: "Dictamen operativo PRELIMINAR generado por TAKAB Ailert a partir de "
+    "evidencia instrumental.",
+    True: "Dictamen operativo FIRMADO por inspector, sobre evidencia instrumental de TAKAB Ailert.",
+}
 
 TS_FMT = "%Y-%m-%d %H:%M:%S UTC"
 
