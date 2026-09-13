@@ -40,6 +40,10 @@ jest.mock("expo-router", () => {
   const { Text } = jest.requireActual("react-native") as typeof import("react-native");
   return {
     Redirect: (p: { href: string }) => <Text testID="redirect">{p.href}</Text>,
+    // [T-7.10.a] La pantalla navega al panel cuando un TÁCTICO sale de la toma;
+    // sin esto en el doble, la pantalla no monta y los cuatro estados de arriba
+    // fallan por una razón que no es la suya.
+    useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
   };
 });
 

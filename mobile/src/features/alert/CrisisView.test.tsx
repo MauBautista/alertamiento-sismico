@@ -1,7 +1,7 @@
 // TESTS DE HONESTIDAD de las pantallas 1.2/1.3 (spec §2.1-A / §10): con
 // source sasmex_wr1 la pantalla JAMÁS contiene magnitud ni ETA; el contador
 // es ascendente (T+); el hueco de ETA no se renderiza con el flag en false.
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 import { CrisisView } from "./CrisisView";
 import { sourceLabel } from "./source";
@@ -96,3 +96,46 @@ it("una detección instrumental NO se anuncia como alerta de SASMEX", async () =
   expect(view.getByText(/EVACÚE/)).toBeTruthy();
 });
 
+
+// --------------------------------------------------------------------------
+// [T-7.29] La salida táctica
+// --------------------------------------------------------------------------
+
+describe("[T-7.29] salida de la toma para el perfil táctico", () => {
+  it("sin `onSalir` NO hay ningún control: el ocupante no sale con el dedo", async () => {
+    const { queryByTestId } = await render(
+      <CrisisView elapsedS={12} policy="evacuate" source={SASMEX} zoneName="PB-A" />,
+    );
+    expect(queryByTestId("crisis-salir-tactico")).toBeNull();
+  });
+
+  it("con `onSalir` pinta el botón y avisa de que la alerta SIGUE", async () => {
+    const salir = jest.fn();
+    const { getByTestId, getByText } = await render(
+      <CrisisView
+        elapsedS={12}
+        onSalir={salir}
+        policy="shelter"
+        source={SASMEX}
+        zoneName="PB-A"
+      />,
+    );
+    fireEvent.press(getByTestId("crisis-salir-tactico"));
+    expect(salir).toHaveBeenCalledTimes(1);
+    // Salir de la PANTALLA no puede leerse como «se acabó la alerta».
+    expect(getByText(/La alerta sigue activa/)).toBeTruthy();
+  });
+
+  it("la instrucción sigue siendo lo más grande: el botón no la desplaza", async () => {
+    const { getByText } = await render(
+      <CrisisView
+        elapsedS={3}
+        onSalir={() => {}}
+        policy="evacuate"
+        source={SASMEX}
+        zoneName={null}
+      />,
+    );
+    expect(getByText("EVACÚE\nAHORA")).toBeTruthy();
+  });
+});

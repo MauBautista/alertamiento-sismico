@@ -17,6 +17,7 @@ import { StyleSheet, View } from "react-native";
 
 import { PESTANAS_TACTICAS, pestanasVisibles } from "@/auth/pestanasTacticas";
 import { useSessionStore } from "@/auth/session.store";
+import { AlertaViva } from "@/features/alert/AlertaViva";
 import { SiteNotices } from "@/features/notices/SiteNotices";
 import { fontSize, palette } from "@/ui/theme";
 
@@ -37,6 +38,10 @@ export default function BrigadistaLayout() {
   // navegador, no en una pestaña: se ve igual en todas.
   return (
     <View style={styles.root}>
+      {/* [T-7.29] Va ARRIBA de los avisos del sitio y con relleno sólido: si
+          el táctico salió de la toma de crisis para trabajar, la alerta viva
+          tiene que seguir siendo lo primero que ve en todas las pestañas. */}
+      <AlertaViva />
       <SiteNotices />
       <Tabs
         screenOptions={{
