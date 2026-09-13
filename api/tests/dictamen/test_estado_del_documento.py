@@ -118,3 +118,81 @@ def test_sin_firma_el_resumen_SIGUE_diciendo_preliminar() -> None:
     resumen = _resumen_de(model())
     assert "sin firma de inspector todavía" in resumen
     assert "Este documento es preliminar" in resumen
+
+
+def _seccion(m, titulo: str) -> str:
+    """Una sección de la prosa, tal como la compone el proveedor determinista."""
+    from takab_api.narrative.deterministic import sections_for  # noqa: PLC0415
+    from takab_api.narrative.redact import facts_from  # noqa: PLC0415
+
+    return dict(sections_for(facts_from(m)))[titulo]
+
+
+def test_las_limitaciones_no_llaman_automatico_a_un_dictamen_FIRMADO() -> None:
+    """La cuarta, y la peor colocada: es donde el lector busca las salvedades.
+
+    Llamar «preliminar y automático» a un veredicto que acaba de firmar una
+    persona contradice la firma en la sección que existe para matizarla.
+    """
+    limitaciones = _seccion(_firmado(), "Limitaciones y datos ausentes")
+    assert "preliminar y automático" not in limitaciones, limitaciones
+    assert "lo firmó un inspector" in limitaciones
+    # Lo que NO cambia: el alcance de la medición, que es el motivo de la sección.
+    assert "no localiza sismos" in limitaciones
+
+
+def test_sin_firma_las_limitaciones_SIGUEN_diciendo_automatico() -> None:
+    assert "Este dictamen es preliminar y automático." in _seccion(
+        model(), "Limitaciones y datos ausentes"
+    )
+
+
+# ---------------------------------------------------------------------------
+# LA GUARDA: la que habría cazado las cuatro de una vez
+# ---------------------------------------------------------------------------
+
+
+def _frases_con_preliminar(m) -> list[str]:
+    """Frases del documento que contienen «preliminar», en sus DOS fuentes.
+
+    El barrido tiene que mirar las dos o no sirve: lo que dibuja el PDF (el
+    encabezado, el deslinde) y la PROSA, que entra al documento ya compuesta por
+    el proveedor de narrativa y no pasa por el render en las pruebas. Dos de las
+    cuatro apariciones vivían justo ahí.
+
+    Se descarta la palabra SUELTA: es el estado de la fila superada en la §9.
+    """
+    corpus = _texto(m).splitlines()
+    from takab_api.narrative.deterministic import sections_for  # noqa: PLC0415
+    from takab_api.narrative.redact import facts_from  # noqa: PLC0415
+
+    for _, cuerpo in sections_for(facts_from(m)):
+        corpus.extend(cuerpo.splitlines())
+    return [
+        linea
+        for linea in corpus
+        if "preliminar" in linea.lower() and linea.strip().upper() != "PRELIMINAR"
+    ]
+
+
+def test_en_un_documento_FIRMADO_la_palabra_preliminar_solo_sobrevive_como_HISTORIA() -> None:
+    """Cuatro sitios distintos llamaban PRELIMINAR a un dictamen firmado, y se
+    encontraron **de uno en uno**, regenerando el PDF cuatro veces.
+
+    Esta es la afirmación que los habría cazado juntos: en un documento firmado,
+    ninguna FRASE puede contener «preliminar». La palabra suelta sí sobrevive —es
+    el ESTADO de la fila superada en la cadena de dictámenes de la §9, y esa fila
+    es historia: dice qué se corrigió—, así que se permite exactamente como
+    celda, y nada más.
+    """
+    frases = _frases_con_preliminar(_firmado())
+    assert not frases, (
+        "un documento FIRMADO se llama preliminar a sí mismo en "
+        f"{len(frases)} sitio(s):\n  - " + "\n  - ".join(f[:110] for f in frases)
+    )
+
+
+def test_la_guarda_NO_esta_ciega() -> None:
+    """Sin firma, esas frases TIENEN que estar: si no, la de arriba no afirma nada."""
+    frases = _frases_con_preliminar(model())
+    assert frases, "sin firma el documento debería declararse preliminar y no lo hace"

@@ -184,8 +184,18 @@ def _que_hacer(f: NarrativeFacts) -> str:
 
 
 def _limitaciones(f: NarrativeFacts) -> str:
+    # [T-7.33] El ORIGEN del veredicto también se deriva. Escrito a fuego, la
+    # sección de limitaciones —donde el lector va justamente a buscar las
+    # salvedades— llamaba «preliminar y automático» a un dictamen que acababa de
+    # firmar una persona. Lo que NO cambia es el alcance de la medición, que es
+    # el motivo de que esta sección exista.
+    origen = (
+        "Este dictamen lo firmó un inspector sobre una evaluación automática."
+        if f.verdict_signed
+        else "Este dictamen es preliminar y automático."
+    )
     base = (
-        "Este dictamen es preliminar y automático. TAKAB no calcula intensidad "
+        f"{origen} TAKAB no calcula intensidad "
         "macrosísmica ni isosistas, y no localiza sismos: lo que reporta es la sacudida "
         "medida en el propio inmueble."
     )
