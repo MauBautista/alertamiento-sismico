@@ -61,27 +61,39 @@ provisionado. `INSTRUMENTAL_ACTUATION` y `AUDIO_ENABLED` ausentes ⇒ `False` (s
 La regenera `make cloud-conformidad`. Lo de aquí abajo entre marcadores es la última corrida; lo de
 arriba es la interpretación y no se regenera.
 
+> **Para medir el gabinete desde la red de casa.** El censo busca al Pi en `192.168.1.0/24`, que es
+> **la red donde se va a instalar**, no la de desarrollo; desde casa lo da por inalcanzable y
+> escribe «no medido», que se lee como si el gabinete estuviera caído. Se le dice dónde mirar:
+>
+> ```
+> TAKAB_PI_SSH_HOST=ailert@<ip> TAKAB_PI_PANEL_URL=http://<ip>:8080 make cloud-conformidad
+> ```
+>
+> Y la dirección **cambia**: el 2026-09-12 el Pi pasó de `192.168.3.91` a `192.168.3.140` por DHCP.
+> Se encuentra sin adivinar buscando quién contesta en el 8080 de la red (`ip neigh` lista los
+> vecinos; las MAC que empiezan por `b8:27:eb` o `e4:5f:01` son Raspberry).
+
 <!-- conformidad:inicio -->
-_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-12T21:27:00Z · HEAD `0d3d0aa` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
+_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-13T01:12:02Z · HEAD `cd70e67` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
 
 | Pieza | Veredicto | Evidencia |
 |---|---|---|
-| build de la nube | 🟢 VERDE | /api/health.build=0d3d0aa == HEAD |
+| build de la nube | 🟢 VERDE | /api/health.build=cd70e67 == HEAD |
 | esquema de la nube | 🟢 VERDE | estado=al_dia aplicada=0062_simulacro_aborto_por_sitio == última migración del repo (0062_simulacro_aborto_por_sitio) |
-| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :0d3d0aa) |
-| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.30s |
+| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :cd70e67) |
+| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.32s |
 | entorno que la nube exige | 🟢 VERDE | todo en el heredoc de deploy.sh/takab-secrets.sh: Settings.REQUERIDOS_EN_PRODUCCION (8 nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL |
-| bandera TAKAB_API_PUSH_FCM_APPLICATION_ARN | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (push real por FCM: T-7.03) |
+| bandera TAKAB_API_PUSH_FCM_APPLICATION_ARN | 🟢 VERDE | exportada en deploy.sh · definida en /etc/takab/cloud.env de la instancia |
 | bandera TAKAB_API_OPENROUTER_ENABLED | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (decisión de la demo) |
 | bandera TAKAB_API_CONSOLE_SCOPE_ENFORCED | 🟢 VERDE | exportada en deploy.sh · definida en /etc/takab/cloud.env de la instancia |
 | cola de backfill | 🟢 VERDE | takab-dev-q-backfill: 0 visibles (0 en vuelo) · takab-dev-q-backfill-dlq: 0 |
 | terraform plan | 🟢 VERDE | sin cambios: código == estado == AWS |
 | alarmas de CloudWatch | 🟢 VERDE | ninguna alarma en ALARM |
-| release activa del Pi | 🟢 VERDE | release 20260912T211956Z-0d3d0aa == HEAD |
+| release activa del Pi | 🟢 VERDE | release 20260912T211956Z-0d3d0aa: nada de lo que el gabinete ejecuta cambió desde 0d3d0aa (HEAD cd70e67) |
 | modo prueba del Pi | 🟢 VERDE | test_mode.active=false · audio.profile: {"applied":{},"rejected":{},"test_tone":true} |
-| APK del Pixel | ⚪ NO MEDIDO | sin teléfono por USB (adb get-state: nada); conecta el Pixel con depuración USB |
+| APK del Pixel | 🟢 VERDE | com.takab.ailert 0.1.0 instalado 2026-09-12 17:52:14 ≥ último cambio de mobile/ (f2515ad 2026-09-12T17:09:02-06:00) |
 
-**RESUMEN:** 11 VERDE · 2 AMARILLO · 0 ROJO · 1 NO MEDIDO
+**RESUMEN:** 13 VERDE · 1 AMARILLO · 0 ROJO · 0 NO MEDIDO
 <!-- conformidad:fin -->
 
 **Dos apostillas a esa corrida, medidas después de generarla.** El «no medido» del modo prueba del gabinete era un defecto del propio script —leía la bandera con una expresión que trata el `false` como ausente, así que el caso bueno salía sin medir— y quedó corregido; a mano, el modo prueba está **desarmado**, que es lo que la demostración necesita. Y la cola de mensajes muertos del backfill creció a cuatro al desplegar el worker: no son evidencia perdida, son los informes en PDF que la propia API escribe bajo el mismo prefijo y que el worker no sabe reconocer (`T-7.05`, H-2).
