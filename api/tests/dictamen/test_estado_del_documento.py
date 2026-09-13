@@ -51,7 +51,7 @@ def _firmado():
         dictamens=[
             DictamenRow("d-2", "normal_operation", _OPENED, FIRMANTE, "", "d-1"),
             DictamenRow("d-1", "inhabit_monitor", _OPENED, None, "dictamen-v1", None),
-        ]
+        ],
     )
 
 
