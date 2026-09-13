@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **406** · `[x]` **335** · `[~]` **10** · `[ ]` **61**
+**Conteo de tareas:** total **406** · `[x]` **335** · `[~]` **12** · `[ ]` **59**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13788,25 +13788,38 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.07 · **El runbook de la demostración y su guion ejecutable** — `SOFTWARE` + `FÍSICO`
+### [~] T-7.07 · **El runbook de la demostración y su guion ejecutable** — `SOFTWARE` + `FÍSICO` · **SOFTWARE HECHO · falta la sesión con el radio**
 - **Componente:** deploy · docs · **Depende de:** T-7.02 · **Prioridad:** F1 · crítica
 - **Objetivo:** que los cuatro actos se ejecuten con el WR-1 real, el gabinete de Puebla y el
   Pixel, con evidencia por acto, y que un script diga si el sistema está listo antes de tocar
   el radio.
 - **Criterios de aceptación:**
-  - [ ] `takab-docs/runbooks/RUNBOOK-demo-cliente.md`: precondiciones, los cuatro actos con
+  - [x] `takab-docs/runbooks/RUNBOOK-demo-cliente.md`: precondiciones, los cuatro actos con
     comandos, limpieza y una tabla **Registro** (fecha, duración, captura por acto).
-  - [ ] `deploy/demo/guion.sh --preflight`: modo prueba del WR-1 desarmado
+  - [x] `deploy/demo/guion.sh --preflight`: modo prueba del WR-1 desarmado
     (`/api/status.test_mode.active == false`), modo demostración apagado (`D-27` suprime push
-    y comandos), destinatarios de la cascada del tenant **propios**, `audio_siren_enabled`
-    decidido, equipo en `192.168.1.0/24`, Pixel enrolado como ocupante.
-  - [ ] `guion.sh --check`: espera el pulso y afirma en el plazo escrito: incidente
-    `trigger=sasmex` abierto, `mobile-state.phase == alert_active`, relés `reported` en
-    `/api/status`, PDF del reporte con al menos una imagen.
-  - [ ] Limpieza: `/api/reset` del enclavado, clasificación `prueba`, cierre (hasta `T-7.13`,
+    y comandos), destinatarios de la cascada del tenant **propios**, algo que suene decidido
+    (relé de sirena o voceo por jack), gabinete alcanzable, Pixel enrolado como ocupante. Y
+    cuatro que la ficha no pedía y salieron de mirar el estado real: enclavado vivo, relés ya
+    accionados, simulacro en curso e incidentes abiertos en el sitio.
+    **Corrido contra el sistema real el 2026-09-12: 13 ✓ · 0 ✗.**
+  - [x] `guion.sh --check`: espera el pulso y afirma en el plazo escrito: incidente
+    `trigger=sasmex` **nuevo** (un incidente de ayer no cuenta), fase `alert_active` derivada
+    con el MISMO SQL que el sembrador —atado al endpoint real por su propia prueba—, relés
+    accionados y acta del reflejo según el panel, y el push en `sent` y no `simulated`.
+    El PDF va aparte, en `guion.sh --reporte`: no existe hasta el acto 4, y meterlo en el
+    mismo `--check` habría obligado a esperar a una firma humana con el radio ya pulsado.
+  - [x] Limpieza: `/api/reset` del enclavado, clasificación `prueba`, cierre (hasta `T-7.13`,
     por SQL como `infra/scripts/sql/staging-incident/reset.sql`).
-  - [ ] Se apoya en `RUNBOOK-gate-hw-movil-y-voceo.md §B`: una alerta real suena y notifica de
+  - [x] Se apoya en `RUNBOOK-gate-hw-movil-y-voceo.md §B`: una alerta real suena y notifica de
     verdad, y el runbook obliga a avisar antes.
+  - [x] El guion se prueba por **conducta**, no leyéndolo (`api/tests/test_guion_demo.py`, 12
+    pruebas): panel de mentira y base de pruebas, y cada ✗ tiene que salir por SU motivo. Ahí
+    se cazó, antes de mordernos, que **el `//` de jq trata `false` como AUSENTE**: con
+    `.test_mode.active // empty`, el preflight decía «el panel no declara test_mode» justo en
+    el caso bueno. Es la segunda vez en el repositorio — la primera fue `conformidad.sh`.
+  - [~] **El Registro, relleno con los cuatro actos.** Es físico: exige el WR-1, el gabinete y
+    una persona en la consola. El software está en verde y el preflight dice que se puede.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:**
   no · **Cambia algo que un test defiende hoy:** no.
 
@@ -13822,15 +13835,30 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.09 · **Actos 3 y 4 en el Pixel: crisis en segundos y liberación acreditada** — `SOFTWARE` + `FÍSICO`
+### [~] T-7.09 · **Actos 3 y 4 en el Pixel: crisis en segundos y liberación acreditada** — `SOFTWARE` + `FÍSICO` · **FLUJOS ACREDITADOS · falta el pulso real**
 - **Componente:** mobile · **Depende de:** T-7.03 · **Prioridad:** F1 · crítica
 - **Objetivo:** que el teléfono entre en crisis en menos de cinco segundos tras el pulso y que
   el flujo dictamen → liberación, nunca acreditado, se acredite.
 - **Criterios de aceptación:**
-  - [ ] `screenrecord` + `getevent` en el Pixel real: tiempo pulso → pantalla de crisis escrito
-    en el Registro; sin push real, el respaldo de `T-7.03` medido y declarado.
-  - [ ] `mobile/.maestro/03-dictamen-liberacion.yaml` acreditado con un inspector firmando en
-    la consola; `01a-crisis.yaml` re-acreditado.
+  - [~] `screenrecord` + `getevent` en el Pixel real: tiempo pulso → pantalla de crisis escrito
+    en el Registro. **Físico: exige el WR-1.** El respaldo ya no hace falta —`T-7.03` cerró con
+    el push real sonando con la pantalla apagada—, así que lo que queda por medir es el TIEMPO.
+  - [x] `mobile/.maestro/03-dictamen-liberacion.yaml` **acreditado el 2026-09-12 en el Pixel
+    real, por primera vez desde que se escribió**, y `01a-crisis.yaml` re-acreditado (rc=0 los
+    dos). Se acreditó con el dictamen firmado que siembra el arnés de staging; **la firma desde
+    la consola sigue pendiente** y llega con el acto 4 de la sesión física.
+  - [x] **Por qué nunca se había acreditado, y no era el teléfono: el flujo estaba roto de dos
+    formas y ninguna daba una pista.**
+    1. Llevaba `assertVisible` con un `timeout:` dentro, propiedad que ese comando **no tiene**.
+       Maestro rechaza el fichero ENTERO —«Unknown Property: timeout»— antes de ejecutar un solo
+       paso: no fallaba una aserción, es que **no cargaba**. La espera se escribe con
+       `extendedWaitUntil`, como en los otros siete flujos.
+    2. Hacía `clearState: true` y **no volvía a enrolar el sitio**, así que la app se quedaba en
+       el asistente de configuración y Home no llegaba a pintarse. La aserción fallaba por algo
+       que no tiene nada que ver con el dictamen.
+    Lo cierra `mobile/tests/flujos-maestro.test.ts`: barre los ocho flujos y rechaza el
+    `timeout:` donde Maestro no lo acepta. Un flujo E2E que no carga se lee como «todavía no lo
+    hemos corrido», y eso puede durar meses.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
