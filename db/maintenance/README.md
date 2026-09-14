@@ -176,4 +176,4 @@ en silencio.
 
 | Fecha | Dump | Resultado | Operador |
 |---|---|---|---|
-| _(pendiente)_ | | | |
+| 2026-09-14 | `takab-2026-09-14.dump` (251 MB · sha256 `a0637eea0d4f…`) · **restaurado y contado** | 9 430 407 features, 145 512 latidos, 111 incidentes, 115 dictámenes, 49 evidencias, 8 simulacros retirados. Intactos: `audit_log` 948→949, `actuation_records` 35, 21 sitios, 8 gabinetes, 27 sensores, 1 usuario, catálogo 13. **Las 6 comprobaciones de orfandad en 0.** Base 3 233 → 2 192 MB. El gabinete volvió a alimentar en el mismo minuto. | Mauricio |

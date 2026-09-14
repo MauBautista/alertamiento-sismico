@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **350** · `[~]` **10** · `[ ]` **57**
+**Conteo de tareas:** total **417** · `[x]` **351** · `[~]` **10** · `[ ]` **56**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13480,8 +13480,8 @@ fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 
 > **Estado de las fases (2026-09-14): `F0` y `F1` CERRADAS.** `F1` cerró con el acto 2 mirado en
 > la consola —lo último que le faltaba—, y con ello el guion de punta a punta está ejecutado y
-> medido contra el gabinete real. `F2` en marcha: `T-7.12` cerrada; quedan `T-7.10` y `T-7.11`,
-> las dos con ventana AWS.
+> medido contra el gabinete real. `F2` en marcha: `T-7.10` y `T-7.12` cerradas; queda `T-7.11`,
+> que pide tres cosas IoT con certificado.
 
 **El orden es de criticidad, no de gusto**, y se ejecuta en ocho fases: conformidad (F0), el
 guion de punta a punta con lo que hay (F1), datos demo (F2), la vida del sismo (F3), papel
@@ -13915,20 +13915,42 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.10 · **Purga operativa de la nube dev con respaldo y huella** — `SOFTWARE` + `GATE-AWS`
+### [x] T-7.10 · **Purga operativa de la nube dev con respaldo y huella** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-14**
 - **Componente:** db · deploy · **Depende de:** T-7.07 · **Prioridad:** F2 · alta
 - **Objetivo:** borrar lo recopilado de julio a septiembre conservando lo que la regla de oro
   11 protege, con un respaldo verificado antes.
 - **Criterios de aceptación:**
-  - [ ] `db/maintenance/2026-09-xx_purge_operativa_demo.sql` calcado del precedente del
+  - [x] `db/maintenance/2026-09-14_purge_operativa_demo.sql` calcado del precedente del
     2026-07-10: superusuario, `session_replication_role=replica`, purga incidentes y su familia
     (acciones, clasificaciones, dictámenes, evidencia, notificaciones), eventos y votos,
     telemetría (`waveform_features_1s`, `device_health`, `rule_evaluations`), simulacros,
     check-ins y reportes de daños; **conserva** `audit_log`, `actuation_records`, tenants,
     sitios, gateways, sensores, usuarios, `gateway_catalog_state` y el catálogo.
-  - [ ] `demo/tests/test_purge_demo.py` sobre una base efímera: lo que queda y lo que no;
-    idempotente al correrla dos veces.
-  - [ ] En la nube: `takab-YYYY-MM-DD.dump` + huella antes; conteos después en el Registro.
+  - [x] ⚠️ **Y NO es el mismo alcance que la del 2026-07-10, que es lo que había que ver antes
+    de copiarla:** aquélla se llevó la flota sim y conservó la telemetría real; ésta conserva la
+    flota ENTERA y se lleva la telemetría. Copiar el script viejo habría borrado los sitios y
+    dejado al gabinete publicando contra un registro inexistente.
+  - [x] **Censo embebido**: el script revienta —antes de tocar una fila— si aparece una tabla del
+    esquema sin clasificar en `_purgar` o en `_conservar`. Sin él, una tabla nacida después se
+    conservaría por omisión y nadie se enteraría.
+  - [x] `demo/tests/test_purge_demo.py` sobre una base efímera: lo que queda y lo que no;
+    idempotente al correrla dos veces; y el censo abortando **sin haber borrado**. La base se
+    **migra desde cero**, no se clona: la de tests tiene sesiones vivas y Postgres se niega a
+    usarla de plantilla. Más tres guardas estáticas que leen el script (todo lo listado tiene su
+    `DELETE`, ningún `DELETE` toca lo conservado, bitácoras y flota siguen protegidas).
+  - [x] ⚠️ **El respaldo se VERIFICÓ restaurándolo, y ahí salieron dos trampas de TimescaleDB**
+    que dejan un dump inútil sin avisar: `pg_restore --jobs` desordena el catálogo de Timescale y
+    deja las **hypertables en CERO** con las tablas normales perfectas —9.4 M de filas ausentes y
+    ni un mensaje—; y `--single-transaction` aborta la restauración entera por el
+    `SET transaction_timeout` que emite un `pg_dump` más nuevo que el servidor. El procedimiento
+    bueno queda escrito en el README, con la comprobación que importa: **contar filas**.
+  - [x] En la nube: `takab-2026-09-14.dump` (251 MB, sha256 `a0637eea0d4f…`) fuera del EC2,
+    restaurado y contado antes de tocar nada; CSV de las 49 llaves S3; conteos antes y después en
+    el Registro. **Ensayo previo terminando en `ROLLBACK`** para leer la verificación sin haber
+    borrado: las seis comprobaciones de orfandad en 0.
+  - [x] Ejecutada el 2026-09-14: 9 430 407 features, 145 512 latidos, 111 incidentes, 115
+    dictámenes, 49 evidencias y 8 simulacros retirados. Base 3 233 → 2 192 MB. `audit_log` 948 →
+    949 con la fila `verb='purge'`. **El gabinete volvió a alimentar en el mismo minuto.**
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
