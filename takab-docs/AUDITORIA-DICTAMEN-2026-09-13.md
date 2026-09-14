@@ -114,6 +114,35 @@ cero **queda congelado** junto a un §5 que sí imprime el pico real.
 | L | «no hay onda cruda archivada» | `deterministic.py:103` | Lo único que falló fue **leerla**; el mismo PDF lista el miniSEED con su hash |
 | M | «No se detectaron datos ausentes» | `deterministic.py:203` | El documento ya declaró dos ausencias en páginas anteriores |
 
+### 2.1 · Verificación de las diez, contra el código de hoy
+
+Las diez se volvieron a comprobar **en el código**, no en los números de línea de arriba (que ya
+se han movido), con una lente por contradicción y **dos escépticos por hallazgo**: uno atacando
+que la frase exista y sea alcanzable, otro atacando el arreglo propuesto.
+
+**Resultado: las diez siguen vivas. Ninguna se retiró.** Y el segundo escéptico **refutó el
+arreglo ingenuo en las diez**, cada vez por un motivo distinto y concreto. Ese es el hallazgo de
+método de esta pasada, y vale más que el censo:
+
+> **El arreglo obvio de una frase que miente suele ser otra frase que miente**, más pequeña. Diez
+> de diez. Por eso ninguna de estas entra sin su refutador delante.
+
+| # | Estado | La trampa que encontró el escéptico del arreglo |
+|---|---|---|
+| D | VIVO · impreso en el PDF de la demostración | La prueba propuesta (`"lo produjo el conjunto de reglas" not in texto`) sale ROJA contra el arreglo bueno si la frase nueva reusa el giro; y la rama firmada **calla la cadena de dictámenes** que la §9 del mismo papel sí enseña |
+| E | VIVO | La señal no puede ser «hay `notes`»: `rules.py` mete `notes` enlatado en TODO dictamen automático. Hace falta la conjunción **firmado Y nota no vacía**, y el booleano nuevo no puede viajar al proveedor remoto sin su prueba en la allowlist |
+| F | VIVO · latente | El corte es de **tres** ramas, no dos: «algunos clips podados» es un estado propio, y hoy recae en «el vídeo está archivado». Además `purged_at` acredita ese clip, no los `cctv_stills`, que se podan con otro plazo |
+| G | VIVO · latente | La frase nueva no puede pronunciarse sobre si hay dictamen firmado: el Lambda ni siquiera recibe esa hora. O se calcula la latencia **en lectura** (el builder ya trae la firma), o el papel solo puede declarar que falta el término calculado |
+| H | VIVO · latente | El aviso de reubicación no puede afirmar que consta en la bitácora: el evento es **compartido entre inmuebles** y la acción puede vivir en el incidente de otro. Dos frases, no una, y dos censos que dar de alta por su nombre |
+| I | VIVO · latente | El texto propuesto manda al lector a la bitácora de auditoría, donde `content_sha256` **no tiene pantalla** y el inspector no entra. Y el comentario del código sigue enseñando la mentira al siguiente que lo lea |
+| J | VIVO · latente | El modelo **sí** tiene la procedencia (`verdict_basis.evidence.pga_source`). El defecto de fondo es que hay **dos** procedencias en el mismo documento —la congelada en el `basis` y la que `build_forensics` recalcula al renderizar— y regenerar las separa |
+| K | VIVO · latente | «fuera del material de vídeo» implica que el vídeo **está** archivado, que es justo lo que F dice que puede ser falso. Y la remisión «§11» sería un número tecleado en otra función: los 14 números de sección son literales independientes |
+| L | VIVO · la frase está impresa en el PDF de la demostración | La guarda va en el **punto de impresión** (`pdf._raw_section`), no en un call site del builder: hay DOS literales que no consultan `m.evidence`, y arreglar uno deja el otro. Y el hecho nuevo obliga a subir el conteo declarado de la allowlist |
+| M | VIVO · la frase está impresa, y la página ya declara una ausencia | Condicionar sobre `t90_s is None` inventa una ausencia: «análisis disponible» con `t90_s` NULL es un camino real. Y la línea del `basis` afirmaría un «dictamen vigente» inexistente |
+
+Lo accionable está en **`T-7.38`**. `C` (§1) se arregla ahí también: es la misma clase de defecto y
+toca los mismos ficheros.
+
 ---
 
 ## 3 · Gráficas que no dicen lo que parecen
