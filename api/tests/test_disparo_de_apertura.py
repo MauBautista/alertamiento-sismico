@@ -126,3 +126,65 @@ def test_no_queda_ni_una_fila_SIN_estampa(sitio) -> None:
         sitio.execute("SELECT count(*) FROM incidents WHERE opened_trigger IS NULL").fetchone()[0]
         == 0
     )
+
+
+def test_el_relleno_de_la_MIGRACION_corre_con_el_rol_de_la_nube(sitio) -> None:
+    """⚠️ En la nube la migración NO corre como superusuario.
+
+    `incidents` tiene `FORCE ROW LEVEL SECURITY`: con FORCE, ni el dueño de la
+    tabla se salta las políticas. En local la migración corre como superusuario
+    (BYPASSRLS) y el relleno toca todas las filas; en la nube corre como
+    `takab_migrator`, sin `app.tenant_id` puesto, y el mismo `UPDATE` afecta a
+    **cero filas en silencio**. El despliegue del 2026-09-14 murió justo ahí, en
+    el `SET NOT NULL` — que es lo único que lo delataba.
+
+    Esto ejercita el bloque REAL de la migración con el rol REAL de la nube y
+    comprueba las dos mitades: que ese rol **puede** ejecutarlo, y que deja el
+    `FORCE` como estaba. Endurecer o ablandar la RLS de una tabla como efecto
+    colateral de añadir una columna sería peor que el defecto original.
+    """
+    relleno = _sql_de_la_migracion("_RELLENO")
+    assert "NO FORCE ROW LEVEL SECURITY" in relleno, (
+        "el relleno no aparta la RLS: con `takab_migrator` no vería ni una fila"
+    )
+    antes = _forzada(sitio)
+    assert antes, "el test no mide nada si `incidents` no tiene FORCE"
+
+    # Se fabrica el estado PREVIO a la migración: una fila sin estampa. Hay que
+    # apagar el disparador (que la restauraría) y soltar el NOT NULL; todo va
+    # dentro de la transacción del test, que se deshace al terminar.
+    ev = _abrir(sitio, "sasmex")
+    sitio.execute("ALTER TABLE incidents ALTER COLUMN opened_trigger DROP NOT NULL")
+    sitio.execute(_sql_de_la_migracion("_SIN_DISPARADOR"))
+    sitio.execute("UPDATE incidents SET opened_trigger = NULL WHERE event_uuid = %s", (ev,))
+    assert _campos(sitio, ev)[1] is None, "no se pudo fabricar el estado previo"
+
+    sitio.execute("SET ROLE takab_migrator")  # el rol REAL de la nube, sin BYPASSRLS
+    try:
+        sitio.execute(relleno)  # el bloque REAL de la migración
+    finally:
+        sitio.execute("RESET ROLE")
+
+    assert _campos(sitio, ev)[1] == "sasmex", (
+        "el relleno no vio la fila: en la nube dejaría el campo de auditoría con huecos "
+        "y el despliegue moriría en el SET NOT NULL"
+    )
+    assert _forzada(sitio) is antes, "la migración dejó la RLS de `incidents` cambiada"
+
+
+def _sql_de_la_migracion(nombre: str) -> str:
+    """Carga `0063_*.py` por RUTA: un fichero que empieza por dígito no se importa."""
+    import importlib.util
+    from pathlib import Path
+
+    ruta = Path(__file__).resolve().parents[1] / "migrations/versions/0063_disparo_de_apertura.py"
+    spec = importlib.util.spec_from_file_location("mig0063", ruta)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return getattr(mod, nombre)
+
+
+def _forzada(conn) -> bool:
+    return conn.execute(
+        "SELECT relforcerowsecurity FROM pg_class WHERE oid = 'incidents'::regclass"
+    ).fetchone()[0]

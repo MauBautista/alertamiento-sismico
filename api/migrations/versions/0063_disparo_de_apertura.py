@@ -61,8 +61,36 @@ ALTER TABLE incidents ADD COLUMN IF NOT EXISTS opened_trigger text;
 # escalaron es lo único que queda, y no hay forma de reconstruir el original.
 # Acotado a `IS NULL` para que una segunda pasada no pise lo que ya estampó el
 # disparador.
+#
+# ⚠️ Y VA CON LA RLS APARTADA, porque si no NO RELLENA NADA. `incidents` tiene
+# `FORCE ROW LEVEL SECURITY`: con FORCE, ni siquiera el dueño de la tabla se
+# salta las políticas. En local la migración corre como superusuario (BYPASSRLS)
+# y el UPDATE toca todas las filas; en la nube corre como `takab_migrator`, sin
+# `app.tenant_id` puesto, así que `incidents_read`/`_write`/`_admin` evalúan a
+# falso y el UPDATE afecta a CERO filas — en silencio. El `SET NOT NULL` de
+# abajo es el que lo delata, y así lo delató: el despliegue del 2026-09-14 murió
+# ahí con «column "opened_trigger" contains null values». Es la trampa que ya
+# tiene nombre en el proyecto: **verde en local puede ser IMPOSIBLE en la nube.**
+#
+# `NO FORCE` **no abre la tabla a nadie más**: solo devuelve al DUEÑO el bypass
+# que tiene por defecto en Postgres. Cualquier otro rol sigue con sus políticas
+# aplicadas, y el estado previo se restaura en el mismo bloque —y dentro de la
+# misma transacción de alembic, así que un fallo lo deshace todo—. Se lee de
+# `pg_class` en vez de darlo por hecho: restaurar un FORCE que no estaba puesto
+# sería endurecer una tabla como efecto colateral de añadir una columna.
 _RELLENO = """
-UPDATE incidents SET opened_trigger = trigger WHERE opened_trigger IS NULL;
+DO $mig$
+DECLARE forzada boolean;
+BEGIN
+  SELECT relforcerowsecurity INTO forzada FROM pg_class WHERE oid = 'incidents'::regclass;
+  IF forzada THEN
+    EXECUTE 'ALTER TABLE incidents NO FORCE ROW LEVEL SECURITY';
+  END IF;
+  UPDATE incidents SET opened_trigger = trigger WHERE opened_trigger IS NULL;
+  IF forzada THEN
+    EXECUTE 'ALTER TABLE incidents FORCE ROW LEVEL SECURITY';
+  END IF;
+END $mig$;
 """
 
 _FN = """
@@ -83,6 +111,16 @@ BEGIN
 END $fn$;
 """
 
+# El disparador se retira ANTES del relleno y se pone DESPUÉS. Si no, se come su
+# propio relleno: es `BEFORE UPDATE` y restaura `OLD.opened_trigger` —que en una
+# fila vieja es NULL— sobre lo que el UPDATE acaba de poner. En una base virgen el
+# orden ya lo evitaba (el disparador aún no existía), pero una re-ejecución de esta
+# migración sí lo encontraría puesto, y el `UPDATE n` de la traza diría que sí
+# escribió.
+_SIN_DISPARADOR = """
+DROP TRIGGER IF EXISTS trg_incidents_opened_trigger ON incidents;
+"""
+
 _TRIGGER = """
 DROP TRIGGER IF EXISTS trg_incidents_opened_trigger ON incidents;
 CREATE TRIGGER trg_incidents_opened_trigger
@@ -91,7 +129,9 @@ CREATE TRIGGER trg_incidents_opened_trigger
 """
 
 # Va DESPUÉS del disparador: los BEFORE corren antes de comprobar restricciones,
-# así que a partir de aquí ninguna fila nueva puede nacer sin estampa.
+# así que a partir de aquí ninguna fila nueva puede nacer sin estampa. Y es la
+# PRUEBA del relleno: si la RLS hubiera escondido una sola fila, esto revienta el
+# despliegue en vez de dejar un campo de auditoría con huecos.
 _NOT_NULL = """
 ALTER TABLE incidents ALTER COLUMN opened_trigger SET NOT NULL;
 """
@@ -99,6 +139,7 @@ ALTER TABLE incidents ALTER COLUMN opened_trigger SET NOT NULL;
 
 def upgrade() -> None:
     op.execute(_COLUMNA)
+    op.execute(_SIN_DISPARADOR)
     op.execute(_RELLENO)
     op.execute(_FN)
     op.execute(_TRIGGER)
