@@ -102,10 +102,24 @@ curl -s http://<ip-del-gabinete>:8080/api/status | jq '{tier: .last_tier, relés
 > la franja de la consola **se monta solo con `severity === "critical"`**
 > (`scene.ts::sceneAlert`), y eso encadena dos condiciones que un golpe flojo no cumple.
 >
-> **1 · El golpe tiene que pasar de `pga_trip_g`.** El `rule_set` v19 que rige declara
-> **0.100 g** (vigilancia 0.070). Solo `evacuate_or_hold` mapea a `critical`; `restricted` es
-> `warning` **y no pinta franja**. El golpe del 12-sep midió **0.357 g** y sí llegó; uno de
-> los del 14-sep se quedó en `restricted` y la consola no habría enseñado nada.
+> **1 · El golpe tiene que disparar DOS canales, no uno.** Solo `evacuate_or_hold` mapea a
+> `critical`; `restricted` es `warning` **y no pinta franja**. Y la regla de `rules/__init__.py`
+> es por CUENTA de canales, no por el pico de uno:
+>
+> ```
+> trip  = canales con pga ≥ pga_trip_g (0.100 g)  o  pgv ≥ pgv_trip_cms (7 cm/s)
+> len(trip) >= 2  → evacuate_or_hold     ← lo único que pinta la franja
+> len(trip) == 1  → restricted           ← warning: la consola no enseña nada
+> watch           → watch
+> ```
+>
+> Medido el 14-sep con tres golpes reales: uno llegó a `watch` (un canal en vigilancia), otro a
+> `restricted` (**disparo en un sensor: ENN**) y ninguno de los dos habría pintado la franja. El
+> del 12-sep midió 0.357 g y sí disparó dos o más.
+>
+> En la práctica: **golpea la superficie sobre la que se apoya el Shake, seco y cerca**, para que
+> el choque cargue verticales y horizontales a la vez. Un toque a la carcasa carga un eje y se
+> queda en `restricted`.
 >
 > Compruébalo en el panel ANTES de ir a la consola:
 >

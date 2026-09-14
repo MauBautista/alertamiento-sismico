@@ -13846,10 +13846,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - [x] **Y no basta con tenerla abierta: la cadena tiene DOS condiciones que un golpe flojo no
     cumple**, rastreadas el 2026-09-14 y escritas en el acto 2 del runbook.
     1. `scene.ts::sceneAlert` monta la franja **solo con `severity === "critical"`**, y `critical`
-       viene únicamente de `evacuate_or_hold` (`restricted` es `warning` y **no pinta nada**). Eso
-       exige pasar de `pga_trip_g`, que el `rule_set` v19 vigente declara en **0.100 g**. El golpe
-       del 12-sep midió 0.357 g y llegó; **un instrumental del 14-sep se quedó en `restricted`** y
-       la consola no habría enseñado nada. El panel lo dice antes de ir a mirarla.
+       viene únicamente de `evacuate_or_hold` (`restricted` es `warning` y **no pinta nada**).
+       ⚠️ Y `evacuate_or_hold` **NO es «pasar de `pga_trip_g`»**: la regla de `rules/__init__.py`
+       cuenta CANALES —`len(trip) >= 2`—, así que un solo canal por encima de 0.100 g da
+       `restricted`. Medido el 14-sep con tres golpes: uno quedó en `watch`, otro en `restricted`
+       («disparo en un sensor: ENN»), ninguno habría pintado la franja. El panel y el journal lo
+       dicen antes de ir a mirarla.
     2. `sceneAlert` toma el **primer** `critical` de la cola (`opened_at DESC`). El nuevo gana por
        reciente, pero si el golpe se queda corto la franja muestra el **SASMEX anterior en rojo**,
        que se lee como si el acto 2 hubiera disparado una alerta que no disparó. Los `critical`
