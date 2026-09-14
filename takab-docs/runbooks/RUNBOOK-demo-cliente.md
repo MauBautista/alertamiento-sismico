@@ -194,23 +194,40 @@ no tener.
 
 ## Registro
 
-Una fila por ensayo. La captura de cada acto va al directorio de evidencia de la sesión.
+**Ensayo completo del 2026-09-12/13 · con el WR-1 real, el gabinete de Puebla y el Pixel 8 Pro.**
+Preflight previo: **13 ✓ · 0 • · 0 ✗**.
 
-| Fecha | Duración | Acto 1 | Acto 2 | Acto 3 (pulso→crisis) | Acto 4 | Incidente | Notas |
-|---|---|---|---|---|---|---|---|
-| _(pendiente)_ | | | | | | | preflight en verde el 2026-09-12: 13 ✓ · 0 ✗ |
+| Acto | Qué se midió | Resultado |
+|---|---|---|
+| **1 · SOC en reposo** | panel del gabinete | nivel `normal` · relés `siren` y `strobe` en reposo · nube en línea, RTT **71 ms**, cola 0 · **36 757** paquetes SeedLink con **0 huecos** |
+| **2 · Movimiento aislado** | 88 muestras en 90 s | nivel `normal → restricted → evacuate_or_hold` · el golpe midió **0,357 g** en el canal vertical (el máximo de 24 h de ENZ pasó de 0,0036 g a 0,357 g) · incidente `local_threshold` en la nube · **NINGÚN relé se movió** |
+| **3 · Pulso del WR-1** | `guion.sh --check` + 240 muestras del panel + registro del teléfono | **6 ✓ · 0 ✗** · SASMEX activo a las 20:59:40.792 · relés `siren` **y** `strobe` accionados · **acta del reflejo: 4,96 ms** (presupuesto 100 ms) · incidente `sasmex` en la nube y fase `alert_active` · push entregado (`sent`) |
+| **3 · El teléfono** | pantalla **apagada y bloqueada** | `isLockScreen:true isScreenOn:false` en el instante de la entrega · la app estaba **congelada** por Android y el aviso la descongeló · aviso pintado a las 20:59:43.069 ⇒ **≈ 2,3 s desde el pulso** · canal **`seismic_alert_v2`** (el que salta el No Molestar) |
+| **4 · Brigadista** | flujo `02` en el Pixel real | foto forense con marca horneada y reporte de daños · **4 fotos** llegaron a la nube con su SHA-256 en la cadena de custodia |
+| **4 · Inspector** | consola, con MFA | dictamen firmado a las 04:28:52Z: `normal_operation`, **sucediendo** al preliminar · push OPS entregado **en el mismo segundo** por el canal `ops` · fase `reentry_approved` · el teléfono leyó el dictamen **35 s después**, solo |
+| **4 · Reporte** | `guion.sh --reporte` + render | PDF de 4 páginas · **el SHA-256 del fichero coincide con el que el sistema registró** en su cadena de custodia |
 
-> El preflight se corrió contra el sistema real el **2026-09-12** —gabinete en `192.168.3.140`,
-> nube en `cd70e67`, Pixel enrolado— y salió **13 ✓ · 0 • · 0 ✗**: los cuatro actos se pueden
-> ejecutar. Lo que falta es la sesión con el radio, que es física.
->
-> Ese mismo día se ensayó en seco lo que no necesita el radio:
->
-> - **`--check` contra el sistema real**, con el incidente abierto por el arnés de staging: cazó
->   el incidente, derivó la fase de la app y confirmó el push entregado — y marcó en ✗ los relés,
->   que es **lo correcto**, porque nadie tocó el radio. Esa es justo la diferencia entre una
->   demostración que funciona y una que lo parece.
-> - **Los dos flujos de Maestro del acto 4**, en el Pixel real: `01a-crisis.yaml` re-acreditado y
->   `03-dictamen-liberacion.yaml` acreditado **por primera vez** (llevaba desde que se escribió
->   sin cargar siquiera). La firma vino del arnés, no de un inspector en la consola: esa mitad
->   sigue pendiente del acto 4 en vivo.
+**Flujos de Maestro, en el Pixel real:** `01a-crisis` re-acreditado · `02-tactico-foto-danos` en verde ·
+**`03-dictamen-liberacion` acreditado por primera vez desde que se escribió** (no cargaba: llevaba un
+`timeout:` dentro de un `assertVisible` y Maestro rechazaba el fichero entero).
+
+### Lo que este ensayo NO midió, y hay que decirlo
+
+- **El tiempo pulso → pantalla de crisis.** Se midió pulso → **aviso** (≈ 2,3 s). Cuando llegó el
+  push el teléfono estaba **sin sesión**, así que la pantalla de crisis se comprobó después de
+  entrar: «ALERTA SÍSMICA SASMEX · EVACÚE AHORA · ZONA PB-A · FUENTE · SASMEX WR-1». Para el
+  ensayo con cliente, **el ocupante tiene que estar dentro de la app antes de empezar**.
+- **La firma del dictamen se repitió tres veces.** El sistema hace lo correcto —generar el reporte
+  **no** firma, la bitácora lo separa— pero la §9 del PDF acaba mostrando tres filas `FIRMADO`
+  idénticas. Ante un cliente eso invita a preguntar por qué. **Firmar una vez y regenerar las
+  veces que haga falta.**
+- **Hubo que concluir la sacudida a mano** (`seed_staging_incident.sh conclude`) para que el
+  teléfono saliera de la crisis. No es un tropiezo del ensayo: es el defecto `T-7.30` —la nube no
+  recibe las transiciones de nivel—, y hasta que se cierre ese paso es parte del guion.
+
+### Evidencia
+
+Los tres PDF generados durante el acto 4 están versionados en
+[`evidencia/`](evidencia/) — cada uno es el «antes» de una corrección: el primero sin firma, el
+segundo con la firma y el encabezado aún diciendo PRELIMINAR, el tercero ya coherente.
+

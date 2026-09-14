@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **414** · `[x]` **340** · `[~]` **12** · `[ ]` **62**
+**Conteo de tareas:** total **414** · `[x]` **342** · `[~]` **11** · `[ ]` **61**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13788,7 +13788,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [~] T-7.07 · **El runbook de la demostración y su guion ejecutable** — `SOFTWARE` + `FÍSICO` · **SOFTWARE HECHO · falta la sesión con el radio**
+### [x] T-7.07 · **El runbook de la demostración y su guion ejecutable** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-13 · los cuatro actos con el WR-1 real**
 - **Componente:** deploy · docs · **Depende de:** T-7.02 · **Prioridad:** F1 · crítica
 - **Objetivo:** que los cuatro actos se ejecuten con el WR-1 real, el gabinete de Puebla y el
   Pixel, con evidencia por acto, y que un script diga si el sistema está listo antes de tocar
@@ -13818,31 +13818,42 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     se cazó, antes de mordernos, que **el `//` de jq trata `false` como AUSENTE**: con
     `.test_mode.active // empty`, el preflight decía «el panel no declara test_mode» justo en
     el caso bueno. Es la segunda vez en el repositorio — la primera fue `conformidad.sh`.
-  - [~] **El Registro, relleno con los cuatro actos.** Es físico: exige el WR-1, el gabinete y
-    una persona en la consola. El software está en verde y el preflight dice que se puede.
+  - [x] **El Registro, relleno con los cuatro actos** (`RUNBOOK-demo-cliente.md`), con las cifras
+    medidas y no recordadas: reflejo en **4,96 ms**, aviso al teléfono en **≈2,3 s** con la
+    pantalla apagada, el golpe del acto 2 en **0,357 g** sin mover un relé, y el hash del PDF
+    coincidiendo con el que el sistema registró. Incluye **lo que el ensayo NO midió**.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:**
   no · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO`
+### [~] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO` · **GABINETE Y NUBE MEDIDOS · falta la consola**
 - **Componente:** edge · web · api · **Depende de:** T-7.07 · **Prioridad:** F1 · alta
 - **Objetivo:** que mover el sensor con la mano produzca un aviso en el panel y en la consola,
   un evento en la nube, y **ningún** movimiento de relé (política de `T-2.32`).
 - **Criterios de aceptación:**
-  - [ ] Panel: tier `watch`/`restricted` visible y relés en reposo; consola: escena `notice`
-    con «SOLO AVISO, SIN ACTUACIÓN»; nube: incidente `local_threshold`.
-  - [ ] Captura de las tres superficies en el Registro; si alguna miente, la corrección nace
-    como criterio aquí.
+  - [x] **Panel y nube, medidos el 2026-09-12** con 88 muestras en 90 s: el nivel subió
+    `normal → restricted → evacuate_or_hold`, el golpe midió **0,357 g** en el canal vertical
+    (el máximo de 24 h de ENZ pasó de 0,0036 g a 0,357 g) y **ningún relé se movió** — que es
+    la política de `T-2.32` enseñada con el dedo. En la nube abrió un incidente
+    `local_threshold`, severidad `critical`.
+  - [~] **La consola NO se miró durante el acto.** La escena `notice` con «SOLO AVISO, SIN
+    ACTUACIÓN» no quedó capturada: el ensayo se llevó desde el panel, la nube y el teléfono.
+    Es lo único que falta de este acto, y se cierra mirando la consola en el ensayo con cliente.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [~] T-7.09 · **Actos 3 y 4 en el Pixel: crisis en segundos y liberación acreditada** — `SOFTWARE` + `FÍSICO` · **FLUJOS ACREDITADOS · falta el pulso real**
+### [x] T-7.09 · **Actos 3 y 4 en el Pixel: crisis en segundos y liberación acreditada** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-13 con el pulso real**
 - **Componente:** mobile · **Depende de:** T-7.03 · **Prioridad:** F1 · crítica
 - **Objetivo:** que el teléfono entre en crisis en menos de cinco segundos tras el pulso y que
   el flujo dictamen → liberación, nunca acreditado, se acredite.
 - **Criterios de aceptación:**
-  - [~] `screenrecord` + `getevent` en el Pixel real: tiempo pulso → pantalla de crisis escrito
-    en el Registro. **Físico: exige el WR-1.** El respaldo ya no hace falta —`T-7.03` cerró con
-    el push real sonando con la pantalla apagada—, así que lo que queda por medir es el TIEMPO.
+  - [x] **Medido con el pulso real del WR-1**, y con la pantalla **apagada y bloqueada**: el
+    registro del teléfono da `isLockScreen:true isScreenOn:false` en el instante de la entrega,
+    la app estaba **congelada** por Android y el aviso la descongeló. **Pulso → aviso ≈ 2,3 s**,
+    en el canal `seismic_alert_v2`.
+  - [x] **Lo que NO se midió, y está escrito en el Registro:** el tiempo pulso → **pantalla de
+    crisis**. Cuando llegó el push el teléfono estaba sin sesión, así que la pantalla se
+    comprobó después de entrar («EVACÚE AHORA · ZONA PB-A · FUENTE · SASMEX WR-1»). Para el
+    ensayo con cliente, el ocupante tiene que estar dentro de la app antes de empezar.
   - [x] `mobile/.maestro/03-dictamen-liberacion.yaml` **acreditado el 2026-09-12 en el Pixel
     real, por primera vez desde que se escribió**, y `01a-crisis.yaml` re-acreditado (rc=0 los
     dos). Se acreditó con el dictamen firmado que siembra el arnés de staging; **la firma desde
