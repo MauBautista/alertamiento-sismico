@@ -29,6 +29,10 @@ class NarrativeFacts:
     opened_at: str
     severity: str
     trigger: str
+    #: [T-7.36] Con qué se ABRIÓ. `trigger` es la última escalada: la ingesta lo
+    #: sobrescribe, así que decir «se abrió a partir de» con él es falso en cuanto
+    #: un incidente escala.
+    opened_trigger: str
     state: str
     event_source: str | None
 

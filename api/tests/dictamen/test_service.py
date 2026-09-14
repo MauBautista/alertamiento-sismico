@@ -423,3 +423,92 @@ def test_basis_v2_pga_source_incident_when_no_features(scenario: _Scenario) -> N
     assert ev["pga_source"] == "incident"
     assert ev["pga_g"] == pytest.approx(0.07)
     assert ev["insufficient_data"] is False
+
+
+# ---- [T-7.37] los umbrales se CONGELAN al emitir -----------------------------
+#
+# `T-7.35` resuelve los umbrales vigentes en la APERTURA del incidente, que es
+# correcto. Pero lo hace AL EXPORTAR: si alguien podara versiones antiguas de
+# `rule_sets`, un PDF regenerado el año que viene clasificaría el mismo pico
+# contra otra banda — y un dictamen es un documento histórico.
+
+_UMBRAL_V1 = {"pga_watch_g": 0.02, "pga_trip_g": 0.09, "pgv_watch_cms": 1.5, "pgv_trip_cms": 6.0}
+_UMBRAL_V2 = {"pga_watch_g": 0.30, "pga_trip_g": 0.70, "pgv_watch_cms": 9.9, "pgv_trip_cms": 20.0}
+
+
+def _rule_set(sc: _Scenario, site: str, *, version: int, umbrales: dict, cuando) -> None:
+    import json as _json
+
+    sc.conn.execute("RESET ROLE")
+    sc.conn.execute(
+        "INSERT INTO rule_sets (tenant_id, scope_type, scope_id, version, is_active, config, "
+        "created_at) VALUES (%s,'site',%s,%s,true,%s::jsonb,%s)",
+        (sc.tenant, site, version, _json.dumps({"edge": {"thresholds": umbrales}}), cuando),
+    )
+    sc.conn.execute("SET ROLE takab_ingest")
+    sc.conn.commit()
+
+
+def _congelado(fila: dict) -> dict:
+    return (fila["basis"] or {})["felt_thresholds"]
+
+
+def test_el_dictamen_CONGELA_los_umbrales_del_inmueble(scenario: _Scenario) -> None:
+    """Sin esto, el papel depende de que nadie pode `rule_sets` nunca."""
+    caso = scenario.seed_incident()
+    _rule_set(
+        scenario, caso["site"], version=7, umbrales=_UMBRAL_V1, cuando=BASE - timedelta(days=1)
+    )
+
+    run_dictamen_pass(scenario.conn, Settings(), now=NOW)
+
+    umbral = _congelado(scenario.dictamens(caso["incident"])[0])
+    assert umbral["pga_trip_g"] == _UMBRAL_V1["pga_trip_g"]
+    assert umbral["rule_set_version"] == 7
+    assert umbral["origen"] == "inmueble", "no declara de quién son los umbrales"
+
+
+def test_una_CORRECCION_arrastra_el_umbral_verbatim(scenario: _Scenario) -> None:
+    """Una corrección tres días después no puede reescribir qué umbral regía
+    cuando tembló — aunque para entonces el inmueble esté reconfigurado."""
+    caso = scenario.seed_incident(severity="info", pga_g=0.01)
+    _rule_set(
+        scenario, caso["site"], version=7, umbrales=_UMBRAL_V1, cuando=BASE - timedelta(days=1)
+    )
+    run_dictamen_pass(scenario.conn, Settings(), now=NOW)
+    primero = _congelado(scenario.dictamens(caso["incident"])[0])
+
+    # El inmueble se reconfigura DESPUÉS, y el quórum corrobora ⇒ corrección.
+    _rule_set(
+        scenario, caso["site"], version=8, umbrales=_UMBRAL_V2, cuando=BASE + timedelta(days=3)
+    )
+    scenario.corroborate(caso["incident"], caso["sensor"])
+    run_dictamen_pass(scenario.conn, Settings(), now=NOW)
+
+    filas = scenario.dictamens(caso["incident"])
+    assert len(filas) == 2, "no hubo corrección: el test no está midiendo nada"
+    assert _congelado(filas[1]) == primero, "la corrección reescribió el umbral que regía"
+
+
+def test_sin_rule_set_se_declara_banda_de_REFERENCIA(scenario: _Scenario) -> None:
+    """Nunca se finge que unos umbrales por defecto son los del edificio."""
+    caso = scenario.seed_incident()
+    run_dictamen_pass(scenario.conn, Settings(), now=NOW)
+
+    umbral = _congelado(scenario.dictamens(caso["incident"])[0])
+    assert umbral["origen"] == "referencia"
+    assert umbral["rule_set_version"] is None
+
+
+def test_un_rule_set_POSTERIOR_al_incidente_no_lo_clasifica(scenario: _Scenario) -> None:
+    """El caso gemelo del defecto de la calibración: describir un documento
+    histórico con la configuración de hoy."""
+    caso = scenario.seed_incident()
+    _rule_set(
+        scenario, caso["site"], version=9, umbrales=_UMBRAL_V2, cuando=BASE + timedelta(days=1)
+    )
+
+    run_dictamen_pass(scenario.conn, Settings(), now=NOW)
+
+    umbral = _congelado(scenario.dictamens(caso["incident"])[0])
+    assert umbral["origen"] == "referencia", "clasificó con un rule_set que aún no existía"

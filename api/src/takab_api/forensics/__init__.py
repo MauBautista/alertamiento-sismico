@@ -18,12 +18,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api import procedencia as pr
 from takab_api.felt import (
-    DEFAULT_THRESHOLDS,
-    ORIGEN_INMUEBLE,
-    ORIGEN_REFERENCIA,
     UmbralComparacion,
     felt_band,
-    thresholds_from_row,
+    umbral_de_fila,
 )
 from takab_api.forensics import correlacion as corr
 from takab_api.geo import bearing16, haversine_km
@@ -47,7 +44,7 @@ from takab_api.settings import Settings
 _INCIDENT = text(
     """
     SELECT i.incident_id, i.site_id, i.tenant_id, i.event_id, i.opened_at, i.closed_at,
-           i.severity, i.state, i.trigger,
+           i.severity, i.state, i.trigger, i.opened_trigger,
            i.max_pga_g::float8 AS max_pga_g, i.max_pgv_cms::float8 AS max_pgv_cms,
            e.source AS event_source, e.detected_at AS event_detected_at,
            e.magnitude::float8 AS event_magnitude,
@@ -113,7 +110,7 @@ async def build_forensics(
         peak_pgv if peak_pgv is not None else inc["max_pgv_cms"],
         umbral.thresholds,
     )
-    lead_time_s, lead_reason = _lead_time(inc["trigger"], opened, peak_ts, banda)
+    lead_time_s, lead_reason = _lead_time(inc["opened_trigger"], opened, peak_ts, banda)
 
     site_row = await q.site_geo(conn, site_id)
     site = SiteGeo(**dict(site_row._mapping)) if site_row is not None else None
@@ -157,8 +154,15 @@ async def build_forensics(
     )
 
 
-def _lead_time(trigger: str, opened, peak_ts, band: str) -> tuple[float | None, str | None]:
+def _lead_time(opened_trigger: str, opened, peak_ts, band: str) -> tuple[float | None, str | None]:
     """Tiempo de aviso GANADO: de la alerta al pico de la sacudida.
+
+    [T-7.36] Se mide contra el disparo de APERTURA, no contra `trigger`, que la
+    ingesta sobrescribe con la última escalada. Las dos direcciones del error
+    eran reales y opuestas: con el umbral local abriendo y SASMEX escalando,
+    `trigger` decía `sasmex` sobre un `opened_at` anterior a que SASMEX dijera
+    nada —el número salía INFLADO—; con SASMEX abriendo y el cuórum escalando,
+    decía `quorum` y el aviso se NEGABA habiéndolo habido.
 
     Solo tiene sentido con SASMEX. En un incidente disparado por umbral local la
     "alerta" ES la sacudida: el número sería ~0 por construcción y presentarlo como
@@ -173,7 +177,7 @@ def _lead_time(trigger: str, opened, peak_ts, band: str) -> tuple[float | None, 
     llegada sísmica; lo que sí se puede afirmar es que no superó el umbral de
     vigilancia DEL INMUEBLE, y eso basta para no presumir el aviso.
     """
-    if trigger != "sasmex":
+    if opened_trigger != "sasmex":
         return None, "not_sasmex"
     if peak_ts is None:
         return None, "no_peak"
@@ -304,10 +308,7 @@ async def umbral_de_comparacion(
     banda de referencia DECLARADA como tal — nunca se finge que son del edificio.
     """
     row = await q.thresholds_in_force(conn, site_id=site_id, tenant_id=tenant_id, at=at)
-    if row is None:
-        return UmbralComparacion(DEFAULT_THRESHOLDS, ORIGEN_REFERENCIA)
-    return UmbralComparacion(
-        thresholds_from_row(row.pga_watch_g, row.pga_trip_g, row.pgv_watch_cms, row.pgv_trip_cms),
-        ORIGEN_INMUEBLE,
-        rule_set_version=row.version,
-    )
+    # [T-7.37] La conversión vive en `felt.umbral_de_fila`: la comparte el camino
+    # de ESCRITURA (psycopg sync, al emitir el dictamen), y dos conversiones del
+    # mismo hecho acaban clasificando el mismo pico contra números distintos.
+    return umbral_de_fila(dict(row._mapping) if row is not None else None)

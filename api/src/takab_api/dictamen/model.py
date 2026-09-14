@@ -218,6 +218,35 @@ class CctvBlock:
     discrepancia: str | None = None
 
 
+#: [T-7.36] Rótulos de celda del disparo. La versión en PROSA vive en
+#: `narrative/deterministic._TRIGGER_TEXT`; ésta es la corta, para portada y
+#: resumen. Son dos registros distintos del mismo hecho, no dos verdades.
+TRIGGER_LABELS = {
+    "sasmex": "SASMEX",
+    "local_threshold": "umbral local",
+    "quorum": "cuórum de red",
+    "manual": "activación manual",
+    "drill": "simulacro",
+}
+
+
+def disparo_line(opened_trigger: str, trigger: str) -> str:
+    """[T-7.36] Qué ABRIÓ el incidente y, si no es lo mismo, a qué escaló.
+
+    La portada y el resumen ejecutivo salen de aquí para que no puedan discrepar
+    entre sí sobre el mismo incidente — el mismo criterio que `umbral_line`.
+
+    La escalada NO se esconde: sustituir una frase falsa («se abrió por el
+    cuórum») por una incompleta («se abrió por SASMEX», callando que el cuórum
+    corroboró) sería cambiar de defecto. Y el cuórum es justo lo que autoriza a
+    evacuar.
+    """
+    abrio = TRIGGER_LABELS.get(opened_trigger, opened_trigger) or "SIN DATO"
+    if not trigger or trigger == opened_trigger:
+        return abrio
+    return f"{abrio} · escaló a {TRIGGER_LABELS.get(trigger, trigger)}"
+
+
 @dataclass
 class ReportModel:
     """Todo lo que el dictamen puede afirmar. Nada se calcula durante el render."""
@@ -232,7 +261,13 @@ class ReportModel:
     opened_at: datetime
     closed_at: datetime | None
     severity: str
+    #: La escalada VIGENTE. La ingesta la sobrescribe (`ON CONFLICT DO UPDATE`).
     trigger: str
+    #: [T-7.36] Con qué se ABRIÓ. Lo estampa la base y es inmutable. Es lo que la
+    #: prosa tiene que decir: «se abrió por X» con el disparo de la última escalada
+    #: es falso en cuanto un incidente escala, y es el mismo campo del que sale el
+    #: tiempo de aviso ganado.
+    opened_trigger: str
     state: str
     event_id: str | None
     event_source: str | None

@@ -124,6 +124,7 @@ def facts_from(m: ReportModel, *, damage_counts: dict[str, int] | None = None) -
         opened_at=m.opened_at.isoformat(),
         severity=m.severity,
         trigger=m.trigger,
+        opened_trigger=m.opened_trigger,
         state=m.state,
         event_source=m.event_source,
         verdict_label=m.verdict_label,

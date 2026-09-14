@@ -55,9 +55,21 @@ def _resumen(f: NarrativeFacts) -> str:
     )
 
 
+def _texto_de_disparo(valor: str) -> str:
+    return _TRIGGER_TEXT.get(valor, f"un disparo de tipo «{valor}»")
+
+
 def _que_paso(f: NarrativeFacts) -> str:
-    disparo = _TRIGGER_TEXT.get(f.trigger, f"un disparo de tipo «{f.trigger}»")
-    partes = [f"El incidente se abrió el {f.opened_at} a partir de {disparo}."]
+    # [T-7.36] La apertura se atribuye a `opened_trigger`, que estampa la base y es
+    # inmutable. `trigger` es la ÚLTIMA ESCALADA —la ingesta lo sobrescribe— y con
+    # él la frase decía que un incidente lo abrió el cuórum cuando lo abrió el
+    # receptor SASMEX dos minutos antes.
+    abrio = f.opened_trigger or f.trigger
+    partes = [f"El incidente se abrió el {f.opened_at} a partir de {_texto_de_disparo(abrio)}."]
+    if f.trigger and f.trigger != abrio:
+        # La escalada se DECLARA, no sustituye a la apertura: callarla cambiaría
+        # una frase falsa por una incompleta, y es lo que autoriza a evacuar.
+        partes.append(f"Después escaló a partir de {_texto_de_disparo(f.trigger)}.")
     if f.station_count:
         partes.append(
             f"{f.station_count} estación(es) de la red registraron el evento en la ventana "

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **343** · `[~]` **11** · `[ ]` **63**
+**Conteo de tareas:** total **417** · `[x]` **345** · `[~]` **11** · `[ ]` **61**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14364,12 +14364,13 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     hospital por defecto — mientras el mapa del SOC sí los lee del `rule_set`. **La consola y el
     dictamen firmado pueden decir lo contrario del mismo pico.** Vivo en la demostración: el
     gabinete declara `pga_trip_g = 0.1` y el documento clasifica con 0.060.
-  - [ ] **B · El disparo de apertura y el tiempo de aviso salen de un campo que se REESCRIBE.**
-    `incidents.trigger` lo sobrescribe la última escalada; la prosa lo presenta como el origen y
-    el mismo campo decide el aviso ganado. **Latente**, no vivo: el incidente del acto 3 abrió con
-    `sasmex` y nunca escaló, así que su `trigger` no se reescribió. (La primera redacción de esta
-    ficha le atribuyó el «149.2 s» del reporte; se comprobó contra el dato y era falso.)
-    **Se arregla en `T-7.36`**, que pide migración y por eso salió de aquí.
+  - [x] **B · El disparo de apertura y el tiempo de aviso salen de un campo que se REESCRIBE.**
+    CERRADO en `T-7.36`. `incidents.trigger` lo sobrescribía la última escalada; la prosa lo
+    presentaba como el origen y el mismo campo decidía el aviso ganado. Era **latente**, no vivo:
+    el incidente del acto 3 abrió con `sasmex` y nunca escaló, así que su `trigger` no se
+    reescribió. (La primera redacción de esta ficha le atribuyó el «149.2 s» del reporte; se
+    comprobó contra el dato y era falso.) Ahora hay `incidents.opened_trigger`, inmutable y
+    estampada por la base.
   - [x] **B′ · El papel presenta un «aviso ganado» de una sacudida que él mismo mide como leve.**
     CERRADO en `T-7.35`. `_lead_time` tomaba como pico el máximo de la ventana haya habido sismo o
     no, así que en una prueba o una falsa alarma medía ruido ambiente. Estaba vivo, y en la misma
@@ -14388,7 +14389,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     `model()` **consigo mismo**. Cada arreglo entra con su prueba, y la prueba tiene que comparar
     lo que el papel compara. Entra con `T-7.38` (contradicción `I`).
   - [ ] **Esta ficha es un CENSO, no una unidad de trabajo**: se cierra cuando cierren sus hijas
-    (`T-7.35` ✓, `T-7.36`, `T-7.37`, `T-7.38`, `T-7.39`). Dejarla como tarea única fue lo que
+    (`T-7.35` ✓, `T-7.36` ✓, `T-7.37` ✓, `T-7.38`, `T-7.39`). Dejarla como tarea única fue lo que
     permitió que `B′` siguiera marcada abierta un día después de estar cerrada.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** sí — `test_los_dos_documentos_declaran_LA_MISMA_huella`
@@ -14427,33 +14428,67 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** sí — la fixture del `ReportModel` ahora EXIGE declarar contra qué se clasificó.
 
-### [ ] T-7.36 · **El disparo de APERTURA no se puede reconstruir** — `SOFTWARE` · **PIDE MIGRACIÓN**
+### [x] T-7.36 · **El disparo de APERTURA no se puede reconstruir** — `SOFTWARE` · **CERRADA 2026-09-13**
 - **Componente:** api · db · **Depende de:** T-7.34 · **Prioridad:** F2 · alta
 - **Objetivo:** que el documento pueda decir qué abrió el incidente, y no lo que lo escaló.
 - **Criterios de aceptación:**
-  - [ ] Hoy **ningún sitio del esquema lo guarda**: el UPSERT de la ingesta sobrescribe
+  - [x] Hoy **ningún sitio del esquema lo guarda**: el UPSERT de la ingesta sobrescribe
     `incidents.trigger` con el de la última escalada y `summary` se fusiona perdiendo el valor
     viejo. Es **latente** —el incidente del acto 3 abrió `sasmex` y no escaló—, pero muerde en
     cuanto un sismo fuerte escala un incidente abierto por el SASMEX.
-  - [ ] Y muerde **más lejos de lo que parece**: el mismo campo alimenta la atribución de la
-    pantalla de crisis del móvil, donde ya hay precedente medido (`T-2.104`).
-  - [ ] Columna `opened_trigger` estampada por la BASE en el INSERT (no por cada escritor: hay
-    ~30 `INSERT INTO incidents` en el repo entre seeds, arneses y tests) y declarada inmutable.
-  - [ ] Migración idempotente, con su prueba de que una escalada posterior NO la toca.
+  - [x] **Las dos direcciones del error son reales y opuestas, y las dos tienen prueba:** con el
+    umbral local abriendo y SASMEX escalando, el papel **inflaba** el aviso ganado atribuyéndole a
+    SASMEX segundos anteriores a que SASMEX dijera nada; con SASMEX abriendo y el cuórum
+    escalando, lo **negaba** habiéndolo habido.
+  - [x] Columna `opened_trigger` estampada por la BASE en el INSERT (no por cada escritor: hay
+    decenas de `INSERT INTO incidents` entre migraciones, sembradores, arneses y tests) y
+    declarada inmutable. Se **copia** de `trigger`, nunca se lee de lo que mandó el escritor: un
+    campo de auditoría que el emisor rellena no audita al emisor. En el UPDATE se **restaura
+    desde `OLD` en silencio** en vez de lanzar — el UPSERT de la ingesta ni la menciona, y fallar
+    ahí mandaría a la DLQ la escalada de un sismo real.
+  - [x] Migración `0063` idempotente, con relleno de lo existente, `NOT NULL` **después** del
+    disparador (los BEFORE corren antes de las restricciones) y su espejo en `db/schema.sql`.
+  - [x] Prueba de que una escalada posterior NO la toca, de que un escritor no puede declarar un
+    origen distinto del suyo, y de que ni un `UPDATE … SET opened_trigger` a propósito la mueve.
+  - [x] Los lectores: el **tiempo de aviso ganado** (`forensics._lead_time`), la portada
+    (`SEVERIDAD · DISPARO`) y la prosa de las dos variantes. La escalada **se declara, no se
+    esconde**: sustituir una frase falsa por una incompleta sería cambiar de defecto, y el cuórum
+    es justo lo que autoriza a evacuar. Portada y resumen salen de **una sola** función
+    (`disparo_line`), como los umbrales de `T-7.35`.
+  - [x] Y muerde **más lejos de lo que parece**: el mismo campo alimenta la atribución de la
+    pantalla de crisis del móvil, donde ya hay precedente medido (`T-2.104`). **Ahí NO se toca, a
+    propósito y escrito en la migración:** la pregunta del móvil es «¿quién autoriza evacuar
+    AHORA?» y la respuesta correcta es la escalada vigente. Cambiarlo **reduciría** autorizaciones
+    legítimas, que es la dirección cara.
+- **Tests de censo que toca:** `test_schema_espejo_de_migraciones` (columna nueva) · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí — la fixture del `ReportModel` ahora
+  EXIGE declarar con qué se abrió, y la allowlist de la prosa pasa de 29 hechos a 30.
 
-### [ ] T-7.37 · **Los umbrales del dictamen se congelan al EMITIR, no al ocurrir** — `SOFTWARE`
+### [x] T-7.37 · **Los umbrales del dictamen se congelan al EMITIR, no al ocurrir** — `SOFTWARE` · **CERRADA 2026-09-13**
 - **Componente:** api · **Depende de:** T-7.35 · **Prioridad:** F2 · media
 - **Objetivo:** que dos exportaciones del mismo incidente en fechas distintas no puedan
   clasificarlo contra números distintos.
 - **Criterios de aceptación:**
-  - [ ] `T-7.35` resuelve los umbrales **vigentes en la apertura**, que es correcto y suficiente
+  - [x] `T-7.35` resuelve los umbrales **vigentes en la apertura**, que es correcto y suficiente
     mientras `rule_sets` no se pode. Pero la resolución ocurre **al exportar**: si alguien borrara
     versiones antiguas, un PDF regenerado el año que viene clasificaría contra otra banda.
-  - [ ] Congelarlos en `dictamens.basis` al emitir el dictamen (jsonb aditivo, append-only por
+  - [x] Congelados en `dictamens.basis` al emitir el dictamen (jsonb aditivo, append-only por
     trigger, escrito por el rol interno ⇒ independiente de quién lea), arrastrándolos verbatim en
     cada corrección: una corrección tres días después no puede reescribir qué umbral regía.
-  - [ ] ⚠️ La cabeza firmada por un inspector escribe `basis = {}` o `{"notes": …}`: el arrastre
-    tiene que recorrer la CADENA, no solo la cabeza, o la congelación se pierde al firmar.
+  - [x] ⚠️ La cabeza firmada por un inspector escribe `basis = {}` o `{"notes": …}`: el arrastre
+    recorre la CADENA, no solo la cabeza. **Y además la firma los arrastra**, para que la fila de
+    más peso legal del sistema no nazca sin la congelación.
+  - [x] **Una sola conversión fila→umbral** (`felt.umbral_de_fila`), compartida por el camino de
+    LECTURA (SQLAlchemy async, al exportar) y el de ESCRITURA (psycopg sync, al emitir). Las dos
+    consultas —una por driver— se comprueban **por comportamiento**: un test las enfrenta al
+    empate entre ámbito de sitio, `created_at` y `version`, que es justo donde se separarían.
+  - [x] El respaldo se queda: sin congelación (documentos anteriores a esta ficha, incidentes sin
+    dictamen) se resuelve como en `T-7.35`, y hay prueba de que sigue funcionando.
+  - [x] Prueba de punta a punta del caso que la ficha teme: se congela, **se borra el `rule_set`
+    que regía**, se firma y se regenera el papel — y sigue clasificando con los números de
+    entonces.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
 
 ### [ ] T-7.38 · **Las diez frases del dictamen que el propio documento desmiente** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-7.34 · **Prioridad:** F2 · alta

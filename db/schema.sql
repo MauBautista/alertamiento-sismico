@@ -289,12 +289,37 @@ CREATE TABLE incidents (
   severity    text NOT NULL CHECK (severity IN ('info','watch','warning','critical')),
   state       text NOT NULL DEFAULT 'open' CHECK (state IN ('open','acked','in_review','closed')),
   trigger     text NOT NULL CHECK (trigger IN ('sasmex','local_threshold','quorum','manual')),
+  -- [T-7.36] Disparo con el que se ABRIÓ el incidente. `trigger` se sobrescribe con
+  -- la última escalada (UPSERT de la ingesta), así que no sirve para reconstruir el
+  -- origen — ni el aviso ganado, que se calcula desde él. Lo estampa la BASE:
+  -- ~39 sitios insertan en esta tabla y un campo de auditoría con huecos no audita.
+  opened_trigger text NOT NULL,
   max_pga_g   numeric,
   max_pgv_cms numeric,
   summary     jsonb NOT NULL DEFAULT '{}'
 );
 CREATE INDEX idx_incidents_site_open    ON incidents (site_id, opened_at DESC);
 CREATE INDEX idx_incidents_tenant_state ON incidents (tenant_id, state) WHERE state <> 'closed';
+
+-- [T-7.36] La estampa del disparo de apertura. Se COPIA de `trigger` en el INSERT
+-- ignorando lo que traiga el escritor (un campo de auditoría que el emisor rellena
+-- no audita al emisor), y se RESTAURA desde OLD en cada UPDATE. Se restaura en
+-- silencio en vez de lanzar: el UPSERT de la ingesta no menciona la columna, y
+-- fallar ahí mandaría a la DLQ la escalada de un sismo real.
+CREATE OR REPLACE FUNCTION takab_stamp_opened_trigger()
+RETURNS trigger LANGUAGE plpgsql AS $fn$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    NEW.opened_trigger := NEW.trigger;
+  ELSE
+    NEW.opened_trigger := OLD.opened_trigger;
+  END IF;
+  RETURN NEW;
+END $fn$;
+
+CREATE TRIGGER trg_incidents_opened_trigger
+  BEFORE INSERT OR UPDATE ON incidents
+  FOR EACH ROW EXECUTE FUNCTION takab_stamp_opened_trigger();
 
 CREATE TABLE quorum_votes (
   event_id    text NOT NULL REFERENCES seismic_events,

@@ -17,6 +17,7 @@ presentarlo como una intensidad real (db/schema.sql §sensors).
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
 #: Banda de sacudida medida. `unknown` = el sitio no ha reportado nada: es
@@ -79,6 +80,50 @@ class UmbralComparacion:
             "origen": self.origen,
             "rule_set_version": self.rule_set_version,
         }
+
+
+#: [T-7.37] Clave del `basis` donde se CONGELAN los umbrales al emitir el dictamen.
+CLAVE_UMBRAL_CONGELADO = "felt_thresholds"
+
+
+def umbral_de_fila(fila: Mapping | None) -> UmbralComparacion:
+    """De la fila de `rule_sets` en vigor a la comparación, con su procedencia.
+
+    Toma un mapa y no una fila de driver a propósito: la misma resolución la
+    necesitan el camino de LECTURA (SQLAlchemy async, al exportar) y el de
+    ESCRITURA (psycopg sync, al emitir el dictamen). Con dos conversiones, las
+    dos superficies acabarían clasificando el mismo pico contra números
+    distintos — que es el defecto `A` de la auditoría del 2026-09-13.
+    """
+    if not fila:
+        # Sin `rule_set` con umbrales anterior al incidente: banda de referencia
+        # DECLARADA como tal. Nunca se finge que son los del edificio.
+        return UmbralComparacion(DEFAULT_THRESHOLDS, ORIGEN_REFERENCIA)
+    return UmbralComparacion(
+        thresholds_from_row(
+            fila.get("pga_watch_g"),
+            fila.get("pga_trip_g"),
+            fila.get("pgv_watch_cms"),
+            fila.get("pgv_trip_cms"),
+        ),
+        ORIGEN_INMUEBLE,
+        rule_set_version=fila.get("version"),
+    )
+
+
+def umbral_congelado(bases: Iterable[Mapping | None]) -> dict | None:
+    """[T-7.37] El primer umbral congelado de la CADENA, de la cabeza hacia atrás.
+
+    No basta con mirar la cabeza: **al firmar, el `basis` de la fila nueva es
+    `{}` o `{"notes": …}`** (`routers/dictamens.sign_dictamen`), así que la
+    cabeza de una cadena firmada no lo lleva aunque el preliminar sí lo llevara.
+    Buscar solo ahí perdería la congelación justo en el documento que más pesa.
+    """
+    for basis in bases:
+        d = (basis or {}).get(CLAVE_UMBRAL_CONGELADO)
+        if isinstance(d, dict) and d:
+            return d
+    return None
 
 
 def umbral_desde_dict(d: dict | None) -> UmbralComparacion:
