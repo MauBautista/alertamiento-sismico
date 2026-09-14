@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **349** · `[~]` **11** · `[ ]` **57**
+**Conteo de tareas:** total **417** · `[x]` **350** · `[~]` **10** · `[ ]` **57**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13478,6 +13478,11 @@ sesión, vive en [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md); a
 fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
 
+> **Estado de las fases (2026-09-14): `F0` y `F1` CERRADAS.** `F1` cerró con el acto 2 mirado en
+> la consola —lo último que le faltaba—, y con ello el guion de punta a punta está ejecutado y
+> medido contra el gabinete real. `F2` en marcha: `T-7.12` cerrada; quedan `T-7.10` y `T-7.11`,
+> las dos con ventana AWS.
+
 **El orden es de criticidad, no de gusto**, y se ejecuta en ocho fases: conformidad (F0), el
 guion de punta a punta con lo que hay (F1), datos demo (F2), la vida del sismo (F3), papel
 oficial (F4), sismología visual (F5), IA asesora (F6) y ensayo general (F7). F5 y F6 pueden
@@ -13825,7 +13830,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:**
   no · **Cambia algo que un test defiende hoy:** no.
 
-### [~] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO` · **GABINETE Y NUBE MEDIDOS · falta la consola**
+### [x] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-14 · con la consola delante**
 - **Componente:** edge · web · api · **Depende de:** T-7.07 · **Prioridad:** F1 · alta
 - **Objetivo:** que mover el sensor con la mano produzca un aviso en el panel y en la consola,
   un evento en la nube, y **ningún** movimiento de relé (política de `T-2.32`).
@@ -13835,9 +13840,24 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     (el máximo de 24 h de ENZ pasó de 0,0036 g a 0,357 g) y **ningún relé se movió** — que es
     la política de `T-2.32` enseñada con el dedo. En la nube abrió un incidente
     `local_threshold`, severidad `critical`.
-  - [~] **La consola NO se miró durante el acto.** La escena `notice` con «SOLO AVISO, SIN
-    ACTUACIÓN» no quedó capturada: el ensayo se llevó desde el panel, la nube y el teléfono.
-    Es lo único que falta de este acto, y se cierra mirando la consola en el ensayo con cliente.
+  - [x] **La consola, MIRADA el 2026-09-14 y en ámbar.** Era lo único que faltaba de este acto
+    —el 12-sep el ensayo se llevó desde el panel, la nube y el teléfono— y **cierra `F1`**. Lo
+    medido, golpe a golpe:
+
+    | hora UTC | qué hizo el gabinete | severidad | ¿franja? |
+    |---|---|---|---|
+    | 19:47:14 | `normal → watch → restricted` (disparo en **1** sensor: ENN) | `warning` | no |
+    | 19:53:11 | `normal → watch` (cautela en 1 sensor) | `watch` | no |
+    | **19:56:40** | `normal → restricted → evacuate_or_hold` (**disparo confirmado por 2 sensores: EHZ, ENN**) | **`critical`** | **sí** |
+
+    El pico del bueno: **EHZ 0.1265 g** a las 19:56:33. Incidente
+    `c7f31753-16dc-452b-8956-4f4b5e4a7ffb`, `local_threshold` en las dos columnas
+    (`trigger` y `opened_trigger`), el más reciente de la cola — así que `sceneAlert` lo eligió
+    por encima del SASMEX de la noche anterior. **La bitácora de actuación quedó vacía: ningún
+    relé se movió**, que es la política de `T-2.32` enseñada con el dedo por segunda vez.
+  - [x] **Y de regalo, `T-7.30` acreditada también sobre un evento INSTRUMENTAL**, no solo sobre
+    el WR-1: `rule_evaluations` recogió `normal → restricted → evacuate_or_hold` y publicó el
+    cierre del episodio a las **19:58:12**, 92 s después, sin que nadie tocara la base.
   - [x] **El software está desplegado y comprobado (2026-09-14).** La derivación vive en
     `alertHeadline.ts` y la defienden tres pruebas de `AlertBanner.test.tsx` (titular, atribución,
     `data-authorizes=false` ⇒ ámbar y no rojo, y la ausencia de «PROTÉJASE»); y el bundle que

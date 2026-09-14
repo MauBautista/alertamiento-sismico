@@ -270,6 +270,25 @@ Preflight previo: **13 ✓ · 0 • · 0 ✗**.
 | **4 · Inspector** | consola, con MFA | dictamen firmado a las 04:28:52Z: `normal_operation`, **sucediendo** al preliminar · push OPS entregado **en el mismo segundo** por el canal `ops` · fase `reentry_approved` · el teléfono leyó el dictamen **35 s después**, solo |
 | **4 · Reporte** | `guion.sh --reporte` + render | PDF de 4 páginas · **el SHA-256 del fichero coincide con el que el sistema registró** en su cadena de custodia |
 
+### Acreditación posterior · **el acto 2 en la CONSOLA** (2026-09-14) — con esto cierra `F1`
+
+Lo único que le faltaba al acto 2: el 12-sep el ensayo se llevó desde el panel, la nube y el
+teléfono, y nadie miró la consola. Se repitió con la consola delante, y **hicieron falta tres
+golpes** porque la condición no es el pico de un canal sino la cuenta:
+
+| hora UTC | qué hizo el gabinete | severidad | ¿franja en la consola? |
+|---|---|---|---|
+| 19:47:14 | `normal → watch → restricted` · disparo en **1** sensor (ENN) | `warning` | no |
+| 19:53:11 | `normal → watch` · cautela en 1 sensor | `watch` | no |
+| **19:56:40** | `normal → restricted → evacuate_or_hold` · **disparo confirmado por 2 sensores: EHZ, ENN** | **`critical`** | **sí, en ámbar** |
+
+Pico del bueno: **EHZ 0.1265 g** a las 19:56:33. Incidente
+`c7f31753-16dc-452b-8956-4f4b5e4a7ffb`, `local_threshold` en `trigger` y en `opened_trigger`, el
+más reciente de la cola. **La bitácora de actuación quedó vacía: ningún relé se movió.**
+
+Y el mismo episodio acreditó `T-7.30` sobre un evento **instrumental**, no solo sobre el WR-1:
+`rule_evaluations` recogió la escalada y publicó el cierre a las **19:58:12**, 92 s después.
+
 ### Acreditación posterior · **la sacudida se concluye sola** (2026-09-14)
 
 Lo que el 12-sep hubo que forzar por SQL. Con `T-7.30` desplegada (nube `41ccc36`, gabinete
