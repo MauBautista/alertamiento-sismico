@@ -39,13 +39,17 @@ import pytest
 from takab_api.dictamen import model as modelo_mod
 from takab_api.dictamen.layout import TakabPDF
 from takab_api.dictamen.model import (
+    CCTV_PARCIALMENTE_PURGADO,
     CCTV_PENDIENTE,
+    CCTV_PURGADO_SIN_ANALISIS,
     CCTV_SIN_CLIP,
+    ActionRow,
     CctvBlock,
+    EvidenceRow,
     ReportModel,
 )
 from takab_api.dictamen.pdf import render
-from tests.dictamen.test_pdf import model
+from tests.dictamen.test_pdf import _OPENED, model
 
 _VARIANTES = ("technical", "executive")
 
@@ -104,8 +108,34 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
     "NO_MMI": (model, frozenset({"technical"})),
     "ENVELOPE_NOTE": (model, frozenset({"technical"})),
     "CENTROID_NOTE": (model, frozenset({"technical"})),
+    # [T-7.38·H] Y su excluyente: un epicentro que movió una PERSONA no es el
+    # centroide de las estaciones, y el papel lo llamaba así por `event_source`.
+    # La trazabilidad se añade solo cuando consta AQUÍ: el evento de red es
+    # compartido entre inmuebles y la acción puede vivir en el incidente de otro.
+    "EPICENTRO_REUBICADO": (
+        lambda: model(epicenter_relocated=True),
+        frozenset({"technical"}),
+    ),
+    "EPICENTRO_REUBICADO_AQUI": (
+        lambda: model(
+            epicenter_relocated=True,
+            actions=[ActionRow(ts=_OPENED, kind="epicenter_relocate", actor="user:op")],
+        ),
+        frozenset({"technical"}),
+    ),
+    "EPICENTRO_REUBICADO_EN_LA_RED": (
+        lambda: model(epicenter_relocated=True, actions=[]),
+        frozenset({"technical"}),
+    ),
     "SKETCH_NOTE": (model, frozenset({"technical"})),
-    "NO_SPECTRUM": (model, frozenset({"technical"})),
+    # [T-7.38·L] `NO_SPECTRUM` afirma «este incidente no tiene miniSEED archivado»,
+    # así que su escenario es justo ése: SIN objeto en la custodia. Con uno
+    # registrado y sin traza, el papel decía lo contrario de su propio §10.
+    "NO_SPECTRUM": (lambda: model(evidence=[]), frozenset({"technical"})),
+    "ONDA_NO_LEIDA": (
+        lambda: model(evidence=[EvidenceRow("miniseed", "a" * 64, _OPENED)], raw_waveform=None),
+        frozenset({"technical"}),
+    ),
     # Sin un solo punto que proyectar no hay croquis, y se dice.
     "NO_GEOMETRY": (
         lambda: model(
@@ -122,6 +152,18 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
     ),
     "CCTV_PENDIENTE": (
         lambda: model(cctv=CctvBlock(estado=CCTV_PENDIENTE)),
+        frozenset({"technical"}),
+    ),
+    # [T-7.38·F] Y los DOS estados de la poda, que antes se leían como «disponible»:
+    # el papel anunciaba un clip destruido como archivado y prometía cifras que no
+    # van a llegar. «Algunos podados» es una clase propia — decir «el vídeo está
+    # archivado» con la mitad destruida es falso.
+    "CCTV_PURGADO_SIN_ANALISIS": (
+        lambda: model(cctv=CctvBlock(estado=CCTV_PURGADO_SIN_ANALISIS)),
+        frozenset({"technical"}),
+    ),
+    "CCTV_PARCIALMENTE_PURGADO": (
+        lambda: model(cctv=CctvBlock(estado=CCTV_PARCIALMENTE_PURGADO)),
         frozenset({"technical"}),
     ),
     # [T-5.11] Que el catálogo no tenga un sismo compatible es un HECHO sobre el
@@ -234,9 +276,10 @@ def test_el_espia_NO_esta_ciego() -> None:
     fallara en silencio— el espía devolvería poco o nada y **todos** los
     `assert ... not in ...` pasarían en verde. Los números van escritos.
     """
-    assert len(ESCENARIOS) == 13, "cambió el número de avisos declarados"
+    # 13 → 15 en `T-7.38·F`: los dos estados de la poda del vídeo.
+    assert len(ESCENARIOS) == 19, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 12, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 18, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

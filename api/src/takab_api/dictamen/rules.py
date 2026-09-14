@@ -90,6 +90,10 @@ def resolve_params(config: dict | None, settings: _DictamenDefaults) -> Dictamen
 
 def evaluate(inp: EvalInput, params: DictamenParams) -> Decision:
     """Dictamen automático preliminar por severidad/PGA + regla de nodos."""
+    # El 0.0 es para COMPARAR —sin medición no se puede superar un umbral—, no para
+    # guardar: [T-7.38·C] congelarlo en el `basis` hacía que la prosa imprimiera «El
+    # valor evaluado fue 0.000 g» en un documento cuyo §5 dice «PGA PICO · SIN DATO».
+    # Un cero fabricado presentado como medición es peor que decir que no consta.
     pga = inp.pga_g if inp.pga_g is not None else 0.0
     corroborated = inp.node_count >= inp.quorum_min_nodes
     if inp.severity == "critical" or pga >= params.pga_no_inhabit_g:
@@ -102,7 +106,7 @@ def evaluate(inp: EvalInput, params: DictamenParams) -> Decision:
         "rule_set_version": RULE_SET_VERSION,
         "evidence": {
             "severity": inp.severity,
-            "pga_g": pga,
+            "pga_g": inp.pga_g,
             "node_count": inp.node_count,
             "corroborated": corroborated,
             "event_id": inp.event_id,

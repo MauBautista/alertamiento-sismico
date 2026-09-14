@@ -1153,3 +1153,19 @@ def test_una_transicion_de_OTRO_sitio_se_rechaza(fleet, ctx, meta) -> None:
     assert res.outcome is Outcome.REJECT
     assert "site" in res.reason
     assert _count(fleet, "SELECT count(*) FROM rule_evaluations") == 0
+
+
+def test_la_fila_no_llama_SOURCE_al_origen_de_la_decision(fleet, ctx, meta) -> None:
+    """[T-7.38·N] En un cierre, `source` es el evaluador de features, no el SASMEX
+    que abrió el episodio. Medido el 2026-09-14 con el WR-1: la fila de cierre
+    decía `local_threshold` en un episodio abierto por el radio. El campo es
+    verdadero sobre la DECISIÓN y falso sobre el episodio, así que se llama por lo
+    que lleva; el origen del episodio está en la fila de apertura, que comparte
+    `event_id`."""
+    assert handle_tier_transition(
+        fleet, _transicion(prev_tier="evacuate_or_hold", new_tier="normal"), meta, ctx
+    ).is_ok
+    basis = fleet.execute("SELECT basis FROM rule_evaluations").fetchone()[0]
+    assert "source" not in basis, "el rótulo promete el origen del episodio"
+    assert basis["decision_source"] == "sasmex"
+    assert basis["event_id"] == EVENT_HEX, "sin esto no se puede casar con la apertura"

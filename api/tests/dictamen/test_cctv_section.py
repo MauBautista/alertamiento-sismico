@@ -130,3 +130,98 @@ def test_la_discrepancia_se_imprime_como_discrepancia() -> None:
     )
     sin = _con(CctvBlock(estado="análisis disponible", t90_s=50.0, peak_n=40))
     assert con != sin
+
+
+# ---- [T-7.38·F] la poda no se lee como «disponible» --------------------------
+#
+# El estado se decidía por que EXISTIERA la fila del clip. La fila sobrevive a la
+# poda A PROPÓSITO —es la cadena de custodia, con su sha256 y su ventana—, así que
+# un clip ya destruido se anunciaba como «CLIP DISPONIBLE · ANÁLISIS PENDIENTE» y
+# el papel prometía cifras de evacuación que no van a llegar nunca.
+
+
+def _clase(*disponibles: bool) -> str:
+    from takab_api.schemas.cctv import clase_del_material
+
+    return clase_del_material(list(disponibles))
+
+
+def test_todos_los_clips_VIVOS_es_analisis_pendiente() -> None:
+    from takab_api.schemas.cctv import CLIPS_VIVOS
+
+    assert _clase(True, True) == CLIPS_VIVOS
+
+
+def test_todos_PURGADOS_es_una_clase_propia() -> None:
+    from takab_api.schemas.cctv import CLIPS_PURGADOS
+
+    assert _clase(False, False) == CLIPS_PURGADOS
+
+
+def test_ALGUNOS_purgados_NO_es_lo_mismo_que_ninguno() -> None:
+    """El estado mixto era el que se colaba: recaía en «el vídeo está archivado»."""
+    from takab_api.schemas.cctv import CLIPS_MIXTOS, CLIPS_VIVOS
+
+    assert _clase(True, False) == CLIPS_MIXTOS
+    assert _clase(True, False) != CLIPS_VIVOS
+
+
+def test_sin_clips_es_sin_clips() -> None:
+    from takab_api.schemas.cctv import CLIPS_SIN
+
+    assert _clase() == CLIPS_SIN
+
+
+def test_las_cuatro_clases_son_DISTINGUIBLES() -> None:
+    """Control de ceguera: con dos clases iguales, los tests de arriba no miden."""
+    from takab_api.schemas.cctv import CLIPS_MIXTOS, CLIPS_PURGADOS, CLIPS_SIN, CLIPS_VIVOS
+
+    assert len({CLIPS_SIN, CLIPS_VIVOS, CLIPS_PURGADOS, CLIPS_MIXTOS}) == 4
+
+
+# ---- [T-7.38·G] «no se observó» con la hora del reingreso escrita al lado -----
+
+
+def test_el_reingreso_OBSERVADO_sin_latencia_no_se_declara_no_observado() -> None:
+    """`lag_s` nulo son DOS ausencias y compartían una sola frase.
+
+    El Lambda cierra el análisis sin la hora del dictamen —nunca la recibe—, así
+    que `reentry_lag_s` sale nulo aunque el reingreso SÍ se haya observado y su
+    hora esté en la misma fila. El papel decía «no se observó el inicio del
+    reingreso» con ese instante escrito al lado.
+    """
+    from datetime import UTC, datetime
+
+    from takab_api.cctv import veredicto_reingreso
+
+    _, frase = veredicto_reingreso(None, datetime(2026, 8, 3, 10, 12, tzinfo=UTC))
+    assert "no se observó" not in frase, "niega una observación que consta"
+    assert "SIN LATENCIA CALCULADA" in frase
+
+
+def test_sin_observar_el_reingreso_se_sigue_diciendo_que_NO_se_observo() -> None:
+    """La otra mitad: cuando de verdad no se vio, la frase de siempre."""
+    from takab_api.cctv import veredicto_reingreso
+
+    _, frase = veredicto_reingreso(None, None)
+    assert frase == "SIN DATO · no se observó el inicio del reingreso"
+
+
+def test_la_frase_NO_se_pronuncia_sobre_si_hay_dictamen_firmado() -> None:
+    """El analizador no sabe eso: nunca recibió la hora de la firma. Lo único que
+    puede declarar es que falta el término calculado."""
+    from datetime import UTC, datetime
+
+    from takab_api.cctv import veredicto_reingreso
+
+    _, frase = veredicto_reingreso(None, datetime(2026, 8, 3, 10, 12, tzinfo=UTC))
+    assert "NO CONSTA dictamen" not in frase
+    assert "sin dictamen" not in frase.lower()
+
+
+def test_con_latencia_la_frase_no_cambia() -> None:
+    """Control: el camino que sí tiene el dato sigue igual, y el hallazgo también."""
+    from takab_api.cctv import veredicto_reingreso
+
+    assert veredicto_reingreso(-412.0)[0] is True
+    assert "después del dictamen firmado" in veredicto_reingreso(120.0)[1]

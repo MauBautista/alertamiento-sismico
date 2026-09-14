@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **345** · `[~]` **11** · `[ ]` **61**
+**Conteo de tareas:** total **417** · `[x]` **348** · `[~]` **11** · `[ ]` **58**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13838,6 +13838,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - [~] **La consola NO se miró durante el acto.** La escena `notice` con «SOLO AVISO, SIN
     ACTUACIÓN» no quedó capturada: el ensayo se llevó desde el panel, la nube y el teléfono.
     Es lo único que falta de este acto, y se cierra mirando la consola en el ensayo con cliente.
+  - [x] **El software está desplegado y comprobado (2026-09-14).** La derivación vive en
+    `alertHeadline.ts` y la defienden tres pruebas de `AlertBanner.test.tsx` (titular, atribución,
+    `data-authorizes=false` ⇒ ámbar y no rojo, y la ausencia de «PROTÉJASE»); y el bundle que
+    **sirve la consola desplegada** contiene la cadena. Lo que falta NO es código: es tener la
+    consola delante cuando alguien golpee el sensor. El paso está escrito en el acto 2 del
+    runbook con lo que hay que mirar y la captura que lo cierra.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
@@ -13951,7 +13957,8 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   epicentro y la magnitud de un sismo real del catálogo, desplazados a hoy y rotulados como
   reproducción, sin crear un solo incidente ni voto de cuórum.
 - **Criterios de aceptación:**
-  - [ ] Migración `0063`: tabla `demo_replay` (tenant, `catalog_key`, `armed_until`,
+  - [ ] Migración nueva (el número se toma al escribirla: `0063` ya es de `T-7.36`): tabla
+    `demo_replay` (tenant, `catalog_key`, `armed_until`,
     `armed_by`; vencimiento obligatorio como `demo_mode`), `reproduccion` en el CHECK de
     `incident_classifications`, y una función SECURITY DEFINER que enlaza un evento a un
     incidente (como `relocate_incident_epicenter`).
@@ -14350,7 +14357,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_el_deslinde_dice_lo_que_
   tiene_que_decir` exigía que la constante empezara por «Dictamen operativo PRELIMINAR».
 
-### [ ] T-7.34 · **Las 19 contradicciones del dictamen** — `SOFTWARE` · **AUDITADO 2026-09-13**
+### [x] T-7.34 · **Las 19 contradicciones del dictamen** — `SOFTWARE` · **CERRADA 2026-09-14**
 - **Componente:** api · **Depende de:** T-7.33 · **Prioridad:** F1 · crítica
 - **Objetivo:** que el documento oficial no afirme nada que el dato desmienta, ni se contradiga
   con la consola sobre el mismo evento.
@@ -14376,20 +14383,20 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     no, así que en una prueba o una falsa alarma medía ruido ambiente. Estaba vivo, y en la misma
     página: «TIEMPO DE AVISO GANADO · 149.2 s» tres líneas debajo de «SACUDIDA LEVE (por debajo
     de los umbrales del inmueble)». Ahora el aviso se niega con razón propia (`sin_sacudida`).
-  - [ ] **C · «El valor evaluado fue 0.000 g» sin medición**, en un documento cuyo §5 dice «SIN
+  - [x] **C · «El valor evaluado fue 0.000 g» sin medición**, en un documento cuyo §5 dice «SIN
     DATO». `rules.py` sustituye `None` por `0.0` y lo congela en el `basis`. **Se arregla en
     `T-7.38`** junto con las diez del §2: es la misma clase de defecto y toca los mismos ficheros.
-  - [ ] Las diez contradicciones internas del §2 del informe (veredicto atribuido a las reglas,
+  - [x] Las diez contradicciones internas del §2 del informe (veredicto atribuido a las reglas,
     fundamento «no guardado» habiéndolo, clip purgado anunciado como disponible, epicentro
     relocalizado a mano descrito como centroide, las dos huellas que el papel promete iguales y
     nunca lo son…). **Fichadas en `T-7.38`.**
-  - [ ] Las cuatro gráficas del §3 (espectro sobre el minuto ANTERIOR, onda cruda con la continua
+  - [x] Las cuatro gráficas del §3 (espectro sobre el minuto ANTERIOR, onda cruda con la continua
     dentro, barra de escala recortada con su rótulo, «100 sps» a fuego). **Fichadas en `T-7.39`.**
-  - [ ] **La guarda que faltaba:** el test que debía cazar las huellas distintas compara
+  - [x] **La guarda que faltaba:** el test que debía cazar las huellas distintas compara
     `model()` **consigo mismo**. Cada arreglo entra con su prueba, y la prueba tiene que comparar
     lo que el papel compara. Entra con `T-7.38` (contradicción `I`).
-  - [ ] **Esta ficha es un CENSO, no una unidad de trabajo**: se cierra cuando cierren sus hijas
-    (`T-7.35` ✓, `T-7.36` ✓, `T-7.37` ✓, `T-7.38`, `T-7.39`). Dejarla como tarea única fue lo que
+  - [x] **Esta ficha es un CENSO, no una unidad de trabajo**: se cierra cuando cierren sus hijas
+    (`T-7.35` ✓, `T-7.36` ✓, `T-7.37` ✓, `T-7.38` ✓, `T-7.39` ✓). Dejarla como tarea única fue lo que
     permitió que `B′` siguiera marcada abierta un día después de estar cerrada.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** sí — `test_los_dos_documentos_declaran_LA_MISMA_huella`
@@ -14490,46 +14497,53 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 
-### [ ] T-7.38 · **Las diez frases del dictamen que el propio documento desmiente** — `SOFTWARE`
+### [x] T-7.38 · **Las diez frases del dictamen que el propio documento desmiente** — `SOFTWARE` · **CERRADA 2026-09-14**
 - **Componente:** api · **Depende de:** T-7.34 · **Prioridad:** F2 · alta
 - **Objetivo:** que ninguna sección del dictamen afirme algo que otra sección del MISMO PDF niega.
 - **Criterios de aceptación:**
-  - [ ] **Las diez (`D`…`M` del §2 de la auditoría) se re-verificaron contra el código de hoy, una
+  - [x] **Las diez (`D`…`M` del §2 de la auditoría) se re-verificaron contra el código de hoy, una
     lente por contradicción y dos escépticos por hallazgo: las diez SIGUEN VIVAS, ninguna se
     retiró.** Dos están impresas en el PDF que se enseñó el 2026-09-13 (`D`, `L`); el resto son
     latentes y muerden en cuanto el dato llega. Censo y trampas en
     [`AUDITORIA-DICTAMEN-2026-09-13.md §2.1`](AUDITORIA-DICTAMEN-2026-09-13.md).
-  - [ ] ⚠️ **El hallazgo de método, y la regla de esta ficha:** el escéptico del arreglo **refutó
+  - [x] ⚠️ **El hallazgo de método, y la regla de esta ficha:** el escéptico del arreglo **refutó
     los diez arreglos ingenuos**, cada uno por un motivo distinto y concreto. *El arreglo obvio de
     una frase que miente suele ser otra frase que miente, más pequeña.* **Ninguna de estas entra
     sin su refutador delante**, y el refutador está escrito en la §2.1 por su clave.
-  - [ ] `D` · «El veredicto lo produjo el conjunto de reglas» — lo eligió y firmó una persona, y la
+  - [x] `D` · «El veredicto lo produjo el conjunto de reglas» — lo eligió y firmó una persona, y la
     rama firmada además **calla la cadena de dictámenes** que la §9 del mismo papel enseña.
-  - [ ] `E` · «el fundamento no quedó guardado» — la señal es la conjunción **firmado Y nota no
+  - [x] `E` · «el fundamento no quedó guardado» — la señal es la conjunción **firmado Y nota no
     vacía**: `rules.py` mete `notes` enlatado en todo dictamen automático.
-  - [ ] `F` · clip podado anunciado como archivado — el corte es de **tres** ramas: «algunos
+  - [x] `F` · clip podado anunciado como archivado — el corte es de **tres** ramas: «algunos
     podados» es un estado propio y hoy recae en «el vídeo está archivado».
-  - [ ] `G` · «no se observó el inicio del reingreso» con el reingreso registrado — o se calcula la
+  - [x] `G` · «no se observó el inicio del reingreso» con el reingreso registrado — o se calcula la
     latencia **en lectura** (el builder ya tiene la hora de la firma), o el papel solo puede decir
     que falta el término calculado. No puede pronunciarse sobre si hay dictamen firmado.
-  - [ ] `H` · epicentro reubicado a mano descrito como centroide — el evento es **compartido entre
+  - [x] `H` · epicentro reubicado a mano descrito como centroide — el evento es **compartido entre
     inmuebles** y la acción puede vivir en el incidente de otro: dos frases, no una.
-  - [ ] `I` · «es la misma huella que la variante técnica» — **nunca lo es**, y la guarda que debía
+  - [x] `I` · «es la misma huella que la variante técnica» — **nunca lo es**, y la guarda que debía
     cazarlo compara `model()` **consigo mismo**. Lo que empareja los dos documentos es el folio sin
     su letra final. Entra con el comentario del código reescrito: hoy enseña la mentira.
-  - [ ] `J` · «el sensor no registró aceleración» y tres líneas después clasifica con ese pico — el
+  - [x] `J` · «el sensor no registró aceleración» y tres líneas después clasifica con ese pico — el
     fondo es que hay **dos procedencias** del pico en el mismo documento, la congelada en el
     `basis` y la que `build_forensics` recalcula al renderizar; regenerar las separa (`T-7.37`).
-  - [ ] `K` · «sin objetos de evidencia archivados» con el clip listado debajo — la frase debe
+  - [x] `K` · «sin objetos de evidencia archivados» con el clip listado debajo — la frase debe
     declarar su ALCANCE sin afirmar el estado del vídeo, y la remisión no puede ser un número de
     sección tecleado: los catorce son literales independientes.
-  - [ ] `L` · «no hay onda cruda archivada» cuando lo único que falló fue LEERLA — la guarda va en
+  - [x] `L` · «no hay onda cruda archivada» cuando lo único que falló fue LEERLA — la guarda va en
     el **punto de impresión**, no en un call site: hay dos literales que no consultan `m.evidence`.
-  - [ ] `M` · «No se detectaron datos ausentes» con dos ausencias ya declaradas — condicionar sobre
+  - [x] `M` · «No se detectaron datos ausentes» con dos ausencias ya declaradas — condicionar sobre
     `t90_s is None` **inventaría** una ausencia: «análisis disponible» con `t90_s` nulo es real.
-  - [ ] `C` (del §1) entra aquí: «El valor evaluado fue 0.000 g» en un documento cuyo §5 dice «SIN
+  - [x] `C` (del §1) entra aquí: «El valor evaluado fue 0.000 g» en un documento cuyo §5 dice «SIN
     DATO». Misma clase, mismos ficheros.
-  - [ ] Cada arreglo con su prueba, y **la prueba no puede comparar una función consigo misma**.
+  - [x] `N` · **El cierre de episodio se atribuye al umbral local.** Medido el 2026-09-14 con el
+    WR-1 real: `rule_evaluations.basis.source` de la fila de cierre dice `local_threshold` en un
+    episodio que abrió el SASMEX. Es literalmente cierto —esa decisión la produjo el evaluador de
+    features, no el radio— y aun así el campo, leído como lo que su nombre promete, dice que el
+    episodio lo cerró el umbral local. Misma familia que `D`…`M`: **un campo rotulado de una cosa
+    que lleva otra**. No se imprime en el dictamen, así que no bloquea nada; el significado lo
+    llevan `prev_tier`/`new_tier` y el id de episodio, que sí casan apertura y cierre.
+  - [x] Cada arreglo con su prueba, y **la prueba no puede comparar una función consigo misma**.
     Las frases nuevas se promueven a constantes de `dictamen/model.py` y se dan de alta en
     `ESCENARIOS` de `test_avisos_impresos.py`, o el espía queda ciego a ellas.
 - **Tests de censo que toca:** `test_avisos_impresos` (frases nuevas), `test_redact`
@@ -14537,24 +14551,42 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   no · **Cambia algo que un test defiende hoy:** sí — `test_los_dos_documentos_declaran_LA_MISMA_huella`
   pasa hoy sobre el defecto `I`.
 
-### [ ] T-7.39 · **Las cuatro gráficas del dictamen no dicen lo que parecen** — `SOFTWARE`
+### [x] T-7.39 · **Las cuatro gráficas del dictamen no dicen lo que parecen** — `SOFTWARE` · **CERRADA 2026-09-14**
 - **Componente:** api · **Depende de:** T-7.34 · **Prioridad:** F3 · media
 - **Objetivo:** que una figura del documento oficial no pueda leerse al revés de lo que ocurrió.
 - **Criterios de aceptación:**
-  - [ ] **Fichadas desde el §3 de la auditoría, SIN re-verificar todavía** — a diferencia de
-    `T-7.38`, aquí no ha pasado el par de escépticos. El primer criterio de esta ficha es
-    comprobarlas contra el código de hoy antes de tocar nada.
-  - [ ] El espectro y el espectrograma se calculan sobre el minuto **anterior** al sismo.
-  - [ ] La onda cruda se dibuja **sin quitar la continua** y con el cero abajo: sale una línea
-    plana bajo una etiqueta «±3.86e+06 cuentas». Ya hay precedente medido en el proyecto — el
-    waveform crudo **trae** continua.
-  - [ ] La barra de escala del croquis se recorta y **conserva su rótulo en km**: quien mida sobre
-    el papel mide mal.
-  - [ ] «· 100 sps ·» escrito a fuego mientras la §8 imprime la tasa **declarada** del sensor.
-  - [ ] Verificación por RENDER (`pdftoppm`), no por lectura de texto: de una gráfica no se raspa
-    una cadena.
+  - [x] **Verificadas contra el código antes de tocar nada**, como pedía el primer criterio: **dos
+    estaban vivas, una NO lo estaba y la cuarta ya la había arreglado otra ficha a medias.** Una
+    gráfica se lee a ojo y nadie comprueba el eje: es la familia de `T-7.38` con números en vez de
+    frases.
+  - [x] **VIVA, y exacta · El espectro se calculaba sobre el minuto ANTERIOR al sismo.**
+    `evidence_pre_s` vale 60 s de fábrica y `MAX_FFT_SAMPLES` son 6 000 muestras: a 100 sps,
+    `samples[:6000]` es **punto por punto** el minuto previo al evento. El espectro que el papel
+    presenta como contenido espectral del sismo describía el ruido de fondo y no llegaba a tocar
+    la sacudida. Ahora la ventana se centra en el pico.
+  - [x] **VIVA · La onda cruda se dibujaba sin quitar la continua y con el cero abajo.** El crudo
+    del ADC trae un offset de millones de cuentas; la traza se escalaba contra él y salía una
+    línea plana bajo la etiqueta «±3.86e+06 cuentas» — que es el offset, no la sacudida. Se resta
+    la media, se centra en el cero y se dibuja su línea. **Verificado por RENDER**: con un crudo
+    realista las trazas pasan de planas a mostrar la sacudida, rotuladas ±900 y ±601 cuentas.
+  - [x] **NO estaba viva · La barra de escala no se recortaba.** Con el formato real (180 × 78 mm)
+    el tope son 82 mm y la barra no pasa de ~62: el `min(...)` nunca llegaba a morder. Era una
+    mentira **latente** —un croquis más estrecho o más alto la activa sin que nada avise— y se
+    cierra bajando al valor redondo que quepa entero, sin cambiar lo que hoy se dibuja. Queda la
+    guarda que mide el formato real.
+  - [x] **Y apareció una quinta, en la misma función**: `mm_per_km` se calculaba con `inner_h`
+    mientras la proyección escala con `min(inner_w, inner_h)`. En el formato del dictamen
+    coinciden por casualidad; en un croquis estrecho la barra salía con una escala distinta de la
+    del dibujo que pretende medir. La encontró la prueba de la barra, no el ojo.
+  - [x] **«· 100 sps ·» escrito a fuego**: la nota de la onda cruda ya usaba la tasa declarada
+    (`m.raw_sample_rate`); lo que quedaba era en dos avisos de `model.py`, que afirmaban una tasa
+    mientras la §8 imprime la del sensor —«? sps» en el reporte de prueba—. Se quita el número.
+  - [x] Comprobado por PROPIEDAD sobre las funciones puras y por RENDER, no raspando texto: de una
+    gráfica no se lee una cadena, y comparar bytes pasa en verde sobre cualquier cambio porque la
+    portada imprime `content_sha256()`.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
+
 
 ## RUTA CRÍTICA
 

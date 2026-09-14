@@ -93,7 +93,23 @@ def test_sin_dictamen_no_se_inventa_una_latencia() -> None:
     assert r.dictamen_lag_s is None
     assert r.reentry_lag_s is None
     assert any("SIN DICTAMEN" in n for n in r.notas)
-    assert "SIN DATO" in r.veredicto_reingreso()
+    # [T-7.38·G] La frase decía «SIN DATO · no se observó el inicio del reingreso»
+    # con la hora del reingreso EN LA MISMA FILA. Son dos ausencias distintas y
+    # compartían una sola frase; ésta era la que defendía el defecto.
+    assert r.reentry_start_at is not None, "el test no mide nada sin reingreso observado"
+    veredicto = r.veredicto_reingreso()
+    assert "no se observó" not in veredicto
+    assert "SIN LATENCIA CALCULADA" in veredicto
+    # Y lo que el nombre de este test promete: ningún número de segundos inventado.
+    assert " s " not in veredicto
+
+
+def test_sin_observar_el_reingreso_si_se_dice_SIN_DATO() -> None:
+    """La otra mitad de la ausencia, que sí es «no se observó»."""
+    from takab_cctv.metricas import Evacuacion
+
+    vacia = Evacuacion(baseline_n=0, peak_n=0, peak_at=T0)
+    assert "SIN DATO" in vacia.veredicto_reingreso()
 
 
 # --------------------------------------------------------- el cruce, no la suma

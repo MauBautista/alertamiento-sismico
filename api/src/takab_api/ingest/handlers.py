@@ -1033,7 +1033,15 @@ def handle_tier_transition(
             "new_tier": payload["new_tier"],
             "basis": Jsonb(
                 {
-                    "source": payload.get("source"),
+                    # [T-7.38·N] `decision_source` y no `source`: es el origen de LA
+                    # DECISIÓN que produjo esta fila, no el del episodio. En un
+                    # cierre vale `local_threshold` —lo produce el evaluador de
+                    # features— aunque el episodio lo hubiera abierto el SASMEX, y
+                    # medido el 2026-09-14 con el WR-1 real el rótulo `source`,
+                    # leído como lo que promete, decía que el episodio lo cerró el
+                    # umbral local. Quien quiera el origen del episodio tiene la
+                    # fila de apertura: comparten `event_id`.
+                    "decision_source": payload.get("source"),
                     "event_id": payload.get("event_id"),
                     "reasons": payload.get("reasons") or [],
                     # El PGA solo viaja si la fuente fue instrumental: el 1.0 con

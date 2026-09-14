@@ -7,6 +7,7 @@ ausencia viaja con su razón, porque un hueco sin explicar se lee como un fallo 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from uuid import UUID
 
@@ -20,6 +21,34 @@ NO_CCTV = "SIN COBERTURA CCTV DECLARADA · este sitio no tiene cámara configura
 #: Lambda de conteo espera ventana AWS (`T-3.12.b`)—. Un fallback no puede ser `ok`, y un
 #: cero inventado aquí sería peor que el hueco.
 ANALISIS_PENDIENTE = "CLIP DISPONIBLE · ANÁLISIS PENDIENTE"
+ANALISIS_PURGADO = "CLIP PURGADO POR RETENCIÓN · SIN ANÁLISIS"
+ANALISIS_PARCIAL = "CLIP PARCIALMENTE PURGADO · ANÁLISIS PENDIENTE"
+
+#: [T-7.38·F] Clases del material de vídeo de un incidente. El corte vive aquí, en
+#: UNA función, porque el mismo hecho lo publican la API (para la consola) y el
+#: generador del dictamen con textos distintos: dos rutas para los mismos hechos
+#: acaban discrepando, y el docstring de `CctvOut` ya lo dice.
+CLIPS_SIN, CLIPS_VIVOS, CLIPS_PURGADOS, CLIPS_MIXTOS = "sin", "vivos", "purgados", "mixtos"
+
+
+def clase_del_material(disponibles: Sequence[bool]) -> str:
+    """Qué queda del vídeo, a partir de si cada clip conserva su objeto.
+
+    Se decide por `disponible` (`bool(s3_key)`), NO por que exista la fila: la fila
+    sobrevive a la poda a propósito —es la cadena de custodia— y tomarla por «hay
+    vídeo» hacía que el papel anunciara como archivado un clip ya destruido, y
+    prometiera cifras que no van a llegar.
+
+    «Algunos podados» es una clase PROPIA, no un caso de «todo bien»: decir «el
+    vídeo está archivado» con la mitad destruida es falso.
+    """
+    if not disponibles:
+        return CLIPS_SIN
+    if all(disponibles):
+        return CLIPS_VIVOS
+    if any(disponibles):
+        return CLIPS_MIXTOS
+    return CLIPS_PURGADOS
 
 
 class ClipOut(BaseModel):

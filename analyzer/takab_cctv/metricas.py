@@ -163,7 +163,17 @@ class Evacuacion:
         return self.reentry_lag_s is not None and self.reentry_lag_s < 0
 
     def veredicto_reingreso(self) -> str:
+        # [T-7.38·G] `lag_s` nulo son DOS ausencias distintas y compartían frase:
+        # o no se vio empezar el reingreso, o sí se vio y no hubo con qué restar
+        # (el análisis se cierra sin la hora del dictamen). Decir «no se observó»
+        # con la hora observada en la fila de al lado es falso.
         if self.reentry_lag_s is None:
+            if self.reentry_start_at is not None:
+                return (
+                    f"el reingreso empezó a las {self.reentry_start_at:%Y-%m-%d %H:%M:%S} UTC"
+                    " · SIN LATENCIA CALCULADA: el análisis del clip se cerró sin la hora"
+                    " del dictamen"
+                )
             return "SIN DATO · no se observó el inicio del reingreso"
         if self.reingreso_antes_del_dictamen:
             return (

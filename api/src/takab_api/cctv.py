@@ -25,19 +25,28 @@ las dos deje de considerarlo un hallazgo, y por eso hay un test a cada lado.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncConnection
 
+from takab_api.dictamen.model import TS_FMT
 from takab_api.queries import cctv as q
 from takab_api.schemas.cctv import (
+    ANALISIS_PARCIAL,
     ANALISIS_PENDIENTE,
+    ANALISIS_PURGADO,
+    CLIPS_MIXTOS,
+    CLIPS_PURGADOS,
+    CLIPS_SIN,
+    CLIPS_VIVOS,
     NO_CCTV,
     CapturaOut,
     CctvOut,
     ClipOut,
     DiscrepanciaOut,
     EvacuacionOut,
+    clase_del_material,
 )
 
 #: Los cuatro papeles del reporte, en el orden en que se cuentan. Se listan SIEMPRE los
@@ -52,9 +61,27 @@ _SIN_FOTO = {
 }
 
 
-def veredicto_reingreso(lag_s: float | None) -> tuple[bool, str]:
-    """`(es_hallazgo, frase)`. Gemelo de `analyzer…metricas.veredicto_reingreso`."""
+def veredicto_reingreso(
+    lag_s: float | None, reentry_start_at: datetime | None = None
+) -> tuple[bool, str]:
+    """`(es_hallazgo, frase)`. Gemelo de `analyzer…metricas.veredicto_reingreso`.
+
+    [T-7.38·G] `lag_s` nulo no significa una cosa, sino DOS, y el papel las decía
+    con la misma frase: que no se observó el inicio del reingreso, o que sí se
+    observó y **no se pudo restar** —el Lambda cierra el análisis sin la hora del
+    dictamen—. Decir «no se observó» con la hora del reingreso escrita en la fila
+    de al lado es falso, y es de las que un perito ve.
+
+    La frase nueva declara el hecho de CANALIZACIÓN, no el del mundo: dice que
+    falta el término calculado, no que no exista dictamen firmado. Eso último el
+    analizador no lo sabe — nunca recibió esa hora.
+    """
     if lag_s is None:
+        if reentry_start_at is not None:
+            return False, (
+                f"el reingreso empezó a las {reentry_start_at:{TS_FMT}} · SIN LATENCIA "
+                "CALCULADA: el análisis del clip se cerró sin la hora del dictamen"
+            )
         return False, "SIN DATO · no se observó el inicio del reingreso"
     if lag_s < 0:
         return True, (
@@ -138,13 +165,17 @@ async def build_cctv(conn: AsyncConnection, incident_id: str | UUID) -> CctvOut 
 
     metricas = (await conn.execute(q.METRICAS, parametros)).mappings().first()
     if metricas is None:
-        estado = (
-            ANALISIS_PENDIENTE
-            if clips
-            else NO_CCTV
+        # [T-7.38·F] El mismo corte que el dictamen, de la misma función: el
+        # docstring de `CctvOut` dice que este objeto va a la pantalla Y al PDF, y
+        # dos rutas para los mismos hechos acaban discrepando.
+        estado = {
+            CLIPS_VIVOS: ANALISIS_PENDIENTE,
+            CLIPS_PURGADOS: ANALISIS_PURGADO,
+            CLIPS_MIXTOS: ANALISIS_PARCIAL,
+            CLIPS_SIN: NO_CCTV
             if not con_camara
-            else ("CÁMARA DECLARADA · sin clip para este incidente")
-        )
+            else "CÁMARA DECLARADA · sin clip para este incidente",
+        }[clase_del_material([c.disponible for c in clips])]
         return CctvOut(
             incident_id=UUID(str(incident_id)),
             con_camara=con_camara,
@@ -153,7 +184,9 @@ async def build_cctv(conn: AsyncConnection, incident_id: str | UUID) -> CctvOut 
             capturas=capturas,
         )
 
-    es_hallazgo, frase = veredicto_reingreso(metricas["reentry_lag_s"])
+    es_hallazgo, frase = veredicto_reingreso(
+        metricas["reentry_lag_s"], metricas["reentry_start_at"]
+    )
     return CctvOut(
         incident_id=UUID(str(incident_id)),
         con_camara=con_camara,

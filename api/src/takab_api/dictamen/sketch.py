@@ -107,10 +107,34 @@ def project(
     # Barra de escala: se calcula sobre una distancia REAL medida con haversine, no
     # sobre la proyección — así el número que se imprime es kilómetros de verdad.
     span_km = haversine_km(cy, (cx / kx) if kx else 0.0, cy + span, (cx / kx) if kx else 0.0)
+    # [T-7.39] La MISMA escala con la que se proyectan los puntos —`min(inner_w,
+    # inner_h)`—, no `inner_h` a secas. En el formato real del dictamen coinciden
+    # porque el alto es el lado corto; en un croquis más estrecho que alto no, y la
+    # barra salía con una escala distinta de la del dibujo que pretende medir.
+    mm_per_km = (min(inner_w, inner_h) / span_km) if span_km > 0 else 0.0
+    # [T-7.39] La barra se RECORTABA a la mitad del ancho y el rótulo conservaba los
+    # kilómetros sin recortar: quien midiera sobre el papel medía mal, y el croquis
+    # existe justo para que se pueda medir. Ahora se elige el valor redondo MÁS
+    # GRANDE que quepa entero; si ni el más pequeño cabe, se dibuja lo que mide de
+    # verdad y el rótulo dice ese mismo número.
+    # [T-7.39] El `min(...)` de antes RECORTABA la barra y dejaba el rótulo con los
+    # kilómetros sin recortar: quien midiera sobre el papel mediría mal. Verificado
+    # el 2026-09-14: con el formato real (180 × 78 mm) el tope nunca llega a morder
+    # —la barra no pasa de ~62 mm sobre un tope de 82—, así que la contradicción NO
+    # estaba viva. Queda como mentira LATENTE: un croquis más estrecho o más alto la
+    # activa sin que nada avise. Se baja al valor redondo que quepa entero en vez de
+    # cortar, y el rótulo dice siempre lo que la barra mide.
+    tope_mm = inner_w * 0.5
     bar_km = _nice_km(max(span_km, 0.5))
-    mm_per_km = (inner_h / span_km) if span_km > 0 else 0.0
+    if mm_per_km > 0 and bar_km * mm_per_km > tope_mm:
+        for valor in reversed(_NICE_KM):
+            if valor < bar_km and valor * mm_per_km <= tope_mm:
+                bar_km = float(valor)
+                break
+        else:
+            bar_km = tope_mm / mm_per_km
     return Sketch(
         points=projected,
-        scale_bar_mm=min(bar_km * mm_per_km, inner_w * 0.5),
+        scale_bar_mm=min(bar_km * mm_per_km, tope_mm),
         scale_bar_km=bar_km,
     )

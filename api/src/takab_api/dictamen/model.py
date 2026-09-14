@@ -75,9 +75,19 @@ NO_CALIBRATION = (
     "documento son valores RELATIVOS del sensor, no unidades físicas."
 )
 NO_SPECTRUM = (
-    "ANÁLISIS ESPECTRAL NO DISPONIBLE. Requiere la forma de onda cruda a 100 sps; el "
+    "ANÁLISIS ESPECTRAL NO DISPONIBLE. Requiere la forma de onda cruda; el "
     "sistema no la transmite en continuo (solo sube a evidencia en eventos "
     "confirmados). Este incidente no tiene miniSEED archivado."
+)
+#: [T-7.38·L] El caso que `NO_SPECTRUM` trataba como el mismo: SÍ consta un objeto
+#: miniSEED en la cadena de custodia —el §10 de este documento imprime su sha256—
+#: y lo que falló fue LEERLO. Decir «no tiene miniSEED archivado» ahí es falso, y
+#: lo desmiente el propio papel cuarenta líneas más abajo.
+ONDA_NO_LEIDA = (
+    "ANÁLISIS ESPECTRAL NO DISPONIBLE. Consta un objeto miniSEED registrado en la cadena "
+    "de custodia de este incidente, con su sha256 impreso en este mismo documento; esta "
+    "exportación no obtuvo traza de él. Que el objeto esté registrado no garantiza que "
+    "siga siendo recuperable ni legible."
 )
 NO_GEOMETRY = "SIN GEOMETRÍA REGISTRADA · no se puede dibujar el croquis del evento."
 #: [T-3.12.c] Los tres estados del CCTV. Se distinguen porque significan cosas OPUESTAS y
@@ -94,7 +104,30 @@ CCTV_PENDIENTE = (
     "CLIP DISPONIBLE · ANÁLISIS PENDIENTE. El vídeo está archivado y todavía no se ha "
     "contado: las cifras de evacuación llegarán en una versión posterior del documento."
 )
+CCTV_PURGADO_SIN_ANALISIS = (
+    "CLIP PURGADO POR RETENCIÓN · SIN ANÁLISIS. El vídeo se destruyó al vencer su plazo de "
+    "retención y no consta conteo de evacuación para este incidente. Permanece la custodia "
+    "—sha256 y ventana— en la lista siguiente."
+)
+CCTV_PARCIALMENTE_PURGADO = (
+    "CLIP PARCIALMENTE PURGADO POR RETENCIÓN · ANÁLISIS PENDIENTE. Parte del vídeo de este "
+    "incidente se destruyó al vencer su plazo de retención; lo que queda no se ha contado. "
+    "La lista siguiente dice de cada objeto si sigue archivado."
+)
 CCTV_PURGADO = "PURGADO (retención de vídeo)"
+EPICENTRO_REUBICADO = (
+    "EPICENTRO REUBICADO A MANO POR UN OPERADOR. No es el centroide de las estaciones ni "
+    "una localización sísmica calculada."
+)
+#: La trazabilidad se AÑADE, y solo cuando consta aquí: un evento de red es
+#: COMPARTIDO entre inmuebles, así que la acción puede vivir en el incidente de otro.
+#: Afirmar «consta en la bitácora» sin mirarla haría que el papel contradijera a su
+#: propia §10.
+EPICENTRO_REUBICADO_AQUI = " La reubicación consta en la bitácora de este incidente."
+EPICENTRO_REUBICADO_EN_LA_RED = (
+    " La reubicó un operador de la red sobre el evento compartido; no consta en la "
+    "bitácora de este incidente."
+)
 CENTROID_NOTE = (
     "EPICENTRO = CENTROIDE DE LAS ESTACIONES QUE DETECTARON EL SISMO. No es una "
     "localización sísmica: está entre las estaciones, no en la falla."
@@ -102,7 +135,7 @@ CENTROID_NOTE = (
 SKETCH_NOTE = "SIN CARTOGRAFÍA BASE · PROYECCIÓN EQUIRECTANGULAR LOCAL"
 ENVELOPE_NOTE = (
     "ENVOLVENTE DE PICO POR SEGUNDO (1 Hz). NO es la forma de onda cruda: el sistema "
-    "muestrea a 100 sps y no transmite el crudo en continuo."
+    "no transmite el crudo en continuo."
 )
 #: [T-5.07] Aviso de asistencia automatizada. Vivía como literal dentro de
 #: `pdf.py`, así que el censo de avisos impresos —que se DERIVA de este módulo— no
@@ -293,6 +326,11 @@ class ReportModel:
     station_count: int
     catalog_line: str | None
     generated_at: datetime
+
+    #: [T-7.38·H] ¿Movió un operador el epicentro a mano? Sale de
+    #: `seismic_events.meta ? 'manual_override'`. Con esto puesto, el papel NO puede
+    #: seguir llamándolo «centroide de las estaciones»: es un punto humano.
+    epicenter_relocated: bool = False
 
     channels: list[ChannelRow] = field(default_factory=list)
     dictamens: list[DictamenRow] = field(default_factory=list)

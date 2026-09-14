@@ -42,6 +42,12 @@ class NarrativeFacts:
     verdict_actions: tuple[str, ...]
     rule_set_version: str | None
     basis: dict = field(default_factory=dict)
+    #: [T-7.38·E] ¿Consta una razón ESCRITA POR UNA PERSONA al firmar? Booleano, no
+    #: el texto: la nota del inspector es prosa libre sin validar y la allowlist de
+    #: `redact` existe para que no salga de la nube. Y es la CONJUNCIÓN «firmada Y
+    #: con nota»: `rules.py` mete `notes` enlatado en todo dictamen automático, así
+    #: que la clave sola no distingue una razón de una cadena de fábrica.
+    reason_recorded: bool = False
 
     site_criticality: str | None = None
     felt_band: str = "unknown"
@@ -61,6 +67,10 @@ class NarrativeFacts:
     dictamen_count: int = 0
     has_epicenter: bool = False
     has_raw_waveform: bool = False
+    #: [T-7.38·L] ¿CONSTA un objeto miniSEED en la cadena de custodia? `has_raw_waveform`
+    #: responde a otra pregunta —«¿se decodificó?»— y la prosa decía «no hay forma de
+    #: onda cruda archivada» sobre un incidente cuyo §10 lista el miniSEED con su hash.
+    has_archived_miniseed: bool = False
     #: Cada dato que falta, con su razón. Es la materia prima de "Limitaciones".
     absences: tuple[str, ...] = ()
 
