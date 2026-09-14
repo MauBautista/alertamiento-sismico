@@ -130,9 +130,40 @@ desde cero (no la clona: la base de tests tiene sesiones vivas y Postgres se nie
 usarla de plantilla), siembra, ejecuta el script ENTERO y comprueba lo que queda, lo que
 no, que repetirlo no cambia nada y que el censo aborta **antes** de borrar.
 
+### ⚠️ Cómo se VERIFICA el respaldo (dos trampas, dos restauraciones perdidas)
+
+Un `pg_dump` que existe no es un respaldo; lo es uno que se ha restaurado. Medido el
+2026-09-14 restaurando el dump de la nube en una base local:
+
+1. **`pg_restore --jobs N` NO sirve con TimescaleDB.** La restauración paralela desordena
+   el catálogo de Timescale y falla con
+   `dimension_slice_chunk_id_fkey` / `compression_chunk_size_chunk_id_fkey`. El resultado
+   es de los que engañan: las tablas normales quedan **perfectas** (incidentes,
+   dictámenes, bitácora) y las **hypertables quedan en CERO** —9.4 millones de filas de
+   features, 145 mil de salud— sin que nada diga «faltan datos». Se restaura **en serie**.
+2. **`--single-transaction` lo aborta todo por un `SET` desconocido.** El `pg_dump` del
+   portátil es más nuevo que el servidor (18.6 contra 16.14) y emite
+   `SET transaction_timeout = 0`, que PG16 no conoce. Dentro de una transacción única eso
+   tumba la restauración ENTERA y la base queda vacía. Sin ella es **un error ignorado** y
+   todo lo demás entra.
+
+El procedimiento que sí funcionó, entre `pre_restore` y `post_restore` (la mitad que ya
+señalaba la Fase 2.6):
+
+```bash
+psql "$DSN_NUEVA" -c 'CREATE EXTENSION IF NOT EXISTS timescaledb' \
+                  -Atc 'SELECT timescaledb_pre_restore()'
+pg_restore -d "$DSN_NUEVA" --no-owner <dump>     # ni --jobs ni --single-transaction
+psql "$DSN_NUEVA" -Atc 'SELECT timescaledb_post_restore()'
+```
+
+Y se comprueba **contando**, no leyendo la salida: las hypertables son las que se pierden
+en silencio.
+
 ### Orden de ejecución
 
-1. `pg_dump -Fc` con su `sha256`, copiado **fuera del EC2**.
+1. `pg_dump -Fc` con su `sha256`, copiado **fuera del EC2**, y **restaurado** según el
+   apartado de arriba: sin contar filas, no está verificado.
 2. CSV de `s3_key` de `evidence_objects` — los objetos de S3 **no se tocan aquí**.
 3. Anotar los conteos ANTES (el script los imprime).
 4. Editar `<SUB_DE_MAURICIO>` y `<NOMBRE_DEL_DUMP>`.
