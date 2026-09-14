@@ -95,13 +95,42 @@ gabinete estuviera mudo, la franja lo diría en vez de pintar un dato viejo como
 curl -s http://<ip-del-gabinete>:8080/api/status | jq '{tier: .last_tier, relés: [.relays[] | {channel, activated}]}'
 ```
 
-> ⚠️ **TEN LA CONSOLA ABIERTA ANTES DEL GOLPE.** Es lo único de `T-7.08` que sigue sin acreditar
-> y lo único que separa a `F1` de estar cerrada: el 2026-09-12 el ensayo se llevó desde el panel,
-> la nube y el teléfono, y **nadie miró la consola**. Con el incidente abierto, la franja superior
-> tiene que decir **«AVISO SÍSMICO · UMBRAL INSTRUMENTAL»** con **«EDGE · RS4D · SOLO AVISO, SIN
-> ACTUACIÓN»** debajo, en ÁMBAR y no en rojo — y sin la palabra «PROTÉJASE», que aquí sería
-> prometer una actuación que la política prohíbe. Hazle una captura: es la evidencia que cierra
-> la ficha. (El software está desplegado y comprobado; lo que falta es la observación.)
+> ### ⚠️ La consola: lo único de `T-7.08` sin acreditar, y las dos trampas que lo impiden
+>
+> El 2026-09-12 el ensayo se llevó desde el panel, la nube y el teléfono, y **nadie miró la
+> consola**. Es lo único que separa a `F1` de estar cerrada. Pero no basta con tenerla abierta:
+> la franja de la consola **se monta solo con `severity === "critical"`**
+> (`scene.ts::sceneAlert`), y eso encadena dos condiciones que un golpe flojo no cumple.
+>
+> **1 · El golpe tiene que pasar de `pga_trip_g`.** El `rule_set` v19 que rige declara
+> **0.100 g** (vigilancia 0.070). Solo `evacuate_or_hold` mapea a `critical`; `restricted` es
+> `warning` **y no pinta franja**. El golpe del 12-sep midió **0.357 g** y sí llegó; uno de
+> los del 14-sep se quedó en `restricted` y la consola no habría enseñado nada.
+>
+> Compruébalo en el panel ANTES de ir a la consola:
+>
+> ```bash
+> curl -s http://raspberry-cerebro.local:8080/api/status \
+>   | jq '{tier: .last_tier, pga_por_canal: [.signal.channels | to_entries[] | {(.key): .value.pga_g}]}'
+> ```
+>
+> `tier` tiene que decir **`evacuate_or_hold`**. Si dice `restricted`, el golpe se quedó corto y
+> la consola **no** va a pintar la escena: vuelve a golpear más fuerte antes de ir a mirarla.
+>
+> **2 · Cierra antes los incidentes `critical` viejos.** `sceneAlert` toma el **primer**
+> incidente `critical` de la cola, y la cola va por `opened_at DESC`. El nuevo gana por ser más
+> reciente — pero si el golpe se queda corto, la franja mostrará el **SASMEX anterior en rojo**,
+> y eso se lee como si el acto 2 hubiera disparado una alerta que no disparó. Ciérralos desde
+> triage con su clasificación (`prueba`), que es de dos clics.
+>
+> **Lo que tiene que decir la franja**, y es la evidencia que cierra la ficha:
+> **«AVISO SÍSMICO · UMBRAL INSTRUMENTAL»** con **«EDGE · RS4D · SOLO AVISO, SIN ACTUACIÓN»**
+> debajo, **en ÁMBAR y no en rojo** (`data-authorizes="false"`), y **sin la palabra
+> «PROTÉJASE»**, que aquí sería prometer una actuación que la política prohíbe. Hazle una
+> captura.
+>
+> El software está desplegado y comprobado —la cadena es `alertHeadline.ts`, tres pruebas la
+> defienden y el bundle servido contiene la cadena—; lo que falta es la observación.
 
 ---
 

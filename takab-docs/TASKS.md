@@ -13842,8 +13842,22 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     `alertHeadline.ts` y la defienden tres pruebas de `AlertBanner.test.tsx` (titular, atribución,
     `data-authorizes=false` ⇒ ámbar y no rojo, y la ausencia de «PROTÉJASE»); y el bundle que
     **sirve la consola desplegada** contiene la cadena. Lo que falta NO es código: es tener la
-    consola delante cuando alguien golpee el sensor. El paso está escrito en el acto 2 del
-    runbook con lo que hay que mirar y la captura que lo cierra.
+    consola delante cuando alguien golpee el sensor.
+  - [x] **Y no basta con tenerla abierta: la cadena tiene DOS condiciones que un golpe flojo no
+    cumple**, rastreadas el 2026-09-14 y escritas en el acto 2 del runbook.
+    1. `scene.ts::sceneAlert` monta la franja **solo con `severity === "critical"`**, y `critical`
+       viene únicamente de `evacuate_or_hold` (`restricted` es `warning` y **no pinta nada**). Eso
+       exige pasar de `pga_trip_g`, que el `rule_set` v19 vigente declara en **0.100 g**. El golpe
+       del 12-sep midió 0.357 g y llegó; **un instrumental del 14-sep se quedó en `restricted`** y
+       la consola no habría enseñado nada. El panel lo dice antes de ir a mirarla.
+    2. `sceneAlert` toma el **primer** `critical` de la cola (`opened_at DESC`). El nuevo gana por
+       reciente, pero si el golpe se queda corto la franja muestra el **SASMEX anterior en rojo**,
+       que se lee como si el acto 2 hubiera disparado una alerta que no disparó. Los `critical`
+       viejos se cierran desde triage antes del acto.
+  - [x] **La política de `T-2.32`, medida otra vez el 2026-09-14 con datos frescos:** dos
+    incidentes `local_threshold` en el sitio (15:11 y 19:47 UTC) y la bitácora de actuación de las
+    últimas 12 h con **un solo apunte, un autodiagnóstico del gabinete**. Ningún relé se movió.
+    Es una segunda medición independiente de la del 12-sep.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
