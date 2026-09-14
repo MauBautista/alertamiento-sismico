@@ -22,6 +22,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import require_roles
 from takab_api.auth.matrix import ROLE_ROUTE_MATRIX, TRIAGE, roles_with_action
+from takab_api.felt import CLAVE_UMBRAL_CONGELADO, umbral_congelado
 from takab_api.queries import dictamens as q
 from takab_api.queries import mobile as mobile_q
 from takab_api.routers._common import http_error, read_session
@@ -93,9 +94,20 @@ async def sign_dictamen(
     head = (await conn.execute(head_stmt, head_params)).scalar_one_or_none()
     supersedes = str(head) if head is not None else None
 
-    basis: dict[str, str] = {}
+    basis: dict = {}
     if body.notes is not None:
         basis["notes"] = body.notes
+    # [T-7.37] Los umbrales congelados se ARRASTRAN VERBATIM a la fila firmada.
+    # Sin esto, la firma —que es la fila de más peso legal del sistema— nacería
+    # sin la congelación y la cadena quedaría dependiendo de que nadie pode
+    # `rule_sets`. No se re-resuelven: qué umbral regía cuando tembló no lo
+    # decide el momento de firmar.
+    chain_stmt, chain_params = q.select_chain_basis(str(incident_id))
+    heredado = umbral_congelado(
+        [r.basis for r in (await conn.execute(chain_stmt, chain_params)).all()]
+    )
+    if heredado is not None:
+        basis[CLAVE_UMBRAL_CONGELADO] = heredado
 
     ins_stmt, ins_params = q.insert_dictamen(
         tenant_id=tenant_id,

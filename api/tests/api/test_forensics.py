@@ -47,6 +47,20 @@ def _token(role: str = "soc_operator", tenant: str = au.DB_TENANT_PRIV) -> dict[
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*"))
 
 
+async def _escalar(incident_id: str, trigger: str) -> None:
+    """Escala el incidente como lo hace la ingesta: pisando `trigger`.
+
+    `opened_trigger` NO se menciona — la estampa la BASE y es inmutable, que es
+    justo lo que esta ficha comprueba.
+    """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE incidents SET trigger = :t WHERE incident_id = CAST(:i AS uuid)"),
+            {"t": trigger, "i": incident_id},
+        )
+
+
 async def _features(site_id: str, rows: list[tuple[int, str, float, float]]) -> None:
     """Siembra features de 1 s: `(offset_s, canal, pga_g, pgv_cms)` desde `_OPENED`."""
     async with get_engine().begin() as conn:
@@ -159,6 +173,42 @@ async def test_sin_pico_el_tiempo_de_aviso_dice_por_que(client, app, make_incide
     )
     body = (await _get(client, iid)).json()
     assert (body["lead_time_s"], body["lead_time_reason"]) == (None, "no_peak")
+
+
+async def test_el_aviso_se_mide_contra_el_disparo_de_APERTURA(client, app, make_incident) -> None:
+    """[T-7.36] Abre el umbral local, escala SASMEX: el número salía INFLADO.
+
+    `incidents.trigger` lo sobrescribe el UPSERT de la ingesta con el disparo de
+    la última escalada, pero `opened_at` se queda en el de la apertura. Midiendo
+    contra `trigger`, el papel presentaba como «tiempo de aviso ganado por
+    SASMEX» 35 segundos que transcurrieron **antes de que SASMEX dijera nada**.
+    """
+    _app_with_forensics(app)
+    iid = await make_incident(
+        au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, trigger="local_threshold"
+    )
+    await _escalar(iid, "sasmex")
+    await _features(au.DB_SITE_PRIV, [(35, "ENZ", 0.1, 4.0)])
+
+    body = (await _get(client, iid)).json()
+    assert (body["lead_time_s"], body["lead_time_reason"]) == (None, "not_sasmex")
+
+
+async def test_una_escalada_NO_borra_un_aviso_que_SI_existio(client, app, make_incident) -> None:
+    """La dirección contraria, igual de real: abre SASMEX, corrobora el cuórum.
+
+    Con `trigger` el campo decía `quorum` y el aviso se NEGABA habiéndolo habido.
+    """
+    _app_with_forensics(app)
+    iid = await make_incident(
+        au.DB_TENANT_PRIV, au.DB_SITE_PRIV, opened_at=_OPENED, trigger="sasmex"
+    )
+    await _escalar(iid, "quorum")
+    await _features(au.DB_SITE_PRIV, [(35, "ENZ", 0.1, 4.0)])
+
+    body = (await _get(client, iid)).json()
+    assert body["lead_time_s"] == 35.0
+    assert body["lead_time_reason"] is None
 
 
 # ---- calibración -------------------------------------------------------------

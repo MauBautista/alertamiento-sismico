@@ -40,6 +40,7 @@ from takab_api.dictamen.model import (
     STATUS_LABELS,
     TS_FMT,
     ReportModel,
+    disparo_line,
     huella_de_custodia,
     lead_time_text,
     num,
@@ -99,7 +100,7 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.field("INCIDENTE", m.incident_id)
     pdf.field("APERTURA", f"{m.opened_at:{TS_FMT}}")
     pdf.field("CIERRE", f"{m.closed_at:{TS_FMT}}" if m.closed_at else "EN CURSO")
-    pdf.field("SEVERIDAD · DISPARO", f"{m.severity} · {m.trigger}")
+    pdf.field("SEVERIDAD · DISPARO", f"{m.severity} · {disparo_line(m.opened_trigger, m.trigger)}")
     pdf.field("EVENTO DE RED", m.event_id or "SIN EVENTO ASOCIADO")
     pdf.field("FOLIO", m.folio)
     # Se imprime la huella del CONTENIDO; la del archivo no cabe dentro de sí mismo.
@@ -667,7 +668,7 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.section("", "QUÉ PASÓ")
     pdf.para(
         f"El {m.opened_at:%d/%m/%Y} a las {m.opened_at:%H:%M UTC} se abrió un incidente "
-        f"en {m.site_name} por {m.trigger}. "
+        f"en {m.site_name} por {disparo_line(m.opened_trigger, m.trigger)}. "
         + (
             f"El sensor del inmueble midió un pico de {num(m.peak_pga_g, 3, 'g')}."
             if m.peak_pga_g is not None

@@ -46,6 +46,7 @@ def model(**over) -> ReportModel:
         "closed_at": None,
         "severity": "warning",
         "trigger": "sasmex",
+        "opened_trigger": "sasmex",
         "state": "open",
         "event_id": "EVT-001",
         "event_source": "local_quorum",

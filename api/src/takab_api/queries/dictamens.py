@@ -43,6 +43,21 @@ def select_chain_head(incident_id: str) -> tuple[TextClause, dict[str, Any]]:
     return text(sql), {"id": incident_id}
 
 
+def select_chain_basis(incident_id: str) -> tuple[TextClause, dict[str, Any]]:
+    """[T-7.37] Los `basis` de la CADENA, de la cabeza hacia atrás.
+
+    No basta con la cabeza: al firmar, el `basis` de la fila nueva es `{}` o
+    `{"notes": …}`, así que en una cadena ya firmada la congelación de umbrales
+    vive en una fila anterior. Buscar solo en la cabeza la perdería justo en el
+    documento que más pesa.
+    """
+    sql = (
+        "SELECT basis FROM dictamens WHERE incident_id = CAST(:id AS uuid) "
+        "ORDER BY created_at DESC, dictamen_id DESC"
+    )
+    return text(sql), {"id": incident_id}
+
+
 def insert_dictamen(
     *,
     tenant_id: str,

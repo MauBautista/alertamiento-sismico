@@ -10,7 +10,11 @@ from __future__ import annotations
 from takab_api.dictamen.model import ABSENT
 from takab_api.narrative import build_narrative
 from takab_api.narrative.base import NarrativeRequest
-from takab_api.narrative.deterministic import DeterministicProvider, sections_for
+from takab_api.narrative.deterministic import (
+    _TRIGGER_TEXT,
+    DeterministicProvider,
+    sections_for,
+)
 from takab_api.narrative.prompts import SECTION_TITLES
 from takab_api.narrative.redact import facts_from
 from takab_api.settings import Settings
@@ -152,3 +156,38 @@ async def test_el_proveedor_determinista_no_necesita_red_ni_clave() -> None:
     out = await DeterministicProvider().generate(req)
     assert out.provider == "deterministic"
     assert out.model is None
+
+
+# ---- [T-7.36] la apertura no es la escalada ----------------------------------
+
+
+def test_la_prosa_atribuye_la_APERTURA_a_quien_la_abrio() -> None:
+    """«El incidente se abrió … a partir de X» salía de `trigger`, que la ingesta
+    sobrescribe con el disparo de la ÚLTIMA ESCALADA.
+
+    Con SASMEX abriendo y el cuórum corroborando, el papel decía que lo abrió el
+    cuórum — y en el caso contrario (umbral local abre, SASMEX escala) inflaba el
+    tiempo de aviso ganado con segundos anteriores a que SASMEX dijera nada.
+    """
+    texto = _secs(opened_trigger="sasmex", trigger="quorum")["Qué pasó"]
+    assert _TRIGGER_TEXT["sasmex"] in texto, "la apertura no se atribuye al SASMEX"
+
+
+def test_la_prosa_DECLARA_la_escalada() -> None:
+    """Se dice, no se sustituye: callarla cambiaría una frase falsa por una
+    incompleta, y el cuórum es justo lo que autoriza a evacuar."""
+    texto = _secs(opened_trigger="sasmex", trigger="quorum")["Qué pasó"]
+    assert _TRIGGER_TEXT["quorum"] in texto, "la prosa se calla que el incidente escaló"
+
+
+def test_sin_escalada_la_prosa_no_INVENTA_una() -> None:
+    texto = _secs(opened_trigger="sasmex", trigger="sasmex")["Qué pasó"]
+    assert "escaló" not in texto.lower()
+    assert _TRIGGER_TEXT["sasmex"] in texto
+
+
+def test_los_dos_TEXTOS_de_disparo_son_distinguibles() -> None:
+    """Control de ceguera: si dos entradas del mapa fueran iguales, los tres tests
+    de arriba no podrían distinguir apertura de escalada."""
+    assert len(set(_TRIGGER_TEXT.values())) == len(_TRIGGER_TEXT)
+    assert all(v.strip() for v in _TRIGGER_TEXT.values())

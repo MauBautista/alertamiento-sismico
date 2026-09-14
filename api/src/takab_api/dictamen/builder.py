@@ -38,6 +38,7 @@ from takab_api.dictamen.model import (
     VoteRow,
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
+from takab_api.felt import umbral_congelado
 from takab_api.forensics import build_forensics, umbral_de_comparacion
 from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as qf
@@ -53,7 +54,7 @@ MAX_FFT_SAMPLES = 6000
 _INCIDENT = text(
     """
     SELECT i.incident_id, i.site_id, i.tenant_id, i.event_id, i.opened_at, i.closed_at,
-           i.severity, i.state, i.trigger,
+           i.severity, i.state, i.trigger, i.opened_trigger,
            s.name AS site_name, s.code AS site_code, s.criticality,
            ST_Y(s.geom::geometry)::float8 AS site_lat,
            ST_X(s.geom::geometry)::float8 AS site_lon,
@@ -168,15 +169,28 @@ async def build_model(
     if forensics is None:  # pragma: no cover - el SELECT de arriba ya lo cubriría
         return None
 
-    # [T-7.35] La MISMA resolución que usó la banda, para poder imprimir contra
-    # qué números se comparó. Se pide a la misma función, no se recalcula: dos
-    # caminos para el mismo número acaban discrepando.
-    umbral = await umbral_de_comparacion(
-        conn, site_id=str(inc["site_id"]), tenant_id=str(inc["tenant_id"]), at=inc["opened_at"]
-    )
-    umbral_dict = umbral.as_dict()
-
     dictamen_rows = (await conn.execute(_DICTAMENS, {"id": incident_id})).all()
+
+    # [T-7.37] Primero se busca el umbral CONGELADO en la cadena de dictámenes.
+    # `T-7.35` resuelve bien los vigentes en la apertura, pero lo hace al
+    # EXPORTAR: si alguien podara versiones antiguas de `rule_sets`, un PDF
+    # regenerado el año que viene clasificaría el mismo pico contra otra banda, y
+    # un dictamen es un documento histórico. Se recorre la CADENA, no solo la
+    # cabeza: al firmar, el `basis` de la fila nueva es `{}` o `{"notes": …}`.
+    #
+    # El respaldo —resolver ahora— se queda para los incidentes sin dictamen y
+    # para los documentos anteriores a esta ficha. Es la MISMA resolución que usa
+    # la banda: dos caminos para el mismo número acaban discrepando.
+    umbral_dict = umbral_congelado([r.basis for r in dictamen_rows])
+    if umbral_dict is None:
+        umbral_dict = (
+            await umbral_de_comparacion(
+                conn,
+                site_id=str(inc["site_id"]),
+                tenant_id=str(inc["tenant_id"]),
+                at=inc["opened_at"],
+            )
+        ).as_dict()
     dictamens = [
         DictamenRow(
             dictamen_id=str(r.dictamen_id),
@@ -219,6 +233,7 @@ async def build_model(
         closed_at=inc["closed_at"],
         severity=inc["severity"],
         trigger=inc["trigger"],
+        opened_trigger=inc["opened_trigger"],
         state=inc["state"],
         event_id=inc["event_id"],
         event_source=inc["event_source"],

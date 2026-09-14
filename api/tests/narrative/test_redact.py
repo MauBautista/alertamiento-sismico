@@ -230,7 +230,10 @@ def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
 
     campos = {f.name for f in fields(NarrativeFacts)}
 
-    assert len(campos) == 29, (
+    # [T-7.36] 29 → 30: `opened_trigger`. Es un hecho AGREGADO del incidente —con
+    # qué disparo se abrió, uno de cuatro valores de un enum— exactamente del mismo
+    # tipo que `trigger`, que ya salía. No identifica ni al inmueble ni a nadie.
+    assert len(campos) == 30, (
         "cambió lo que viaja al proveedor de prosa. Si el campo nuevo es un dato "
         "del inmueble o de una persona, NO puede salir; si es un hecho agregado, "
         f"actualiza el número y di por qué. Campos: {sorted(campos)}"

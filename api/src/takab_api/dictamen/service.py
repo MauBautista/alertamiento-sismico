@@ -25,6 +25,7 @@ from datetime import UTC, datetime, timedelta
 import psycopg
 
 from takab_api.dictamen.rules import EvalInput, evaluate, resolve_params
+from takab_api.felt import CLAVE_UMBRAL_CONGELADO, umbral_congelado, umbral_de_fila
 from takab_api.incident.quorum import resolve_params as resolve_quorum_params
 from takab_api.settings import Settings
 
@@ -56,7 +57,8 @@ SELECT i.incident_id,
        COALESCE(nv.node_count, 0)::int AS node_count,
        head.dictamen_id AS head_id,
        head.status      AS head_status,
-       head.signed_by   AS head_signed_by
+       head.signed_by   AS head_signed_by,
+       head.head_basis
 FROM incidents i
 LEFT JOIN LATERAL (
   SELECT se.sensor_id
@@ -78,7 +80,7 @@ LEFT JOIN LATERAL (
   WHERE qv.event_id = i.event_id AND qv.counted
 ) nv ON true
 LEFT JOIN LATERAL (
-  SELECT d.dictamen_id, d.status, d.signed_by
+  SELECT d.dictamen_id, d.status, d.signed_by, d.basis AS head_basis
   FROM dictamens d
   WHERE d.incident_id = i.incident_id
     AND NOT EXISTS (
@@ -102,6 +104,31 @@ WHERE is_active
      OR (scope_type = 'tenant' AND scope_id = %(tenant)s) )
 ORDER BY (scope_type = 'site') DESC, version DESC
 LIMIT 1
+"""
+
+# [T-7.37] Umbrales del INMUEBLE vigentes en la apertura del incidente, para
+# congelarlos en el `basis`. Es el espejo sync de
+# `queries/forensics._THRESHOLDS_IN_FORCE` —aquél es SQLAlchemy async y éste
+# psycopg— y por eso `test_umbral_congelado.py` comprueba que los dos eligen la
+# MISMA fila: dos consultas del mismo hecho acaban discrepando solas.
+#
+# No se reusa `_RULESET_SQL`: aquél toma el rule_set ACTIVO de hoy para los
+# parámetros del dictamen; éste toma el que REGÍA en la apertura y exige que
+# declare umbrales (`config->'edge' ? 'thresholds'`). Son preguntas distintas y
+# pueden dar filas distintas.
+_UMBRALES_SQL = """
+SELECT version,
+       (config->'edge'->'thresholds'->>'pga_watch_g')::float   AS pga_watch_g,
+       (config->'edge'->'thresholds'->>'pga_trip_g')::float    AS pga_trip_g,
+       (config->'edge'->'thresholds'->>'pgv_watch_cms')::float AS pgv_watch_cms,
+       (config->'edge'->'thresholds'->>'pgv_trip_cms')::float  AS pgv_trip_cms
+  FROM rule_sets
+ WHERE created_at <= %(at)s
+   AND config->'edge' ? 'thresholds'
+   AND ( (scope_type = 'site'   AND scope_id = %(site)s)
+      OR (scope_type = 'tenant' AND scope_id = %(tenant)s) )
+ ORDER BY (scope_type = 'site') DESC, created_at DESC, version DESC
+ LIMIT 1
 """
 
 _INSERT_DICTAMEN_SQL = """
@@ -205,6 +232,27 @@ def run_dictamen_pass(
         )
         if row["head_id"] is not None and row["head_status"] == decision.status:
             continue  # sin cambio material → sin fila nueva
+        # [T-7.37] Los umbrales contra los que se clasifica la sacudida se
+        # CONGELAN aquí, al emitir. `T-7.35` los resuelve bien —los vigentes en la
+        # apertura— pero lo hace AL EXPORTAR: si alguien podara versiones antiguas
+        # de `rule_sets`, un PDF regenerado el año que viene clasificaría el mismo
+        # pico contra otra banda. En una corrección se ARRASTRAN VERBATIM del
+        # anterior: una corrección tres días después no puede reescribir qué
+        # umbral regía cuando tembló.
+        congelado = (
+            umbral_congelado([row["head_basis"]])
+            or umbral_de_fila(
+                conn.execute(
+                    _UMBRALES_SQL,
+                    {
+                        "at": row["opened_at"],
+                        "site": row["site_id"],
+                        "tenant": row["tenant_id"],
+                    },
+                ).fetchone()
+            ).as_dict()
+        )
+        decision.basis[CLAVE_UMBRAL_CONGELADO] = congelado
         dictamen_id = conn.execute(
             _INSERT_DICTAMEN_SQL,
             {
