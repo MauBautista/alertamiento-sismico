@@ -533,6 +533,43 @@ class LocalEvent(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class TierTransition(BaseModel):
+    """[T-7.30] Cambio del estado de alerta del inmueble, tal como lo vio el gabinete.
+
+    Es el hecho que le faltaba a la nube para saber que la sacudida terminó. NO
+    se llama «fin del sismo» porque el gabinete no sabe eso: sabe que su estado
+    pasó de X a Y en el instante T y por estas razones. Ese hecho ya tiene tabla
+    desde la 0001 (``rule_evaluations``, «registro por transición»), y hasta esta
+    ficha no la escribía nadie.
+
+    Viaja por ``takab/events``, el topic que YA existe, discriminado por ``kind``
+    igual que conviven ``ActuatorAck`` y ``CommandAck`` en ``takab/acks``: un
+    topic MQTT nuevo obliga a tocar la política de fleet, y un topic no autorizado
+    desconecta al gabinete en cada publish (medido el 2026-07-12).
+
+    ``event_id`` es el id del EPISODIO —el mismo del ``LocalEvent`` de apertura,
+    que acaba siendo ``incidents.event_uuid``—, no el de la decisión que lo
+    provocó: el motor regenera el id en cada evaluación NORMAL, y usarlo haría
+    imposible casar la apertura con el cierre.
+    """
+
+    kind: Literal["tier_transition"] = "tier_transition"
+    event_id: str = Field(default_factory=new_event_id)
+    #: El MISMO `settings.site_id` que viaja en el `LocalEvent` de apertura, no el
+    #: sitio propio del gateway: si el cierre se atribuyera por el registro y la
+    #: apertura por el payload, un incidente abierto en el sitio X se concluiría
+    #: en el Y en cuanto un gabinete sim atendiera a más de uno.
+    site_id: str
+    prev_tier: Tier
+    new_tier: Tier
+    source: AlertSource
+    at: datetime = Field(default_factory=utcnow)
+    #: PGA pico SOLO si la fuente es instrumental. El 1.0 con el que se emite
+    #: SASMEX es un booleano disfrazado de número, y no se imprime como medición.
+    pga_g: float | None = None
+    reasons: list[str] = Field(default_factory=list)
+
+
 class EvidenceObject(BaseModel):
     """Evidencia inmutable: ventana miniSEED de un evento subida a S3, con sha256.
 

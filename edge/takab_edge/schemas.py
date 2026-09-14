@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from takab_edge.contracts import (
+from takab_edge.contracts import (  # noqa: I001
     ActuationRecord,
     ActuatorAck,
     BackfillRequest,
@@ -28,6 +28,7 @@ from takab_edge.contracts import (
     HealthSnapshot,
     LocalEvent,
     SecondaryCabinetState,
+    TierTransition,
     WaveformPacket,
 )
 
@@ -117,7 +118,17 @@ from takab_edge.contracts import (
 #:     ADITIVO: enum ampliado.
 #:   · `lora_secondary_state` gana `pending` (`ce1db6d`, T-5.25). ADITIVO: clave opcional.
 #: La guarda que impide repetirlo está abajo: `HUELLA_POR_VERSION`.
-SCHEMA_VERSION = "1.15.0"
+#:
+#: 1.16.0 — ADITIVO: nace `tier_transition` (`T-7.30`). Es el hecho que le faltaba
+#: a la nube para saber que la sacudida TERMINÓ: hasta ahora el gabinete no
+#: publicaba nada al volver a `normal` y `rule_evaluations` no la escribía nadie,
+#: así que un sismo real no podía producir jamás la fase `shaking_concluded` — el
+#: teléfono se quedaba en la pantalla de crisis contando (medido con el WR-1 el
+#: 2026-09-12). Viaja por `takab/events`, discriminado por `kind`, para NO abrir
+#: topic: uno nuevo obliga a tocar la política de fleet y un topic no autorizado
+#: desconecta al gabinete en cada publish. Un consumidor 1.15.0 ignora el mensaje
+#: nuevo (no lo entiende, no lo rompe); el sentido peligroso sería el contrario.
+SCHEMA_VERSION = "1.16.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -125,6 +136,7 @@ MODELS: dict[str, type[BaseModel]] = {
     "feature_1s": Feature1s,
     "feature_batch": FeatureBatch,  # T-1.56: lote de tier normal (takab/features/batch)
     "local_event": LocalEvent,
+    "tier_transition": TierTransition,  # T-7.30: la sacudida terminó (takab/events)
     "health_snapshot": HealthSnapshot,
     "actuator_ack": ActuatorAck,
     "command_ack": CommandAck,  # T-1.23: ack de comando remoto (takab/acks)
@@ -176,6 +188,7 @@ def huella_del_contenido() -> str:
 #: número, que es justo lo que no existía cuando el desfase pasó desapercibido.
 HUELLA_POR_VERSION: dict[str, str] = {
     "1.15.0": "11d28237b98491a9eaaf1fb600ed88c74a38d31ae3d5c36bc9bb07c0f66a57b0",
+    "1.16.0": "1c0bcb6f44a608b2f923f6b195b5bbd8e1f546bb9f8be611bc82c239db71bf17",
 }
 
 

@@ -267,6 +267,15 @@ class CloudConnector(EdgeModule):
             return None
         payload = record.get("payload", {})
         disc = (
+            # [T-7.30] `kind` y `new_tier` PRIMERO, y no por estética: la apertura
+            # y el cierre de un episodio comparten topic y `event_id`, y ninguno
+            # lleva la clave `tier`. Sin estas dos, las dos transiciones tenían la
+            # MISMA identidad lógica y el spool descartaba el cierre como
+            # «re-publicación idéntica»: el teléfono se quedaba en crisis y el
+            # mensaje no llegaba a salir del Pi. De paso desambigua el
+            # `ActuatorAck`/`CommandAck` que hoy conviven en `takab/acks`.
+            payload.get("kind"),
+            payload.get("new_tier"),
             payload.get("tier"),
             payload.get("channel"),
             payload.get("action"),

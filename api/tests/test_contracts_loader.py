@@ -167,3 +167,50 @@ def test_split_meta_does_not_mutate_input() -> None:
     raw = {"a": 1, "meta_topic": "takab/acks"}
     split_meta(raw)
     assert raw == {"a": 1, "meta_topic": "takab/acks"}
+
+
+# Contratos que el edge GENERA pero la nube no ingiere por sí solos, con su razón.
+# La lista es corta a propósito: si crece, la pregunta es por qué el gabinete
+# publica algo que nadie lee.
+_SIN_INGESTA = {
+    # --- NUBE → GABINETE: los publica la nube y los consume el edge. Entran por
+    # `edge/takab_edge/dispatch/`, no por esta cola.
+    "command",  # T-1.23: orden firmada a un actuador
+    "config_update",  # T-1.28: empujón de configuración firmado
+    "backfill_grant",  # T-1.25: URL pre-firmada de subida
+    # --- GABINETE → ..., pero no por MQTT ni por su propio topic:
+    # El waveform crudo NO se sube en continuo (regla de oro 9): el miniSEED viaja
+    # a S3 por URL pre-firmada. El schema existe para el panel local.
+    "waveform_packet",
+    # T-2.33: estado de gabinete secundario LoRa. Lo consume el gabinete PRINCIPAL
+    # por radio y viaja a la nube dentro de su `HealthSnapshot`, no por su topic.
+    "lora_secondary_state",
+}
+
+
+def test_TODO_schema_compartido_tiene_su_clase_de_contrato() -> None:
+    """[T-7.30] Un schema sin `KIND` es un mensaje que muere en la DLQ.
+
+    `KINDS` se parametriza sobre sí misma, así que los tests de arriba pasan sin
+    enterarse de que falta una clase: el contrato nuevo de esta ficha estaba
+    generado, discriminado por topic, con handler y con cinco pruebas verdes — y
+    `validate()` lo habría rechazado como «clase de contrato desconocida»
+    mandando a la DLQ el único mensaje que le dice a la nube que la sacudida
+    terminó. Lo cazó la prueba de costura, no las unitarias.
+
+    Es el defecto de censo que `TRASPASO-SESION.md` ya tiene escrito: **una lista
+    enumerada a mano acaba divergiendo de lo que enumera.**
+    """
+    en_disco = {p.name.removesuffix(".schema.json") for p in SCHEMAS_DIR.glob("*.schema.json")}
+    huerfanos = en_disco - set(KINDS) - _SIN_INGESTA
+    assert not huerfanos, (
+        f"schemas sin clase de contrato: {sorted(huerfanos)}. Añádelos a `KINDS` en "
+        "`contracts/loader.py` (y a `_TOPIC_KIND` o a `discriminate`), o a `_SIN_INGESTA` "
+        "con la razón por la que la nube no los ingiere."
+    )
+
+
+def test_el_censo_de_exentos_no_INVENTA_schemas() -> None:
+    """Control de ceguera: un exento que ya no existe vacía la guarda en silencio."""
+    en_disco = {p.name.removesuffix(".schema.json") for p in SCHEMAS_DIR.glob("*.schema.json")}
+    assert _SIN_INGESTA <= en_disco, f"exentos que no existen: {sorted(_SIN_INGESTA - en_disco)}"

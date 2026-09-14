@@ -198,7 +198,8 @@ def test_sasmex_actuates_with_cloud_offline(supervisor):
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
     # La nube sólo encola (offline-first); nunca fue prerequisito para actuar.
     # (Desde T-1.17 la cola también lleva telemetría: se cuenta POR topic.)
-    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 1
+    # [T-7.30] El topic lleva el `LocalEvent` Y la apertura del episodio.
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 2
     assert supervisor.cloud.queued_by_topic(ACKS_TOPIC) == 5  # secuencia evacuate completa
     assert supervisor.cloud.sent == 0
 
