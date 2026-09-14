@@ -2,10 +2,11 @@
   "_about": "Cierre de la pregunta abierta #2 [ANALISIS-00] (T-1.46, antes soft-gate #2 de T-1.19): catalogo de sismos REALES con parametros OFICIALES para validar el quorum distance-aware (blueprint 4.5). Consumido por tools/quorum_ssn_validation.py.",
   "_provenance": {
     "flagships_ssn": "Los 5 eventos SSN-* llevan los parametros OFICIALES del Servicio Sismologico Nacional, transcritos de sus Reportes Especiales (PDF, www.ssn.unam.mx/sismicidad/reportes-especiales/) el 2026-07-09. Cada evento cita su reporte en 'source'.",
-    "usgs_events": "Los eventos USGS-* llevan la solucion del catalogo FDSN de USGS (earthquake.usgs.gov/fdsnws/event/1), consultado 2026-07-09; el SSN no publica reportes especiales pre-2010 ni expone API programatica de catalogo (su formulario web solo emite CSV por sesion de navegador).",
+    "usgs_events": "Los eventos USGS-* llevan la solucion del catalogo FDSN de USGS (earthquake.usgs.gov/fdsnws/event/1), consultado 2026-07-09; el SSN no publica reportes especiales pre-2010 ni expone API programatica de catalogo (su formulario web solo emite CSV por sesion de navegador). [T-7.12, 2026-09-14] RECONSULTADO al mismo servicio: los cuatro USGS-* que este fixture comparte con `db/seeds/reference_earthquakes.sql` (2017-09-19 us2000ar20, 2017-09-08 us2000ahv0, 1999-06-15 usp00099y6, 1985-09-19 usp0002jwe) devolvieron magnitud, epicentro y profundidad IDENTICOS a los transcritos en 2026-07-09, y los cuatro estan `reviewed` en la fuente. La respuesta completa esta archivada en `usgs-consulta-2026-09-14.json`; la procedencia (`consulted_at`, `review_status`, `provider_event_id`) se estampa en el seed, no aqui.",
     "twins": "El 19S-2017 y Tehuantepec-2017 aparecen DOS veces (solucion SSN y solucion USGS, que difieren ~28-36 km en epicentro y ~2-9 km en profundidad): si el quorum asocia bajo AMBAS soluciones, los parametros son robustos a la incertidumbre de localizacion entre catalogos.",
     "p_arrivals": "SINTETICOS: derivados por la herramienta con el modelo de una capa t = t_origen + hipocentro/v_P_travel. Sirven para probar la GEOMETRIA de asociacion, no para localizar. La herramienta acepta --v-p-travel-km-s; el test barre 5.5/6.0/8.0 km/s (Pg crustal a Pn de manto): si asocia en los extremos, asocia con los primeros arribos reales.",
-    "station_coords": "estacion_real_r4f74 = coordenada REAL de la estacion AM.R4F74 (epoca vigente del StationXML FDSN raspberryshake.org, 2026-07-05→). Las demas son centroides municipales aproximados de la flota de referencia del blueprint 3 (la geometria inter-ciudad es lo que importa aqui, no el edificio exacto)."
+    "station_coords": "estacion_real_r4f74 = coordenada REAL de la estacion AM.R4F74 (epoca vigente del StationXML FDSN raspberryshake.org, 2026-07-05→). Las demas son centroides municipales aproximados de la flota de referencia del blueprint 3 (la geometria inter-ciudad es lo que importa aqui, no el edificio exacto).",
+    "fuera_de_este_fixture": "[T-7.12] La consulta del 2026-09-14 trajo DOS eventos que el seed incorpora y este fixture NO: el gemelo USGS de Michoacan 2022 (us7000i9bw, M 7.6, a ~62 km de la solucion SSN) y Huehuetlan el Chico 2023 (us7000lh50, M 5.7, prof. 54 km, a 12 km del sitio de Puebla). No entran aqui porque `stations` es una ENTRADA —que estaciones detectan el evento— y elegirla es un juicio sismologico: inventarla corromperia la validacion del cuorum que este fixture existe para sostener. Entran cuando alguien derive esa lista con criterio, no antes."
   },
   "_travel_time_model": {
     "type": "single_layer_hypocentral",
@@ -23,13 +24,48 @@
     "max_window_s": 30
   },
   "reference_stations": [
-    { "id": "estacion_real_r4f74", "name": "Estacion real AM.R4F74 (Puebla)", "lat": 19.045, "lon": -98.1522 },
-    { "id": "planta_cholula", "name": "Planta Cholula", "lat": 19.063, "lon": -98.305 },
-    { "id": "bodega_atlixco", "name": "Bodega Atlixco", "lat": 18.908, "lon": -98.434 },
-    { "id": "cd_tehuacan", "name": "CD Tehuacan", "lat": 18.462, "lon": -97.393 },
-    { "id": "planta_zacatlan", "name": "Planta Zacatlan", "lat": 19.931, "lon": -97.96 },
-    { "id": "corporativo_cdmx", "name": "Corporativo CDMX", "lat": 19.4326, "lon": -99.1332 },
-    { "id": "hospital_general", "name": "Hospital General CDMX", "lat": 19.411, "lon": -99.152 }
+    {
+      "id": "estacion_real_r4f74",
+      "name": "Estacion real AM.R4F74 (Puebla)",
+      "lat": 19.045,
+      "lon": -98.1522
+    },
+    {
+      "id": "planta_cholula",
+      "name": "Planta Cholula",
+      "lat": 19.063,
+      "lon": -98.305
+    },
+    {
+      "id": "bodega_atlixco",
+      "name": "Bodega Atlixco",
+      "lat": 18.908,
+      "lon": -98.434
+    },
+    {
+      "id": "cd_tehuacan",
+      "name": "CD Tehuacan",
+      "lat": 18.462,
+      "lon": -97.393
+    },
+    {
+      "id": "planta_zacatlan",
+      "name": "Planta Zacatlan",
+      "lat": 19.931,
+      "lon": -97.96
+    },
+    {
+      "id": "corporativo_cdmx",
+      "name": "Corporativo CDMX",
+      "lat": 19.4326,
+      "lon": -99.1332
+    },
+    {
+      "id": "hospital_general",
+      "name": "Hospital General CDMX",
+      "lat": 19.411,
+      "lon": -99.152
+    }
   ],
   "earthquakes": [
     {
@@ -38,9 +74,20 @@
       "source": "SSN Reporte Especial SSNMX_rep_esp_20170919_Puebla-Morelos_M71.pdf (18.40 N, -98.72 W, prof. 57 km, 13:14:40 CDMX)",
       "magnitude": 7.1,
       "depth_km": 57,
-      "epicenter": { "lat": 18.4, "lon": -98.72 },
+      "epicenter": {
+        "lat": 18.4,
+        "lon": -98.72
+      },
       "origin_time_utc": "2017-09-19T18:14:40Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"],
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ],
       "derived_p_arrival_s": {
         "bodega_atlixco": 13.2,
         "planta_cholula": 15.8,
@@ -53,9 +100,20 @@
       "source": "USGS us2000ar20 (18.5499 N, -98.4887 W, prof. 48 km) — difiere ~28 km del epicentro SSN: prueba de robustez a la incertidumbre entre catalogos",
       "magnitude": 7.1,
       "depth_km": 48,
-      "epicenter": { "lat": 18.5499, "lon": -98.4887 },
+      "epicenter": {
+        "lat": 18.5499,
+        "lon": -98.4887
+      },
       "origin_time_utc": "2017-09-19T18:14:38Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "SSN-2017-09-08-TEHU",
@@ -63,9 +121,20 @@
       "source": "SSN Reporte Especial SSNMX_rep_esp_20170907_Tehuantepec_M82.pdf (14.761 N, -94.103 W, prof. 45.9 km, 04:49:17 UTC)",
       "magnitude": 8.2,
       "depth_km": 45.9,
-      "epicenter": { "lat": 14.761, "lon": -94.103 },
+      "epicenter": {
+        "lat": 14.761,
+        "lon": -94.103
+      },
       "origin_time_utc": "2017-09-08T04:49:17Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-2017-09-08-TEHU",
@@ -73,9 +142,20 @@
       "source": "USGS us2000ahv0 (15.0222 N, -93.8993 W, prof. 47.4 km) — difiere ~36 km del epicentro SSN",
       "magnitude": 8.2,
       "depth_km": 47.4,
-      "epicenter": { "lat": 15.0222, "lon": -93.8993 },
+      "epicenter": {
+        "lat": 15.0222,
+        "lon": -93.8993
+      },
       "origin_time_utc": "2017-09-08T04:49:19Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "SSN-2020-06-23-OAX",
@@ -83,9 +163,20 @@
       "source": "SSN Reporte Especial SSNMX_rep_esp_20200623_Oaxaca-Costa_M75.pdf (magnitud ACTUALIZADA a 7.4; 15.784 N, -96.120 W, prof. 22.6 km)",
       "magnitude": 7.4,
       "depth_km": 22.6,
-      "epicenter": { "lat": 15.784, "lon": -96.12 },
+      "epicenter": {
+        "lat": 15.784,
+        "lon": -96.12
+      },
       "origin_time_utc": "2020-06-23T15:29:04Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "SSN-2021-09-07-GRO",
@@ -93,9 +184,20 @@
       "source": "SSN Reporte Especial SSNMX_rep_esp_20210907_Guerrero_M71.pdf (16.82 N, -99.78 W, prof. 10 km, 20:47 CDMX)",
       "magnitude": 7.1,
       "depth_km": 10,
-      "epicenter": { "lat": 16.82, "lon": -99.78 },
+      "epicenter": {
+        "lat": 16.82,
+        "lon": -99.78
+      },
       "origin_time_utc": "2021-09-08T01:47:47Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "SSN-2022-09-19-MICH",
@@ -103,9 +205,20 @@
       "source": "SSN Reporte Especial SSNMX_rep_esp_20220919_Michoacan_M74.pdf (M 7.7; 18.24 N, -103.29 W, prof. 15 km, 13:05:09 CDMX)",
       "magnitude": 7.7,
       "depth_km": 15,
-      "epicenter": { "lat": 18.24, "lon": -103.29 },
+      "epicenter": {
+        "lat": 18.24,
+        "lon": -103.29
+      },
       "origin_time_utc": "2022-09-19T18:05:09Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-1999-06-15-TEHUACAN",
@@ -113,9 +226,20 @@
       "source": "USGS (18.386 N, -97.436 W, prof. 70 km, M 7.0, 20:42:05 UTC) — el SSN no publica reporte especial pre-2010",
       "magnitude": 7.0,
       "depth_km": 70,
-      "epicenter": { "lat": 18.386, "lon": -97.436 },
+      "epicenter": {
+        "lat": 18.386,
+        "lon": -97.436
+      },
       "origin_time_utc": "1999-06-15T20:42:05Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-2000-07-21-JOLALPAN",
@@ -123,9 +247,20 @@
       "source": "USGS (18.414 N, -98.916 W, prof. 80.1 km, M 5.9, 06:13:41 UTC)",
       "magnitude": 5.9,
       "depth_km": 80.1,
-      "epicenter": { "lat": 18.414, "lon": -98.916 },
+      "epicenter": {
+        "lat": 18.414,
+        "lon": -98.916
+      },
       "origin_time_utc": "2000-07-21T06:13:41Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-2011-12-11-GRO",
@@ -133,9 +268,20 @@
       "source": "USGS (17.986 N, -99.789 W, prof. 59 km, M 6.5, 01:47:25 UTC)",
       "magnitude": 6.5,
       "depth_km": 59,
-      "epicenter": { "lat": 17.986, "lon": -99.789 },
+      "epicenter": {
+        "lat": 17.986,
+        "lon": -99.789
+      },
       "origin_time_utc": "2011-12-11T01:47:25Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-2013-06-16-GRO",
@@ -143,9 +289,20 @@
       "source": "USGS (18.155 N, -99.203 W, prof. 52 km, M 5.8, 05:19:00 UTC)",
       "magnitude": 5.8,
       "depth_km": 52,
-      "epicenter": { "lat": 18.155, "lon": -99.203 },
+      "epicenter": {
+        "lat": 18.155,
+        "lon": -99.203
+      },
       "origin_time_utc": "2013-06-16T05:19:00Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-2018-07-19-OAX",
@@ -153,9 +310,20 @@
       "source": "USGS (17.9318 N, -97.7158 W, prof. 48.5 km, M 5.8, 13:31:53 UTC)",
       "magnitude": 5.8,
       "depth_km": 48.5,
-      "epicenter": { "lat": 17.9318, "lon": -97.7158 },
+      "epicenter": {
+        "lat": 17.9318,
+        "lon": -97.7158
+      },
       "origin_time_utc": "2018-07-19T13:31:53Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     },
     {
       "event_id": "USGS-1985-09-19-MICH",
@@ -163,9 +331,20 @@
       "source": "USGS (18.19 N, -102.533 W, prof. 27.9 km, M 8.0, 13:17:47 UTC)",
       "magnitude": 8.0,
       "depth_km": 27.9,
-      "epicenter": { "lat": 18.19, "lon": -102.533 },
+      "epicenter": {
+        "lat": 18.19,
+        "lon": -102.533
+      },
       "origin_time_utc": "1985-09-19T13:17:47Z",
-      "stations": ["estacion_real_r4f74", "planta_cholula", "bodega_atlixco", "cd_tehuacan", "planta_zacatlan", "corporativo_cdmx", "hospital_general"]
+      "stations": [
+        "estacion_real_r4f74",
+        "planta_cholula",
+        "bodega_atlixco",
+        "cd_tehuacan",
+        "planta_zacatlan",
+        "corporativo_cdmx",
+        "hospital_general"
+      ]
     }
   ]
 }

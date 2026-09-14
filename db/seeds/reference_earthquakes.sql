@@ -72,7 +72,43 @@ VALUES
   ('USGS-1985-09-19-MICH', '1985-09-19T13:17:47Z', 8.0,
    'Michoacan 1985 (historico, campo lejano)',
    ST_SetSRID(ST_MakePoint(-102.533, 18.19), 4326)::geography, 27.9,
-   'USGS', 'USGS (18.19 N, -102.533 W, prof. 27.9 km, M 8.0, 13:17:47 UTC)')
+   'USGS', 'USGS (18.19 N, -102.533 W, prof. 27.9 km, M 8.0, 13:17:47 UTC)'),
+  -- [T-7.12] Las DOS que trajo la consulta del 2026-09-14 al FDSN de USGS.
+  ('USGS-2022-09-19-MICH', '2022-09-19T18:05:08Z', 7.6,
+   'Michoacan 2022 (solucion USGS, gemelo)',
+   ST_SetSRID(ST_MakePoint(-102.9561, 18.4552), 4326)::geography, 26.943,
+   'USGS', 'USGS us7000i9bw (18.4552 N, -102.9561 W, prof. 26.9 km, Mww 7.6, 18:05:08 UTC) — el SSN publica M 7.7 en (18.24, -103.29): difiere ~62 km y una decima de magnitud'),
+  ('USGS-2023-12-07-HUEH', '2023-12-07T20:03:38Z', 5.7,
+   'Huehuetlan el Chico 2023 (intraslab, a 12 km del sitio de Puebla)',
+   ST_SetSRID(ST_MakePoint(-98.7384, 18.2702), 4326)::geography, 54.0,
+   'USGS', 'USGS us7000lh50 (18.2702 N, -98.7384 W, prof. 54 km, Mww 5.7, 20:03:38 UTC) — sin gemelo SSN: no se consulto esa fuente, no que no exista')
 ON CONFLICT (catalog_key) DO NOTHING;
+
+-- [T-7.12] PROCEDENCIA, y solo procedencia. Lo que se estampa es cuándo se preguntó
+-- A LA FUENTE, qué id tiene el evento EN la fuente y en qué estado lo tiene ella.
+--
+-- Las cifras (magnitud, epicentro, profundidad) NO se tocan: se compararon una a una
+-- con lo que contestó el FDSN el 2026-09-14 y coincidían, así que reescribirlas sería
+-- cambiar una cita por otra idéntica y perder la trazabilidad de quién la transcribió.
+-- La consulta entera está archivada en
+-- `api/tests/incident/fixtures/usgs-consulta-2026-09-14.json`.
+--
+-- `review_status` sale del campo `status` del FDSN: las seis vinieron `reviewed`.
+-- Un `preliminar` de la fuente se copiaría como `preliminar`, no se ascendería.
+UPDATE reference_earthquakes AS r SET
+  consulted_at      = c.consulted_at,
+  review_status     = c.review_status,
+  provider_event_id = v.provider_event_id
+FROM (VALUES
+  ('USGS-2017-09-19-PUE',      'us2000ar20'),
+  ('USGS-2017-09-08-TEHU',     'us2000ahv0'),
+  ('USGS-1999-06-15-TEHUACAN', 'usp00099y6'),
+  ('USGS-1985-09-19-MICH',     'usp0002jwe'),
+  ('USGS-2022-09-19-MICH',     'us7000i9bw'),
+  ('USGS-2023-12-07-HUEH',     'us7000lh50')
+) AS v(catalog_key, provider_event_id)
+CROSS JOIN (VALUES ('2026-09-14T15:12:50Z'::timestamptz, 'confirmado'))
+  AS c(consulted_at, review_status)
+WHERE r.catalog_key = v.catalog_key;
 
 COMMIT;

@@ -1,0 +1,224 @@
+{
+  "consultado_en": "2026-09-14T15:12:50+00:00",
+  "servicio": "https://earthquake.usgs.gov/fdsnws/event/1/query",
+  "consultas": [
+    {
+      "catalog_key": "USGS-2017-09-19-PUE",
+      "query": "format=geojson&starttime=2017-09-19T18%3A10%3A00&endtime=2017-09-19T18%3A20%3A00&minmagnitude=6.5&orderby=magnitude",
+      "n": 1,
+      "features": [
+        {
+          "id": "us2000ar20",
+          "mag": 7.1,
+          "place": "1 km S of Matzaco, Mexico",
+          "time_ms": 1505844878090,
+          "status": "reviewed",
+          "lon": -98.4887,
+          "lat": 18.5499,
+          "depth_km": 48,
+          "magType": "mww"
+        }
+      ]
+    },
+    {
+      "catalog_key": "USGS-2017-09-08-TEHU",
+      "query": "format=geojson&starttime=2017-09-08T04%3A45%3A00&endtime=2017-09-08T04%3A55%3A00&minmagnitude=7.5&orderby=magnitude",
+      "n": 1,
+      "features": [
+        {
+          "id": "us2000ahv0",
+          "mag": 8.2,
+          "place": "2017 Tehuantepec, Mexico Earthquake",
+          "time_ms": 1504846159180,
+          "status": "reviewed",
+          "lon": -93.8993,
+          "lat": 15.0222,
+          "depth_km": 47.39,
+          "magType": "mww"
+        }
+      ]
+    },
+    {
+      "catalog_key": "USGS-1999-06-15-TEHUACAN",
+      "query": "format=geojson&starttime=1999-06-15T20%3A38%3A00&endtime=1999-06-15T20%3A48%3A00&minmagnitude=6.5&orderby=magnitude",
+      "n": 1,
+      "features": [
+        {
+          "id": "usp00099y6",
+          "mag": 7,
+          "place": "1 km SE of Texcala, Mexico",
+          "time_ms": 929479325930,
+          "status": "reviewed",
+          "lon": -97.436,
+          "lat": 18.386,
+          "depth_km": 70,
+          "magType": "mwc"
+        }
+      ]
+    },
+    {
+      "catalog_key": "USGS-1985-09-19-MICH",
+      "query": "format=geojson&starttime=1985-09-19T13%3A12%3A00&endtime=1985-09-19T13%3A22%3A00&minmagnitude=7.5&orderby=magnitude",
+      "n": 1,
+      "features": [
+        {
+          "id": "usp0002jwe",
+          "mag": 8,
+          "place": "1985 Michoacan, Mexico Earthquake",
+          "time_ms": 495983867350,
+          "status": "reviewed",
+          "lon": -102.533,
+          "lat": 18.19,
+          "depth_km": 27.9,
+          "magType": "mw"
+        }
+      ]
+    },
+    {
+      "catalog_key": "SSN-2022-09-19-MICH",
+      "query": "format=geojson&starttime=2022-09-19T18%3A00%3A00&endtime=2022-09-19T18%3A10%3A00&minmagnitude=7.0&orderby=magnitude",
+      "n": 1,
+      "features": [
+        {
+          "id": "us7000i9bw",
+          "mag": 7.6,
+          "place": "35 km SSW of Aguililla, Mexico",
+          "time_ms": 1663610708217,
+          "status": "reviewed",
+          "lon": -102.9561,
+          "lat": 18.4552,
+          "depth_km": 26.943,
+          "magType": "mww"
+        }
+      ]
+    },
+    {
+      "catalog_key": "NUEVO-2023-12-07-HUEH",
+      "query": "format=geojson&starttime=2023-12-07T00%3A00%3A00&endtime=2023-12-08T00%3A00%3A00&minmagnitude=5.0&orderby=magnitude",
+      "n": 11,
+      "features": [
+        {
+          "id": "us7000lgwp",
+          "mag": 7.1,
+          "place": "118 km S of Isangel, Vanuatu",
+          "time_ms": 1701953790184,
+          "status": "reviewed",
+          "lon": 169.3089,
+          "lat": -20.6152,
+          "depth_km": 48,
+          "magType": "mww"
+        },
+        {
+          "id": "us7000lgss",
+          "mag": 5.7,
+          "place": "southeast of Easter Island",
+          "time_ms": 1701911863363,
+          "status": "reviewed",
+          "lon": -104.4933,
+          "lat": -35.1496,
+          "depth_km": 10,
+          "magType": "mww"
+        },
+        {
+          "id": "us7000lh50",
+          "mag": 5.7,
+          "place": "12 km SSW of Huehuetlan el Chico, Mexico",
+          "time_ms": 1701979418568,
+          "status": "reviewed",
+          "lon": -98.7384,
+          "lat": 18.2702,
+          "depth_km": 54,
+          "magType": "mww"
+        },
+        {
+          "id": "us7000lgsj",
+          "mag": 5.4,
+          "place": "49 km ENE of Aras-asan, Philippines",
+          "time_ms": 1701909990224,
+          "status": "reviewed",
+          "lon": 126.7508,
+          "lat": 8.9973,
+          "depth_km": 16.406,
+          "magType": "mww"
+        },
+        {
+          "id": "us7000lgud",
+          "mag": 5.4,
+          "place": "44 km NNE of Şuraabad, Azerbaijan",
+          "time_ms": 1701922539620,
+          "status": "reviewed",
+          "lon": 49.7285,
+          "lat": 41.1658,
+          "depth_km": 39.269,
+          "magType": "mww"
+        },
+        {
+          "id": "us7000lguu",
+          "mag": 5.2,
+          "place": "52 km E of Aras-asan, Philippines",
+          "time_ms": 1701931129459,
+          "status": "reviewed",
+          "lon": 126.7893,
+          "lat": 8.8293,
+          "depth_km": 44.584,
+          "magType": "mb"
+        },
+        {
+          "id": "us7000lh4u",
+          "mag": 5.2,
+          "place": "Kermadec Islands region",
+          "time_ms": 1701976338609,
+          "status": "reviewed",
+          "lon": -178.1385,
+          "lat": -31.294,
+          "depth_km": 32.871,
+          "magType": "mb"
+        },
+        {
+          "id": "us7000lgui",
+          "mag": 5.1,
+          "place": "45 km ESE of Marihatag, Philippines",
+          "time_ms": 1701924346856,
+          "status": "reviewed",
+          "lon": 126.6965,
+          "lat": 8.7042,
+          "depth_km": 49.809,
+          "magType": "mb"
+        },
+        {
+          "id": "us7000lgxl",
+          "mag": 5.1,
+          "place": "141 km NW of Las Khorey, Somalia",
+          "time_ms": 1701960542224,
+          "status": "reviewed",
+          "lon": 47.4657,
+          "lat": 12.2214,
+          "depth_km": 10,
+          "magType": "mb"
+        },
+        {
+          "id": "us7000lgt7",
+          "mag": 5,
+          "place": "90 km SW of Labuha, Indonesia",
+          "time_ms": 1701914960569,
+          "status": "reviewed",
+          "lon": 126.8473,
+          "lat": -1.1405,
+          "depth_km": 10,
+          "magType": "mb"
+        },
+        {
+          "id": "us7000lgxu",
+          "mag": 5,
+          "place": "70 km SE of Taoluo, China",
+          "time_ms": 1701961306079,
+          "status": "reviewed",
+          "lon": 119.9328,
+          "lat": 34.8398,
+          "depth_km": 10,
+          "magType": "mb"
+        }
+      ]
+    }
+  ]
+}
