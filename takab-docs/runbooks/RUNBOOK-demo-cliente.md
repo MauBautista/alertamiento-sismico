@@ -227,6 +227,25 @@ Preflight previo: **13 ✓ · 0 • · 0 ✗**.
 | **4 · Inspector** | consola, con MFA | dictamen firmado a las 04:28:52Z: `normal_operation`, **sucediendo** al preliminar · push OPS entregado **en el mismo segundo** por el canal `ops` · fase `reentry_approved` · el teléfono leyó el dictamen **35 s después**, solo |
 | **4 · Reporte** | `guion.sh --reporte` + render | PDF de 4 páginas · **el SHA-256 del fichero coincide con el que el sistema registró** en su cadena de custodia |
 
+### Acreditación posterior · **la sacudida se concluye sola** (2026-09-14)
+
+Lo que el 12-sep hubo que forzar por SQL. Con `T-7.30` desplegada (nube `41ccc36`, gabinete
+`20260914T070224Z-41ccc36`) y un **segundo pulso real del WR-1**:
+
+| Instante (UTC) | Qué |
+|---|---|
+| `07:13:33.696` | el motor sube `normal → evacuate_or_hold` por el WR-1 |
+| `07:13:34.004` | **fila en `rule_evaluations`**: `normal → evacuate_or_hold`, `sasmex`, episodio `feb1993ab…` |
+| `07:13:34.035` | el motor devuelve `normal` **339 ms después del pulso** — y esa transición **NO se publica** |
+| `07:13:34.14` | incidente `sasmex` · `critical` · `opened_trigger = sasmex` · push y correos `sent` |
+| `~07:17:13` | se cancela la alerta: **el enclavado suelta y solo entonces arranca el reloj** |
+| `07:18:43.496` | **fila de cierre**: `evacuate_or_hold → normal`, **mismo episodio** `feb1993ab…` |
+
+Fase que deriva la app en ese punto: **`shaking_concluded`**, con el reingreso todavía bloqueado.
+DLQ de eventos a **0** — la ingesta reconoce el contrato nuevo. **Dos filas, no tres**: el `normal`
+de los 339 ms habría sacado al ocupante de «EVACÚE» antes de la onda S, y es justo lo que la
+asimetría del seguidor de episodio impide.
+
 **Flujos de Maestro, en el Pixel real:** `01a-crisis` re-acreditado · `02-tactico-foto-danos` en verde ·
 **`03-dictamen-liberacion` acreditado por primera vez desde que se escribió** (no cargaba: llevaba un
 `timeout:` dentro de un `assertVisible` y Maestro rechazaba el fichero entero).

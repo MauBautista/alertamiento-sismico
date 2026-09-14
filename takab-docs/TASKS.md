@@ -13957,7 +13957,8 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   epicentro y la magnitud de un sismo real del catálogo, desplazados a hoy y rotulados como
   reproducción, sin crear un solo incidente ni voto de cuórum.
 - **Criterios de aceptación:**
-  - [ ] Migración `0063`: tabla `demo_replay` (tenant, `catalog_key`, `armed_until`,
+  - [ ] Migración nueva (el número se toma al escribirla: `0063` ya es de `T-7.36`): tabla
+    `demo_replay` (tenant, `catalog_key`, `armed_until`,
     `armed_by`; vencimiento obligatorio como `demo_mode`), `reproduccion` en el CHECK de
     `incident_classifications`, y una función SECURITY DEFINER que enlaza un evento a un
     incidente (como `relocate_incident_epicenter`).
