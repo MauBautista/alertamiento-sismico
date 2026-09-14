@@ -13981,7 +13981,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Objetivo:** que las tres estaciones simuladas publiquen features en rampa en su arribo,
   ancladas al pulso real del WR-1, sin publicar un solo evento.
 - **Criterios de aceptación:**
-  - [ ] `--armar` sondea `http://192.168.1.105:8080/api/status` en la LAN (sin JWT) y fija
+  - [ ] `--armar` sondea `http://raspberry-cerebro.local:8080/api/status` en la LAN (sin JWT) y fija
     `t0` al ver `sasmex_active`; `--t0 now` como disparo manual.
   - [ ] Por estación: STA/LTA bajo umbral antes de `t_arribo`, PGA de `pga_law_g` después,
     decayendo; latido intacto; **nunca `takab/events`**; `test_cloud_streaming_crudo` sigue

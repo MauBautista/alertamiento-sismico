@@ -24,7 +24,7 @@
 #
 # Costuras (para las pruebas, y para correrlo desde otra red):
 #
-#   TAKAB_DEMO_PANEL_URL   panel del gabinete      (def. http://192.168.1.105:8080)
+#   TAKAB_DEMO_PANEL_URL   panel del gabinete      (def. http://raspberry-cerebro.local:8080)
 #   TAKAB_DEMO_DSN         base de datos YA accesible; si se da, NO se abre túnel
 #   TAKAB_DEMO_SITE        sitio de la demostración (def. el piloto de Puebla)
 #   TAKAB_DEMO_TENANT      tenant                  (def. el de desarrollo)
@@ -41,7 +41,10 @@
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
-PANEL="${TAKAB_DEMO_PANEL_URL:-http://192.168.1.105:8080}"
+# El gabinete coge dirección por DHCP y se ha mudado tres veces en tres días
+# (.3.91 → .3.140 → .1.86), rompiendo cada vez lo que apuntaba a la de antes.
+# Se le pregunta POR NOMBRE: el Pi se anuncia por mDNS y eso sobrevive al cambio.
+PANEL="${TAKAB_DEMO_PANEL_URL:-http://raspberry-cerebro.local:8080}"
 SITIO="${TAKAB_DEMO_SITE:-d1000000-0000-0000-0000-000000000000}"
 TENANT="${TAKAB_DEMO_TENANT:-d0000000-0000-0000-0000-000000000001}"
 #: Qué cuenta como destinatario PROPIO. La cascada de una demostración no puede

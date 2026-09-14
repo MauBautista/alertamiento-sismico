@@ -390,7 +390,8 @@ pieza_alarmas() {
 # --- 9 y 10 · el gabinete ------------------------------------------------------------------
 PI_HOST_ALIAS="${TAKAB_PI_SSH_HOST:-takab-pi5}"
 PI_IP="$(ssh -G "$PI_HOST_ALIAS" 2>/dev/null | awk '$1 == "hostname" { print $2 }')"
-PI_IP="${PI_IP:-192.168.1.105}"
+# Respaldo POR NOMBRE, no por dirección: el Pi la coge por DHCP y cambia.
+PI_IP="${PI_IP:-raspberry-cerebro.local}"
 PI_PANEL="${TAKAB_PI_PANEL_URL:-http://$PI_IP:8080}"
 
 pieza_pi_release() {
