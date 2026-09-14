@@ -233,7 +233,12 @@ def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
     # [T-7.36] 29 → 30: `opened_trigger`. Es un hecho AGREGADO del incidente —con
     # qué disparo se abrió, uno de cuatro valores de un enum— exactamente del mismo
     # tipo que `trigger`, que ya salía. No identifica ni al inmueble ni a nadie.
-    assert len(campos) == 30, (
+    # [T-7.38·E] 30 → 31: `reason_recorded`. Es un BOOLEANO —«¿firmó una persona y
+    # escribió por qué?»—, jamás el texto de la nota: esa nota es prosa libre sin
+    # validar y esta allowlist existe para que no salga de la nube.
+    # [T-7.38·L] 31 → 32: `has_archived_miniseed`. Booleano derivado de la lista de
+    # custodia: dice si CONSTA el objeto, que es otra pregunta que si se decodificó.
+    assert len(campos) == 32, (
         "cambió lo que viaja al proveedor de prosa. Si el campo nuevo es un dato "
         "del inmueble o de una persona, NO puede salir; si es un hecho agregado, "
         f"actualiza el número y di por qué. Campos: {sorted(campos)}"
@@ -241,3 +246,42 @@ def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
     # El payload real no está vacío: los `not in` de arriba buscan sobre algo.
     payload = _payload(_con_folio_real())
     assert len(payload) > 400, f"el payload serializado quedó en {len(payload)} bytes"
+
+
+# ---- [T-7.38·E] el hecho de la razón viaja; el texto JAMÁS -------------------
+
+
+def test_la_nota_del_inspector_NO_sale_de_la_nube() -> None:
+    """Sale el hecho («consta una razón»), nunca su contenido.
+
+    La nota es prosa libre que escribe una persona sin validación ni tope de
+    longitud: puede llevar el nombre de un ocupante, una dirección o el estado de
+    un local. Esta allowlist existe exactamente para eso.
+    """
+    from takab_api.narrative.redact import facts_from
+    from tests.dictamen.test_pdf import model
+
+    secreto = "revisó el local de la Sra. Pérez, depto 302"
+    m = model(verdict_signed=True, verdict_basis={"notes": secreto})
+    assert facts_from(m).reason_recorded is True
+    assert secreto not in _payload(m)
+    assert "notes" not in _payload(m)
+
+
+def test_un_dictamen_AUTOMATICO_no_declara_razon_de_persona() -> None:
+    """`dictamen/rules.py` mete `notes` ENLATADO en todos los automáticos
+    («dictamen automático preliminar»). Sin la conjunción con la firma, esa cadena
+    de fábrica pasaría por el fundamento escrito de un veredicto."""
+    from takab_api.narrative.redact import facts_from
+    from tests.dictamen.test_pdf import model
+
+    assert facts_from(model(verdict_basis=BASIS)).reason_recorded is False
+    assert "notes" in BASIS, "el fixture ya no representa lo que escribe `rules.py`"
+
+
+def test_firmar_SIN_nota_no_declara_razon() -> None:
+    """`body.notes is None` produce `basis = {}` exacto."""
+    from takab_api.narrative.redact import facts_from
+    from tests.dictamen.test_pdf import model
+
+    assert facts_from(model(verdict_signed=True, verdict_basis={})).reason_recorded is False

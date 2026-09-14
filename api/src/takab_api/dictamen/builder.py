@@ -23,8 +23,10 @@ from takab_api.cctv import build_cctv
 from takab_api.dictamen.duracion import significativa
 from takab_api.dictamen.espectrograma import calcular as calcular_espectrograma
 from takab_api.dictamen.model import (
+    CCTV_PARCIALMENTE_PURGADO,
     CCTV_PENDIENTE,
     CCTV_PURGADO,
+    CCTV_PURGADO_SIN_ANALISIS,
     CCTV_SIN_CLIP,
     NO_CCTV,
     STATUS_LABELS,
@@ -42,6 +44,7 @@ from takab_api.felt import umbral_congelado
 from takab_api.forensics import build_forensics, umbral_de_comparacion
 from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as qf
+from takab_api.schemas import cctv as esq_cctv
 from takab_api.schemas.forensics import ForensicsOut
 from takab_api.settings import Settings
 
@@ -59,6 +62,7 @@ _INCIDENT = text(
            ST_Y(s.geom::geometry)::float8 AS site_lat,
            ST_X(s.geom::geometry)::float8 AS site_lon,
            e.source AS event_source,
+           (e.meta ? 'manual_override') AS epi_manual,
            ST_Y(e.epicenter::geometry)::float8 AS epi_lat,
            ST_X(e.epicenter::geometry)::float8 AS epi_lon
     FROM incidents i
@@ -127,7 +131,16 @@ async def _cctv_block(conn: AsyncConnection, incident_id: str) -> CctvBlock:
     ]
 
     if datos.evacuacion is None:
-        estado = CCTV_PENDIENTE if datos.clips else (CCTV_SIN_CLIP if datos.con_camara else NO_CCTV)
+        # [T-7.38·F] El estado se decide por lo que QUEDA del vídeo, no por que exista
+        # la fila: la fila sobrevive a la poda a propósito —es la cadena de custodia—
+        # y tomarla por «hay vídeo» anunciaba como archivado un clip ya destruido,
+        # prometiendo cifras de evacuación que no van a llegar nunca.
+        estado = {
+            esq_cctv.CLIPS_VIVOS: CCTV_PENDIENTE,
+            esq_cctv.CLIPS_PURGADOS: CCTV_PURGADO_SIN_ANALISIS,
+            esq_cctv.CLIPS_MIXTOS: CCTV_PARCIALMENTE_PURGADO,
+            esq_cctv.CLIPS_SIN: CCTV_SIN_CLIP if datos.con_camara else NO_CCTV,
+        }[esq_cctv.clase_del_material([c.disponible for c in datos.clips])]
         return CctvBlock(estado=estado, objetos=objetos)
 
     e = datos.evacuacion
@@ -237,6 +250,7 @@ async def build_model(
         state=inc["state"],
         event_id=inc["event_id"],
         event_source=inc["event_source"],
+        epicenter_relocated=bool(inc["epi_manual"]),
         epicenter_lat=inc["epi_lat"],
         epicenter_lon=inc["epi_lon"],
         verdict_status=head.status if head else None,
@@ -421,7 +435,18 @@ def _spectrum(trace, rate: float):
     """
     import numpy as np  # noqa: PLC0415 - import perezoso: solo el técnico lo necesita
 
-    samples = np.asarray(trace.samples[:MAX_FFT_SAMPLES], dtype=np.float64)
+    # [T-7.39] La ventana se centra en el PICO, no en el principio de la traza.
+    # Con `evidence_pre_s = 60` y 100 sps, `samples[:6000]` eran exactamente los
+    # 60 segundos ANTERIORES al evento: el espectro que el documento presenta como
+    # contenido espectral del sismo se calculaba sobre el ruido de fondo previo y
+    # no llegaba a tocar la sacudida. Las cifras eran ciertas y describían otra cosa.
+    crudo = np.asarray(trace.samples, dtype=np.float64)
+    if crudo.size > MAX_FFT_SAMPLES:
+        pico = int(np.argmax(np.abs(crudo - crudo.mean())))
+        inicio = max(0, min(pico - MAX_FFT_SAMPLES // 2, crudo.size - MAX_FFT_SAMPLES))
+        samples = crudo[inicio : inicio + MAX_FFT_SAMPLES]
+    else:
+        samples = crudo
     if samples.size < 32 or rate <= 0:
         return None, None
     samples = samples - samples.mean()

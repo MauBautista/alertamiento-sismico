@@ -7,6 +7,8 @@ escriba un número donde no hubo medición.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from takab_api.dictamen.model import ABSENT
 from takab_api.narrative import build_narrative
 from takab_api.narrative.base import NarrativeRequest
@@ -20,6 +22,23 @@ from takab_api.narrative.redact import facts_from
 from takab_api.settings import Settings
 from tests.dictamen.test_pdf import model
 from tests.narrative.test_redact import BASIS
+
+
+def _cadena(n: int) -> list:
+    """`n` filas de dictamen, para que `dictamen_count` sea real."""
+    from takab_api.dictamen.model import DictamenRow
+
+    return [
+        DictamenRow(
+            dictamen_id=f"d{i}",
+            status="normal_operation",
+            created_at=datetime(2026, 8, 3, 10, i, tzinfo=UTC),
+            signed_by=None,
+            rule_set_version="sin versión",
+            supersedes=None,
+        )
+        for i in range(n)
+    ]
 
 
 def _secs(**over) -> dict[str, str]:
@@ -191,3 +210,81 @@ def test_los_dos_TEXTOS_de_disparo_son_distinguibles() -> None:
     de arriba no podrían distinguir apertura de escalada."""
     assert len(set(_TRIGGER_TEXT.values())) == len(_TRIGGER_TEXT)
     assert all(v.strip() for v in _TRIGGER_TEXT.values())
+
+
+# ---- [T-7.38·D] el veredicto FIRMADO no lo produjo el motor ------------------
+
+
+def _firmado(**over) -> dict[str, str]:
+    """La fila que produce de verdad `sign_dictamen`: status de la persona,
+    `signed_by` puesto y un `basis` que NO trae evidencia ni parámetros."""
+    base = {
+        "verdict_signed": True,
+        "verdict_status": "normal_operation",
+        "verdict_label": "OPERACIÓN NORMAL",
+        # Lo que pone `builder.py` cuando el basis firmado no trae versión.
+        "rule_set_version": "sin versión",
+        "verdict_basis": {},
+    }
+    base.update(over)
+    return dict(sections_for(facts_from(model(**base))))
+
+
+def test_un_veredicto_FIRMADO_no_se_le_atribuye_a_las_reglas() -> None:
+    """Lo eligió y lo firmó UNA PERSONA, y el papel se lo colgaba al motor.
+
+    Vivo en el PDF que se enseñó el 2026-09-13: «El veredicto «OPERACIÓN NORMAL»
+    lo produjo el conjunto de reglas sin versión», cuatro líneas encima de «Este
+    dictamen lo firmó un inspector» y de la huella del firmante en la §14. Y de
+    paso nombraba un conjunto de reglas —«sin versión»— que no existe: el
+    `ABSENT` nunca se alcanza porque el builder ya metió esa cadena.
+    """
+    texto = _firmado()["Por qué este veredicto"]
+    assert "conjunto de reglas" not in texto, "sigue atribuyéndole el veredicto al motor"
+    assert "firmó" in texto
+
+
+def test_la_rama_firmada_NO_se_come_la_cadena_de_dictamenes() -> None:
+    """La salida temprana dejaba la sección en dos frases y callaba un hecho que
+    la §9 del MISMO papel enseña en una tabla."""
+    texto = _firmado(dictamens=_cadena(4))["Por qué este veredicto"]
+    assert "dictámenes en la cadena" in texto
+
+
+def test_sin_firmar_se_sigue_citando_la_version_de_reglas() -> None:
+    """Control: el dictamen automático no puede perder su trazabilidad."""
+    texto = dict(sections_for(facts_from(model(verdict_basis=BASIS))))["Por qué este veredicto"]
+    assert "conjunto de reglas" in texto and "dictamen-v1" in texto
+
+
+# ---- [T-7.38·E] «no quedó guardado» sobre un fundamento que SÍ se guardó -----
+
+
+def test_una_razon_ESCRITA_al_firmar_no_se_declara_perdida() -> None:
+    """El inspector escribió su razón y el papel decía que no quedó guardada.
+
+    Presentaba como accidente —se perdió— lo que es de diseño: una firma humana
+    no registra umbral instrumental, nunca lo tuvo. Son dos estados distintos y
+    el papel los confundía en uno.
+    """
+    texto = _firmado(verdict_basis={"notes": "revisión en sitio, sin daño visible"})[
+        "Por qué este veredicto"
+    ]
+    assert "no quedó guardado" not in texto, "declara perdido un fundamento que consta"
+    assert "nota" in texto.lower()
+
+
+def test_firmar_SIN_escribir_nada_sigue_diciendo_que_no_consta() -> None:
+    """`body.notes is None` produce `basis = {}` exacto: un firmado sin razón es
+    indistinguible de uno con razón si solo se mira `verdict_signed`. Por eso el
+    hecho es el DATO, no la inferencia."""
+    texto = _firmado(verdict_basis={})["Por qué este veredicto"]
+    assert "nota" not in texto.lower()
+
+
+def test_el_dictamen_AUTOMATICO_no_declara_nota_de_nadie() -> None:
+    """`rules.py` mete `notes` ENLATADO en todo dictamen automático («dictamen
+    automático preliminar»): tomarlo por la razón de una persona convertiría una
+    cadena de fábrica en el fundamento de un veredicto."""
+    texto = dict(sections_for(facts_from(model(verdict_basis=BASIS))))["Por qué este veredicto"]
+    assert "nota" not in texto.lower()

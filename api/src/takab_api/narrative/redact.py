@@ -34,12 +34,18 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from takab_api.dictamen.model import (
+    CCTV_PARCIALMENTE_PURGADO,
+    CCTV_PENDIENTE,
+    CCTV_PURGADO_SIN_ANALISIS,
+    CCTV_SIN_CLIP,
     FELT_LABELS,
     NO_CALIBRATION,
+    NO_CCTV,
     NO_SPECTRUM,
     STATUS_ACTIONS,
     lead_time_text,
 )
+from takab_api.felt import ORIGEN_INMUEBLE
 from takab_api.narrative.base import NarrativeFacts
 
 if TYPE_CHECKING:  # pragma: no cover - solo para el tipo; evita ciclo de imports
@@ -78,6 +84,22 @@ def redact_basis(basis: dict | None) -> dict:
     return out
 
 
+#: [T-7.38·M] Estados de vídeo en los que NO hay conteo de evacuación. Se enumeran
+#: por estado y no por `t90_s is None`: «análisis disponible» con `t90_s` nulo es un
+#: camino real, y condicionar ahí produciría la ausencia «(1) análisis disponible».
+_CCTV_SIN_ANALISIS = frozenset(
+    {NO_CCTV, CCTV_SIN_CLIP, CCTV_PENDIENTE, CCTV_PURGADO_SIN_ANALISIS, CCTV_PARCIALMENTE_PURGADO}
+)
+SIN_CONTEO_CCTV = "No hay conteo de evacuación por vídeo para este incidente."
+SIN_FUNDAMENTO_REGISTRADO = (
+    "El dictamen vigente no registra evidencia instrumental en su fundamento."
+)
+SIN_UMBRALES_DEL_INMUEBLE = (
+    "La sacudida se clasificó con la banda de referencia: no consta configuración de "
+    "umbrales del inmueble anterior al incidente."
+)
+
+
 def absences_of(m: ReportModel) -> tuple[str, ...]:
     """Cada dato ausente, con su razón. Es lo que sostiene "Limitaciones".
 
@@ -113,7 +135,33 @@ def absences_of(m: ReportModel) -> tuple[str, ...]:
             f"Canales saturados ({', '.join(clipped)}): en ellos el pico registrado es "
             "el techo del convertidor, no la sacudida real."
         )
+    # [T-7.38·M] Tres huecos que el documento YA declara en sus secciones y que esta
+    # lista no miraba, de modo que podía cerrar con «No se detectaron datos ausentes»
+    # una página después de haber declarado dos.
+    if m.cctv.estado in _CCTV_SIN_ANALISIS:
+        gaps.append(SIN_CONTEO_CCTV)
+    # Gateado en que HAYA dictamen: sin él, la línea de arriba ya lo dice y ésta
+    # afirmaría un «dictamen vigente» que no existe.
+    if m.dictamens and not (m.verdict_basis or {}).get("evidence"):
+        gaps.append(SIN_FUNDAMENTO_REGISTRADO)
+    if (m.felt_thresholds or {}).get("origen") != ORIGEN_INMUEBLE:
+        gaps.append(SIN_UMBRALES_DEL_INMUEBLE)
     return tuple(gaps)
+
+
+def _razon_de_persona(m: ReportModel) -> bool:
+    """[T-7.38·E] ¿Firmó una persona Y escribió por qué?
+
+    La conjunción no es adorno: `sign_dictamen` inserta `basis = {}` cuando no hay
+    nota, y `dictamen/rules.py` mete `notes` ENLATADO («dictamen automático
+    preliminar») en todos los automáticos. Con la clave sola, una cadena de fábrica
+    pasaría por el fundamento de un veredicto; con `verdict_signed` solo, un firmado
+    sin razón sería indistinguible de uno con razón.
+    """
+    if not m.verdict_signed:
+        return False
+    nota = (m.verdict_basis or {}).get("notes")
+    return isinstance(nota, str) and bool(nota.strip())
 
 
 def facts_from(m: ReportModel, *, damage_counts: dict[str, int] | None = None) -> NarrativeFacts:
@@ -133,6 +181,7 @@ def facts_from(m: ReportModel, *, damage_counts: dict[str, int] | None = None) -
         verdict_actions=STATUS_ACTIONS.get(m.verdict_status or "", ()),
         rule_set_version=m.rule_set_version,
         basis=redact_basis(m.verdict_basis),
+        reason_recorded=_razon_de_persona(m),
         site_criticality=m.site_criticality,
         felt_band=m.felt_band,
         felt_label=FELT_LABELS.get(m.felt_band, FELT_LABELS["unknown"]),
@@ -149,5 +198,6 @@ def facts_from(m: ReportModel, *, damage_counts: dict[str, int] | None = None) -
         dictamen_count=len(m.dictamens),
         has_epicenter=m.epicenter_lat is not None and m.epicenter_lon is not None,
         has_raw_waveform=bool(m.raw_waveform),
+        has_archived_miniseed=any(e.kind == "miniseed" for e in m.evidence),
         absences=absences_of(m),
     )

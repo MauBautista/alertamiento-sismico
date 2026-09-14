@@ -95,6 +95,14 @@ gabinete estuviera mudo, la franja lo diría en vez de pintar un dato viejo como
 curl -s http://<ip-del-gabinete>:8080/api/status | jq '{tier: .last_tier, relés: [.relays[] | {channel, activated}]}'
 ```
 
+> ⚠️ **TEN LA CONSOLA ABIERTA ANTES DEL GOLPE.** Es lo único de `T-7.08` que sigue sin acreditar
+> y lo único que separa a `F1` de estar cerrada: el 2026-09-12 el ensayo se llevó desde el panel,
+> la nube y el teléfono, y **nadie miró la consola**. Con el incidente abierto, la franja superior
+> tiene que decir **«AVISO SÍSMICO · UMBRAL INSTRUMENTAL»** con **«EDGE · RS4D · SOLO AVISO, SIN
+> ACTUACIÓN»** debajo, en ÁMBAR y no en rojo — y sin la palabra «PROTÉJASE», que aquí sería
+> prometer una actuación que la política prohíbe. Hazle una captura: es la evidencia que cierra
+> la ficha. (El software está desplegado y comprobado; lo que falta es la observación.)
+
 ---
 
 ## Acto 3 · El pulso del WR-1

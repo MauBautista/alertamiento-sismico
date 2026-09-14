@@ -109,11 +109,18 @@ def _que_se_midio(f: NarrativeFacts) -> str:
         if f.calibrated
         else "Los valores son RELATIVOS del sensor: no hay fuente de calibración declarada."
     )
-    partes.append(
-        "El incidente tiene forma de onda cruda archivada."
-        if f.has_raw_waveform
-        else "No hay forma de onda cruda archivada para este incidente."
-    )
+    # [T-7.38·L] Tres estados donde el papel decía dos. «No hay onda archivada» se
+    # emitía mirando si se DECODIFICÓ, no si EXISTE, y el §10 del mismo documento
+    # lista el miniSEED con su sha256 en el caso de en medio.
+    if f.has_raw_waveform:
+        partes.append("El incidente tiene forma de onda cruda archivada.")
+    elif f.has_archived_miniseed:
+        partes.append(
+            "Consta un objeto miniSEED en la cadena de custodia de este incidente, "
+            "pero esta exportación no obtuvo traza de él."
+        )
+    else:
+        partes.append("No hay forma de onda cruda archivada para este incidente.")
     return " ".join(partes)
 
 
@@ -126,21 +133,63 @@ def _por_que(f: NarrativeFacts) -> str:
             "evidencia disponible hasta ahora."
         )
     version = f.rule_set_version or ABSENT
-    partes = [f"El veredicto «{f.verdict_label}» lo produjo el conjunto de reglas {version}."]
+    # [T-7.38·D] Un veredicto FIRMADO no lo produjo el motor: lo eligió y lo firmó una
+    # persona, y `sign_dictamen` inserta fila nueva con SU status. El papel se lo
+    # colgaba al conjunto de reglas —y encima nombraba uno, «sin versión», que el
+    # builder había puesto por defecto y no existe—. Estaba impreso en el PDF que se
+    # enseñó el 2026-09-13, cuatro líneas encima de «Este dictamen lo firmó un
+    # inspector» y de la huella del firmante.
+    partes = [
+        f"El veredicto «{f.verdict_label}» lo eligió y firmó una persona."
+        if f.verdict_signed
+        else f"El veredicto «{f.verdict_label}» lo produjo el conjunto de reglas {version}."
+    ]
 
     evidencia = f.basis.get("evidence", {}) if isinstance(f.basis, dict) else {}
     params = f.basis.get("params", {}) if isinstance(f.basis, dict) else {}
     if not evidencia and not params:
-        partes.append(
-            "El registro de fundamento (basis) de este dictamen no quedó guardado, por lo "
-            "que no puede reconstruirse qué umbral lo determinó."
-        )
-        return " ".join(partes)
+        # [T-7.38·E] Tres estados donde el papel veía uno. «No quedó guardado»
+        # presenta como ACCIDENTE —se perdió— lo que en una firma humana es de
+        # diseño: no hay umbral que registrar, nunca lo hubo. Y si además el
+        # inspector escribió su razón, decir que el fundamento se perdió es
+        # sencillamente falso: consta en el registro del dictamen.
+        #
+        # De la nota solo se afirma que EXISTE. Su texto es prosa libre sin
+        # validar, la allowlist de `redact` lo deja fuera de la nube a propósito,
+        # y ninguna sección del PDF tiene dónde imprimirlo.
+        if f.reason_recorded:
+            partes.append(
+                "Este dictamen lo firmó una persona: en su registro no consta umbral "
+                "instrumental, y sí consta una nota escrita al firmar."
+            )
+        elif f.verdict_signed:
+            partes.append(
+                "Este dictamen lo firmó una persona: en su registro no consta umbral "
+                "instrumental ni razón escrita."
+            )
+        else:
+            partes.append(
+                "El registro de fundamento (basis) de este dictamen no quedó guardado, por lo "
+                "que no puede reconstruirse qué umbral lo determinó."
+            )
+        # Sin `return`: la cadena de dictámenes de abajo es un hecho verificable que
+        # la §9 del mismo papel ya enseña en una tabla, y la salida temprana dejaba
+        # la sección de un dictamen firmado en dos frases, callándola.
+        return " ".join(partes + _cola_de_cadena(f))
 
     pga = evidencia.get("pga_g")
     no_hab = params.get("pga_no_inhabit_g")
     monitor = params.get("pga_monitor_g")
-    if pga is not None and no_hab is not None and monitor is not None:
+    if pga is None and "pga_g" in evidencia and no_hab is not None and monitor is not None:
+        # [T-7.38·C] El veredicto se decidió SIN medición: los umbrales no se
+        # superaron porque no había con qué superarlos. Decirlo es distinto de
+        # imprimir el cero con el que se comparó, que es lo que hacía el papel.
+        partes.append(
+            "No consta medición de aceleración en la ventana del incidente, así que "
+            f"el veredicto no se apoya en el umbral de no habitar ({num(no_hab, 3, 'g')}) "
+            f"ni en el de monitoreo ({num(monitor, 3, 'g')})."
+        )
+    elif pga is not None and no_hab is not None and monitor is not None:
         comparacion = (
             f"El valor evaluado fue {num(pga, 3, 'g')} frente a un umbral de no habitar de "
             f"{num(no_hab, 3, 'g')} y uno de monitoreo de {num(monitor, 3, 'g')}: "
@@ -172,12 +221,17 @@ def _por_que(f: NarrativeFacts) -> str:
             "Sin medición instrumental ni corroboración de red, el veredicto se sostiene "
             "únicamente en la severidad de la alerta recibida."
         )
-    if f.dictamen_count > 1:
-        partes.append(
-            f"Hay {f.dictamen_count} dictámenes en la cadena de este incidente; el vigente "
-            "es el más reciente y los anteriores se conservan como evidencia."
-        )
-    return " ".join(partes)
+    return " ".join(partes + _cola_de_cadena(f))
+
+
+def _cola_de_cadena(f: NarrativeFacts) -> list[str]:
+    """La cadena de dictámenes, que vale para las dos ramas de `_por_que`."""
+    if f.dictamen_count <= 1:
+        return []
+    return [
+        f"Hay {f.dictamen_count} dictámenes en la cadena de este incidente; el vigente "
+        "es el más reciente y los anteriores se conservan como evidencia."
+    ]
 
 
 def _que_hacer(f: NarrativeFacts) -> str:
@@ -212,7 +266,14 @@ def _limitaciones(f: NarrativeFacts) -> str:
         "medida en el propio inmueble."
     )
     if not f.absences:
-        return f"{base} No se detectaron datos ausentes en este incidente."
+        # [T-7.38·M] Se acota a lo que ESTA lista comprueba. La frase cerraba la
+        # sección diciendo que no faltaba nada mientras el mismo documento había
+        # declarado ausencias en otras secciones — el CCTV sin conteo, el
+        # fundamento sin evidencia, la banda de referencia.
+        return (
+            f"{base} No se detectaron datos ausentes entre los que esta lista comprueba; "
+            "las ausencias de otras secciones se declaran en ellas."
+        )
     lista = " ".join(f"({i}) {a}" for i, a in enumerate(f.absences, start=1))
     return f"{base} Datos ausentes en este incidente: {lista}"
 

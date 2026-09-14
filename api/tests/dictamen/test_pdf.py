@@ -391,13 +391,51 @@ def test_el_ejecutivo_lleva_su_huella_de_contenido() -> None:
     )
 
 
-def test_los_dos_documentos_declaran_LA_MISMA_huella() -> None:
-    """Es lo que permite comprobar que el resumen y el pericial hablan del mismo
-    incidente sin abrirlos a la vez. Sale del CONTENIDO, no del archivo — los dos
-    archivos son distintos y sus sha256 de fichero también."""
+def test_la_huella_es_ESTABLE_para_el_mismo_contenido() -> None:
+    """Dos modelos iguales dan la misma huella: eso sí es cierto, y es lo único que
+    el test de antes comprobaba de verdad."""
     m = model()
     assert m.content_sha256() == model().content_sha256()
     assert render(m, "executive") != render(m), "los dos documentos son el mismo archivo"
+
+
+def test_las_dos_variantes_NO_comparten_huella() -> None:
+    """[T-7.38·I] El papel prometía que la huella del ejecutivo era la MISMA que la
+    del pericial. **Nunca lo es**: el folio lleva el sufijo de variante (-E / -T) y
+    entra en `content_sha256()`.
+
+    La guarda que debía cazarlo —`test_los_dos_documentos_declaran_LA_MISMA_huella`—
+    comparaba `model()` **consigo mismo**: dos modelos idénticos, misma variante, y
+    por supuesto la misma huella. Pasaba en verde sobre su propio defecto, que es la
+    razón de que esta contradicción sobreviviera a `T-5.26`.
+    """
+    ejecutivo = model(folio="TKB-CHL-A-20260803-1A2B3C4D-E")
+    pericial = model(folio="TKB-CHL-A-20260803-1A2B3C4D-T")
+    assert ejecutivo.content_sha256() != pericial.content_sha256(), (
+        "si estas dos coincidieran, la frase del papel sería cierta y este test sobra"
+    )
+    # Y lo que SÍ los empareja, que es lo que el papel manda mirar:
+    assert ejecutivo.folio[:-1] == pericial.folio[:-1]
+
+
+def test_el_papel_YA_NO_promete_huellas_iguales() -> None:
+    """La frase vivía solo en el ejecutivo, así que se comprueba donde vivía."""
+    visto: list[str] = []
+    original = layout.TakabPDF.text_of
+
+    def espia(self, value: str) -> str:
+        visto.append(value)
+        return original(self, value)
+
+    layout.TakabPDF.text_of = espia  # type: ignore[method-assign]
+    try:
+        render(model(), "executive")
+    finally:
+        layout.TakabPDF.text_of = original  # type: ignore[method-assign]
+    texto = "\n".join(visto)
+    assert len(texto) > 1000, "el espía no recogió el documento"
+    assert "misma que imprime la variante técnica" not in texto
+    assert "NO coinciden" in texto
 
 
 def test_las_dos_variantes_siguen_siendo_deterministas() -> None:

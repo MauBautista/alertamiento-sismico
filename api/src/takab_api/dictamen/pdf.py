@@ -28,12 +28,16 @@ from takab_api.dictamen.model import (
     DISCLAIMER,
     DISCLAIMER_ESTADO,
     ENVELOPE_NOTE,
+    EPICENTRO_REUBICADO,
+    EPICENTRO_REUBICADO_AQUI,
+    EPICENTRO_REUBICADO_EN_LA_RED,
     FELT_LABELS,
     NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
     NO_GEOMETRY,
     NO_MMI,
     NO_SPECTRUM,
+    ONDA_NO_LEIDA,
     SIN_CORRELACION_EN_CATALOGO,
     SKETCH_NOTE,
     STATUS_ACTIONS,
@@ -191,7 +195,17 @@ def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
 
     pdf.set_y(top + _SKETCH_H + 2)
     pdf.para(SKETCH_NOTE, size=7, muted=True)
-    if m.event_source == "local_quorum":
+    # [T-7.38·H] Excluyentes a propósito: los dos avisos juntos dejan al lector sin
+    # saber cuál creer. Un epicentro que movió una persona NO es el centroide de las
+    # estaciones, y el papel lo llamaba así por `event_source` sin mirar si alguien
+    # lo había reubicado después.
+    if m.epicenter_relocated:
+        aqui = any(a.kind == "epicenter_relocate" for a in m.actions)
+        pdf.callout(
+            EPICENTRO_REUBICADO
+            + (EPICENTRO_REUBICADO_AQUI if aqui else EPICENTRO_REUBICADO_EN_LA_RED)
+        )
+    elif m.event_source == "local_quorum":
         pdf.callout(CENTROID_NOTE)
 
 
@@ -208,9 +222,20 @@ def _envelope_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _trace(
-    pdf: TakabPDF, channel: str, values: list[float | None], flags: list[bool], unit: str
+    pdf: TakabPDF,
+    channel: str,
+    values: list[float | None],
+    flags: list[bool],
+    unit: str,
+    *,
+    centrada: bool = False,
 ) -> None:
-    """Una traza con escala propia. Escala común aplastaría los canales pequeños."""
+    """Una traza con escala propia. Escala común aplastaría los canales pequeños.
+
+    `centrada` pone el cero en la MITAD del recuadro, que es lo que corresponde a
+    una señal con signo (el crudo del ADC sin su continua). En falso el cero queda
+    abajo, que es lo correcto para magnitudes positivas como el PGA.
+    """
     if pdf.get_y() > 240:
         pdf.add_page()
     top = pdf.get_y()
@@ -228,8 +253,11 @@ def _trace(
 
     pdf.set_draw_color(*RULE)
     pdf.rect(box.x, box.y, box.w, box.h)
+    if centrada:
+        pdf.set_draw_color(*RULE)
+        pdf.line(box.x, box.y + box.h / 2, box.x + box.w, box.y + box.h / 2)
     pdf.set_draw_color(20, 24, 30)
-    for seg in plot.segments(values, box, scale):
+    for seg in plot.segments(values, box, scale, baseline=centrada):
         pdf.polyline(seg)
     # El recorte del ADC se marca aparte: un canal saturado NO midió el pico, midió
     # el techo del conversor, y leerlo como aceleración real sería un error grave.
@@ -243,12 +271,18 @@ def _trace(
 def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("3", "FORMA DE ONDA CRUDA Y CONTENIDO ESPECTRAL")
     if not m.raw_waveform:
-        pdf.callout(m.raw_unavailable_reason or NO_SPECTRUM)
+        # [T-7.38·L] El fallback afirmaba «este incidente no tiene miniSEED
+        # archivado» SIN mirar nunca la lista de custodia — que este mismo
+        # documento imprime, con su sha256, cuarenta líneas más abajo. Son dos
+        # estados distintos: no haberlo, y no haber podido leerlo.
+        consta = any(e.kind == "miniseed" for e in m.evidence)
+        pdf.callout(m.raw_unavailable_reason or (ONDA_NO_LEIDA if consta else NO_SPECTRUM))
         return
 
     rate = m.raw_sample_rate or 100.0
     pdf.para(
-        f"Decodificada del miniSEED archivado del evento · {rate:g} sps · cuentas del ADC.",
+        f"Decodificada del miniSEED archivado del evento · {rate:g} sps · cuentas del ADC, "
+        "sin su componente continua (el cero de cada traza es su propia media).",
         size=7,
         muted=True,
     )
@@ -256,8 +290,15 @@ def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
         # Se diezma para el dibujo: 18 000 muestras no caben en 180 mm y fpdf2
         # tardaría más en trazarlas que la propia consulta.
         step = max(1, len(samples) // 900)
-        thinned: list[float | None] = [float(v) for v in samples[::step]]
-        _trace(pdf, channel, thinned, [False] * len(thinned), unit="cuentas")
+        crudas = [float(v) for v in samples[::step]]
+        # [T-7.39] Se le quita la CONTINUA. El crudo del ADC trae un offset enorme
+        # —del orden de 10^6 cuentas— y la traza se escalaba contra él con el cero
+        # abajo: salía una línea plana bajo la etiqueta «±3.86e+06 cuentas», que es
+        # el offset, no la sacudida. Restar la media y centrar en el cero es lo que
+        # hace visible la señal, y la etiqueta pasa a decir su amplitud real.
+        continua = sum(crudas) / len(crudas) if crudas else 0.0
+        sin_dc: list[float | None] = [v - continua for v in crudas]
+        _trace(pdf, channel, sin_dc, [False] * len(sin_dc), unit="cuentas", centrada=True)
 
     _duracion(pdf, m)
 
@@ -548,7 +589,23 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
             # deja la columna, así que entran en una sola línea.
             pdf.field(e.kind.upper(), huella_de_custodia(e.sha256))
     else:
-        pdf.para("Sin objetos de evidencia archivados.", size=7.5, muted=True)
+        # [T-7.38·K] Esta sección solo lee `evidence_objects`. El material de vídeo
+        # es custodia igual —el apartado siguiente lo relaciona con su sha256— y
+        # vive en otras tablas, así que «sin objetos» a secas contradecía a la
+        # página de al lado. La frase DECLARA SU ALCANCE y remite; no dice del
+        # vídeo más que dónde mirar, así que vale igual para un clip archivado y
+        # para uno ya purgado.
+        pdf.para(
+            "Sin objetos de evidencia archivados para este incidente."
+            + (
+                " El material de vídeo no se contabiliza aquí: su custodia y su "
+                "estado se relacionan en el apartado siguiente."
+                if m.cctv.objetos
+                else ""
+            ),
+            size=7.5,
+            muted=True,
+        )
 
 
 def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -672,7 +729,12 @@ def _render_executive(m: ReportModel) -> bytes:
         + (
             f"El sensor del inmueble midió un pico de {num(m.peak_pga_g, 3, 'g')}."
             if m.peak_pga_g is not None
-            else "El sensor del inmueble no registró aceleración en la ventana del evento."
+            # [T-7.38·J] «No registró» AFIRMA sobre el sensor; lo único que consta es
+            # que el documento no tiene la medición. Y dos líneas más abajo, «QUÉ
+            # SIGNIFICA» clasifica la sacudida con un pico —el que `build_forensics`
+            # saca del incidente— que esta misma frase acababa de negar.
+            else "No consta medición de aceleración del sensor del inmueble en la "
+            "ventana del evento."
         )
     )
 
@@ -691,15 +753,20 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.field("ESTACIONES QUE CORROBORARON", str(m.station_count))
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("FOLIO", m.folio)
-    # [T-5.26] La huella también aquí. Este es el documento que lee QUIEN DECIDE,
-    # y era el único de los dos que no traía con qué verificarse: el técnico la
-    # imprime en portada desde siempre. Es la MISMA huella en los dos —sale del
-    # contenido, no del archivo—, que es justo lo que permite comprobar que el
-    # resumen y el pericial hablan del mismo incidente sin abrirlos a la vez.
+    # [T-5.26] La huella también aquí. Este es el documento que lee QUIEN DECIDE, y
+    # era el único de los dos que no traía con qué verificarse.
+    #
+    # [T-7.38·I] Y NO es la misma que la del pericial. Nunca lo fue: el folio lleva
+    # el sufijo de variante (-E / -T) y entra en `content_sha256()`, igual que la
+    # onda cruda y `generated_at`. El papel prometía que coincidían, y la guarda que
+    # debía cazarlo comparaba `model()` CONSIGO MISMO. Lo que sí empareja los dos
+    # documentos es el folio sin su letra final.
     pdf.field("HASH DE CONTENIDO", m.content_sha256())
     pdf.para(
-        "Esta huella identifica el CONTENIDO del dictamen, no este archivo. Es la "
-        "misma que imprime la variante técnica del mismo incidente.",
+        "Esta huella identifica el CONTENIDO de esta exportación, no este archivo. "
+        "La variante técnica del mismo incidente lleva su propio folio y su propia "
+        "huella: NO coinciden. Lo que empareja los dos documentos es el FOLIO de "
+        "arriba, idéntico salvo la letra final (-E resumen, -T pericial).",
         size=7,
         muted=True,
     )

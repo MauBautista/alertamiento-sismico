@@ -136,3 +136,61 @@ def test_resolve_params_inverted_thresholds_fall_back() -> None:
     p = resolve_params(cfg, s)
     assert p.pga_no_inhabit_g == s.dictamen_pga_no_inhabit_g
     assert p.pga_monitor_g == s.dictamen_pga_monitor_g
+
+
+# ---- [T-7.38·C] el cero con el que se COMPARA no se guarda -------------------
+
+
+def test_sin_medicion_el_basis_NO_congela_un_cero() -> None:
+    """«El valor evaluado fue 0.000 g» en un documento cuyo §5 dice «SIN DATO».
+
+    El 0.0 existe para comparar —sin medición no se puede superar un umbral— y es
+    correcto ahí. Lo que no puede es quedarse congelado en el `basis` y salir
+    impreso como si el sensor hubiera medido cero.
+    """
+    d = evaluate(
+        EvalInput(
+            severity="info",
+            pga_g=None,
+            node_count=0,
+            quorum_min_nodes=3,
+            trigger="sasmex",
+            event_id=None,
+            pga_source="none",
+        ),
+        DictamenParams(pga_no_inhabit_g=0.25, pga_monitor_g=0.05),
+    )
+    assert d.basis["evidence"]["pga_g"] is None, "congeló un cero que nadie midió"
+    assert d.basis["evidence"]["insufficient_data"] is True
+
+
+def test_con_medicion_el_basis_guarda_LA_MEDICION() -> None:
+    """Control: el camino normal no se toca."""
+    d = evaluate(
+        EvalInput(
+            severity="warning",
+            pga_g=0.081,
+            node_count=0,
+            quorum_min_nodes=3,
+            trigger="sasmex",
+            event_id=None,
+            pga_source="features",
+        ),
+        DictamenParams(pga_no_inhabit_g=0.25, pga_monitor_g=0.05),
+    )
+    assert d.basis["evidence"]["pga_g"] == 0.081
+
+
+def test_sin_medicion_el_veredicto_NO_cambia() -> None:
+    """El cero sigue comparándose: un `None` no puede superar un umbral."""
+    sin = EvalInput(
+        severity="info",
+        pga_g=None,
+        node_count=0,
+        quorum_min_nodes=3,
+        trigger="sasmex",
+        event_id=None,
+        pga_source="none",
+    )
+    params = DictamenParams(pga_no_inhabit_g=0.25, pga_monitor_g=0.05)
+    assert evaluate(sin, params).status == "normal_operation"
