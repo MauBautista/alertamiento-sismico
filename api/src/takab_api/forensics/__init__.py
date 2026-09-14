@@ -17,7 +17,14 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api import procedencia as pr
-from takab_api.felt import felt_band
+from takab_api.felt import (
+    DEFAULT_THRESHOLDS,
+    ORIGEN_INMUEBLE,
+    ORIGEN_REFERENCIA,
+    UmbralComparacion,
+    felt_band,
+    thresholds_from_row,
+)
 from takab_api.forensics import correlacion as corr
 from takab_api.geo import bearing16, haversine_km
 from takab_api.queries import compliance as qc
@@ -39,7 +46,7 @@ from takab_api.settings import Settings
 
 _INCIDENT = text(
     """
-    SELECT i.incident_id, i.site_id, i.event_id, i.opened_at, i.closed_at,
+    SELECT i.incident_id, i.site_id, i.tenant_id, i.event_id, i.opened_at, i.closed_at,
            i.severity, i.state, i.trigger,
            i.max_pga_g::float8 AS max_pga_g, i.max_pgv_cms::float8 AS max_pgv_cms,
            e.source AS event_source, e.detected_at AS event_detected_at,
@@ -80,6 +87,14 @@ async def build_forensics(
     window_from = opened - timedelta(seconds=s.dictamen_pga_window_pre_s)
     window_to = opened + timedelta(seconds=s.dictamen_pga_window_post_s)
 
+    # [T-7.35] Los umbrales del INMUEBLE, vigentes cuando se abrió el incidente.
+    # Antes se clasificaba con los de fábrica mientras el papel decía que eran los
+    # del edificio, y el mapa del SOC sí resolvía los suyos: el mismo pico salía
+    # `watch` en la consola y «SACUDIDA FUERTE» en el dictamen firmado.
+    umbral = await umbral_de_comparacion(
+        conn, site_id=site_id, tenant_id=str(inc["tenant_id"]), at=opened
+    )
+
     peaks = [
         ChannelPeak(**dict(r._mapping))
         for r in await q.channel_peaks(conn, site_id=site_id, from_ts=window_from, to_ts=window_to)
@@ -91,7 +106,14 @@ async def build_forensics(
         None,
     )
 
-    lead_time_s, lead_reason = _lead_time(inc["trigger"], opened, peak_ts)
+    # [T-7.35] La banda va ANTES del aviso: sin saber si hubo sacudida no se puede
+    # decidir si hubo algo de lo que avisar.
+    banda = felt_band(
+        peak_pga if peak_pga is not None else inc["max_pga_g"],
+        peak_pgv if peak_pgv is not None else inc["max_pgv_cms"],
+        umbral.thresholds,
+    )
+    lead_time_s, lead_reason = _lead_time(inc["trigger"], opened, peak_ts, banda)
 
     site_row = await q.site_geo(conn, site_id)
     site = SiteGeo(**dict(site_row._mapping)) if site_row is not None else None
@@ -119,10 +141,7 @@ async def build_forensics(
         peak_ts=peak_ts,
         # La banda se calcula sobre el pico de la VENTANA; si no hubo features cae al
         # máximo persistido en el incidente, y si tampoco, `unknown`.
-        felt_band=felt_band(
-            peak_pga if peak_pga is not None else inc["max_pga_g"],
-            peak_pgv if peak_pgv is not None else inc["max_pgv_cms"],
-        ),
+        felt_band=banda,
         lead_time_s=lead_time_s,
         lead_time_reason=lead_reason,
         station_count=station_count,
@@ -138,17 +157,28 @@ async def build_forensics(
     )
 
 
-def _lead_time(trigger: str, opened, peak_ts) -> tuple[float | None, str | None]:
+def _lead_time(trigger: str, opened, peak_ts, band: str) -> tuple[float | None, str | None]:
     """Tiempo de aviso GANADO: de la alerta al pico de la sacudida.
 
     Solo tiene sentido con SASMEX. En un incidente disparado por umbral local la
     "alerta" ES la sacudida: el número sería ~0 por construcción y presentarlo como
     tiempo ganado sería una cifra inventada con apariencia de logro.
+
+    [T-7.35] Y solo si hubo sacudida que avisar. El «pico» es el máximo de la
+    ventana HAYA HABIDO SISMO O NO: en una prueba del WR-1 o una falsa alarma es
+    ruido ambiente. El reporte del acto 4 imprimió «TIEMPO DE AVISO GANADO ·
+    149.2 s» tres líneas debajo de «SACUDIDA LEVE (por debajo de los umbrales)»,
+    o sea presentó como logro haber avisado de algo que él mismo declaraba no
+    significativo. No se puede afirmar sin forma de onda que el pico fuera una
+    llegada sísmica; lo que sí se puede afirmar es que no superó el umbral de
+    vigilancia DEL INMUEBLE, y eso basta para no presumir el aviso.
     """
     if trigger != "sasmex":
         return None, "not_sasmex"
     if peak_ts is None:
         return None, "no_peak"
+    if band == "normal":
+        return None, "sin_sacudida"
     delta = (peak_ts - opened).total_seconds()
     if delta < 0:
         # El pico precede a la alerta: no hubo aviso, hubo confirmación posterior.
@@ -260,4 +290,24 @@ async def _catalog(
             magnitude=match.magnitude if inc["event_magnitude"] is None else None,
         ),
         correlation,
+    )
+
+
+async def umbral_de_comparacion(
+    conn: AsyncConnection, *, site_id: str, tenant_id: str, at
+) -> UmbralComparacion:
+    """Umbrales contra los que se clasifica la sacudida, con su procedencia.
+
+    UNA sola resolución para las dos superficies: la banda que calcula este
+    módulo y la línea que imprime el dictamen salen de aquí, así que no pueden
+    discrepar. Sin `rule_set` con umbrales anterior al incidente se devuelve la
+    banda de referencia DECLARADA como tal — nunca se finge que son del edificio.
+    """
+    row = await q.thresholds_in_force(conn, site_id=site_id, tenant_id=tenant_id, at=at)
+    if row is None:
+        return UmbralComparacion(DEFAULT_THRESHOLDS, ORIGEN_REFERENCIA)
+    return UmbralComparacion(
+        thresholds_from_row(row.pga_watch_g, row.pga_trip_g, row.pgv_watch_cms, row.pgv_trip_cms),
+        ORIGEN_INMUEBLE,
+        rule_set_version=row.version,
     )

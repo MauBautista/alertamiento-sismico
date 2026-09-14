@@ -248,6 +248,10 @@ class ReportModel:
     peak_pgv_cms: float | None
     peak_ts: datetime | None
     felt_band: str
+    # [T-7.35] Contra qué números se clasificó `felt_band` y de quién son. Con
+    # default para no romper los modelos que aún no lo traen; la línea del papel
+    # lo declara como «banda de referencia» cuando falta.
+    felt_thresholds: dict | None
     calibrated: bool
     lead_time_s: float | None
     lead_time_reason: str | None
@@ -327,17 +331,51 @@ def huella_de_custodia(sha: str | None) -> str:
     return sha or SIN_HASH
 
 
+# [T-7.35] El rótulo dice la BANDA, no de quién es el umbral.
+#
+# Decía «supera el umbral de actuación del inmueble» y afirmaba dos cosas que el
+# documento no comprobaba: que el umbral era el de ese edificio —se clasificaba
+# con la banda de fábrica— y que superarlo acciona algo, cuando desde `T-2.32`
+# una detección instrumental sola NO mueve un relé. Los números y su procedencia
+# los imprime `umbral_line()` en la línea de debajo, que es donde se pueden
+# verificar.
 FELT_LABELS: dict[str, str] = {
-    "trip": "SACUDIDA FUERTE (supera el umbral de actuación del inmueble)",
+    "trip": "SACUDIDA FUERTE (supera el umbral de disparo)",
     "watch": "SACUDIDA MODERADA (supera el umbral de vigilancia)",
-    "normal": "SACUDIDA LEVE (por debajo de los umbrales del inmueble)",
+    "normal": "SACUDIDA LEVE (por debajo de los umbrales)",
     "unknown": "SIN MEDICIÓN DE SACUDIDA",
 }
+
+
+def umbral_line(u) -> str:  # noqa: ANN001 - felt.UmbralComparacion (import circular si se anota)
+    """Contra qué números se clasificó la sacudida, y de dónde salieron.
+
+    Va debajo de la BANDA porque es lo que la hace verificable: sin esta línea,
+    «SACUDIDA FUERTE» es una palabra sin escala. Con `origen == 'referencia'` se
+    DICE que son los de fábrica en vez de fingir que son los del edificio.
+    """
+    th = u.thresholds
+    numeros = (
+        f"PGA {th.pga_watch_g:.3f}/{th.pga_trip_g:.3f} g · "
+        f"PGV {th.pgv_watch_cms:.1f}/{th.pgv_trip_cms:.1f} cm/s"
+    )
+    if u.origen == "inmueble":
+        version = f" v{u.rule_set_version}" if u.rule_set_version is not None else ""
+        return f"{numeros} · umbrales del inmueble{version}, vigentes en la apertura"
+    return (
+        f"{numeros} · banda de referencia: no consta configuración del inmueble "
+        "anterior al incidente"
+    )
+
 
 LEAD_REASONS: dict[str, str] = {
     "not_sasmex": "no aplica: el incidente no se disparó por SASMEX",
     "no_peak": "no hubo pico medido en la ventana del incidente",
     "peak_before_alert": "el pico precedió a la alerta",
+    # [T-7.35] No hubo sacudida que avisar: el pico de la ventana no superó el
+    # umbral de vigilancia del inmueble. Presentar segundos de «aviso ganado»
+    # sobre ruido ambiente es presumir un logro que no ocurrió.
+    "sin_sacudida": "no aplica: la sacudida no superó el umbral de vigilancia del inmueble",
 }
 
 

@@ -59,6 +59,16 @@ def model(**over) -> ReportModel:
         "peak_pgv_cms": 3.2,
         "peak_ts": datetime(2026, 8, 3, 10, 0, 35, tzinfo=UTC),
         "felt_band": "trip",
+        # [T-7.35] El modelo EXIGE declarar contra qué umbrales se clasificó:
+        # un dictamen que no lo diga vuelve a dejar «SACUDIDA FUERTE» sin escala.
+        "felt_thresholds": {
+            "pga_watch_g": 0.07,
+            "pga_trip_g": 0.10,
+            "pgv_watch_cms": 4.0,
+            "pgv_trip_cms": 7.0,
+            "origen": "inmueble",
+            "rule_set_version": 19,
+        },
         "calibrated": True,
         "lead_time_s": 35.0,
         "lead_time_reason": None,

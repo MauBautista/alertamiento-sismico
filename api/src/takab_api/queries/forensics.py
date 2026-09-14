@@ -143,6 +143,36 @@ _SERIES = text(
 )
 
 
+# [T-7.35] Los umbrales que REGÍAN cuando se abrió el incidente, no los de hoy.
+#
+# `rule_sets` no se reescribe: publicar o revertir INSERTA versión nueva
+# (`version` + `created_at`), así que la vigente en un instante es la última
+# creada antes de él. Sin migración, y sin describir un documento histórico con
+# la configuración actual — que es el defecto gemelo que la auditoría del
+# 2026-09-13 encontró en la calibración.
+#
+# Se exige que la fila TRAIGA los umbrales: un `rule_set` sin la clave `edge` no
+# dice nada del disparo del gabinete (hay sitios cuyos umbrales viven en el
+# `edge.env` y no viajan), y contarlo como «del inmueble» sería la misma mentira
+# con otra ropa. Precedencia sitio > cliente, igual que el mapa del SOC.
+_THRESHOLDS_IN_FORCE = text(
+    """
+    SELECT version,
+           (config->'edge'->'thresholds'->>'pga_watch_g')::float   AS pga_watch_g,
+           (config->'edge'->'thresholds'->>'pga_trip_g')::float    AS pga_trip_g,
+           (config->'edge'->'thresholds'->>'pgv_watch_cms')::float AS pgv_watch_cms,
+           (config->'edge'->'thresholds'->>'pgv_trip_cms')::float  AS pgv_trip_cms
+      FROM rule_sets
+     WHERE created_at <= :at
+       AND config->'edge' ? 'thresholds'
+       AND ( (scope_type = 'site'   AND scope_id = :site)
+          OR (scope_type = 'tenant' AND scope_id = :tenant) )
+     ORDER BY (scope_type = 'site') DESC, created_at DESC, version DESC
+     LIMIT 1
+    """
+)
+
+
 async def channel_peaks(
     conn: AsyncConnection, *, site_id: str, from_ts: datetime, to_ts: datetime
 ) -> Sequence[Row]:
@@ -197,3 +227,12 @@ async def site_geo(conn: AsyncConnection, site_id: str) -> Row | None:
 async def event_peers(conn: AsyncConnection, event_id: str) -> Sequence[Row]:
     """Estaciones que votaron en el quórum, con geometría cuando la RLS la permite."""
     return (await conn.execute(_EVENT_PEERS, {"event_id": event_id})).all()
+
+
+async def thresholds_in_force(
+    conn: AsyncConnection, *, site_id: str, tenant_id: str, at: datetime
+) -> Row | None:
+    """Umbrales del inmueble vigentes en `at`, o ``None`` si no consta ninguno."""
+    return (
+        await conn.execute(_THRESHOLDS_IN_FORCE, {"site": site_id, "tenant": tenant_id, "at": at})
+    ).first()

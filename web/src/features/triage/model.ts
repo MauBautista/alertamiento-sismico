@@ -468,9 +468,16 @@ export function insufficientData(dictamen: DictamenOut | null): boolean {
 /**
  * Banda de sacudida MEDIDA a partir del PGA pico del incidente [T-2.39].
  *
- * Espejo de `api/src/takab_api/felt.py::felt_band` con sus umbrales por defecto. NO es
- * intensidad macrosísmica (MMI): TAKAB no la calcula (blueprint §14). Es la misma
- * tabla de verdad que decide si el gabinete actúa, expresada en palabras.
+ * Espejo de `api/src/takab_api/felt.py::felt_band` con sus umbrales POR DEFECTO. NO es
+ * intensidad macrosísmica (MMI): TAKAB no la calcula (blueprint §14).
+ *
+ * ⚠️ [T-7.35] Estos son los umbrales de REFERENCIA, no los del inmueble. El
+ * dictamen firmado clasifica con los del `rule_set` del edificio vigentes en la
+ * apertura del incidente, así que para un sitio con umbrales propios esta
+ * etiqueta y la del documento PUEDEN no coincidir. Aquí se conserva a propósito:
+ * la LISTA de triage ordena una cola de incidentes de sitios distintos y no
+ * recibe los umbrales de cada uno. Lo que no puede volver a decirse es que sea
+ * «la misma tabla de verdad que decide si el gabinete actúa»: no lo es.
  *
  * Sin PGA devuelve "SIN MEDICIÓN" — jamás una banda tranquilizadora por defecto.
  */
