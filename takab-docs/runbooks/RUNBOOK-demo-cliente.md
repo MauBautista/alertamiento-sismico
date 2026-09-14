@@ -95,13 +95,56 @@ gabinete estuviera mudo, la franja lo diría en vez de pintar un dato viejo como
 curl -s http://<ip-del-gabinete>:8080/api/status | jq '{tier: .last_tier, relés: [.relays[] | {channel, activated}]}'
 ```
 
-> ⚠️ **TEN LA CONSOLA ABIERTA ANTES DEL GOLPE.** Es lo único de `T-7.08` que sigue sin acreditar
-> y lo único que separa a `F1` de estar cerrada: el 2026-09-12 el ensayo se llevó desde el panel,
-> la nube y el teléfono, y **nadie miró la consola**. Con el incidente abierto, la franja superior
-> tiene que decir **«AVISO SÍSMICO · UMBRAL INSTRUMENTAL»** con **«EDGE · RS4D · SOLO AVISO, SIN
-> ACTUACIÓN»** debajo, en ÁMBAR y no en rojo — y sin la palabra «PROTÉJASE», que aquí sería
-> prometer una actuación que la política prohíbe. Hazle una captura: es la evidencia que cierra
-> la ficha. (El software está desplegado y comprobado; lo que falta es la observación.)
+> ### ⚠️ La consola: lo único de `T-7.08` sin acreditar, y las dos trampas que lo impiden
+>
+> El 2026-09-12 el ensayo se llevó desde el panel, la nube y el teléfono, y **nadie miró la
+> consola**. Es lo único que separa a `F1` de estar cerrada. Pero no basta con tenerla abierta:
+> la franja de la consola **se monta solo con `severity === "critical"`**
+> (`scene.ts::sceneAlert`), y eso encadena dos condiciones que un golpe flojo no cumple.
+>
+> **1 · El golpe tiene que disparar DOS canales, no uno.** Solo `evacuate_or_hold` mapea a
+> `critical`; `restricted` es `warning` **y no pinta franja**. Y la regla de `rules/__init__.py`
+> es por CUENTA de canales, no por el pico de uno:
+>
+> ```
+> trip  = canales con pga ≥ pga_trip_g (0.100 g)  o  pgv ≥ pgv_trip_cms (7 cm/s)
+> len(trip) >= 2  → evacuate_or_hold     ← lo único que pinta la franja
+> len(trip) == 1  → restricted           ← warning: la consola no enseña nada
+> watch           → watch
+> ```
+>
+> Medido el 14-sep con tres golpes reales: uno llegó a `watch` (un canal en vigilancia), otro a
+> `restricted` (**disparo en un sensor: ENN**) y ninguno de los dos habría pintado la franja. El
+> del 12-sep midió 0.357 g y sí disparó dos o más.
+>
+> En la práctica: **golpea la superficie sobre la que se apoya el Shake, seco y cerca**, para que
+> el choque cargue verticales y horizontales a la vez. Un toque a la carcasa carga un eje y se
+> queda en `restricted`.
+>
+> Compruébalo en el panel ANTES de ir a la consola:
+>
+> ```bash
+> curl -s http://raspberry-cerebro.local:8080/api/status \
+>   | jq '{tier: .last_tier, pga_por_canal: [.signal.channels | to_entries[] | {(.key): .value.pga_g}]}'
+> ```
+>
+> `tier` tiene que decir **`evacuate_or_hold`**. Si dice `restricted`, el golpe se quedó corto y
+> la consola **no** va a pintar la escena: vuelve a golpear más fuerte antes de ir a mirarla.
+>
+> **2 · Cierra antes los incidentes `critical` viejos.** `sceneAlert` toma el **primer**
+> incidente `critical` de la cola, y la cola va por `opened_at DESC`. El nuevo gana por ser más
+> reciente — pero si el golpe se queda corto, la franja mostrará el **SASMEX anterior en rojo**,
+> y eso se lee como si el acto 2 hubiera disparado una alerta que no disparó. Ciérralos desde
+> triage con su clasificación (`prueba`), que es de dos clics.
+>
+> **Lo que tiene que decir la franja**, y es la evidencia que cierra la ficha:
+> **«AVISO SÍSMICO · UMBRAL INSTRUMENTAL»** con **«EDGE · RS4D · SOLO AVISO, SIN ACTUACIÓN»**
+> debajo, **en ÁMBAR y no en rojo** (`data-authorizes="false"`), y **sin la palabra
+> «PROTÉJASE»**, que aquí sería prometer una actuación que la política prohíbe. Hazle una
+> captura.
+>
+> El software está desplegado y comprobado —la cadena es `alertHeadline.ts`, tres pruebas la
+> defienden y el bundle servido contiene la cadena—; lo que falta es la observación.
 
 ---
 
@@ -226,6 +269,25 @@ Preflight previo: **13 ✓ · 0 • · 0 ✗**.
 | **4 · Brigadista** | flujo `02` en el Pixel real | foto forense con marca horneada y reporte de daños · **4 fotos** llegaron a la nube con su SHA-256 en la cadena de custodia |
 | **4 · Inspector** | consola, con MFA | dictamen firmado a las 04:28:52Z: `normal_operation`, **sucediendo** al preliminar · push OPS entregado **en el mismo segundo** por el canal `ops` · fase `reentry_approved` · el teléfono leyó el dictamen **35 s después**, solo |
 | **4 · Reporte** | `guion.sh --reporte` + render | PDF de 4 páginas · **el SHA-256 del fichero coincide con el que el sistema registró** en su cadena de custodia |
+
+### Acreditación posterior · **el acto 2 en la CONSOLA** (2026-09-14) — con esto cierra `F1`
+
+Lo único que le faltaba al acto 2: el 12-sep el ensayo se llevó desde el panel, la nube y el
+teléfono, y nadie miró la consola. Se repitió con la consola delante, y **hicieron falta tres
+golpes** porque la condición no es el pico de un canal sino la cuenta:
+
+| hora UTC | qué hizo el gabinete | severidad | ¿franja en la consola? |
+|---|---|---|---|
+| 19:47:14 | `normal → watch → restricted` · disparo en **1** sensor (ENN) | `warning` | no |
+| 19:53:11 | `normal → watch` · cautela en 1 sensor | `watch` | no |
+| **19:56:40** | `normal → restricted → evacuate_or_hold` · **disparo confirmado por 2 sensores: EHZ, ENN** | **`critical`** | **sí, en ámbar** |
+
+Pico del bueno: **EHZ 0.1265 g** a las 19:56:33. Incidente
+`c7f31753-16dc-452b-8956-4f4b5e4a7ffb`, `local_threshold` en `trigger` y en `opened_trigger`, el
+más reciente de la cola. **La bitácora de actuación quedó vacía: ningún relé se movió.**
+
+Y el mismo episodio acreditó `T-7.30` sobre un evento **instrumental**, no solo sobre el WR-1:
+`rule_evaluations` recogió la escalada y publicó el cierre a las **19:58:12**, 92 s después.
 
 ### Acreditación posterior · **la sacudida se concluye sola** (2026-09-14)
 

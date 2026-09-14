@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **349** · `[~]` **11** · `[ ]` **57**
+**Conteo de tareas:** total **417** · `[x]` **350** · `[~]` **10** · `[ ]` **57**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13478,6 +13478,11 @@ sesión, vive en [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md); a
 fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
 
+> **Estado de las fases (2026-09-14): `F0` y `F1` CERRADAS.** `F1` cerró con el acto 2 mirado en
+> la consola —lo último que le faltaba—, y con ello el guion de punta a punta está ejecutado y
+> medido contra el gabinete real. `F2` en marcha: `T-7.12` cerrada; quedan `T-7.10` y `T-7.11`,
+> las dos con ventana AWS.
+
 **El orden es de criticidad, no de gusto**, y se ejecuta en ocho fases: conformidad (F0), el
 guion de punta a punta con lo que hay (F1), datos demo (F2), la vida del sismo (F3), papel
 oficial (F4), sismología visual (F5), IA asesora (F6) y ensayo general (F7). F5 y F6 pueden
@@ -13825,7 +13830,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:**
   no · **Cambia algo que un test defiende hoy:** no.
 
-### [~] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO` · **GABINETE Y NUBE MEDIDOS · falta la consola**
+### [x] T-7.08 · **Acto 2: el aviso instrumental aislado se ve sin actuar** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-14 · con la consola delante**
 - **Componente:** edge · web · api · **Depende de:** T-7.07 · **Prioridad:** F1 · alta
 - **Objetivo:** que mover el sensor con la mano produzca un aviso en el panel y en la consola,
   un evento en la nube, y **ningún** movimiento de relé (política de `T-2.32`).
@@ -13835,15 +13840,46 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     (el máximo de 24 h de ENZ pasó de 0,0036 g a 0,357 g) y **ningún relé se movió** — que es
     la política de `T-2.32` enseñada con el dedo. En la nube abrió un incidente
     `local_threshold`, severidad `critical`.
-  - [~] **La consola NO se miró durante el acto.** La escena `notice` con «SOLO AVISO, SIN
-    ACTUACIÓN» no quedó capturada: el ensayo se llevó desde el panel, la nube y el teléfono.
-    Es lo único que falta de este acto, y se cierra mirando la consola en el ensayo con cliente.
+  - [x] **La consola, MIRADA el 2026-09-14 y en ámbar.** Era lo único que faltaba de este acto
+    —el 12-sep el ensayo se llevó desde el panel, la nube y el teléfono— y **cierra `F1`**. Lo
+    medido, golpe a golpe:
+
+    | hora UTC | qué hizo el gabinete | severidad | ¿franja? |
+    |---|---|---|---|
+    | 19:47:14 | `normal → watch → restricted` (disparo en **1** sensor: ENN) | `warning` | no |
+    | 19:53:11 | `normal → watch` (cautela en 1 sensor) | `watch` | no |
+    | **19:56:40** | `normal → restricted → evacuate_or_hold` (**disparo confirmado por 2 sensores: EHZ, ENN**) | **`critical`** | **sí** |
+
+    El pico del bueno: **EHZ 0.1265 g** a las 19:56:33. Incidente
+    `c7f31753-16dc-452b-8956-4f4b5e4a7ffb`, `local_threshold` en las dos columnas
+    (`trigger` y `opened_trigger`), el más reciente de la cola — así que `sceneAlert` lo eligió
+    por encima del SASMEX de la noche anterior. **La bitácora de actuación quedó vacía: ningún
+    relé se movió**, que es la política de `T-2.32` enseñada con el dedo por segunda vez.
+  - [x] **Y de regalo, `T-7.30` acreditada también sobre un evento INSTRUMENTAL**, no solo sobre
+    el WR-1: `rule_evaluations` recogió `normal → restricted → evacuate_or_hold` y publicó el
+    cierre del episodio a las **19:58:12**, 92 s después, sin que nadie tocara la base.
   - [x] **El software está desplegado y comprobado (2026-09-14).** La derivación vive en
     `alertHeadline.ts` y la defienden tres pruebas de `AlertBanner.test.tsx` (titular, atribución,
     `data-authorizes=false` ⇒ ámbar y no rojo, y la ausencia de «PROTÉJASE»); y el bundle que
     **sirve la consola desplegada** contiene la cadena. Lo que falta NO es código: es tener la
-    consola delante cuando alguien golpee el sensor. El paso está escrito en el acto 2 del
-    runbook con lo que hay que mirar y la captura que lo cierra.
+    consola delante cuando alguien golpee el sensor.
+  - [x] **Y no basta con tenerla abierta: la cadena tiene DOS condiciones que un golpe flojo no
+    cumple**, rastreadas el 2026-09-14 y escritas en el acto 2 del runbook.
+    1. `scene.ts::sceneAlert` monta la franja **solo con `severity === "critical"`**, y `critical`
+       viene únicamente de `evacuate_or_hold` (`restricted` es `warning` y **no pinta nada**).
+       ⚠️ Y `evacuate_or_hold` **NO es «pasar de `pga_trip_g`»**: la regla de `rules/__init__.py`
+       cuenta CANALES —`len(trip) >= 2`—, así que un solo canal por encima de 0.100 g da
+       `restricted`. Medido el 14-sep con tres golpes: uno quedó en `watch`, otro en `restricted`
+       («disparo en un sensor: ENN»), ninguno habría pintado la franja. El panel y el journal lo
+       dicen antes de ir a mirarla.
+    2. `sceneAlert` toma el **primer** `critical` de la cola (`opened_at DESC`). El nuevo gana por
+       reciente, pero si el golpe se queda corto la franja muestra el **SASMEX anterior en rojo**,
+       que se lee como si el acto 2 hubiera disparado una alerta que no disparó. Los `critical`
+       viejos se cierran desde triage antes del acto.
+  - [x] **La política de `T-2.32`, medida otra vez el 2026-09-14 con datos frescos:** dos
+    incidentes `local_threshold` en el sitio (15:11 y 19:47 UTC) y la bitácora de actuación de las
+    últimas 12 h con **un solo apunte, un autodiagnóstico del gabinete**. Ningún relé se movió.
+    Es una segunda medición independiente de la del 12-sep.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
