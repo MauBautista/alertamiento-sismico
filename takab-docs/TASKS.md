@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **348** · `[~]` **11** · `[ ]` **58**
+**Conteo de tareas:** total **417** · `[x]` **349** · `[~]` **11** · `[ ]` **57**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13915,23 +13915,45 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_fleet_sim` fija
   `tenant-dev`/`SIM001` y `siteDemoCensus` afirma que solo existe `sim_fleet.sql`.
 
-### [ ] T-7.12 · **El catálogo con procedencia real: consulta viva a USGS** — `SOFTWARE`
+### [x] T-7.12 · **El catálogo con procedencia real: consulta viva a USGS** — `SOFTWARE` · **CERRADA 2026-09-14**
 - **Componente:** api · db · **Depende de:** — · **Prioridad:** F2 · alta
 - **Objetivo:** que las filas del catálogo que la demostración va a reproducir pinten su cifra
   con procedencia `confirmado`, porque se consultó la fuente de verdad y quedó grabado.
 - **Criterios de aceptación:**
-  - [ ] Consulta al FDSN de USGS grabada como fixture con fecha
-    (`api/tests/incident/fixtures/usgs-consulta-YYYY-MM-DD.json`).
-  - [ ] Las filas USGS de 2017-09-19, 1999-06-15, 2022-09-19, 2017-09-08 y 1985-09-19 ganan
-    `consulted_at`, `review_status='confirmado'` y `provider_event_id`; entra el 2023-12-07
-    M5.7 (Huehuetlán el Chico) con su gemelo SSN si existe.
-  - [ ] `ssn_catalog.json` y `db/seeds/reference_earthquakes.sql` cambian **juntos** con la
-    nota de ratificación de `T-1.46`; `GET /catalog/earthquakes` y la línea del dictamen
-    pintan la cifra.
-  - [ ] Nada de historial fabricado: ningún incidente con fecha anterior a su corrida real.
+  - [x] Consulta al FDSN de USGS grabada como fixture con fecha
+    (`api/tests/incident/fixtures/usgs-consulta-2026-09-14.json`): seis ventanas estrechas
+    alrededor de cada origen conocido, con la respuesta entera —id, `status`, magnitud y su tipo,
+    epicentro, profundidad—.
+  - [x] Las filas USGS de 2017-09-19 (`us2000ar20`), 2017-09-08 (`us2000ahv0`), 1999-06-15
+    (`usp00099y6`) y 1985-09-19 (`usp0002jwe`) ganan `consulted_at`, `review_status='confirmado'`
+    y `provider_event_id`. **Las cuatro devolvieron magnitud, epicentro y profundidad idénticos a
+    lo transcrito el 2026-07-09**, y las cuatro están `reviewed` en la fuente.
+  - [x] **Michoacán 2022 no tenía fila USGS**: el catálogo solo llevaba la del SSN (M 7.7). Entra
+    su gemelo `USGS-2022-09-19-MICH` (`us7000i9bw`, M 7.6), que difiere **~62 km** de la solución
+    del SSN — las dos conviven a propósito, como el par de 2017.
+  - [x] Entra el 2023-12-07 M 5.7 de Huehuetlán el Chico (`us7000lh50`, prof. 54 km), **a 12 km
+    del sitio de Puebla**. Su gemelo SSN NO se añade: al SSN no se le consultó, y eso es distinto
+    de que no exista. Queda escrito así en la fila.
+  - [x] `review_status` se **copia** del `status` del FDSN, no se asciende: un `automatic` sería
+    `preliminar`. Las seis vinieron `reviewed`, y hay prueba de que si alguna dejara de estarlo el
+    seed se pone rojo.
+  - [x] Las cifras del seed **NO se reescriben**: se compararon una a una con la respuesta y
+    coincidían. Reescribirlas sería cambiar una cita por otra idéntica y perder de vista quién la
+    transcribió. Lo que se estampa es procedencia, y solo procedencia.
+  - [x] `ssn_catalog.json` y `db/seeds/reference_earthquakes.sql` cambian **juntos**, con la nota
+    de ratificación. ⚠️ **Los dos eventos nuevos NO entran en el fixture del cuórum**: su campo
+    `stations` es una ENTRADA —qué estaciones detectan el evento— y elegirla es un juicio
+    sismológico. Inventarla corrompería la validación que ese fixture existe para sostener.
+    Entran cuando alguien derive esa lista con criterio; está dicho en su `_provenance`.
+  - [x] Las filas del SSN se quedan en `NULL` = «no consta», y la UI no pinta su cifra. Hay prueba
+    de que ninguna lleva la procedencia de una consulta a USGS.
+  - [x] Nada de historial fabricado: ningún incidente con fecha anterior a su corrida real.
+  - [x] `api/tests/incident/test_catalogo_con_procedencia.py` ata el seed a la respuesta
+    archivada: para cada fila estampada, el id tiene que estar en la consulta y las cifras
+    coincidir. Una fila editada a mano —o un id copiado de otro evento— sale roja.
 - **Tests de censo que toca:** `test_procedencia`, `test_catalog_line` · **Token nuevo:** no ·
-  **Cambia algo que un test defiende hoy:** sí — los tests que afirman que todas las filas
-  del catálogo degradan a `sin_dato_externo`.
+  **Cambia algo que un test defiende hoy:** no — los que afirmaban `sin_dato_externo` lo hacen
+  sobre fixtures propios, no sobre el seed; siguen verdes y siguen siendo ciertos para el SSN.
 
 ### [ ] T-7.13 · **El incidente tiene fases y se cierra** — `SOFTWARE`
 - **Componente:** api · **Depende de:** — · **Prioridad:** F3 · crítica
