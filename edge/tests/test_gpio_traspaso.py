@@ -699,9 +699,17 @@ def test_SPOF_02_el_contacto_SOSTENIDO_cruza_hasta_la_nube(cfg_separado, monkeyp
         #     había volado (medido: el test fallaba con el episodio reconciliado
         #     en el journal).
         sup = EdgeSupervisor(cfg_separado, seedlink_source=None)
+        # [T-7.30] Se captura también el payload: `takab/events` lleva ahora dos
+        # contratos y esta prueba mide el EVENTO del episodio, no todo el topic.
         publicados: list[str] = []
+        publicados_con_payload: list[tuple[str, object]] = []
         sup.build()
-        sup.cloud.publish = lambda topic, payload: publicados.append(topic)
+
+        def _capturar(topic, payload):
+            publicados.append(topic)
+            publicados_con_payload.append((topic, payload))
+
+        sup.cloud.publish = _capturar
         sup.start()
         try:
             assert _esperar(lambda: EVENTS_TOPIC in publicados), (
@@ -730,8 +738,17 @@ def test_SPOF_02_el_contacto_SOSTENIDO_cruza_hasta_la_nube(cfg_separado, monkeyp
                 assert estado.activated is True, (
                     f"{canal.value} no acabó protegiendo tras el traspaso HW→software"
                 )
-            assert publicados.count(EVENTS_TOPIC) == 1, (
-                f"el episodio sembrado se entregó {publicados.count(EVENTS_TOPIC)} veces: "
+            # [T-7.30] `takab/events` lleva ahora DOS contratos: el `LocalEvent` del
+            # episodio y su transición de estado. Lo que esta prueba fija —que una
+            # reconexión no REABRE el episodio— se mide sobre el evento, no sobre
+            # todo lo que pasa por el topic.
+            eventos = sum(
+                1
+                for topic, payload in publicados_con_payload
+                if topic == EVENTS_TOPIC and getattr(payload, "tier", None) is not None
+            )
+            assert eventos == 1, (
+                f"el episodio sembrado se entregó {eventos} veces: "
                 "una reconexión durante un sismo no puede reabrir el incidente"
             )
         finally:

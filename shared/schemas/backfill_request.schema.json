@@ -55,6 +55,6 @@
   "title": "BackfillRequest",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/backfill_request/v1.15.0",
-  "version": "1.15.0"
+  "$id": "https://takab.mx/schemas/backfill_request/v1.16.0",
+  "version": "1.16.0"
 }

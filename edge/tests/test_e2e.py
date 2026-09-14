@@ -295,14 +295,18 @@ def test_sasmex_reflex_and_sequence_cloud_off(supervisor):
     WR1Simulator(supervisor.gpio).alert()
     assert supervisor.gpio.siren_sounding is True  # reflejo local inmediato (sin nube)
     assert supervisor.rules.last_decision.tier is Tier.EVACUATE_OR_HOLD
-    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 1  # UN evento (T-1.17: por topic)
+    # [T-7.30] El topic lleva ahora el `LocalEvent` Y la apertura del episodio
+    # (dos contratos, como `takab/acks`): UNO de cada, no dos eventos.
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) == 2
 
 
 def test_no_duplicate_event_explosion_within_episode(supervisor):
     _feed_quake(supervisor)
     # Todo el sismo es UN episodio: los eventos se deduplican por (event_id, tier), así que
     # no hay explosión de duplicados aunque lluevan paquetes (idempotencia, regla de oro 3).
-    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) <= 3  # a lo sumo watch/restr/evacuate
+    # A lo sumo watch/restr/evacuate, MÁS sus transiciones de episodio (T-7.30):
+    # el tope sube, pero lo que la prueba fija sigue siendo que no hay explosión.
+    assert supervisor.cloud.queued_by_topic(EVENTS_TOPIC) <= 6
 
 
 def test_evidence_window_extractable_after_quake(supervisor):

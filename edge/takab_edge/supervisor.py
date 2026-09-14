@@ -48,6 +48,7 @@ from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
 from takab_edge.module import EdgeModule
 from takab_edge.rules import RuleEngine, commands_for
+from takab_edge.rules.episode import EpisodeTracker
 from takab_edge.security import SecurityManager
 from takab_edge.seedlink import ObsPySeedLinkTransport, SeedLinkClient
 from takab_edge.signal import FeatureExtractor
@@ -368,6 +369,14 @@ class EdgeSupervisor:
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
+        # [T-7.30] El episodio de alerta, con su estado en disco: la forma más
+        # probable de que un sismo real termine es cortando la luz, y un episodio
+        # que solo viva en RAM deja el cierre sin emisor.
+        self.episode = EpisodeTracker(
+            s.episode_quiet_s,
+            site_id=s.site_id,
+            state_path=(Path(s.cloud_spool_dir) / "episodio.json") if s.cloud_spool_dir else None,
+        )
         self.local_api = LocalDashboard(
             self.gpio_link,
             self.rules,
@@ -632,6 +641,25 @@ class EdgeSupervisor:
         except Exception:  # noqa: BLE001 — el conteo del panel nunca tumba el pipeline
             log.warning("agregador de sacudida no disponible (aislado)", exc_info=True)
 
+    def _publicar_transicion(self, decision: TierDecision) -> None:
+        """Publica el cambio de estado de alerta, si lo hay. Nunca lanza.
+
+        El enclavado se lee aquí y se pasa al seguidor: con la alerta enclavada
+        —o si NO SE PUDO LEER— el episodio no se cierra. Es la dirección contraria
+        al fail-open del modo prueba, y por su razón: allí callar pierde un sismo
+        real; aquí cerrar de más apaga una crisis que sigue viva.
+        """
+        try:
+            try:
+                latched: bool | None = bool(self.gpio_link.snapshot().alert_latched)
+            except Exception:  # noqa: BLE001 — ilegible ⇒ no se cierra nada
+                latched = None
+            transicion = self.episode.observe(decision, latched=latched, now=utcnow())
+            if transicion is not None:
+                self.cloud.publish(EVENTS_TOPIC, transicion)
+        except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+            log.exception("publicación de la transición de tier falló (aislada)")
+
     def _modo_prueba_activo(self, decision: TierDecision) -> bool:
         """¿Hay ventana de prueba del WR-1 armada? (T-1.69) — y JAMÁS lanza.
 
@@ -770,6 +798,13 @@ class EdgeSupervisor:
         # ACK de cada actuador → nube, tras actuar (dedup por event_id+canal+acción).
         for ack in acks:
             self.cloud.publish(ACKS_TOPIC, ack)
+        # [T-7.30] La transición de estado hacia la nube. Va ANTES del corte de
+        # `NORMAL` porque el cierre del episodio ES una decisión normal, y es el
+        # único mensaje que le dice a la nube que la sacudida terminó: sin él,
+        # `rule_evaluations` nunca recibe un `normal` y la app no puede derivar
+        # `shaking_concluded` — el teléfono se queda contando. Advisory y
+        # aislado: un fallo aquí jamás puede tumbar ACKs, espejo LoRa ni evidencia.
+        self._publicar_transicion(decision)
         if decision.tier is Tier.NORMAL:
             return
         # Evento idempotente hacia la nube (offline-first; NO bloquea la actuación).

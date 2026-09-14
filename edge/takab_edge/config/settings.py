@@ -359,6 +359,13 @@ class EdgeSettings(BaseSettings):
     iot_thing: str = ""
     #: Spool durable de la cola offline (vacío → dir temporal en dev/tests; en el Pi, NVMe).
     cloud_spool_dir: str = ""
+    #: [T-7.30] Silencio CONTINUO que hay que sostener para declarar terminado un
+    #: episodio de alerta hacia la nube. No es un detalle de afinado: el motor
+    #: devuelve `normal` UN SEGUNDO después del pulso del SASMEX —`decide()` solo
+    #: mira el suelo—, así que sin esta espera el teléfono saldría de la pantalla
+    #: de crisis antes de que llegue la onda S. 90 s cubre con holgura la fase S
+    #: de un sismo lejano; el enclavado del gabinete manda por encima de esto.
+    episode_quiet_s: float = Field(default=90.0, gt=0)
     cloud_backoff_s: float = Field(default=1.0, gt=0)  # base de reconexión
     cloud_backoff_max_s: float = Field(default=60.0, gt=0)  # tope del backoff
     #: Tope de mensajes encolados POR TOPIC de telemetría reponible (features/health):

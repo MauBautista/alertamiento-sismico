@@ -29,6 +29,7 @@ from takab_api.ingest.handlers import (
     handle_health_snapshot,
     handle_local_event,
     handle_status,
+    handle_tier_transition,
 )
 
 # UUIDs fijos de la familia del seed (db/seeds/prod_fleet.sql + sim_fleet.sql, sufijo 00 = dev).
@@ -1055,3 +1056,100 @@ def test_una_fila_sin_record_id_valido_se_rechaza_y_no_reintenta(fleet, ctx, met
     assert res.outcome is Outcome.REJECT
     assert "record_id" in res.reason
     assert _registros(fleet) == 0
+
+
+# --------------------------------------------------------------------------
+# [T-7.30] tier_transition → rule_evaluations
+# --------------------------------------------------------------------------
+#
+# EL DEFECTO, medido con el WR-1 real el 2026-09-12: `rule_evaluations` la
+# escribían ÚNICAMENTE los sembradores. Ninguna ruta de ingesta la tocaba, y
+# `routers/mobile_site.py` deriva `shaking_concluded` de la última `new_tier` de
+# esa tabla — así que un sismo real no podía producir esa fase jamás y el
+# teléfono se quedaba en la pantalla de crisis contando.
+#
+# El mensaje viaja por `takab/events`, el topic que ya existe, discriminado por
+# `kind`: uno nuevo obliga a tocar la política de fleet, y un topic no autorizado
+# desconecta al gabinete en cada publish.
+
+
+def _transicion(**over: object) -> dict:
+    base = {
+        "kind": "tier_transition",
+        "event_id": EVENT_HEX,
+        "site_id": "site-dev",
+        "prev_tier": "evacuate_or_hold",
+        "new_tier": "normal",
+        "source": "sasmex",
+        "at": TS_EVENT,
+        "pga_g": None,
+        "reasons": ["silencio sostenido"],
+    }
+    base.update(over)
+    return base
+
+
+def test_la_transicion_ESCRIBE_la_fila_que_la_app_lee(fleet, ctx, meta) -> None:
+    assert handle_tier_transition(fleet, _transicion(), meta, ctx).is_ok
+    row = fleet.execute(
+        "SELECT tenant_id::text, site_id::text, gateway_id::text, prev_tier, new_tier "
+        "FROM rule_evaluations"
+    ).fetchone()
+    assert row is not None, "la transición no dejó fila: la app no puede derivar la fase"
+    assert (row[3], row[4]) == ("evacuate_or_hold", "normal")
+
+
+def test_la_identidad_sale_del_GATEWAY_no_del_payload(fleet, ctx, meta) -> None:
+    """`tenant_id`/`site_id`/`gateway_id` los pone el contexto ya validado.
+
+    Los sembradores llenaban `gateway_id` con un uuid aleatorio; una fila de
+    auditoría con un emisor inventado no sirve para auditar nada.
+    """
+    assert handle_tier_transition(fleet, _transicion(), meta, ctx).is_ok
+    row = fleet.execute(
+        "SELECT tenant_id::text, site_id::text, gateway_id::text FROM rule_evaluations"
+    ).fetchone()
+    assert (row[0], row[1]) == (TENANT, SITE)
+    assert uuid.UUID(row[2]) == ctx.gateway_id
+
+
+def test_la_transicion_NO_abre_incidente(fleet, ctx, meta) -> None:
+    """Lo que separa este handler del de eventos: una vuelta a la normalidad no
+    puede abrir nada, y el `_EVENT_SQL` vive en el otro."""
+    assert handle_tier_transition(fleet, _transicion(), meta, ctx).is_ok
+    assert _count(fleet, "SELECT count(*) FROM incidents") == 0
+
+
+def test_repetir_la_misma_transicion_NO_duplica(fleet, ctx, meta) -> None:
+    """Idempotencia (regla de oro 3): SQS entrega al menos una vez.
+
+    Y `rule_evaluations` es append-only por trigger, así que el reintento tiene
+    que ser `DO NOTHING`: un `DO UPDATE` reventaría y mandaría a la DLQ un
+    mensaje perfectamente bueno.
+    """
+    assert handle_tier_transition(fleet, _transicion(), meta, ctx).is_ok
+    assert handle_tier_transition(fleet, _transicion(), meta, ctx).is_ok
+    assert _count(fleet, "SELECT count(*) FROM rule_evaluations") == 1
+
+
+def test_la_apertura_del_episodio_tambien_se_registra(fleet, ctx, meta) -> None:
+    """Sin la fila de apertura, el sismo SIGUIENTE nacería ya «concluido».
+
+    La derivación mira la ÚLTIMA fila del sitio sin ventana: si solo se
+    escribieran los cierres, el `normal` del episodio anterior sería lo último
+    que vería la app al abrirse el incidente nuevo.
+    """
+    assert handle_tier_transition(
+        fleet, _transicion(prev_tier="normal", new_tier="evacuate_or_hold"), meta, ctx
+    ).is_ok
+    assert (
+        fleet.execute("SELECT new_tier FROM rule_evaluations").fetchone()[0] == "evacuate_or_hold"
+    )
+
+
+def test_una_transicion_de_OTRO_sitio_se_rechaza(fleet, ctx, meta) -> None:
+    """El cierre no puede reatribuirse: apagaría la crisis del sitio equivocado."""
+    res = handle_tier_transition(fleet, _transicion(site_id="site-ajeno"), meta, ctx)
+    assert res.outcome is Outcome.REJECT
+    assert "site" in res.reason
+    assert _count(fleet, "SELECT count(*) FROM rule_evaluations") == 0

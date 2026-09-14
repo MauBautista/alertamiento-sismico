@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **415** · `[x]` **342** · `[~]` **11** · `[ ]` **62**
+**Conteo de tareas:** total **417** · `[x]` **343** · `[~]` **11** · `[ ]` **63**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14225,26 +14225,63 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** sí — `crisis-states.test.tsx` moqueaba `expo-router` sin `useRouter`.
 
-### [ ] T-7.30 · **La nube no se entera de que la sacudida terminó** — `SOFTWARE` · **DEFECTO MEDIDO**
+### [x] T-7.30 · **La nube no se entera de que la sacudida terminó** — `SOFTWARE` · **CERRADA 2026-09-13**
 - **Componente:** edge · api · **Depende de:** — · **Prioridad:** F1 · crítica
 - **Objetivo:** que una transición de tier REAL llegue a `rule_evaluations` en la nube, que es
   de donde la app deriva que la sacudida concluyó.
 - **Criterios de aceptación:**
-  - [ ] **El defecto, medido el 2026-09-12 con el WR-1 real:** `rule_evaluations` en la nube la
+  - [x] **El defecto, medido el 2026-09-12 con el WR-1 real:** `rule_evaluations` en la nube la
     escriben ÚNICAMENTE los sembradores (`db/seeds/restore_drill.sql`, el arnés de staging).
     **Ninguna ruta de ingesta la escribe.** El edge registra las transiciones de tier solo en
     local (`rules/__init__.py`, para el panel). Como `mobile_site.py` deriva
     `shaking_concluded` de la última `new_tier`, **un sismo real no puede producir esa fase
     jamás**: el teléfono se queda en crisis, contando, hasta que alguien cierra el incidente a
     mano. Es lo que pasó en el acto 3, y el síntoma que se ve es «la app no sale de la alerta».
-  - [ ] El edge publica la transición y la ingesta la persiste, con `gateway_id` real (hoy las
-    filas sembradas llevan uno aleatorio).
-  - [ ] Prueba de punta a punta: tier a `normal` en el gabinete ⇒ `phase == shaking_concluded`
-    por el endpoint, sin tocar la base a mano.
-  - [ ] Hasta entonces, el runbook de la demostración dice qué hacer (`conclude` del arnés) y
-    **por qué** — un paso manual escrito es mejor que un silencio.
+  - [x] **El arreglo ingenuo era PEOR que el defecto, y por eso esto no es un detector de
+    flancos.** `evaluate_sasmex` deja el motor en `evacuate_or_hold`, pero `evaluate_features`
+    corre CADA SEGUNDO y `decide()` no sabe nada del SASMEX: con el suelo quieto devuelve
+    `normal` al segundo siguiente del pulso. Publicar esa transición cruda le habría dicho a la
+    nube que la sacudida terminó **antes de que llegue la onda S**, sacando al ocupante de la
+    pantalla que le dice que evacúe. La asimetría es todo el módulo: **escalar se publica al
+    instante; volver a normal exige silencio CONTINUO** (`episode_quiet_s`, 90 s de fábrica).
+  - [x] `edge/takab_edge/rules/episode.py` · `EpisodeTracker`, con tres cautelas que no son
+    adorno y que son sus pruebas: **con el enclavado puesto el reloj del silencio no corre**;
+    **si el enclavado no se puede leer tampoco** (falla CERRADO — al revés que el fail-open
+    deliberado del modo prueba, y por su razón: allí callar pierde un sismo, aquí cerrar de más
+    apaga una crisis viva); y **el episodio se persiste**, porque la forma más probable de que
+    un sismo real termine es cortando la luz y un episodio que solo vive en RAM deja el cierre
+    sin emisor — el mismo defecto con otra cara.
+  - [x] NO vive dentro de `RuleEngine`: ése es el camino umbral→actuador (regla de oro 1). Esto
+    es advisory, va envuelto en `try/except` en el supervisor y su fallo jamás puede propagar a
+    la actuación, a los acuses ni al espejo LoRa.
+  - [x] Contrato `TierTransition` por `takab/events`, discriminado por `kind` igual que conviven
+    `ActuatorAck` y `CommandAck` en `takab/acks`: **un topic MQTT nuevo obliga a tocar la
+    política de fleet, y un topic no autorizado desconecta al gabinete en cada publish**
+    (medido el 2026-07-12). `SCHEMA_VERSION` 1.16.0 con su huella registrada.
+  - [x] El contrato lleva **el mismo `site_id` que el `LocalEvent`**, no el sitio propio del
+    gateway en el registro: si la apertura se atribuyera por el payload y el cierre por el
+    registro, en cuanto un gabinete sim atienda a más de un sitio un incidente abierto en el X
+    se concluiría en el Y.
+  - [x] `_dedup_key` de la cola del edge discrimina por `kind` y `new_tier`: sin eso la apertura
+    y el cierre del mismo episodio colisionan y **el cierre no sale nunca del Pi**.
+  - [x] El edge publica la transición y la ingesta la persiste, con `gateway_id` real (hoy las
+    filas sembradas llevan uno aleatorio). `ON CONFLICT (ts, gateway_id) DO NOTHING` y jamás
+    `DO UPDATE`: la tabla es append-only por trigger y un `DO UPDATE` reventaría el handler,
+    mandando a la DLQ un mensaje bueno.
+  - [x] `rule_set_version` se deja **NULL a propósito**: el número que el gabinete tiene es el
+    contador de empujones de `gateway_config_state`, no `rule_sets.version`. Ponerlo sería
+    escribir en un campo de auditoría un número que dice otra cosa.
+  - [x] Prueba de punta a punta: tier a `normal` en el gabinete ⇒ `phase == shaking_concluded`
+    por el endpoint, sin tocar la base a mano
+    (`api/tests/api/test_sacudida_concluida_e2e.py`). Recorre el camino real —topic →
+    discriminación por `kind` → validación contra el schema COMPARTIDO → registro de identidad
+    → handler → commit— y lee la fase por HTTP. **Las dos mitades ya estaban verdes y el
+    producto roto: lo que faltaba era la costura.**
+  - [x] El runbook de la demostración decía qué hacer mientras tanto (`conclude` del arnés) y
+    **por qué** — un paso manual escrito es mejor que un silencio. Ya no hace falta.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
-  defiende hoy:** no.
+  defiende hoy:** sí — cinco tests del edge leían TODOS los mensajes de `takab/events` dando por
+  hecho que traían `tier`; ahora discriminan por contrato.
 
 ### [x] T-7.31 · **La cámara forense decía «no se pudo» y nada más** — `SOFTWARE` · **CERRADA 2026-09-12**
 - **Componente:** mobile · deploy · **Depende de:** T-7.07 · **Prioridad:** F1 · media
@@ -14332,22 +14369,27 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     el mismo campo decide el aviso ganado. **Latente**, no vivo: el incidente del acto 3 abrió con
     `sasmex` y nunca escaló, así que su `trigger` no se reescribió. (La primera redacción de esta
     ficha le atribuyó el «149.2 s» del reporte; se comprobó contra el dato y era falso.)
-  - [ ] **B′ · El papel presenta un «aviso ganado» de una sacudida que él mismo mide como leve.**
-    `_lead_time` toma como pico el máximo de la ventana haya habido sismo o no, así que en una
-    prueba o una falsa alarma mide ruido ambiente. **Esto sí está vivo, y en la misma página:**
-    «TIEMPO DE AVISO GANADO · 149.2 s» tres líneas debajo de «SACUDIDA LEVE (por debajo de los
-    umbrales del inmueble)».
+    **Se arregla en `T-7.36`**, que pide migración y por eso salió de aquí.
+  - [x] **B′ · El papel presenta un «aviso ganado» de una sacudida que él mismo mide como leve.**
+    CERRADO en `T-7.35`. `_lead_time` tomaba como pico el máximo de la ventana haya habido sismo o
+    no, así que en una prueba o una falsa alarma medía ruido ambiente. Estaba vivo, y en la misma
+    página: «TIEMPO DE AVISO GANADO · 149.2 s» tres líneas debajo de «SACUDIDA LEVE (por debajo
+    de los umbrales del inmueble)». Ahora el aviso se niega con razón propia (`sin_sacudida`).
   - [ ] **C · «El valor evaluado fue 0.000 g» sin medición**, en un documento cuyo §5 dice «SIN
-    DATO». `rules.py` sustituye `None` por `0.0` y lo congela en el `basis`.
+    DATO». `rules.py` sustituye `None` por `0.0` y lo congela en el `basis`. **Se arregla en
+    `T-7.38`** junto con las diez del §2: es la misma clase de defecto y toca los mismos ficheros.
   - [ ] Las diez contradicciones internas del §2 del informe (veredicto atribuido a las reglas,
     fundamento «no guardado» habiéndolo, clip purgado anunciado como disponible, epicentro
     relocalizado a mano descrito como centroide, las dos huellas que el papel promete iguales y
-    nunca lo son…).
+    nunca lo son…). **Fichadas en `T-7.38`.**
   - [ ] Las cuatro gráficas del §3 (espectro sobre el minuto ANTERIOR, onda cruda con la continua
-    dentro, barra de escala recortada con su rótulo, «100 sps» a fuego).
+    dentro, barra de escala recortada con su rótulo, «100 sps» a fuego). **Fichadas en `T-7.39`.**
   - [ ] **La guarda que faltaba:** el test que debía cazar las huellas distintas compara
     `model()` **consigo mismo**. Cada arreglo entra con su prueba, y la prueba tiene que comparar
-    lo que el papel compara.
+    lo que el papel compara. Entra con `T-7.38` (contradicción `I`).
+  - [ ] **Esta ficha es un CENSO, no una unidad de trabajo**: se cierra cuando cierren sus hijas
+    (`T-7.35` ✓, `T-7.36`, `T-7.37`, `T-7.38`, `T-7.39`). Dejarla como tarea única fue lo que
+    permitió que `B′` siguiera marcada abierta un día después de estar cerrada.
 - **Tests de censo que toca:** `test_docs_consistency` (documento nuevo) · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** sí — `test_los_dos_documentos_declaran_LA_MISMA_huella`
   pasa hoy sobre el defecto.
@@ -14412,6 +14454,72 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     cada corrección: una corrección tres días después no puede reescribir qué umbral regía.
   - [ ] ⚠️ La cabeza firmada por un inspector escribe `basis = {}` o `{"notes": …}`: el arrastre
     tiene que recorrer la CADENA, no solo la cabeza, o la congelación se pierde al firmar.
+
+### [ ] T-7.38 · **Las diez frases del dictamen que el propio documento desmiente** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.34 · **Prioridad:** F2 · alta
+- **Objetivo:** que ninguna sección del dictamen afirme algo que otra sección del MISMO PDF niega.
+- **Criterios de aceptación:**
+  - [ ] **Las diez (`D`…`M` del §2 de la auditoría) se re-verificaron contra el código de hoy, una
+    lente por contradicción y dos escépticos por hallazgo: las diez SIGUEN VIVAS, ninguna se
+    retiró.** Dos están impresas en el PDF que se enseñó el 2026-09-13 (`D`, `L`); el resto son
+    latentes y muerden en cuanto el dato llega. Censo y trampas en
+    [`AUDITORIA-DICTAMEN-2026-09-13.md §2.1`](AUDITORIA-DICTAMEN-2026-09-13.md).
+  - [ ] ⚠️ **El hallazgo de método, y la regla de esta ficha:** el escéptico del arreglo **refutó
+    los diez arreglos ingenuos**, cada uno por un motivo distinto y concreto. *El arreglo obvio de
+    una frase que miente suele ser otra frase que miente, más pequeña.* **Ninguna de estas entra
+    sin su refutador delante**, y el refutador está escrito en la §2.1 por su clave.
+  - [ ] `D` · «El veredicto lo produjo el conjunto de reglas» — lo eligió y firmó una persona, y la
+    rama firmada además **calla la cadena de dictámenes** que la §9 del mismo papel enseña.
+  - [ ] `E` · «el fundamento no quedó guardado» — la señal es la conjunción **firmado Y nota no
+    vacía**: `rules.py` mete `notes` enlatado en todo dictamen automático.
+  - [ ] `F` · clip podado anunciado como archivado — el corte es de **tres** ramas: «algunos
+    podados» es un estado propio y hoy recae en «el vídeo está archivado».
+  - [ ] `G` · «no se observó el inicio del reingreso» con el reingreso registrado — o se calcula la
+    latencia **en lectura** (el builder ya tiene la hora de la firma), o el papel solo puede decir
+    que falta el término calculado. No puede pronunciarse sobre si hay dictamen firmado.
+  - [ ] `H` · epicentro reubicado a mano descrito como centroide — el evento es **compartido entre
+    inmuebles** y la acción puede vivir en el incidente de otro: dos frases, no una.
+  - [ ] `I` · «es la misma huella que la variante técnica» — **nunca lo es**, y la guarda que debía
+    cazarlo compara `model()` **consigo mismo**. Lo que empareja los dos documentos es el folio sin
+    su letra final. Entra con el comentario del código reescrito: hoy enseña la mentira.
+  - [ ] `J` · «el sensor no registró aceleración» y tres líneas después clasifica con ese pico — el
+    fondo es que hay **dos procedencias** del pico en el mismo documento, la congelada en el
+    `basis` y la que `build_forensics` recalcula al renderizar; regenerar las separa (`T-7.37`).
+  - [ ] `K` · «sin objetos de evidencia archivados» con el clip listado debajo — la frase debe
+    declarar su ALCANCE sin afirmar el estado del vídeo, y la remisión no puede ser un número de
+    sección tecleado: los catorce son literales independientes.
+  - [ ] `L` · «no hay onda cruda archivada» cuando lo único que falló fue LEERLA — la guarda va en
+    el **punto de impresión**, no en un call site: hay dos literales que no consultan `m.evidence`.
+  - [ ] `M` · «No se detectaron datos ausentes» con dos ausencias ya declaradas — condicionar sobre
+    `t90_s is None` **inventaría** una ausencia: «análisis disponible» con `t90_s` nulo es real.
+  - [ ] `C` (del §1) entra aquí: «El valor evaluado fue 0.000 g» en un documento cuyo §5 dice «SIN
+    DATO». Misma clase, mismos ficheros.
+  - [ ] Cada arreglo con su prueba, y **la prueba no puede comparar una función consigo misma**.
+    Las frases nuevas se promueven a constantes de `dictamen/model.py` y se dan de alta en
+    `ESCENARIOS` de `test_avisos_impresos.py`, o el espía queda ciego a ellas.
+- **Tests de censo que toca:** `test_avisos_impresos` (frases nuevas), `test_redact`
+  (`test_la_allowlist_declara_CUANTOS_hechos_deja_pasar`, si se añade un hecho) · **Token nuevo:**
+  no · **Cambia algo que un test defiende hoy:** sí — `test_los_dos_documentos_declaran_LA_MISMA_huella`
+  pasa hoy sobre el defecto `I`.
+
+### [ ] T-7.39 · **Las cuatro gráficas del dictamen no dicen lo que parecen** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.34 · **Prioridad:** F3 · media
+- **Objetivo:** que una figura del documento oficial no pueda leerse al revés de lo que ocurrió.
+- **Criterios de aceptación:**
+  - [ ] **Fichadas desde el §3 de la auditoría, SIN re-verificar todavía** — a diferencia de
+    `T-7.38`, aquí no ha pasado el par de escépticos. El primer criterio de esta ficha es
+    comprobarlas contra el código de hoy antes de tocar nada.
+  - [ ] El espectro y el espectrograma se calculan sobre el minuto **anterior** al sismo.
+  - [ ] La onda cruda se dibuja **sin quitar la continua** y con el cero abajo: sale una línea
+    plana bajo una etiqueta «±3.86e+06 cuentas». Ya hay precedente medido en el proyecto — el
+    waveform crudo **trae** continua.
+  - [ ] La barra de escala del croquis se recorta y **conserva su rótulo en km**: quien mida sobre
+    el papel mide mal.
+  - [ ] «· 100 sps ·» escrito a fuego mientras la §8 imprime la tasa **declarada** del sensor.
+  - [ ] Verificación por RENDER (`pdftoppm`), no por lectura de texto: de una gráfica no se raspa
+    una cadena.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
 
 ## RUTA CRÍTICA
 

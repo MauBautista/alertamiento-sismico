@@ -132,18 +132,30 @@ adb pull /sdcard/acto3.mp4 acto3.mp4
 
 ---
 
-## Entre el acto 3 y el acto 4 · **concluir la sacudida, a mano y con su razón**
+## Entre el acto 3 y el acto 4 · **la sacudida se concluye SOLA (y cómo comprobarlo)**
+
+**Ya no hay paso manual** — `T-7.30`, cerrada el 2026-09-13. El gabinete publica la transición de
+nivel y la ingesta la persiste en `rule_evaluations`, que es de donde la app deriva «sacudida
+concluida». El cierre llega **cuando el suelo lleva `episode_quiet_s` en calma** (90 s de fábrica)
+y **nunca con la alerta enclavada**: si dejas el WR-1 pulsado o el enclavado puesto, el teléfono
+sigue —correctamente— en crisis.
+
+Lo que se ve en la demostración: tras el pulso el teléfono muestra la instrucción; minuto y medio
+después de soltar el radio pasa a «sacudida concluida» con el reingreso **todavía bloqueado**, que
+es lo que abre el acto 4.
+
+**Antes de la sesión, comprueba que el gabinete lleva la versión con el arreglo** — si corre una
+anterior, el teléfono se queda contando igual que el 2026-09-12:
+
+```bash
+ssh takab-pi5 'journalctl -u takab-edge -n 200 | grep -c tier_transition'   # > 0 tras un episodio
+```
+
+Si por lo que sea hiciera falta forzarlo (gabinete viejo, ensayo sin radio), el arnés sigue ahí:
 
 ```bash
 AWS_PROFILE=takab-dev bash infra/scripts/seed_staging_incident.sh conclude
 ```
-
-**Por qué hace falta un paso manual, medido el 2026-09-12 con el radio real:** la app deriva
-«sacudida concluida» de la última transición de nivel que haya en la nube, y **nadie la escribe
-ahí** — el gabinete registra sus transiciones solo en local y ninguna ruta de ingesta persiste
-`rule_evaluations`. Resultado: tras el pulso el teléfono se queda en la pantalla de crisis
-contando, y parece que la app se atascó. El defecto está fichado en `T-7.30`; hasta que se cierre,
-este comando es el que devuelve la app a la vida.
 
 Y dilo en voz alta delante del cliente, porque se ve: **durante la alerta el brigadista tampoco
 puede trabajar** — su teléfono enseña la instrucción, no las pestañas. Desde `T-7.29` tiene un
@@ -224,10 +236,16 @@ Preflight previo: **13 ✓ · 0 • · 0 ✗**.
 - **Hubo que concluir la sacudida a mano** (`seed_staging_incident.sh conclude`) para que el
   teléfono saliera de la crisis. No es un tropiezo del ensayo: es el defecto `T-7.30` —la nube no
   recibe las transiciones de nivel—, y hasta que se cierre ese paso es parte del guion.
+  **CERRADO el 2026-09-13**: el gabinete publica ahora la transición y la ingesta la escribe. El
+  cierre exige silencio sostenido y no ocurre con el enclavado puesto — a propósito: publicar el
+  `normal` crudo habría sacado al ocupante de «EVACÚE» un segundo después de la alerta, antes de
+  la onda S.
 
 ### Evidencia
 
-Los tres PDF generados durante el acto 4 están versionados en
+Los cuatro PDF generados durante el acto 4 están versionados en
 [`evidencia/`](evidencia/) — cada uno es el «antes» de una corrección: el primero sin firma, el
-segundo con la firma y el encabezado aún diciendo PRELIMINAR, el tercero ya coherente.
+segundo con la firma y el encabezado aún diciendo PRELIMINAR, el tercero ya coherente, y el cuarto
+(`20260914T033755Z`) el que se barrió entero buscando la misma clase de defecto — de ahí salieron
+las 19 contradicciones de `T-7.34`.
 

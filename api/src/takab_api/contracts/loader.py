@@ -28,6 +28,7 @@ KINDS = (
     "waveform_packet",
     "evidence_object",
     "actuation_record",  # T-2.86.a: bitácora de actuación del gabinete
+    "tier_transition",  # T-7.30: la sacudida terminó (takab/events, por `kind`)
 )
 
 # Topic MQTT → clase de contrato. `takab/status/+` (LWT) no tiene schema en
@@ -93,6 +94,15 @@ def discriminate(kind: str, payload: object) -> str:
         and payload.get("kind") == "command_ack"
     ):
         return "command_ack"
+    # [T-7.30] `takab/events` transporta también la transición de episodio. Va por
+    # el topic que YA existe a propósito: uno nuevo obliga a tocar la política de
+    # fleet, y un topic no autorizado desconecta al gabinete en cada publish.
+    if (
+        kind == "local_event"
+        and isinstance(payload, dict)
+        and payload.get("kind") == "tier_transition"
+    ):
+        return "tier_transition"
     return kind
 
 

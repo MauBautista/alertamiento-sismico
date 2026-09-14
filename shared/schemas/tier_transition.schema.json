@@ -1,0 +1,87 @@
+{
+  "$defs": {
+    "AlertSource": {
+      "description": "Origen de una detección/evento local (blueprint §4.5).",
+      "enum": [
+        "sasmex",
+        "local_threshold",
+        "manual"
+      ],
+      "title": "AlertSource",
+      "type": "string"
+    },
+    "Tier": {
+      "description": "Tiers deterministas del motor de reglas (blueprint §4.5).",
+      "enum": [
+        "normal",
+        "watch",
+        "restricted",
+        "evacuate_or_hold",
+        "manual_only"
+      ],
+      "title": "Tier",
+      "type": "string"
+    }
+  },
+  "description": "[T-7.30] Cambio del estado de alerta del inmueble, tal como lo vio el gabinete.\n\nEs el hecho que le faltaba a la nube para saber que la sacudida terminó. NO\nse llama «fin del sismo» porque el gabinete no sabe eso: sabe que su estado\npasó de X a Y en el instante T y por estas razones. Ese hecho ya tiene tabla\ndesde la 0001 (``rule_evaluations``, «registro por transición»), y hasta esta\nficha no la escribía nadie.\n\nViaja por ``takab/events``, el topic que YA existe, discriminado por ``kind``\nigual que conviven ``ActuatorAck`` y ``CommandAck`` en ``takab/acks``: un\ntopic MQTT nuevo obliga a tocar la política de fleet, y un topic no autorizado\ndesconecta al gabinete en cada publish (medido el 2026-07-12).\n\n``event_id`` es el id del EPISODIO —el mismo del ``LocalEvent`` de apertura,\nque acaba siendo ``incidents.event_uuid``—, no el de la decisión que lo\nprovocó: el motor regenera el id en cada evaluación NORMAL, y usarlo haría\nimposible casar la apertura con el cierre.",
+  "properties": {
+    "kind": {
+      "const": "tier_transition",
+      "default": "tier_transition",
+      "title": "Kind",
+      "type": "string"
+    },
+    "event_id": {
+      "title": "Event Id",
+      "type": "string"
+    },
+    "site_id": {
+      "title": "Site Id",
+      "type": "string"
+    },
+    "prev_tier": {
+      "$ref": "#/$defs/Tier"
+    },
+    "new_tier": {
+      "$ref": "#/$defs/Tier"
+    },
+    "source": {
+      "$ref": "#/$defs/AlertSource"
+    },
+    "at": {
+      "format": "date-time",
+      "title": "At",
+      "type": "string"
+    },
+    "pga_g": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pga G"
+    },
+    "reasons": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasons",
+      "type": "array"
+    }
+  },
+  "required": [
+    "site_id",
+    "prev_tier",
+    "new_tier",
+    "source"
+  ],
+  "title": "TierTransition",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://takab.mx/schemas/tier_transition/v1.16.0",
+  "version": "1.16.0"
+}

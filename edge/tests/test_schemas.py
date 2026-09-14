@@ -40,6 +40,7 @@ def test_all_contract_families_are_exported():
         "evidence_object",
         "lora_secondary_state",
         "actuation_record",  # T-2.33: gabinete secundario LoRa
+        "tier_transition",  # T-7.30: la sacudida terminó (takab/events)
     }
 
 

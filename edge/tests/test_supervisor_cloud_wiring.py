@@ -42,6 +42,17 @@ def _payloads(transport: FakeMqttTransport, topic: str) -> list[dict]:
     return [payload for t, payload in transport.published if t == topic]
 
 
+def _eventos(transport: FakeMqttTransport) -> list[dict]:
+    """Solo los `LocalEvent` de `takab/events`.
+
+    [T-7.30] Ese topic transporta ahora DOS contratos —el evento local y la
+    transición de episodio— discriminados por `kind`, igual que `takab/acks`
+    lleva `ActuatorAck` y `CommandAck`. Leer todo el topic y asumir que trae
+    `tier` era lo que rompía aquí.
+    """
+    return [p for p in _payloads(transport, EVENTS_TOPIC) if "tier" in p]
+
+
 @pytest.fixture
 def online_supervisor(settings):
     """Supervisor arrancado con transporte fake; el hilo de reconexión conecta solo."""
@@ -69,7 +80,7 @@ def test_quake_publishes_local_event_and_acks(online_supervisor):
     sup, transport = online_supervisor
     _feed_quake(sup)
     assert _wait(lambda: _payloads(transport, EVENTS_TOPIC))
-    events = _payloads(transport, EVENTS_TOPIC)
+    events = _eventos(transport)
     assert any(e["tier"] == "evacuate_or_hold" for e in events)
     assert all(e["tenant_id"] == sup.settings.tenant_id for e in events)
     # [T-2.32] Aviso instrumental: el EVENTO viaja (alimenta el quórum) pero no

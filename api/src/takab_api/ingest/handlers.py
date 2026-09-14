@@ -974,6 +974,78 @@ def handle_status(
     return OK
 
 
+# [T-7.30] La transición de estado de alerta → `rule_evaluations`.
+#
+# `rule_set_version` se deja NULL A PROPÓSITO. El gabinete SÍ tiene un número de
+# versión (`ConfigStore.version`), pero es el contador de empujones de
+# `gateway_config_state`, no `rule_sets.version`: escribirlo en esta columna
+# pondría en un campo de auditoría un número que dice otra cosa — exactamente la
+# clase de defecto que censa `AUDITORIA-DICTAMEN-2026-09-13.md`. Un NULL honesto
+# vale más, y el rule_set en vigor se resuelve por tiempo
+# (`queries/forensics.thresholds_in_force`, T-7.35).
+#
+# `ON CONFLICT DO NOTHING`, jamás `DO UPDATE`: `trg_rule_evaluations_append_only`
+# es BEFORE UPDATE OR DELETE, así que un `DO UPDATE` reventaría el handler y
+# mandaría a la DLQ un mensaje perfectamente bueno. SQS entrega al menos una vez
+# (regla de oro 3) y la PK es `(ts, gateway_id)`.
+_TIER_TRANSITION_SQL = """
+INSERT INTO rule_evaluations
+  (ts, tenant_id, site_id, gateway_id, prev_tier, new_tier, basis)
+VALUES (%(ts)s, %(tenant_id)s, %(site_id)s, %(gateway_id)s,
+        %(prev_tier)s, %(new_tier)s, %(basis)s)
+ON CONFLICT (ts, gateway_id) DO NOTHING
+"""
+
+
+def handle_tier_transition(
+    conn: psycopg.Connection, payload: dict, meta: Meta, ctx: GatewayCtx
+) -> HandlerResult:
+    """TierTransition → `rule_evaluations`. Es lo que le dice a la app que terminó.
+
+    Hasta esta ficha esa tabla la escribían SOLO los sembradores, y
+    `routers/mobile_site.py` deriva `shaking_concluded` de su última `new_tier`:
+    un sismo real no podía producir esa fase jamás, y el teléfono se quedaba en
+    la pantalla de crisis contando (medido con el WR-1 el 2026-09-12).
+
+    **No toca `incidents`.** Una vuelta a la normalidad no abre nada, y el
+    `_EVENT_SQL` vive en `handle_local_event`, que es su sitio.
+
+    La identidad sale SIEMPRE del `GatewayCtx` ya validado, nunca del payload:
+    una fila de auditoría con un emisor inventado no sirve para auditar.
+    """
+    if (rej := _identity_reject(conn, payload, meta, ctx, "tier_transition")) is not None:
+        return rej
+    try:
+        ts = _dt(payload.get("at")) or _fallback_ts(meta)
+    except ValueError as exc:
+        return reject(f"tier_transition: `at` inválido ({exc})")
+    # El sitio ya lo validó `check_identity` contra los que el gateway atiende;
+    # aquí solo se traduce el código a su uuid.
+    site_id = ctx.served_sites[payload["site_id"]]
+    conn.execute(
+        _TIER_TRANSITION_SQL,
+        {
+            "ts": ts,
+            "tenant_id": ctx.tenant_id,
+            "site_id": site_id,
+            "gateway_id": ctx.gateway_id,
+            "prev_tier": payload["prev_tier"],
+            "new_tier": payload["new_tier"],
+            "basis": Jsonb(
+                {
+                    "source": payload.get("source"),
+                    "event_id": payload.get("event_id"),
+                    "reasons": payload.get("reasons") or [],
+                    # El PGA solo viaja si la fuente fue instrumental: el 1.0 con
+                    # que se emite SASMEX es un booleano, no una medición.
+                    "pga_g": payload.get("pga_g"),
+                }
+            ),
+        },
+    )
+    return OK
+
+
 # Despacho por clase de contrato (kind_for_topic → handler); lo usa consumer.py.
 Handler = Callable[[psycopg.Connection, dict, Meta, GatewayCtx], HandlerResult]
 
@@ -981,6 +1053,7 @@ HANDLERS: dict[str, Handler] = {
     "feature_1s": handle_feature_1s,
     "feature_batch": handle_feature_batch,  # T-1.56: lote de tier normal
     "local_event": handle_local_event,
+    "tier_transition": handle_tier_transition,  # T-7.30: la sacudida terminó
     "health_snapshot": handle_health_snapshot,
     "actuator_ack": handle_actuator_ack,
     "actuation_record": handle_actuation_record,  # T-2.86.a: hueco RO-4.e
