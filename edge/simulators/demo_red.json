@@ -3,8 +3,27 @@
   "_invariante": "Se corre SIEMPRE con --no-events. Un LocalEvent simulado abre un incidente de verdad, el motor de cuórum forma con estaciones que no midieron nada y la cascada manda una alerta real a los teléfonos del sitio.",
   "tenant": "tenant-dev",
   "stations": [
-    { "station": "SIM101", "gateway": "gw-sim-0101", "site": "site-sim-101" },
-    { "station": "SIM102", "gateway": "gw-sim-0102", "site": "site-sim-102" },
-    { "station": "SIM103", "gateway": "gw-sim-0103", "site": "site-sim-103" }
-  ]
+    {
+      "station": "SIM101",
+      "gateway": "gw-sim-0101",
+      "site": "site-sim-101",
+      "lat": 19.3139,
+      "lon": -98.2404
+    },
+    {
+      "station": "SIM102",
+      "gateway": "gw-sim-0102",
+      "site": "site-sim-102",
+      "lat": 19.4326,
+      "lon": -99.1332
+    },
+    {
+      "station": "SIM103",
+      "gateway": "gw-sim-0103",
+      "site": "site-sim-103",
+      "lat": 19.2826,
+      "lon": -99.6557
+    }
+  ],
+  "_coordenadas": "[T-7.15] `lat`/`lon` son las MISMAS de db/seeds/demo_red.sql y por eso están aquí: sin ellas el simulador no sabe cuándo le llega la onda a cada estación, y publicaría ruido de fondo mientras el mapa pinta el frente pasando por encima."
 }

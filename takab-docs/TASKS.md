@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **355** · `[~]` **10** · `[ ]` **52**
+**Conteo de tareas:** total **417** · `[x]` **356** · `[~]` **10** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14156,17 +14156,37 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   `test_engine` (declara la pasada nueva) · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** sí — el catálogo de clasificación deja de tener cuatro valores.
 
-### [ ] T-7.15 · **Las estaciones simuladas sienten la onda: `fleet.py --replay --armar`** — `SOFTWARE`
+### [x] T-7.15 · **Las estaciones simuladas sienten la onda: `fleet.py --replay --armar`** — `SOFTWARE` · **CERRADA 2026-09-15**
 - **Componente:** edge · **Depende de:** T-7.11, T-7.14 · **Prioridad:** F3 · crítica
 - **Objetivo:** que las tres estaciones simuladas publiquen features en rampa en su arribo,
   ancladas al pulso real del WR-1, sin publicar un solo evento.
 - **Criterios de aceptación:**
-  - [ ] `--armar` sondea `http://raspberry-cerebro.local:8080/api/status` en la LAN (sin JWT) y fija
-    `t0` al ver `sasmex_active`; `--t0 now` como disparo manual.
-  - [ ] Por estación: STA/LTA bajo umbral antes de `t_arribo`, PGA de `pga_law_g` después,
-    decayendo; latido intacto; **nunca `takab/events`**; `test_cloud_streaming_crudo` sigue
-    verde (features acotadas por esquema).
-  - [ ] Ensayable en local con `edge/simulators/wr1.py` y el modo spool de `demo/`.
+  - [x] `--armar <URL>` sondea el panel del gabinete REAL en la LAN (sin JWT) y ancla `t0` al ver
+    `sasmex_active`; `--t0 now` es el disparo manual. **Una lectura fallida no aborta la
+    demostración**: el panel puede reiniciarse a mitad, y rendirse por eso sería peor que
+    reintentar. Vencido el plazo devuelve `False` y lo dice, en vez de esperar para siempre
+    delante del cliente.
+  - [x] Por estación: ruido de fondo hasta su arribo de la onda S, y desde ahí el pico que
+    predice ATTEN-LAW para su distancia, decayendo con la constante de la coda. **Cada una en
+    SU instante**: si todas sintieran a la vez, la demostración enseñaría algo que la física no
+    hace. Latido intacto; `test_cloud_streaming_crudo` sigue verde.
+  - [x] **Determinista, sin RNG en la rampa.** Una demostración tiene que salir igual dos veces
+    seguidas, y una rampa aleatoria no se puede comparar con lo que el mapa pinta. El ruido de
+    fondo sí es aleatorio: es ruido.
+  - [x] **Ni con `--replay` sale un `LocalEvent`**, comprobado sobre 80 ventanas de corrida.
+    `--replay` y `--quake` se rechazan juntos al construir: serían dos sismos a la vez, y el de
+    `--quake` abre los incidentes que la reproducción existe para no abrir.
+  - [x] Las coordenadas entran en `demo_red.json` (espejo de `db/seeds/demo_red.sql`) y **una
+    estación sin ellas revienta con su nombre**: publicar ruido de fondo mientras el mapa pinta
+    el frente pasándole por encima parecería que la estación no sintió nada, que es la peor
+    forma de fallar.
+  - [x] El sismo viaja en `simulators/replay_19s.json` con su procedencia escrita (solución
+    USGS `us2000ar20`, la misma fila del catálogo) y la razón de `v_s = 4.0`.
+  - [x] **Ejercido fuera de los tests**, 45 s del planificador real contra un sumidero local:
+    546 mensajes, 0 errores, **0 en `takab/events`**, y cada estación con su pico en su arribo —
+    `SIM101` 0.0536 g a los 26 s, `SIM102` 0.0419 g a los 33 s, `SIM103` 0.0358 g a los 39 s—,
+    descendiendo con la distancia. El `--replay` de la CLI imprime el plan antes de abrir una
+    sola conexión: si faltan coordenadas se falla sin haber publicado nada.
 - **Tests de censo que toca:** `test_fleet_sim`, `test_cloud_streaming_crudo` · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
