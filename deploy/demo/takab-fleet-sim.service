@@ -24,8 +24,18 @@
 # publicar en `takab/events` con esta bandera puesta —lanza, no descarta en
 # silencio—, así que esto es el segundo cinturón, no el único.
 #
+# ⚠️ VIVE EN `deploy/demo/`, NO en `edge/systemd/`, y no es por orden. El censo
+# de `edge/tests/test_deploy_artifacts.py` se deriva del glob de ese directorio y
+# NO tiene exenciones: toda unidad que viva ahí es un servicio del GABINETE y se
+# le exige lo que a un servicio de vida —console script declarado en el
+# `pyproject`, `StartLimitIntervalSec=0` para que un update malo no la deje en
+# `failed` para siempre, watchdog—. Esto es lo contrario: una herramienta de
+# demostración que NO debe reiniciarse sola (`Restart=no`), que no sostiene nada
+# y que puede correr en un portátil. Meterla ahí obligaría a relajar el censo del
+# gabinete o a ponerle a un juguete los invariantes de la sirena.
+#
 # Instalación:
-#   sudo cp edge/systemd/takab-fleet-sim.service /etc/systemd/system/
+#   sudo cp deploy/demo/takab-fleet-sim.service /etc/systemd/system/
 #   sudo systemctl daemon-reload
 #   sudo systemctl start takab-fleet-sim      # y `stop` al terminar. NUNCA `enable`.
 

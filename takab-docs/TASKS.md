@@ -13983,7 +13983,10 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     Seis pruebas nuevas, con su control de ceguera (sin la bandera, el simulador SIGUE pudiendo
     emitir: si no, las otras pasarían sobre un simulador que nunca emite).
   - [x] Corre como unidad systemd (`takab-fleet-sim`), en el Pi 4 o en el portátil, **y NO se
-    habilita**: `--no-events` está escrito en el `ExecStart`, no en una nota.
+    habilita**: `--no-events` está escrito en el `ExecStart`, no en una nota. La unidad vive en
+    `deploy/demo/`, **no** en `edge/systemd/`: el censo de aquel directorio se deriva de su glob
+    y no tiene exenciones —le exige a toda unidad los invariantes de un servicio de vida—, y
+    esto es una herramienta de demostración con `Restart=no`.
   - [x] **Coste medido** (1089 mensajes en 89,3 s, 0 errores): 12 msg/s = 1 036 800 mensajes y
     otras tantas filas **al día**. IoT Core ~$31/mes + SQS ~$12/mes = **~$43 contra un
     presupuesto de $50**. Dejarla encendida se come el entorno dev en un mes, y llena justo la
