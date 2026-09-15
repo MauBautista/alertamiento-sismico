@@ -1892,6 +1892,14 @@ body {
   text-decoration: underline;
 }
 
+/* [T-7.17] El sensor, al lado del sitio y en segundo plano: identifica la fila
+   cuando dos sitios se llaman parecido, pero no compite con el nombre. */
+.soc-estaciones__sensor {
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-2xs);
+  color: var(--tk-fg-3);
+}
+
 /* =====================================================================
    [T-6.04] EL NOMBRE DE UN SITIO CON SU CINTA DE DEMOSTRACIÓN
    =====================================================================

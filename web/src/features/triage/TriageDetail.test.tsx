@@ -14,6 +14,17 @@ import TriageDetail from "./TriageDetail";
 import type { TriageDetailProps } from "./TriageDetail";
 import type { TriageRow } from "./model";
 
+/** [T-7.17] La red vacía. Estas suites corren SIN QueryClientProvider a
+ *  propósito, así que el hook no puede llamarse aquí: entra por props, como
+ *  todo lo demás en este panel. */
+const ESTACIONES_VACIAS = {
+  data: null,
+  loading: false,
+  error: false,
+  updatedAt: 0,
+  refetch: () => {},
+};
+
 // [T-5.12] `ClassificationPanel` consulta al servidor y este arnés no monta
 // QueryClient: se mockea el hook, como hace `DrillBanner.test`. Este fichero
 // prueba que los hechos no dependen del dictamen, no la clasificación —que tiene
@@ -168,6 +179,7 @@ function arrange(
         canDownloadClip={false}
         minNodes={3}
         incidentStaleSince={null}
+        estaciones={ESTACIONES_VACIAS}
         canSign={false}
         canExport={false}
         canGenerateReport={false}
@@ -360,6 +372,7 @@ describe("TriageDetail · la edad del dato llega a los paneles [T-2.82.a]", () =
       {
         row: { ...ROW, incident: { ...INCIDENT, event_id: null } },
         incidentStaleSince: HORA,
+        estaciones: ESTACIONES_VACIAS,
       },
     );
     const panel = screen.getByText(/INCIDENTE SIN EVENTO SÍSMICO ASOCIADO/);

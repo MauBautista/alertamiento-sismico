@@ -38,6 +38,18 @@ vi.mock("./useIncidentDetail", () => ({ useIncidentDetail: mocks.useIncidentDeta
 vi.mock("./useForensics", () => ({
   useForensics: () => ({ data: undefined, loading: false, error: null, refetch: vi.fn() }),
 }));
+// [T-7.17] `useEstaciones` monta react-query por lo mismo, y esta suite no lleva
+// provider a propósito. Su semántica se prueba en `EstacionesTable.test.tsx`.
+vi.mock("../console/useEstaciones", async () => ({
+  ...(await vi.importActual<typeof import("../console/useEstaciones")>("../console/useEstaciones")),
+  useEstaciones: () => ({
+    data: null,
+    loading: false,
+    error: false,
+    updatedAt: 0,
+    refetch: vi.fn(),
+  }),
+}));
 // [T-3.12.c] `useCctv` monta react-query por el mismo motivo que `useForensics`, y esta
 // suite no lleva provider a propósito. Su semántica se prueba en `CctvPanel.test.tsx`.
 vi.mock("./useCctv", () => ({

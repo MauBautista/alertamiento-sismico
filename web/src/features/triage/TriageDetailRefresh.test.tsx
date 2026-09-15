@@ -75,6 +75,17 @@ vi.mock("@takab/sdk", async (importOriginal) => ({
   listEvidenceIncidentsIncidentIdEvidenceGet: mocks.listEvidence,
 }));
 
+/** [T-7.17] La red vacía. Estas suites corren SIN QueryClientProvider a
+ *  propósito, así que el hook no puede llamarse aquí: entra por props, como
+ *  todo lo demás en este panel. */
+const ESTACIONES_VACIAS = {
+  data: null,
+  loading: false,
+  error: false,
+  updatedAt: 0,
+  refetch: () => {},
+};
+
 // Los tres hooks que montan react-query por su cuenta y no son de esta prueba,
 // apartados igual que en `TriageDetail.test.tsx`.
 vi.mock("./useNotifyChain", async () => ({
@@ -237,6 +248,7 @@ function arrange(hint: IncidentRefreshHint | null, socket: LiveSocketLike | null
         }
         minNodes={3}
         incidentStaleSince={null}
+        estaciones={ESTACIONES_VACIAS}
         canSign
         canExport={false}
         canDownloadClip={false}

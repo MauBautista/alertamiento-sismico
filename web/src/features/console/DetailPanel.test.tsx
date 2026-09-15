@@ -18,6 +18,17 @@ import type { IncidentActionsData } from "./useIncidentActions";
 import type { FeaturePoint, SiteFeaturesData } from "./useSiteFeatures";
 import type { SiteRelaysData } from "./useSiteRelays";
 
+/** [T-7.17] La red sin leer: el panel se pinta igual y la tabla lo dice con su
+ *  propio marco. Entra por props como el resto — esta suite no lleva
+ *  QueryClientProvider a propósito. */
+const ESTACIONES_VACIAS = {
+  data: null,
+  loading: false,
+  error: false,
+  updatedAt: 0,
+  refetch: () => {},
+};
+
 const NOW = Date.parse("2026-07-08T10:41:35Z");
 const SITE = {
   site_id: "s-1",
@@ -136,6 +147,7 @@ function renderPanel(over: Partial<Parameters<typeof DetailPanel>[0]> = {}) {
         soh={SOH}
         actions={actions()}
         incident={INCIDENT}
+        estaciones={ESTACIONES_VACIAS}
         relays={NO_RELAYS}
         link={linkData()}
         nowMs={NOW}
@@ -151,6 +163,7 @@ describe("DetailPanel", () => {
   it("[T-2.32] pinta el badge QUÓRUM RED cuando hay burst de actuación de red", () => {
     renderPanel({
       incident: { ...INCIDENT, event_id: "EVT-20260803-120000-abc123" },
+      estaciones: ESTACIONES_VACIAS,
       quorumCommanded: { channels: ["gas_valve", "siren"], acked: 3, total: 9 },
     });
     const badge = screen.getByTestId("quorum-red-badge");
@@ -408,6 +421,7 @@ describe("DetailPanel", () => {
           soh={SOH}
           actions={actions()}
           incident={INCIDENT}
+          estaciones={ESTACIONES_VACIAS}
           relays={NO_RELAYS}
           link={linkData()}
           nowMs={NOW}
@@ -483,6 +497,7 @@ describe("DetailPanel · enlace con el gabinete", () => {
             soh={SOH}
             actions={actions()}
             incident={INCIDENT}
+            estaciones={ESTACIONES_VACIAS}
             relays={NO_RELAYS}
             link={linkData(byState[state])}
             nowMs={NOW}

@@ -23,6 +23,8 @@ import { Link } from "react-router";
 
 import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
+import EstacionesTable from "./EstacionesTable";
+import type { EstacionesData } from "./useEstaciones";
 import { utcClock } from "../../lib/time";
 import NotCalibratedBadge from "../telemetry/NotCalibratedBadge";
 import { unitsFor } from "../telemetry/calibration";
@@ -118,6 +120,8 @@ export interface DetailPanelProps {
   actions: IncidentActionsData;
   /** Incidente enfocado del sitio (null = sin incidente abierto). */
   incident: LiveIncident | null;
+  /** [T-7.17] La red de estaciones del incidente en foco, con su marco propio. */
+  estaciones: EstacionesData;
   /** Relés del gabinete del sitio (config activa; null = no visible). */
   relays: SiteRelaysData;
   /** [T-2.32] Burst de actuación comandado por el quórum de red (null = ninguno). */
@@ -148,6 +152,7 @@ export default function DetailPanel({
   soh,
   actions,
   incident,
+  estaciones,
   relays,
   quorumCommanded = null,
   link,
@@ -580,6 +585,13 @@ export default function DetailPanel({
           </StateFrame>
         </div>
       </Card>
+
+      {/* [T-7.17] La red de estaciones del incidente en foco. Va al final del
+          panel porque contesta la pregunta que viene DESPUÉS de «qué pasa en
+          este edificio»: qué midieron los demás, y si lo que midió éste encaja
+          con su distancia. Sin incidente en foco su consulta ni se lanza y el
+          marco se queda en `loading` un instante y luego vacío. */}
+      <EstacionesTable estaciones={estaciones} />
     </aside>
   );
 }

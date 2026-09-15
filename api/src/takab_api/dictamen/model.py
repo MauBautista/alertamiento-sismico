@@ -205,6 +205,25 @@ class VoteRow:
 
 
 @dataclass(frozen=True, slots=True)
+class EstacionFila:
+    """[T-7.17] Una estación de la red frente a este incidente, en el papel.
+
+    Lleva lo MEDIDO y lo ESPERADO juntos, y `None` donde no hay dato en vez de un
+    cero: un `0.0 g` impreso en un dictamen firmado es una afirmación de que la
+    estación midió calma, y no es lo mismo que no haber medido.
+    """
+
+    site_name: str
+    site_code: str
+    sensor_code: str | None
+    dist_km: float | None
+    t_teorico_s: float | None
+    t_medido_s: float | None
+    peak_pga_g: float | None
+    tier: str | None
+
+
+@dataclass(frozen=True, slots=True)
 class ActionRow:
     ts: datetime
     kind: str
@@ -360,6 +379,14 @@ class ReportModel:
     #: `basis` del dictamen vigente (T-2.42): qué umbral, con qué valor, de qué versión
     #: de reglas. Es lo que hace auditable el "por qué este veredicto" de la prosa.
     verdict_basis: dict = field(default_factory=dict)
+    #: [T-7.17] La red de estaciones: qué midió cada una y qué le tocaba. Entra en
+    #: ``content_sha256`` como todo lo demás — cambiar lo que el documento afirma
+    #: sobre lo que midió otro inmueble tiene que mover la huella.
+    estaciones: list[EstacionFila] = field(default_factory=list)
+    #: Desde dónde se cuentan los arribos de arriba (`event` u `incident`). Sin
+    #: declararlo, dos dictámenes con anclas distintas se comparan como si
+    #: midieran lo mismo.
+    estaciones_ancla: str = "incident"
     #: Prosa opcional (T-2.42). El veredicto NO sale de aquí.
     narrative: list[tuple[str, str]] = field(default_factory=list)
     narrative_provider: str | None = None

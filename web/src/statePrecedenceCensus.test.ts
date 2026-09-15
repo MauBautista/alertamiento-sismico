@@ -181,15 +181,21 @@ describe("censo · ningún panel de la pantalla de firma clava su frescura (T-2.
     ).toBe(true);
   });
 
-  it("la lista vacía NO lo está por vacuidad: los doce marcos siguen ahí", () => {
+  it("la lista vacía NO lo está por vacuidad: los trece marcos siguen ahí", () => {
     // El agujero que abre pagar la deuda. Mientras la lista tenía siete
     // entradas, un analizador que se quedara ciego se delataba solo; con la
     // lista vacía, encontrar CERO marcos también «cuadra». Este test cierra esa
     // puerta: la población se sigue DERIVANDO del árbol —no se enumera para
-    // vigilar—, y lo que se fija es que la derivación siga viendo los DOCE
+    // vigilar—, y lo que se fija es que la derivación siga viendo los TRECE
     // paneles que el inspector tiene delante al firmar.
     const enLaPagina = MARCOS.filter((m) => ARBOL.includes(m.fichero)).map((m) => m.clave);
     expect(enLaPagina).toEqual([
+      // [T-7.17] El decimotercero, y el único que no vive en `features/triage/`:
+      // la red de estaciones la comparten el muro y esta pantalla, así que su
+      // componente es de `console/`. Su `staleSince` es el del historial —el
+      // mismo que ya fecha el panel del quórum—, porque la tabla describe un
+      // evento pasado y lo que puede envejecer es la fila del incidente.
+      "features/console/EstacionesTable.tsx#ESTACIONES",
       // [T-3.12.c] El noveno. Cablea `staleSince` de verdad desde `useCctv`, con el
       // mismo reloj y el mismo umbral que el resto de la pantalla.
       "features/triage/CctvPanel.tsx#EVACUACIÓN OBSERVADA",
