@@ -231,6 +231,7 @@ async def map_state(
             depth_km=r.depth_km,
             detected_at=r.detected_at,
             node_count=r.node_count,
+            reproduccion=bool(r.reproduccion),
         )
         for r in (await conn.execute(ep_stmt, ep_params)).all()
     ]

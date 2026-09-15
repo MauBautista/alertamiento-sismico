@@ -89,12 +89,23 @@ export function waveRadiiKm(elapsedS: number): WaveRadii {
 /**
  * ¿Este epicentro está LOCALIZADO de verdad?
  *
- * SASMEX es el canal autoritativo; el quórum localiza con ≥3 estaciones. Un punto
- * de catálogo (SSN/USGS) o una reubicación manual describen dónde ocurrió algo,
- * no un frente que esté cruzando la red ahora mismo: no arrancan la animación.
+ * Tres ramas, y la tercera es de `T-7.18`:
+ *
+ *  1. **SASMEX**: canal autoritativo.
+ *  2. **Quórum**: ≥3 estaciones lo localizaron entre ellas.
+ *  3. **Reproducción** (`T-7.14`): un sismo del catálogo desplazado a hoy. Es
+ *     `source === "external"`, que esta función RECHAZABA — y con razón: un punto
+ *     de catálogo describe dónde ocurrió algo en 2017, no un frente cruzando la
+ *     red ahora. La reproducción es la excepción exacta a esa regla, porque el
+ *     `t0` del evento SÍ es de ahora y hay estaciones publicando su arribo. Se
+ *     distingue por `reproduccion`, no por el `source`: ampliar la rama a todo
+ *     `external` devolvería justo el defecto que la regla evita.
+ *
+ * Una reubicación manual sigue fuera: describe dónde, no cuándo.
  */
 export function isLocalized(epicenter: MapEpicenter): boolean {
   if (epicenter.source === "sasmex") return true;
+  if (epicenter.reproduccion === true) return true;
   return (epicenter.node_count ?? 0) >= QUORUM_MIN_NODES;
 }
 
@@ -224,6 +235,53 @@ export const DASH_FRAMES: readonly (readonly number[])[] = [
 export function dashFrameIndex(elapsedMs: number): number {
   const ms = elapsedMs > 0 ? elapsedMs : 0;
   return Math.floor(ms / DASH_STEP_MS) % DASH_FRAMES.length;
+}
+
+// --- [T-7.18] El arribo POR ESTACIÓN ------------------------------------------
+//
+// La ráfaga no la ancla un campo del servidor: la deriva el MISMO frente que el
+// mapa ya está dibujando. Es deliberado. Si el instante viniera del snapshot y el
+// frente se calculara aquí, el anillo de una estación podría encenderse mientras
+// el frente se ve pasando por otro sitio — dos relojes contando el mismo suceso,
+// y ninguna forma de saber cuál miente. El arribo MEDIDO, que es el dato con el
+// que se contrasta, vive en la tabla de `T-7.17`, que es donde se compara.
+
+/** Espejo de `--tk-dur-arrival`. Lo ata `motionInvariants.test.ts`. */
+export const ARRIVAL_BURST_S = 2.0;
+
+/** Segundos desde el origen hasta que la onda S alcanza esa distancia. */
+export function arrivalSeconds(km: number): number {
+  return km / V_S_KM_S;
+}
+
+/**
+ * Intensidad 1 → 0 de la ráfaga de una estación; `0` cuando no le toca.
+ *
+ * Antes del arribo es cero —no se anuncia lo que no ha llegado— y después se
+ * apaga en `ARRIVAL_BURST_S`. Nunca se queda encendida: un anillo permanente
+ * diría «aquí está pasando algo» un minuto después de que pasara.
+ */
+export function arrivalGlow(elapsedS: number, arrivalS: number): number {
+  const d = elapsedS - arrivalS;
+  if (d < 0 || d >= ARRIVAL_BURST_S) return 0;
+  return 1 - d / ARRIVAL_BURST_S;
+}
+
+/** Estaciones a las que la onda S YA llegó, para el modo accesible. */
+export function arrivedSiteIds(
+  epicenter: MapEpicenter,
+  sites: MapSiteState[],
+  elapsedS: number,
+): string[] {
+  return sites
+    .filter(
+      (s) =>
+        elapsedS >=
+        arrivalSeconds(
+          haversineKm({ lon: epicenter.lon, lat: epicenter.lat }, { lon: s.lon, lat: s.lat }),
+        ),
+    )
+    .map((s) => s.site_id);
 }
 
 // --- Modo accesible: anillos quietos ------------------------------------------

@@ -46,8 +46,10 @@ import {
 import { esDeDemostracion, ROTULO_DEMO } from "../fleet/datosDeDemostracion";
 import { sitesInBounds, type ViewBounds } from "./stats";
 import {
+  ARRIVAL_BURST_S,
   DASH_FRAMES,
   animatableEpicenters,
+  arrivalSeconds,
   dashFrameIndex,
   epicenterLinks,
   kmToPixels,
@@ -55,6 +57,7 @@ import {
   waveRadiiKm,
   WAVE_MAX_AGE_S,
 } from "./wavefront";
+import { haversineKm } from "../fleet/geo";
 
 /** Lo que `GeoJSONSource.setData` acepta. El namespace global `GeoJSON` no está
  * en el `types` del tsconfig: se deriva del propio tipo de MapLibre. */
@@ -225,11 +228,21 @@ export function epicentersToFeatureCollection(epicenters: MapEpicenter[]): Featu
       const base = e.magnitude !== null ? `M ${e.magnitude.toFixed(1)}` : "EPICENTRO";
       // Corroboración (T-1.71): N estaciones que formaron el evento por quórum. Solo
       // `local_quorum` la trae (`meta.node_count`); sin ella se rotula solo el evento.
-      const label = e.node_count != null ? `${base} · ${e.node_count} est.` : base;
+      const conNodos = e.node_count != null ? `${base} · ${e.node_count} est.` : base;
+      // [T-7.18] Un epicentro de 2017 pintado sin decir que es una reproducción
+      // es la mentira más cara que puede contar esta pantalla. El rótulo lo dice
+      // SIEMPRE y en primer lugar: quien mire el ◇ no puede leer la magnitud sin
+      // leer que es una reproducción.
+      const label = e.reproduccion === true ? `REPRODUCCIÓN · ${conNodos}` : conNodos;
       return {
         type: "Feature",
         geometry: { type: "Point", coordinates: [e.lon, e.lat] },
-        properties: { event_id: e.event_id, node_count: e.node_count ?? null, label },
+        properties: {
+          event_id: e.event_id,
+          node_count: e.node_count ?? null,
+          reproduccion: e.reproduccion === true,
+          label,
+        },
       };
     }),
   };
@@ -263,6 +276,39 @@ export function catalogToFeatureCollection(
         selected: q.ref_id === selectedId,
       },
     })),
+  };
+}
+
+/**
+ * [T-7.18] EL ARRIBO POR ESTACIÓN: un punto sobre cada edificio, con el segundo
+ * en que la onda S le llega.
+ *
+ * El instante NO viene del servidor: sale del mismo frente que el mapa está
+ * dibujando. Si el anillo se encendiera con un campo del snapshot y el frente se
+ * calculara aquí, una estación podría iluminarse mientras el frente se ve pasando
+ * por otro sitio — dos relojes para el mismo suceso y ninguna forma de saber cuál
+ * miente. El arribo MEDIDO, que es con lo que se contrasta, está en la tabla de
+ * `T-7.17`, que es donde se compara.
+ */
+export function arrivalsFeatureCollection(
+  epicenters: MapEpicenter[],
+  sites: MapSiteState[],
+): FeatureCollection {
+  return {
+    type: "FeatureCollection",
+    features: epicenters.flatMap((e) =>
+      sites.map((s) => ({
+        type: "Feature" as const,
+        geometry: { type: "Point" as const, coordinates: [s.lon, s.lat] as [number, number] },
+        properties: {
+          event_id: e.event_id,
+          site_id: s.site_id,
+          arrival_s: arrivalSeconds(
+            haversineKm({ lon: e.lon, lat: e.lat }, { lon: s.lon, lat: s.lat }),
+          ),
+        },
+      })),
+    ),
   };
 }
 
@@ -480,6 +526,14 @@ export default function MapPanel({
         type: "geojson",
         data: staticRingsFeatureCollection([], DEFAULT_ZOOM),
       });
+      // [T-7.18] La ráfaga de arribo por estación. Fuente propia y no una
+      // propiedad de `sites`: el instante depende del EPICENTRO, y meterlo en el
+      // edificio haría que el mismo sitio tuviera un arribo distinto por cada
+      // evento en pantalla.
+      map.addSource("arrivals", {
+        type: "geojson",
+        data: arrivalsFeatureCollection([], []),
+      });
       map.addLayer({
         id: "wave-link",
         type: "line",
@@ -569,6 +623,20 @@ export default function MapPanel({
           "circle-color": "rgba(0,0,0,0)",
           "circle-stroke-color": FELT_COLOR.trip,
           "circle-stroke-width": 1.2,
+        },
+      });
+      // [T-7.18] El anillo del arribo va DEBAJO del edificio: anuncia que la onda
+      // acaba de llegar ahí, no tapa lo que el edificio midió.
+      map.addLayer({
+        id: "arrival-ring",
+        type: "circle",
+        source: "arrivals",
+        paint: {
+          "circle-radius": 0,
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-stroke-color": EPICENTER_COLOR,
+          "circle-stroke-width": 1.4,
+          "circle-stroke-opacity": 0,
         },
       });
       // Halo + núcleo de cada EDIFICIO, coloreados por lo que ESE inmueble midió.
@@ -828,6 +896,26 @@ export default function MapPanel({
                 const frame = DASH_FRAMES[dashFrameIndex(t - start)];
                 map.setPaintProperty("wave-link", "line-dasharray", [...frame]);
               }
+              // [T-7.18] La ráfaga de cada estación, en UNA expresión por frame:
+              // el motor la evalúa por rasgo, así que da igual que haya tres
+              // estaciones o trescientas. `d` es lo que lleva la onda desde que
+              // llegó a ESE edificio.
+              if (map.getLayer("arrival-ring") !== undefined) {
+                const d = ["-", elapsedS, ["get", "arrival_s"]];
+                const dentro = ["all", [">=", d, 0], ["<", d, ARRIVAL_BURST_S]];
+                map.setPaintProperty("arrival-ring", "circle-radius", [
+                  "case",
+                  dentro,
+                  ["+", 9, ["*", 18, ["/", d, ARRIVAL_BURST_S]]],
+                  0,
+                ]);
+                map.setPaintProperty("arrival-ring", "circle-stroke-opacity", [
+                  "case",
+                  dentro,
+                  ["-", 1, ["/", d, ARRIVAL_BURST_S]],
+                  0,
+                ]);
+              }
             }
           }
         }
@@ -911,10 +999,25 @@ export default function MapPanel({
     (map.getSource("wave-static") as maplibregl.GeoJSONSource | undefined)?.setData(
       staticRingsFeatureCollection(live, zoom) as unknown as SourceData,
     );
+    // [T-7.18] Los arribos del frente VIVO. Con `newest === null` la colección
+    // queda vacía y el anillo desaparece solo, sin esperar a un snapshot nuevo.
+    (map.getSource("arrivals") as maplibregl.GeoJSONSource | undefined)?.setData(
+      arrivalsFeatureCollection(newest === null ? [] : [newest], sites) as unknown as SourceData,
+    );
     if (reducedMotion && map.getLayer("wave-link") !== undefined) {
       // Dash CONGELADO en su primer fotograma: el interruptor apaga TODO
       // movimiento, incluido el de la línea.
       map.setPaintProperty("wave-link", "line-dasharray", [...DASH_FRAMES[0]]);
+    }
+    if (reducedMotion && map.getLayer("arrival-ring") !== undefined) {
+      // [T-7.18] El interruptor apaga el MOVIMIENTO, no la información: en vez
+      // de la ráfaga, un anillo QUIETO sobre cada estación a la que la onda ya
+      // llegó. Sin tick no hay decaimiento, así que el anillo no miente sobre
+      // «acaba de llegar»: dice «ya llegó», que es lo que se sabe.
+      const elapsedS = newest === null ? 0 : (Date.now() - Date.parse(newest.detected_at)) / 1000;
+      const yaLlego = [">=", elapsedS, ["get", "arrival_s"]];
+      map.setPaintProperty("arrival-ring", "circle-radius", ["case", yaLlego, 14, 0]);
+      map.setPaintProperty("arrival-ring", "circle-stroke-opacity", ["case", yaLlego, 0.55, 0]);
     }
   }, [sites, live, newest, reducedMotion, styleReady]);
 
@@ -1033,7 +1136,13 @@ export default function MapPanel({
           {layers.waves && waveActive && (
             <div className="soc-map__legend-note" data-testid="waves-model">
               ◍ FRENTES P/S · MODELO DE UNA CAPA · ESTIMACIÓN
-              {reducedMotion ? " · ANILLOS ESTÁTICOS (MOVIMIENTO REDUCIDO)" : ""}
+              {/* [T-7.18] Bajo reducción el anillo de arribo no destella: se
+                  queda puesto sobre las estaciones a las que la onda YA llegó, y
+                  la leyenda lo dice. El interruptor apaga el movimiento, no la
+                  información — y decir «ya llegó» es lo que se sabe sin tick. */}
+              {reducedMotion
+                ? " · ANILLOS ESTÁTICOS (MOVIMIENTO REDUCIDO) · ARRIBO YA ALCANZADO, SIN RÁFAGA"
+                : ""}
             </div>
           )}
         </div>

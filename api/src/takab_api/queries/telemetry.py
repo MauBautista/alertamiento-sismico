@@ -287,7 +287,10 @@ SELECT DISTINCT
        -- Corroboración: cuántas estaciones formaron el evento por quórum (T-1.71).
        -- Solo los eventos `local_quorum` llevan `meta.node_count`; los demás (sasmex/
        -- externo) devuelven NULL y la UI no inventa una cuenta.
-       (e.meta->>'node_count')::int AS node_count
+       (e.meta->>'node_count')::int AS node_count,
+       -- [T-7.18] El rótulo de reproducción viaja PEGADO al epicentro, no aparte:
+       -- quien pinte el punto no puede leerlo sin ver que lo es.
+       (e.meta->'reproduccion' IS NOT NULL) AS reproduccion
 FROM seismic_events e
 JOIN incidents i ON i.event_id = e.event_id
 WHERE i.state <> 'closed'

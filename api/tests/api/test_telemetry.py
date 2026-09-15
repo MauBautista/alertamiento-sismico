@@ -348,6 +348,58 @@ async def test_map_state_epicenter_reports_node_count(telemetry_client, seed) ->
             cur.execute("DELETE FROM seismic_events WHERE event_id = %s", (evt,))
 
 
+async def test_map_state_epicenter_declara_si_es_REPRODUCCION(telemetry_client, seed) -> None:
+    """[T-7.18] El rótulo de reproducción viaja PEGADO al epicentro.
+
+    El mapa lo necesita por dos motivos opuestos y los dos importan: para
+    **animar** el frente —un `external` no lo haría, y en una reproducción sí hay
+    un frente cruzando la red ahora mismo— y para **rotularlo**, porque un
+    epicentro de 2017 pintado sin decir que es una reproducción es la mentira más
+    cara que puede contar esta pantalla.
+
+    El control está en el mismo test: un evento `external` normal sale
+    `reproduccion: false`, o la rama de animación se abriría para todo el
+    catálogo.
+    """
+    import json
+
+    import psycopg
+
+    from _telemetry_fixtures import _dsn
+
+    rep, normal = "EVT-REP-MAP-1", "EVT-EXT-MAP-1"
+    with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+        for evt, meta in (
+            (rep, json.dumps({"reproduccion": {"catalog_key": "USGS-2017-09-19-PUE"}})),
+            (normal, json.dumps({})),
+        ):
+            cur.execute(
+                "INSERT INTO seismic_events (event_id, source, epicenter, detected_at, meta) "
+                "VALUES (%s, 'external', "
+                "ST_SetSRID(ST_MakePoint(-98.49, 18.55), 4326)::geography, now(), %s::jsonb)",
+                (evt, meta),
+            )
+            cur.execute(
+                "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, event_id, "
+                "opened_at, severity, state, trigger) VALUES "
+                "(gen_random_uuid(), gen_random_uuid(), %s, %s, %s, now(), 'critical', 'open', "
+                "'sasmex')",
+                (T_PRIV_A, S_A, evt),
+            )
+    try:
+        r = await telemetry_client.get(
+            "/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A)
+        )
+        assert r.status_code == 200, r.text
+        eps = {e["event_id"]: e for e in r.json()["epicenters"]}
+        assert eps[rep]["reproduccion"] is True
+        assert eps[normal]["reproduccion"] is False, "un `external` normal no es reproducción"
+    finally:
+        with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM incidents WHERE event_id = ANY(%s)", ([rep, normal],))
+            cur.execute("DELETE FROM seismic_events WHERE event_id = ANY(%s)", ([rep, normal],))
+
+
 async def test_mobile_only_role_forbidden(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features",
