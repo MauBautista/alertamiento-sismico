@@ -43,6 +43,50 @@
         "title": "ActiveDrillOut",
         "type": "object"
       },
+      "ArriboOut": {
+        "description": "Lo que le toca a una estación. Segundos **desde el origen** del sismo.",
+        "properties": {
+          "epi_km": {
+            "title": "Epi Km",
+            "type": "number"
+          },
+          "hypo_km": {
+            "title": "Hypo Km",
+            "type": "number"
+          },
+          "pga_g": {
+            "title": "Pga G",
+            "type": "number"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "site_id": {
+            "title": "Site Id",
+            "type": "string"
+          },
+          "t_p_s": {
+            "title": "T P S",
+            "type": "number"
+          },
+          "t_s_s": {
+            "title": "T S S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_code",
+          "epi_km",
+          "hypo_km",
+          "t_p_s",
+          "t_s_s",
+          "pga_g"
+        ],
+        "title": "ArriboOut",
+        "type": "object"
+      },
       "AuditPage": {
         "properties": {
           "items": {
@@ -1158,7 +1202,7 @@
         "description": "Clasificar. **Sin valor por defecto: se elige.**",
         "properties": {
           "classification": {
-            "pattern": "^(real|falso_positivo|prueba|indeterminado)$",
+            "pattern": "^(real|falso_positivo|prueba|indeterminado|reproduccion)$",
             "title": "Classification",
             "type": "string"
           },
@@ -8765,6 +8809,125 @@
         "title": "ReleaseOut",
         "type": "object"
       },
+      "ReplayIn": {
+        "description": "Armar. `catalog_key` es el sismo del catálogo que se va a reproducir.",
+        "properties": {
+          "catalog_key": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "note": {
+            "default": "",
+            "title": "Note",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_key"
+        ],
+        "title": "ReplayIn",
+        "type": "object"
+      },
+      "ReplayOut": {
+        "description": "El estado. `armed=False` no lleva el resto: no hay nada que contar.",
+        "properties": {
+          "armed": {
+            "title": "Armed",
+            "type": "boolean"
+          },
+          "armed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armed At"
+          },
+          "armed_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armed By"
+          },
+          "armed_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Armed Until"
+          },
+          "catalog_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Key"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "remaining_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining S"
+          },
+          "tenant_id": {
+            "title": "Tenant Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "armed",
+          "tenant_id"
+        ],
+        "title": "ReplayOut",
+        "type": "object"
+      },
       "ReportOut": {
         "description": "Evidencia ``report_pdf`` recién generada + presigned GET de descarga.",
         "properties": {
@@ -8788,6 +8951,108 @@
           "expires_in"
         ],
         "title": "ReportOut",
+        "type": "object"
+      },
+      "ReproduccionOut": {
+        "description": "El plan completo de un incidente vestido de reproducción.\n\n`t0_real` es la hora de origen del sismo histórico y `t0_demo` la del pulso\nque lo reprodujo. Los arribos se cuentan desde el origen: quien pinta la\nanimación suma `t0_demo`; quien compara con el sismo real suma `t0_real`.\nSin los dos, el consumidor tiene que adivinar cuál es el ancla.",
+        "properties": {
+          "arrivals": {
+            "items": {
+              "$ref": "#/components/schemas/ArriboOut"
+            },
+            "title": "Arrivals",
+            "type": "array"
+          },
+          "catalog_key": {
+            "title": "Catalog Key",
+            "type": "string"
+          },
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "event_id": {
+            "title": "Event Id",
+            "type": "string"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lat"
+          },
+          "lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lon"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "t0_demo": {
+            "format": "date-time",
+            "title": "T0 Demo",
+            "type": "string"
+          },
+          "t0_real": {
+            "format": "date-time",
+            "title": "T0 Real",
+            "type": "string"
+          },
+          "v_p_km_s": {
+            "title": "V P Km S",
+            "type": "number"
+          },
+          "v_s_km_s": {
+            "title": "V S Km S",
+            "type": "number"
+          }
+        },
+        "required": [
+          "incident_id",
+          "event_id",
+          "catalog_key",
+          "magnitude",
+          "lat",
+          "lon",
+          "depth_km",
+          "t0_real",
+          "t0_demo",
+          "v_p_km_s",
+          "v_s_km_s",
+          "arrivals"
+        ],
+        "title": "ReproduccionOut",
         "type": "object"
       },
       "RetireCodeRotate": {
@@ -12042,6 +12307,79 @@
         "summary": "Encender Demo Mode"
       }
     },
+    "/demo-mode/replay": {
+      "delete": {
+        "description": "Desarma. Idempotente: desarmar lo ya desarmado devuelve 200 y el estado.",
+        "operationId": "desarmar_replay_demo_mode_replay_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Desarmar Replay"
+      },
+      "get": {
+        "description": "Qué sismo está armado en el cliente de quien pregunta, si alguno.\n\nSin restricción de rol, como el modo demostración: quien vaya a mirar la\nconsola tiene derecho a saber que lo que ve es una reproducción — más que\nnadie, de hecho.",
+        "operationId": "get_replay_demo_mode_replay_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Replay"
+      },
+      "post": {
+        "description": "Arma la ventana. Re-armar la PISA: dos ventanas serían dos verdades.",
+        "operationId": "armar_replay_demo_mode_replay_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplayIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplayOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Armar Replay"
+      }
+    },
     "/drill-templates": {
       "get": {
         "description": "Las plantillas vivas del tenant, **con su estado de hoy**.\n\nEl conteo de sitios no usables viaja en la LISTA y no solo en el detalle: el\ncriterio de la ficha es que se sepa **al usarla**, y quien la elige está\nmirando la lista.",
@@ -14524,6 +14862,47 @@
           }
         },
         "summary": "Generate Report"
+      }
+    },
+    "/incidents/{incident_id}/reproduccion": {
+      "get": {
+        "description": "Qué sismo se reproduce y cuándo le llega la onda a cada estación.",
+        "operationId": "incident_reproduccion_incidents__incident_id__reproduccion_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReproduccionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Reproduccion"
       }
     },
     "/incidents/{incident_id}/roster": {

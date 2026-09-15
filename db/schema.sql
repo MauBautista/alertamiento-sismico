@@ -368,8 +368,11 @@ CREATE TABLE incident_classifications (
   classification_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id      uuid NOT NULL REFERENCES tenants,
   incident_id    uuid NOT NULL REFERENCES incidents,
+  -- [T-7.14 · D-33] `reproduccion` es la quinta: una corrida de demostración no es
+  -- una prueba del gabinete ni un falso positivo, y meterla en cualquiera de las
+  -- dos ensucia la única métrica que decide si un cliente renueva.
   classification text NOT NULL CHECK (classification IN
-                 ('real','falso_positivo','prueba','indeterminado')),
+                 ('real','falso_positivo','prueba','indeterminado','reproduccion')),
   note           text NOT NULL DEFAULT '',
   classified_by  uuid NOT NULL,
   classified_at  timestamptz NOT NULL DEFAULT now(),
@@ -2019,6 +2022,9 @@ CREATE TABLE reference_earthquakes (
 );
 CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
 GRANT SELECT ON reference_earthquakes TO takab_app;
+-- [T-7.14] El worker de reproducción lee de aquí la magnitud y el epicentro
+-- que viste el incidente.
+GRANT SELECT ON reference_earthquakes TO takab_ingest;
 
 ALTER TABLE reference_earthquakes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reference_earthquakes FORCE  ROW LEVEL SECURITY;
@@ -2104,6 +2110,48 @@ CREATE POLICY demo_mode_tenant ON demo_mode
   WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
 
 GRANT SELECT, INSERT, DELETE ON demo_mode TO takab_app;
+
+-- [T-7.14] REPRODUCCIÓN HISTÓRICA. Una fila dice: «en este cliente, hasta esta
+-- hora, lo que abra un pulso del WR-1 es una reproducción del sismo
+-- `catalog_key`». No hay forma técnica de distinguir el pulso de una
+-- demostración del de una alerta real —es el mismo contacto seco, que es
+-- justamente lo que hace confiable al camino SASMEX—, así que lo que el sistema
+-- exige es que alguien lo DECLARE: con nombre, con vencimiento y en un cliente
+-- con sitios de demostración.
+--
+-- ⚠️ Riesgo residual, escrito donde se lee: dentro de la ventana, un sismo REAL
+-- en ese cliente se rotularía como reproducción. Es el precio de anclar la
+-- demostración al gabinete real; por eso la ventana vence sola, la abre solo un
+-- superadmin, y el rótulo viaja en `meta.reproduccion` del evento, que no se
+-- borra y permite saber después qué incidentes se vistieron de demostración.
+CREATE TABLE demo_replay (
+  -- PK = el cliente: armar dos veces es la misma ventana, no dos verdades sobre
+  -- qué sismo se está reproduciendo.
+  tenant_id   uuid PRIMARY KEY REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+  -- FK al catálogo: no se arma un sismo que no tenga fila citable con su
+  -- procedencia (T-7.12). La cifra que se enseña no se inventa aquí.
+  catalog_key text NOT NULL REFERENCES reference_earthquakes(catalog_key),
+  armed_by    uuid NOT NULL,
+  armed_at    timestamptz NOT NULL DEFAULT now(),
+  armed_until timestamptz NOT NULL,
+  note        text NOT NULL DEFAULT '',
+  -- El techo vive en la BASE, como en `demo_mode`: ocho horas. Un tope de código
+  -- se salta con un INSERT a mano.
+  CONSTRAINT demo_replay_ventana_acotada
+    CHECK (armed_until > armed_at AND armed_until <= armed_at + interval '8 hours')
+);
+
+ALTER TABLE demo_replay ENABLE ROW LEVEL SECURITY;
+ALTER TABLE demo_replay FORCE  ROW LEVEL SECURITY;
+CREATE POLICY demo_replay_tenant ON demo_replay
+  USING      (tenant_id = current_setting('app.tenant_id', true)::uuid)
+  WITH CHECK (tenant_id = current_setting('app.tenant_id', true)::uuid);
+
+GRANT SELECT, INSERT, DELETE ON demo_replay TO takab_app;
+-- El worker LEE la ventana para vestir el incidente. No arma ni desarma: armar es
+-- acto de persona, y desarmar también (o lo hace el vencimiento).
+GRANT SELECT ON demo_replay TO takab_ingest;
+
 -- El worker de notificación NECESITA borrar: «lo real gana» lo ejecuta él, antes
 -- de planificar el primer aviso de un incidente. Sin el DELETE, un sismo no
 -- podría apagar el modo y la promesa de D-27 sería falsa — que es exactamente el

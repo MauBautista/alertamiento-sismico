@@ -14086,30 +14086,75 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   llamarse **igual** que su `revision`) · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** sí — la clasificación deja de ser inerte.
 
-### [ ] T-7.14 · **La reproducción histórica se arma en la nube y viaja como atributo** — `SOFTWARE`
+### [x] T-7.14 · **La reproducción histórica se arma en la nube y viaja como atributo** — `SOFTWARE` · **CERRADA 2026-09-15**
 - **Componente:** api · db · **Depende de:** T-7.12 · **Prioridad:** F3 · crítica
 - **Objetivo:** que un pulso real del WR-1 en un tenant con reproducción armada produzca el
   epicentro y la magnitud de un sismo real del catálogo, desplazados a hoy y rotulados como
   reproducción, sin crear un solo incidente ni voto de cuórum.
 - **Criterios de aceptación:**
-  - [ ] Migración nueva (el número se toma al escribirla: `0063` ya es de `T-7.36`): tabla
-    `demo_replay` (tenant, `catalog_key`, `armed_until`,
-    `armed_by`; vencimiento obligatorio como `demo_mode`), `reproduccion` en el CHECK de
-    `incident_classifications`, y una función SECURITY DEFINER que enlaza un evento a un
-    incidente (como `relocate_incident_epicenter`).
-  - [ ] `POST`/`DELETE /demo-mode/replay` solo para `takab_superadmin` y solo en tenants con
-    sitios DEMO; auditado.
-  - [ ] Al abrir un incidente `sasmex` con reproducción armada, el worker crea `EVT-REP-…` en
-    `seismic_events` (`source='external'`, magnitud, epicentro y profundidad del catálogo,
-    `meta.reproduccion={catalog_key,t0_real,t0_demo}`, `meta.node_count`) y lo enlaza; **jamás
-    crea incidentes ni `quorum_votes`** (test que lo fija).
-  - [ ] Plan de arribos por estación como función pura (`replay/plan.py`: v_p y v_s del
-    `rule_set`, distancia hipocentral de `geo.py`), con espejo en
-    `edge/simulators/replay.py` y test de igualdad entre los dos (como ATTEN-LAW);
-    `GET /incidents/{id}/reproduccion` lo expone. Valores de referencia para el 19-S-2017:
-    onda S en Puebla +19.6 s, Tlaxcala +25.3 s, CDMX +32.1 s, Toluca +38.7 s.
-- **Tests de censo que toca:** `test_forensics`, `test_catalog_line` · **Token nuevo:** no ·
-  **Cambia algo que un test defiende hoy:** no.
+  - [x] Migración **`0065`**: tabla `demo_replay` (tenant como PK, `catalog_key` con FK al
+    catálogo, `armed_until` obligatorio y acotado a 8 h **en el CHECK**, como `demo_mode`) y
+    `reproduccion` en el CHECK de `incident_classifications`. ⚠️ **La bajada se NIEGA si ya hay
+    filas `reproduccion`** en vez de borrarlas: la tabla es append-only por privilegio y por
+    trigger, y una migración que se salte eso deja escrito que se puede.
+  - [x] ⚠️ **La función SECURITY DEFINER NO se implementó, y es deliberado.** Existía para dar
+    una escritura que su único ejecutor ya tiene: el que enlaza es el worker, que conecta como
+    `takab_ingest` con `UPDATE` sobre `incidents` y `INSERT` sobre `seismic_events`. Añadirla
+    habría creado una segunda vía de escritura a `seismic_events` —dato de RED compartido entre
+    inmuebles— **sin un solo llamador**. `relocate_incident_epicenter` sí la necesita porque
+    quien reubica es la CONSOLA (`takab_app`), que no puede escribir esa tabla.
+  - [x] `POST`/`DELETE`/`GET /demo-mode/replay`. Armar y desarmar, solo `takab_superadmin` y
+    solo en tenants con sitios DEMO (409 si no los hay), auditado con `replay_armed` /
+    `replay_disarmed`. **Leer no pide rol**: quien va a mirar la consola tiene derecho a saber
+    que lo que ve es una reproducción. Re-armar es borrado + alta, no `ON CONFLICT DO UPDATE`,
+    por el mismo par de razones que `demo_mode` (privilegio y semántica).
+  - [x] Al abrir un incidente `sasmex` con reproducción armada, el worker crea `EVT-REP-…`
+    (`source='external'`, magnitud/epicentro/profundidad del catálogo,
+    `meta.reproduccion={catalog_key,t0_real,t0_demo}`, `meta.node_count`) y lo enlaza. **Jamás
+    crea incidentes ni `quorum_votes`**, y hay test que lo fija. El `node_count` va **pegado**
+    al rótulo en el mismo `meta`: nadie puede leer la corroboración sin ver que es una
+    reproducción. El id es determinista y **por minuto**: dos gabinetes del mismo pulso
+    comparten evento, que es la verdad — un sismo, un evento.
+  - [x] Plan de arribos como función pura (`replay/plan.py`), con espejo en
+    `edge/simulators/replay.py` y prueba de **igualdad de salida** entre los dos sobre una
+    rejilla de 4 sismos × 5 estaciones × 3 velocidades (`edge/tests/test_replay_plan.py`, que
+    importa el módulo de la nube por ruta y **falla en vez de saltarse** si no lo encuentra).
+    `GET /incidents/{id}/reproduccion` lo expone, y da **404 si el incidente no es una
+    reproducción**: calcular un plan sobre un epicentro estimado y devolverlo sería presentar
+    una simulación como si fuera la medición.
+  - [x] **Los cuatro arribos de referencia salen**, con 0.08 s de error máximo: Puebla +19.6 s,
+    Tlaxcala +25.3 s, CDMX +32.1 s, Toluca +38.7 s. Reproducirlos fijó de dónde salen: solución
+    **USGS** (18.5499 N, −98.4887 W, 48 km), distancia **hipocentral** y `v_s = 4.0 km/s`.
+  - [x] ⚠️ **`v_s` NO es `correlation_v_s_km_s` (3.6) y no se deben unificar.** Allí la
+    velocidad acota cuán tarde puede llegar un arribo real y la elección conservadora es la
+    LENTA; aquí la pregunta es cuándo se ESPERA la onda y hace falta la mejor estimación. El
+    19-S es intraplaca a 48 km: la energía viaja por la placa subducida y la velocidad aparente
+    supera la de la corteza. `v_p` no se configura: sale de `v_s` por la razón de Poisson (√3),
+    para que no puedan moverse por separado.
+  - [x] ⚠️ **`GRANT SELECT ON reference_earthquakes TO takab_ingest`**, en la misma migración.
+    El catálogo solo se lo había concedido a `takab_app`: sin esto el worker muere con
+    `permission denied` en cada pasada — verde en local, imposible en la nube. Segunda vez en
+    dos fichas.
+  - [x] ⚠️ **Riesgo residual declarado**: dentro de la ventana armada, un sismo REAL en ese
+    cliente se rotularía como reproducción. Es el precio de anclar la demostración al gabinete
+    real —no hay forma técnica de distinguir el pulso de una demostración del de una alerta, y
+    eso es justo lo que hace confiable al camino SASMEX—. Por eso la ventana **vence sola**, la
+    abre solo un superadmin, exige sitios DEMO y el rótulo viaja en `meta.reproduccion`, que no
+    se borra: después siempre se puede saber qué incidentes se vistieron de demostración.
+  - [x] `reproduccion` entra también en la consola (`useClassification.ts`) **con un censo
+    nuevo** que compara las dos listas: eran dos catálogos escritos a mano en dos lenguajes y
+    podían divergir en silencio — una casilla de menos deja al operador sin poder clasificar lo
+    que la base acepta; una de más, un 500 contra el CHECK.
+  - [x] **Ejercida fuera de los tests** con el worker real (`python -m takab_api.incident`)
+    contra la base de desarrollo, con la ventana armada y las cuatro estaciones de la
+    demostración: el pulso del gabinete real quedó vestido con `EVT-REP-7ed18eacf7d0`
+    (`external`, M7.1, 48 km, 18.5499 N / −98.4887 W, `node_count` 4) y el plan salió
+    **19.7 · 25.3 · 32.1 · 38.7 s**, que es la cifra de esta ficha medida de punta a punta.
+    Cero incidentes nuevos y cero `quorum_votes`.
+- **Tests de censo que toca:** `test_classification_cierra` (el catálogo pasa a **cinco** y
+  `TERMINALES` a tres), el espejo del patrón de sitio DEMO contra `datosDeDemostracion.ts`,
+  `test_engine` (declara la pasada nueva) · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** sí — el catálogo de clasificación deja de tener cuatro valores.
 
 ### [ ] T-7.15 · **Las estaciones simuladas sienten la onda: `fleet.py --replay --armar`** — `SOFTWARE`
 - **Componente:** edge · **Depende de:** T-7.11, T-7.14 · **Prioridad:** F3 · crítica
