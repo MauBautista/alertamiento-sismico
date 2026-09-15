@@ -1,7 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
+import { alertKind } from "../scene/scene";
 import AlertBanner from "./AlertBanner";
+import { alertaViva } from "./alertaViva";
 import type { LiveIncident } from "./useLiveIncidents";
 
 const INCIDENT: LiveIncident = {
@@ -104,5 +106,45 @@ describe("AlertBanner · el titular se atribuye a quien lo dijo", () => {
     expect(caja).toHaveTextContent("TELETRANSPORTE");
     expect(caja).toHaveAttribute("data-seismic", "false");
     expect(caja).not.toHaveTextContent("PROTÉJASE");
+  });
+});
+
+// [T-7.19 · D-30] LA ALERTA RESPIRA, Y DEJA DE HACERLO POR ESTADO
+describe("AlertBanner · la carcasa viva", () => {
+  const conEstado = (state: string): LiveIncident => ({ ...INCIDENT, state });
+
+  it("declara VIVA la alerta que el servidor todavía sostiene", () => {
+    for (const state of ["open", "acked"]) {
+      const { unmount } = render(<AlertBanner incident={conEstado(state)} siteName={null} />);
+      expect(screen.getByTestId("alert-banner").dataset.alive, state).toBe("true");
+      unmount();
+    }
+  });
+
+  it("en REVISIÓN y CERRADO deja de estarlo: el estado la apaga, no un reloj", () => {
+    for (const state of ["in_review", "closed"]) {
+      const { unmount } = render(<AlertBanner incident={conEstado(state)} siteName={null} />);
+      expect(screen.getByTestId("alert-banner").dataset.alive, state).toBe("false");
+      unmount();
+    }
+  });
+
+  it("el TEXTO no depende de que esté viva: se lee igual con la animación apagada", () => {
+    // Condición 2 de `D-30`: siempre hay un portador que no es movimiento.
+    render(<AlertBanner incident={conEstado("in_review")} siteName="Edificio Central" />);
+    const banner = screen.getByTestId("alert-banner");
+    expect(banner.textContent).toContain("ALERTA SÍSMICA");
+    expect(banner.dataset.authorizes).toBe("true");
+  });
+
+  it("`alertaViva` y `alertKind` miran el MISMO estado y no pueden divergir", () => {
+    // Las dos deciden cosas distintas —una si la carcasa respira, la otra qué
+    // escena manda— pero sobre el mismo hecho. Si una dijera `review` y la otra
+    // «viva», el muro tendría una tarjeta respirando bajo una franja que dice
+    // SISMO CONCLUIDO.
+    for (const state of ["open", "acked", "in_review", "closed"]) {
+      const inc = conEstado(state);
+      expect(alertaViva(inc), state).toBe(alertKind(inc) !== "review" && state !== "closed");
+    }
   });
 });

@@ -1459,6 +1459,47 @@ describe("[T-6.01] la franja de escena", () => {
   });
 });
 
+describe("[T-7.19 · D-30] la alerta respira sin mover una letra", () => {
+  it("lo que anima es un pseudo-elemento, NUNCA el texto ni su caja", () => {
+    // Condición 1 de `D-30`: la instrucción y el sitio son legibles desde el
+    // primer frame. Si la animación viviera en `.soc-alert` o en `__strip`, el
+    // titular más importante que pinta la consola se movería mientras se lee.
+    const anima = [...ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(
+      ([, sel, body]) => /\.soc-alert\b/.test(sel) && /\banimation\s*:/.test(body),
+    );
+    expect(anima.length, "la alerta dejó de animar: la negación pasaría vacía").toBeGreaterThan(0);
+    for (const [, sel] of anima) {
+      expect(sel, `${sel.trim()} anima la caja del texto`).toMatch(/::after/);
+    }
+  });
+
+  it("solo respira la que AUTORIZA y mientras el servidor la sostiene", () => {
+    // Condición 3: se detiene por ESTADO. Y U-28: un aviso que no manda sobre
+    // nada no puede llamar la atención como lo que sí manda.
+    const anima = [...ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(
+      ([, sel, body]) => /\.soc-alert\b/.test(sel) && /\banimation\s*:\s*soc-alert/.test(body),
+    );
+    expect(anima.length).toBeGreaterThan(0);
+    for (const [, sel] of anima) {
+      expect(sel).toMatch(/\[data-alive="true"\]/);
+      expect(sel).toMatch(/\[data-authorizes="true"\]/);
+    }
+  });
+
+  it("y la LÍNEA de la franja sigue inmóvil: el eco de las otras cinco rutas no se mueve", () => {
+    // Lo cubre el invariante de `.soc-scene` de arriba; se nombra aquí para que
+    // quede escrito que la revocación del §5.3 alcanza a la TARJETA del muro y
+    // no a la línea del shell, que es otro componente y otra decisión.
+    const reglas = [...ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, sel]) =>
+      /\.soc-scene__alert/.test(sel),
+    );
+    expect(reglas.length).toBeGreaterThan(0);
+    for (const [, sel, body] of reglas) {
+      expect(body, `${sel.trim()} anima`).not.toMatch(/\b(animation|transition)\b/);
+    }
+  });
+});
+
 describe("un botón apagado tiene que PARECER apagado", () => {
   // [T-2.59] `CONFIRMAR ACUSE` se pintaba deshabilitado con `opacity: 1`,
   // `cursor: pointer` y el CIAN PLENO de llamada a la acción: idéntico a cuando

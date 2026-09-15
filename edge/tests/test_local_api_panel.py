@@ -987,6 +987,44 @@ def test_tier_instrumental_es_aviso_ambar_no_rojo(tmp_path):
     assert "EVACUATE_OR_HOLD" in _txt(out, "aviso-meta")
 
 
+def test_el_parpadeo_del_banner_CESA_al_cambiar_de_escena(tmp_path):
+    """[T-7.19 · D-30] El parpadeo se detiene por ESTADO, no por cronómetro.
+
+    `#banner-alert` anima `tk-blink` en bucle infinito: mientras el elemento esté
+    a la vista, parpadea para siempre. Lo que lo detiene es que la escena deje de
+    ser una alerta —y entonces el banner se esconde con `display:none`, que para
+    la animación de raíz—.
+
+    Se comprueba sobre la MISMA corrida: primero con la alerta viva y luego sin
+    ella, con el panel real y su JS. Dos corridas distintas no demostrarían que
+    cesa, solo que hay dos estados.
+    """
+    st = _base()
+    st["sasmex_active"] = True
+    vivo = _render(tmp_path, status=st)
+    assert not _hidden(vivo, "banner-alert"), "el control: sin esto, lo de abajo pasa vacío"
+
+    st["sasmex_active"] = False
+    apagado = _render(tmp_path, status=st)
+    assert _hidden(apagado, "banner-alert"), "la alerta se fue y el banner sigue parpadeando"
+
+
+def test_el_parpadeo_vive_en_el_BANNER_y_no_en_el_texto(tmp_path):
+    """[T-7.19 · D-30] Condición 1: la instrucción es legible desde el primer
+    frame. El `tk-blink` está en `#banner-alert`, la carcasa; si estuviera en
+    `.big` —que es donde va «ALERTA SÍSMICA · PROTÉJASE»— la letra parpadearía
+    justo cuando hay que leerla."""
+    hoja = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
+    conBlink = [
+        sel
+        for sel, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", hoja)
+        if "animation:tk-blink" in cuerpo.replace(" ", "")
+    ]
+    assert conBlink, "el panel dejó de parpadear: la negación pasaría vacía"
+    for sel in conBlink:
+        assert sel.strip() == "#banner-alert", f"el parpadeo se mudó al texto: {sel.strip()}"
+
+
 def test_enclave_sin_alerta_viva_se_declara(tmp_path):
     st = _base()
     st["alert_latched"] = True
