@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **353** · `[~]` **10** · `[ ]` **54**
+**Conteo de tareas:** total **417** · `[x]` **354** · `[~]` **10** · `[ ]` **53**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14125,21 +14125,45 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_fleet_sim`, `test_cloud_streaming_crudo` · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.16 · **La escena ANALIZANDO se deriva del estado** — `SOFTWARE`
+### [x] T-7.16 · **La escena ANALIZANDO se deriva del estado** — `SOFTWARE` · **CERRADA 2026-09-15**
 - **Componente:** web · **Depende de:** T-7.13 · **Prioridad:** F3 · alta
-- **Objetivo:** que la consola diga «SISMO CONCLUIDO · ANALIZANDO · DICTAMEN PRELIMINAR EN
-  00:47» sin tocar la tabla de escenas que un censo clava.
+- **Objetivo:** que la consola diga «SISMO CONCLUIDO · ANALIZANDO» sin tocar la tabla de
+  escenas que un censo clava.
 - **Criterios de aceptación:**
-  - [ ] `alertKind` devuelve `alert | notice | review` según `incident.state === "in_review"`;
-    `sceneAlert` sigue eligiendo el crítico más nuevo (un WR-1 nuevo gana a una revisión).
-    `SCENE_PRECEDENCE` no cambia.
-  - [ ] Banner de revisión en `features/scene/` con contador de **texto** hasta el preliminar,
-    luego «DICTAMEN PRELIMINAR EMITIDO · EPICENTRO …» con enlace a triage; pasada la retención
-    sin clasificar, texto fechado en pasado. Sin animación.
-  - [ ] `sceneCensus.test.ts` (lectores y pintores) y `statePrecedenceCensus` actualizados en
-    el mismo commit con la razón escrita.
-- **Tests de censo que toca:** `sceneCensus`, `statePrecedenceCensus` · **Token nuevo:** no ·
-  **Cambia algo que un test defiende hoy:** sí — la firma de `alertKind`.
+  - [x] `alertKind` devuelve `alert | notice | review` según `incident.state === "in_review"`.
+    **La revisión gana a la autoridad de la fuente, y no al revés**: que lo abriera el WR-1 no
+    devuelve a la alerta un sismo que el servidor ya dio por concluido (regla de oro 7).
+    `sceneAlert` sigue eligiendo por la cola, así que un WR-1 nuevo gana a una revisión.
+  - [x] `SCENE_PRECEDENCE` **no cambia**: lo que cambia es por dónde se entra. `sceneSlot()`
+    mete la revisión por la casilla `notice`, que es la que «se declara con su titular honesto,
+    pero no degrada nada» — y es lo correcto: meterla en `alert` dejaría el banner del
+    simulacro reducido a un badge **después** de que el sismo acabara, que es justo el ruido
+    que `DEGRADES_UNDER_ALERT` existe para quitar EN el peor momento y no después.
+  - [x] `ReviewLine` en `features/scene/`, quieta y en cian —el color de lo informativo en esta
+    consola, ni rojo ni ámbar—, con el sitio, el epicentro **si el snapshot del mapa ya lo
+    tiene** (cero peticiones nuevas: la franja ya sondea ese mapa) y el enlace a triage por el
+    MISMO `?incident=` que usa la consola.
+  - [x] ⚠️ **El contador cuenta HACIA ARRIBA, y la ficha pedía una cuenta atrás.** «DICTAMEN
+    PRELIMINAR EN 00:47» es **imposible por construcción**: el incidente entra en revisión
+    cuando han pasado `max(dictamen_settle_s, alert_hold_min_s)` desde la apertura, y el
+    dictamen preliminar se emite al cumplirse `dictamen_settle_s` — o sea, antes. Pintar una
+    cuenta atrás hacia un plazo ya vencido sería inventar una espera que no existe. Se pinta
+    `SISMO HACE mm:ss`, que es un hecho que el cliente deriva de dato del servidor.
+  - [x] Pasadas 6 h sin clasificar, la línea habla **en pasado** (`SISMO CONCLUIDO · SIN
+    CLASIFICAR`) y se apaga a gris. Cambia las PALABRAS, nunca el estado: cerrar es del
+    servidor (`incident_review_ttl_s`). Con el TTL en su valor normal este caso ni se alcanza
+    —el registro ya estaría cerrado—; se alcanza justo cuando alguien puso el TTL a cero para
+    exigir cierre humano, que es cuando más importa no mentir.
+  - [x] Sin animación: la anima `T-7.19`, que es la alerta. Esto está quieto por definición.
+  - [x] ⚠️ **`sceneCensus` y `statePrecedenceCensus` NO necesitaron cambios**, y comprobarlo era
+    parte del trabajo: `ReviewLine` vive DENTRO de `features/scene/` y solo la importa
+    `SceneStrip`, así que no cruza la frontera que el censo vigila; y no lee ninguna fuente de
+    escena —recibe todo por props—, así que no entra en el cierre de lectores. `sceneSlot`
+    queda protegida de oficio: el censo compara los imports que salen de la carpeta **por
+    igualdad**, y sacarla fuera saldría rojo sin que nadie tenga que acordarse.
+- **Tests de censo que toca:** `sceneCensus`, `statePrecedenceCensus` (ninguno cambia; ver
+  arriba) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí — la firma de
+  `alertKind`.
 
 ### [ ] T-7.17 · **Cómo lo detectó cada estación** — `SOFTWARE`
 - **Componente:** api · web · **Depende de:** T-7.14 · **Prioridad:** F3 · alta

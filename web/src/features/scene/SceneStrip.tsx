@@ -26,10 +26,11 @@ import { useLiveIncidents } from "../console/useLiveIncidents";
 import { useMaintenanceWindows } from "../console/useMaintenanceWindows";
 import { useMapState } from "../console/useMapState";
 import AlertLine from "./AlertLine";
+import ReviewLine from "./ReviewLine";
 import DemoModeBanner from "./DemoModeBanner";
 import DrillBanner from "./DrillBanner";
 import MaintenanceBanner from "./MaintenanceBanner";
-import { WALL_ROUTE, alertKind, resolveScene, sceneAlert } from "./scene";
+import { WALL_ROUTE, alertKind, resolveScene, sceneAlert, sceneSlot } from "./scene";
 
 /** Sin snapshot fresco de incidentes tras esto, la línea de alerta es DATOS RETENIDOS.
  *  Mismo umbral que el wall (`CONSOLE_STALE_MS`): tres sondeos perdidos. */
@@ -52,8 +53,9 @@ export default function SceneStrip() {
   const alert = sceneAlert(incidents.incidents);
   const kind = alertKind(alert);
   const scene = resolveScene({
-    alert: kind === "alert",
-    notice: kind === "notice",
+    // [T-7.16] La casilla la decide `sceneSlot`, no este componente: una
+    // revisión entra por `notice` y la razón vive en la tabla, con ella.
+    ...sceneSlot(kind),
     drill: drill.drill !== null,
     maintenance: maintenance.items.length > 0,
     demo: demo.demo?.active === true,
@@ -62,6 +64,13 @@ export default function SceneStrip() {
     alert !== null ? (map.sites.find((s) => s.site_id === alert.site_id) ?? null) : null;
   const siteName = alertSite?.name ?? null;
   const siteCode = alertSite?.code ?? null;
+  // El epicentro del evento del incidente, si la correlación (o la reproducción,
+  // T-7.14) ya lo localizó. Sale del MISMO snapshot del mapa que ya se sondea:
+  // la franja no pide nada nuevo para poder nombrarlo.
+  const epicentro =
+    alert?.event_id != null
+      ? (map.epicenters.find((e) => e.event_id === alert.event_id) ?? null)
+      : null;
   const alertStale =
     !incidents.loading &&
     incidents.error === null &&
@@ -89,7 +98,16 @@ export default function SceneStrip() {
           silentEmpty
           staleSince={alertStale}
         >
-          {alert !== null && kind !== null && (
+          {alert !== null && kind === "review" && (
+            <ReviewLine
+              incident={alert}
+              siteName={siteName}
+              siteCode={siteCode}
+              epicentro={epicentro}
+              now={now}
+            />
+          )}
+          {alert !== null && (kind === "alert" || kind === "notice") && (
             <AlertLine incident={alert} kind={kind} siteName={siteName} siteCode={siteCode} />
           )}
         </StateFrame>
