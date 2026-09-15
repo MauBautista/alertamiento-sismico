@@ -1,0 +1,11 @@
+{
+  "_about": "[T-7.14/T-7.15] El sismo que se reproduce en la demostración: el 19-S de 2017 (M7.1, Puebla-Morelos, intraplaca). Es el que más cerca pasó de las cuatro estaciones.",
+  "_procedencia": "Solución USGS us2000ar20, la misma fila `USGS-2017-09-19-PUE` de db/seeds/reference_earthquakes.sql. Se usa la del USGS y no la del SSN porque es la que reproduce los cuatro arribos de referencia de la ficha T-7.14 (Puebla +19.6 s, Tlaxcala +25.3 s, CDMX +32.1 s, Toluca +38.7 s) con 0.08 s de error máximo.",
+  "_velocidad": "v_s = 4.0 km/s y NO los 3.6 de `correlation_v_s_km_s`. Allí la velocidad acota cuán tarde puede llegar un arribo real y lo conservador es lo lento; aquí la pregunta es cuándo se ESPERA la onda y hace falta la mejor estimación. Es un evento intraplaca a 48 km: la energía viaja por la placa subducida y la velocidad aparente supera la de la corteza. v_p no se declara: sale de ésta por la razón de Poisson.",
+  "catalog_key": "USGS-2017-09-19-PUE",
+  "magnitude": 7.1,
+  "lat": 18.5499,
+  "lon": -98.4887,
+  "depth_km": 48.0,
+  "v_s_km_s": 4.0
+}

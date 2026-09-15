@@ -39,6 +39,9 @@ from takab_edge.contracts import (
     new_event_id,
 )
 
+from simulators.replay import Arribo, Sismo, plan_de_arribos, velocidades
+from simulators.replay import Estacion as EstacionDelPlan
+
 # Convención de flota dev (FIJA — ver seeds db/seeds/prod_fleet.sql + sim_fleet.sql)
 TENANT_ID = "tenant-dev"
 MAX_SITES = 20
@@ -125,6 +128,10 @@ class Estacion:
     station: str
     gateway: str
     site: str
+    #: [T-7.15] Dónde está, para saber cuándo le llega la onda. Solo lo necesita
+    #: `--replay`; la flota fija de carga no lo lleva y no tiene por qué.
+    lat: float | None = None
+    lon: float | None = None
 
 
 def flota_fija(sites: int) -> list[Estacion]:
@@ -140,11 +147,15 @@ def flota_de_fichero(ruta: Path) -> tuple[str, list[Estacion]]:
 
         {"tenant": "tenant-dev",
          "stations": [{"station": "SIM101", "gateway": "gw-sim-0101",
-                       "site": "site-sim-101"}, ...]}
+                       "site": "site-sim-101", "lat": 19.31, "lon": -98.24}, ...]}
 
     Se validan las tres claves de cada fila: una estación sin gateway publicaría
     con un `thing` vacío y la nube la rechazaría por principal desconocido, que es
     un error mucho más caro de leer que éste.
+
+    [T-7.15] `lat`/`lon` son OPCIONALES aquí y obligatorias en `--replay`: sin
+    coordenadas no hay cuándo llega la onda, y el error se da al armar la
+    reproducción —con el nombre de la estación— en vez de al leer el fichero.
     """
     datos = json.loads(ruta.read_text(encoding="utf-8"))
     filas = datos.get("stations") or []
@@ -155,8 +166,148 @@ def flota_de_fichero(ruta: Path) -> tuple[str, list[Estacion]]:
         faltan = [k for k in ("station", "gateway", "site") if not fila.get(k)]
         if faltan:
             raise ValueError(f"{ruta}: estación {i} sin {', '.join(faltan)}")
-        estaciones.append(Estacion(fila["station"], fila["gateway"], fila["site"]))
+        estaciones.append(
+            Estacion(
+                fila["station"],
+                fila["gateway"],
+                fila["site"],
+                lat=fila.get("lat"),
+                lon=fila.get("lon"),
+            )
+        )
     return datos.get("tenant") or TENANT_ID, estaciones
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# [T-7.15] LA REPRODUCCIÓN: que las estaciones SIENTAN la onda.
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# El plan de arribos lo calcula `simulators/replay.py`, espejo del de la nube
+# (`api/src/takab_api/replay/plan.py`) con prueba de igualdad de salida entre los
+# dos. Aquí solo se le da FORMA a la feature: antes del arribo, ruido de fondo;
+# desde el arribo, el pico que predice ATTEN-LAW, decayendo.
+#
+# **Determinista, sin RNG.** Una demostración tiene que salir igual dos veces
+# seguidas, y una rampa aleatoria no se puede comprobar contra lo que el mapa
+# pinta. El ruido de fondo sí es aleatorio: es ruido.
+
+#: Constante de tiempo de la coda. NO es una medición: es la forma que hace
+#: legible la demostración —el pico se ve llegar, se sostiene y se apaga en
+#: torno al minuto—. Un sismo real no decae en una exponencial limpia.
+DECAIMIENTO_S = 20.0
+
+#: Tope del ruido de fondo (`_feature` sortea en 0.8..1.4). La rampa empieza por
+#: encima para que el arribo se distinga del ruido, que es lo que la ficha pide:
+#: «STA/LTA bajo umbral antes de `t_arribo`».
+STA_LTA_FONDO_MAX = 1.4
+#: STA/LTA en el pico. Basta con que esté cómodamente sobre cualquier umbral de
+#: disparo; el número exacto no decide nada porque estas features no accionan.
+STA_LTA_PICO = 9.0
+#: Razón PGV/PGA del ruido de fondo, reutilizada en la rampa para que la fila no
+#: cambie de forma al llegar la onda.
+PGV_POR_PGA = 10.0
+
+
+@dataclass(frozen=True)
+class Reproduccion:
+    """El sismo que se reproduce y cuándo le llega a cada estación."""
+
+    catalog_key: str
+    sismo: Sismo
+    #: Por código de ESTACIÓN (`SIM101`), que es como el simulador la nombra. El
+    #: plan de la nube va por sitio porque allí la unidad es el inmueble; aquí la
+    #: unidad es el sensor que publica.
+    arribos: dict[str, Arribo]
+
+    def arribo_de(self, station: str) -> Arribo | None:
+        return self.arribos.get(station)
+
+
+def reproduccion_de_fichero(ruta: Path, estaciones: list[Estacion]) -> Reproduccion:
+    """Arma la reproducción desde un JSON de sismo + las estaciones con coordenadas.
+
+    Formato (ver `edge/simulators/replay_19s.json`)::
+
+        {"catalog_key": "USGS-2017-09-19-PUE", "magnitude": 7.1,
+         "lat": 18.5499, "lon": -98.4887, "depth_km": 48.0, "v_s_km_s": 4.0}
+
+    Una estación sin coordenadas es un error **con su nombre**: sin ellas no hay
+    cuándo llega la onda, y publicar ruido de fondo mientras el mapa pinta el
+    frente pasando por encima sería la peor forma de fallar — parecería que la
+    estación no sintió nada.
+    """
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    faltan = [k for k in ("catalog_key", "magnitude", "lat", "lon") if datos.get(k) is None]
+    if faltan:
+        raise ValueError(f"{ruta}: al sismo le falta {', '.join(faltan)}")
+    sin_coords = [e.station for e in estaciones if e.lat is None or e.lon is None]
+    if sin_coords:
+        raise ValueError(
+            f"sin lat/lon no se puede reproducir: {', '.join(sorted(sin_coords))}. "
+            "Añádelas al fichero de flota (espejo de db/seeds/demo_red.sql)."
+        )
+    v_p, v_s = velocidades(float(datos.get("v_s_km_s") or 4.0))
+    sismo = Sismo(
+        catalog_key=datos["catalog_key"],
+        magnitude=float(datos["magnitude"]),
+        lat=float(datos["lat"]),
+        lon=float(datos["lon"]),
+        depth_km=None if datos.get("depth_km") is None else float(datos["depth_km"]),
+        v_s_km_s=v_s,
+        v_p_km_s=v_p,
+    )
+    plan = plan_de_arribos(
+        sismo,
+        [
+            EstacionDelPlan(e.site, e.station, float(e.lat), float(e.lon))
+            for e in estaciones
+            if e.lat is not None and e.lon is not None
+        ],
+    )
+    return Reproduccion(
+        catalog_key=sismo.catalog_key,
+        sismo=sismo,
+        arribos={a.site_code: a for a in plan},
+    )
+
+
+def esperar_pulso_wr1(
+    url: str,
+    *,
+    timeout_s: float,
+    leer: Callable[[str], dict[str, Any]],
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    periodo_s: float = 0.2,
+) -> bool:
+    """Sondea el panel del gabinete REAL hasta ver `sasmex_active`. LAN, sin JWT.
+
+    Devuelve `True` si vio el pulso, `False` si venció el plazo. No lanza por un
+    fallo de lectura: el panel puede reiniciarse a mitad, y abortar la
+    demostración porque una lectura falló sería peor que reintentar.
+
+    ⚠️ Ancla la reproducción al pulso REAL del WR-1, que es lo que hace que la
+    coreografía cuadre con lo que el operador acaba de pulsar. Sin esto, el
+    simulador y el gabinete cuentan desde instantes distintos y las ondas llegan
+    antes o después que la alerta.
+    """
+    limite = clock() + timeout_s
+    while clock() < limite:
+        try:
+            if leer(url).get("sasmex_active") is True:
+                return True
+        except Exception:  # noqa: BLE001 - un panel que se reinicia no aborta la demo
+            pass
+        sleep(periodo_s)
+    return False
+
+
+def leer_panel(url: str, *, timeout_s: float = 2.0) -> dict[str, Any]:
+    """Lectura HTTP mínima del panel. `urllib` y no un cliente: cero dependencias."""
+    import urllib.request  # noqa: PLC0415 - import perezoso, herramienta de desarrollo
+
+    with urllib.request.urlopen(url, timeout=timeout_s) as r:  # noqa: S310 - URL de la LAN
+        return json.loads(r.read().decode("utf-8"))
 
 
 def enrich(payload: dict[str, Any], topic: str, thing: str, *, ts_ms: int | None = None) -> dict:
@@ -209,6 +360,7 @@ class FleetSimulator:
         estaciones: list[Estacion] | None = None,
         tenant: str = TENANT_ID,
         no_events: bool = False,
+        replay: Reproduccion | None = None,
     ) -> None:
         if estaciones is None and not 1 <= sites <= MAX_SITES:
             raise ValueError(f"sites debe estar en 1..{MAX_SITES} (flota sim fija)")
@@ -219,12 +371,18 @@ class FleetSimulator:
         # opuestas, y fallar aquí es mejor que emitir a medias.
         if no_events and quake is not None:
             raise ValueError("--no-events y --quake son incompatibles: el sismo ES un LocalEvent")
+        # [T-7.15] Reproducir un sismo histórico y además emitir uno sintético son
+        # dos sismos a la vez. El de `--quake` abriría incidentes que la
+        # reproducción existe para NO abrir.
+        if replay is not None and quake is not None:
+            raise ValueError("--replay y --quake son incompatibles: serían dos sismos a la vez")
         self.sites = sites
         self.rate = rate
         self.interval = 1.0 / rate
         self.with_health = with_health
         self.tenant = tenant
         self.no_events = no_events
+        self.replay = replay
         flota = estaciones if estaciones is not None else flota_fija(sites)
         self.stations = [e.station for e in flota]
         self._gateway_de = {e.station: e.gateway for e in flota}
@@ -251,6 +409,37 @@ class FleetSimulator:
             pgv=rng.uniform(1e-3, 1e-2),
             rms=pga * rng.uniform(0.2, 0.5),
             sta_lta=rng.uniform(0.8, 1.4),
+            clipping=False,
+            health_score=1.0,
+        )
+
+    def _feature_reproducida(
+        self, station: str, channel: str, window_start: datetime, elapsed: float
+    ) -> Feature1s:
+        """La forma de la onda en esta estación. DETERMINISTA: sin RNG.
+
+        Antes del arribo de la S el sitio está en su ruido de fondo; desde el
+        arribo, el pico que predice ATTEN-LAW para esta distancia, decayendo con
+        la constante de la coda. Una demostración tiene que salir igual dos veces
+        seguidas, y una rampa aleatoria no se puede comparar con lo que el mapa
+        pinta.
+        """
+        assert self.replay is not None
+        a = self.replay.arribo_de(station)
+        if a is None or elapsed < a.t_s_s:
+            return self._feature(station, channel, window_start)
+        dt = elapsed - a.t_s_s
+        atenuacion = math.exp(-dt / DECAIMIENTO_S)
+        pga = a.pga_g * atenuacion
+        return Feature1s(
+            station=station,
+            channel=channel,
+            window_start=window_start,
+            pga=pga,
+            pgv=pga * PGV_POR_PGA,
+            rms=pga * 0.35,
+            # Entre el fondo y el pico, proporcional a lo que queda de sacudida.
+            sta_lta=STA_LTA_FONDO_MAX + (STA_LTA_PICO - STA_LTA_FONDO_MAX) * atenuacion,
             clipping=False,
             health_score=1.0,
         )
@@ -289,7 +478,11 @@ class FleetSimulator:
         for station in self.stations:
             thing = self._gateway_de[station]
             for channel in CHANNELS:
-                feature = self._feature(station, channel, window_start)
+                feature = (
+                    self._feature_reproducida(station, channel, window_start, elapsed)
+                    if self.replay is not None
+                    else self._feature(station, channel, window_start)
+                )
                 batch.append(self._msg(FEATURES_TOPIC, thing, feature.model_dump(mode="json")))
         # Heartbeat por gateway cada 30 s (incluye la ventana 0)
         if self.with_health and elapsed % HEALTH_PERIOD_S < self.interval:
@@ -466,6 +659,36 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         action="store_true",
         help="PROHÍBE publicar en takab/events (un LocalEvent simulado abre incidentes reales)",
     )
+    # [T-7.15] La reproducción: las estaciones SIENTEN la onda de un sismo del
+    # catálogo, cada una en su arribo.
+    parser.add_argument(
+        "--replay",
+        type=Path,
+        default=None,
+        metavar="RUTA",
+        help="JSON del sismo a reproducir (ver simulators/replay_19s.json)",
+    )
+    parser.add_argument(
+        "--armar",
+        default=None,
+        metavar="URL",
+        help=(
+            "sondea el panel del gabinete REAL hasta ver `sasmex_active` y ancla ahí el t0 "
+            "(p. ej. http://raspberry-cerebro.local:8080/api/status)"
+        ),
+    )
+    parser.add_argument(
+        "--armar-timeout-s",
+        type=float,
+        default=300.0,
+        help="cuánto esperar el pulso del WR-1 antes de rendirse (def. 300)",
+    )
+    parser.add_argument(
+        "--t0",
+        default=None,
+        choices=("now",),
+        help="disparo MANUAL: empieza la reproducción ya, sin esperar al WR-1",
+    )
     return parser.parse_args(argv)
 
 
@@ -477,6 +700,30 @@ def main(argv: list[str] | None = None) -> int:
         tenant, estaciones = flota_de_fichero(args.stations_file)
     tenant = args.tenant or tenant or TENANT_ID
 
+    # [T-7.15] La reproducción se arma ANTES de abrir conexiones: si las
+    # coordenadas faltan o el sismo no cuadra, se falla sin haber publicado nada.
+    replay = None
+    if args.replay is not None:
+        if estaciones is None:
+            raise SystemExit(
+                "--replay necesita --stations-file: la flota fija no lleva coordenadas"
+            )
+        replay = reproduccion_de_fichero(args.replay, estaciones)
+        print(f"reproducción armada: {replay.catalog_key}")
+        for a in sorted(replay.arribos.values(), key=lambda x: x.t_p_s):
+            print(f"  {a.site_code:<14} P +{a.t_p_s:5.1f}s  S +{a.t_s_s:5.1f}s  {a.pga_g:.3f} g")
+
+    # El ancla del t0. Con `--armar` se espera al pulso REAL del WR-1: sin eso, el
+    # simulador y el gabinete cuentan desde instantes distintos y las ondas llegan
+    # antes o después que la alerta que las anuncia.
+    if args.armar is not None and args.t0 is None:
+        print(f"esperando el pulso del WR-1 en {args.armar} …")
+        if not esperar_pulso_wr1(args.armar, timeout_s=args.armar_timeout_s, leer=leer_panel):
+            raise SystemExit(
+                f"no llegó el pulso en {args.armar_timeout_s:.0f}s: nada que reproducir"
+            )
+        print("pulso visto: t0 anclado")
+
     sim = FleetSimulator(
         sites=args.sites,
         rate=args.rate,
@@ -486,6 +733,7 @@ def main(argv: list[str] | None = None) -> int:
         estaciones=estaciones,
         tenant=tenant,
         no_events=args.no_events,
+        replay=replay,
     )
     connections: dict = {}
     if args.mode == "sqs":
