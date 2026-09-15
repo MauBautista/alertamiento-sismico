@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **359** · `[~]` **11** · `[ ]` **47**
+**Conteo de tareas:** total **417** · `[x]` **360** · `[~]` **10** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14305,7 +14305,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   (+9), `MapPanel.test` (+3), `motion.spec` · **Token nuevo:** sí, `--tk-dur-arrival` ·
   **Cambia algo que un test defiende hoy:** sí — `isLocalized` rechazaba `external`.
 
-### [~] T-7.19 · **La alerta se anima y se detiene** — `SOFTWARE` · **MURO Y PANEL HECHOS 2026-09-15 · MÓVIL ESPERA EL PIXEL**
+### [x] T-7.19 · **La alerta se anima y se detiene** — `SOFTWARE` · **CERRADA 2026-09-15 · MURO, PANEL Y PIXEL REAL**
 - **Componente:** web · edge · mobile · **Depende de:** T-7.13 · **Prioridad:** F3 · alta
 - **Objetivo:** ejecutar `D-30`: el camino de lectura de la alerta gana movimiento con
   condiciones —texto legible desde el primer frame, portador no-movimiento, se detiene por
@@ -14333,13 +14333,41 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     corridas distintas no demuestran que cese— y que el parpadeo vive en la carcasa y no en
     `.big`, que es donde va «ALERTA SÍSMICA · PROTÉJASE». Que `reduced-motion` lo apaga ya lo
     fijaba `test_el_movimiento_se_apaga_entero_bajo_reduce`.
-  - [ ] **Móvil: PENDIENTE DEL PIXEL.** `CrisisView` con halo respirando (`Animated`,
-    `useReduceMotion`) que se detiene en `shaking_concluded`, re-acreditado en el teléfono
-    real con captura y `screenrecord`. No se hace en un emulador
-    ([regla](PENDIENTES-MAURICIO.md)), así que esta mitad espera a que Mauricio lo conecte.
+  - [x] **Móvil: ACREDITADO EN EL PIXEL 8 PRO REAL** (2026-09-15, `41270DLJG000WB`, nube dev,
+    incidente `02fd0111-1342-446c-95c1-7b606b5feacf`). `CrisisView` con halo respirando
+    (`Animated`, `useReduceMotion`), conducido con `infra/scripts/seed_staging_incident.sh`.
+
+    **No se afirma que late: se MIDE.** Una captura sola no distingue «late» de «está
+    puesto», así que la evidencia es una ráfaga de capturas —el período es de 2400 ms— y el
+    brillo del píxel del anillo en el borde izquierdo, a media altura, donde lo único que hay
+    es el halo sobre el fondo de la variante:
+
+    | Escenario | Canal rojo del anillo | Amplitud |
+    |---|---|---|
+    | `alert_active`, movimiento normal (12 tomas) | 87 … 219 | **132** |
+    | `alert_active`, movimiento reducido (10 tomas) | 87 constante | **0** |
+    | tras `conclude` (`shaking_concluded`) | (14,35,54) = el fondo | — |
+
+    Las tres filas dicen las tres condiciones de `D-30` de una vez: **late** (amplitud 132);
+    **bajo reducción se queda QUIETO Y PUESTO** —87 es exactamente el mínimo de la corrida
+    animada, es decir `HALO_REPOSO`, y el anillo (87,77,77) sigue distinguiéndose del fondo
+    (22,8,8): no desaparece, deja de latir—; y **se detiene por ESTADO**, porque al concluir
+    la sacudida la pantalla de crisis entera cede el sitio al check-in de vida y en el borde
+    ya no queda anillo.
+
+    ⚠️ **Lo que en el teléfono NO se ve, y por qué no es un hueco.** «Halo detenido sobre la
+    misma vista» no existe en la app: la ruta de crisis redirige en cuanto la fase deja de ser
+    `alert_active`, así que lo acreditable en el aparato es que la alerta **deja de mostrarse**.
+    Que el componente se detenga por estado y no por la garantía de enrutado es justo lo que
+    fija la prop `viva` y sus cuatro casos de jest — montado con `viva={false}` no late, y ahí
+    sí se ve el anillo quieto.
+
+    Evidencia: `screenrecord` de 12 s con la alerta viva, capturas de los tres escenarios y la
+    serie de brillos. Las capturas del teléfono **no se comparten**: es un aparato personal y
+    el volcado lleva notificaciones ajenas al producto.
   - [x] `PLAN-REFORMA-VISUAL.md §5.3` ya estaba anotado como revocado por `D-30`; verificado.
 - **Tests de censo que toca:** `motionInvariants`, `layoutInvariants` (tres invariantes
-  nuevos), `test_local_api_panel` (+2), `motion.spec`, jest de `CrisisView` (pendiente) ·
+  nuevos), `test_local_api_panel` (+2), `motion.spec`, jest de `CrisisView` (4 casos del halo) ·
   **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende hoy:** sí — el
   selector nuevo tiene que entrar en el grupo `animation: none`.
 
