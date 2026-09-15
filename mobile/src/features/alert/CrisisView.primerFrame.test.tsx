@@ -27,12 +27,7 @@ const FUENTE = sourceLabel({ trigger: "sasmex" } as Parameters<typeof sourceLabe
 describe("[T-6.23] la crisis se lee desde el primer frame", () => {
   it("instrucción, zona, fuente y T+ salen de props, sin efectos de por medio", async () => {
     const v = await render(
-      <CrisisView
-        policy="evacuate"
-        source={FUENTE}
-        elapsedS={42}
-        zoneName="Norte"
-      />,
+      <CrisisView policy="evacuate" source={FUENTE} elapsedS={42} viva zoneName="Norte" />,
     );
     // Sin `act` ni avance de temporizadores: nada de esto depende de un efecto.
     expect(v.getByText(/EVACÚE/)).toBeTruthy();
@@ -50,12 +45,24 @@ describe("[T-6.23] la crisis se lee desde el primer frame", () => {
     expect(ruta).not.toMatch(/useSharedValue|withTiming|withSpring|entering=/);
   });
 
-  it("y el camino de lectura no anima nada por su cuenta", () => {
-    // Si mañana alguien mete una entrada a la vista —en vez de al contenedor—,
-    // el caso de arriba seguiría verde: `render` devuelve el árbol, no los
-    // fotogramas. Este barrido es la otra mitad.
+  it("[T-7.19 · D-30] lo ÚNICO que anima es el halo; el texto no se mueve", () => {
+    // ⚠️ Esta prueba defendía el §5.3 del plan de reforma visual —«no animar
+    // nada en el camino de lectura»—, que `D-30` REVOCA. Lo que aquella
+    // prohibición protegía era la LECTURA, no la quietud, y eso es lo que se
+    // sigue fijando aquí: la instrucción, el detalle y la fuente son `Text`
+    // planos, y lo único envuelto en `Animated` es el anillo de la carcasa.
+    //
+    // Si mañana alguien envuelve la instrucción en un `Animated.Text`, el caso
+    // de arriba seguiría verde —`render` devuelve el árbol, no los fotogramas—
+    // y este barrido es la otra mitad.
     const fuente = readFileSync(resolve(__dirname, "CrisisView.tsx"), "utf8");
-    expect(fuente).not.toMatch(/\bAnimated\b/);
+    // `expect` de jest NO admite mensaje (a diferencia de vitest): lo que
+    // explica el fallo va en el comentario y en el nombre del caso.
+    const animados = [...fuente.matchAll(/<Animated\.(\w+)/g)].map((m) => m[1]);
+    expect(animados).toEqual(["View"]);
+    // Y ese único `Animated.View` es el halo, no otra cosa.
+    expect(fuente).toMatch(/testID="crisis-halo"/);
+    // Reanimated sigue fuera: lo que falta aquí no es una librería (§5.4).
     expect(fuente).not.toMatch(/useSharedValue|withTiming|withSpring|entering=/);
   });
 });

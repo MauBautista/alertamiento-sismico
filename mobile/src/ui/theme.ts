@@ -41,6 +41,13 @@ export const emergency = {
  */
 export const motion = {
   pulseMs: toNumber(tokens.motion.durPulse),
+  /**
+   * [T-7.19 · D-30] El PERÍODO del halo de la alerta viva. Sale del mismo token
+   * que la consola (`--tk-dur-alerta`) porque es el mismo hecho en la otra
+   * superficie: «el servidor todavía sostiene esta alerta». Dos períodos
+   * distintos se leerían como dos cosas distintas.
+   */
+  alertaMs: toNumber(tokens.motion.durAlerta),
 } as const;
 
 export const fontSize = {
