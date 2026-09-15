@@ -290,6 +290,73 @@ describe("SceneStrip · cada fuente pinta lo suyo", () => {
     pintar();
     expect(screen.getByTestId("scene-alert")).toHaveTextContent("SITIO s-1");
   });
+
+  // [T-7.16] LA REVISIÓN
+  it("un incidente en revisión pinta SISMO CONCLUIDO y NO la alerta", () => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ state: "in_review" })] }),
+    );
+    pintar();
+    // La casilla es `notice`: la tabla no cambió, cambió por dónde se entra.
+    expect(screen.getByTestId("scene-strip")).toHaveAttribute("data-scene", "notice");
+    const linea = screen.getByTestId("scene-review");
+    expect(linea).toHaveTextContent("SISMO CONCLUIDO · ANALIZANDO");
+    expect(linea).toHaveAttribute("data-kind", "review");
+    // Y la línea de alerta NO está: son excluyentes, no se apilan.
+    expect(screen.queryByTestId("scene-alert")).toBeNull();
+    expect(screen.queryByText(/PROTÉJASE/)).toBeNull();
+  });
+
+  it("la revisión nombra el epicentro SOLO si el snapshot del mapa ya lo tiene", () => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ state: "in_review", event_id: "EVT-REP-1" })] }),
+    );
+    pintar();
+    expect(screen.getByTestId("scene-review")).not.toHaveTextContent("EPICENTRO");
+
+    mocks.useMapState.mockReturnValue(
+      mapData({
+        epicenters: [
+          {
+            event_id: "EVT-REP-1",
+            lat: 18.55,
+            lon: -98.49,
+            depth_km: 48,
+            magnitude: 7.1,
+            detected_at: "2026-09-07T09:59:00Z",
+            source: "external",
+          } as MapStateData["epicenters"][number],
+        ],
+      }),
+    );
+    pintar();
+    expect(screen.getAllByTestId("scene-review")[1]).toHaveTextContent("EPICENTRO M7.1");
+  });
+
+  it("un WR-1 NUEVO manda sobre una revisión vieja: vuelve la alerta", () => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({
+        incidents: [
+          incidente({ incident_id: "nuevo", state: "open" }),
+          incidente({ incident_id: "viejo", state: "in_review" }),
+        ],
+      }),
+    );
+    pintar();
+    expect(screen.getByTestId("scene-strip")).toHaveAttribute("data-scene", "alert");
+    expect(screen.getByTestId("scene-alert")).toHaveTextContent("PROTÉJASE");
+  });
+
+  it("una revisión NO degrada el simulacro que el equipo retomó", () => {
+    // Bajo alerta real el banner del simulacro se reduce a un badge; una
+    // revisión no puede hacer eso, porque el sismo ya terminó.
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ state: "in_review" })] }),
+    );
+    mocks.useActiveDrill.mockReturnValue(drillData({ drill: DRILL }));
+    pintar();
+    expect(screen.getByTestId("drill-banner")).toHaveTextContent("ESTO NO ES UNA ALERTA REAL");
+  });
 });
 
 describe("SceneStrip · la precedencia y la excepción escrita", () => {
