@@ -4,12 +4,16 @@ import type { MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import { V_P_KM_S } from "./attenuation";
 import {
+  ARRIVAL_BURST_S,
   DASH_FRAMES,
   DASH_STEP_MS,
   STATIC_RING_MARKS_S,
   V_S_KM_S,
   WAVE_MAX_AGE_S,
   animatableEpicenters,
+  arrivalGlow,
+  arrivalSeconds,
+  arrivedSiteIds,
   dashFrameIndex,
   epicenterLinks,
   isAnimatable,
@@ -264,5 +268,89 @@ describe("staticRings — lo que se ve con prefers-reduced-motion", () => {
     expect(p10?.km).toBeCloseTo(waveRadiiKm(10).pKm, 9);
     const s10 = rings.find((r) => r.label === "S +10s");
     expect(s10?.km).toBeCloseTo(waveRadiiKm(10).sKm, 9);
+  });
+});
+
+// [T-7.18] EL ARRIBO POR ESTACIÓN
+describe("isLocalized · la tercera rama", () => {
+  const base = {
+    event_id: "EVT-1",
+    lon: -98.49,
+    lat: 18.55,
+    magnitude: 7.1,
+    depth_km: 48,
+    detected_at: new Date().toISOString(),
+  };
+
+  it("una REPRODUCCIÓN localiza, aunque su `source` sea `external`", () => {
+    expect(isLocalized({ ...base, source: "external", reproduccion: true })).toBe(true);
+  });
+
+  it("un `external` que NO es reproducción sigue sin localizar", () => {
+    // Es la regla que protege el caso caro: un punto del catálogo describe dónde
+    // ocurrió algo en 2017, no un frente cruzando la red ahora mismo.
+    expect(isLocalized({ ...base, source: "external" })).toBe(false);
+    expect(isLocalized({ ...base, source: "external", reproduccion: false })).toBe(false);
+  });
+
+  it("una reubicación MANUAL sigue fuera: dice dónde, no cuándo", () => {
+    expect(isLocalized({ ...base, source: "manual", reproduccion: false })).toBe(false);
+  });
+
+  it("y las dos ramas de siempre no se tocan", () => {
+    expect(isLocalized({ ...base, source: "sasmex" })).toBe(true);
+    expect(isLocalized({ ...base, source: "local_quorum", node_count: 3 })).toBe(true);
+    expect(isLocalized({ ...base, source: "local_quorum", node_count: 2 })).toBe(false);
+  });
+});
+
+describe("arrivalSeconds · cuándo le llega la S a esa distancia", () => {
+  it("es la distancia entre la velocidad de corte, y crece con ella", () => {
+    expect(arrivalSeconds(0)).toBe(0);
+    expect(arrivalSeconds(101)).toBeGreaterThan(arrivalSeconds(78));
+    expect(arrivalSeconds(V_S_KM_S)).toBeCloseTo(1, 10);
+  });
+});
+
+describe("arrivalGlow · la ráfaga se enciende y SE APAGA", () => {
+  it("antes del arribo no se anuncia nada", () => {
+    expect(arrivalGlow(10, 25.3)).toBe(0);
+  });
+
+  it("en el arribo está al máximo y decae a cero en la ventana del token", () => {
+    expect(arrivalGlow(25.3, 25.3)).toBe(1);
+    expect(arrivalGlow(25.3 + ARRIVAL_BURST_S / 2, 25.3)).toBeCloseTo(0.5, 10);
+  });
+
+  it("pasada la ventana se apaga y NO vuelve", () => {
+    // Un anillo permanente diría «aquí está pasando algo» un minuto después.
+    expect(arrivalGlow(25.3 + ARRIVAL_BURST_S, 25.3)).toBe(0);
+    expect(arrivalGlow(300, 25.3)).toBe(0);
+  });
+});
+
+describe("arrivedSiteIds · a quién YA le llegó (modo accesible)", () => {
+  const epi = {
+    event_id: "EVT-1",
+    source: "external",
+    reproduccion: true,
+    lon: -98.4887,
+    lat: 18.5499,
+    magnitude: 7.1,
+    depth_km: 48,
+    detected_at: new Date().toISOString(),
+  };
+  const sitio = (id: string, lat: number, lon: number) =>
+    ({ site_id: id, lat, lon }) as unknown as MapSiteState;
+
+  it("crece con el tiempo y respeta la distancia", () => {
+    const red = [
+      sitio("tlaxcala", 19.3139, -98.2404),
+      sitio("cdmx", 19.4326, -99.1332),
+      sitio("toluca", 19.2826, -99.6557),
+    ];
+    expect(arrivedSiteIds(epi, red, 0)).toEqual([]);
+    expect(arrivedSiteIds(epi, red, 24)).toEqual(["tlaxcala"]);
+    expect(arrivedSiteIds(epi, red, 40)).toEqual(["tlaxcala", "cdmx", "toluca"]);
   });
 });

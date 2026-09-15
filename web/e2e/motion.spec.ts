@@ -93,6 +93,11 @@ test.describe("con movimiento reducido", () => {
     await expect(shown).toBeVisible();
     if (await model.isVisible()) {
       await expect(model).toContainText("ANILLOS ESTÁTICOS (MOVIMIENTO REDUCIDO)");
+      // [T-7.18] Y la ráfaga de arribo también se declara apagada. Sin esta
+      // línea, el anillo por estación podría seguir destellando bajo reducción y
+      // la leyenda solo hablaría de los frentes: media verdad es peor aquí,
+      // porque el operador la lee como la verdad entera.
+      await expect(model).toContainText("SIN RÁFAGA");
     }
   });
 

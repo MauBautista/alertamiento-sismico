@@ -45,6 +45,7 @@ vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 import MapPanel, {
+  arrivalsFeatureCollection,
   epicentersToFeatureCollection,
   FALLBACK_STYLE,
   FELT_COLOR,
@@ -794,5 +795,50 @@ describe("[T-7.05] el orden de las leyendas decide qué sobrevive a la banda cor
       primera?.getAttribute("data-testid"),
       "la primera leyenda de la columna no es CAPAS: con la banda corta de una alerta, sus botones quedan fuera de vista",
     ).toBe("map-layers");
+  });
+});
+
+// [T-7.18] EL ARRIBO POR ESTACIÓN
+describe("MapPanel · la ráfaga de arribo", () => {
+  it("la capa del anillo existe y va DEBAJO del edificio", () => {
+    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+    act(() => {
+      mocks.handlers.get("style.load")?.();
+    });
+    const ids: string[] = mocks.map.addLayer.mock.calls.map((c: [{ id: string }]) => c[0].id);
+    expect(ids).toContain("arrival-ring");
+    // Se añade antes que el halo ⇒ MapLibre lo dibuja debajo: el anillo anuncia
+    // que la onda llegó, no tapa lo que el edificio midió.
+    expect(ids.indexOf("arrival-ring")).toBeLessThan(ids.indexOf("site-halo"));
+  });
+
+  it("el instante de cada estación sale del FRENTE, no de un campo del servidor", () => {
+    const fc = arrivalsFeatureCollection(
+      [
+        {
+          event_id: "EVT-1",
+          source: "external",
+          reproduccion: true,
+          lon: -98.4887,
+          lat: 18.5499,
+          magnitude: 7.1,
+          depth_km: 48,
+          detected_at: new Date().toISOString(),
+        },
+      ],
+      [
+        { site_id: "cerca", lon: -98.2404, lat: 19.3139 },
+        { site_id: "lejos", lon: -99.6557, lat: 19.2826 },
+      ] as unknown as Parameters<typeof arrivalsFeatureCollection>[1],
+    );
+    const porSitio = Object.fromEntries(
+      fc.features.map((f) => [f.properties?.["site_id"], f.properties?.["arrival_s"]]),
+    );
+    expect(porSitio["cerca"]).toBeLessThan(porSitio["lejos"] as number);
+    expect(porSitio["cerca"]).toBeGreaterThan(0);
+  });
+
+  it("sin frente vivo la colección queda VACÍA: el anillo desaparece solo", () => {
+    expect(arrivalsFeatureCollection([], []).features).toEqual([]);
   });
 });

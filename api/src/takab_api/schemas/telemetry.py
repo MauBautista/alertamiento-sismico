@@ -105,6 +105,13 @@ class MapEpicenter(BaseModel):
     #: Estaciones que corroboraron el evento por quórum (T-1.71). Solo lo llevan los
     #: eventos ``local_quorum`` (``meta.node_count``); ``None`` en los demás.
     node_count: int | None = None
+    #: [T-7.18] ¿Es una REPRODUCCIÓN de un sismo histórico (`T-7.14`)? El mapa lo
+    #: necesita por dos motivos opuestos y los dos importan: para **animar** el
+    #: frente —un evento `external` no lo haría, y aquí sí hay un frente cruzando
+    #: la red ahora mismo— y para **rotularlo**, porque un epicentro de 2017
+    #: pintado sin decir que es una reproducción es la mentira más cara que puede
+    #: contar esta pantalla.
+    reproduccion: bool = False
 
 
 class MapSiteState(BaseModel):

@@ -6459,6 +6459,11 @@
             ],
             "title": "Node Count"
           },
+          "reproduccion": {
+            "default": false,
+            "title": "Reproduccion",
+            "type": "boolean"
+          },
           "source": {
             "title": "Source",
             "type": "string"

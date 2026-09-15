@@ -21,6 +21,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { cssVariables } from "@takab/design-tokens";
+
+import { ARRIVAL_BURST_S } from "../features/console/wavefront";
 import { describe, expect, it } from "vitest";
 
 const DIR = path.resolve(process.cwd(), "src", "styles");
@@ -223,5 +225,18 @@ describe("[T-6.10 · U-23] un latido es una AFIRMACIÓN, y nunca se escribe a fu
       `el halo se pinta sin condición aquí:\n${pelados.join("\n")}\n` +
         "Un halo que late siempre afirma «llega ahora» sobre cualquier dato.",
     ).toEqual([]);
+  });
+});
+
+describe("[T-7.18] la ráfaga de arribo del mapa sale del MISMO token", () => {
+  it("`ARRIVAL_BURST_S` y `--tk-dur-arrival` no pueden divergir", () => {
+    // El anillo lo pinta MapLibre sobre un canvas, así que su duración no
+    // aparece en ninguna hoja y el barrido de arriba no la alcanza. Sin esta
+    // atadura, alguien cambiaría el token para acortar la ráfaga y la ráfaga
+    // seguiría durando lo mismo — un token que no gobierna nada es peor que no
+    // tenerlo, porque parece que gobierna.
+    const token = cssVariables["--tk-dur-arrival"];
+    expect(token, "falta `--tk-dur-arrival` en @takab/design-tokens").toBeDefined();
+    expect(ARRIVAL_BURST_S * 1000).toBe(Number.parseFloat(token));
   });
 });

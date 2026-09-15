@@ -128,6 +128,7 @@
   --tk-dur-pulse: 1600ms;
   --tk-dur-armed: 1000ms;
   --tk-dur-drill: 1400ms;
+  --tk-dur-arrival: 2000ms;
   --tk-wait-declare: 3000ms;
   --tk-grid-cols: 12;
   --tk-grid-gutter: 24px;

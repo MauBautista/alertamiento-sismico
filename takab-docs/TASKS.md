@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **357** · `[~]` **10** · `[ ]` **50**
+**Conteo de tareas:** total **417** · `[x]` **358** · `[~]` **10** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14264,23 +14264,46 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   `features/triage/`) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el
   `DetailPanel` y el `TriageDetail` ganan una prop obligatoria.
 
-### [ ] T-7.18 · **Las ondas llegan a cada estación en el mapa** — `SOFTWARE`
+### [x] T-7.18 · **Las ondas llegan a cada estación en el mapa** — `SOFTWARE` · **CERRADA 2026-09-15**
 - **Componente:** web · api · **Depende de:** T-7.14 · **Prioridad:** F3 · alta
 - **Objetivo:** que el frente P/S que el mapa ya sabe animar se dispare con el epicentro
   reproducido y que cada estación anuncie su arribo, y que todo se apague bajo movimiento
   reducido y con la edad.
 - **Criterios de aceptación:**
-  - [ ] `MapEpicenter.reproduccion: bool` en `/telemetry/map/state` (SDK regenerado con
-    `make drift`) y una **tercera rama explícita** en `isLocalized` de `wavefront.ts`, que hoy
-    rechaza `external`; chip «REPRODUCCIÓN» junto al epicentro.
-  - [ ] Ráfaga de arribo por estación anclada a `t_arribo` (campo `felt_at` en el snapshot),
-    con token nuevo `--tk-dur-arrival`; `reduced-motion` ⇒ anillo estático y leyenda;
-    `WAVE_MAX_AGE_S` no se extiende.
-  - [ ] `motionInvariants` (duración por token, selector en el grupo `animation: none`),
-    `wavefront.test.ts` y `motion.spec.ts` con una aserción nueva.
-- **Tests de censo que toca:** `motionInvariants`, `wavefront.test`, `motion.spec` ·
-  **Token nuevo:** sí, `--tk-dur-arrival` · **Cambia algo que un test defiende hoy:** sí —
-  `isLocalized` rechazaba `external`.
+  - [x] `MapEpicenter.reproduccion: bool` en `/telemetry/map/state`, SDK regenerado, y la
+    **tercera rama** de `isLocalized`. Se distingue por `reproduccion` y **no** por el
+    `source`: ampliar la rama a todo `external` devolvería justo el defecto que la regla
+    evita —un punto del catálogo describe dónde ocurrió algo en 2017, no un frente cruzando
+    la red ahora—. La prueba lleva su control: un `external` que no es reproducción sigue sin
+    localizar.
+  - [x] El rótulo dice **REPRODUCCIÓN en primer lugar**, no como sufijo: quien mire el ◇ no
+    puede leer la magnitud sin leer que es una reproducción. Un epicentro de 2017 pintado sin
+    decirlo es la mentira más cara que puede contar esta pantalla.
+  - [x] ⚠️ **La ráfaga NO se ancla en un campo del snapshot, y es deliberado.** La ficha pedía
+    `felt_at`; el instante se deriva del **mismo frente que el mapa está dibujando**. Si
+    viniera del servidor y el frente se calculara en el cliente, una estación podría
+    iluminarse mientras el frente se ve pasando por otro sitio: dos relojes para el mismo
+    suceso y ninguna forma de saber cuál miente. Además `site_metrics_1m` no puede dar ese
+    dato —los tres arribos de la demostración caen en el mismo minuto o en el contiguo—. El
+    arribo MEDIDO, que es con lo que se contrasta, está en la tabla de `T-7.17`.
+  - [x] Token nuevo `--tk-dur-arrival` (2 s), **atado a `ARRIVAL_BURST_S`** por un invariante
+    nuevo: el anillo lo pinta MapLibre sobre un canvas, así que su duración no aparece en
+    ninguna hoja y el barrido de `motionInvariants` no la alcanzaba. Un token que no gobierna
+    nada es peor que no tenerlo, porque parece que gobierna.
+  - [x] La ráfaga se apaga sola: antes del arribo no se anuncia nada y después decae a cero
+    en la ventana del token. Un anillo permanente diría «aquí está pasando algo» un minuto
+    después de que pasara. `WAVE_MAX_AGE_S` no se extiende.
+  - [x] `reduced-motion` ⇒ anillo **quieto** sobre las estaciones a las que la onda ya llegó,
+    y la leyenda lo declara (`ARRIBO YA ALCANZADO, SIN RÁFAGA`). Sin tick no hay decaimiento,
+    así que el anillo no miente sobre «acaba de llegar»: dice «ya llegó», que es lo que se
+    sabe. `motion.spec.ts` gana esa aserción — media verdad en esa leyenda es peor que
+    ninguna, porque el operador la lee como la verdad entera.
+  - [x] La capa va **debajo** del edificio: anuncia que la onda llegó, no tapa lo que el
+    edificio midió. Y es una sola expresión por fotograma, evaluada por rasgo: da igual que
+    haya tres estaciones o trescientas.
+- **Tests de censo que toca:** `motionInvariants` (invariante nuevo del token), `wavefront.test`
+  (+9), `MapPanel.test` (+3), `motion.spec` · **Token nuevo:** sí, `--tk-dur-arrival` ·
+  **Cambia algo que un test defiende hoy:** sí — `isLocalized` rechazaba `external`.
 
 ### [ ] T-7.19 · **La alerta se anima y se detiene** — `SOFTWARE`
 - **Componente:** web · edge · mobile · **Depende de:** T-7.13 · **Prioridad:** F3 · alta

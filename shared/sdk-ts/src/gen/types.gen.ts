@@ -1590,6 +1590,7 @@ export type MapEpicenter = {
     lon: number;
     magnitude: number | null;
     node_count?: number | null;
+    reproduccion?: boolean;
     source: string;
 };
 
