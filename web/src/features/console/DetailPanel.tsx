@@ -23,8 +23,10 @@ import { Link } from "react-router";
 
 import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
+import EpicentroCard from "./EpicentroCard";
 import EstacionesTable from "./EstacionesTable";
 import type { EstacionesData } from "./useEstaciones";
+import type { ReproduccionData } from "./useReproduccion";
 import { utcClock } from "../../lib/time";
 import NotCalibratedBadge from "../telemetry/NotCalibratedBadge";
 import { unitsFor } from "../telemetry/calibration";
@@ -122,6 +124,8 @@ export interface DetailPanelProps {
   incident: LiveIncident | null;
   /** [T-7.17] La red de estaciones del incidente en foco, con su marco propio. */
   estaciones: EstacionesData;
+  /** [T-7.20] El sismo que se reproduce, si lo hay. `data === null` ⇒ no hay tarjeta. */
+  reproduccion: ReproduccionData;
   /** Relés del gabinete del sitio (config activa; null = no visible). */
   relays: SiteRelaysData;
   /** [T-2.32] Burst de actuación comandado por el quórum de red (null = ninguno). */
@@ -153,6 +157,7 @@ export default function DetailPanel({
   actions,
   incident,
   estaciones,
+  reproduccion,
   relays,
   quorumCommanded = null,
   link,
@@ -591,7 +596,12 @@ export default function DetailPanel({
           este edificio»: qué midieron los demás, y si lo que midió éste encaja
           con su distancia. Sin incidente en foco su consulta ni se lanza y el
           marco se queda en `loading` un instante y luego vacío. */}
-      <EstacionesTable estaciones={estaciones} />
+      {/* [T-7.20] El epicentro ENCIMA de la tabla: primero qué sismo fue, luego
+          qué midió cada estación. Al revés se leen las filas sin saber de qué. */}
+      <EpicentroCard reproduccion={reproduccion} />
+      <div className="soc-reveal">
+        <EstacionesTable estaciones={estaciones} />
+      </div>
     </aside>
   );
 }

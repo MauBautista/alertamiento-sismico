@@ -21,6 +21,10 @@ import type { SiteRelaysData } from "./useSiteRelays";
 /** [T-7.17] La red sin leer: el panel se pinta igual y la tabla lo dice con su
  *  propio marco. Entra por props como el resto — esta suite no lleva
  *  QueryClientProvider a propósito. */
+/** [T-7.20] Sin reproducción: la inmensa mayoría de los incidentes no lo son, y
+ *  entonces la tarjeta del epicentro NO se pinta. */
+const SIN_REPRODUCCION = { data: null, loading: false, error: false, refetch: () => {} };
+
 const ESTACIONES_VACIAS = {
   data: null,
   loading: false,
@@ -148,6 +152,7 @@ function renderPanel(over: Partial<Parameters<typeof DetailPanel>[0]> = {}) {
         actions={actions()}
         incident={INCIDENT}
         estaciones={ESTACIONES_VACIAS}
+        reproduccion={SIN_REPRODUCCION}
         relays={NO_RELAYS}
         link={linkData()}
         nowMs={NOW}
@@ -164,6 +169,7 @@ describe("DetailPanel", () => {
     renderPanel({
       incident: { ...INCIDENT, event_id: "EVT-20260803-120000-abc123" },
       estaciones: ESTACIONES_VACIAS,
+      reproduccion: SIN_REPRODUCCION,
       quorumCommanded: { channels: ["gas_valve", "siren"], acked: 3, total: 9 },
     });
     const badge = screen.getByTestId("quorum-red-badge");
@@ -422,6 +428,7 @@ describe("DetailPanel", () => {
           actions={actions()}
           incident={INCIDENT}
           estaciones={ESTACIONES_VACIAS}
+          reproduccion={SIN_REPRODUCCION}
           relays={NO_RELAYS}
           link={linkData()}
           nowMs={NOW}
@@ -498,6 +505,7 @@ describe("DetailPanel · enlace con el gabinete", () => {
             actions={actions()}
             incident={INCIDENT}
             estaciones={ESTACIONES_VACIAS}
+            reproduccion={SIN_REPRODUCCION}
             relays={NO_RELAYS}
             link={linkData(byState[state])}
             nowMs={NOW}

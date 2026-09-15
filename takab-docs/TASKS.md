@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **358** · `[~]` **11** · `[ ]` **48**
+**Conteo de tareas:** total **417** · `[x]` **358** · `[~]` **12** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14343,19 +14343,36 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende hoy:** sí — el
   selector nuevo tiene que entrar en el grupo `animation: none`.
 
-### [ ] T-7.20 · **Epicentro y estaciones en el muro, de punta a punta** — `SOFTWARE`
+### [~] T-7.20 · **Epicentro y estaciones en el muro, de punta a punta** — `SOFTWARE` · **SOFTWARE HECHO 2026-09-15 · FALTA CORRERLO EN NAVEGADOR**
 - **Componente:** web · **Depende de:** T-7.16, T-7.17, T-7.18 · **Prioridad:** F3 · alta
 - **Objetivo:** que al concluir la sacudida el muro muestre el epicentro con su procedencia y
   la tabla por estación en orden de arribo, y que un e2e lo ejerza entero.
 - **Criterios de aceptación:**
-  - [ ] Tarjeta «EPICENTRO · REPRODUCCIÓN 19-09-2017 · M7.1 · CONFIRMADO POR LA FUENTE · USGS»
-    y `EstacionesTable` reveladas con `soc-row-in`; el panel del gabinete muestra la
-    comparativa que ya existe (§7.5 de su spec).
-  - [ ] `web/e2e/vida_del_sismo.spec.ts` sobre `soc-local`: `:9100/sasmex` + `fleet --replay`
-    en modo spool ⇒ alerta con halo → revisión con contador → epicentro y tabla → cierre por
-    clasificación y halo detenido.
-- **Tests de censo que toca:** `serverDataCensus` · **Token nuevo:** no · **Cambia algo que
-  un test defiende hoy:** no.
+  - [x] Tarjeta «EPICENTRO · REPRODUCCIÓN 19-09-2017 · M7.1 · CONFIRMADO POR LA FUENTE · USGS»,
+    con la **procedencia del catálogo** que el endpoint `/reproduccion` ahora devuelve
+    (`place`, `catalog_source`, `review_status`). ⚠️ **La magnitud se pinta SOLO si la
+    procedencia lo autoriza** (`T-5.10`, glosario compartido): una cifra sin procedencia se lee
+    como propia, y TAKAB no calcula magnitudes. Cuando no se pinta, se dice **por qué** — un
+    hueco se lee como «no pasó nada», que es lo contrario de «no lo sé».
+  - [x] La fecha del sismo REAL va en la línea y **sin hora**: un epicentro de 2017 sin fecha se
+    lee como un sismo de hoy, y la hora de 2017 junto a la de la demostración las mezcla.
+  - [x] Tarjeta y `EstacionesTable` reveladas con `soc-row-in` (clase `.soc-reveal`, una sola
+    pasada), dada de alta en el grupo `animation: none` — lo exigió el invariante derivado.
+  - [x] **Sin reproducción NO hay tarjeta**, ni un marco vacío: casi ningún incidente es una
+    reproducción, y un «SIN REPRODUCCIÓN» permanente enseña al operador a no leer esa esquina
+    —el mismo razonamiento de la escena NORMAL (U-45)—. El 404 del endpoint es la respuesta
+    **esperada** de un incidente real y el hook lo traduce a «no hay», nunca a un error.
+  - [x] `web/e2e/vida_del_sismo.spec.ts` escrito: alerta viva con `data-alive` → epicentro con
+    procedencia → tabla en orden de arribo → revisión con el halo detenido. **Declara el arnés
+    que necesita y se SALTA CON MOTIVO si no está**, en vez de pasar en verde: un e2e que se
+    salta en silencio lo que vino a comprobar es la peor clase de verde.
+  - [ ] **Correrlo de verdad**: `make soc-local` + el WR-1 en `:9100` + `fleet --replay`, con la
+    ventana de reproducción armada. Es lo que pide el criterio de cierre del bloque —ejercida
+    al menos una vez fuera de los tests— y necesita una sesión con navegador.
+  - [ ] Verificar que el panel del gabinete muestra la comparativa que ya existe (§7.5 de su
+    spec) durante esa misma corrida.
+- **Tests de censo que toca:** `serverDataCensus` (un alta más, con su razón) · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
 ### [ ] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE`
 - **Componente:** api · shared · **Depende de:** — · **Prioridad:** F4 · alta

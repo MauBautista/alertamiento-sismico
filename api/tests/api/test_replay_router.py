@@ -244,6 +244,11 @@ async def test_el_plan_de_arribos_SALE_de_un_incidente_vestido(client, base_data
         assert cuerpo["t0_real"].startswith("2017-09-19")
         assert cuerpo["t0_demo"].startswith("2026-09-15")
         assert cuerpo["v_s_km_s"] == pytest.approx(4.0)
+        # [T-7.20] La procedencia sale del CATÁLOGO: quién sostiene la cifra y si
+        # esa fuente la dio por revisada. Sin ella el muro pintaría «M7.1» sin
+        # decir quién lo sostiene, que es lo que `T-5.10` cerró.
+        assert cuerpo["catalog_source"] == "USGS"
+        assert cuerpo["place"] == "19-S 2017 (fixture)"
         arribos = cuerpo["arrivals"]
         assert arribos, "el plan salió vacío: ninguna estación"
         assert "site-sim-901" in [a["site_code"] for a in arribos]
