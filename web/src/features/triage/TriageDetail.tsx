@@ -21,6 +21,8 @@ import NotifyChain from "./NotifyChain";
 import CctvPanel from "./CctvPanel";
 import { ClassificationPanel } from "./ClassificationPanel";
 import PostEventSummary from "./PostEventSummary";
+import EstacionesTable from "../console/EstacionesTable";
+import type { EstacionesData } from "../console/useEstaciones";
 import QuorumNodes from "./QuorumNodes";
 import StructuralTriage from "./StructuralTriage";
 import {
@@ -107,6 +109,8 @@ export interface TriageDetailProps {
    * de los marcos usan la edad de SU propio recurso.
    */
   incidentStaleSince: number | null;
+  /** [T-7.17] La red de estaciones de este incidente. */
+  estaciones: EstacionesData;
   /** `me.allowed_actions` — server-driven, default-deny. */
   canSign: boolean;
   canExport: boolean;
@@ -172,6 +176,7 @@ export default function TriageDetail({
   cctv,
   minNodes,
   incidentStaleSince,
+  estaciones,
   canSign,
   canExport,
   canDownloadClip,
@@ -303,19 +308,28 @@ export default function TriageDetail({
           inmueble— con la otra mitad del dato: la gente. */}
       <CctvPanel cctv={cctv} canDownloadClip={canDownloadClip} onDownloadClip={onDownloadClip} />
 
-      <QuorumNodes
-        view={quorum}
-        eventState={eventStateOf(row, event)}
-        eventError={event.error}
-        corroborated={isCorroborated(event.data)}
-        minNodes={minNodes}
-        // [T-2.82.a] Dos ramas, dos datos, dos edades: la del evento para los
-        // votos que sostienen si hubo corroboración, la del incidente para la
-        // rama que afirma que no hay evento ninguno.
-        eventStaleSince={event.staleSince}
-        incidentStaleSince={incidentStaleSince}
-        onRetry={detail.refetch}
-      />
+      {/* [T-7.17] La red de estaciones SUSTITUYE a la tabla de cuórum cuando el
+          evento es una reproducción: allí no hubo votos, y enseñar una tabla de
+          votos vacía parecería que la red no corroboró cuando lo que pasa es que
+          no había nada que corroborar. Con un evento real se pintan las dos: la
+          de cuórum dice quién votó, ésta dice qué midió cada una. */}
+      <EstacionesTable estaciones={estaciones} staleSince={incidentStaleSince} />
+
+      {estaciones.data?.reproduccion !== true && (
+        <QuorumNodes
+          view={quorum}
+          eventState={eventStateOf(row, event)}
+          eventError={event.error}
+          corroborated={isCorroborated(event.data)}
+          minNodes={minNodes}
+          // [T-2.82.a] Dos ramas, dos datos, dos edades: la del evento para los
+          // votos que sostienen si hubo corroboración, la del incidente para la
+          // rama que afirma que no hay evento ninguno.
+          eventStaleSince={event.staleSince}
+          incidentStaleSince={incidentStaleSince}
+          onRetry={detail.refetch}
+        />
+      )}
 
       <Card
         title="Evidencia archivada"

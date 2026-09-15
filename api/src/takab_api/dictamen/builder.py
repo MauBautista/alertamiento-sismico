@@ -35,11 +35,13 @@ from takab_api.dictamen.model import (
     CctvObjectRow,
     ChannelRow,
     DictamenRow,
+    EstacionFila,
     EvidenceRow,
     ReportModel,
     VoteRow,
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
+from takab_api.estaciones import build_estaciones
 from takab_api.felt import umbral_congelado
 from takab_api.forensics import build_forensics, umbral_de_comparacion
 from takab_api.queries import compliance as qc
@@ -182,6 +184,12 @@ async def build_model(
     if forensics is None:  # pragma: no cover - el SELECT de arriba ya lo cubriría
         return None
 
+    # [T-7.17] La red de estaciones, de la MISMA función que sirve a la consola y
+    # al muro. Dos caminos para los mismos números acabarían discrepando, y un
+    # dictamen que no coincide con lo que el operador vio en pantalla es peor que
+    # ninguno — es exactamente el razonamiento del bloque de forensics.
+    red = await build_estaciones(conn, incident_id, s)
+
     dictamen_rows = (await conn.execute(_DICTAMENS, {"id": incident_id})).all()
 
     # [T-7.37] Primero se busca el umbral CONGELADO en la cadena de dictámenes.
@@ -233,6 +241,20 @@ async def build_model(
     raw, rate, spectrum, peak_hz, espectrograma, duracion, reason = await _raw_waveform(
         evidence_rows, fetch_object, variant
     )
+
+    estaciones = [
+        EstacionFila(
+            site_name=e.site_name,
+            site_code=e.site_code,
+            sensor_code=e.sensor_code,
+            dist_km=e.dist_km,
+            t_teorico_s=e.t_arribo_teorico_s,
+            t_medido_s=e.t_arribo_medido_s,
+            peak_pga_g=e.peak_pga_g,
+            tier=e.tier,
+        )
+        for e in (red.items if red is not None else [])
+    ]
 
     return ReportModel(
         folio=folio_of(inc["site_code"], inc["opened_at"], incident_id, variant),
@@ -306,6 +328,8 @@ async def build_model(
         spectrogram=espectrograma,
         shaking_duration=duracion,
         raw_unavailable_reason=reason,
+        estaciones=estaciones,
+        estaciones_ancla=(red.ancla if red is not None else "incident"),
         verdict_basis=head_basis,
         # [T-2.82] Marco DECLARADO por el cliente. Sale de la MISMA función que lo
         # sirve a la pantalla de Triage (`queries.compliance.document_for_incident`):

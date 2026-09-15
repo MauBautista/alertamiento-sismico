@@ -3892,6 +3892,218 @@
         "title": "ErrorFrame",
         "type": "object"
       },
+      "EstacionOut": {
+        "description": "Una estación de la red frente a este incidente.",
+        "properties": {
+          "counted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Counted"
+          },
+          "dist_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dist Km"
+          },
+          "peak_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pga G"
+          },
+          "peak_ts": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Ts"
+          },
+          "sensor_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Code"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "site_id": {
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "t_arribo_medido_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Arribo Medido S"
+          },
+          "t_arribo_teorico_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "T Arribo Teorico S"
+          },
+          "tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tier"
+          },
+          "umbral_origen": {
+            "title": "Umbral Origen",
+            "type": "string"
+          },
+          "umbral_pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Umbral Pga G"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_code",
+          "site_name",
+          "umbral_origen"
+        ],
+        "title": "EstacionOut",
+        "type": "object"
+      },
+      "EstacionesOut": {
+        "description": "La tabla completa, en ORDEN DE ARRIBO.",
+        "properties": {
+          "ancla": {
+            "title": "Ancla",
+            "type": "string"
+          },
+          "ancla_ts": {
+            "format": "date-time",
+            "title": "Ancla Ts",
+            "type": "string"
+          },
+          "epicentro_lat": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epicentro Lat"
+          },
+          "epicentro_lon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epicentro Lon"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EstacionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "magnitude": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitude"
+          },
+          "reproduccion": {
+            "default": false,
+            "title": "Reproduccion",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "incident_id",
+          "event_id",
+          "ancla",
+          "ancla_ts",
+          "items"
+        ],
+        "title": "EstacionesOut",
+        "type": "object"
+      },
       "EvacuacionOut": {
         "description": "Las métricas. `None` es «no medido»; la razón está en `notas`.",
         "properties": {
@@ -14545,6 +14757,47 @@
           }
         },
         "summary": "Relocate Epicenter"
+      }
+    },
+    "/incidents/{incident_id}/estaciones": {
+      "get": {
+        "description": "Lo medido y lo esperado por estación, en orden de arribo.",
+        "operationId": "incident_estaciones_incidents__incident_id__estaciones_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstacionesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Estaciones"
       }
     },
     "/incidents/{incident_id}/evidence": {

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **356** · `[~]` **10** · `[ ]` **51**
+**Conteo de tareas:** total **417** · `[x]` **357** · `[~]` **10** · `[ ]` **50**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14230,19 +14230,39 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   arriba) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí — la firma de
   `alertKind`.
 
-### [ ] T-7.17 · **Cómo lo detectó cada estación** — `SOFTWARE`
+### [x] T-7.17 · **Cómo lo detectó cada estación** — `SOFTWARE` · **CERRADA 2026-09-15**
 - **Componente:** api · web · **Depende de:** T-7.14 · **Prioridad:** F3 · alta
 - **Objetivo:** una tabla por estación con lo medido y lo esperado, en el muro, en triage y en
   el PDF.
 - **Criterios de aceptación:**
-  - [ ] `GET /incidents/{id}/estaciones`: sitio (siempre por `SiteLabel`), sensor, distancia
-    al epicentro, pico medido de `waveform_features_1s`, `t_arribo` medido (primer segundo
-    sobre umbral) y teórico (plan), tier alcanzado por el gabinete real, `counted`.
-  - [ ] `EstacionesTable` con `StateFrame` (loading/error/empty/stale) en `DetailPanel` del
-    muro y en triage, en orden de arribo; sustituye a `QuorumNodes` cuando hay reproducción.
-  - [ ] Sección «Red de estaciones» en el PDF con los mismos datos.
-- **Tests de censo que toca:** `serverDataCensus`, `siteDemoCensus`, `primitivasCensus`,
-  `typeScale` · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+  - [x] `GET /incidents/{id}/estaciones`: sitio (con su código, para que `SiteLabel` pinte la
+    cinta DEMO), sensor, distancia al epicentro, pico medido, `t_arribo` medido (primer segundo
+    sobre umbral) y teórico (del plan de `T-7.14`), tier alcanzado y `counted`.
+  - [x] ⚠️ **El ancla se DECLARA.** Los arribos se cuentan desde el origen del sismo cuando hay
+    evento y desde la apertura del incidente cuando no, y el campo `ancla` lo dice. Sin eso, dos
+    tablas con anclas distintas se comparan como si midieran lo mismo — un error que no se ve.
+  - [x] ⚠️ **«Sobre umbral» es el umbral del INMUEBLE**, resuelto con el mismo
+    `umbral_de_comparacion` que usan la banda y el dictamen, y viaja con su **procedencia**. Un
+    umbral de fábrica presentado como del edificio es el defecto que cerró `T-7.35`.
+  - [x] ⚠️ **`tier = null` no es `normal`**, ni en la API ni en la tabla ni en el PDF: un
+    gabinete que no publicó transición no dijo que estuviera en calma, no dijo nada.
+  - [x] ⚠️ **Sin epicentro, distancia y arribo teórico van en `null`.** Rellenarlos con una
+    estimación sería presentar una simulación como si fuera la medición; lo medido sigue ahí.
+  - [x] `EstacionesTable` con `StateFrame` (los cuatro estados) en el `DetailPanel` del muro y
+    en triage, **en el orden del servidor**, que es el del arribo — la tabla no reordena, o dos
+    superficies contarían la misma secuencia de dos maneras. Sustituye a `QuorumNodes` cuando el
+    evento es una reproducción: allí no hubo votos, y una tabla de votos vacía parecería que la
+    red no corroboró cuando lo que pasa es que no había nada que corroborar.
+  - [x] Sección **7 · RED DE ESTACIONES** en el PDF, con los mismos números y del **mismo
+    builder** que la pantalla: dos caminos para los mismos datos acaban discrepando, y un
+    dictamen que no coincide con lo que el operador vio es peor que ninguno. Las secciones 7-14
+    se renumeraron a 8-15. Es distinta de la 6: aquélla dice quién VOTÓ, ésta qué MIDIÓ cada
+    inmueble.
+  - [x] Del PDF no se raspa texto: se espía `text_of`. Seis pruebas, con su control de ceguera.
+- **Tests de censo que toca:** `serverDataCensus` (dos altas, muro y triage, con su razón),
+  `statePrecedenceCensus` (el marco número **trece**, y el primero que no vive en
+  `features/triage/`) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el
+  `DetailPanel` y el `TriageDetail` ganan una prop obligatoria.
 
 ### [ ] T-7.18 · **Las ondas llegan a cada estación en el mapa** — `SOFTWARE`
 - **Componente:** web · api · **Depende de:** T-7.14 · **Prioridad:** F3 · alta

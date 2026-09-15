@@ -217,6 +217,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "detailVisible",
     "epicenterIncident",
     "epicenterSite",
+    "estaciones",
     "features",
     "focusIncident",
     "focusSite",
@@ -255,6 +256,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "current",
     "deepLinkMiss",
     "detail",
+    "estaciones",
     "forensics",
     "matrix",
     "staleSince",
@@ -291,7 +293,11 @@ const RAZONES: Record<string, string> = {
     "están anclados a la página y meterlos dentro los borraría en `loading`/`error`, que es " +
     "cuando el operador más necesita el detalle del sitio. Cada hijo trae su propio marco " +
     "(DetailPanel tiene tres). Lo que SÍ queda pendiente es que `staleSince` sólo viaja a " +
-    "DetailPanel dentro de `link`: los dos modales no reciben frescura ninguna.",
+    "DetailPanel dentro de `link`: los dos modales no reciben frescura ninguna. " +
+    "[T-7.17] `estaciones` baja a `DetailPanel`, que la pinta dentro del marco de " +
+    "`EstacionesTable` — el cuarto de ese riel. Esta página no pinta ni una de sus celdas, " +
+    "y contarla aquí es lo correcto: el día que alguien saque un pico o un arribo al muro " +
+    "sin marco, un incidente sin leer diría `S/D` como si fuera la medición.",
   "features/console/DrillModal.tsx::DrillModal":
     "(a) FORMULARIO DE GUARDADO. Lo único de `plantillas` que queda fuera del marco es el " +
     "formulario de GUARDAR COMO PLANTILLA: `plantillas.pending` deshabilita el botón y " +
@@ -372,7 +378,12 @@ const RAZONES: Record<string, string> = {
     "[T-3.12.c] `cctv` está aquí por la MISMA razón que `forensics`: no se pinta, baja " +
     "entero a `CctvPanel`, que sí tiene su marco con las cuatro entradas y su `staleSince` " +
     "de verdad. Se cuenta igual, y eso es lo correcto: el día que alguien saque una cifra " +
-    "de evacuación a esta página sin marco, este censo lo dice.",
+    "de evacuación a esta página sin marco, este censo lo dice. " +
+    "[T-7.17] `estaciones` entra por la misma puerta que `cctv` y `forensics`: la página no " +
+    "pinta una sola de sus celdas, baja entero a `EstacionesTable`, que tiene su marco con " +
+    "las cuatro entradas. Se cuenta igual —y debe contarse—: el día que alguien saque un " +
+    "pico o un arribo a esta página sin marco, un incidente sin leer diría `S/D` como si " +
+    "fuera la medición.",
   "shell/OperatorMenu.tsx::OperatorMenu":
     '(c) DEUDA menor pero real. `label = profile.data?.display_name ?? me?.role ?? ""` se ' +
     "pinta en la topbar de TODAS las pantallas sin marco ni prueba de cuatro estados. El " +

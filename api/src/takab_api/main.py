@@ -17,6 +17,7 @@ from takab_api.routers.demo_mode import router as demo_mode_router
 from takab_api.routers.dictamens import router as dictamens_router
 from takab_api.routers.drill_templates import router as drill_templates_router
 from takab_api.routers.drills import router as drills_router
+from takab_api.routers.estaciones import router as estaciones_router
 from takab_api.routers.events import router as events_router
 from takab_api.routers.exports import router as exports_router
 from takab_api.routers.fleet import router as fleet_router
@@ -152,6 +153,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
     # [T-2.40] Hechos medidos del incidente: una fuente para pantalla y dictamen.
     app.include_router(forensics_router)
+    app.include_router(estaciones_router)
     app.include_router(reproduccion_router)
     # [T-3.12.c] CCTV: métricas de evacuación y descarga del clip.
     app.include_router(cctv_router)

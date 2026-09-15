@@ -87,6 +87,7 @@ def _render_technical(m: ReportModel) -> bytes:
     _channels_section(pdf, m)
     _intensity_section(pdf, m)
     _quorum_section(pdf, m)
+    _estaciones_section(pdf, m)
     _post_event_section(pdf, m)
     _sensors_section(pdf, m)
     _chain_section(pdf, m)
@@ -513,8 +514,46 @@ def _quorum_section(pdf: TakabPDF, m: ReportModel) -> None:
             row.cell(pdf.text_of("sí" if v.counted else "no"))
 
 
+def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-7.17] Qué midió cada estación de la red, junto a lo que le tocaba.
+
+    Distinta de la sección 6: aquélla dice QUIÉN VOTÓ en el cuórum —un hecho del
+    motor—, y ésta dice QUÉ MIDIÓ cada inmueble. En una reproducción no hay votos
+    y esta tabla es la única que cuenta lo que pasó en la red.
+    """
+    pdf.section("7", "RED DE ESTACIONES")
+    if not m.estaciones:
+        pdf.callout("SIN ESTACIONES CON GABINETE ACTIVO EN ESTE CLIENTE.")
+        return
+    pdf.para(
+        "Arribos contados desde "
+        + (
+            "el origen del sismo."
+            if m.estaciones_ancla == "event"
+            else "la apertura del incidente."
+        ),
+        size=7.5,
+        muted=True,
+    )
+    pdf.set_font(pdf.body_font, "", 7)
+    with pdf.table(col_widths=(46, 20, 22, 22, 22, 20), text_align="LEFT") as table:
+        head = table.row()
+        for h in ("ESTACIÓN", "DIST (km)", "ESPERADO (s)", "MEDIDO (s)", "PICO (g)", "TIER"):
+            head.cell(pdf.text_of(h))
+        for e in m.estaciones:
+            row = table.row()
+            etiqueta = e.site_name if e.sensor_code is None else f"{e.site_name} ({e.sensor_code})"
+            row.cell(pdf.text_of(etiqueta))
+            row.cell(pdf.text_of(num(e.dist_km, 0)))
+            row.cell(pdf.text_of(num(e.t_teorico_s, 1)))
+            row.cell(pdf.text_of(num(e.t_medido_s, 1)))
+            row.cell(pdf.text_of(num(e.peak_pga_g, 4)))
+            # Vacío no es `normal`: el gabinete no dijo que estuviera en calma.
+            row.cell(pdf.text_of(e.tier or "S/D"))
+
+
 def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("7", "DESEMPEÑO DE LA RED")
+    pdf.section("8", "DESEMPEÑO DE LA RED")
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("ESTACIONES QUE CONTRIBUYERON", str(m.station_count))
     # [T-5.11] El rótulo dice CORRELACIÓN y no «contraste»: contrastar exige un
@@ -524,7 +563,7 @@ def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("8", "INSTRUMENTACIÓN")
+    pdf.section("9", "INSTRUMENTACIÓN")
     if not m.sensors:
         pdf.callout("SIN SENSORES ACTIVOS REGISTRADOS PARA ESTE INMUEBLE.")
         return
@@ -538,7 +577,7 @@ def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("9", "CADENA DE DICTÁMENES")
+    pdf.section("10", "CADENA DE DICTÁMENES")
     if not m.dictamens:
         pdf.callout("SIN DICTAMEN REGISTRADO PARA ESTE INCIDENTE.")
         return
@@ -563,7 +602,7 @@ def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("10", "CADENA DE CUSTODIA")
+    pdf.section("11", "CADENA DE CUSTODIA")
     if m.actions:
         pdf.set_font(pdf.mono_font, "", 6.5)
         for a in m.actions:
@@ -619,7 +658,7 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     inmueble no tiene CCTV o si el generador se lo saltó, que es exactamente la ambigüedad
     que `NO_CCTV` está escrito para cerrar.
     """
-    pdf.section("11", "EVACUACIÓN OBSERVADA (CCTV)")
+    pdf.section("12", "EVACUACIÓN OBSERVADA (CCTV)")
     bloque = m.cctv
 
     if bloque.t90_s is None:
@@ -663,7 +702,7 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
     """Prosa opcional (T-2.42). Rodea al veredicto; nunca lo produce."""
     if not m.narrative:
         return
-    pdf.section("12", "ANÁLISIS")
+    pdf.section("13", "ANÁLISIS")
     for title, body in m.narrative:
         pdf.set_font(pdf.body_font, "B", 8)
         pdf.cell(0, 5, pdf.text_of(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -684,7 +723,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
     apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
     que no haga falta llegar a la nota para saber de quién son.
     """
-    pdf.section("13", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    pdf.section("14", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
     block = compliance_block(m.compliance)
     for label, value in block.rows:
         pdf.field(label, value)
@@ -695,7 +734,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("14", "FIRMA Y DESLINDE")
+    pdf.section("15", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)

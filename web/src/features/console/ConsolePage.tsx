@@ -32,6 +32,7 @@ import { isLinkDown, siteLink } from "./link";
 import { consoleKpis } from "./stats";
 import { useAutoPopup } from "./useAutoPopup";
 import { useDictamenRequest } from "./useDictamenRequest";
+import { useEstaciones } from "./useEstaciones";
 import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
 import { useQuorumCommands } from "./useQuorumCommands";
@@ -90,6 +91,9 @@ function ConsoleWall() {
   const relays = useSiteRelays(focusSiteId);
   const focusIncident = incidents.incidents.find((i) => i.site_id === focusSiteId) ?? null;
   const actions = useIncidentActions(focusIncident?.incident_id ?? null);
+  // [T-7.17] La red de estaciones del incidente en foco. Una sola consulta, sin
+  // poll: describe un evento que ya ocurrió.
+  const estaciones = useEstaciones(focusIncident?.incident_id ?? null);
   // [T-2.32] Burst de actuación del quórum de red para el incidente enfocado.
   const quorumCommanded = useQuorumCommands(focusSiteId, focusIncident?.event_id ?? null);
 
@@ -374,6 +378,7 @@ function ConsoleWall() {
           soh={soh}
           actions={actions}
           incident={focusIncident}
+          estaciones={estaciones}
           relays={relays}
           quorumCommanded={quorumCommanded}
           // [T-2.46] El enlace sale del MISMO snapshot que pinta el mapa: una

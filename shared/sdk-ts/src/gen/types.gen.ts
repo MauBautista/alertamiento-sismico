@@ -992,6 +992,40 @@ export type ErrorFrame = {
 };
 
 /**
+ * Una estación de la red frente a este incidente.
+ */
+export type EstacionOut = {
+    counted?: boolean | null;
+    dist_km?: number | null;
+    peak_pga_g?: number | null;
+    peak_ts?: string | null;
+    sensor_code?: string | null;
+    site_code: string;
+    site_id: string;
+    site_name: string;
+    t_arribo_medido_s?: number | null;
+    t_arribo_teorico_s?: number | null;
+    tier?: string | null;
+    umbral_origen: string;
+    umbral_pga_g?: number | null;
+};
+
+/**
+ * La tabla completa, en ORDEN DE ARRIBO.
+ */
+export type EstacionesOut = {
+    ancla: string;
+    ancla_ts: string;
+    epicentro_lat?: number | null;
+    epicentro_lon?: number | null;
+    event_id: string | null;
+    incident_id: string;
+    items: Array<EstacionOut>;
+    magnitude?: number | null;
+    reproduccion?: boolean;
+};
+
+/**
  * Las métricas. `None` es «no medido»; la razón está en `notas`.
  */
 export type EvacuacionOut = {
@@ -4382,6 +4416,33 @@ export type RelocateEpicenterIncidentsIncidentIdEpicenterPostResponses = {
 };
 
 export type RelocateEpicenterIncidentsIncidentIdEpicenterPostResponse = RelocateEpicenterIncidentsIncidentIdEpicenterPostResponses[keyof RelocateEpicenterIncidentsIncidentIdEpicenterPostResponses];
+
+export type IncidentEstacionesIncidentsIncidentIdEstacionesGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/estaciones';
+};
+
+export type IncidentEstacionesIncidentsIncidentIdEstacionesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentEstacionesIncidentsIncidentIdEstacionesGetError = IncidentEstacionesIncidentsIncidentIdEstacionesGetErrors[keyof IncidentEstacionesIncidentsIncidentIdEstacionesGetErrors];
+
+export type IncidentEstacionesIncidentsIncidentIdEstacionesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: EstacionesOut;
+};
+
+export type IncidentEstacionesIncidentsIncidentIdEstacionesGetResponse = IncidentEstacionesIncidentsIncidentIdEstacionesGetResponses[keyof IncidentEstacionesIncidentsIncidentIdEstacionesGetResponses];
 
 export type ListEvidenceIncidentsIncidentIdEvidenceGetData = {
     body?: never;

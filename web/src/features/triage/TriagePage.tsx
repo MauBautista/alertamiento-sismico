@@ -9,6 +9,7 @@ import { useNow } from "../../lib/useNow";
 import CatalogPanel from "./CatalogPanel";
 import { FalsePositiveRate } from "./ClassificationPanel";
 import InspectionMatrix from "./InspectionMatrix";
+import { useEstaciones } from "../console/useEstaciones";
 import TriageDetail from "./TriageDetail";
 import TriageTable from "./TriageTable";
 import { inspectionMatrix } from "./priority";
@@ -94,6 +95,9 @@ export default function TriagePage() {
   const forensics = useForensics(current?.incident.incident_id ?? null);
   // [T-3.12.c] CCTV: misma cadencia y mismo reloj de frescura que forensics.
   const cctv = useCctv(current?.incident.incident_id ?? null);
+  // [T-7.17] La red de estaciones del incidente en foco. Misma forma que
+  // `forensics` y `cctv`: la página lee, el panel pinta.
+  const estaciones = useEstaciones(current?.incident.incident_id ?? null);
 
   // [T-2.40] Sitios del MISMO evento, ordenados por prioridad. Se derivan de las
   // filas YA cargadas —incidentes del propio tenant, ya filtrados por RLS—: un
@@ -238,6 +242,7 @@ export default function TriagePage() {
             forensics={forensics}
             cctv={cctv}
             minNodes={triage.minNodesFor(current.incident.site_id)}
+            estaciones={estaciones}
             // [T-2.82.a] La misma edad que fecha el HISTORIAL: la fila del
             // incidente sale de esa consulta y de ninguna otra, así que el panel
             // del quórum —que sin evento asociado no habla del evento sino del
