@@ -74,8 +74,7 @@ def test_el_catalogo_de_la_CONSOLA_es_el_mismo() -> None:
     mecanismo que `bmsChannels.test.ts` al revés (web leyendo `handlers.py`).
     """
     fuente = (
-        Path(__file__).resolve().parents[3]
-        / "web/src/features/triage/useClassification.ts"
+        Path(__file__).resolve().parents[3] / "web/src/features/triage/useClassification.ts"
     ).read_text(encoding="utf-8")
     bloque = fuente.split("export const CLASIFICACIONES = [")[1].split("] as const;")[0]
     en_la_consola = re.findall(r'value:\s*"(\w+)"', bloque)
