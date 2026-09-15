@@ -111,6 +111,54 @@ def site_for(station: str) -> str:
     return f"site-sim-{_station_index(station):03d}"
 
 
+@dataclass(frozen=True)
+class Estacion:
+    """Una estación simulada y a quién pertenece.
+
+    [T-7.11] La convención fija (`SIM001..020`, 5 por gateway, índice→sitio) sigue
+    siendo el default, pero la red de demostración no cabe en ella: son tres sitios
+    de tres tipos con un gateway cada uno. En vez de estirar la fórmula —que es
+    cómo una convención acaba con excepciones dentro— la flota puede venir de un
+    fichero, y entonces es un DATO que se lee, no una regla que se adivina.
+    """
+
+    station: str
+    gateway: str
+    site: str
+
+
+def flota_fija(sites: int) -> list[Estacion]:
+    """La convención de siempre, intacta: `db/seeds/sim_fleet.sql`."""
+    return [
+        Estacion(s, gateway_for(s), site_for(s))
+        for s in (station_name(i) for i in range(1, sites + 1))
+    ]
+
+
+def flota_de_fichero(ruta: Path) -> tuple[str, list[Estacion]]:
+    """`(tenant, estaciones)` de un JSON. Formato:
+
+        {"tenant": "tenant-dev",
+         "stations": [{"station": "SIM101", "gateway": "gw-sim-0101",
+                       "site": "site-sim-101"}, ...]}
+
+    Se validan las tres claves de cada fila: una estación sin gateway publicaría
+    con un `thing` vacío y la nube la rechazaría por principal desconocido, que es
+    un error mucho más caro de leer que éste.
+    """
+    datos = json.loads(ruta.read_text(encoding="utf-8"))
+    filas = datos.get("stations") or []
+    if not filas:
+        raise ValueError(f"{ruta}: no declara ninguna estación")
+    estaciones = []
+    for i, fila in enumerate(filas):
+        faltan = [k for k in ("station", "gateway", "site") if not fila.get(k)]
+        if faltan:
+            raise ValueError(f"{ruta}: estación {i} sin {', '.join(faltan)}")
+        estaciones.append(Estacion(fila["station"], fila["gateway"], fila["site"]))
+    return datos.get("tenant") or TENANT_ID, estaciones
+
+
 def enrich(payload: dict[str, Any], topic: str, thing: str, *, ts_ms: int | None = None) -> dict:
     """Imita el enriquecimiento de la IoT Rule (T-1.15): añade EXACTAMENTE 3 claves meta_*.
 
@@ -158,21 +206,33 @@ class FleetSimulator:
         quake: str | None = None,
         seed: int | None = None,
         t0: datetime | None = None,
+        estaciones: list[Estacion] | None = None,
+        tenant: str = TENANT_ID,
+        no_events: bool = False,
     ) -> None:
-        if not 1 <= sites <= MAX_SITES:
+        if estaciones is None and not 1 <= sites <= MAX_SITES:
             raise ValueError(f"sites debe estar en 1..{MAX_SITES} (flota sim fija)")
         if rate <= 0:
             raise ValueError("rate debe ser > 0")
+        # [T-7.11] `--no-events` y `--quake` son incompatibles por definición: el
+        # sismo simulado ES un LocalEvent. Pedirlos juntos es pedir dos cosas
+        # opuestas, y fallar aquí es mejor que emitir a medias.
+        if no_events and quake is not None:
+            raise ValueError("--no-events y --quake son incompatibles: el sismo ES un LocalEvent")
         self.sites = sites
         self.rate = rate
         self.interval = 1.0 / rate
         self.with_health = with_health
-        self.stations = [station_name(i) for i in range(1, sites + 1)]
-        self.gateways = sorted({gateway_for(s) for s in self.stations})
+        self.tenant = tenant
+        self.no_events = no_events
+        flota = estaciones if estaciones is not None else flota_fija(sites)
+        self.stations = [e.station for e in flota]
+        self._gateway_de = {e.station: e.gateway for e in flota}
+        self._sitio_de = {e.station: e.site for e in flota}
+        self.gateways = sorted({e.gateway for e in flota})
         if quake is not None:
-            _station_index(quake)  # valida convención
             if quake not in self.stations:
-                raise ValueError(f"--quake {quake} fuera de los --sites={sites} activos")
+                raise ValueError(f"--quake {quake} no está entre las estaciones activas")
         self.quake = quake
         self._quake_event_id = new_event_id()
         self._quake_stage = 0  # 0=nada, 1=watch emitido, 2=escalado
@@ -196,6 +256,17 @@ class FleetSimulator:
         )
 
     def _msg(self, topic: str, thing: str, payload: dict[str, Any]) -> OutMessage:
+        # [T-7.11] La invariante del bloque VIII, puesta donde no se puede rodear:
+        # por aquí pasa TODO mensaje que sale del simulador. Un `LocalEvent`
+        # simulado abre un incidente de verdad, el motor de cuórum forma con
+        # estaciones que no midieron nada y la nube manda una alerta real a los
+        # teléfonos del sitio. Se LANZA, no se descarta en silencio: un simulador
+        # que se traga mensajes esconde el fallo en vez de enseñarlo.
+        if self.no_events and topic == EVENTS_TOPIC:
+            raise RuntimeError(
+                "el simulador tiene --no-events y algo intentó publicar en "
+                f"{EVENTS_TOPIC}: un LocalEvent simulado abre incidentes reales"
+            )
         validate_payload(topic, payload)
         return OutMessage(topic=topic, thing=thing, payload=payload)
 
@@ -203,20 +274,20 @@ class FleetSimulator:
         assert self.quake is not None
         event = LocalEvent(
             event_id=self._quake_event_id,  # MISMO event_id: prueba la escalada E2E (G3)
-            tenant_id=TENANT_ID,
-            site_id=site_for(self.quake),
+            tenant_id=self.tenant,
+            site_id=self._sitio_de[self.quake],
             source=AlertSource.THRESHOLD,
             tier=tier,
             created_at=created_at,
         )
-        return self._msg(EVENTS_TOPIC, gateway_for(self.quake), event.model_dump(mode="json"))
+        return self._msg(EVENTS_TOPIC, self._gateway_de[self.quake], event.model_dump(mode="json"))
 
     def window_batch(self, window_index: int) -> list[OutMessage]:
         elapsed = window_index * self.interval
         window_start = self.t0 + timedelta(seconds=elapsed)
         batch: list[OutMessage] = []
         for station in self.stations:
-            thing = gateway_for(station)
+            thing = self._gateway_de[station]
             for channel in CHANNELS:
                 feature = self._feature(station, channel, window_start)
                 batch.append(self._msg(FEATURES_TOPIC, thing, feature.model_dump(mode="json")))
@@ -380,17 +451,41 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--with-health", action="store_true", help="heartbeat cada 30 s/gateway")
     parser.add_argument("--quake", default=None, metavar="SIMxxx", help="watch→evacuate_or_hold")
     parser.add_argument("--seed", type=int, default=None, help="RNG reproducible")
+    # [T-7.11] La red de demostración no cabe en la convención fija (SIM001..020,
+    # 5 por gateway): son tres sitios de tres tipos con un gateway cada uno.
+    parser.add_argument(
+        "--stations-file",
+        type=Path,
+        default=None,
+        metavar="RUTA",
+        help="JSON con la flota {tenant, stations:[{station,gateway,site}]} en vez de la fija",
+    )
+    parser.add_argument("--tenant", default=None, help=f"tenant a publicar (def. {TENANT_ID})")
+    parser.add_argument(
+        "--no-events",
+        action="store_true",
+        help="PROHÍBE publicar en takab/events (un LocalEvent simulado abre incidentes reales)",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    # [T-7.11] La flota, de fichero o la fija de siempre.
+    estaciones = tenant = None
+    if args.stations_file is not None:
+        tenant, estaciones = flota_de_fichero(args.stations_file)
+    tenant = args.tenant or tenant or TENANT_ID
+
     sim = FleetSimulator(
         sites=args.sites,
         rate=args.rate,
         with_health=args.with_health,
         quake=args.quake,
         seed=args.seed,
+        estaciones=estaciones,
+        tenant=tenant,
+        no_events=args.no_events,
     )
     connections: dict = {}
     if args.mode == "sqs":

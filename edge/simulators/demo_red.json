@@ -1,0 +1,10 @@
+{
+  "_about": "[T-7.11] La red de demostración: tres estaciones simuladas de tres tipos. Espejo de db/seeds/demo_red.sql — si una cambia, la otra también, o el simulador publica contra un registro que no existe y la nube lo rechaza por principal desconocido.",
+  "_invariante": "Se corre SIEMPRE con --no-events. Un LocalEvent simulado abre un incidente de verdad, el motor de cuórum forma con estaciones que no midieron nada y la cascada manda una alerta real a los teléfonos del sitio.",
+  "tenant": "tenant-dev",
+  "stations": [
+    { "station": "SIM101", "gateway": "gw-sim-0101", "site": "site-sim-101" },
+    { "station": "SIM102", "gateway": "gw-sim-0102", "site": "site-sim-102" },
+    { "station": "SIM103", "gateway": "gw-sim-0103", "site": "site-sim-103" }
+  ]
+}

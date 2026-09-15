@@ -138,3 +138,100 @@ def test_quake_escala_con_mismo_event_id():
         assert msg.payload["tenant_id"] == "tenant-dev"
         assert msg.payload["site_id"] == "site-sim-007"
         assert msg.payload["source"] == "local_threshold"
+
+
+# ---- [T-7.11] la red de demostración: flota de fichero y CERO eventos --------
+#
+# La invariante del bloque VIII, que no es una preferencia de estilo: un
+# `LocalEvent` simulado ABRE UN INCIDENTE DE VERDAD en la nube, el motor de
+# cuórum forma con estaciones que no midieron nada y la cascada de notificación
+# manda una alerta real a los teléfonos del sitio. Un simulador que puede hacer
+# eso no se deja corriendo como unidad de systemd.
+
+
+def _demo() -> list:
+    from simulators.fleet import Estacion
+
+    return [
+        Estacion("SIM101", "gw-sim-0101", "site-sim-101"),
+        Estacion("SIM102", "gw-sim-0102", "site-sim-102"),
+        Estacion("SIM103", "gw-sim-0103", "site-sim-103"),
+    ]
+
+
+def test_con_no_events_NINGUNA_ventana_publica_en_takab_events() -> None:
+    """Se barre una corrida larga, no la primera ventana: el sismo simulado del
+    modo normal aparece a los 2 y 5 segundos, no en el arranque."""
+    sim = FleetSimulator(estaciones=_demo(), tenant="tenant-dev", no_events=True, with_health=True)
+    topics = {m.topic for w in range(120) for m in sim.window_batch(w)}
+    assert "takab/events" not in topics
+    assert topics == {"takab/features", "takab/health"}, sorted(topics)
+
+
+def test_la_prohibicion_LANZA_en_vez_de_tragarse_el_mensaje() -> None:
+    """Un simulador que descarta en silencio esconde el fallo en vez de enseñarlo.
+
+    Se ataca el punto por el que pasa TODO mensaje, que es donde vive la guarda.
+    """
+    sim = FleetSimulator(estaciones=_demo(), no_events=True)
+    with pytest.raises(RuntimeError, match="takab/events"):
+        sim._msg("takab/events", "gw-sim-0101", {"lo que sea": 1})
+
+
+def test_no_events_y_quake_son_INCOMPATIBLES() -> None:
+    """Pedir los dos es pedir cosas opuestas: el sismo ES un LocalEvent."""
+    with pytest.raises(ValueError, match="incompatibles"):
+        FleetSimulator(estaciones=_demo(), no_events=True, quake="SIM101")
+
+
+def test_sin_la_bandera_el_simulador_SIGUE_pudiendo_emitir() -> None:
+    """Control de ceguera: si `no_events` no cambiara nada, los tres de arriba
+    pasarían igual sobre un simulador que nunca emite eventos."""
+    sim = FleetSimulator(estaciones=_demo(), quake="SIM101")
+    topics = {m.topic for w in range(120) for m in sim.window_batch(w)}
+    assert "takab/events" in topics
+
+
+def test_la_flota_de_FICHERO_no_inventa_el_gateway_ni_el_sitio() -> None:
+    """La convención fija deriva gateway y sitio del índice; la red de
+    demostración no cabe en ella y sus tres sitios son de tres tipos."""
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from simulators.fleet import flota_de_fichero
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        json.dump(
+            {
+                "tenant": "tenant-demo",
+                "stations": [{"station": "SIM101", "gateway": "gw-x", "site": "sitio-x"}],
+            },
+            fh,
+        )
+        ruta = Path(fh.name)
+    try:
+        tenant, estaciones = flota_de_fichero(ruta)
+    finally:
+        ruta.unlink()
+    assert tenant == "tenant-demo"
+    assert (estaciones[0].gateway, estaciones[0].site) == ("gw-x", "sitio-x")
+
+
+def test_una_estacion_SIN_gateway_se_rechaza_al_leer_el_fichero() -> None:
+    """Publicaría con un `thing` vacío y la nube la rechazaría por principal
+    desconocido — un error mucho más caro de leer que éste."""
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from simulators.fleet import flota_de_fichero
+
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+        json.dump({"stations": [{"station": "SIM101", "site": "sitio-x"}]}, fh)
+        ruta = Path(fh.name)
+    try:
+        with pytest.raises(ValueError, match="gateway"):
+            flota_de_fichero(ruta)
+    finally:
+        ruta.unlink()
