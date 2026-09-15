@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **358** · `[~]` **10** · `[ ]` **49**
+**Conteo de tareas:** total **417** · `[x]` **358** · `[~]` **11** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14305,23 +14305,43 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   (+9), `MapPanel.test` (+3), `motion.spec` · **Token nuevo:** sí, `--tk-dur-arrival` ·
   **Cambia algo que un test defiende hoy:** sí — `isLocalized` rechazaba `external`.
 
-### [ ] T-7.19 · **La alerta se anima y se detiene** — `SOFTWARE`
+### [~] T-7.19 · **La alerta se anima y se detiene** — `SOFTWARE` · **MURO Y PANEL HECHOS 2026-09-15 · MÓVIL ESPERA EL PIXEL**
 - **Componente:** web · edge · mobile · **Depende de:** T-7.13 · **Prioridad:** F3 · alta
 - **Objetivo:** ejecutar `D-30`: el camino de lectura de la alerta gana movimiento con
   condiciones —texto legible desde el primer frame, portador no-movimiento, se detiene por
   estado, respeta `reduced-motion`— en el muro, el panel y el móvil.
 - **Criterios de aceptación:**
-  - [ ] Muro: la carcasa `.soc-alert` gana un halo `soc-alert-pulse` (`--tk-dur-alerta`) solo
-    con `alertKind === "alert"`; el texto no se mueve; la **línea** de escena de las otras
-    cinco rutas sigue inmóvil (`layoutInvariants`).
-  - [ ] Panel: `#banner-alert` ya parpadea (`tk-blink`); se verifica que cesa al cambiar de
-    escena y que `reduced-motion` lo apaga.
-  - [ ] Móvil: `CrisisView` con halo respirando (`Animated`, `useReduceMotion`), que se detiene
-    en `shaking_concluded`; **re-acreditado en el Pixel real** con captura y `screenrecord`.
-  - [ ] `PLAN-REFORMA-VISUAL.md §5.3` anotado como revocado por `D-30`.
-- **Tests de censo que toca:** `motionInvariants`, `layoutInvariants`, `motion.spec`, jest de
-  `CrisisView` · **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende
-  hoy:** sí — el selector nuevo tiene que entrar en el grupo `animation: none`.
+  - [x] Muro: la carcasa `.soc-alert` respira con `soc-alert-pulse` (`--tk-dur-alerta`), y
+    **solo** con `data-alive="true"` **y** `data-authorizes="true"`. Lo que anima es un
+    `::after`, no la caja del texto: la instrucción es legible desde el primer frame
+    (condición 1). Se anima `opacity` de un pseudo-elemento y no `box-shadow` de la caja —
+    es lo que el compositor mueve sin recalcular el diseño, que es la otra mitad de «no
+    retrasar la lectura». La **línea** de escena de las otras cinco rutas sigue inmóvil, con
+    su invariante nombrado.
+  - [x] ⚠️ **`data-alive` sale del ESTADO, no de un cronómetro** (condición 3): `open`/`acked`
+    sí, `in_review`/`closed` no. La animación no se apaga: **deja de existir** porque el
+    selector no casa. `alertaViva` vive en `features/console/` y no en `scene.ts` porque el
+    censo de la escena prohíbe sacar esa decisión de su carpeta — y hay una prueba de tabla
+    que ata `alertaViva` con `alertKind` sobre los cuatro estados, para que no puedan
+    divergir: si una dijera `review` y la otra «viva», el muro tendría una tarjeta respirando
+    bajo una franja que dice SISMO CONCLUIDO.
+  - [x] El selector entra en el grupo `animation: none` —lo **exige** el invariante derivado,
+    no una lista— y bajo reducción el anillo **se queda puesto** en vez de desaparecer:
+    apagar bien una animación es que siga leyéndose como estado.
+  - [x] Panel: `#banner-alert` ya parpadeaba; ahora se verifica que **cesa al cambiar de
+    escena** —sobre la MISMA corrida, primero con la alerta viva y luego sin ella, porque dos
+    corridas distintas no demuestran que cese— y que el parpadeo vive en la carcasa y no en
+    `.big`, que es donde va «ALERTA SÍSMICA · PROTÉJASE». Que `reduced-motion` lo apaga ya lo
+    fijaba `test_el_movimiento_se_apaga_entero_bajo_reduce`.
+  - [ ] **Móvil: PENDIENTE DEL PIXEL.** `CrisisView` con halo respirando (`Animated`,
+    `useReduceMotion`) que se detiene en `shaking_concluded`, re-acreditado en el teléfono
+    real con captura y `screenrecord`. No se hace en un emulador
+    ([regla](PENDIENTES-MAURICIO.md)), así que esta mitad espera a que Mauricio lo conecte.
+  - [x] `PLAN-REFORMA-VISUAL.md §5.3` ya estaba anotado como revocado por `D-30`; verificado.
+- **Tests de censo que toca:** `motionInvariants`, `layoutInvariants` (tres invariantes
+  nuevos), `test_local_api_panel` (+2), `motion.spec`, jest de `CrisisView` (pendiente) ·
+  **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende hoy:** sí — el
+  selector nuevo tiene que entrar en el grupo `animation: none`.
 
 ### [ ] T-7.20 · **Epicentro y estaciones en el muro, de punta a punta** — `SOFTWARE`
 - **Componente:** web · **Depende de:** T-7.16, T-7.17, T-7.18 · **Prioridad:** F3 · alta

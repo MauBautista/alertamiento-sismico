@@ -20,6 +20,7 @@
 import { AlertOctagon } from "lucide-react";
 
 import { authorizes } from "../scene/scene";
+import { alertaViva } from "./alertaViva";
 import { alertHeadline } from "./alertHeadline";
 import type { LiveIncident } from "./useLiveIncidents";
 import SiteLabel from "../../components/SiteLabel";
@@ -44,6 +45,10 @@ export default function AlertBanner({ incident, siteName, siteCode = null }: Ale
       data-trigger={incident.trigger ?? "desconocido"}
       data-seismic={String(fuente.seismic)}
       data-authorizes={String(authorizes(incident.trigger))}
+      // [T-7.19 · D-30] La carcasa respira mientras el SERVIDOR sostiene la
+      // alerta. En `in_review` y `closed` la animación no existe — no se apaga
+      // por un cronómetro del cliente, deja de existir porque el estado cambió.
+      data-alive={String(alertaViva(incident))}
     >
       <div className="soc-alert__strip">
         <AlertOctagon size={16} aria-hidden />

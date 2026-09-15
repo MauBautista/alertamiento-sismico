@@ -567,6 +567,48 @@ body {
   border-radius: var(--tk-radius-md);
   overflow: hidden;
   box-shadow: var(--tk-shadow-critical);
+  /* [T-7.19] Ancla del halo. No cambia el flujo: la tarjeta ya era un bloque
+     del ancho de su columna. */
+  position: relative;
+}
+
+/* [T-7.19 · D-30] LA ALERTA RESPIRA — con las cuatro condiciones de la decisión.
+   El §5.3 del plan de reforma visual prohibía animar el camino de lectura; D-30
+   lo revoca y conserva lo que aquella prohibición protegía, que era la LECTURA y
+   no la quietud:
+
+   1. El texto NO se mueve. Lo que anima es un anillo en `::after`, sobre la
+      carcasa; la tipografía y su posición no se tocan.
+   2. Hay portador que no es movimiento: el rojo anclado, el glifo y el titular
+      siguen diciendo lo mismo con la animación apagada.
+   3. Se detiene POR ESTADO: `data-alive` sale de `open`/`acked` (`D-33`). En
+      revisión y cerrado el selector no casa y la animación no existe — no se
+      apaga por un cronómetro del cliente.
+   4. `prefers-reduced-motion` la apaga, y el selector está en el grupo
+      `animation: none` que `motionInvariants.test.ts` deriva y exige.
+
+   Solo con `data-authorizes="true"`: un AVISO que no manda sobre nada no puede
+   llamar la atención como lo que sí manda (U-28). Y anima `opacity` de un
+   pseudo-elemento, no `box-shadow` de la caja: es lo que el compositor mueve sin
+   recalcular el diseño, que es la otra mitad de «no retrasar la lectura». */
+.soc-alert[data-alive="true"][data-authorizes="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid var(--tk-status-critical);
+  pointer-events: none;
+  opacity: 0.25;
+  animation: soc-alert-pulse var(--tk-dur-alerta) ease-in-out infinite;
+}
+@keyframes soc-alert-pulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.85;
+  }
 }
 .soc-alert__strip {
   background: var(--tk-status-critical);
@@ -1725,12 +1767,18 @@ body {
   .soc-dot--pulse::after,
   .soc-confirm--armed,
   .soc-drill--fresca,
-  .soc-table__row--nueva {
+  .soc-table__row--nueva,
+  .soc-alert[data-alive="true"][data-authorizes="true"]::after {
     animation: none !important;
   }
   .soc-dot--pulse::after {
     transform: scale(1);
     opacity: 0.35;
+  }
+  /* [T-7.19] El anillo se queda PUESTO, no desaparece: apagar bien una
+     animación es que siga leyéndose como estado. La alerta sigue anillada. */
+  .soc-alert[data-alive="true"][data-authorizes="true"]::after {
+    opacity: 0.5;
   }
 }
 
