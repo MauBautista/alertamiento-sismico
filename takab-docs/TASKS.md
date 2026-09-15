@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **352** · `[~]` **10** · `[ ]` **55**
+**Conteo de tareas:** total **417** · `[x]` **353** · `[~]` **10** · `[ ]` **54**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14042,23 +14042,49 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   **Cambia algo que un test defiende hoy:** no — los que afirmaban `sin_dato_externo` lo hacen
   sobre fixtures propios, no sobre el seed; siguen verdes y siguen siendo ciertos para el SSN.
 
-### [ ] T-7.13 · **El incidente tiene fases y se cierra** — `SOFTWARE`
+### [x] T-7.13 · **El incidente tiene fases y se cierra** — `SOFTWARE` · **CERRADA 2026-09-15**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F3 · crítica
 - **Objetivo:** que un incidente pase a revisión cuando la sacudida concluye y se cierre por
   una causa auditada, nunca por un cronómetro del cliente (`D-33`).
 - **Criterios de aceptación:**
-  - [ ] `run_lifecycle_pass` en el worker `takab_api.incident`: `open/acked → in_review`
+  - [x] `run_lifecycle_pass` en el worker `takab_api.incident`: `open/acked → in_review`
     cuando el último tier del sitio es `normal` y han pasado `dictamen_settle_s` **y**
     `alert_hold_min_s` (nuevo, `TAKAB_API_`) desde la apertura; `→ closed` por clasificación
-    `falso_positivo`/`prueba`/`reproduccion`, por dictamen firmado o por
-    `incident_review_ttl_s` (horas, nuevo). Siempre vía `transition_incident` con actor
-    `system:incident`, fila en `incident_actions` y frame por el canal live.
-  - [ ] `POST /incidents/{id}/classification` cierra el incidente cuando la clasificación es
-    terminal; `real` lo deja en revisión hasta el dictamen firmado.
-  - [ ] Idempotente y sin tocar cerrados; `api/tests/incident/test_lifecycle_pass.py` y
-    `tests/api/test_classification_cierra.py` escritos primero.
-- **Tests de censo que toca:** `test_lifecycle` (gana un llamador) · **Token nuevo:** no ·
-  **Cambia algo que un test defiende hoy:** sí — la clasificación deja de ser inerte.
+    terminal, por dictamen firmado o por `incident_review_ttl_s` (horas, nuevo). Siempre vía
+    `transition_incident` con actor `system:incident`, fila en `incident_actions` y frame por
+    el canal live —que **no hubo que programar**: el `AFTER UPDATE` de `incidents` ya emite el
+    `NOTIFY takab_live` desde la `0004`, que es justo el diseño de fetch-on-notify—.
+    `reproduccion` la añade `T-7.14`, que es quien la mete en el CHECK de la tabla; el censo
+    `CIERRA_EL_INCIDENTE` la obliga a declarar si cierra el día que entre.
+  - [x] `POST /incidents/{id}/classification` cierra el incidente cuando la clasificación es
+    terminal; `real` lo deja en revisión hasta el dictamen firmado. El cierre del endpoint lo
+    firma **`user:<sub>`**, no `system:incident`: el cierre por decisión de una persona y el
+    cierre por vencimiento son dos hechos distintos en el timeline.
+  - [x] Idempotente y sin tocar cerrados; `api/tests/incident/test_lifecycle_pass.py` (17) y
+    `tests/api/test_classification_cierra.py` (8) escritos primero.
+  - [x] ⚠️ **Migración `0064`**: `takab_ingest` no tenía `SELECT` sobre
+    `incident_classifications` —la `0055` la creó con `takab_app` como único destinatario—, así
+    que el worker moría con `permission denied` en cada pasada. Verde en local (los tests corren
+    como superusuario) e **imposible en la nube**: la trampa del `GRANT` de la `0001` otra vez.
+    Solo `SELECT`: el worker decide a partir de la clasificación, no clasifica.
+  - [x] ⚠️ **Un gabinete que escala y se queda mudo deja su incidente en ALERTA**, y es la
+    dirección segura: el último tier conocido dice que está sacudiéndose, y apagar el banner
+    porque el gabinete dejó de hablar sería inventar una vuelta a la normalidad que nadie
+    observó. El operador clasifica y cierra al instante; la avería la delata la flota
+    (`is_ghost`, `T-2.60`).
+  - [x] **Ejercida fuera de los tests** con el worker real (`python -m takab_api.incident`)
+    contra la base de desarrollo: `open → in_review` (`shaking_concluded`) en el sitio que
+    volvió a `normal`, el sitio que seguía en `evacuate_or_hold` **intacto en alerta**, y los
+    dos cierres, `classification` y `review_ttl`, con su causa en `incident_actions`.
+  - [x] `alert_hold_min_s` = 180 s e `incident_review_ttl_s` = 6 h entran como
+    **`[SUPUESTO t-7-13-01]`**: son los dos valores que aporta Mauricio (plan §7) y se cambian
+    por entorno sin tocar código. `incident_review_ttl_s = 0` desactiva el TTL y deja las otras
+    dos vías — que es exactamente cómo se revoca `D-33`.
+- **Tests de censo que toca:** `test_lifecycle` (gana un llamador), `test_engine`
+  (`test_run_survives_prolonged_db_outage` declara la pasada nueva),
+  `test_la_cabeza_ESPERADA_sale_de_las_migraciones` (el fichero de la migración tiene que
+  llamarse **igual** que su `revision`) · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** sí — la clasificación deja de ser inerte.
 
 ### [ ] T-7.14 · **La reproducción histórica se arma en la nube y viaja como atributo** — `SOFTWARE`
 - **Componente:** api · db · **Depende de:** T-7.12 · **Prioridad:** F3 · crítica

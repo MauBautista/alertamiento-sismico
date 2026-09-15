@@ -203,6 +203,7 @@ class IncidentEngine:
                     self.run_correlation(work_conn)
                     self._quorum_actuation_pass(work_conn)
                     self._dictamen_pass(work_conn)
+                    self._lifecycle_pass(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("engine: DB no disponible; reconecta")
                     self._safe_close(work_conn)
@@ -267,6 +268,18 @@ class IncidentEngine:
         from takab_api.dictamen.service import run_dictamen_pass
 
         run_dictamen_pass(work_conn, self._settings, lookback_s=self._lookback_s)
+
+    def _lifecycle_pass(self, work_conn: psycopg.Connection) -> None:
+        """[T-7.13 · D-33] Las fases del incidente: a revisión cuando la sacudida
+        concluye, cerrado por causa auditada. DESPUÉS del dictamen y con
+        transacción propia, por lo mismo que el resto de pasadas: un fallo aquí
+        no puede revertir una correlación ni un dictamen ya escritos.
+
+        Es el llamador que le faltaba a ``transition_incident``: hasta esta ficha
+        nada cerraba un incidente en producción."""
+        from takab_api.incident.lifecycle import run_lifecycle_pass
+
+        run_lifecycle_pass(work_conn, self._settings)
 
     # ----------------------------------------------------------- correlación
 

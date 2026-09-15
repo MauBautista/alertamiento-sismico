@@ -556,6 +556,7 @@ def test_run_survives_prolonged_db_outage(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(eng, "_ensure_work", lambda wc: _Dummy())
     monkeypatch.setattr(eng, "run_correlation", lambda conn: resumed.set() or [])
     monkeypatch.setattr(eng, "_dictamen_pass", lambda wc: None)  # T-1.20, fuera de alcance aquí
+    monkeypatch.setattr(eng, "_lifecycle_pass", lambda wc: None)  # T-7.13, ídem
 
     t = threading.Thread(target=eng.run)
     t.start()
