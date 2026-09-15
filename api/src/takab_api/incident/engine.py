@@ -201,6 +201,7 @@ class IncidentEngine:
                         break
                     work_conn = self._ensure_work(work_conn)
                     self.run_correlation(work_conn)
+                    self._replay_pass(work_conn)
                     self._quorum_actuation_pass(work_conn)
                     self._dictamen_pass(work_conn)
                     self._lifecycle_pass(work_conn)
@@ -268,6 +269,18 @@ class IncidentEngine:
         from takab_api.dictamen.service import run_dictamen_pass
 
         run_dictamen_pass(work_conn, self._settings, lookback_s=self._lookback_s)
+
+    def _replay_pass(self, work_conn: psycopg.Connection) -> None:
+        """[T-7.14] Viste de reproducción los incidentes del WR-1 en clientes con
+        la ventana armada. ANTES del dictamen y de la actuación de cuórum: los dos
+        leen el evento enlazado, y si se vistiera después el primer dictamen del
+        incidente saldría sin epicentro y habría que corregirlo.
+
+        Nunca en la ingesta: el camino que abre un incidente por un pulso del WR-1
+        no se alarga (regla de oro 1)."""
+        from takab_api.replay.service import run_replay_pass
+
+        run_replay_pass(work_conn, self._settings, lookback_s=self._lookback_s)
 
     def _lifecycle_pass(self, work_conn: psycopg.Connection) -> None:
         """[T-7.13 · D-33] Las fases del incidente: a revisión cuando la sacudida

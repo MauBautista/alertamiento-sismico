@@ -37,6 +37,7 @@ from takab_api.routers.notify_webhooks import router as notify_webhooks_router
 from takab_api.routers.ops_alerts import router as ops_alerts_router
 from takab_api.routers.privacy import router as privacy_router
 from takab_api.routers.reports import router as reports_router
+from takab_api.routers.reproduccion import router as reproduccion_router
 from takab_api.routers.rollouts import router as rollouts_router
 from takab_api.routers.rule_sets import router as rule_sets_router
 from takab_api.routers.sensors import router as sensors_router
@@ -151,6 +152,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
     # [T-2.40] Hechos medidos del incidente: una fuente para pantalla y dictamen.
     app.include_router(forensics_router)
+    app.include_router(reproduccion_router)
     # [T-3.12.c] CCTV: métricas de evacuación y descarga del clip.
     app.include_router(cctv_router)
 

@@ -15,6 +15,19 @@ export type ActiveDrillOut = {
     drill: DrillOut | null;
 };
 
+/**
+ * Lo que le toca a una estación. Segundos **desde el origen** del sismo.
+ */
+export type ArriboOut = {
+    epi_km: number;
+    hypo_km: number;
+    pga_g: number;
+    site_code: string;
+    site_id: string;
+    t_p_s: number;
+    t_s_s: number;
+};
+
 export type AuditPage = {
     items: Array<AuditRowOut>;
     next_cursor: string | null;
@@ -2228,12 +2241,58 @@ export type ReleaseOut = {
 };
 
 /**
+ * Armar. `catalog_key` es el sismo del catálogo que se va a reproducir.
+ */
+export type ReplayIn = {
+    catalog_key: string;
+    duration_s?: number | null;
+    note?: string;
+};
+
+/**
+ * El estado. `armed=False` no lleva el resto: no hay nada que contar.
+ */
+export type ReplayOut = {
+    armed: boolean;
+    armed_at?: string | null;
+    armed_by?: string | null;
+    armed_until?: string | null;
+    catalog_key?: string | null;
+    note?: string | null;
+    remaining_s?: number | null;
+    tenant_id: string;
+};
+
+/**
  * Evidencia ``report_pdf`` recién generada + presigned GET de descarga.
  */
 export type ReportOut = {
     evidence_id: string;
     expires_in: number;
     url: string;
+};
+
+/**
+ * El plan completo de un incidente vestido de reproducción.
+ *
+ * `t0_real` es la hora de origen del sismo histórico y `t0_demo` la del pulso
+ * que lo reprodujo. Los arribos se cuentan desde el origen: quien pinta la
+ * animación suma `t0_demo`; quien compara con el sismo real suma `t0_real`.
+ * Sin los dos, el consumidor tiene que adivinar cuál es el ancla.
+ */
+export type ReproduccionOut = {
+    arrivals: Array<ArriboOut>;
+    catalog_key: string;
+    depth_km: number | null;
+    event_id: string;
+    incident_id: string;
+    lat: number | null;
+    lon: number | null;
+    magnitude: number | null;
+    t0_demo: string;
+    t0_real: string;
+    v_p_km_s: number;
+    v_s_km_s: number;
 };
 
 /**
@@ -3040,6 +3099,63 @@ export type EncenderDemoModeDemoModePostResponses = {
 };
 
 export type EncenderDemoModeDemoModePostResponse = EncenderDemoModeDemoModePostResponses[keyof EncenderDemoModeDemoModePostResponses];
+
+export type DesarmarReplayDemoModeReplayDeleteData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/demo-mode/replay';
+};
+
+export type DesarmarReplayDemoModeReplayDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReplayOut;
+};
+
+export type DesarmarReplayDemoModeReplayDeleteResponse = DesarmarReplayDemoModeReplayDeleteResponses[keyof DesarmarReplayDemoModeReplayDeleteResponses];
+
+export type GetReplayDemoModeReplayGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/demo-mode/replay';
+};
+
+export type GetReplayDemoModeReplayGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReplayOut;
+};
+
+export type GetReplayDemoModeReplayGetResponse = GetReplayDemoModeReplayGetResponses[keyof GetReplayDemoModeReplayGetResponses];
+
+export type ArmarReplayDemoModeReplayPostData = {
+    body: ReplayIn;
+    path?: never;
+    query?: never;
+    url: '/demo-mode/replay';
+};
+
+export type ArmarReplayDemoModeReplayPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ArmarReplayDemoModeReplayPostError = ArmarReplayDemoModeReplayPostErrors[keyof ArmarReplayDemoModeReplayPostErrors];
+
+export type ArmarReplayDemoModeReplayPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: ReplayOut;
+};
+
+export type ArmarReplayDemoModeReplayPostResponse = ArmarReplayDemoModeReplayPostResponses[keyof ArmarReplayDemoModeReplayPostResponses];
 
 export type ListTemplatesDrillTemplatesGetData = {
     body?: never;
@@ -4460,6 +4576,33 @@ export type GenerateReportIncidentsIncidentIdReportPostResponses = {
 };
 
 export type GenerateReportIncidentsIncidentIdReportPostResponse = GenerateReportIncidentsIncidentIdReportPostResponses[keyof GenerateReportIncidentsIncidentIdReportPostResponses];
+
+export type IncidentReproduccionIncidentsIncidentIdReproduccionGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/reproduccion';
+};
+
+export type IncidentReproduccionIncidentsIncidentIdReproduccionGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentReproduccionIncidentsIncidentIdReproduccionGetError = IncidentReproduccionIncidentsIncidentIdReproduccionGetErrors[keyof IncidentReproduccionIncidentsIncidentIdReproduccionGetErrors];
+
+export type IncidentReproduccionIncidentsIncidentIdReproduccionGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReproduccionOut;
+};
+
+export type IncidentReproduccionIncidentsIncidentIdReproduccionGetResponse = IncidentReproduccionIncidentsIncidentIdReproduccionGetResponses[keyof IncidentReproduccionIncidentsIncidentIdReproduccionGetResponses];
 
 export type IncidentRosterIncidentsIncidentIdRosterGetData = {
     body?: never;

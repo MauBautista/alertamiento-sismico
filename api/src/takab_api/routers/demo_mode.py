@@ -27,11 +27,14 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api import demo_mode as dm
+from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles, require_web_surface
 from takab_api.auth.matrix import roles_with_action
+from takab_api.replay import service as rp
 from takab_api.routers._common import http_error
 from takab_api.schemas.demo_mode import DemoModeIn, DemoModeOut
+from takab_api.schemas.replay import ReplayIn, ReplayOut
 
 router = APIRouter(dependencies=[Depends(require_web_surface)])
 
@@ -111,3 +114,113 @@ async def apagar_demo_mode(
     """
     await dm.apagar(conn, tenant_id=claims.tenant_id, actor=claims.sub)
     return _out(claims.tenant_id, None)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# [T-7.14] REPRODUCCIÓN HISTÓRICA — armar y desarmar.
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Vive en este router y no en uno propio porque es el mismo gesto: declarar que
+# lo que pase a continuación es una demostración. Lo que cambia es qué declara —
+# aquél suprime salidas, éste viste el incidente con un sismo del catálogo.
+#
+# **Solo `takab_superadmin`, y solo en clientes con sitios de demostración.** No
+# es simetría con `demo_mode`: allí el administrador del cliente puede APAGAR
+# porque quedarse sin avisos le perjudica a él. Aquí no hay nada que apagar por
+# seguridad, y armar sobre un cliente real haría que sus incidentes salieran
+# rotulados como demostración — la guarda de los sitios DEMO es la que lo impide,
+# y está en `replay.service.armar`, no aquí.
+
+_PATH_REPLAY = "/demo-mode/replay"
+_require_replay = require_roles("takab_superadmin")
+
+
+def _out_replay(tenant_id: str, ventana: rp.Ventana | None) -> ReplayOut:
+    if ventana is None:
+        return ReplayOut(armed=False, tenant_id=tenant_id)
+    return ReplayOut(
+        armed=True,
+        tenant_id=ventana.tenant_id,
+        catalog_key=ventana.catalog_key,
+        armed_by=ventana.armed_by,
+        armed_at=ventana.armed_at,
+        armed_until=ventana.armed_until,
+        remaining_s=ventana.restante_s(),
+        note=ventana.note,
+    )
+
+
+@router.get(_PATH_REPLAY, response_model=ReplayOut)
+async def get_replay(
+    claims: Claims = Depends(get_claims),
+    conn: AsyncConnection = Depends(get_session),
+) -> ReplayOut:
+    """Qué sismo está armado en el cliente de quien pregunta, si alguno.
+
+    Sin restricción de rol, como el modo demostración: quien vaya a mirar la
+    consola tiene derecho a saber que lo que ve es una reproducción — más que
+    nadie, de hecho.
+    """
+    return _out_replay(claims.tenant_id, await rp.ventana_viva(conn, claims.tenant_id))
+
+
+@router.post(_PATH_REPLAY, response_model=ReplayOut, status_code=201)
+async def armar_replay(
+    body: ReplayIn,
+    claims: Claims = Depends(_require_replay),
+    conn: AsyncConnection = Depends(get_session),
+) -> ReplayOut:
+    """Arma la ventana. Re-armar la PISA: dos ventanas serían dos verdades."""
+    try:
+        ventana = await rp.armar(
+            conn,
+            tenant_id=claims.tenant_id,
+            catalog_key=body.catalog_key,
+            actor=claims.sub,
+            segundos=body.duration_s,
+            note=body.note,
+        )
+    except rp.SinSitiosDemo:
+        raise http_error(
+            409,
+            "este cliente no tiene sitios de demostración: armar una reproducción "
+            "rotularía como demostración incidentes de edificios reales",
+        ) from None
+    except rp.SismoDesconocido:
+        raise http_error(
+            404,
+            f"`{body.catalog_key}` no está en el catálogo de referencia: solo se "
+            "reproduce un sismo con su procedencia escrita",
+        ) from None
+
+    await audit_async(
+        conn,
+        tenant_id=claims.tenant_id,
+        actor=claims.sub,
+        verb="replay_armed",
+        obj=f"tenant:{claims.tenant_id}",
+        meta={
+            "catalog_key": ventana.catalog_key,
+            "armed_until": ventana.armed_until.isoformat(),
+            "note": ventana.note,
+        },
+    )
+    return _out_replay(claims.tenant_id, ventana)
+
+
+@router.delete(_PATH_REPLAY, response_model=ReplayOut)
+async def desarmar_replay(
+    claims: Claims = Depends(_require_replay),
+    conn: AsyncConnection = Depends(get_session),
+) -> ReplayOut:
+    """Desarma. Idempotente: desarmar lo ya desarmado devuelve 200 y el estado."""
+    hubo = await rp.desarmar(conn, tenant_id=claims.tenant_id)
+    if hubo:
+        await audit_async(
+            conn,
+            tenant_id=claims.tenant_id,
+            actor=claims.sub,
+            verb="replay_disarmed",
+            obj=f"tenant:{claims.tenant_id}",
+        )
+    return _out_replay(claims.tenant_id, None)

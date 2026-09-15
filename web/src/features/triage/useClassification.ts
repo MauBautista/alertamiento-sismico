@@ -17,6 +17,10 @@ import type { ClassificationChainOut, ClassificationStatsOut } from "@takab/sdk"
 export const CLASSIFICATION_KEY = (id: string) => ["classification", id] as const;
 export const CLASSIFICATION_STATS_KEY = ["classification", "stats"] as const;
 
+// [T-7.14] Espejo de `api/src/takab_api/incident/classification.py::CLASIFICACIONES`.
+// Los dos se comparan en `api/tests/api/test_classification_cierra.py`: hasta esa
+// ficha podían divergir en silencio y el operador se habría quedado sin una casilla
+// que la base sí acepta — o peor, con una que la base rechaza con un 500.
 /** El catálogo cerrado, con la etiqueta que ve quien elige a las 3 de la mañana. */
 export const CLASIFICACIONES = [
   { value: "real", label: "REAL", hint: "Hubo un evento: el sistema hizo lo que tenía que hacer" },
@@ -34,6 +38,11 @@ export const CLASIFICACIONES = [
     value: "indeterminado",
     label: "INDETERMINADO",
     hint: "Se revisó y no se pudo determinar. Distinto de no haberlo revisado",
+  },
+  {
+    value: "reproduccion",
+    label: "REPRODUCCIÓN",
+    hint: "Reproducción de un sismo histórico para una demostración",
   },
 ] as const;
 

@@ -7,9 +7,10 @@ código: el documento de entrega **se deslinda expresamente de los falsos
 positivos de SASMEX**, y el sistema no medía ninguno.
 
 **Catálogo cerrado y corto**, decidido en la ficha y anclado por el CHECK de la
-tabla. Cuatro y no más: cada valor adicional es una casilla que alguien tiene que
-entender a las 3 de la mañana, y un catálogo largo se convierte en «lo dejo en el
-primero».
+tabla. Cada valor adicional es una casilla que alguien tiene que entender a las 3
+de la mañana, y un catálogo largo se convierte en «lo dejo en el primero». Eran
+cuatro hasta `T-7.14`, que añadió `reproduccion` porque `D-33` midió que una
+corrida de demostración no cabía en ninguna de las cuatro sin mentir.
 
 **`indeterminado` se ELIGE.** No hay valor por defecto y no lo puede haber: un
 default silencioso convertiría «nadie lo revisó» en «se revisó y no se supo», que
@@ -28,7 +29,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 #: Catálogo cerrado. El orden es el de la interfaz, de más común a menos.
-CLASIFICACIONES: tuple[str, ...] = ("real", "falso_positivo", "prueba", "indeterminado")
+CLASIFICACIONES: tuple[str, ...] = (
+    "real",
+    "falso_positivo",
+    "prueba",
+    "indeterminado",
+    "reproduccion",
+)
 
 #: Qué significa cada una, en la lengua de quien la elige a las 3 de la mañana.
 SIGNIFICADO: dict[str, str] = {
@@ -36,10 +43,12 @@ SIGNIFICADO: dict[str, str] = {
     "falso_positivo": "No hubo evento. Es la casilla que decide si el cliente renueva.",
     "prueba": "Prueba, mantenimiento o puesta en marcha. No cuenta como falso positivo.",
     "indeterminado": "Se revisó y NO se pudo determinar. Distinto de no haberlo revisado.",
+    "reproduccion": "Reproducción de un sismo histórico para una demostración.",
 }
 
 #: Las que cuentan en el denominador de la tasa. `prueba` NO: un incidente
-#: provocado a propósito no dice nada sobre si el sistema molesta.
+#: provocado a propósito no dice nada sobre si el sistema molesta. `reproduccion`
+#: tampoco, y por la misma razón: el pulso lo dio quien enseñaba el sistema.
 EN_LA_TASA: frozenset[str] = frozenset({"real", "falso_positivo", "indeterminado"})
 
 #: [T-7.13 · D-33] ¿Clasificar así CIERRA el registro? Un diccionario y no una
@@ -57,6 +66,7 @@ CIERRA_EL_INCIDENTE: dict[str, bool] = {
     "falso_positivo": True,
     "prueba": True,
     "indeterminado": False,
+    "reproduccion": True,
 }
 
 #: Derivado, nunca escrito a mano: las clasificaciones que cierran.
