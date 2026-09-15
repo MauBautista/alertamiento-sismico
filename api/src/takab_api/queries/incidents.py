@@ -23,6 +23,7 @@ _COLS = (
 def select_incidents(
     *,
     state: str | None,
+    live: bool = False,
     severity: str | None,
     site_id: str | None,
     q: str | None,
@@ -45,6 +46,21 @@ def select_incidents(
     if state is not None:
         where.append("state = :state")
         params["state"] = state
+    # [T-7.20] LO QUE SIGUE EN LA MESA, que no es lo mismo que `state = 'open'`.
+    #
+    # La consola pedía `state=open` y por eso un incidente EN REVISIÓN
+    # desaparecía de su lista entera: la escena «SISMO CONCLUIDO · ANALIZANDO»
+    # (`T-7.16`) sólo llegaba a un navegador que ya estuviera abierto y
+    # recibiera el frame del canal live. Quien recargara, reconectara o llegara
+    # después no veía la revisión: veía NADA, que es la forma exacta de la regla
+    # de oro 7 —callar sobre un sismo que acaba de terminar y está esperando a
+    # que alguien lo clasifique—.
+    #
+    # El predicado es el MISMO que `isOpen` aplica en el cliente
+    # (`useLiveIncidents.ts`), a propósito: son las dos mitades de una sola
+    # verdad y separarlas es cómo volverían a divergir.
+    if live:
+        where.append("state <> 'closed' AND closed_at IS NULL")
     if severity is not None:
         where.append("severity = :severity")
         params["severity"] = severity

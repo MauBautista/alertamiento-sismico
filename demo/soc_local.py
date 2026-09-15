@@ -14,6 +14,9 @@ La API, el worker de incidentes y el web dev server corren aparte
     curl -X POST http://127.0.0.1:9100/quake         # sismo instrumental
     curl -X POST http://127.0.0.1:9100/sasmex        # cierre del contacto WR-1
     curl -X POST http://127.0.0.1:9100/sasmex/clear  # apertura del contacto
+    curl -X POST http://127.0.0.1:9100/calma         # el sensor midiendo CALMA
+                                                     # (tras re-armar el panel:
+                                                     #  es lo que cierra el episodio)
     curl -X POST http://127.0.0.1:9100/wan/off       # corte de WAN (y /wan/on)
 
 NO toca datos existentes (sin reset_state): lo que generes se queda en la DB
@@ -132,6 +135,7 @@ def main() -> int:
     print(f"  · Estímulos:  curl -X POST http://127.0.0.1:{args.control_port}/quake")
     print(f"                curl -X POST http://127.0.0.1:{args.control_port}/sasmex")
     print(f"                curl -X POST http://127.0.0.1:{args.control_port}/sasmex/clear")
+    print(f"                curl -X POST http://127.0.0.1:{args.control_port}/calma")
     print(f"                curl -X POST http://127.0.0.1:{args.control_port}/wan/off | /wan/on")
     print("  · Simulacro comandado DESDE LA NUBE (T-6.18): la consola lo dispara en")
     print(f"    /console y el gabinete lo acusa; el panel lo pinta en :{args.dashboard_port}.")

@@ -35,6 +35,15 @@ TAKAB_EDGE_HMAC_KEY="${TAKAB_EDGE_HMAC_KEY:-$(printf '6f%062d' 618)}"
 TAKAB_API_COMMAND_HMAC_KEYS_JSON="${TAKAB_API_COMMAND_HMAC_KEYS_JSON:-{\"gw-sim-0001\":\"$TAKAB_EDGE_HMAC_KEY\"}}"
 mkdir -p "$TAKAB_DEMO_DOWNLINK"
 
+# [T-7.20] DÓNDE ESTÁ EL GABINETE. Sin esto el panel no puede pintar la §7.5
+# (comparativa sismo↔estación): su cajón declara «SIN UBICACIÓN PROVISIONADA —
+# sin distancias ni comparativa», que es la conducta correcta y también la razón
+# por la que esa sección no se podía enseñar en local. Las coordenadas son las
+# del sitio que este gabinete dice ser (`site-sim-001` de `db/seeds/sim_fleet.sql`,
+# Puebla): inventarle otras haría que las distancias del cajón fueran falsas.
+TAKAB_EDGE_SITE_LAT="${TAKAB_EDGE_SITE_LAT:-19.05}"
+TAKAB_EDGE_SITE_LON="${TAKAB_EDGE_SITE_LON:--98.22}"
+
 # Evidencia contra el MinIO de docker-compose: sin esto la API no tiene bucket
 # y el botón DICTAMEN PDF muere en 503. El endpoint es 127.0.0.1 (no `minio`)
 # porque el presigned URL lo abre el NAVEGADOR, no el contenedor.

@@ -130,11 +130,52 @@ describe("AlertBanner · la carcasa viva", () => {
   });
 
   it("el TEXTO no depende de que esté viva: se lee igual con la animación apagada", () => {
-    // Condición 2 de `D-30`: siempre hay un portador que no es movimiento.
-    render(<AlertBanner incident={conEstado("in_review")} siteName="Edificio Central" />);
+    // Condición 2 de `D-30`: siempre hay un portador que no es movimiento. Con
+    // la alerta viva y el halo apagado (`reduce-motion`) el titular es el mismo.
+    render(<AlertBanner incident={conEstado("acked")} siteName="Edificio Central" />);
     const banner = screen.getByTestId("alert-banner");
     expect(banner.textContent).toContain("ALERTA SÍSMICA");
     expect(banner.dataset.authorizes).toBe("true");
+  });
+
+  it("[T-7.20] en REVISIÓN el muro DEJA DE GRITAR: dice SISMO CONCLUIDO", () => {
+    // ⚠️ Este caso usaba `in_review` para decir «sin animación», y al hacerlo
+    // dejaba fijado el defecto: la tarjeta seguía diciendo «ALERTA SÍSMICA ·
+    // PROTÉJASE» con el sismo ya terminado. `T-7.16` le dio la revisión a la
+    // franja del shell, que NO se pinta en el muro, así que el videowall —la
+    // pantalla que alguien mira de pie— era la única superficie que no se
+    // enteraba. Lo cazó la corrida real del e2e, no una prueba de unidad.
+    render(
+      <AlertBanner
+        incident={conEstado("in_review")}
+        siteName="Edificio Central"
+        now={Date.parse(INCIDENT.opened_at) + 90_000}
+      />,
+    );
+    const banner = screen.getByTestId("alert-banner");
+    expect(banner.textContent).toContain("SISMO CONCLUIDO · ANALIZANDO");
+    expect(banner.textContent).not.toContain("ALERTA SÍSMICA");
+    expect(banner.textContent).not.toContain("PROTÉJASE");
+    // La carcasa se viste de revisión, y la fuente sigue escrita: que el sismo
+    // concluyera no borra de dónde vino el aviso.
+    expect(banner.dataset.kind).toBe("review");
+    expect(banner.textContent).toContain("SASMEX");
+    // Y el sello «● AUTO» se va: afirma una actuación que ya no está en curso.
+    expect(banner.textContent).not.toContain("AUTO");
+    expect(banner.textContent).toContain("SISMO HACE 01:30");
+  });
+
+  it("[T-7.20] pasadas seis horas sin clasificar, el muro habla en PASADO", () => {
+    render(
+      <AlertBanner
+        incident={conEstado("in_review")}
+        siteName="Edificio Central"
+        now={Date.parse(INCIDENT.opened_at) + 7 * 3600_000}
+      />,
+    );
+    expect(screen.getByTestId("alert-banner").textContent).toContain(
+      "SISMO CONCLUIDO · SIN CLASIFICAR",
+    );
   });
 
   it("`alertaViva` y `alertKind` miran el MISMO estado y no pueden divergir", () => {

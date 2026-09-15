@@ -175,9 +175,29 @@ function cruzanLaFrontera(
  * CON la tabla, no contra ella); `authorizes` a `AlertBanner` (viste la carcasa
  * según la tabla). Ni un banner, ni `resolveScene`, ni `DEGRADES_UNDER_ALERT`:
  * quien los importe desde fuera está decidiendo o pintando escena por su cuenta.
+ *
+ * [T-7.20] Cuatro altas, todas a `AlertBanner` y todas por el mismo hecho: la
+ * franja del shell NO se pinta en el muro (`SceneStrip`: `{!wall && …}`), así
+ * que allí la revisión la tiene que decir la TARJETA. Hasta esta ficha no la
+ * decía nadie y el videowall seguía gritando «ALERTA SÍSMICA · PROTÉJASE» con el
+ * sismo terminado.
+ *
+ * · `scene#alertKind` — la clase la sigue decidiendo la TABLA, que es el punto
+ *   de este censo. `AlertBanner` no mira `incident.state` por su cuenta: si lo
+ *   hiciera, la tarjeta y la franja podrían clasificar distinto el mismo
+ *   incidente, que es exactamente lo que este archivo existe para impedir.
+ * · `revision#tituloRevision`, `#edadDelSismo`, `#transcurrido` — las PALABRAS,
+ *   compartidas con `ReviewLine`. Escribirlas dos veces es garantizar que las
+ *   dos superficies acaben diciendo cosas distintas del mismo sismo.
  */
 const PINTORES: Record<string, string[]> = {
-  "features/console/AlertBanner.tsx": ["scene#authorizes"],
+  "features/console/AlertBanner.tsx": [
+    "revision#edadDelSismo",
+    "revision#tituloRevision",
+    "revision#transcurrido",
+    "scene#alertKind",
+    "scene#authorizes",
+  ],
   "features/console/ConsolePage.tsx": ["scene#sceneAlert"],
   "shell/AppShell.tsx": ["SceneStrip#default"],
 };
