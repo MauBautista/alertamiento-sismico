@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **351** · `[~]` **10** · `[ ]` **56**
+**Conteo de tareas:** total **417** · `[x]` **352** · `[~]` **10** · `[ ]` **55**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13480,8 +13480,8 @@ fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 
 > **Estado de las fases (2026-09-14): `F0` y `F1` CERRADAS.** `F1` cerró con el acto 2 mirado en
 > la consola —lo último que le faltaba—, y con ello el guion de punta a punta está ejecutado y
-> medido contra el gabinete real. `F2` en marcha: `T-7.10` y `T-7.12` cerradas; queda `T-7.11`,
-> que pide tres cosas IoT con certificado.
+> medido contra el gabinete real. `F2` **CERRADA** (`T-7.10`, `T-7.11`, `T-7.12`). Sigue `F3`: la vida
+> del sismo en la consola.
 
 **El orden es de criticidad, no de gusto**, y se ejecuta en ocho fases: conformidad (F0), el
 guion de punta a punta con lo que hay (F1), datos demo (F2), la vida del sismo (F3), papel
@@ -13954,24 +13954,53 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.11 · **La red de demostración: tres estaciones simuladas con latido** — `SOFTWARE` + `GATE-AWS`
+### [x] T-7.11 · **La red de demostración: tres estaciones simuladas con latido** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-14**
 - **Componente:** db · edge · infra · web · **Depende de:** T-7.10 · **Prioridad:** F2 · alta
 - **Objetivo:** que `/fleet` muestre cuatro estaciones operativas —Puebla real y Tlaxcala,
   CDMX y Toluca simuladas— con cinta DEMO en las tres simuladas (`D-31`).
 - **Criterios de aceptación:**
-  - [ ] `db/seeds/demo_red.sql`: `site-sim-101` Tlaxcala (gobierno), `site-sim-102` CDMX
+  - [x] `db/seeds/demo_red.sql`: `site-sim-101` Tlaxcala (gobierno), `site-sim-102` CDMX
     (hospital), `site-sim-103` Toluca (industrial), `gw-sim-0101..0103`, `SIM101..103` sin
-    calibración; nombres ficticios y presentables que no usurpan ninguna institución real;
-    `tenant-dev` y `site-dev` con `name` presentable. `make cloud-demo-red` idempotente y
-    `cloud-demo-red-down`, **fuera** de `deploy.sh`.
-  - [ ] Tres cosas IoT con certificado (`infra/scripts/provision_gateway.sh`).
-  - [ ] `edge/simulators/fleet.py --stations-file --tenant --no-events` publica latido y
-    features y **jamás `takab/events`** (test que lo fija); corre como unidad systemd
-    (`takab-fleet-sim`) en el Pi 4 o en el portátil, con el coste medido.
-  - [ ] `web/src/siteDemoCensus.test.ts` declara el segundo seed; `/fleet` con 4 OPERATIVOS.
+    calibración; nombres ficticios y presentables que **no usurpan ninguna institución real**
+    —los tres dicen «Demostración» en el nombre, que es además lo que `D-31` pinta— y
+    `tenant-dev`/`site-dev` con `name` presentable (el CÓDIGO no se toca: es la identidad que
+    usan el gabinete, los seeds y los tests). `make cloud-demo-red` idempotente y
+    `cloud-demo-red-down`, **fuera** de `deploy.sh`: una red de adorno re-sembrada en cada
+    despliegue acaba pareciendo inventario, y el censo de la purga de `T-7.10` la conservaría
+    sin saber qué es. El `down` lleva guardia anti-estación-real.
+  - [x] Tres cosas IoT con certificado. Se hicieron por `terraform` —`gateway_fleet` alimenta un
+    `for_each`, así que fue una línea— con plan revisado: **30 to add, 0 to change, 0 to
+    destroy**. `provision_gateway.sh` solo BAJA los secretos; quien crea la cosa y su
+    certificado es terraform, y por eso fallaba con `ResourceNotFoundException` antes del apply.
+  - [x] `edge/simulators/fleet.py` gana `--stations-file`, `--tenant` y `--no-events`. La flota
+    pasa a ser un **dato** (`{station, gateway, site}`) en vez de una fórmula sobre el índice: la
+    red de demostración no cabe en la convención fija (`SIM001..020`, 5 por gateway) y estirarla
+    es cómo una convención acaba con excepciones dentro.
+  - [x] ⚠️ **La invariante del bloque, puesta donde no se puede rodear.** `--no-events` no es un
+    `if` en el sitio de llamada: la guarda vive en `_msg`, por donde pasa TODO mensaje, y
+    **lanza** en vez de descartar en silencio —un simulador que se traga mensajes esconde el
+    fallo—. Y `--no-events` con `--quake` se rechaza al construir: el sismo ES un `LocalEvent`.
+    Seis pruebas nuevas, con su control de ceguera (sin la bandera, el simulador SIGUE pudiendo
+    emitir: si no, las otras pasarían sobre un simulador que nunca emite).
+  - [x] Corre como unidad systemd (`takab-fleet-sim`), en el Pi 4 o en el portátil, **y NO se
+    habilita**: `--no-events` está escrito en el `ExecStart`, no en una nota. La unidad vive en
+    `deploy/demo/`, **no** en `edge/systemd/`: el censo de aquel directorio se deriva de su glob
+    y no tiene exenciones —le exige a toda unidad los invariantes de un servicio de vida—, y
+    esto es una herramienta de demostración con `Restart=no`.
+  - [x] **Coste medido** (1089 mensajes en 89,3 s, 0 errores): 12 msg/s = 1 036 800 mensajes y
+    otras tantas filas **al día**. IoT Core ~$31/mes + SQS ~$12/mes = **~$43 contra un
+    presupuesto de $50**. Dejarla encendida se come el entorno dev en un mes, y llena justo la
+    tabla que la purga acaba de vaciar. Por eso se arranca antes de una demostración y se para.
+  - [x] `web/src/features/fleet/datosDeDemostracion.ts` declara el **segundo** seed: los
+    patrones ya cubrían `site-sim-101` sin tocarlos —la ventaja de derivar del prefijo— pero
+    «exactamente lo que genera `sim_fleet.sql`, y nada más» dejó de ser cierto. Diez pruebas
+    nuevas, incluida la que comprueba que **la estación REAL sigue sin cinta**: rotular de
+    demostración un edificio con gente dentro es peor que no rotular nada.
+  - [x] **Verificado contra la nube**: 4 estaciones publicando (R4F74 real + SIM101/102/103) y 4
+    gabinetes latiendo. Y lo que importa: **cero incidentes de la red demo**.
 - **Tests de censo que toca:** `siteDemoCensus`, `edge/tests/test_fleet_sim.py` · **Token
-  nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_fleet_sim` fija
-  `tenant-dev`/`SIM001` y `siteDemoCensus` afirma que solo existe `sim_fleet.sql`.
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí — `test_fleet_sim` fijaba
+  `tenant-dev`/`SIM001` como única convención posible.
 
 ### [x] T-7.12 · **El catálogo con procedencia real: consulta viva a USGS** — `SOFTWARE` · **CERRADA 2026-09-14**
 - **Componente:** api · db · **Depende de:** — · **Prioridad:** F2 · alta

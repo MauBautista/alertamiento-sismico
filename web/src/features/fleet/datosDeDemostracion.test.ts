@@ -62,3 +62,36 @@ describe("siteLabelText · [T-6.04] el nombre en texto plano lleva el rótulo", 
     expect(siteLabelText("Sin código", null)).toBe("Sin código");
   });
 });
+
+// [T-7.11] La RED DE DEMOSTRACIÓN: tres sitios que SÍ van a la nube.
+//
+// Es la diferencia que hace estos casos distintos de los de arriba. `sim_fleet.sql`
+// nunca toca el entorno desplegado, así que su cinta protege una pantalla de
+// desarrollo; `demo_red.sql` se aplica a la nube a propósito, y su cinta es lo
+// único que separa, en la pantalla que ve un cliente, tres edificios inventados de
+// uno que existe y tiene gente dentro.
+describe("[T-7.11] la red de demostración lleva cinta", () => {
+  it.each([
+    ["site-sim-101", "Centro Cívico Demostración · Tlaxcala"],
+    ["site-sim-102", "Hospital Demostración · Ciudad de México"],
+    ["site-sim-103", "Planta Demostración · Toluca"],
+  ])("el sitio %s es de demostración", (codigo) => {
+    expect(esDeDemostracion(codigo)).toBe(true);
+  });
+
+  it.each(["gw-sim-0101", "gw-sim-0102", "gw-sim-0103"])("el gabinete %s también", (serial) => {
+    expect(esDeDemostracion(serial)).toBe(true);
+  });
+
+  it.each(["SIM101", "SIM102", "SIM103"])("y el sensor %s", (serial) => {
+    expect(esDeDemostracion(serial)).toBe(true);
+  });
+
+  it("la estación REAL de Puebla sigue sin cinta", () => {
+    // La dirección cara del error: rotular de demostración un edificio con gente
+    // dentro es peor que no rotular nada.
+    expect(esDeDemostracion("site-dev")).toBe(false);
+    expect(esDeDemostracion("gw-dev-0001")).toBe(false);
+    expect(esDeDemostracion("R4F74")).toBe(false);
+  });
+});

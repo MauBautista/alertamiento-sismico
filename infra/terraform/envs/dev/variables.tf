@@ -117,9 +117,23 @@ variable "acme_email" {
 }
 
 variable "gateway_fleet" {
-  description = "Things IoT a aprovisionar (1 gateway real + 4 simulados)."
+  description = <<-EOT
+    Things IoT a aprovisionar: 1 gateway REAL + 4 simulados de desarrollo + los 3
+    de la RED DE DEMOSTRACIÓN (T-7.11, `gw-sim-01xx`).
+
+    Los tres últimos existen en AWS de forma permanente —una cosa IoT con su
+    certificado no cuesta nada— mientras que su presencia EN PANTALLA la gobierna
+    `db/seeds/demo_red.sql`, que se pone y se quita a mano con `make cloud-demo-red`.
+    Separarlo así es deliberado: el certificado tarda en propagarse y no se quiere
+    aprovisionar con el cliente delante, pero un sitio de adorno sembrado de forma
+    permanente acabaría pareciendo inventario de verdad.
+  EOT
   type        = list(string)
-  default     = ["gw-dev-0001", "gw-sim-0001", "gw-sim-0002", "gw-sim-0003", "gw-sim-0004"]
+  default = [
+    "gw-dev-0001",
+    "gw-sim-0001", "gw-sim-0002", "gw-sim-0003", "gw-sim-0004",
+    "gw-sim-0101", "gw-sim-0102", "gw-sim-0103",
+  ]
 }
 
 variable "budget_email" {

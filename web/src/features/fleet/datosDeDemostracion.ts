@@ -19,11 +19,22 @@
 // simulado un sitio real llamado `site-simon-01`, y equivocarse en esa dirección
 // —rotular de demo un edificio con gente dentro— es peor que no rotular nada.
 
-/** Exactamente lo que genera `db/seeds/sim_fleet.sql`, y nada más. */
+/**
+ * Exactamente lo que generan los DOS seeds de flota simulada, y nada más:
+ *
+ *   `db/seeds/sim_fleet.sql`  · 20 sitios del desarrollo local, JAMÁS en la nube
+ *   `db/seeds/demo_red.sql`   · [T-7.11] los 3 de la red de demostración, que SÍ
+ *                               van a la nube y por eso son los que un cliente ve
+ *
+ * Los patrones ya los cubrían sin tocarlos —`site-sim-101` casa igual que
+ * `site-sim-001`—, y eso es la ventaja de derivar del prefijo: el segundo seed no
+ * obligó a cambiar la regla. Lo que sí obliga es a decirlo aquí, porque «y nada
+ * más» dejó de ser cierto en cuanto hubo un segundo origen.
+ */
 const PATRONES = [
-  /^site-sim-\d+$/, // sitios     · site-sim-001 … site-sim-020
-  /^gw-sim-\d+$/, //   gabinetes · gw-sim-0001 … gw-sim-0004
-  /^SIM\d+$/, //       sensores  · SIM001 … SIM020
+  /^site-sim-\d+$/, // sitios     · site-sim-001 … 020 (local) y 101 … 103 (demo)
+  /^gw-sim-\d+$/, //   gabinetes · gw-sim-0001 … 0004 y 0101 … 0103
+  /^SIM\d+$/, //       sensores  · SIM001 … SIM020 y SIM101 … SIM103
 ];
 
 /**

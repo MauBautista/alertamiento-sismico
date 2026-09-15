@@ -1,3 +1,14 @@
+.PHONY: cloud-demo-red cloud-demo-red-down
+# [T-7.11] La red de demostración: tres estaciones simuladas de tres tipos, para
+# que /fleet enseñe una RED y no un gabinete solo. Va APARTE de `deploy.sh` a
+# propósito — una red de adorno re-sembrada en cada despliegue acaba pareciendo
+# inventario, y el censo de la purga de T-7.10 la conservaría sin saber qué es.
+cloud-demo-red: ## Siembra la red de demostración en la nube (idempotente)
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/demo_red.sh up
+
+cloud-demo-red-down: ## La retira. La estación REAL no se toca (guardia dentro)
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/demo_red.sh down
+
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
         billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \

@@ -1,0 +1,74 @@
+# TAKAB Ailert — RED DE DEMOSTRACIÓN (T-7.11): tres estaciones simuladas.
+#
+# Publica features y latidos de tres sitios que NO existen, para que `/fleet`
+# enseñe una red y no un gabinete solo. Puede correr en el Pi 4 o en un portátil:
+# no toca hardware, solo habla MQTT.
+#
+# ⚠️ NO SE HABILITA (`systemctl enable`). Se arranca antes de una demostración y
+# se para después, por dos razones medidas:
+#
+#   1. CUESTA, y la cifra está medida (1089 mensajes en 89,3 s el 2026-09-14):
+#        12 msg/s = 1 036 800 mensajes/día = 31,1 millones/mes
+#        IoT Core  ~$1.04/día  · ~$31.10/mes
+#        SQS       ~$0.41/día  · ~$12.44/mes
+#        y 1 036 800 filas/día en `waveform_features_1s`
+#      Son **~$43/mes contra un presupuesto de $50**, y lo que se llena es la
+#      misma tabla que la purga de `T-7.10` acaba de vaciar. Dejarla encendida se
+#      come el entorno dev en un mes.
+#   2. Un sitio de adorno que lleva semanas latiendo deja de parecer adorno.
+#
+# ⚠️ `--no-events` NO ES OPCIONAL, y por eso está escrito aquí y no en una nota.
+# Un `LocalEvent` simulado abre un incidente DE VERDAD en la nube, el motor de
+# cuórum forma con estaciones que no midieron nada y la cascada de notificación
+# manda una alerta real a los teléfonos del sitio. El simulador además se niega a
+# publicar en `takab/events` con esta bandera puesta —lanza, no descarta en
+# silencio—, así que esto es el segundo cinturón, no el único.
+#
+# ⚠️ VIVE EN `deploy/demo/`, NO en `edge/systemd/`, y no es por orden. El censo
+# de `edge/tests/test_deploy_artifacts.py` se deriva del glob de ese directorio y
+# NO tiene exenciones: toda unidad que viva ahí es un servicio del GABINETE y se
+# le exige lo que a un servicio de vida —console script declarado en el
+# `pyproject`, `StartLimitIntervalSec=0` para que un update malo no la deje en
+# `failed` para siempre, watchdog—. Esto es lo contrario: una herramienta de
+# demostración que NO debe reiniciarse sola (`Restart=no`), que no sostiene nada
+# y que puede correr en un portátil. Meterla ahí obligaría a relajar el censo del
+# gabinete o a ponerle a un juguete los invariantes de la sirena.
+#
+# Instalación:
+#   sudo cp deploy/demo/takab-fleet-sim.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl start takab-fleet-sim      # y `stop` al terminar. NUNCA `enable`.
+
+[Unit]
+Description=TAKAB — red de demostración (3 estaciones simuladas, sin eventos)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/takab/edge
+# El endpoint y el directorio de certificados del entorno. `TAKAB_IOT_ENDPOINT`
+# lo lee el simulador si no se pasa `--endpoint`.
+EnvironmentFile=/etc/takab/fleet-sim.env
+ExecStart=/opt/takab/edge/.venv/bin/python -m simulators.fleet \
+    --mode iot \
+    --no-events \
+    --with-health \
+    --stations-file /opt/takab/edge/simulators/demo_red.json \
+    --certs-dir ${TAKAB_FLEET_SIM_CERTS} \
+    --rate ${TAKAB_FLEET_SIM_RATE} \
+    --duration-s ${TAKAB_FLEET_SIM_DURACION_S}
+Restart=no
+# Se cae con el sistema: no es un servicio de vida, es una demostración.
+StandardOutput=journal
+StandardError=journal
+
+# Superficie mínima: no toca hardware ni el estado del gabinete.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadOnlyPaths=/opt/takab/edge
+
+[Install]
+WantedBy=multi-user.target
