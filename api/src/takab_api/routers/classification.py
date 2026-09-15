@@ -8,6 +8,7 @@ quien lee el número.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
@@ -19,7 +20,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles, require_web_surface
 from takab_api.auth.matrix import roles_with_action
-from takab_api.incident.classification import CLASIFICACIONES, EN_LA_TASA
+from takab_api.incident.classification import CLASIFICACIONES, EN_LA_TASA, TERMINALES
 from takab_api.routers._common import http_error
 from takab_api.schemas.classification import (
     ClassificationChainOut,
@@ -36,7 +37,21 @@ _require_classify = require_roles(*roles_with_action("classify_incident"))
 #: cliente decide si el sistema le molesta o le sirve.
 _VENTANA_DEFECTO_D = 90
 
-_INCIDENTE_VISIBLE = text("SELECT tenant_id FROM incidents WHERE incident_id = :i")
+_INCIDENTE_VISIBLE = text("SELECT tenant_id, state FROM incidents WHERE incident_id = :i")
+
+#: [T-7.13 · D-33] El cierre por clasificación. Guardado con `state <> 'closed'`
+#: en el propio UPDATE: `closed` es terminal, y clasificar otra vez un incidente
+#: ya cerrado —corregir es clasificar otra vez— no puede escribir un segundo
+#: cierre ni reventar contra la máquina de estados.
+_CERRAR = text(
+    "UPDATE incidents SET state = 'closed', closed_at = now()"
+    " WHERE incident_id = :i AND state <> 'closed'"
+)
+
+_ACCION_CIERRE = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)"
+    " VALUES (:i, :t, 'close', :actor, :payload)"
+)
 
 _CADENA = text("""
 SELECT classification_id, incident_id, classification, note, classified_by,
@@ -90,13 +105,14 @@ def _vigentes(filas) -> set[UUID]:
     return {f.classification_id for f in filas if f.classification_id not in sustituidas}
 
 
-async def _tenant_del_incidente(conn: AsyncConnection, incident_id: UUID) -> str:
+async def _tenant_del_incidente(conn: AsyncConnection, incident_id: UUID) -> tuple[str, str]:
+    """Devuelve ``(tenant_id, state)`` del incidente visible."""
     row = (await conn.execute(_INCIDENTE_VISIBLE, {"i": str(incident_id)})).first()
     if row is None:
         # 404 y no 403: «no existe» y «no es tuyo» se contestan igual, que es lo
         # que impide usar esta ruta para saber si un incidente ajeno existe.
         raise http_error(404, "incidente no encontrado")
-    return str(row.tenant_id)
+    return str(row.tenant_id), row.state
 
 
 @router.get("/incidents/{incident_id}/classifications", response_model=ClassificationChainOut)
@@ -127,8 +143,15 @@ async def classify_incident(
     No hay `PUT` ni `DELETE`, y la base tampoco los permitiría: la tabla es
     append-only con sus dos capas. Quien clasificó mal a las 3 de la mañana no
     puede hacer desaparecer su clasificación — la corrige, y las dos quedan.
+
+    **[T-7.13 · D-33] Una clasificación TERMINAL cierra el incidente aquí mismo.**
+    Hasta esa ficha esto era inerte: se escribía la fila y el banner seguía puesto
+    hasta que alguien mirara. El worker hace lo mismo en su pasada —esto no lo
+    sustituye, lo adelanta—, pero la vía normal de cierre tiene que notarse en el
+    acto o el operador vuelve a pulsar. La consola se entera por el NOTIFY que
+    dispara el propio UPDATE de `incidents`; no hace falta decírselo.
     """
-    tenant = await _tenant_del_incidente(conn, incident_id)
+    tenant, estado = await _tenant_del_incidente(conn, incident_id)
 
     if body.supersedes_id is not None:
         previa = (
@@ -170,7 +193,45 @@ async def classify_incident(
             "supersedes_id": str(body.supersedes_id) if body.supersedes_id else None,
         },
     )
+    if body.classification in TERMINALES:
+        await _cerrar_por_clasificacion(
+            conn, incident_id, tenant=tenant, desde=estado, valor=body.classification, claims=claims
+        )
     return _out(row, {row.classification_id})
+
+
+async def _cerrar_por_clasificacion(
+    conn: AsyncConnection,
+    incident_id: UUID,
+    *,
+    tenant: str,
+    desde: str,
+    valor: str,
+    claims: Claims,
+) -> None:
+    """Cierra y deja la traza con la CAUSA y con quién la decidió.
+
+    El actor es `user:<sub>` y **no** `system:incident`: el cierre por decisión de
+    una persona y el cierre por vencimiento son dos hechos distintos en el
+    timeline, y escribirlos igual borra la única traza de que alguien decidió.
+    """
+    cur = await conn.execute(_CERRAR, {"i": str(incident_id)})
+    if cur.rowcount == 0:
+        return  # ya estaba cerrado: corregir la clasificación no lo cierra dos veces
+    actor = f"user:{claims.sub}"
+    detalle = {"from": desde, "to": "closed", "reason": "classification", "classification": valor}
+    await conn.execute(
+        _ACCION_CIERRE,
+        {"i": str(incident_id), "t": tenant, "actor": actor, "payload": json.dumps(detalle)},
+    )
+    await audit_async(
+        conn,
+        tenant_id=tenant,
+        actor=actor,
+        verb="close",
+        obj=f"incident:{incident_id}",
+        meta=detalle,
+    )
 
 
 @router.get("/classification-stats", response_model=ClassificationStatsOut)

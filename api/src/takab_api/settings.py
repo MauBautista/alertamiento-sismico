@@ -376,6 +376,28 @@ class Settings(BaseSettings):
     # el edificio puede no haber sentido casi nada.
     correlation_min_pga_g: float = 0.001
 
+    # --- Fases del incidente (T-7.13 · D-33) ---
+    # Hasta T-7.13 NADA cerraba un incidente: un incidente abierto en julio
+    # seguía siendo «la alerta» en septiembre. Los dos números de abajo son los
+    # únicos que gobiernan cuándo deja de serlo, y ninguno de los dos vive en el
+    # cliente: la escena se apaga por lo que el servidor sabe, no por el reloj
+    # del navegador (regla de oro 7).
+    #
+    # RETÉN MÍNIMO de la alerta. Se SUMA a la condición de estado (el tier del
+    # sitio de vuelta en `normal`), nunca la sustituye: sin él, un gabinete que
+    # repunta y vuelve a normal en 20 s apagaría el banner mientras la gente
+    # todavía baja las escaleras. Es el «unos minutos» de `D-33`.
+    # [SUPUESTO t-7-13-01] 3 min es el valor de arranque; el definitivo lo da
+    # Mauricio (plan §7, aporte de F3) y se cambia por entorno sin tocar código.
+    alert_hold_min_s: float = 180.0
+    # RED DE SEGURIDAD, no la vía normal. Cierra un incidente que lleva horas en
+    # revisión y que nadie clasificó. En HORAS y no en minutos a propósito: un
+    # TTL corto esconde un evento real que nadie miró, que es peor que dejarlo
+    # en la lista. `0` desactiva esta vía y deja las otras dos (es exactamente
+    # cómo se revoca `D-33` si un cliente exige cierre humano siempre).
+    # [SUPUESTO t-7-13-01] 6 h cubre un turno completo de SOC.
+    incident_review_ttl_s: float = 21600.0
+
     # --- Dictamen automático preliminar (T-1.20 · B5) ---
     # Umbrales de PGA del dictamen (placeholders CALIBRABLES por ingeniería;
     # override por rule_sets.config.dictamen). settle_s retrasa la emisión para

@@ -2036,6 +2036,10 @@ CREATE POLICY ref_eq_read ON reference_earthquakes FOR SELECT
 -- ROUTER vía audit.py (single-writer).
 GRANT SELECT, INSERT, UPDATE ON seismic_events TO takab_ingest;
 GRANT SELECT, UPDATE ON incidents TO takab_ingest;
+-- [T-7.13 · D-33] El worker de fases DECIDE a partir de la clasificación (una
+-- terminal cierra el registro), así que la lee. Solo SELECT: no clasifica, y un
+-- INSERT le dejaría escribirse a sí mismo la razón por la que cerró.
+GRANT SELECT ON incident_classifications TO takab_ingest;
 
 -- [T-2.71] Ventanas de mantenimiento: silenciar alarmas de OPERACIÓN, jamás la
 -- actuación. El efecto real vive en AWS (una CloudWatch alarm mute rule); esta

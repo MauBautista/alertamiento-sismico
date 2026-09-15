@@ -42,6 +42,26 @@ SIGNIFICADO: dict[str, str] = {
 #: provocado a propósito no dice nada sobre si el sistema molesta.
 EN_LA_TASA: frozenset[str] = frozenset({"real", "falso_positivo", "indeterminado"})
 
+#: [T-7.13 · D-33] ¿Clasificar así CIERRA el registro? Un diccionario y no una
+#: lista: así una clasificación nueva no puede entrar sin que alguien decida esto
+#: —el censo de `test_classification_cierra.py` compara las dos colecciones y se
+#: pone rojo—. Una lista por omisión convertiría «nadie lo decidió» en «no
+#: cierra», que es una decisión tomada por descuido.
+#:
+#: `real` NO cierra: el evento ocurrió y el inmueble sigue por dictaminar; lo
+#: cierra el dictamen firmado. `indeterminado` tampoco: «se revisó y no se supo»
+#: deja el registro a la vista hasta que venza el TTL, porque es justo el caso
+#: que alguien debería volver a mirar.
+CIERRA_EL_INCIDENTE: dict[str, bool] = {
+    "real": False,
+    "falso_positivo": True,
+    "prueba": True,
+    "indeterminado": False,
+}
+
+#: Derivado, nunca escrito a mano: las clasificaciones que cierran.
+TERMINALES: frozenset[str] = frozenset(c for c, cierra in CIERRA_EL_INCIDENTE.items() if cierra)
+
 
 class ClasificacionInvalida(ValueError):
     """Un valor fuera del catálogo. No se normaliza: se rechaza."""
