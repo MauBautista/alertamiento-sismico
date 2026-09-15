@@ -21,6 +21,7 @@ import { startAlertLoop, stopAlertLoop } from "@/features/alert/sound";
 import { useAlertState } from "@/features/alert/useAlertState";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
+import { useReduceMotion } from "@/ui/useReduceMotion";
 
 /** Sin sitio vigilado no hay a quién preguntarle: se DICE, no se gira. El
  *  ocupante llega aquí por una push o por el `CrisisWatcher`, así que la salida
@@ -39,6 +40,7 @@ export default function Crisis() {
   const siteId = useWatchedSiteId();
   const { state, data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const reduceMotion = useReduceMotion();
 
   // T+ ascendente: tick de 1 s mientras la pantalla vive.
   useEffect(() => {
@@ -108,7 +110,15 @@ export default function Crisis() {
           elapsedS={elapsedSeconds(incident.opened_at, nowMs)}
           policy={(data.my_zone?.evac_policy as "evacuate" | "shelter" | null) ?? null}
           onSalir={salir}
+          reduceMotion={reduceMotion}
           source={sourceLabel(incident)}
+          // [T-7.19 · D-30] El halo vive mientras el SERVIDOR sostiene la alerta.
+          // `alert_active` es exactamente eso: en cuanto la fase pasa a
+          // `shaking_concluded` esta ruta redirige al check-in, y aun así la
+          // condición viaja explícita — una animación que dependa de que el
+          // enrutado la desmonte se rompe en silencio el día que alguien monte
+          // esta vista en otro sitio.
+          viva={state === "alert_active"}
           zoneName={data.my_zone?.name ?? null}
         />
       ) : null}

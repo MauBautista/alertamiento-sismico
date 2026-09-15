@@ -15,7 +15,7 @@ function treeText(component: Awaited<ReturnType<typeof render>>): string {
 describe("CrisisView — honestidad §2.1-A", () => {
   it("sasmex: SIN magnitud, SIN ETA, SIN cuenta regresiva (test que FALLA si aparecen)", async () => {
     const view = await render(
-      <CrisisView elapsedS={4} policy="evacuate" source={SASMEX} zoneName={null} />,
+      <CrisisView elapsedS={4} policy="evacuate" source={SASMEX} zoneName={null} viva />,
     );
     const text = treeText(view);
     expect(text).not.toMatch(/magnitud/i);
@@ -28,14 +28,14 @@ describe("CrisisView — honestidad §2.1-A", () => {
 
   it("el hueco de ETA NO se renderiza (ALERT_SOURCE_CARRIES_ETA=false)", async () => {
     const view = await render(
-      <CrisisView elapsedS={10} policy="evacuate" source={SASMEX} zoneName={null} />,
+      <CrisisView elapsedS={10} policy="evacuate" source={SASMEX} zoneName={null} viva />,
     );
     expect(view.queryByTestId("eta-slot")).toBeNull();
   });
 
   it("política evacuate ⇒ EVACÚE AHORA (1.2)", async () => {
     const view = await render(
-      <CrisisView elapsedS={4} policy="evacuate" source={SASMEX} zoneName="P02" />,
+      <CrisisView elapsedS={4} policy="evacuate" source={SASMEX} zoneName="P02" viva />,
     );
     expect(view.getByText(/EVACÚE/)).toBeTruthy();
     expect(view.getByText(/No use elevadores/)).toBeTruthy();
@@ -44,7 +44,7 @@ describe("CrisisView — honestidad §2.1-A", () => {
 
   it("política shelter ⇒ REPLIÉGUESE (1.3)", async () => {
     const view = await render(
-      <CrisisView elapsedS={4} policy="shelter" source={SASMEX} zoneName="P10-A" />,
+      <CrisisView elapsedS={4} policy="shelter" source={SASMEX} zoneName="P10-A" viva />,
     );
     expect(view.getByText("REPLIÉGUESE")).toBeTruthy();
     expect(view.getByText(/ventanas y cristales/)).toBeTruthy();
@@ -52,7 +52,7 @@ describe("CrisisView — honestidad §2.1-A", () => {
 
   it("sin política de zona ⇒ PROTÉJASE (banner MVP) — el teléfono no adivina", async () => {
     const view = await render(
-      <CrisisView elapsedS={4} policy={null} source={SASMEX} zoneName={null} />,
+      <CrisisView elapsedS={4} policy={null} source={SASMEX} zoneName={null} viva />,
     );
     expect(view.getByText("PROTÉJASE")).toBeTruthy();
     expect(view.queryByText(/EVACÚE/)).toBeNull();
@@ -62,7 +62,7 @@ describe("CrisisView — honestidad §2.1-A", () => {
   it("fuente quórum: estaciones corroborantes (dato real de red)", async () => {
     const quorum = sourceLabel({ trigger: "quorum", max_pga_g: null, node_count: 3 });
     const view = await render(
-      <CrisisView elapsedS={70} policy="evacuate" source={quorum} zoneName={null} />,
+      <CrisisView elapsedS={70} policy="evacuate" source={quorum} zoneName={null} viva />,
     );
     expect(view.getByText(/CONFIRMADO · 3 ESTACIONES/)).toBeTruthy();
     expect(view.getByText(/T\+1m10s/)).toBeTruthy();
@@ -71,7 +71,7 @@ describe("CrisisView — honestidad §2.1-A", () => {
   it("fuente local: PGA instrumental MEDIDO, jamás magnitud", async () => {
     const local = sourceLabel({ trigger: "local_threshold", max_pga_g: 0.15, node_count: null });
     const view = await render(
-      <CrisisView elapsedS={9} policy="shelter" source={local} zoneName={null} />,
+      <CrisisView elapsedS={9} policy="shelter" source={local} zoneName={null} viva />,
     );
     expect(view.getByText(/PGA 0\.15g MEDIDO/)).toBeTruthy();
     expect(treeText(view)).not.toMatch(/magnitud/i);
@@ -82,13 +82,9 @@ describe("CrisisView — honestidad §2.1-A", () => {
 // defecto vivía aquí —una cadena escrita a fuego— y las pruebas de `sourceLabel`
 // no podían verlo porque la vista no las usaba para titular.
 it("una detección instrumental NO se anuncia como alerta de SASMEX", async () => {
-  const LOCAL = sourceLabel({
-    trigger: "local_threshold",
-    max_pga_g: 0.12,
-    node_count: null,
-  });
+  const LOCAL = sourceLabel({ trigger: "local_threshold", max_pga_g: 0.12, node_count: null });
   const view = await render(
-    <CrisisView elapsedS={4} policy="evacuate" source={LOCAL} zoneName="PB-A" />,
+    <CrisisView elapsedS={4} policy="evacuate" source={LOCAL} zoneName="PB-A" viva />,
   );
   expect(view.queryByText(/SASMEX/)).toBeNull();
   expect(view.getByText("SISMO DETECTADO EN ESTE EDIFICIO")).toBeTruthy();
@@ -104,7 +100,7 @@ it("una detección instrumental NO se anuncia como alerta de SASMEX", async () =
 describe("[T-7.29] salida de la toma para el perfil táctico", () => {
   it("sin `onSalir` NO hay ningún control: el ocupante no sale con el dedo", async () => {
     const { queryByTestId } = await render(
-      <CrisisView elapsedS={12} policy="evacuate" source={SASMEX} zoneName="PB-A" />,
+      <CrisisView elapsedS={12} policy="evacuate" source={SASMEX} zoneName="PB-A" viva />,
     );
     expect(queryByTestId("crisis-salir-tactico")).toBeNull();
   });
@@ -118,6 +114,7 @@ describe("[T-7.29] salida de la toma para el perfil táctico", () => {
         policy="shelter"
         source={SASMEX}
         zoneName="PB-A"
+        viva
       />,
     );
     fireEvent.press(getByTestId("crisis-salir-tactico"));
@@ -133,9 +130,64 @@ describe("[T-7.29] salida de la toma para el perfil táctico", () => {
         onSalir={() => {}}
         policy="evacuate"
         source={SASMEX}
+        viva
         zoneName={null}
       />,
     );
     expect(getByText("EVACÚE\nAHORA")).toBeTruthy();
+  });
+});
+
+// [T-7.19 · D-30] EL HALO: respira mientras el SERVIDOR sostiene la alerta.
+describe("[T-7.19] el halo de la alerta viva", () => {
+  const props = {
+    policy: "evacuate" as const,
+    source: SASMEX,
+    elapsedS: 12,
+    zoneName: null,
+  };
+
+  it("con la alerta viva el anillo está puesto, y NO se come el toque", async () => {
+    const v = await render(<CrisisView {...props} viva />);
+    // ⚠️ Hace falta `includeHiddenElements`, y eso es JUSTO la prueba de que el
+    // anillo está fuera del árbol de accesibilidad: RNTL esconde de sus
+    // consultas lo que el lector de pantalla no va a leer. El lector ya tiene la
+    // instrucción y la fuente; un anillo decorativo entre medias es ruido para
+    // quien no lo ve.
+    expect(v.queryByTestId("crisis-halo")).toBeNull();
+    const halo = v.getByTestId("crisis-halo", { includeHiddenElements: true });
+    expect(halo.props.pointerEvents).toBe("none");
+    expect(halo.props.accessibilityElementsHidden).toBe(true);
+  });
+
+  it("sin alerta viva el anillo se APAGA — es la condición 3 de D-30", async () => {
+    // Se detiene POR ESTADO. Hoy la ruta redirige en `shaking_concluded`, pero
+    // la vista no depende de eso: montada con `viva={false}` no late.
+    const v = await render(<CrisisView {...props} viva={false} />);
+    expect(v.getByTestId("crisis-halo", { includeHiddenElements: true })).toBeTruthy();
+    // La instrucción sigue ahí: apagar el halo no apaga la pantalla.
+    expect(v.getByText(/EVACÚE/)).toBeTruthy();
+  });
+
+  it("con `reduceMotion` el anillo se queda QUIETO, no desaparece", async () => {
+    // Apagar bien una animación es que siga leyéndose como estado.
+    const v = await render(<CrisisView {...props} reduceMotion viva />);
+    expect(v.getByTestId("crisis-halo", { includeHiddenElements: true })).toBeTruthy();
+    expect(v.getByText(/EVACÚE/)).toBeTruthy();
+  });
+
+  it("el TEXTO se lee igual en los tres casos: el portador no es el movimiento", async () => {
+    for (const caso of [
+      { viva: true, reduceMotion: false },
+      { viva: false, reduceMotion: false },
+      { viva: true, reduceMotion: true },
+    ]) {
+      // Sin `viva` suelto al final: lo pone `caso`, y añadirlo aquí pisaría el
+      // caso apagado y las tres vueltas medirían lo mismo.
+      const v = await render(<CrisisView {...props} {...caso} />);
+      expect(v.getByText(/EVACÚE/)).toBeTruthy();
+      expect(v.getByText(props.source.title)).toBeTruthy();
+      await v.unmount();
+    }
   });
 });

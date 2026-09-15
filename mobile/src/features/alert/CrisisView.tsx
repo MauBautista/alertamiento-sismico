@@ -2,9 +2,10 @@
 // la instrucción gigante ES la pantalla; abajo el T+ ascendente (dato real) y
 // la fuente etiquetada. PROHIBIDO cualquier cronómetro regresivo o magnitud
 // preliminar. Presentacional puro: todo entra por props (testeable).
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { emergency, fontSize, palette, radius, space } from "@/ui/theme";
+import { emergency, fontSize, motion, palette, radius, space } from "@/ui/theme";
 
 import { ALERT_SOURCE_CARRIES_ETA, formatElapsed } from "./machine";
 import type { SourceLabel } from "./source";
@@ -24,7 +25,29 @@ export type CrisisViewProps = {
    * MIENTRAS la alerta sigue viva, y durante el ensayo del 2026-09-12 su
    * teléfono le enseñaba «PROTÉJASE» y nada más. */
   onSalir?: (() => void) | null;
+  /**
+   * [T-7.19 · D-30] ¿El SERVIDOR todavía sostiene esta alerta?
+   *
+   * Es la condición 3 de la decisión: el halo se detiene POR ESTADO, nunca por
+   * un cronómetro del teléfono. Hoy la ruta de crisis redirige en cuanto la fase
+   * deja de ser `alert_active`, así que parecería que basta con eso — pero un
+   * componente presentacional cuya animación dependa de una garantía de
+   * enrutado se rompe en silencio el día que alguien lo monte en otro sitio (la
+   * franja de alerta viva del brigadista, por ejemplo). Entra por prop, y las
+   * pruebas fijan las dos direcciones.
+   */
+  viva: boolean;
+  /**
+   * Preferencia de movimiento reducido del sistema. Entra por PROP porque esta
+   * vista es presentacional: el hook vive en la ruta, como en `SiteNotices`.
+   */
+  reduceMotion?: boolean;
 };
+
+/** Opacidad del anillo en reposo — la que se queda puesta sin animación. */
+const HALO_REPOSO = 0.28;
+/** Opacidad en el pico del latido. */
+const HALO_PICO = 0.85;
 
 const VARIANTS = {
   evacuate: {
@@ -55,10 +78,64 @@ const VARIANTS = {
   },
 } as const;
 
-export function CrisisView({ policy, source, elapsedS, zoneName, onSalir }: CrisisViewProps) {
+export function CrisisView({
+  policy,
+  source,
+  elapsedS,
+  zoneName,
+  onSalir,
+  viva,
+  reduceMotion = false,
+}: CrisisViewProps) {
   const variant = VARIANTS[policy ?? "none"];
+  // [T-7.19 · D-30] EL HALO. Se anima la CARCASA —un anillo sobre el borde de la
+  // pantalla—, nunca la tipografía: la instrucción es legible desde el primer
+  // frame, que es lo que la prohibición del §5.3 protegía y esta decisión
+  // conserva. `useNativeDriver` porque `opacity` la mueve el compositor sin
+  // pasar por el puente: un halo que compita por el hilo de JS con la consulta
+  // de estado retrasaría justo lo que no puede retrasarse.
+  // `useState` con inicializador perezoso y no `useRef(...).current`: leer un
+  // ref durante el render es lo que prohíbe `react-hooks`, y es la misma forma
+  // que ya usan `LatidoPunto` y `PanicButton`.
+  const [halo] = useState(() => new Animated.Value(HALO_REPOSO));
+  useEffect(() => {
+    if (!viva || reduceMotion) {
+      // Quieto y PUESTO. Apagar bien una animación es que siga leyéndose como
+      // estado: el anillo no desaparece, deja de latir.
+      halo.setValue(viva ? HALO_REPOSO : 0);
+      return undefined;
+    }
+    const mitad = motion.alertaMs / 2;
+    const bucle = Animated.loop(
+      Animated.sequence([
+        Animated.timing(halo, {
+          toValue: HALO_PICO,
+          duration: mitad,
+          useNativeDriver: true,
+        }),
+        Animated.timing(halo, {
+          toValue: HALO_REPOSO,
+          duration: mitad,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    bucle.start();
+    return () => {
+      bucle.stop();
+      halo.setValue(HALO_REPOSO);
+    };
+  }, [halo, viva, reduceMotion]);
+
   return (
     <View style={[styles.wrap, { backgroundColor: variant.bg }]}>
+      <Animated.View
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents="none"
+        style={[styles.halo, { borderColor: variant.accent, opacity: halo }]}
+        testID="crisis-halo"
+      />
       <View style={[styles.strip, { backgroundColor: variant.strip }]}>
         <Text style={[styles.stripEyebrow, { color: variant.stripText }]}>
           {source.eyebrow}
@@ -122,6 +199,19 @@ export function CrisisView({ policy, source, elapsedS, zoneName, onSalir }: Cris
 
 const styles = StyleSheet.create({
   wrap: { flex: 1 },
+  // El anillo va por ENCIMA del fondo y por DEBAJO de todo lo que se lee: no
+  // intercepta toques (`pointerEvents`) y está oculto para el lector de
+  // pantalla, que ya tiene la instrucción y la fuente.
+  halo: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    borderWidth: 4,
+    borderRadius: radius.md,
+    zIndex: 1,
+  },
   // El objetivo táctil no baja del mínimo de T-6.20 (48 dp) ni con guantes:
   // esto se pulsa en una evacuación, no en un escritorio.
   salida: { marginTop: space[4], alignItems: "center" },

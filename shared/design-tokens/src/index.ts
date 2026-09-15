@@ -280,6 +280,16 @@ export const tokens = {
     durPulse: v("--tk-dur-pulse"),
     durArmed: v("--tk-dur-armed"),
     durDrill: v("--tk-dur-drill"),
+    /**
+     * [T-7.19 · D-30] El PERÍODO del halo de la alerta: el mismo en la consola y
+     * en la pantalla de crisis del móvil. Es un solo hecho —«la alerta está
+     * viva»— en dos superficies, y dos períodos distintos se leerían como dos
+     * cosas distintas. Más lento que `durPulse` a propósito: el latido del dato
+     * vivo y el de la alerta no pueden batir juntos o se confunden.
+     */
+    durAlerta: v("--tk-dur-alerta"),
+    /** [T-7.18] Cuánto dura la ráfaga de arribo de una estación en el mapa. */
+    durArrival: v("--tk-dur-arrival"),
   },
   /**
    * [T-6.07] Cuánto puede callar una espera antes de tener que DECIR qué
