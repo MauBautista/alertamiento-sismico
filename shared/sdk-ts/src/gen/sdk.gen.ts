@@ -746,6 +746,13 @@ export const submitCheckinIncidentsIncidentIdCheckinsPost = <ThrowOnError extend
  * No hay `PUT` ni `DELETE`, y la base tampoco los permitiría: la tabla es
  * append-only con sus dos capas. Quien clasificó mal a las 3 de la mañana no
  * puede hacer desaparecer su clasificación — la corrige, y las dos quedan.
+ *
+ * **[T-7.13 · D-33] Una clasificación TERMINAL cierra el incidente aquí mismo.**
+ * Hasta esa ficha esto era inerte: se escribía la fila y el banner seguía puesto
+ * hasta que alguien mirara. El worker hace lo mismo en su pasada —esto no lo
+ * sustituye, lo adelanta—, pero la vía normal de cierre tiene que notarse en el
+ * acto o el operador vuelve a pulsar. La consola se entera por el NOTIFY que
+ * dispara el propio UPDATE de `incidents`; no hace falta decírselo.
  */
 export const classifyIncidentIncidentsIncidentIdClassificationPost = <ThrowOnError extends boolean = false>(options: Options<ClassifyIncidentIncidentsIncidentIdClassificationPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<ClassifyIncidentIncidentsIncidentIdClassificationPostResponse, ClassifyIncidentIncidentsIncidentIdClassificationPostError, ThrowOnError>({
