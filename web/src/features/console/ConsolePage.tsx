@@ -285,6 +285,7 @@ function ConsoleWall() {
             <div className="soc-stage__overlays" data-testid="stage-overlays">
               <AlertBanner
                 incident={critical}
+                now={now}
                 siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
                 siteCode={critical ? (siteById.get(critical.site_id)?.code ?? null) : null}
               />

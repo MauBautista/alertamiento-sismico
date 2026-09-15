@@ -84,8 +84,25 @@ export function mergeIncidents(
   });
 }
 
-async function fetchOpenIncidents(): Promise<LiveIncident[]> {
-  const { data, response } = await listIncidentsIncidentsGet({ query: { state: "open" } });
+/**
+ * [T-7.20] LO QUE SIGUE EN LA MESA, no `state = "open"`.
+ *
+ * Esto pedía `state: "open"`, y por eso un incidente que el servidor pasaba a
+ * `in_review` desaparecía de la lista entera: la escena «SISMO CONCLUIDO ·
+ * ANALIZANDO» (`T-7.16`) sólo llegaba a un navegador que ya estuviera abierto
+ * cuando entró el frame del canal live. Quien recargara, reconectara o llegara
+ * después no veía la revisión — veía NADA, que es exactamente lo que la regla
+ * de oro 7 prohíbe: callar sobre un sismo que acaba de terminar y está
+ * esperando a que alguien lo clasifique. Lo cazó la corrida real de
+ * `vida_del_sismo.spec.ts`, no una prueba de este módulo: aquí el frame del
+ * live siempre estaba.
+ *
+ * `live=true` es el MISMO predicado que `isOpen` de abajo, servido por el
+ * servidor. Las dos mitades tienen que existir —el filtro acota la página y el
+ * cliente sostiene los frames— y por eso están escritas una al lado de la otra.
+ */
+async function fetchLiveIncidents(): Promise<LiveIncident[]> {
+  const { data, response } = await listIncidentsIncidentsGet({ query: { live: true } });
   if (data === undefined) {
     throw new Error(`GET /incidents falló (${response.status})`);
   }
@@ -147,7 +164,7 @@ export function useLiveIncidents(): LiveIncidentsData {
   const socket = useLiveSocket();
   const query = useQuery({
     queryKey: ["incidents", "open"],
-    queryFn: fetchOpenIncidents,
+    queryFn: fetchLiveIncidents,
     refetchInterval: INCIDENTS_REFETCH_MS,
   });
   const [frames, setFrames] = useState<ReadonlyMap<string, LiveIncident>>(new Map());

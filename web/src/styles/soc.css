@@ -638,6 +638,24 @@ body {
   background: var(--tk-status-warning);
   color: var(--tk-navy-900);
 }
+/* [T-7.20] Y UNA REVISIÓN TAMPOCO viste la carcasa de la alerta. Mismo
+   razonamiento que el AVISO de aquí arriba, y el mismo defecto una ficha
+   después: la franja del shell ya pintaba «SISMO CONCLUIDO» en cian (abajo,
+   `.soc-scene__alert[data-kind="review"]`), pero esa franja NO se pinta en el
+   muro — allí la alerta tiene su tarjeta—, así que el videowall seguía en rojo
+   crítico con el sismo terminado. El cian es el mismo de la franja a propósito:
+   es el mismo hecho en las dos superficies.
+
+   El halo no hace falta apagarlo aquí: su selector pide `data-alive="true"` y
+   en revisión `alertaViva` ya dice `false`, así que no casa. */
+.soc-alert[data-kind="review"] {
+  border-color: var(--tk-border-cyan);
+  box-shadow: none;
+}
+.soc-alert[data-kind="review"] .soc-alert__strip {
+  background: var(--tk-cyan-08);
+  color: var(--tk-cyan);
+}
 .soc-alert__site {
   padding: 14px 16px 4px;
   font-family: var(--tk-font-ui);

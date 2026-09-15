@@ -18,11 +18,13 @@ runtime del gabinete (imports perezosos).
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import os
 import random
 import time
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -575,6 +577,51 @@ def make_sqs_sender(client, queue_url: str, sleep: Callable[[float], None] = tim
     return send
 
 
+# --- modo spool (el SOC local) ----------------------------------------------
+
+
+def make_spool_sender(directorio: Path) -> Sender:
+    """Deja los mensajes en el spool en disco que sustituye a IoT Core + SQS.
+
+    Es el ÚNICO modo que no habla con AWS, y existe por una razón medida:
+    `make soc-local` levanta el sistema entero —supervisor del edge, consumer
+    real, handlers, motor de incidentes, consola— sustituyendo **solo** ese
+    tramo, y la flota únicamente sabía publicar a SQS o a IoT Core. Sin esto la
+    reproducción (`--replay`) no se puede enseñar en un navegador sin desplegar:
+    la tabla por estación sale con el arribo TEÓRICO y jamás con el medido, que
+    es justo la comparación por la que esa tabla existe (`T-7.17`).
+
+    Enriquece con las MISMAS tres claves `meta_*` que la IoT Rule porque quien
+    lee esto es el consumer de producción, que las separa antes de validar
+    contra el schema.
+    """
+    directorio.mkdir(parents=True, exist_ok=True)
+    # Contador monótono: ordenar por nombre reproduce el orden de publicación,
+    # que es lo que el consumer observa. Mismo contrato que `demo/spool.py`.
+    secuencia = itertools.count(1)
+
+    def send(messages: list[OutMessage]) -> tuple[int, int]:
+        ok = errors = 0
+        for m in messages:
+            cuerpo = json.dumps(enrich(m.payload, m.topic, m.thing))
+            destino = directorio / f"{next(secuencia):012d}-{uuid.uuid4().hex[:8]}.json"
+            # Escribir y renombrar. El consumer lee el directorio en caliente y
+            # sólo mira `*.json`: un fichero a medio escribir sería un JSON roto
+            # que acaba en la DLQ, y una pérdida silenciosa es peor que un error.
+            tmp = destino.with_suffix(".tmp")
+            try:
+                tmp.write_text(cuerpo, encoding="utf-8")
+                os.replace(tmp, destino)
+            except OSError:
+                tmp.unlink(missing_ok=True)
+                errors += 1
+                continue
+            ok += 1
+        return ok, errors
+
+    return send
+
+
 # --- modo iot ---------------------------------------------------------------
 
 
@@ -632,7 +679,7 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
         prog="fleet",
         description="Simulador de flota sim (SIM001..SIM020) para el load test de ingesta.",
     )
-    parser.add_argument("--mode", choices=("sqs", "iot"), required=True)
+    parser.add_argument("--mode", choices=("sqs", "iot", "spool"), required=True)
     parser.add_argument("--rate", type=float, default=1.0, help="msg/s por canal (default 1.0)")
     parser.add_argument("--sites", type=int, default=MAX_SITES)
     parser.add_argument("--duration-s", type=float, default=60.0)
@@ -640,6 +687,13 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--certs-dir", type=Path, default=None, help="modo iot: <dir>/<thing>/")
     parser.add_argument("--endpoint", default=None, help="modo iot (o env TAKAB_IOT_ENDPOINT)")
     parser.add_argument("--profile", default=None, help="perfil boto3 (modo sqs)")
+    parser.add_argument(
+        "--spool-dir",
+        type=Path,
+        default=None,
+        metavar="RUTA",
+        help="modo spool: la cola en disco del SOC local (.local-soc/cola/<thing>)",
+    )
     parser.add_argument("--region", default="us-east-2")
     parser.add_argument("--with-health", action="store_true", help="heartbeat cada 30 s/gateway")
     parser.add_argument("--quake", default=None, metavar="SIMxxx", help="watch→evacuate_or_hold")
@@ -736,7 +790,11 @@ def main(argv: list[str] | None = None) -> int:
         replay=replay,
     )
     connections: dict = {}
-    if args.mode == "sqs":
+    if args.mode == "spool":
+        if args.spool_dir is None:
+            raise SystemExit("modo spool requiere --spool-dir (la cola que lee el bridge local)")
+        send = make_spool_sender(args.spool_dir)
+    elif args.mode == "sqs":
         queue_url = args.queue_url or os.environ.get("TAKAB_QUEUE_URL")
         if not queue_url:
             raise SystemExit("modo sqs requiere --queue-url o env TAKAB_QUEUE_URL")

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **358** · `[~]` **12** · `[ ]` **47**
+**Conteo de tareas:** total **417** · `[x]` **359** · `[~]` **11** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14343,7 +14343,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende hoy:** sí — el
   selector nuevo tiene que entrar en el grupo `animation: none`.
 
-### [~] T-7.20 · **Epicentro y estaciones en el muro, de punta a punta** — `SOFTWARE` · **SOFTWARE HECHO 2026-09-15 · FALTA CORRERLO EN NAVEGADOR**
+### [x] T-7.20 · **Epicentro y estaciones en el muro, de punta a punta** — `SOFTWARE` · **CORRIDA EN NAVEGADOR 2026-09-15 · DOS DEFECTOS CAZADOS Y CERRADOS**
 - **Componente:** web · **Depende de:** T-7.16, T-7.17, T-7.18 · **Prioridad:** F3 · alta
 - **Objetivo:** que al concluir la sacudida el muro muestre el epicentro con su procedencia y
   la tabla por estación en orden de arribo, y que un e2e lo ejerza entero.
@@ -14366,13 +14366,45 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     procedencia → tabla en orden de arribo → revisión con el halo detenido. **Declara el arnés
     que necesita y se SALTA CON MOTIVO si no está**, en vez de pasar en verde: un e2e que se
     salta en silencio lo que vino a comprobar es la peor clase de verde.
-  - [ ] **Correrlo de verdad**: `make soc-local` + el WR-1 en `:9100` + `fleet --replay`, con la
-    ventana de reproducción armada. Es lo que pide el criterio de cierre del bloque —ejercida
-    al menos una vez fuera de los tests— y necesita una sesión con navegador.
-  - [ ] Verificar que el panel del gabinete muestra la comparativa que ya existe (§7.5 de su
-    spec) durante esa misma corrida.
+  - [x] **Correrlo de verdad** (2026-09-15, Chromium 1280×800 sobre `make soc-local`): del pulso
+    del WR-1 al cierre por clasificación, 3.1 min, en verde. ⚠️ **El spec ya no espera el arnés
+    puesto: lo CONDUCE.** La primera versión solo miraba la consola y se saltaba el caso si no
+    encontraba la alerta — y sin nadie tocando el radio se saltó en las tres resoluciones sin
+    probar una sola de las siete fichas, que es el verde que esta ficha vino a evitar. Ahora la
+    prueba arma la ventana de reproducción, cierra el contacto del WR-1, re-arma el gabinete y
+    le da calma al sensor contra los mismos puertos que usaría el operador.
+  - [x] **Defecto 1, cazado por la corrida: la consola PERDÍA el incidente en revisión.**
+    `useLiveIncidents` pedía `state=open`, así que en cuanto el worker lo pasaba a `in_review`
+    desaparecía de la lista entera: «SISMO CONCLUIDO · ANALIZANDO» sólo llegaba a un navegador
+    que ya estuviera abierto cuando entró el frame del canal live. Quien recargara, reconectara
+    o llegara después no veía la revisión — veía **nada**, que es la regla de oro 7 al revés.
+    Cerrado con `GET /incidents?live=true` (mismo predicado que `isOpen`, servido por el
+    servidor; excluyente con `state`) y tres tests en `api/tests/api/test_incidents.py`.
+  - [x] **Defecto 2, cazado por la misma corrida: el MURO seguía gritando.** `T-7.16` le dio la
+    escena de revisión a la franja del shell, y esa franja **no se pinta en `/console`** (allí
+    la alerta tiene su tarjeta anclada al escenario). Con el sismo ya terminado el videowall
+    —la pantalla que alguien mira de pie— seguía diciendo «ALERTA SÍSMICA · PROTÉJASE» y lo
+    único que cambiaba era que el halo se paraba. `AlertBanner` deriva ahora su titular de
+    `alertKind` y las palabras salen de `features/scene/revision.ts`, compartido con
+    `ReviewLine`; la carcasa se viste de revisión (`data-kind="review"`, cian, sin sombra
+    crítica). El caso que fijaba la conducta vieja se reescribió en vez de borrarse.
+  - [x] **`fleet --replay` contra el SOC local**: modo `--mode spool` en `edge/simulators/fleet.py`
+    (el único que no habla con AWS; escribe en la cola en disco que sustituye a IoT Core + SQS,
+    con las tres claves `meta_*` de la IoT Rule). Medido: 720 mensajes, 0 errores, y las tres
+    estaciones de `demo_red.sql` ingeridas con picos 0.0536 / 0.0419 / 0.0358 g contra los
+    0.056 / 0.044 / 0.036 g del plan. `edge/tests/test_fleet_spool.py`, 6 casos.
+  - [x] Verificado en la misma corrida que el panel del gabinete muestra la comparativa §7.5:
+    seleccionado `Puebla-Morelos 19S (solución USGS)` del catálogo empujado firmado a `:8080`,
+    el cajón imprime «DISTANCIA EPICENTRAL 62 km SSO · DISTANCIA HIPOCENTRAL 79 km · prof 48 km
+    · ARRIBO P TEÓRICO ~12 s · v_P 6.5 km/s · PGA EST. EPICENTRO 0.117 g · PGA EST. ESTACIÓN
+    0.071 g», el rótulo maestro «ESTIMACIÓN TEÓRICA · LEY DE ATENUACIÓN SIMPLE — NO ES DATO
+    MEDIDO» y «S/D · NO MEDIDO EN ESTA VENTANA» para el pico medido (tercer candado de §7.5).
+    ⚠️ Hizo falta **provisionar la ubicación del gabinete local** (`TAKAB_EDGE_SITE_LAT/LON` en
+    `demo/soc_local.sh`, las del sitio que dice ser): sin ella el cajón declara «SIN UBICACIÓN
+    PROVISIONADA» —conducta correcta— y §7.5 no se podía enseñar en local.
 - **Tests de censo que toca:** `serverDataCensus` (un alta más, con su razón) · **Token
-  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el caso de `AlertBanner.test.tsx`
+  que usaba `in_review` para decir «sin animación» y con ello dejaba fijado el defecto 2.
 
 ### [ ] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE`
 - **Componente:** api · shared · **Depende de:** — · **Prioridad:** F4 · alta

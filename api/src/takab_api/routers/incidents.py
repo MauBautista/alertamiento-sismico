@@ -62,6 +62,7 @@ async def list_incidents(
     conn: AsyncConnection = Depends(read_session),
     scope: ConsoleScope = Depends(get_console_scope),
     state: str | None = Query(None),
+    live: bool = Query(False),
     severity: str | None = Query(None),
     site_id: str | None = Query(None),
     q_prefix: str | None = Query(None, alias="q"),
@@ -74,6 +75,12 @@ async def list_incidents(
     y paginación keyset estable."""
     if state is not None and state not in _VALID_STATE:
         raise http_error(400, "state inválido")
+    # [T-7.20] `live` y `state` se contradicen: uno pide un estado concreto y el
+    # otro «todos menos cerrado». Combinarlos devolvería silenciosamente la
+    # intersección, y quien pidiera `live=true&state=closed` recibiría una lista
+    # vacía que se lee como «no hay incidentes» en vez de como un error suyo.
+    if live and state is not None:
+        raise http_error(400, "`live` y `state` son excluyentes: pide uno de los dos")
     if severity is not None and severity not in _VALID_SEVERITY:
         raise http_error(400, "severity inválido")
     from_ts, to_ts = parse_range_filters(from_, to)
@@ -85,6 +92,7 @@ async def list_incidents(
 
     stmt, params = q.select_incidents(
         state=state,
+        live=live,
         severity=severity,
         site_id=site_id,
         q=q_prefix,

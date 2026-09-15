@@ -23,6 +23,7 @@ import { Link } from "react-router";
 
 import SiteLabel from "../../components/SiteLabel";
 import type { LiveIncident } from "../console/useLiveIncidents";
+import { REVIEW_PASADO_MS, edadDelSismo, tituloRevision, transcurrido } from "./revision";
 
 /** Epicentro localizado del evento, si el mapa ya lo tiene. Subconjunto de `MapEpicenter`. */
 export interface EpicentroDeLaRevision {
@@ -30,26 +31,10 @@ export interface EpicentroDeLaRevision {
   source: string;
 }
 
-/**
- * Pasado esto sin que nadie clasifique, la línea habla EN PASADO.
- *
- * No cierra nada ni cambia ningún estado —eso es del servidor, siempre
- * (`incident_review_ttl_s`)—: cambia las PALABRAS. Un «ANALIZANDO» en presente
- * doce horas después del sismo dice que hay alguien mirando ahora mismo, y no lo
- * hay; con el TTL del servidor en su valor normal este caso ni se alcanza,
- * porque el registro ya estaría cerrado. Se alcanza justo cuando alguien puso el
- * TTL a cero para exigir cierre humano, que es cuando más importa no mentir.
- */
-export const REVIEW_PASADO_MS = 6 * 3600_000;
-
-/** `mm:ss` mientras cabe; `h:mm` en cuanto pasa de una hora. Sin decimales. */
-export function transcurrido(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (h > 0) return `${h}:${String(m).padStart(2, "0")} h`;
-  return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-}
+// `REVIEW_PASADO_MS` y `transcurrido` se mudaron a `revision.ts` cuando la
+// tarjeta del muro tuvo que decir lo mismo que esta línea. Se re-exportan para
+// no partir a quien ya las importaba de aquí.
+export { REVIEW_PASADO_MS, transcurrido } from "./revision";
 
 export default function ReviewLine({
   incident,
@@ -66,8 +51,7 @@ export default function ReviewLine({
   /** Milisegundos. Se inyecta para que el reloj del test no sea el del navegador. */
   now: number;
 }) {
-  const desde = Date.parse(incident.opened_at);
-  const edad = Number.isNaN(desde) ? null : now - desde;
+  const edad = edadDelSismo(incident.opened_at, now);
   const enPasado = edad !== null && edad > REVIEW_PASADO_MS;
 
   return (
@@ -79,9 +63,7 @@ export default function ReviewLine({
       data-past={String(enPasado)}
     >
       <Activity size={14} aria-hidden />
-      <span className="soc-scene__alert-title">
-        {enPasado ? "SISMO CONCLUIDO · SIN CLASIFICAR" : "SISMO CONCLUIDO · ANALIZANDO"}
-      </span>
+      <span className="soc-scene__alert-title">{tituloRevision(edad)}</span>
       <SiteLabel
         className="soc-scene__alert-site"
         name={siteName ?? `SITIO ${incident.site_id.slice(0, 8)}`}

@@ -34,6 +34,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -43,7 +44,7 @@ sys.path.insert(0, str(_ROOT))
 sys.path.insert(0, str(_ROOT / "edge"))
 
 from demo.spool import SpoolMqttTransport  # noqa: E402
-from simulators.quake import quake_packets  # noqa: E402
+from simulators.quake import DEFAULT_CHANNELS, quake_packets  # noqa: E402
 from simulators.rs4d import RS4DSimulator  # noqa: E402
 from simulators.wr1 import WR1Simulator  # noqa: E402
 from takab_edge.config import EdgeSettings  # noqa: E402
@@ -109,6 +110,9 @@ class Gabinete:
         self.sup.build().start()
         self.wr1 = WR1Simulator(self.sup.gpio)
         self._rs4d = RS4DSimulator(station=args.station, sample_rate=self.settings.sample_rate)
+        #: El hilo de calma de `calma()`, y la bandera que lo corta al apagar.
+        self._calma: threading.Thread | None = None
+        self._parando = threading.Event()
 
     # --- estímulos ---------------------------------------------------------
     def sasmex(self) -> None:
@@ -124,6 +128,41 @@ class Gabinete:
         for packet in packets:
             self.sup.seedlink.feed(packet)
         return len(packets)
+
+    def calma(self, segundos: float = 120.0) -> dict:
+        """El sensor MIDIENDO CALMA — lo que permite que el episodio se CIERRE.
+
+        [T-7.20] Sin esto el SOC local no puede enseñar la mitad más importante
+        de la coreografía de F3. Este gabinete arranca sin SeedLink
+        (`seedlink_source=None`), así que después del pulso del WR-1 no vuelve a
+        haber ventanas de features: `EpisodeTracker.observe` no se llama nunca,
+        el reloj del silencio (`episode_quiet_s`) ni empieza, y la transición de
+        cierre —la que le dice a la nube que la sacudida terminó (`T-7.30`)— no
+        se publica jamás. El incidente se queda en ALERTA para siempre, que es
+        exactamente lo que `D-33` vino a arreglar.
+
+        No inventa el cierre: alimenta ruido de fondo, que es lo que un sensor
+        real entrega cuando no pasa nada, y deja que el gabinete decida. El
+        enclavado sigue mandando — con la alerta puesta el reloj del silencio no
+        arranca (`_quizas_cerrar`), así que hay que re-armar en el panel primero.
+
+        Va en un HILO porque ese reloj es de pared: 90 s por defecto, y el panel
+        tiene que seguir atendiendo mientras tanto.
+        """
+        if self._calma is not None and self._calma.is_alive():
+            return {"ya_corria": True}
+        fin = time.monotonic() + float(segundos)
+
+        def alimentar() -> None:
+            while time.monotonic() < fin and not self._parando.is_set():
+                momento = datetime.now(UTC)
+                for canal in DEFAULT_CHANNELS:
+                    self.sup.seedlink.feed(self._rs4d.packet(canal, momento))
+                time.sleep(1.0)
+
+        self._calma = threading.Thread(target=alimentar, name="calma", daemon=True)
+        self._calma.start()
+        return {"segundos": float(segundos), "canales": list(DEFAULT_CHANNELS)}
 
     def wan(self, up: bool) -> None:
         if up:
@@ -153,6 +192,9 @@ class Gabinete:
         }
 
     def stop(self) -> None:
+        self._parando.set()
+        if self._calma is not None:
+            self._calma.join(timeout=2.0)
         self.sup.stop()
 
 
@@ -161,6 +203,7 @@ def _handler(gab: Gabinete) -> type[BaseHTTPRequestHandler]:
         "/sasmex": gab.sasmex,
         "/sasmex/clear": gab.sasmex_clear,
         "/quake": gab.quake,
+        "/calma": gab.calma,
         "/wan/off": lambda: gab.wan(False),
         "/wan/on": lambda: gab.wan(True),
     }

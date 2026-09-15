@@ -175,3 +175,64 @@ async def test_mobile_only_role_forbidden(client, make_incident) -> None:
     await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     resp = await client.get("/incidents", headers=_token(role="brigadista"))
     assert resp.status_code == 403
+
+
+# ─────────────────────────────────────────────────── [T-7.20] lo que sigue en la mesa
+
+
+async def test_LIVE_incluye_la_revision_y_deja_fuera_lo_cerrado(client, make_incident) -> None:
+    """La regresión que costó la escena «SISMO CONCLUIDO».
+
+    La consola pedía `state=open`, así que un incidente que el servidor pasaba a
+    `in_review` desaparecía de su lista ENTERA: la revisión sólo llegaba a un
+    navegador que ya estuviera abierto cuando entró el frame del canal live.
+    Quien recargara, reconectara o llegara después no veía la revisión — veía
+    nada, que es la regla de oro 7 al revés: callar sobre un sismo que acaba de
+    terminar y está esperando a que alguien lo clasifique.
+
+    Lo cazó la corrida real de `web/e2e/vida_del_sismo.spec.ts`; ninguna prueba
+    de unidad podía verlo porque en todas ellas el frame del live estaba.
+    """
+    en_la_mesa = {
+        estado: await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, state=estado)
+        for estado in ("open", "acked", "in_review")
+    }
+    cerrado = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, state="closed")
+
+    r = await client.get("/incidents", params={"live": "true"}, headers=_token())
+    assert r.status_code == 200, r.text
+    vistos = {it["incident_id"] for it in r.json()["items"]}
+
+    for estado, iid in en_la_mesa.items():
+        assert iid in vistos, f"`{estado}` se cayó de la lista viva"
+    assert cerrado not in vistos
+
+
+async def test_LIVE_tampoco_devuelve_lo_que_tiene_FECHA_de_cierre(client, make_incident) -> None:
+    """Las dos mitades del predicado, por separado.
+
+    `state` y `closed_at` pueden discrepar —el cierre escribe los dos, pero un
+    arreglo a mano o una migración a medias no—, y una lista viva que enseñe un
+    incidente con fecha de cierre pinta como vigente algo que ya no lo está.
+    """
+    from sqlalchemy import text
+
+    from takab_api.db.engine import get_engine
+
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, state="in_review")
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text("UPDATE incidents SET closed_at = now() WHERE incident_id = :i"), {"i": iid}
+        )
+
+    r = await client.get("/incidents", params={"live": "true"}, headers=_token())
+    assert iid not in {it["incident_id"] for it in r.json()["items"]}
+
+
+async def test_LIVE_y_STATE_son_EXCLUYENTES(client, make_incident) -> None:
+    """Combinarlos devolvería la intersección en silencio: `live&state=closed`
+    daría una lista vacía que se lee como «no hay incidentes», no como un error."""
+    await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    r = await client.get("/incidents", params={"live": "true", "state": "closed"}, headers=_token())
+    assert r.status_code == 400
+    assert "excluyentes" in r.text

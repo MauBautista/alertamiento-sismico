@@ -3983,6 +3983,7 @@ export type ListIncidentsIncidentsGetData = {
     path?: never;
     query?: {
         state?: string | null;
+        live?: boolean;
         severity?: string | null;
         site_id?: string | null;
         q?: string | null;
