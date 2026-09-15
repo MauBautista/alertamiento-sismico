@@ -77,6 +77,10 @@ INSERT INTO _conservar (t) VALUES
   ('site_ground_refs'), ('cameras'), ('compliance_labels'), ('rule_sets'),
   ('gateway_config_state'), ('gateway_catalog_state'), ('maintenance_windows'),
   ('fw_releases'), ('fleet_rollouts'), ('fleet_rollout_sites'), ('demo_mode'),
+  -- [T-7.14] `demo_replay` va con `demo_mode` y por lo mismo: es una VENTANA
+  -- declarada, no dato de operación, y vence sola en 8 h. Esta línea la obligó
+  -- el censo de abajo, que es justamente para lo que está.
+  ('demo_replay'),
   -- personas y sus accesos
   ('user_profiles'), ('user_zone_assignments'), ('user_deactivations'),
   ('device_keys'), ('push_tokens'), ('site_enrollment_codes'),

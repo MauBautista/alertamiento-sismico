@@ -376,6 +376,21 @@ class Settings(BaseSettings):
     # el edificio puede no haber sentido casi nada.
     correlation_min_pga_g: float = 0.001
 
+    # --- Reproducción histórica (T-7.14 · D-33) ---
+    # Velocidad de la onda S del PLAN de arribos. NO es `correlation_v_s_km_s`
+    # (3.6) y no se debe unificar con ella: allí la velocidad acota cuán tarde
+    # puede llegar un arribo real y la elección conservadora es la LENTA —una
+    # rápida cerraría la ventana antes de tiempo y perdería el evento—; aquí la
+    # pregunta es cuándo se ESPERA la onda y hace falta la mejor estimación.
+    #
+    # 4.0 km/s está anclada a un sismo medido: reproduce los cuatro arribos de
+    # referencia del 19-S-2017 de la ficha (Puebla +19.6 s, Tlaxcala +25.3 s,
+    # CDMX +32.1 s, Toluca +38.7 s) con 0.08 s de error máximo. Es un evento
+    # INTRAPLACA a 48 km: la energía viaja por la placa subducida y la velocidad
+    # aparente supera los 3.5-3.6 de la corteza. `v_p` no se configura: sale de
+    # ésta por la razón de Poisson (√3), para que no puedan moverse por separado.
+    replay_v_s_km_s: float = 4.0
+
     # --- Fases del incidente (T-7.13 · D-33) ---
     # Hasta T-7.13 NADA cerraba un incidente: un incidente abierto en julio
     # seguía siendo «la alerta» en septiembre. Los dos números de abajo son los

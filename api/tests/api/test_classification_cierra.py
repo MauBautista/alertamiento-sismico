@@ -24,7 +24,9 @@ Lo que se fija aquí:
 # ruff: noqa: F811  (fixtures de pytest importadas por nombre)
 from __future__ import annotations
 
+import re
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
@@ -58,9 +60,29 @@ def test_el_catalogo_entero_DECLARA_si_cierra() -> None:
 
 
 def test_las_terminales_son_las_de_D_33() -> None:
-    assert TERMINALES == frozenset({"falso_positivo", "prueba"})
+    assert TERMINALES == frozenset({"falso_positivo", "prueba", "reproduccion"})
     assert "real" not in TERMINALES, "el evento ocurrió: lo cierra el dictamen firmado"
     assert "indeterminado" not in TERMINALES, "es el caso que hay que volver a mirar"
+
+
+def test_el_catalogo_de_la_CONSOLA_es_el_mismo() -> None:
+    """[T-7.14] El espejo de `useClassification.ts`, que hasta aquí podía divergir.
+
+    Son dos listas escritas a mano en dos lenguajes, y el precio de que difieran
+    no es cosmético: una casilla de menos deja al operador sin poder clasificar lo
+    que la base sí acepta, y una de más le da un 500 contra el CHECK. Mismo
+    mecanismo que `bmsChannels.test.ts` al revés (web leyendo `handlers.py`).
+    """
+    fuente = (
+        Path(__file__).resolve().parents[3]
+        / "web/src/features/triage/useClassification.ts"
+    ).read_text(encoding="utf-8")
+    bloque = fuente.split("export const CLASIFICACIONES = [")[1].split("] as const;")[0]
+    en_la_consola = re.findall(r'value:\s*"(\w+)"', bloque)
+    assert en_la_consola, "el bloque de la consola se movió: sin él este test no mide nada"
+    assert en_la_consola == list(CLASIFICACIONES), (
+        f"la consola ofrece {en_la_consola} y la base acepta {list(CLASIFICACIONES)}"
+    )
 
 
 # ──────────────────────────────────────────────────────── contra la API
