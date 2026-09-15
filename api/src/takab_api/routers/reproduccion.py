@@ -35,9 +35,14 @@ router = APIRouter(dependencies=[Depends(require_web_surface)])
 _INCIDENTE = text("""
 SELECT i.incident_id, i.tenant_id, i.event_id,
        e.magnitude, e.depth_km, e.meta,
-       ST_Y(e.epicenter::geometry) AS lat, ST_X(e.epicenter::geometry) AS lon
+       ST_Y(e.epicenter::geometry) AS lat, ST_X(e.epicenter::geometry) AS lon,
+       -- [T-7.20] La procedencia sale del CATÁLOGO, no del evento vestido: es la
+       -- fuente quien sostiene la cifra, y quien la declara revisada o no.
+       c.place, c.source AS catalog_source, c.review_status
   FROM incidents i
   JOIN seismic_events e ON e.event_id = i.event_id
+  LEFT JOIN reference_earthquakes c
+         ON c.catalog_key = e.meta->'reproduccion'->>'catalog_key'
  WHERE i.incident_id = CAST(:i AS uuid)
 """)
 
@@ -94,6 +99,9 @@ async def incident_reproduccion(
         depth_km=None if fila.depth_km is None else float(fila.depth_km),
         t0_real=rep["t0_real"],
         t0_demo=rep["t0_demo"],
+        place=fila.place,
+        catalog_source=fila.catalog_source,
+        review_status=fila.review_status,
         v_p_km_s=sismo.v_p_km_s,
         v_s_km_s=sismo.v_s_km_s,
         arrivals=[

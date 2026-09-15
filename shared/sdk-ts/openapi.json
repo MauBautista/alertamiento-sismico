@@ -9184,6 +9184,17 @@
             "title": "Catalog Key",
             "type": "string"
           },
+          "catalog_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Source"
+          },
           "depth_km": {
             "anyOf": [
               {
@@ -9235,6 +9246,28 @@
               }
             ],
             "title": "Magnitude"
+          },
+          "place": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Place"
+          },
+          "review_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Status"
           },
           "t0_demo": {
             "format": "date-time",

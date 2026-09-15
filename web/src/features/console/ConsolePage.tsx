@@ -33,6 +33,7 @@ import { consoleKpis } from "./stats";
 import { useAutoPopup } from "./useAutoPopup";
 import { useDictamenRequest } from "./useDictamenRequest";
 import { useEstaciones } from "./useEstaciones";
+import { useReproduccion } from "./useReproduccion";
 import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
 import { useQuorumCommands } from "./useQuorumCommands";
@@ -94,6 +95,8 @@ function ConsoleWall() {
   // [T-7.17] La red de estaciones del incidente en foco. Una sola consulta, sin
   // poll: describe un evento que ya ocurrió.
   const estaciones = useEstaciones(focusIncident?.incident_id ?? null);
+  // [T-7.20] Qué sismo se está reproduciendo, si es que se reproduce alguno.
+  const reproduccion = useReproduccion(focusIncident?.incident_id ?? null);
   // [T-2.32] Burst de actuación del quórum de red para el incidente enfocado.
   const quorumCommanded = useQuorumCommands(focusSiteId, focusIncident?.event_id ?? null);
 
@@ -379,6 +382,7 @@ function ConsoleWall() {
           actions={actions}
           incident={focusIncident}
           estaciones={estaciones}
+          reproduccion={reproduccion}
           relays={relays}
           quorumCommanded={quorumCommanded}
           // [T-2.46] El enlace sale del MISMO snapshot que pinta el mapa: una

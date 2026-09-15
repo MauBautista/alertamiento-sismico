@@ -60,6 +60,13 @@ class ReproduccionOut(BaseModel):
     depth_km: float | None
     t0_real: datetime
     t0_demo: datetime
+    #: [T-7.20] La PROCEDENCIA de la cifra que se va a enseñar, del catálogo. Sin
+    #: ella el muro pintaría «M7.1» sin decir quién lo sostiene ni si esa fuente
+    #: lo dio por revisado — que es exactamente lo que `T-5.10` cerró. `None`
+    #: cuando la fila del catálogo no consta: entonces NO se pinta la cifra.
+    place: str | None = None
+    catalog_source: str | None = None
+    review_status: str | None = None
     v_p_km_s: float
     v_s_km_s: float
     arrivals: list[ArriboOut]

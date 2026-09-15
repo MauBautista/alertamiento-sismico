@@ -2318,12 +2318,15 @@ export type ReportOut = {
 export type ReproduccionOut = {
     arrivals: Array<ArriboOut>;
     catalog_key: string;
+    catalog_source?: string | null;
     depth_km: number | null;
     event_id: string;
     incident_id: string;
     lat: number | null;
     lon: number | null;
     magnitude: number | null;
+    place?: string | null;
+    review_status?: string | null;
     t0_demo: string;
     t0_real: string;
     v_p_km_s: number;

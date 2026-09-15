@@ -226,6 +226,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "quake",
     "quorumCommanded",
     "relays",
+    "reproduccion",
     "soh",
     "staleSince",
   ],
@@ -297,7 +298,13 @@ const RAZONES: Record<string, string> = {
     "[T-7.17] `estaciones` baja a `DetailPanel`, que la pinta dentro del marco de " +
     "`EstacionesTable` — el cuarto de ese riel. Esta página no pinta ni una de sus celdas, " +
     "y contarla aquí es lo correcto: el día que alguien saque un pico o un arribo al muro " +
-    "sin marco, un incidente sin leer diría `S/D` como si fuera la medición.",
+    "sin marco, un incidente sin leer diría `S/D` como si fuera la medición. " +
+    "[T-7.20] `reproduccion` es el caso donde NO hay marco, y a propósito: sin reproducción " +
+    "la tarjeta del epicentro no existe. La inmensa mayoría de los incidentes no son " +
+    "reproducciones, y un «SIN REPRODUCCIÓN» permanente en el muro enseña al operador a no " +
+    "leer esa esquina — que es el mismo razonamiento con el que la escena NORMAL se pinta " +
+    "como ausencia de franja (U-45). Un fallo de lectura tampoco se pinta: el 404 es la " +
+    "respuesta ESPERADA de un incidente real y el hook lo traduce a «no hay», no a error.",
   "features/console/DrillModal.tsx::DrillModal":
     "(a) FORMULARIO DE GUARDADO. Lo único de `plantillas` que queda fuera del marco es el " +
     "formulario de GUARDAR COMO PLANTILLA: `plantillas.pending` deshabilita el botón y " +

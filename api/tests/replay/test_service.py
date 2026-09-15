@@ -96,13 +96,28 @@ class Escenario:
     site_demo: str
     catalogo: str
 
-    def armar(self, *, hasta: datetime, catalog_key: str | None = None) -> None:
+    def armar(
+        self, *, hasta: datetime, desde: datetime | None = None, catalog_key: str | None = None
+    ) -> None:
+        """⚠️ `desde` y `hasta` tienen que salir del MISMO reloj.
+
+        El CHECK de la tabla exige `armed_until <= armed_at + 8h`. Mezclar el
+        `NOW` fijo de estas pruebas con el reloj real hace que la fila pase o
+        reviente **según la hora del día**: con `armed_at` a las 11:55 del NOW
+        fijo, cualquier `armed_until` posterior a las 19:55 reales viola el
+        CHECK. Lo descubrió CI corriendo de noche, no la corrida local.
+        """
         self.conn.execute(
             "INSERT INTO demo_replay (tenant_id, catalog_key, armed_by, armed_at, armed_until)"
             " VALUES (%s,%s,gen_random_uuid(),%s,%s)"
-            " ON CONFLICT (tenant_id) DO UPDATE SET armed_until = EXCLUDED.armed_until,"
-            " catalog_key = EXCLUDED.catalog_key",
-            (self.tenant, catalog_key or self.catalogo, NOW - timedelta(minutes=5), hasta),
+            " ON CONFLICT (tenant_id) DO UPDATE SET armed_at = EXCLUDED.armed_at,"
+            " armed_until = EXCLUDED.armed_until, catalog_key = EXCLUDED.catalog_key",
+            (
+                self.tenant,
+                catalog_key or self.catalogo,
+                desde if desde is not None else NOW - timedelta(minutes=5),
+                hasta,
+            ),
         )
         self.conn.commit()
 
@@ -337,7 +352,8 @@ def test_la_ventana_viva_se_LEE_con_el_rol_del_worker(esc: Escenario) -> None:
     resuelve la base con su `now()`, que es lo correcto —el vencimiento no puede
     depender del reloj del proceso— y lo que obliga a que la prueba lo respete.
     """
-    esc.armar(hasta=datetime.now(tz=UTC) + timedelta(hours=1))
+    ahora = datetime.now(tz=UTC)
+    esc.armar(desde=ahora - timedelta(minutes=5), hasta=ahora + timedelta(hours=1))
     esc.conn.execute('SET ROLE "takab_ingest"')
     try:
         ventana = ventana_viva_sync(esc.conn, esc.tenant)

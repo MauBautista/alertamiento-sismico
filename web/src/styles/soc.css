@@ -1719,6 +1719,15 @@ body {
 .soc-table__row--nueva {
   animation: soc-row-in var(--tk-dur-row-in) var(--tk-ease) 1;
 }
+/* [T-7.20] Lo que APARECE cuando la sacudida concluye —el epicentro y la tabla
+   por estación— entra con el mismo gesto que una fila nueva y por la misma
+   razón: aparecer es información, y una tarjeta que se materializa de golpe se
+   lee como si hubiera estado ahí todo el tiempo. Una sola pasada (`1`): no
+   respira ni parpadea — eso es de la alerta (T-7.19), y esto se lee cuando ya
+   pasó. */
+.soc-reveal {
+  animation: soc-row-in var(--tk-dur-row-in) var(--tk-ease) 1;
+}
 @keyframes soc-row-in {
   from {
     background-color: var(--tk-cyan-15);
@@ -1768,6 +1777,7 @@ body {
   .soc-confirm--armed,
   .soc-drill--fresca,
   .soc-table__row--nueva,
+  .soc-reveal,
   .soc-alert[data-alive="true"][data-authorizes="true"]::after {
     animation: none !important;
   }
