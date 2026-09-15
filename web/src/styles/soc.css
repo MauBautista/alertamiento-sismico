@@ -1853,6 +1853,23 @@ body {
   background: var(--tk-status-warning-15);
   color: var(--tk-status-warning);
 }
+/* [T-7.16] La REVISIÓN: cian, que en esta consola es el color de lo informativo,
+   no de lo que alarma. Ni rojo ni ámbar a propósito — la sacudida terminó y
+   nadie tiene que hacer nada por este color. Y SIN animación: la anima T-7.19,
+   que es la alerta; esto está quieto por definición. */
+.soc-scene__alert[data-kind="review"] {
+  border-color: var(--tk-border-cyan);
+  background: var(--tk-cyan-08);
+  color: var(--tk-cyan);
+}
+/* Pasadas las horas sin que nadie clasifique, la línea se apaga con su tiempo
+   verbal: deja de llamar la atención, pero no desaparece — el registro sigue
+   abierto y eso hay que poder verlo. */
+.soc-scene__alert[data-kind="review"][data-past="true"] {
+  border-color: var(--tk-border);
+  background: transparent;
+  color: var(--tk-fg-3);
+}
 .soc-scene__alert-title {
   letter-spacing: 0.12em;
 }

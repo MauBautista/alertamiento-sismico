@@ -102,8 +102,38 @@ export function sceneAlert(incidents: readonly LiveIncident[]): LiveIncident | n
   return incidents.find((i) => i.severity === "critical") ?? null;
 }
 
-/** De qué escena es este incidente: `alert` si autoriza, `notice` si no. */
-export function alertKind(incident: LiveIncident | null): "alert" | "notice" | null {
+/** Las tres formas de estar en pantalla un incidente crítico abierto. */
+export type AlertKind = "alert" | "notice" | "review";
+
+/**
+ * De qué clase es este incidente: `alert` si autoriza, `notice` si no, y
+ * `review` en cuanto el SERVIDOR lo pasa a `in_review` — nunca por un cronómetro
+ * del cliente (`D-33`, T-7.13).
+ *
+ * La revisión GANA a la autoridad de la fuente, y no al revés: un incidente que
+ * el servidor ya movió a revisión es un sismo que CONCLUYÓ, y seguir pintándolo
+ * rojo como «PROTÉJASE» es pintar como vigente lo que el servidor ya no sostiene
+ * (regla de oro 7). Que lo abriera el WR-1 no lo devuelve a la alerta.
+ */
+export function alertKind(incident: LiveIncident | null): AlertKind | null {
   if (incident === null) return null;
+  if (incident.state === "in_review") return "review";
   return authorizes(incident.trigger) ? "alert" : "notice";
+}
+
+/**
+ * En qué CASILLA de `SCENE_PRECEDENCE` cae cada clase. La tabla no cambia
+ * (T-7.16): lo que cambia es de dónde se entra a ella.
+ *
+ * `review` entra por `notice`, y es la casilla correcta por lo que `notice`
+ * significa aquí: «se declara con su titular honesto, pero no degrada nada». Una
+ * revisión ya no autoriza actuar —la sacudida terminó, nadie tiene que
+ * evacuar—, así que tampoco puede tapar al simulacro que el equipo retomó ni
+ * robarle la franja al mantenimiento. Meterla en `alert` mantendría degradado el
+ * banner ámbar del simulacro después de que el sismo acabara, que es justo el
+ * ruido que `DEGRADES_UNDER_ALERT` existe para quitar en el peor momento y no
+ * después.
+ */
+export function sceneSlot(kind: AlertKind | null): { alert: boolean; notice: boolean } {
+  return { alert: kind === "alert", notice: kind === "notice" || kind === "review" };
 }
