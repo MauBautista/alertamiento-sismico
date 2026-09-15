@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import sys
 import uuid
 from pathlib import Path
 
@@ -137,7 +138,11 @@ def efimera():
         pytest.skip(f"no se pudo crear la base efímera: {creada.stderr.strip()[:160]}")
     try:
         migrada = subprocess.run(
-            ["uv", "run", "python", "-m", "alembic", "upgrade", "head"],
+            # `sys.executable`, NO `uv run`: en el runner de CI no existe `uv` en el
+            # PATH y el fixture moría con un `FileNotFoundError` que no menciona la
+            # palabra `uv` por ningún lado. El intérprete que corre pytest ya tiene
+            # alembic instalado — es el mismo truco de `api/tests/conftest.py`.
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
             cwd=_RAIZ / "api",
             capture_output=True,
             text=True,
