@@ -14080,6 +14080,15 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     **`[SUPUESTO t-7-13-01]`**: son los dos valores que aporta Mauricio (plan §7) y se cambian
     por entorno sin tocar código. `incident_review_ttl_s = 0` desactiva el TTL y deja las otras
     dos vías — que es exactamente cómo se revoca `D-33`.
+- **Cómo se cerró (2026-09-15).** Lo que la planificación no vio: **el frame del canal live no
+  hubo que programarlo**. El `AFTER UPDATE` de `incidents` ya emitía `NOTIFY takab_live` desde la
+  `0004`, así que el fetch-on-notify pagó aquí una deuda contraída ocho meses antes. Lo que sí
+  costó fue lo contrario de construir: **decidir que un gabinete que escala y enmudece deja su
+  incidente en ALERTA**. Es fail-closed a propósito —el último tier conocido dice que está
+  sacudiéndose— y sin escribirlo parecería un olvido. La migración `0064` es la trampa del `GRANT`
+  otra vez: verde en local, donde alembic conecta como superusuario, e imposible en la nube.
+  **Desplegada el 2026-09-16** (`9a01278`); antes de construir se comprobó que
+  `incident_classifications` es propiedad de `takab_migrator`, así que podía otorgar.
 - **Tests de censo que toca:** `test_lifecycle` (gana un llamador), `test_engine`
   (`test_run_survives_prolonged_db_outage` declara la pasada nueva),
   `test_la_cabeza_ESPERADA_sale_de_las_migraciones` (el fichero de la migración tiene que
@@ -14151,6 +14160,13 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     (`external`, M7.1, 48 km, 18.5499 N / −98.4887 W, `node_count` 4) y el plan salió
     **19.7 · 25.3 · 32.1 · 38.7 s**, que es la cifra de esta ficha medida de punta a punta.
     Cero incidentes nuevos y cero `quorum_votes`.
+- **Cómo se cerró (2026-09-15).** Dos criterios de la ficha se **declinaron con razón escrita**,
+  que es el hallazgo: la función `SECURITY DEFINER` no se implementó porque no tenía llamador, y
+  `felt_at` no entró en el snapshot —la ráfaga se deriva del frente que el mapa ya dibuja—. Añadir
+  lo que nadie usa es deuda que parece trabajo. Lo que sí hubo que defender: **`v_s` no se unifica
+  con `correlation_v_s_km_s` (3.6)**, porque allí es una ventana de asociación y aquí una
+  coreografía; parecen el mismo número y no lo son. Queda declarado el riesgo residual: dentro de
+  la ventana armada, un sismo REAL se rotularía como reproducción. `GRANT` gemelo en la `0065`.
 - **Tests de censo que toca:** `test_classification_cierra` (el catálogo pasa a **cinco** y
   `TERMINALES` a tres), el espejo del patrón de sitio DEMO contra `datosDeDemostracion.ts`,
   `test_engine` (declara la pasada nueva) · **Token nuevo:** no · **Cambia algo que un test
@@ -14187,6 +14203,13 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     `SIM101` 0.0536 g a los 26 s, `SIM102` 0.0419 g a los 33 s, `SIM103` 0.0358 g a los 39 s—,
     descendiendo con la distancia. El `--replay` de la CLI imprime el plan antes de abrir una
     sola conexión: si faltan coordenadas se falla sin haber publicado nada.
+- **Cómo se cerró (2026-09-15, ampliada el 2026-09-16).** La rampa salió **determinista, sin
+  RNG**: una demostración tiene que dar lo mismo dos veces o no se puede comparar con lo que pinta
+  el mapa. Y ni con `--replay` escapa un `LocalEvent`, comprobado sobre 80 ventanas.
+  **Lo que la planificación no vio lo destapó `T-7.20`**: la flota sólo sabía publicar a SQS o a
+  IoT Core, así que esto no se podía enseñar en un navegador sin desplegar a la nube. De ahí el
+  modo `--mode spool`, medido contra el SOC local: 720 mensajes, 0 errores, y picos ingeridos de
+  0.0536 / 0.0419 / 0.0358 g contra los 0.056 / 0.044 / 0.036 g del plan.
 - **Tests de censo que toca:** `test_fleet_sim`, `test_cloud_streaming_crudo` · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
@@ -14226,6 +14249,13 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     escena —recibe todo por props—, así que no entra en el cierre de lectores. `sceneSlot`
     queda protegida de oficio: el censo compara los imports que salen de la carpeta **por
     igualdad**, y sacarla fuera saldría rojo sin que nadie tenga que acordarse.
+- **Cómo se cerró (2026-09-15).** **La ficha pedía una cuenta atrás y era imposible por
+  construcción.** «DICTAMEN PRELIMINAR EN 00:47» no se puede pintar: el incidente entra en revisión
+  cuando ya pasó `max(dictamen_settle_s, alert_hold_min_s)`, y el dictamen preliminar se emite al
+  cumplirse `dictamen_settle_s` — o sea ANTES. Pintar una cuenta atrás hacia un plazo vencido sería
+  inventar una espera que no existe, así que el contador cuenta **hacia arriba**. El otro hallazgo
+  es que `sceneCensus` y `statePrecedenceCensus` **no necesitaron cambios**, y comprobarlo era el
+  trabajo: un censo que no se toca al añadir una escena es la prueba de que la tabla estaba bien.
 - **Tests de censo que toca:** `sceneCensus`, `statePrecedenceCensus` (ninguno cambia; ver
   arriba) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí — la firma de
   `alertKind`.
@@ -14259,6 +14289,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     se renumeraron a 8-15. Es distinta de la 6: aquélla dice quién VOTÓ, ésta qué MIDIÓ cada
     inmueble.
   - [x] Del PDF no se raspa texto: se espía `text_of`. Seis pruebas, con su control de ceguera.
+- **Cómo se cerró (2026-09-15).** Cuatro decisiones, y todas son la misma: **no rellenar huecos**.
+  El ancla de los arribos se DECLARA (desde el origen del sismo o desde la apertura del incidente);
+  «sobre umbral» es el umbral del INMUEBLE, no uno global; **`tier = null` no es `normal`** ni en la
+  API ni en la tabla ni en el PDF —el gabinete no dijo que estuviera en calma, no dijo nada—; y sin
+  epicentro, distancia y arribo teórico van en `null` en vez de estimarse. Rellenar cualquiera de
+  los cuatro habría presentado una simulación como si fuera la medición.
 - **Tests de censo que toca:** `serverDataCensus` (dos altas, muro y triage, con su razón),
   `statePrecedenceCensus` (el marco número **trece**, y el primero que no vive en
   `features/triage/`) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el
@@ -14301,6 +14337,11 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - [x] La capa va **debajo** del edificio: anuncia que la onda llegó, no tapa lo que el
     edificio midió. Y es una sola expresión por fotograma, evaluada por rasgo: da igual que
     haya tres estaciones o trescientas.
+- **Cómo se cerró (2026-09-15).** El criterio que cambió al construirlo: **la ráfaga no se ancla
+  en un campo del snapshot**, y es deliberado. La ficha pedía un `felt_at` por estación; se deriva
+  del frente que el mapa ya dibuja. Un campo nuevo que duplica lo que otro dato ya dice son dos
+  verdades que acaban divergiendo — y aquí divergirían pintando la onda en un sitio y el destello
+  en otro.
 - **Tests de censo que toca:** `motionInvariants` (invariante nuevo del token), `wavefront.test`
   (+9), `MapPanel.test` (+3), `motion.spec` · **Token nuevo:** sí, `--tk-dur-arrival` ·
   **Cambia algo que un test defiende hoy:** sí — `isLocalized` rechazaba `external`.
@@ -14366,6 +14407,16 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     serie de brillos. Las capturas del teléfono **no se comparten**: es un aparato personal y
     el volcado lleva notificaciones ajenas al producto.
   - [x] `PLAN-REFORMA-VISUAL.md §5.3` ya estaba anotado como revocado por `D-30`; verificado.
+- **Cómo se cerró (2026-09-15, móvil el 2026-09-16).** Esta ficha **revoca la letra del §5.3** de
+  la reforma visual («la pantalla de crisis no anima nada») conservando lo que aquella prohibición
+  protegía: la LECTURA, no la quietud. ⚠️ El hallazgo caro: **la prueba que defendía el §5.3 era el
+  cerrojo del defecto siguiente** — usaba `in_review` para decir «sin animación» y con ello dejaba
+  fijado que el muro siguiera gritando (lo arregló `T-7.20`). Se reescribió, no se borró.
+  En el Pixel el halo **se midió, no se afirmó**: una captura sola no distingue «late» de «está
+  puesto». Ráfagas sobre el píxel del anillo: **87 … 219 (amplitud 132)** animado, **87 constante
+  (amplitud 0)** con movimiento reducido —y 87 es exactamente `HALO_REPOSO`, así que no desaparece:
+  deja de latir—, y el fondo tras `conclude`. Queda escrito que «halo detenido sobre la misma
+  vista» **no se puede ver en el teléfono**, porque la ruta redirige; eso lo fija `viva` en jest.
 - **Tests de censo que toca:** `motionInvariants`, `layoutInvariants` (tres invariantes
   nuevos), `test_local_api_panel` (+2), `motion.spec`, jest de `CrisisView` (4 casos del halo) ·
   **Token nuevo:** sí, `--tk-dur-alerta` · **Cambia algo que un test defiende hoy:** sí — el
@@ -14430,6 +14481,16 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     ⚠️ Hizo falta **provisionar la ubicación del gabinete local** (`TAKAB_EDGE_SITE_LAT/LON` en
     `demo/soc_local.sh`, las del sitio que dice ser): sin ella el cajón declara «SIN UBICACIÓN
     PROVISIONADA» —conducta correcta— y §7.5 no se podía enseñar en local.
+- **Cómo se cerró (2026-09-15, corrida real el 2026-09-16).** **El spec llevaba un día escrito sin
+  haber medido nada**: se saltaba con motivo antes de que llegara el dato, y pedía la tarjeta de
+  epicentro en el muro desnudo cuando vive en el detalle. Se saltó en las tres resoluciones sin
+  probar una sola de las siete fichas de F3 — el verde que esta ficha existía para evitar. Ahora
+  **conduce** el arnés. Correrlo destapó dos silencios de la regla de oro 7 que ninguna prueba de
+  unidad podía ver, porque en todas ellas el frame del canal live siempre estaba: la consola
+  **perdía** el incidente en revisión (`state=open`), y el **muro seguía gritando** «PROTÉJASE» con
+  el sismo terminado. Al SOC local le faltaban tres piezas para poder enseñar F3: el estímulo
+  `/calma` —sin él el episodio **no se cerraba nunca**—, el modo `spool` de la flota y la ubicación
+  del gabinete. §7.5 del panel verificada en la misma corrida.
 - **Tests de censo que toca:** `serverDataCensus` (un alta más, con su razón) · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el caso de `AlertBanner.test.tsx`
   que usaba `in_review` para decir «sin animación» y con ello dejaba fijado el defecto 2.

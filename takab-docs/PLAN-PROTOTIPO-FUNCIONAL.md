@@ -231,9 +231,23 @@ procedencia y la tabla de cómo detectó cada estación; y que todo **se detenga
 ( cd edge && uv run pytest -q tests/test_fleet_replay.py tests/test_cloud_streaming_crudo.py )
 ( cd web && npx vitest run src/sceneCensus.test.ts src/styles/motionInvariants.test.ts src/features/console/wavefront.test.ts src/serverDataCensus.test.ts src/siteDemoCensus.test.ts && npm run e2e )
 ( cd mobile && npm test -- CrisisView )
-bash deploy/demo/guion.sh --check-f3       # open→in_review en ≤ settle+hold+15 s tras tier normal · epicentro reproduccion=true con procedencia confirmado · 4 filas por estación con t_arribo y pico · cierre por clasificación
 # fuera de tests: capturas del muro en alert (halo vivo) → review (contador) → epicentro y tabla; alerta detenida tras clasificar; Pixel con y sin reduce-motion
 ```
+
+> **DEROGADO el 2026-09-16 · `bash deploy/demo/guion.sh --check-f3`, esa línea y ninguna otra.**
+> Ese subcomando nunca se escribió —`guion.sh` tiene `--preflight`, `--check` y `--reporte`— y no
+> se va a escribir. Lo sustituye `web/e2e/vida_del_sismo.spec.ts`, **que el Goal ya corre**: el
+> `npm run e2e` de la línea de `web` es `playwright test` a secas y recoge todos los specs, así
+> que no hace falta añadir nada. Ese spec **hace lo mismo y más**:
+> comprueba las cuatro cosas que la línea enumeraba (`open→in_review` tras el tier normal, el
+> epicentro con procedencia confirmada, la tabla por estación en orden de arribo y el cierre por
+> clasificación) y además las ejerce **en un navegador de verdad**, conduciendo el arnés en vez de
+> esperarlo puesto. Corrida limpia el 2026-09-16: verde en 3.1 min sobre `make soc-local`.
+>
+> La razón de derogar en vez de escribirlo: un segundo comprobador que verifica lo mismo por otra
+> vía es una pieza más que se puede pudrir, y este repositorio ya tiene medido lo que les pasa a
+> los arneses que nadie ejerce (`make demo-fase1`, un mes en rojo sin que nadie lo notara). Dos
+> guardas de la misma propiedad no dan el doble de seguridad: dan una que miente cuando divergen.
 
 **Subagentes.** Lote 1: A = `T-7.13` (`api/incident`) en paralelo con B = `T-7.14` (`api/replay`,
 **única migración `0063`**). Lote 2: A = `T-7.15` (edge) en paralelo con B = `T-7.16`+`T-7.18`+la
