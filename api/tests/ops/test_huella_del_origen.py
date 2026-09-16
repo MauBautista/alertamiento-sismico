@@ -288,3 +288,71 @@ def test_el_ensayo_local_sigue_siendo_el_espejo_del_cron() -> None:
         encoding="utf-8"
     )
     assert "capture_baseline" in drill
+
+
+# ------------------------------------------------- [T-7.22] lo que `api/src` lee de `shared/`
+
+#: Dónde vive el código que la imagen ejecuta. El barrido es sobre el árbol real,
+#: no sobre una lista: un módulo nuevo que lea un activo compartido entra solo.
+API_SRC = REPO / "api" / "src" / "takab_api"
+
+#: Un literal `"shared/…"` dentro de una ruta construida en tiempo de ejecución.
+#: Se busca la CADENA y no el `Path(...)` completo porque el patrón del repo es
+#: `Path(__file__).resolve().parents[N] / "shared/algo/fichero.json"`, y partir
+#: eso por AST obligaría a evaluar la aritmética de `parents` para nada.
+_LITERAL_SHARED = re.compile(r'"(shared/[^"]+)"')
+
+
+def _activos_compartidos_que_lee_la_api() -> list[tuple[str, int, str]]:
+    """Cada `(fichero, línea, ruta)` de `shared/…` que `api/src` abre en ejecución."""
+    encontrados: list[tuple[str, int, str]] = []
+    for py in sorted(API_SRC.rglob("*.py")):
+        texto = py.read_text(encoding="utf-8")
+        if "shared/" not in texto:
+            continue
+        for m in _LITERAL_SHARED.finditer(texto):
+            # Un comentario o un docstring que NOMBRA el fichero no lo abre. Se
+            # filtra por extensión: los activos que se leen son datos, y los que
+            # se citan en prosa se citan con su nombre a secas.
+            if not m.group(1).endswith((".json", ".yaml", ".yml", ".txt", ".csv")):
+                continue
+            encontrados.append(
+                (str(py.relative_to(REPO)), texto[: m.start()].count("\n") + 1, m.group(1))
+            )
+    return encontrados
+
+
+def test_el_barrido_de_activos_compartidos_MIRA_donde_debe() -> None:
+    """Guarda de no-vacuidad: si el barrido dejara de ver ficheros, todo pasaría solo."""
+    ficheros = list(API_SRC.rglob("*.py"))
+    assert len(ficheros) > 100, f"solo {len(ficheros)} módulos bajo {API_SRC}"
+    assert _activos_compartidos_que_lee_la_api(), (
+        "el barrido no encontró NI UN activo compartido; al menos el glosario de "
+        "procedencia se lee de `shared/glossary/`"
+    )
+
+
+def test_TODO_activo_compartido_que_la_api_lee_VIAJA_en_la_imagen() -> None:
+    """La frontera que `procedencia.json` cruzó sin que nada se pusiera rojo.
+
+    `api/src/takab_api/procedencia.py` resuelve el glosario con `parents[3] /
+    "shared/glossary/procedencia.json"` y lo abre con `read_text()` **sin
+    respaldo**. El `Dockerfile` copiaba `shared/schemas` y nada más, así que en la
+    nube ese `read_text()` era un `FileNotFoundError` — y lo alcanzaba cualquier
+    incidente CON correlación de catálogo, que es justo el caso de la
+    demostración: `_catalog_line` llama a `pr.rotulo(...)`
+    (`api/src/takab_api/dictamen/builder.py`) y `build_forensics` a `pr.de_fila`.
+
+    Verde en local porque el checkout SÍ tiene el fichero. Es el mismo modo de
+    fallo que este módulo documenta para `db/schema.sql`, y la razón de que el
+    censo se DERIVE en vez de enumerarse.
+    """
+    fuera = [
+        f"{fichero}:{linea} lee {ruta}"
+        for fichero, linea, ruta in _activos_compartidos_que_lee_la_api()
+        if not en_la_imagen(ruta)
+    ]
+    assert not fuera, (
+        "la API abre activos de `shared/` que el Dockerfile no copia: en la nube "
+        "son FileNotFoundError, y en local no se nota. " + " · ".join(fuera)
+    )

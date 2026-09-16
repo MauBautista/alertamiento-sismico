@@ -33,6 +33,7 @@ la cadena no pasa por ahí y el test se pone rojo nombrando el aviso.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 
@@ -44,6 +45,7 @@ from takab_api.dictamen.model import (
     CCTV_SIN_CLIP,
     ActionRow,
     CctvBlock,
+    DanoFila,
     EvidenceRow,
     ReportModel,
 )
@@ -92,6 +94,27 @@ def _avisos_declarados() -> dict[str, str]:
         for nombre, valor in vars(modelo_mod).items()
         if nombre.isupper() and isinstance(valor, str) and len(valor) >= 40 and " " in valor
     }
+
+
+def _dano(**over) -> DanoFila:
+    """El reporte de daños MÍNIMO, al que cada escenario le cambia una cosa.
+
+    Sin fotografías a propósito: los avisos que aquí se comprueban son los del
+    reporte, no los de la imagen, y embeber JPEG en cada escenario del censo
+    multiplicaría el coste de la suite sin comprobar nada más.
+    """
+    base = {
+        "report_id": "d-1",
+        "rol": "brigadista",
+        "zona": "Nivel 3",
+        "categorias": [{"key": "grieta", "severity": "alta"}],
+        "personas_en_riesgo": False,
+        "notas": None,
+        "ts": _OPENED,
+        "fotos": [],
+        "fotos_omitidas": 0,
+    }
+    return DanoFila(**{**base, **over})
 
 
 #: Para cada aviso: cómo se fabrica el documento que DEBE llevarlo, y en qué
@@ -173,6 +196,53 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
     # que se lee como «no pasó nada».
     "SIN_CORRELACION_EN_CATALOGO": (
         lambda: model(catalog_line=None),
+        frozenset({"technical"}),
+    ),
+    # [T-7.22] La leyenda que un papel firmado no puede callarse: el epicentro y
+    # la magnitud son los de un sismo HISTÓRICO. Solo en el pericial, que es el
+    # que lleva la §7; el ejecutivo no tiene tabla de red que rotular.
+    "REPRODUCCION_NOTE": (
+        lambda: model(reproduccion=True),
+        frozenset({"technical"}),
+    ),
+    # [T-7.22] Y la ausencia del mapa de la red, declarada en vez de dejar el
+    # hueco: sin coordenadas en ninguna parte no se puede situar nada, y una caja
+    # vacía se leería como «no hay estaciones» — que es lo contrario de lo que
+    # dice la tabla que va justo debajo.
+    "SIN_GEOMETRIA_DE_RED": (
+        lambda: model(
+            site_lat=None,
+            site_lon=None,
+            epicenter_lat=None,
+            epicenter_lon=None,
+            estaciones=[replace(e, lat=None, lon=None) for e in model().estaciones],
+        ),
+        frozenset({"technical"}),
+    ),
+    # [T-7.22] La bitácora vacía. En un incidente con sirena disparada sería un
+    # defecto, y por eso se dice en vez de dejar la sección en blanco.
+    "SIN_CRONOLOGIA": (lambda: model(actions=[]), frozenset({"technical"})),
+    # [T-7.22] Y el recuento de verbos sin rótulo. El `kind` es deliberadamente
+    # uno que `bitacora.ROTULOS` no conoce: `incident_actions` es append-only y
+    # exenta de poda, así que un documento histórico puede traerlos.
+    "CRONOLOGIA_SIN_ROTULO": (
+        lambda: model(actions=[ActionRow(_OPENED, "verbo_de_otra_epoca", "system:edge")]),
+        frozenset({"technical"}),
+    ),
+    # [T-7.22] Los daños del brigadista. Sin reportes NO se calla: la ausencia de
+    # una inspección no es la ausencia de daños, y el hueco se leería como lo
+    # segundo.
+    "SIN_DANOS": (lambda: model(danos=[]), frozenset({"technical"})),
+    # Los cuatro que dependen de CÓMO viene el reporte. Se fabrican con `_dano`,
+    # que es el reporte mínimo al que se le cambia una cosa cada vez.
+    "PERSONAS_EN_RIESGO": (
+        lambda: model(danos=[_dano(personas_en_riesgo=True)]),
+        frozenset({"technical"}),
+    ),
+    "ROL_NO_RESUELTO": (lambda: model(danos=[_dano(rol=None)]), frozenset({"technical"})),
+    "SIN_CATEGORIAS": (lambda: model(danos=[_dano(categorias=[])]), frozenset({"technical"})),
+    "FOTOS_OMITIDAS": (
+        lambda: model(danos=[_dano(fotos_omitidas=3)]),
         frozenset({"technical"}),
     ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
@@ -279,9 +349,11 @@ def test_el_espia_NO_esta_ciego() -> None:
     `assert ... not in ...` pasarían en verde. Los números van escritos.
     """
     # 13 → 15 en `T-7.38·F`: los dos estados de la poda del vídeo.
-    assert len(ESCENARIOS) == 19, "cambió el número de avisos declarados"
+    # 19 → 28 en `T-7.22`: leyenda de reproducción, ausencia del mapa de red,
+    # bitácora vacía, verbos sin rótulo y los cinco del reporte de daños.
+    assert len(ESCENARIOS) == 28, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 18, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 27, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

@@ -17,6 +17,8 @@ nuevo que se olvide de restaurar el color vuelve a ponerlo en rojo.
 
 from __future__ import annotations
 
+from unittest import mock
+
 from takab_api.dictamen.layout import TakabPDF
 from takab_api.dictamen.pdf import render
 from tests.dictamen.test_pdf import model
@@ -40,6 +42,20 @@ def _luminancia(color: object) -> float:
 
 
 def _rellenos_al_abrir_tablas(variante: str) -> list[float]:
+    """⚠️ [T-7.22] Se restaura con `mock.patch.object`, no reasignando.
+
+    `table` NO es de `TakabPDF` ni de `MembretePDF`: viene de `FPDF`. Al
+    «restaurarla» con `TakabPDF.table = original` se le instalaba a la subclase un
+    atributo PROPIO que sombreaba al ancestro **para siempre** — medido,
+    `'table' in TakabPDF.__dict__` pasaba de `False` a `True` y no volvía. Es el
+    mismo defecto que `T-7.21` pagó con cinco espías de `text_of`, vivo aquí y sin
+    guarda porque aquélla solo vigilaba esa clave.
+
+    Hoy no rompía nada porque la función reinstalada era la misma, pero cualquier
+    espía futuro sobre `FPDF.table` o `MembretePDF.table` recogería CERO según el
+    orden de la suite. `mock.patch.object` BORRA el atributo al salir si no era
+    propio, que es justo lo que hace falta.
+    """
     vistos: list[float] = []
     original = TakabPDF.table
 
@@ -47,11 +63,8 @@ def _rellenos_al_abrir_tablas(variante: str) -> list[float]:
         vistos.append(_luminancia(self.fill_color))
         return original(self, *args, **kwargs)
 
-    TakabPDF.table = espia  # type: ignore[method-assign]
-    try:
+    with mock.patch.object(TakabPDF, "table", espia):
         render(model(), variante)
-    finally:
-        TakabPDF.table = original  # type: ignore[method-assign]
     return vistos
 
 

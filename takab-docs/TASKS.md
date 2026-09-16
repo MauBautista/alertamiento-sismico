@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **419** · `[x]` **360** · `[~]` **11** · `[ ]` **48**
+**Conteo de tareas:** total **423** · `[x]` **361** · `[~]` **11** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14562,21 +14562,174 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   algo que un test defiende hoy:** sí — el pie, el arte que se mudó a `documentos/` y los
   cinco espías.
 
-### [ ] T-7.22 · **El informe del evento con todos los datos e imágenes** — `SOFTWARE`
+### [x] T-7.22 · **El informe del evento con todos los datos e imágenes** — `SOFTWARE` · **CERRADA 2026-09-16**
 - **Componente:** api · **Depende de:** T-7.17, T-7.21 · **Prioridad:** F4 · alta
 - **Objetivo:** que `POST /incidents/{id}/report` entregue el documento que el cliente se
   lleva: estaciones, epicentro con procedencia, cronología, daños del brigadista con fotos,
   y las secciones que F5 y F6 rellenan.
+- **No nace un cuarto documento.** El informe del evento es lo que ese endpoint YA entrega:
+  `backfill/objects.py` lo llama así desde antes de esta ficha, y once de sus quince secciones
+  existían. Un `InformePDF` aparte habría duplicado 826 líneas de render ya probadas y habría
+  nacido con el pie diciendo `DICTAMEN` —`tipo` es atributo de clase—, que es el defecto que
+  `T-7.21` cerró en el reporte de simulacro.
 - **Criterios de aceptación:**
-  - [ ] Sección «Red de estaciones»: mapa estático **vectorial con fpdf** (sin peticiones
+  - [x] Sección «Red de estaciones»: mapa estático **vectorial con fpdf** (sin peticiones
     externas) + tabla de arribos; leyenda «REPRODUCCIÓN» obligatoria si el evento la lleva.
-  - [ ] Línea de epicentro con procedencia (existe `catalog_line`); cronología desde
-    `incident_actions`; reporte de daños del brigadista con fotos redimensionadas y embebidas.
-  - [ ] Sección de mapa de intensidad que dice «NO DISPONIBLE · SIN MAGNITUD» hasta `T-7.24`;
-    narrativa tal como está hasta `T-7.27`.
-  - [ ] Espía del render por sección; `report_rate_*` sin tocar.
-- **Tests de censo que toca:** contrato de narrativa (la prosa no toca el veredicto) · **Token
-  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+    Mismo `sketch.project` que el croquis del evento, para que las dos figuras midan igual.
+    La leyenda va como TEXTO del cuerpo y no como rótulo del dibujo: la meta de F4 la busca
+    extrayendo el texto del PDF. La tabla gana además el umbral con su procedencia (`T-7.35`).
+  - [x] Línea de epicentro con procedencia (existe `catalog_line` — y **no funcionaba en la
+    nube**, ver abajo); cronología desde `incident_actions` promovida a su §12 y rotulada en
+    castellano; reporte de daños del brigadista en §13 con fotos redimensionadas y embebidas.
+  - [~] Sección de mapa de intensidad. **Se desvía de la letra de la ficha, con razón medida:**
+    no dice «SIN MAGNITUD» porque un evento de reproducción SÍ trae magnitud y la §8 la imprime
+    tres páginas antes — el papel se desmentiría a sí mismo, que es la familia de defectos que
+    costó `T-7.34`, `T-7.38` y `T-7.39`. Se declara por su CAUSA: la viñeta
+    `[DIFERIDO · mini-ShakeMap]` de `blueprint §14`, que sólo `T-7.24` deroga —y **sólo esa
+    viñeta**: las otras cinco de esa sección están marcadas `INVARIANTE` (T-MINUS, magnitud
+    preliminar, streaming crudo continuo, IA en la ruta de disparo y tocar el Shake OS) y son
+    prohibiciones que no se tocan. Esta ficha no deroga ninguna: sólo NOMBRA la diferida como
+    causa del hueco, para que el día que se levante alguien encuentre esta frase. Narrativa
+    intacta hasta `T-7.27`.
+  - [x] Espía del render por sección (`tests/documentos/espia.py`, uno solo y compartido);
+    `report_rate_*` sin tocar — `settings.py`, `routers/reports.py` y `routers/exports.py` no
+    tienen una línea de diferencia contra `main`.
+- **Tests de censo que toca:** contrato de narrativa (la prosa no toca el veredicto) · censo de
+  avisos impresos (**19 → 28**) · censo de dependencias de runtime (`PIL` → `pillow`) · censo
+  de activos compartidos en la imagen (nuevo) · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** **sí** — la línea original decía «no» y era falsa: cambia el censo de avisos,
+  la numeración de secciones del pericial (CCTV, ANÁLISIS, MARCO y FIRMA corren dos números),
+  el contrato del espía de tablas y el texto de `NO_MMI`.
+
+> **Cómo se cerró, y los cuatro defectos VIVOS que el reconocimiento destapó de camino.**
+> Ninguno de los cuatro los pedía la ficha, y los cuatro estaban en verde.
+>
+> **1. El glosario de procedencia no viajaba en la imagen.** `procedencia.py` resuelve
+> `shared/glossary/procedencia.json` con `parents[3]` y lo abre con `read_text()` **sin
+> respaldo**; el `Dockerfile` copiaba `api/*` y `shared/schemas` y nada más. En la nube eso era
+> un `FileNotFoundError`, y lo alcanzaba cualquier incidente **con correlación de catálogo** —
+> que es justo el caso de la demostración, porque `_catalog_line` llama a `pr.rotulo(...)` y
+> `build_forensics` a `pr.de_fila`. Verde en local porque el checkout sí tiene el fichero.
+> **Bloqueaba la propia meta de F4**, que pide un reporte generado EN LA NUBE de un incidente de
+> reproducción. El censo se DERIVA: se barre cada literal `"shared/….json"` de `api/src` y se
+> cruza contra los `COPY` del propio Dockerfile con el `en_la_imagen()` que ya existía.
+>
+> **2. La guarda de geometría era ciega en dos ejes a la vez.** Sólo parseaba `re` y `l`/`m`, y
+> una imagen emite `cm … Do`: la única guarda de geometría del repositorio no podía ver una foto
+> pintada encima del pie, en los tres documentos y desde siempre. Y no miraba el eje VERTICAL
+> pese a que el punto 3 de su propio encabezado lo afirma desde `T-7.21` — los cinco tests
+> medían el borde derecho. Un documento ejecutable que afirma algo que no sostiene.
+>
+> **3. El sombreado de subclases estaba vivo y sin guarda.** `test_tablas_legibles` parcheaba
+> `TakabPDF.table` y «restauraba» reasignando; `table` viene de `FPDF`, así que
+> `'table' in TakabPDF.__dict__` pasaba de `False` a `True` y no volvía. La guarda de `T-7.21`
+> no lo vio porque vigilaba UNA clave escrita a mano, `text_of`. Ahora se deriva sin lista de
+> exentos: una redefinición legítima tiene un valor DISTINTO del de la base; un espía mal
+> restaurado reinstala el MISMO objeto, y esa identidad es la firma del defecto.
+>
+> **4. El criterio de imágenes de la meta de F4 estaba VACÍO.** Medido antes de tocar nada: el
+> dictamen técnico daba «3 páginas → 3 imágenes» **sin una sola fotografía**, porque
+> `page.images` cuenta el logotipo del membrete una vez POR PÁGINA. Un dictamen de cuatro
+> páginas lo habría cumplido con cero fotos. Ahora se cuenta por `/DCTDecode` —el documento sin
+> fotos tiene cero, y eso se comprueba— y por identidad declarada, que no se pone rojo porque un
+> brigadista suba dos veces la misma foto.
+>
+> **Y la medición que cambió el diseño de las fotos: el passthrough filtra PII.** Embebiendo el
+> JPEG tal cual, la marca del teléfono y la cadena de ubicación del EXIF quedan **dentro del PDF
+> entregado** — y `damage_reports` lo lee también un `gov_operator` (`app_gov_can_see`).
+> Reencodar lo quita, y hay prueba propia para que nadie lo reabra «optimizando» al passthrough
+> para ahorrar CPU. De paso: `exif_transpose` primero, o las fotos de un brigadista —que
+> fotografía de pie— salen tumbadas; y **un tope de píxeles NO es un tope de bytes**, medido de
+> 25 KB a 202 KB para el mismo 1024².
+>
+> **Lo que queda y no es software:** correr la meta de F4 contra la nube con un incidente de
+> reproducción real. Necesita desplegar, y el `Dockerfile` cambió en el punto 1.
+
+### [ ] T-7.42 · **El pie del dictamen dice que el documento no afirma datos, y la portada imprime su hash** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.21 · **Prioridad:** F4 · alta
+- **Objetivo:** que el pie deje de desmentir a la portada del mismo papel.
+- **El fallo, medido.** Espiando el render del dictamen: el pie imprime, en todas sus páginas,
+  `SIN HUELLA DE CONTENIDO · ESTE DOCUMENTO NO AFIRMA DATOS`, mientras el cuerpo del mismo
+  documento imprime `HASH DE CONTENIDO <sha256>` y una línea que instruye verificarlo con
+  `sha256sum`. Causa: `MembretePDF.__init__` acepta `huella=` y **nadie se lo pasa** — ni
+  `dictamen/pdf.py` en sus dos variantes, ni `drill_report.py`.
+- **Por qué no se arregló en `T-7.22`:** cambia los BYTES de todo dictamen futuro, y su sha256
+  se registra como evidencia. Un cambio de formato del número que el papel manda verificar es un
+  hecho que se cuenta, no un efecto secundario de otra ficha.
+- **Criterios de aceptación:**
+  - [ ] Todo documento que AFIRMA datos pasa su huella al membrete; sólo la hoja en blanco
+    declara la ausencia. La guarda actual acepta cualquiera de las dos frases con un `or`
+    (`tests/documentos/test_membrete_compartido.py`) y hay que endurecerla.
+  - [ ] Decidir, con su razón escrita, si `Settings().build_sha` entra en el pie. Hoy el
+    `build` NO se imprime en ningún documento real —sólo un test lo pasa— y meterlo hace que el
+    MISMO modelo dé bytes distintos según el despliegue: hay que elegir entre trazabilidad del
+    binario y sha256 reproducible.
+  - [ ] El reporte de simulacro no tiene `content_sha256()`: o se dice de dónde sale su huella,
+    o se queda declarando su ausencia. No se inventa una.
+- **Tests de censo que toca:** espía general del membrete · **Token nuevo:** no · **Cambia algo
+  que un test defiende hoy:** sí (el pie de los tres documentos y sus bytes).
+
+### [ ] T-7.43 · **`content_sha256` cambia con el reloj, y el documento promete lo contrario** — `SOFTWARE`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que «comparar dos exportaciones del mismo incidente sin abrirlas» sea verdad, o
+  que deje de prometerse.
+- **El fallo, medido.** `ReportModel.content_sha256()` serializa el modelo entero y
+  `generated_at` es campo del modelo. Dos modelos que difieren SÓLO en el reloj, en un segundo,
+  dan `3fbd6a35…` y `a21e8e78…`. Así que la promesa escrita en el docstring de esa misma función
+  —«permite comparar dos exportaciones del mismo incidente sin abrirlas»— es falsa: nunca
+  coinciden, y quien compare concluirá que cambió el contenido cuando sólo se movió la hora.
+- **Y hay una segunda vía, peor.** La lectura del miniSEED es best-effort **por diseño** («un
+  fallo de S3 degrada la sección, nunca tumba la exportación»), así que un hipo de S3 ya mueve el
+  hash del contenido. `T-7.22` multiplicó esa superficie: ahora también las fotografías entran
+  por esa puerta.
+- **Criterios de aceptación:**
+  - [ ] O `generated_at` sale del payload de la huella —y entonces la promesa se cumple—, o el
+    docstring y el papel dejan de prometer la comparación y dicen qué SÍ identifica ese número.
+  - [ ] Lo que se decida, con una prueba que lo fije en los dos sentidos.
+  - [ ] Declarar qué pasa con la degradación best-effort: un documento cuya huella depende de si
+    S3 respondió no puede presentarse como identificador del contenido sin decirlo.
+- **Tests de censo que toca:** — · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** sí (`test_la_huella_de_contenido_es_estable_y_cambia_con_el_contenido`).
+
+### [ ] T-7.44 · **Cuatro topes de página calibrados a ojo contra A4, ciegos desde la migración a Carta** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.21 · **Prioridad:** F4 · media
+- **Objetivo:** que ninguna figura del dictamen decida si cabe con un número escrito a mano.
+- **El fallo.** `dictamen/pdf.py` decide el salto de página de sus figuras con cuatro
+  comparaciones absolutas —`pdf.get_y() > 240` dos veces, `> 220` y `> 200`—. Los cuatro se
+  calibraron contra el alto de A4 y **ninguno se movió** al migrar a Carta en `T-7.21`. No es que
+  estén mal hoy: es que no dicen contra qué miden, así que el día que cambie el pie o el formato
+  volverán a quedarse atrás sin que nada avise.
+- **Lo que ya existe:** `MembretePDF.reserva(alto)` (`T-7.21`) hace exactamente esto derivando el
+  tope de `PAGE_H - PIE_MM`. `T-7.22` la estrenó en el mapa de la red y en las fotografías; las
+  cuatro figuras antiguas siguen con su número.
+- **Criterios de aceptación:**
+  - [ ] Las cuatro pasan a `reserva()`, con el alto REAL de cada figura.
+  - [ ] Una prueba que rinda el documento con las cuatro figuras y compruebe, con el barrido de
+    geometría de `T-7.22` —que ya sabe leer imágenes y el eje vertical—, que ninguna pisa el pie.
+  - [ ] Barrido derivado que prohíba un tope absoluto nuevo: `get_y() > <número>` en
+    `dictamen/pdf.py` se convierte en un defecto que CI caza.
+- **Tests de censo que toca:** `test_geometria` · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.45 · **Descargar evidencia gasta el techo del usuario pero NO el del edificio** — `SOFTWARE`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que los dos techos del freno de exportación cuenten lo mismo.
+- **El fallo.** El freno cuenta filas de `audit_log` con `verb='export_pdf'` y lo hace por dos
+  vías: la del USUARIO cuenta filas suyas, y la del EDIFICIO filtra por `meta->>'site_id'`. Pero
+  `routers/exports.py` escribe `verb='export_pdf'` **sin `meta` alguno**, luego sin `site_id`:
+  una descarga gasta el techo del usuario y es invisible para el del inmueble. El acoplamiento es
+  asimétrico, y la mitad que falta es justo la que importa en una demostración, donde un solo
+  operador genera y descarga.
+- **Y un segundo rótulo mal puesto**, del mismo vocabulario: descargar la foto de un brigadista
+  se audita como `export_miniseed`. Cuando alguien abra la ficha de la cadena de custodia de
+  fotografías, ese verbo es el que decidirá qué se cuenta contra qué techo.
+- **Criterios de aceptación:**
+  - [ ] Decidir si una descarga debe gastar el techo del edificio. Si sí, `exports.py` escribe el
+    `site_id` en `meta`; si no, se DECLARA por qué los dos techos cuentan cosas distintas.
+  - [ ] El verbo de auditoría dice qué se descargó. Una foto no es un miniSEED.
+  - [ ] Prueba que fije la simetría elegida, en los dos sentidos.
+- **Tests de censo que toca:** — · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** sí (`tests/api/test_reports.py`, los casos del freno).
 
 ### [ ] T-7.23 · **Panel SISMÓGRAFO en el gabinete: trazas, espectrograma y helicorder** — `SOFTWARE`
 - **Componente:** edge · docs · **Depende de:** — · **Prioridad:** F5 · media

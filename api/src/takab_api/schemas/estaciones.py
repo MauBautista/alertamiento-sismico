@@ -23,6 +23,15 @@ class EstacionOut(BaseModel):
     site_name: str
     sensor_code: str | None = None
 
+    #: [T-7.22] Dónde está el inmueble. Las trae la misma consulta que calcula el
+    #: arribo (`ST_Y`/`ST_X` sobre `sites.geom`) y hasta ahora morían dentro de
+    #: `_una_estacion`: el dictamen no podía dibujar el mapa de la red sin abrir
+    #: una segunda consulta de sitios, que es justo lo que `builder.py` rechaza
+    #: por escrito —dos caminos para los mismos números acaban discrepando—.
+    #: Van juntas o no van: media coordenada no sitúa nada.
+    lat: float | None = None
+    lon: float | None = None
+
     #: Epicentro → sitio. `None` cuando el evento no tiene epicentro localizado:
     #: sin él no hay distancia, y una distancia inventada ordena mal la tabla.
     dist_km: float | None = None

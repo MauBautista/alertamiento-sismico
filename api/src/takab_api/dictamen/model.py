@@ -90,6 +90,13 @@ ONDA_NO_LEIDA = (
     "siga siendo recuperable ni legible."
 )
 NO_GEOMETRY = "SIN GEOMETRÍA REGISTRADA · no se puede dibujar el croquis del evento."
+#: [T-7.22] La misma ausencia, en la otra figura. Se dice aparte y no se
+#: reutiliza `NO_GEOMETRY` porque aquélla nombra el croquis del evento: leerla
+#: bajo «RED DE ESTACIONES» haría pensar que falló el dibujo de otra sección.
+SIN_GEOMETRIA_DE_RED = (
+    "SIN GEOMETRÍA REGISTRADA PARA LA RED · ninguna estación tiene coordenadas "
+    "y no se puede situar el mapa. La tabla de arribos que sigue no depende de esto."
+)
 #: [T-3.12.c] Los tres estados del CCTV. Se distinguen porque significan cosas OPUESTAS y
 #: se leerían igual si el reporte solo dijera «sin datos».
 NO_CCTV = (
@@ -148,8 +155,100 @@ NARRATIVE_AI_NOTE = (
     "VEREDICTO y todos los valores medidos de este documento son deterministas"
 )
 
+#: [T-7.22] La leyenda que un documento firmado NO puede callarse. El evento de
+#: una reproducción trae el epicentro y la magnitud de un sismo HISTÓRICO: sin
+#: esta frase, el papel afirma con todas las letras que el 19-S de 2017 ocurrió
+#: hoy en este inmueble. Es el riesgo residual que `db/schema.sql` deja escrito
+#: al lado de `meta.reproduccion`, y la consola ya lo rotula — el papel no.
+#:
+#: Va como TEXTO del cuerpo, no como rótulo dentro del dibujo: la meta de F4
+#: exige encontrar «REPRODUCCIÓN» extrayendo el texto del PDF, y lo que se pinta
+#: dentro de una figura se extrae mal o no se extrae.
+REPRODUCCION_NOTE = (
+    "REPRODUCCIÓN: este incidente se construyó sobre un sismo HISTÓRICO del "
+    "catálogo para ensayo. El epicentro, la magnitud y los arribos son los de "
+    "aquel evento; la sacudida de este inmueble NO ocurrió."
+)
+
+#: [T-7.22] Cuando la bitácora del incidente está vacía. No es lo mismo que
+#: «no pasó nada»: `incident_actions` recoge lo que hicieron el gabinete, la nube
+#: y las personas, y que no haya ni una fila es un hecho sobre el incidente que
+#: merece decirse —y que en un incidente con sirena disparada sería un defecto—.
+SIN_CRONOLOGIA = (
+    "SIN ACCIONES REGISTRADAS PARA ESTE INCIDENTE: ni el gabinete, ni la nube, ni "
+    "ninguna persona dejaron constancia de una acción en la bitácora."
+)
+
+#: [T-7.22] El recuento de verbos que el documento no supo traducir. Marcar las
+#: filas no basta: quien audita tiene que poder saber de un vistazo cuánto de la
+#: cronología se entrega sin rotular.
+#:
+#: El número va al FINAL y no delante a propósito: con el recuento por delante la
+#: frase habría que declinarla («1 acciones») y un documento firmado no puede
+#: permitirse esa errata. Así la constante es una sola y vale para cualquier
+#: cantidad.
+CRONOLOGIA_SIN_ROTULO = (
+    "Hay acciones sin rótulo declarado: se imprimen con su identificador técnico y su "
+    "significado está en el registro de la consola. Filas afectadas: "
+)
+
+#: [T-7.22] Cuando nadie reportó daños desde el táctico. No es «el edificio está
+#: bien»: es que nadie entró a mirarlo, o que quien entró no reportó. Un hueco
+#: mudo aquí se lee como «sin daños», que es una afirmación que este documento no
+#: puede hacer.
+SIN_DANOS = (
+    "SIN REPORTES DE DAÑOS DESDE EL TÁCTICO. La ausencia de reportes NO significa "
+    "que el inmueble esté sin daños: significa que nadie registró una inspección."
+)
+
+#: [T-7.22] `D-32` manda que el brigadista aparezca por ROL, nunca por nombre. Si
+#: la asignación ya no existe se dice, en vez de rellenar con «brigadista» por
+#: costumbre: quien firma el documento no puede afirmar un rol que no consta.
+ROL_NO_RESUELTO = "rol no resuelto en el padrón del inmueble"
+
+#: [T-7.22] Lo más importante que puede decir un reporte de campo. No puede
+#: quedarse como una casilla más de la tabla de categorías.
+PERSONAS_EN_RIESGO = (
+    "PERSONAS EN RIESGO REPORTADAS EN ESTE PUNTO por quien hizo la inspección. "
+    "Este documento no verifica ese reporte: lo registra tal como se recibió."
+)
+
+#: [T-7.22] Un reporte con fotografías y sin categorías es válido —el brigadista
+#: fotografió y no clasificó— y el papel lo dice en vez de dejar la tabla ausente.
+SIN_CATEGORIAS = (
+    "Este reporte no clasificó el daño por categorías; lo que sigue son sus "
+    "observaciones y fotografías tal como se recibieron."
+)
+
+#: [T-7.22] El recuento de fotografías que NO entraron. Entregar seis de once sin
+#: decirlo es recortar la evidencia en silencio. El número va al final por la
+#: misma razón que en la cronología: para no tener que declinar la frase.
+FOTOS_OMITIDAS = (
+    "Este reporte tiene más fotografías de las que el documento imprime; el resto "
+    "queda en el expediente de evidencia. Impresas: "
+)
+
+#: [T-7.22] El hueco del mapa de intensidad, declarado POR SU CAUSA.
+#:
+#: ⚠️ La ficha pedía literalmente «NO DISPONIBLE · SIN MAGNITUD hasta `T-7.24`», y
+#: esa frase se escribe aquí de otra manera a propósito. Dos razones medidas:
+#:
+#: 1. **«sin magnitud» es falso en el escenario de la demostración.** Un evento de
+#:    reproducción SÍ trae magnitud —la del sismo histórico— y la §8 la imprime en
+#:    la línea de catálogo. Un papel que diga «no hay mapa porque no hay magnitud»
+#:    tres páginas después de imprimir «M 7.1» se desmiente a sí mismo, que es la
+#:    familia de defectos que costó `T-7.34`, `T-7.38` y `T-7.39`.
+#: 2. **La causa real está escrita en otro sitio:** la viñeta
+#:    `[DIFERIDO · mini-ShakeMap]` de `blueprint §14`, que sólo `T-7.24` puede
+#:    derogar. Nombrarla es lo que permite que el día que se derogue alguien
+#:    encuentre esta frase.
+#:
+#: El texto anterior decía «TAKAB no las calcula», que era categórico y que
+#: `T-7.24` volverá falso dentro de dos fichas — una frase ya impresa en
+#: documentos firmados que habría que derogar.
 NO_MMI = (
-    "No se reporta intensidad macrosísmica (MMI) ni isosistas: TAKAB no las calcula. "
+    "No se reporta mapa de intensidad macrosísmica (MMI) ni isosistas: el cálculo "
+    "está DIFERIDO y su ficha es T-7.24. No depende del dato de este incidente. "
     "La banda que sigue es la sacudida MEDIDA por el sensor del propio inmueble."
 )
 
@@ -221,6 +320,80 @@ class EstacionFila:
     t_medido_s: float | None
     peak_pga_g: float | None
     tier: str | None
+
+    #: [T-7.22] Dónde está, para poder dibujarla. `None` en las dos o en
+    #: ninguna: media coordenada no sitúa nada, y el mapa declara la ausencia en
+    #: vez de colocar el punto en el meridiano cero.
+    lat: float | None = None
+    lon: float | None = None
+
+    #: [T-7.22] El umbral contra el que se decidió «sobre umbral», CON su
+    #: procedencia. La tabla imprimía el pico a secas: sin el umbral al lado, un
+    #: `0.0123 g` no dice si esa estación se movió mucho o poco, y sin la
+    #: procedencia el número parece del edificio aunque sea el de referencia
+    #: —que es la razón por la que `T-7.35` añadió `umbral_origen`—.
+    umbral_pga_g: float | None = None
+    umbral_origen: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FotoFila:
+    """[T-7.22] Una fotografía del reporte de daños, tal como llega al papel.
+
+    **Tres huellas y no una, y la distinción no es pedantería.**
+
+    * `sha256_declarado` es lo que dijo el DISPOSITIVO al registrar la evidencia
+      (`POST /evidence`), y el servidor nunca lo verificó — por eso existe
+      `POST /evidence/{id}/verify` como operación aparte.
+    * `sha256_medido` es lo que el servidor calculó del blob al leerlo para
+      imprimirlo. Es gratis: el render tiene que bajar los bytes de todos modos.
+    * `sha256_impreso` es el de la DERIVADA redimensionada, que es lo que el
+      lector tiene delante.
+
+    Rotular el primero como «huella del original» junto a una portada que manda
+    hacer `sha256sum` repetiría la clase de defecto de `T-5.26`: un dato
+    inverificable presentado como verificable. Y un desajuste entre el declarado y
+    el medido es lo más importante que esta sección puede decir de una foto de
+    evidencia, así que se imprime.
+    """
+
+    evidence_id: str
+    sha256_declarado: str
+    sha256_medido: str | None = None
+    sha256_impreso: str | None = None
+    ancho: int | None = None
+    alto: int | None = None
+    #: Por qué no se imprime, si es el caso. Nunca un hueco mudo.
+    motivo: str | None = None
+    #: Los bytes JPEG a embeber. **No entran crudos en `content_sha256`**: ver
+    #: `_para_la_huella`. Su `sha256_impreso` sí, que es lo que identifica el
+    #: contenido sin arrastrar megabytes por el serializador en cada llamada.
+    jpeg: bytes | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DanoFila:
+    """[T-7.22] Un reporte de daños del brigadista.
+
+    `rol` y no nombre: lo fija `D-32` («el brigadista aparece por **rol**, nunca
+    por nombre») y es lo único que este documento necesita para que la observación
+    tenga procedencia. `None` cuando la asignación ya no existe — se declara, no se
+    rellena con «brigadista» por costumbre.
+    """
+
+    report_id: str
+    rol: str | None
+    zona: str | None
+    #: `[{key, severity, note?}]` tal como lo escribió la app.
+    categorias: list[dict]
+    personas_en_riesgo: bool
+    notas: str | None
+    ts: datetime
+    fotos: list[FotoFila] = field(default_factory=list)
+    #: Cuántas fotografías tiene el reporte MÁS ALLÁ del tope del documento. Se
+    #: imprime: entregar seis de once sin decirlo es recortar la evidencia en
+    #: silencio.
+    fotos_omitidas: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +560,16 @@ class ReportModel:
     #: declararlo, dos dictámenes con anclas distintas se comparan como si
     #: midieran lo mismo.
     estaciones_ancla: str = "incident"
+    #: [T-7.22] ¿El evento enlazado es una reproducción de un sismo histórico?
+    #:
+    #: Se DERIVA de `seismic_events.meta->'reproduccion'` —lo que escribe el
+    #: propio replay— y no de `incident_classifications.classification`, que la
+    #: pone una PERSONA y que la reproducción no escribe. Las dos compiten: un
+    #: incidente real clasificado a mano como reproducción no llevaría el rótulo,
+    #: y uno vestido por el replay lo llevaría sin que nadie lo clasificara. Se
+    #: elige la del evento porque es la misma que lee la consola, y papel y
+    #: pantalla no pueden discrepar sobre si lo que se enseña ocurrió.
+    reproduccion: bool = False
     #: Prosa opcional (T-2.42). El veredicto NO sale de aquí.
     narrative: list[tuple[str, str]] = field(default_factory=list)
     narrative_provider: str | None = None
@@ -402,14 +585,38 @@ class ReportModel:
     #: cuánto tardó la gente en salir tiene que mover la huella.
     cctv: CctvBlock = field(default_factory=CctvBlock)
 
+    #: [T-7.22] Los reportes de daños del brigadista, con sus fotografías. Entran
+    #: en ``content_sha256`` como todo lo demás — sus HUELLAS, no sus bytes.
+    danos: list[DanoFila] = field(default_factory=list)
+
     def content_sha256(self) -> str:
         """Huella del CONTENIDO (no del archivo): identifica qué se afirmó.
 
         El sha256 del PDF no puede imprimirse dentro de sí mismo; este sí, y permite
         comparar dos exportaciones del mismo incidente sin abrirlas.
         """
-        payload = json.dumps(asdict(self), sort_keys=True, separators=(",", ":"), default=str)
+        payload = json.dumps(
+            asdict(self), sort_keys=True, separators=(",", ":"), default=_para_la_huella
+        )
         return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _para_la_huella(valor: object) -> str:
+    """Cómo se serializa lo que `json` no sabe, al calcular `content_sha256`.
+
+    [T-7.22] Los BYTES de una fotografía se sustituyen por su tamaño. No es una
+    omisión: la huella de esa misma derivada (`FotoFila.sha256_impreso`) SÍ entra
+    en el payload, así que dos informes con fotografías distintas siguen dando
+    huellas distintas — que es lo que
+    `test_la_huella_de_contenido_es_estable_y_cambia_con_el_contenido` exige.
+
+    Lo que se evita es arrastrar megabytes de `repr` por el serializador en CADA
+    llamada, y `content_sha256()` se llama al menos dos veces por documento (la
+    portada y el pie).
+    """
+    if isinstance(valor, bytes):
+        return f"<{len(valor)} bytes>"
+    return str(valor)
 
 
 #: [T-5.26] Lo que se imprime donde va la huella de un objeto de evidencia.
