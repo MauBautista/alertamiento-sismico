@@ -26,6 +26,7 @@ import pytest
 from takab_api.documentos.hoja import hoja_en_blanco
 from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import model
+from tests.documentos.test_censo_fpdf import _descendientes
 
 
 @contextmanager
@@ -133,20 +134,67 @@ def test_el_sellado_de_la_hoja_NO_es_el_reloj() -> None:
     assert hoja_en_blanco() == hoja_en_blanco()
 
 
-def test_la_subclase_NO_sombrea_el_text_of_de_la_base() -> None:
-    """La guarda del defecto de arriba, y la razón de que exista.
+def test_NINGUNA_subclase_sombrea_un_metodo_HEREDADO() -> None:
+    """La guarda del defecto de arriba, generalizada — y la razón de que exista.
 
-    Si alguien vuelve a parchear `TakabPDF.text_of` y a «restaurarlo»
-    reasignando, la subclase se queda con un atributo propio y el espía general
-    deja de ver nada — **en silencio y sólo según el orden de la suite**, que es
-    la peor forma de fallar. Esto lo caza en cualquier orden.
+    ⚠️ [T-7.22] La versión de `T-7.21` miraba UNA clave escrita a mano,
+    `text_of`, y por eso no vio que `test_tablas_legibles` llevaba sombreando
+    `TakabPDF.table` desde siempre: `table` viene de `FPDF`, no del membrete.
+    Un censo que enumera a mano diverge, también cuando lo que enumera son
+    nombres de método.
+
+    **Cómo se DERIVA sin lista de exentos.** Un `tipo = "DICTAMEN"` es una
+    redefinición legítima: su valor es DISTINTO del de la base. Un espía mal
+    restaurado reinstala el MISMO objeto que el ancestro —`TakabPDF.table =
+    original` donde `original` era `FPDF.table`—, y esa identidad es la firma del
+    defecto. Se marca solo lo idéntico, así que las redefiniciones de verdad no
+    necesitan estar en ninguna lista.
+
+    El daño no es teórico: mientras el atributo propio existe, un espía puesto
+    sobre la BASE recoge CERO — **en silencio y solo según el orden de la
+    suite**, que es la peor forma de fallar.
+    """
+    from takab_api.documentos.membrete import MembretePDF
+
+    sombras: list[str] = []
+    for clase in _descendientes(MembretePDF) | {MembretePDF}:
+        for nombre, valor in vars(clase).items():
+            if nombre.startswith("__"):
+                continue
+            for ancestro in clase.__mro__[1:]:
+                if nombre not in vars(ancestro):
+                    continue
+                if vars(ancestro)[nombre] is valor:
+                    sombras.append(f"{clase.__name__}.{nombre} (idéntico a {ancestro.__name__})")
+                break
+    assert not sombras, (
+        "hay atributos reinstalados sobre una subclase con el MISMO objeto del "
+        "ancestro: algún espía parcheó la clase derivada y «restauró» "
+        "reasignando, en vez de usar `mock.patch.object`. A partir de ahí, un "
+        f"espía sobre la base recoge cero según el orden de la suite. {sombras}"
+    )
+
+
+def test_la_guarda_de_sombreado_CAZA_un_espia_mal_restaurado() -> None:
+    """Porque una guarda que no puede fallar no vigila nada.
+
+    Se reproduce el defecto exacto —parchear la subclase y «restaurar»
+    reasignando— y se comprueba que el atributo propio queda, que es lo que la
+    prueba de arriba busca.
     """
     from takab_api.dictamen.layout import TakabPDF
-    from takab_api.documentos.hoja import _Hoja
-    from takab_api.drill_report import ReportePDF
+    from takab_api.documentos.membrete import MembretePDF
 
-    for clase in (TakabPDF, ReportePDF, _Hoja):
-        assert "text_of" not in clase.__dict__, (
-            f"{clase.__name__} define su propio `text_of` y sombrea al membrete: "
-            "algún espía parcheó la subclase en vez de la base"
+    assert "text_of" not in TakabPDF.__dict__
+    original = TakabPDF.text_of
+    TakabPDF.text_of = lambda self, v: original(self, v)  # type: ignore[method-assign]
+    try:
+        TakabPDF.text_of = original  # type: ignore[method-assign]  # «restaurar»
+        assert "text_of" in TakabPDF.__dict__, (
+            "reasignar sobre la subclase dejó de instalar un atributo propio: si "
+            "Python cambió esto, la guarda de arriba ya no hace falta"
         )
+        assert vars(MembretePDF)["text_of"] is TakabPDF.__dict__["text_of"]
+    finally:
+        del TakabPDF.text_of
+    assert "text_of" not in TakabPDF.__dict__

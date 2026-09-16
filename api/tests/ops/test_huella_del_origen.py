@@ -316,7 +316,9 @@ def _activos_compartidos_que_lee_la_api() -> list[tuple[str, int, str]]:
             # se citan en prosa se citan con su nombre a secas.
             if not m.group(1).endswith((".json", ".yaml", ".yml", ".txt", ".csv")):
                 continue
-            encontrados.append((str(py.relative_to(REPO)), texto[: m.start()].count("\n") + 1, m.group(1)))
+            encontrados.append(
+                (str(py.relative_to(REPO)), texto[: m.start()].count("\n") + 1, m.group(1))
+            )
     return encontrados
 
 

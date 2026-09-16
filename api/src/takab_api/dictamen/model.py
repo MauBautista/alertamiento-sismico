@@ -170,6 +170,28 @@ REPRODUCCION_NOTE = (
     "aquel evento; la sacudida de este inmueble NO ocurrió."
 )
 
+#: [T-7.22] Cuando la bitácora del incidente está vacía. No es lo mismo que
+#: «no pasó nada»: `incident_actions` recoge lo que hicieron el gabinete, la nube
+#: y las personas, y que no haya ni una fila es un hecho sobre el incidente que
+#: merece decirse —y que en un incidente con sirena disparada sería un defecto—.
+SIN_CRONOLOGIA = (
+    "SIN ACCIONES REGISTRADAS PARA ESTE INCIDENTE: ni el gabinete, ni la nube, ni "
+    "ninguna persona dejaron constancia de una acción en la bitácora."
+)
+
+#: [T-7.22] El recuento de verbos que el documento no supo traducir. Marcar las
+#: filas no basta: quien audita tiene que poder saber de un vistazo cuánto de la
+#: cronología se entrega sin rotular.
+#:
+#: El número va al FINAL y no delante a propósito: con el recuento por delante la
+#: frase habría que declinarla («1 acciones») y un documento firmado no puede
+#: permitirse esa errata. Así la constante es una sola y vale para cualquier
+#: cantidad.
+CRONOLOGIA_SIN_ROTULO = (
+    "Hay acciones sin rótulo declarado: se imprimen con su identificador técnico y su "
+    "significado está en el registro de la consola. Filas afectadas: "
+)
+
 NO_MMI = (
     "No se reporta intensidad macrosísmica (MMI) ni isosistas: TAKAB no las calcula. "
     "La banda que sigue es la sacudida MEDIDA por el sensor del propio inmueble."

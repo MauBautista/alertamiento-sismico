@@ -36,9 +36,16 @@ from pathlib import Path
 import pytest
 
 from takab_api.dictamen import pdf as pdf_mod
-from takab_api.dictamen.model import REPRODUCCION_NOTE, SIN_GEOMETRIA_DE_RED
+from takab_api.dictamen.bitacora import SIN_ROTULO
+from takab_api.dictamen.model import (
+    CRONOLOGIA_SIN_ROTULO,
+    REPRODUCCION_NOTE,
+    SIN_CRONOLOGIA,
+    SIN_GEOMETRIA_DE_RED,
+    ActionRow,
+)
 from takab_api.dictamen.pdf import render
-from tests.dictamen.test_pdf import model
+from tests.dictamen.test_pdf import _OPENED, model
 from tests.documentos.espia import espia_del_render
 
 FUENTE = Path(pdf_mod.__file__)
@@ -234,3 +241,69 @@ def test_ninguna_seccion_se_queda_VACIA(variante: str) -> None:
     cap = _capturado(variante=variante)
     vacias = [t for t in cap.titulos if not cap.seccion(t).strip()]
     assert not vacias, f"secciones con título y sin contenido en {variante}: {vacias}"
+
+
+# ──────────────────────────────────────── la cronología, que salió de la custodia
+
+
+def test_la_cronologia_rotula_en_CASTELLANO_y_no_en_crudo() -> None:
+    """El papel decía `gas_closed` donde la pantalla dice «VÁLVULAS DE GAS CERRADAS».
+
+    Es el defecto que `T-2.127` y `T-2.144` ya pagaron dos veces en la consola,
+    cobrado una tercera en un documento firmado.
+    """
+    cap = _capturado(
+        model(
+            actions=[
+                ActionRow(_OPENED, "gas_closed", "system:edge"),
+                ActionRow(_OPENED, "ack", "user:ana"),
+            ]
+        )
+    )
+    seccion = cap.seccion("CRONOLOGÍA DEL INCIDENTE")
+    assert "VÁLVULAS DE GAS CERRADAS" in seccion
+    assert "ACUSE DE OPERADOR" in seccion
+    assert "gas_closed" not in seccion, "el identificador técnico se coló en vez del rótulo"
+
+
+def test_la_cronologia_SALIO_de_la_cadena_de_custodia() -> None:
+    """Y no se quedó también allí: imprimir las mismas filas en dos secciones de
+    un documento de evidencia obliga al lector a contarlas dos veces o a decidir
+    cuál de las dos apariciones creer."""
+    cap = _capturado(model(actions=[ActionRow(_OPENED, "siren_on", "system:edge")]))
+    assert "SIRENA ACTIVADA" in cap.seccion("CRONOLOGÍA DEL INCIDENTE")
+    custodia = cap.seccion("CADENA DE CUSTODIA")
+    assert "SIRENA ACTIVADA" not in custodia
+    assert "siren_on" not in custodia
+    # Y la custodia sigue haciendo lo suyo: los objetos archivados con su huella.
+    assert "MINISEED" in custodia
+
+
+def test_un_verbo_SIN_ROTULO_sale_declarado_y_contado() -> None:
+    """`incident_actions` es append-only y exenta de poda: un dictamen histórico
+    regenerado puede traer verbos que el registro de hoy no conozca. El
+    identificador va igual —es el dato de la tabla— pero dicho como lo que es."""
+    cap = _capturado(
+        model(
+            actions=[
+                ActionRow(_OPENED, "verbo_de_otra_epoca", "system:legacy"),
+                ActionRow(_OPENED, "ack", "user:ana"),
+            ]
+        )
+    )
+    seccion = cap.seccion("CRONOLOGÍA DEL INCIDENTE")
+    assert "verbo_de_otra_epoca" in seccion
+    assert SIN_ROTULO in seccion
+    assert CRONOLOGIA_SIN_ROTULO in seccion
+    assert "1 de 2." in seccion, "el recuento no dice cuántas de cuántas"
+
+
+def test_con_TODOS_los_verbos_rotulados_no_hay_aviso() -> None:
+    """El lado negativo: un aviso que sale siempre enseña a ignorar el aviso."""
+    cap = _capturado(model(actions=[ActionRow(_OPENED, "ack", "user:ana")]))
+    assert CRONOLOGIA_SIN_ROTULO not in cap.seccion("CRONOLOGÍA DEL INCIDENTE")
+
+
+def test_sin_acciones_la_cronologia_lo_DICE() -> None:
+    """Una bitácora vacía no es «no pasó nada»: es un hecho sobre el incidente."""
+    assert SIN_CRONOLOGIA in _capturado(model(actions=[])).seccion("CRONOLOGÍA DEL INCIDENTE")

@@ -197,6 +197,16 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         ),
         frozenset({"technical"}),
     ),
+    # [T-7.22] La bitácora vacía. En un incidente con sirena disparada sería un
+    # defecto, y por eso se dice en vez de dejar la sección en blanco.
+    "SIN_CRONOLOGIA": (lambda: model(actions=[]), frozenset({"technical"})),
+    # [T-7.22] Y el recuento de verbos sin rótulo. El `kind` es deliberadamente
+    # uno que `bitacora.ROTULOS` no conoce: `incident_actions` es append-only y
+    # exenta de poda, así que un documento histórico puede traerlos.
+    "CRONOLOGIA_SIN_ROTULO": (
+        lambda: model(actions=[ActionRow(_OPENED, "verbo_de_otra_epoca", "system:edge")]),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -301,10 +311,11 @@ def test_el_espia_NO_esta_ciego() -> None:
     `assert ... not in ...` pasarían en verde. Los números van escritos.
     """
     # 13 → 15 en `T-7.38·F`: los dos estados de la poda del vídeo.
-    # 19 → 21 en `T-7.22`: la leyenda de reproducción y la ausencia del mapa de red.
-    assert len(ESCENARIOS) == 21, "cambió el número de avisos declarados"
+    # 19 → 23 en `T-7.22`: leyenda de reproducción, ausencia del mapa de red,
+    # bitácora vacía y recuento de verbos sin rótulo.
+    assert len(ESCENARIOS) == 23, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 20, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 22, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

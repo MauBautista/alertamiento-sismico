@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import io
 import re
+from dataclasses import dataclass
 
 import pytest
 from pypdf import PdfReader
@@ -79,27 +80,68 @@ def test_el_chasis_y_fpdf2_MIDEN_LO_MISMO() -> None:
     )
 
 
-def bordes_dibujados(pagina) -> list[float]:
-    """El borde DERECHO de todo lo que se dibuja, en mm.
+#: Un milímetro en puntos PostScript, que es la unidad del flujo de contenido.
+_PT_A_MM = 25.4 / 72.0
 
-    ⚠️ Se miden los operadores de dibujo (`re` para rectángulos, `l`/`m` para
-    líneas), no el texto. La primera versión de esta guarda usaba la matriz de
-    texto de `pypdf` y **no cazaba nada**: `tm[4]` es donde EMPIEZA el fragmento,
-    y una celda alineada a la derecha empieza a la izquierda del filete y se
-    extiende más allá. Medido: con la media migración el texto arrancaba en
-    184.0 mm, muy por debajo del tope, mientras las tablas desbordaban de verdad.
+#: `x y w h re` — un rectángulo. Lo dibujan las tablas y los marcos de las figuras.
+_RE_RECT = re.compile(rb"([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+re\b")
+#: `x y l` / `x y m` — un trazo. El filete del pie es uno de éstos.
+_RE_TRAZO = re.compile(rb"([\d.\-]+)\s+([\d.\-]+)\s+(?:l|m)\b")
+#: `w 0 0 h x y cm /In Do` — una imagen colocada. [T-7.22] Es el operador que
+#: `bordes_dibujados` NO miraba, así que la única guarda de geometría del
+#: repositorio era ciega a una foto pintada encima del pie — en los tres
+#: documentos y desde siempre. Con las fotos del brigadista dentro, eso pasa de
+#: hueco teórico a agujero por el que cabe el criterio 2 de la ficha.
+_RE_IMAGEN = re.compile(
+    rb"([\d.\-]+)\s+0\s+0\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+cm\s*/(\w+)\s+Do"
+)
+
+
+@dataclass(frozen=True)
+class Caja:
+    """Algo dibujado, con sus dos bordes que importan, en mm desde el borde de la hoja.
+
+    `y_inferior` se mide desde ARRIBA porque es como se leen los márgenes del
+    chasis (`PAGE_H - PIE_MM`); el flujo del PDF lo cuenta desde abajo.
+    """
+
+    clase: str
+    x_derecha: float
+    y_inferior: float
+
+
+def cajas_dibujadas(pagina, alto_mm: float = layout.PAGE_H) -> list[Caja]:
+    """Todo lo dibujado en esa página: rectángulos, trazos e IMÁGENES.
+
+    ⚠️ Se miden los operadores de dibujo, no el texto. La primera versión de esta
+    guarda usaba la matriz de texto de `pypdf` y **no cazaba nada**: `tm[4]` es
+    donde EMPIEZA el fragmento, y una celda alineada a la derecha empieza a la
+    izquierda del filete y se extiende más allá. Medido: con la media migración
+    el texto arrancaba en 184.0 mm, muy por debajo del tope, mientras las tablas
+    desbordaban de verdad.
 
     Los rectángulos sí dan el borde exacto —`x y w h re`— y son justo lo que
     dibujan las tablas del dictamen, que es donde el desborde se ve.
     """
     datos = pagina.get_contents().get_data()
-    bordes: list[float] = []
-    for m in re.finditer(rb"([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+re\b", datos):
-        x, _y, w, _h = (float(v) for v in m.groups())
-        bordes.append((x + w) / 72.0 * 25.4)
-    for m in re.finditer(rb"([\d.\-]+)\s+([\d.\-]+)\s+(?:l|m)\b", datos):
-        bordes.append(float(m.group(1)) / 72.0 * 25.4)
-    return bordes
+    alto_pts = alto_mm / _PT_A_MM
+    cajas: list[Caja] = []
+    for m in _RE_RECT.finditer(datos):
+        x, y, w, _h = (float(v) for v in m.groups())
+        cajas.append(Caja("rect", (x + w) * _PT_A_MM, (alto_pts - y) * _PT_A_MM))
+    for m in _RE_TRAZO.finditer(datos):
+        x, y = (float(v) for v in m.groups())
+        cajas.append(Caja("trazo", x * _PT_A_MM, (alto_pts - y) * _PT_A_MM))
+    for m in _RE_IMAGEN.finditer(datos):
+        w, _h, x, y = (float(v) for v in m.groups()[:4])
+        nombre = m.group(5).decode()
+        cajas.append(Caja(f"imagen {nombre}", (x + w) * _PT_A_MM, (alto_pts - y) * _PT_A_MM))
+    return cajas
+
+
+def bordes_dibujados(pagina) -> list[float]:
+    """El borde DERECHO de todo lo que se dibuja, en mm. Ver `cajas_dibujadas`."""
+    return [c.x_derecha for c in cajas_dibujadas(pagina)]
 
 
 def test_NADA_se_sale_del_filete(lector: PdfReader) -> None:
@@ -138,3 +180,75 @@ def test_el_folio_se_extrae(lector: PdfReader) -> None:
     """Sin folio extraíble no se puede casar el papel con el registro."""
     texto = lector.pages[0].extract_text() or ""
     assert model().folio in texto
+
+
+# ───────────────────────────────── [T-7.22] el punto 3 del encabezado, sostenido
+
+
+def test_el_barrido_de_geometria_VE_las_imagenes() -> None:
+    """Guarda de no-vacuidad del operador nuevo, y la que sostiene a la de abajo.
+
+    Sin esto, `test_NINGUNA_caja_pisa_el_PIE` pasaría en verde sobre un documento
+    lleno de fotos sencillamente porque el analizador no las ve. El logotipo del
+    membrete se dibuja en todas las páginas, así que siempre hay al menos una.
+    """
+    lector = PdfReader(io.BytesIO(render(model())))
+    for i, pagina in enumerate(lector.pages, start=1):
+        imagenes = [c for c in cajas_dibujadas(pagina) if c.clase.startswith("imagen")]
+        assert imagenes, (
+            f"pág. {i}: el barrido no ve NI el logotipo del membrete; el operador "
+            "`cm … Do` dejó de casar y la guarda del pie no mide nada"
+        )
+
+
+def test_NINGUNA_caja_pisa_el_PIE() -> None:
+    """El punto 3 del encabezado de este módulo, que hasta ahora NADIE comprobaba.
+
+    Estaba escrito arriba desde `T-7.21` —«`rect`/`polyline` NO disparan el salto
+    de página automático, así que las figuras se dibujarían sobre el filete sin
+    que nada fallara»— y ninguno de los cinco tests miraba el eje vertical: los
+    cinco medían el borde DERECHO. Un documento ejecutable que afirma algo que no
+    sostiene es la forma de defecto que este repositorio ya tiene fichada.
+
+    Importa ahora porque `T-7.22` mete la figura más alta del documento después
+    del croquis —el mapa de la red— y, detrás, las fotos del brigadista.
+
+    Se miden rectángulos e imágenes, **no trazos**: el filete del pie ES un
+    trazo, dibujado exactamente en la línea que esta prueba vigila, y medirlo
+    haría fallar la guarda por su propio patrón de referencia.
+    """
+    tope_mm = layout.PAGE_H - layout.PIE_MM
+    lector = PdfReader(io.BytesIO(render(model())))
+    invasores: list[str] = []
+    for i, pagina in enumerate(lector.pages, start=1):
+        for caja in cajas_dibujadas(pagina):
+            if caja.clase == "trazo":
+                continue
+            if caja.y_inferior > tope_mm + 0.05:
+                invasores.append(f"pág. {i}: {caja.clase} baja hasta {caja.y_inferior:.1f} mm")
+    assert not invasores, (
+        f"hay dibujo por debajo del filete del pie ({tope_mm:.1f} mm), encima del "
+        "sha256 y de la paginación: " + " · ".join(invasores)
+    )
+
+
+def test_la_guarda_del_PIE_caza_una_figura_que_lo_invade() -> None:
+    """Porque una guarda que no puede fallar es una ceremonia.
+
+    Se dibuja a propósito una caja como la que saldría de olvidar `reserva()`
+    antes de una figura —que es exactamente el defecto que `reserva()` existe
+    para evitar— y se comprueba que la medición la ve.
+    """
+    pdf = layout.TakabPDF("TKB-GEOM-PIE", "invasión deliberada")
+    pdf.add_page()
+    # 10 mm POR DEBAJO del filete del pie: lo que pasa cuando una figura alta
+    # empieza demasiado abajo y fpdf2 no salta de página porque es dibujo.
+    pdf.rect(layout.MARGIN, layout.PAGE_H - layout.PIE_MM + 4, 40, 6)
+    pagina = PdfReader(io.BytesIO(bytes(pdf.output()))).pages[0]
+
+    tope_mm = layout.PAGE_H - layout.PIE_MM
+    peor = max(c.y_inferior for c in cajas_dibujadas(pagina) if c.clase != "trazo")
+    assert peor > tope_mm + 0.05, (
+        f"la caja invasora llega a {peor:.1f} mm y la guarda la daría por buena "
+        f"(tope {tope_mm:.1f} mm): la medición del eje vertical no funciona"
+    )

@@ -20,11 +20,13 @@ from fpdf.enums import XPos, YPos
 
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
+from takab_api.dictamen.bitacora import rotulo as rotulo_de_accion
 from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
 from takab_api.dictamen.layout import CONTENT_W, INK, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
     ABSENT,
     CENTROID_NOTE,
+    CRONOLOGIA_SIN_ROTULO,
     DISCLAIMER,
     DISCLAIMER_ESTADO,
     ENVELOPE_NOTE,
@@ -40,6 +42,7 @@ from takab_api.dictamen.model import (
     ONDA_NO_LEIDA,
     REPRODUCCION_NOTE,
     SIN_CORRELACION_EN_CATALOGO,
+    SIN_CRONOLOGIA,
     SIN_GEOMETRIA_DE_RED,
     SKETCH_NOTE,
     STATUS_ACTIONS,
@@ -94,7 +97,8 @@ def _render_technical(m: ReportModel) -> bytes:
     _sensors_section(pdf, m)
     _chain_section(pdf, m)
     _custody_section(pdf, m)
-    _cctv_section(pdf, m)  # 11
+    _cronologia_section(pdf, m)
+    _cctv_section(pdf, m)
     _narrative_section(pdf, m)
     _compliance_section(pdf, m)
     _closing(pdf, m)
@@ -728,21 +732,18 @@ def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("11", "CADENA DE CUSTODIA")
-    if m.actions:
-        pdf.set_font(pdf.mono_font, "", 6.5)
-        for a in m.actions:
-            pdf.cell(
-                0,
-                3.6,
-                pdf.text_of(f"{a.ts:%Y-%m-%d %H:%M:%S}  {a.kind:<22} {a.actor}"),
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-            )
-    else:
-        pdf.para("Sin acciones registradas.", size=7.5, muted=True)
+    """[T-7.22] Solo los OBJETOS de evidencia. La bitácora se fue a la §12.
 
-    pdf.ln(1)
+    Imprimía además, en monoespaciada y sin rótulo, las filas de
+    `incident_actions` con su `kind` CRUDO: el papel decía `gas_closed` donde la
+    pantalla dice «VÁLVULAS DE GAS CERRADAS». Son dos cosas distintas —qué se
+    archivó y qué pasó— y estaban bajo un mismo título que solo nombra a una.
+
+    Se MUEVEN y no se duplican: imprimir las mismas filas en dos secciones de un
+    documento de evidencia obliga al lector a contarlas dos veces o a decidir
+    cuál de las dos apariciones creer.
+    """
+    pdf.section("11", "CADENA DE CUSTODIA")
     if m.evidence:
         pdf.set_font(pdf.body_font, "", 7.5)
         for e in m.evidence:
@@ -773,6 +774,44 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
         )
 
 
+def _cronologia_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-7.22] Qué pasó y cuándo, en castellano.
+
+    El criterio de la ficha pide «cronología desde `incident_actions`». Las filas
+    ya viajaban en el modelo y ya se imprimían —dentro de la CADENA DE CUSTODIA, en
+    monoespaciada y con el `kind` en crudo—. Lo que faltaba no era el dato: era
+    que se pudiera leer.
+
+    Los rótulos son el ESPEJO de los de la consola (`dictamen/bitacora.py`), para
+    que el papel y la pantalla no cuenten lo mismo con dos vocabularios. Un verbo
+    que el registro no sepa rotular sale con su identificador **y con el aviso de
+    que no tiene rótulo**: `incident_actions` es append-only y exenta de poda, así
+    que puede traer verbos de hace dos años, y un dato crudo declarado como tal es
+    honesto donde uno crudo a secas no lo es.
+    """
+    pdf.section("12", "CRONOLOGÍA DEL INCIDENTE")
+    if not m.actions:
+        pdf.callout(SIN_CRONOLOGIA)
+        return
+    pdf.set_font(pdf.body_font, "", 7)
+    sin_rotulo = 0
+    with pdf.table(col_widths=(34, 86, 38), text_align="LEFT") as table:
+        head = table.row()
+        for h in ("INSTANTE (UTC)", "QUÉ PASÓ", "QUIÉN"):
+            head.cell(pdf.text_of(h))
+        for a in m.actions:
+            texto, conocido = rotulo_de_accion(a.kind)
+            sin_rotulo += 0 if conocido else 1
+            row = table.row()
+            row.cell(pdf.text_of(f"{a.ts:{TS_FMT}}"))
+            row.cell(pdf.text_of(texto))
+            row.cell(pdf.text_of(a.actor))
+    if sin_rotulo:
+        # Declarar el recuento, no solo marcar las filas: quien audite tiene que
+        # poder saber de un vistazo cuánto del documento no se supo traducir.
+        pdf.callout(f"{CRONOLOGIA_SIN_ROTULO}{sin_rotulo} de {len(m.actions)}.")
+
+
 def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     """[T-3.12.c] Analítica de evacuación y custodia del vídeo.
 
@@ -784,7 +823,7 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     inmueble no tiene CCTV o si el generador se lo saltó, que es exactamente la ambigüedad
     que `NO_CCTV` está escrito para cerrar.
     """
-    pdf.section("12", "EVACUACIÓN OBSERVADA (CCTV)")
+    pdf.section("13", "EVACUACIÓN OBSERVADA (CCTV)")
     bloque = m.cctv
 
     if bloque.t90_s is None:
@@ -828,7 +867,7 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
     """Prosa opcional (T-2.42). Rodea al veredicto; nunca lo produce."""
     if not m.narrative:
         return
-    pdf.section("13", "ANÁLISIS")
+    pdf.section("14", "ANÁLISIS")
     for title, body in m.narrative:
         pdf.set_font(pdf.body_font, "B", 8)
         pdf.cell(0, 5, pdf.text_of(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -849,7 +888,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
     apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
     que no haga falta llegar a la nota para saber de quién son.
     """
-    pdf.section("14", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    pdf.section("15", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
     block = compliance_block(m.compliance)
     for label, value in block.rows:
         pdf.field(label, value)
@@ -860,7 +899,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("15", "FIRMA Y DESLINDE")
+    pdf.section("16", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)
