@@ -23,6 +23,7 @@ from takab_api.dictamen.model import (
     ActionRow,
     ChannelRow,
     DictamenRow,
+    EstacionFila,
     EvidenceRow,
     ReportModel,
     VoteRow,
@@ -90,6 +91,43 @@ def model(**over) -> ReportModel:
         "evidence": [EvidenceRow("miniseed", "a" * 64, _OPENED)],
         "sensors": [{"kind": "structural", "model": "RS4D", "calibration_source": "stationxml"}],
         "peers": [{"lat": 19.43, "lon": -99.13, "site_code": "CDMX-1"}],
+        # [T-7.22] La red VA en el fixture compartido, y con coordenadas.
+        # Hasta ahora `estaciones` se quedaba en su `default_factory=list`, así
+        # que la §7 salía por el callout de «sin estaciones» y NINGUNA suite
+        # —ni la de geometría, ni la de legibilidad de tablas, ni la del
+        # determinismo— había visto nunca esa sección con datos. Con el mapa
+        # vectorial dentro, eso dejaba la figura más grande del documento sin
+        # una sola guarda.
+        "estaciones": [
+            EstacionFila(
+                site_name="Planta Cholula",
+                site_code="CHL-A",
+                sensor_code="AM.R4F74",
+                dist_km=0.0,
+                t_teorico_s=0.0,
+                t_medido_s=0.4,
+                peak_pga_g=0.081,
+                tier="evacuate_or_hold",
+                lat=19.06,
+                lon=-98.30,
+                umbral_pga_g=0.10,
+                umbral_origen="inmueble",
+            ),
+            EstacionFila(
+                site_name="Torre CDMX",
+                site_code="CDMX-1",
+                sensor_code=None,
+                dist_km=112.0,
+                t_teorico_s=28.0,
+                t_medido_s=None,
+                peak_pga_g=0.012,
+                tier=None,
+                lat=19.43,
+                lon=-99.13,
+                umbral_pga_g=0.07,
+                umbral_origen="referencia",
+            ),
+        ],
         "series": {"ENZ": [(_OPENED, 0.01 * i, False) for i in range(60)]},
     }
     return ReportModel(**{**base, **over})

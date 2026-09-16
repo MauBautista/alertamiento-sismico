@@ -90,6 +90,13 @@ ONDA_NO_LEIDA = (
     "siga siendo recuperable ni legible."
 )
 NO_GEOMETRY = "SIN GEOMETRÍA REGISTRADA · no se puede dibujar el croquis del evento."
+#: [T-7.22] La misma ausencia, en la otra figura. Se dice aparte y no se
+#: reutiliza `NO_GEOMETRY` porque aquélla nombra el croquis del evento: leerla
+#: bajo «RED DE ESTACIONES» haría pensar que falló el dibujo de otra sección.
+SIN_GEOMETRIA_DE_RED = (
+    "SIN GEOMETRÍA REGISTRADA PARA LA RED · ninguna estación tiene coordenadas "
+    "y no se puede situar el mapa. La tabla de arribos que sigue no depende de esto."
+)
 #: [T-3.12.c] Los tres estados del CCTV. Se distinguen porque significan cosas OPUESTAS y
 #: se leerían igual si el reporte solo dijera «sin datos».
 NO_CCTV = (
@@ -146,6 +153,21 @@ ENVELOPE_NOTE = (
 NARRATIVE_AI_NOTE = (
     "Las secciones en prosa se redactaron con asistencia automatizada. El "
     "VEREDICTO y todos los valores medidos de este documento son deterministas"
+)
+
+#: [T-7.22] La leyenda que un documento firmado NO puede callarse. El evento de
+#: una reproducción trae el epicentro y la magnitud de un sismo HISTÓRICO: sin
+#: esta frase, el papel afirma con todas las letras que el 19-S de 2017 ocurrió
+#: hoy en este inmueble. Es el riesgo residual que `db/schema.sql` deja escrito
+#: al lado de `meta.reproduccion`, y la consola ya lo rotula — el papel no.
+#:
+#: Va como TEXTO del cuerpo, no como rótulo dentro del dibujo: la meta de F4
+#: exige encontrar «REPRODUCCIÓN» extrayendo el texto del PDF, y lo que se pinta
+#: dentro de una figura se extrae mal o no se extrae.
+REPRODUCCION_NOTE = (
+    "REPRODUCCIÓN: este incidente se construyó sobre un sismo HISTÓRICO del "
+    "catálogo para ensayo. El epicentro, la magnitud y los arribos son los de "
+    "aquel evento; la sacudida de este inmueble NO ocurrió."
 )
 
 NO_MMI = (
@@ -221,6 +243,20 @@ class EstacionFila:
     t_medido_s: float | None
     peak_pga_g: float | None
     tier: str | None
+
+    #: [T-7.22] Dónde está, para poder dibujarla. `None` en las dos o en
+    #: ninguna: media coordenada no sitúa nada, y el mapa declara la ausencia en
+    #: vez de colocar el punto en el meridiano cero.
+    lat: float | None = None
+    lon: float | None = None
+
+    #: [T-7.22] El umbral contra el que se decidió «sobre umbral», CON su
+    #: procedencia. La tabla imprimía el pico a secas: sin el umbral al lado, un
+    #: `0.0123 g` no dice si esa estación se movió mucho o poco, y sin la
+    #: procedencia el número parece del edificio aunque sea el de referencia
+    #: —que es la razón por la que `T-7.35` añadió `umbral_origen`—.
+    umbral_pga_g: float | None = None
+    umbral_origen: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -387,6 +423,16 @@ class ReportModel:
     #: declararlo, dos dictámenes con anclas distintas se comparan como si
     #: midieran lo mismo.
     estaciones_ancla: str = "incident"
+    #: [T-7.22] ¿El evento enlazado es una reproducción de un sismo histórico?
+    #:
+    #: Se DERIVA de `seismic_events.meta->'reproduccion'` —lo que escribe el
+    #: propio replay— y no de `incident_classifications.classification`, que la
+    #: pone una PERSONA y que la reproducción no escribe. Las dos compiten: un
+    #: incidente real clasificado a mano como reproducción no llevaría el rótulo,
+    #: y uno vestido por el replay lo llevaría sin que nadie lo clasificara. Se
+    #: elige la del evento porque es la misma que lee la consola, y papel y
+    #: pantalla no pueden discrepar sobre si lo que se enseña ocurrió.
+    reproduccion: bool = False
     #: Prosa opcional (T-2.42). El veredicto NO sale de aquí.
     narrative: list[tuple[str, str]] = field(default_factory=list)
     narrative_provider: str | None = None

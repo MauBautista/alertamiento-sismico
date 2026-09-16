@@ -217,6 +217,8 @@ async def _una_estacion(
         site_code=e.site_code,
         site_name=e.site_name,
         sensor_code=e.sensor_code,
+        lat=float(e.lat),
+        lon=float(e.lon),
         dist_km=dist,
         t_arribo_teorico_s=teorico,
         t_arribo_medido_s=(

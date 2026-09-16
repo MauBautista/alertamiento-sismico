@@ -252,6 +252,13 @@ async def build_model(
             t_medido_s=e.t_arribo_medido_s,
             peak_pga_g=e.peak_pga_g,
             tier=e.tier,
+            # [T-7.22] Lo que `EstacionOut` ya traía y este mapeo tiraba: sin
+            # coordenadas no hay mapa de la red, y sin umbral el pico de la tabla
+            # es un número sin escala.
+            lat=e.lat,
+            lon=e.lon,
+            umbral_pga_g=e.umbral_pga_g,
+            umbral_origen=e.umbral_origen,
         )
         for e in (red.items if red is not None else [])
     ]
@@ -330,6 +337,10 @@ async def build_model(
         raw_unavailable_reason=reason,
         estaciones=estaciones,
         estaciones_ancla=(red.ancla if red is not None else "incident"),
+        # [T-7.22] De `seismic_events.meta->'reproduccion'`, que es lo que lee
+        # la consola. Sin `red` no se puede afirmar que NO lo sea, pero un
+        # incidente sin evento enlazado tampoco tiene sismo histórico detrás.
+        reproduccion=(red.reproduccion if red is not None else False),
         verdict_basis=head_basis,
         # [T-2.82] Marco DECLARADO por el cliente. Sale de la MISMA función que lo
         # sirve a la pantalla de Triage (`queries.compliance.document_for_incident`):

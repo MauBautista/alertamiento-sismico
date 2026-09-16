@@ -33,6 +33,7 @@ la cadena no pasa por ahí y el test se pone rojo nombrando el aviso.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 
 import pytest
 
@@ -175,6 +176,27 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         lambda: model(catalog_line=None),
         frozenset({"technical"}),
     ),
+    # [T-7.22] La leyenda que un papel firmado no puede callarse: el epicentro y
+    # la magnitud son los de un sismo HISTÓRICO. Solo en el pericial, que es el
+    # que lleva la §7; el ejecutivo no tiene tabla de red que rotular.
+    "REPRODUCCION_NOTE": (
+        lambda: model(reproduccion=True),
+        frozenset({"technical"}),
+    ),
+    # [T-7.22] Y la ausencia del mapa de la red, declarada en vez de dejar el
+    # hueco: sin coordenadas en ninguna parte no se puede situar nada, y una caja
+    # vacía se leería como «no hay estaciones» — que es lo contrario de lo que
+    # dice la tabla que va justo debajo.
+    "SIN_GEOMETRIA_DE_RED": (
+        lambda: model(
+            site_lat=None,
+            site_lon=None,
+            epicenter_lat=None,
+            epicenter_lon=None,
+            estaciones=[replace(e, lat=None, lon=None) for e in model().estaciones],
+        ),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -279,9 +301,10 @@ def test_el_espia_NO_esta_ciego() -> None:
     `assert ... not in ...` pasarían en verde. Los números van escritos.
     """
     # 13 → 15 en `T-7.38·F`: los dos estados de la poda del vídeo.
-    assert len(ESCENARIOS) == 19, "cambió el número de avisos declarados"
+    # 19 → 21 en `T-7.22`: la leyenda de reproducción y la ausencia del mapa de red.
+    assert len(ESCENARIOS) == 21, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 18, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 20, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

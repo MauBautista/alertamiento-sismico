@@ -21,7 +21,7 @@ from fpdf.enums import XPos, YPos
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
 from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
-from takab_api.dictamen.layout import CONTENT_W, MARGIN, MUTED, RULE, TakabPDF
+from takab_api.dictamen.layout import CONTENT_W, INK, MARGIN, MUTED, RULE, TakabPDF
 from takab_api.dictamen.model import (
     ABSENT,
     CENTROID_NOTE,
@@ -38,7 +38,9 @@ from takab_api.dictamen.model import (
     NO_MMI,
     NO_SPECTRUM,
     ONDA_NO_LEIDA,
+    REPRODUCCION_NOTE,
     SIN_CORRELACION_EN_CATALOGO,
+    SIN_GEOMETRIA_DE_RED,
     SKETCH_NOTE,
     STATUS_ACTIONS,
     STATUS_LABELS,
@@ -50,7 +52,7 @@ from takab_api.dictamen.model import (
     num,
     umbral_line,
 )
-from takab_api.felt import umbral_desde_dict
+from takab_api.felt import ORIGEN_INMUEBLE, ORIGEN_REFERENCIA, umbral_desde_dict
 
 _TRACE_H = 18.0
 _SKETCH_H = 78.0
@@ -515,6 +517,110 @@ def _quorum_section(pdf: TakabPDF, m: ReportModel) -> None:
             row.cell(pdf.text_of("sí" if v.counted else "no"))
 
 
+#: [T-7.22] Alto del mapa de la red. Más bajo que el croquis del evento (78 mm)
+#: porque debajo va la tabla de arribos y las dos tienen que caber juntas para
+#: poder leerse de una vez: un mapa en una página y su tabla en la siguiente
+#: obliga a pasar hojas para saber qué punto es qué fila.
+_MAPA_RED_H = 62.0
+
+#: Rótulo del origen del umbral, en la celda de la tabla de la red.
+_ORIGEN_CORTO = {ORIGEN_INMUEBLE: "del inmueble", ORIGEN_REFERENCIA: "de referencia"}
+
+
+def _umbral_celda(e) -> str:  # noqa: ANN001 - EstacionFila
+    """El umbral de esa estación con su procedencia, o la ausencia declarada.
+
+    [T-7.35] El número solo no vale: durante meses el papel atribuyó al edificio
+    un umbral que era el de fábrica. Y un umbral ausente no es cero — significa
+    que no se sabe contra qué se comparó ese pico.
+    """
+    if e.umbral_pga_g is None:
+        return "SIN DATO"
+    origen = _ORIGEN_CORTO.get(e.umbral_origen or "", "origen no declarado")
+    return f"{num(e.umbral_pga_g, 4)} {origen}"
+
+
+def _mapa_de_la_red(pdf: TakabPDF, m: ReportModel) -> None:
+    """Mapa estático VECTORIAL de la red: dónde está cada estación y el epicentro.
+
+    [T-7.22] Vectorial y sin una sola petición externa —ni tiles, ni cartografía
+    base—: un documento de evidencia que dependa de que un servidor de mapas siga
+    en pie dentro de cinco años no es evidencia. Se dibuja con la MISMA
+    proyección que el croquis del evento (`sketch.project`), así que las dos
+    figuras del documento miden igual; portar el renderizador del panel habría
+    dado un segundo proyector que acabaría discrepando del primero.
+
+    **Es distinto del croquis de la §1.** Aquél pinta a quienes VOTARON en el
+    cuórum (`m.peers`), que es un hecho del motor; en una reproducción no hay
+    votos y sale con dos puntos. Éste pinta las estaciones que MIDIERON, que es
+    lo que la §7 narra — y es justo el caso de la demostración.
+
+    Sin cartografía base el dibujo es un croquis rotulado, no un mapa geográfico,
+    y el papel lo dice: lleva barra de escala y norte, que es lo que permite leer
+    distancias sin fingir que hay costas.
+    """
+    puntos: list[sketch.Point] = []
+    # El inmueble del dictamen se distingue de las demás estaciones aunque
+    # aparezca en las dos listas: es el sujeto del documento, no un testigo.
+    propio = m.site_code
+    if m.site_lat is not None and m.site_lon is not None:
+        puntos.append(sketch.Point(m.site_lat, m.site_lon, propio, "site"))
+    if m.epicenter_lat is not None and m.epicenter_lon is not None:
+        puntos.append(sketch.Point(m.epicenter_lat, m.epicenter_lon, "EPICENTRO", "epicenter"))
+    for e in m.estaciones:
+        if e.lat is None or e.lon is None or e.site_code == propio:
+            continue
+        puntos.append(sketch.Point(e.lat, e.lon, e.site_code, "station"))
+
+    dibujo = sketch.project(puntos, CONTENT_W, _MAPA_RED_H)
+    if dibujo is None:
+        # Declarar la ausencia, no dejar el hueco: sin geometría no se puede
+        # situar nada, y un mapa vacío se lee como «no hay estaciones».
+        pdf.callout(SIN_GEOMETRIA_DE_RED)
+        return
+
+    # ⚠️ `rect`/`line` NO disparan el salto de página de fpdf2 (`set_auto_page_break`
+    # sólo mira texto): sin esto la figura se pinta encima del filete del pie.
+    pdf.reserva(_MAPA_RED_H + 6)
+    top = pdf.get_y()
+    pdf.set_draw_color(*RULE)
+    pdf.rect(MARGIN, top, CONTENT_W, _MAPA_RED_H)
+
+    for p in dibujo.points:
+        x, y = MARGIN + p.x, top + p.y
+        if p.kind == "site":
+            pdf.set_fill_color(*INK)
+            pdf.rect(x - 1.6, y - 1.6, 3.2, 3.2, style="F")
+        elif p.kind == "epicenter":
+            pdf.set_draw_color(196, 48, 43)
+            pdf.set_line_width(0.5)
+            pdf.line(x - 2.4, y, x + 2.4, y)
+            pdf.line(x, y - 2.4, x, y + 2.4)
+            pdf.set_line_width(0.2)
+            pdf.set_draw_color(*RULE)
+        else:
+            # Anillo, no disco: una estación que midió es un testigo, y el disco
+            # relleno ya significa «el inmueble de este dictamen».
+            pdf.set_draw_color(110, 120, 132)
+            pdf.circle(x=x - 1.3, y=y - 1.3, radius=1.3)
+            pdf.set_draw_color(*RULE)
+        pdf.set_xy(x + 2.5, y - 2)
+        pdf.set_font(pdf.body_font, "", 6)
+        pdf.cell(28, 3, pdf.text_of(p.label))
+
+    _relleno_por_defecto(pdf)
+    pdf.set_draw_color(*INK)
+    bar_y = top + _MAPA_RED_H - 6
+    pdf.line(MARGIN + 5, bar_y, MARGIN + 5 + dibujo.scale_bar_mm, bar_y)
+    pdf.set_xy(MARGIN + 5, bar_y + 0.5)
+    pdf.set_font(pdf.body_font, "", 6)
+    pdf.cell(30, 3, pdf.text_of(f"{dibujo.scale_bar_km:g} km"))
+    pdf.set_xy(MARGIN + CONTENT_W - 12, top + 3)
+    pdf.set_font(pdf.body_font, "B", 7)
+    pdf.cell(8, 4, pdf.text_of("N ↑"))
+    pdf.set_y(top + _MAPA_RED_H + 2)
+
+
 def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
     """[T-7.17] Qué midió cada estación de la red, junto a lo que le tocaba.
 
@@ -523,9 +629,15 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
     y esta tabla es la única que cuenta lo que pasó en la red.
     """
     pdf.section("7", "RED DE ESTACIONES")
+    # [T-7.22] La leyenda va ANTES que nada: condiciona todo lo que sigue. Un
+    # lector que llegue a la tabla de arribos sin haberla leído está midiendo la
+    # respuesta de un edificio a un sismo que no ocurrió.
+    if m.reproduccion:
+        pdf.callout(REPRODUCCION_NOTE)
     if not m.estaciones:
         pdf.callout("SIN ESTACIONES CON GABINETE ACTIVO EN ESTE CLIENTE.")
         return
+    _mapa_de_la_red(pdf, m)
     pdf.para(
         "Arribos contados desde "
         + (
@@ -537,9 +649,17 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
         muted=True,
     )
     pdf.set_font(pdf.body_font, "", 7)
-    with pdf.table(col_widths=(46, 20, 22, 22, 22, 20), text_align="LEFT") as table:
+    with pdf.table(col_widths=(40, 17, 20, 20, 20, 24, 17), text_align="LEFT") as table:
         head = table.row()
-        for h in ("ESTACIÓN", "DIST (km)", "ESPERADO (s)", "MEDIDO (s)", "PICO (g)", "TIER"):
+        for h in (
+            "ESTACIÓN",
+            "DIST (km)",
+            "ESPERADO (s)",
+            "MEDIDO (s)",
+            "PICO (g)",
+            "UMBRAL (g)",
+            "TIER",
+        ):
             head.cell(pdf.text_of(h))
         for e in m.estaciones:
             row = table.row()
@@ -549,6 +669,11 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
             row.cell(pdf.text_of(num(e.t_teorico_s, 1)))
             row.cell(pdf.text_of(num(e.t_medido_s, 1)))
             row.cell(pdf.text_of(num(e.peak_pga_g, 4)))
+            # [T-7.22] El pico sin su umbral es un número sin escala, y el umbral
+            # sin su procedencia parece del edificio aunque sea el de referencia
+            # (`T-7.35`). Van en la misma celda porque separan mal: una columna
+            # más estrecha partiría el rótulo de procedencia en dos líneas.
+            row.cell(pdf.text_of(_umbral_celda(e)))
             # Vacío no es `normal`: el gabinete no dijo que estuviera en calma.
             row.cell(pdf.text_of(e.tier or "S/D"))
 
