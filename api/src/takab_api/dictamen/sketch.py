@@ -109,7 +109,8 @@ def project(
     span_km = haversine_km(cy, (cx / kx) if kx else 0.0, cy + span, (cx / kx) if kx else 0.0)
     # [T-7.39] La MISMA escala con la que se proyectan los puntos —`min(inner_w,
     # inner_h)`—, no `inner_h` a secas. En el formato real del dictamen coinciden
-    # porque el alto es el lado corto; en un croquis más estrecho que alto no, y la
+    # porque el alto es el lado corto (62.0 mm frente a 169.9); en un croquis más
+    # estrecho que alto no, y la
     # barra salía con una escala distinta de la del dibujo que pretende medir.
     mm_per_km = (min(inner_w, inner_h) / span_km) if span_km > 0 else 0.0
     # [T-7.39] La barra se RECORTABA a la mitad del ancho y el rótulo conservaba los
@@ -119,9 +120,12 @@ def project(
     # verdad y el rótulo dice ese mismo número.
     # [T-7.39] El `min(...)` de antes RECORTABA la barra y dejaba el rótulo con los
     # kilómetros sin recortar: quien midiera sobre el papel mediría mal. Verificado
-    # el 2026-09-14: con el formato real (180 × 78 mm) el tope nunca llega a morder
-    # —la barra no pasa de ~62 mm sobre un tope de 82—, así que la contradicción NO
-    # estaba viva. Queda como mentira LATENTE: un croquis más estrecho o más alto la
+    # el 2026-09-14: con el formato real (180 × 78 mm en A4) el tope nunca llegaba a
+    # morder —la barra no pasaba de 62 mm sobre un tope de 82—, así que la
+    # contradicción NO estaba viva. RE-DERIVADO para Carta el 2026-09-16 (`T-7.21`):
+    # la caja pasa a 185.9 × 78 mm ⇒ interior 169.9 × 62.0, la escala la sigue
+    # mandando el lado corto (62.0 mm) y el tope sube a 85.0. Sigue sin morder, y
+    # con MÁS margen que antes. Queda como mentira LATENTE: un croquis más estrecho o más alto la
     # activa sin que nada avise. Se baja al valor redondo que quepa entero en vez de
     # cortar, y el rótulo dice siempre lo que la barra mide.
     tope_mm = inner_w * 0.5

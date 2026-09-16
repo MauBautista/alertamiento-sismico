@@ -1,39 +1,52 @@
-"""Chasis del PDF de dictamen (T-2.41): tipografía, encabezado, pie y primitivas.
+"""Chasis del PDF de DICTAMEN: lo que sólo el dictamen tiene.
 
-Todo el dibujo sale de fpdf2 —``line``, ``rect``, ``polyline``, ``circle``, ``table``—
-sin rasterizar nada. Un vector pesa menos, no pixela al imprimir en A4 y, sobre todo,
-es DETERMINISTA byte a byte: un PNG no garantiza los mismos bytes entre versiones del
-codificador, y el sha256 del dictamen es lo que lo hace evidencia.
+[T-7.21] Casi todo lo que vivía aquí subió a `takab_api.documentos.membrete`,
+que es el chasis compartido: cabecera, pie, tipografía, paleta y primitivas. Se
+quedan aquí las DOS piezas que son del dictamen y de nadie más — el color del
+veredicto y la banda que lo pinta—, porque sus claves son los cuatro veredictos
+periciales y un reporte de simulacro no tiene veredicto.
 
-**Determinismo**: fpdf2 estampa ``/CreationDate`` con el reloj. Sin fijarlo, dos
-generaciones del mismo modelo darían hashes distintos y la promesa de "verifique el
-sha256" sería falsa. ``TakabPDF.seal`` lo fija a un instante del propio incidente.
+`TakabPDF` conserva su nombre: lo instancian `dictamen/pdf.py` y `drill_report.py`,
+y renombrarlo habría sido un cambio de superficie sin ganancia.
+
+Lo que se re-exporta (`MARGIN`, `CONTENT_W`, `INK`, `MUTED`, `RULE`) es para no
+partir a quien ya lo importaba de aquí. ⚠️ `dictamen/pdf.py` reexporta `CONTENT_W`
+y `tests/dictamen/test_graficas_honestas.py` lo importa DE AHÍ: quitarlo mataría
+esa suite en la colecta, no en un assert — el modo de fallo que este repositorio
+ya tiene medido como «el import que tumba una suite a 0 test en silencio».
 """
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
-_FONTS = Path(__file__).parent / "fonts"
+from takab_api.documentos.membrete import (
+    CONTENT_W,
+    CUERPO_Y,
+    INK,
+    MARGIN,
+    MUTED,
+    PAGE_H,
+    PAGE_W,
+    PIE_MM,
+    RULE,
+    MembretePDF,
+)
 
-#: [T-6.33] El logotipo de la cabecera, en su variante POSITIVA. Es el único
-#: destino de la marca en positivo del repo, y no es un capricho: éste es el
-#: único PAPEL BLANCO que el producto entrega, y va firmado. Sobre blanco, la
-#: variante negativa —la de la consola, el panel y la app— se perdería.
-#: Lo deriva `shared/brand/generar.py` como los otros catorce; aquí no se edita.
-LOGOTIPO = _FONTS.parent / "marca" / "logotipo.png"
+__all__ = [
+    "CONTENT_W",
+    "CUERPO_Y",
+    "INK",
+    "MARGIN",
+    "MUTED",
+    "PAGE_H",
+    "PAGE_W",
+    "PIE_MM",
+    "RULE",
+    "VERDICT_COLORS",
+    "TakabPDF",
+]
 
-#: Ancho impreso de la marca, en mm. La caja de cabecera da hasta el filete de
-#: y=26 y el subtítulo tiene que caber debajo.
-_LOGO_MM = 34.0
-
-#: Paleta del PDF (RGB). Deliberadamente sobria: un dictamen no es un tablero.
-INK = (20, 24, 30)
-MUTED = (110, 120, 132)
-RULE = (200, 206, 214)
 VERDICT_COLORS: dict[str, tuple[int, int, int]] = {
     "no_inhabit_inspect": (196, 48, 43),
     "restricted": (214, 132, 20),
@@ -41,140 +54,11 @@ VERDICT_COLORS: dict[str, tuple[int, int, int]] = {
     "normal_operation": (38, 140, 78),
 }
 
-PAGE_W = 210.0
-MARGIN = 15.0
-CONTENT_W = PAGE_W - 2 * MARGIN
 
+class TakabPDF(MembretePDF):
+    """El membrete, más la banda de veredicto que sólo el dictamen usa."""
 
-class TakabPDF(FPDF):
-    """A4 con encabezado, pie paginado y tipografía Unicode.
-
-    ``degraded`` queda en ``True`` si las fuentes vendorizadas no viajaron en la
-    imagen: el documento se genera igual con las core de fpdf2 y lo DECLARA en el pie.
-    Una exportación de evidencia no puede fallar por tipografía, pero tampoco puede
-    perder un carácter en silencio.
-    """
-
-    def __init__(self, folio: str, subtitle: str) -> None:
-        super().__init__(format="A4")
-        self.folio = folio
-        self.subtitle = subtitle
-        self.degraded = False
-        # Misma regla que la tipografía: si el arte no viajó con el paquete el
-        # documento SALE IGUAL, con la palabra compuesta. Una exportación de
-        # evidencia no puede caerse por un adorno.
-        self.sin_marca = not LOGOTIPO.exists()
-        self.set_margins(MARGIN, 18, MARGIN)
-        self.set_auto_page_break(auto=True, margin=20)
-        self._install_fonts()
-        self.alias_nb_pages()
-
-    def _install_fonts(self) -> None:
-        try:
-            self.add_font("dejavu", "", str(_FONTS / "DejaVuSans.ttf"))
-            self.add_font("dejavu", "B", str(_FONTS / "DejaVuSans-Bold.ttf"))
-            self.add_font("dejavumono", "", str(_FONTS / "DejaVuSansMono.ttf"))
-            self.body_font = "dejavu"
-            self.mono_font = "dejavumono"
-        except (FileNotFoundError, RuntimeError):
-            self.degraded = True
-            self.body_font = "helvetica"
-            self.mono_font = "courier"
-
-    def text_of(self, value: str) -> str:
-        """Con fuentes core hay que degradar a latin-1; con DejaVu pasa todo."""
-        if not self.degraded:
-            return value
-        return value.encode("latin-1", "replace").decode("latin-1")
-
-    # --- chasis ---------------------------------------------------------------
-
-    def header(self) -> None:  # noqa: D102 - contrato de fpdf2
-        if self.sin_marca:
-            # Respaldo: la palabra compuesta con la tipografía del documento, que
-            # es lo que este encabezado llevaba antes de T-6.33.
-            self.set_font(self.body_font, "B", 9)
-            self.set_text_color(*INK)
-            self.cell(0, 5, self.text_of("TAKAB AILERT"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        else:
-            # `x`/`y` explícitos: `header()` corre en CADA página y el cursor no
-            # llega aquí en el mismo sitio en todas. fpdf2 embebe el PNG una sola
-            # vez y lo reutiliza, así que repetirlo no engorda el documento.
-            self.image(str(LOGOTIPO), x=MARGIN, y=10, w=_LOGO_MM)
-            self.set_y(20)
-        self.set_font(self.body_font, "", 7.5)
-        self.set_text_color(*MUTED)
-        self.cell(0, 4, self.text_of(self.subtitle), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_draw_color(*RULE)
-        self.line(MARGIN, 26, PAGE_W - MARGIN, 26)
-        self.set_y(32)
-        self.set_text_color(*INK)
-
-    def footer(self) -> None:  # noqa: D102 - contrato de fpdf2
-        self.set_y(-15)
-        self.set_draw_color(*RULE)
-        self.line(MARGIN, self.get_y(), PAGE_W - MARGIN, self.get_y())
-        self.ln(1)
-        self.set_font(self.body_font, "", 7)
-        self.set_text_color(*MUTED)
-        # [T-6.33] El NOMBRE, en texto y en todas las páginas. La cabecera pasó a
-        # llevar el logotipo como arte, y un lector de pantalla —o un `pdftotext`
-        # de la contraparte que revisa el dictamen— no lee un PNG. En un
-        # documento firmado, de quién es la firma no puede vivir sólo en una
-        # imagen. Antes estaba únicamente arriba; ahora está en cada pie.
-        left = f"TAKAB AILERT · {self.folio} · EVIDENCIA INMUTABLE"
-        if self.degraded:
-            # No se calla: un dictamen al que le faltan caracteres tiene que decirlo.
-            left += " · TIPOGRAFÍA DEGRADADA (fuente Unicode ausente)"
-        self.cell(CONTENT_W - 30, 4, self.text_of(left))
-        self.cell(30, 4, f"Pág. {self.page_no()} de {{nb}}", align="R")
-
-    def seal(self, created_at) -> None:
-        """Metadatos fijos ⇒ mismas entradas, mismos bytes (y mismo sha256)."""
-        self.set_creation_date(created_at)
-        self.set_producer("TAKAB Ailert")
-        self.set_creator("takab-api")
-        self.set_title(self.folio)
-
-    # --- primitivas de contenido ---------------------------------------------
-
-    def section(self, number: str, title: str) -> None:
-        self.ln(3)
-        self.set_font(self.body_font, "B", 10)
-        self.set_text_color(*INK)
-        self.cell(0, 6, self.text_of(f"{number}. {title}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_draw_color(*RULE)
-        self.line(MARGIN, self.get_y(), PAGE_W - MARGIN, self.get_y())
-        self.ln(2)
-
-    def para(self, text: str, *, size: float = 8.5, muted: bool = False) -> None:
-        self.set_font(self.body_font, "", size)
-        self.set_text_color(*(MUTED if muted else INK))
-        self.multi_cell(0, 4.4, self.text_of(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_text_color(*INK)
-
-    def field(self, label: str, value: str) -> None:
-        self.set_font(self.body_font, "", 8)
-        self.set_text_color(*MUTED)
-        self.cell(52, 4.8, self.text_of(label))
-        self.set_font(self.mono_font, "", 8)
-        self.set_text_color(*INK)
-        self.multi_cell(0, 4.8, self.text_of(value), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    def callout(self, text: str, color: tuple[int, int, int] = MUTED) -> None:
-        """Recuadro de AUSENCIA: por qué un dato no está, en vez de un hueco mudo."""
-        self.ln(1)
-        y = self.get_y()
-        self.set_draw_color(*color)
-        self.set_line_width(0.4)
-        self.line(MARGIN, y, MARGIN, y + 8)
-        self.set_line_width(0.2)
-        self.set_x(MARGIN + 3)
-        self.set_font(self.body_font, "", 7.5)
-        self.set_text_color(*color)
-        self.multi_cell(CONTENT_W - 3, 4, self.text_of(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        self.set_text_color(*INK)
-        self.ln(1)
+    tipo = "DICTAMEN"
 
     def verdict_banner(self, status: str, label: str, signed: bool) -> None:
         color = VERDICT_COLORS.get(status, MUTED)

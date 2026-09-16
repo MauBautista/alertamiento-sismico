@@ -480,6 +480,7 @@ def _spectrum(trace, rate: float):
 
     # Se descarta la primera muestra (DC residual) para el pico: no es una frecuencia.
     peak_hz = float(freqs[1:][int(np.argmax(amps[1:]))]) if amps.size > 1 else None
-    # Se diezma a ~400 puntos: más no se distingue en 180 mm de papel.
+    # Se diezma a ~400 puntos: más no se distingue en la banda útil del papel
+    # (185.9 mm en Carta desde `T-7.21`; eran 180 en A4).
     step = max(1, freqs.size // 400)
     return (freqs[::step].tolist(), amps[::step].tolist()), peak_hz

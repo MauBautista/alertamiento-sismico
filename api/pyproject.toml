@@ -39,12 +39,23 @@ dev = [
     "ruff>=0.7",
     "moto[s3,sqs,ses]>=5.2.2",
     "pytest-asyncio>=1.4.0",
+    # [T-7.21] Leer el PDF que producimos, para comprobar que el membrete sale
+    # como TEXTO extraíble y no sólo dibujado. La ficha decía `pdftotext`, que es
+    # poppler: sería la PRIMERA dependencia de un binario del sistema en la suite
+    # —CI hace `pip install -e ".[dev]"` y nada más—. `pypdf` es un paquete
+    # Python, lo pide ya el Goal de F4 para contar imágenes, y resuelve el
+    # `/ToUnicode` de las DejaVu embebidas, que es justo lo que un lector
+    # escrito a mano tendría que reimplementar. Sólo en dev: no entra en la imagen.
+    "pypdf>=5.1",
 ]
 
 [tool.setuptools.package-data]
 # [T-2.41] Tipografía Unicode del PDF. Las fuentes core de fpdf2 son latin-1 y
 # degradaban Δ, ≥ y ≈ a interrogantes en un documento de compliance.
-"takab_api.dictamen" = ["fonts/*.ttf", "fonts/LICENSE", "marca/*.png"]
+# [T-7.21] El arte y la tipografía se mudaron con el chasis a `documentos/`:
+# los usa el membrete, que ahora comparten el dictamen, el reporte de simulacro
+# y el informe del evento.
+"takab_api.documentos" = ["fonts/*.ttf", "fonts/LICENSE", "marca/*.png"]
 # [T-2.77] Los artefactos de plantilla de WhatsApp. Sin esta línea el wheel sale
 # sin ellos y el canal se declara simulado en producción "sin motivo": el catálogo
 # estaría vacío porque el directorio no viajó, no porque Meta no haya aprobado.
@@ -72,4 +83,5 @@ markers = [
 dev = [
     "moto[s3,sqs,ses]>=5.2.2",
     "pytest-asyncio>=1.4.0",
+    "pypdf>=5.1",
 ]

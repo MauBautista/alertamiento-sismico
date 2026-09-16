@@ -37,7 +37,6 @@ from collections.abc import Callable
 import pytest
 
 from takab_api.dictamen import model as modelo_mod
-from takab_api.dictamen.layout import TakabPDF
 from takab_api.dictamen.model import (
     CCTV_PARCIALMENTE_PURGADO,
     CCTV_PENDIENTE,
@@ -49,6 +48,7 @@ from takab_api.dictamen.model import (
     ReportModel,
 )
 from takab_api.dictamen.pdf import render
+from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import _OPENED, model
 
 _VARIANTES = ("technical", "executive")
@@ -61,17 +61,19 @@ def _texto_dibujado(m: ReportModel, variante: str) -> str:
     Lo que demuestra es que la llamada que imprime el aviso SE HIZO con ese texto.
     """
     visto: list[str] = []
-    original = TakabPDF.text_of
+    # ⚠️ [T-7.21] La BASE, no la subclase: ver la nota en
+    # `tests/documentos/test_membrete_compartido.py`.
+    original = MembretePDF.text_of
 
-    def espia(self: TakabPDF, value: str) -> str:
+    def espia(self: MembretePDF, value: str) -> str:
         visto.append(value)
         return original(self, value)
 
-    TakabPDF.text_of = espia  # type: ignore[method-assign]
+    MembretePDF.text_of = espia  # type: ignore[method-assign]
     try:
         render(m, variante)
     finally:
-        TakabPDF.text_of = original  # type: ignore[method-assign]
+        MembretePDF.text_of = original  # type: ignore[method-assign]
     return "\n".join(visto)
 
 

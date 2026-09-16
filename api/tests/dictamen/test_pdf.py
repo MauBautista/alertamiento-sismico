@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import pathlib
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -29,6 +30,7 @@ from takab_api.dictamen.model import (
     num,
 )
 from takab_api.dictamen.pdf import render
+from takab_api.documentos import membrete
 
 _OPENED = datetime(2026, 8, 3, 10, 0, 0, tzinfo=UTC)
 
@@ -186,7 +188,7 @@ def test_las_fuentes_unicode_viajan_con_el_paquete() -> None:
 
 def test_sin_la_fuente_degrada_pero_NO_falla(monkeypatch: pytest.MonkeyPatch) -> None:
     """Una exportación de evidencia jamás puede caerse por tipografía."""
-    monkeypatch.setattr(layout, "_FONTS", layout.Path("/no/existe"))
+    monkeypatch.setattr(membrete, "_FONTS", pathlib.Path("/no/existe"))
     pdf = layout.TakabPDF("TKB-TEST", "sub")
     assert pdf.degraded
     # Y lo declara en el pie: perder caracteres en silencio sería peor que degradar.
@@ -202,14 +204,14 @@ def test_el_logotipo_viaja_con_el_paquete() -> None:
     documento, no la de la marca. El logotipo va en su variante POSITIVA porque el
     papel es blanco: la negativa, que es la de toda la interfaz, desaparecería."""
     pdf = layout.TakabPDF("TKB-TEST", "sub")
-    assert not pdf.sin_marca, "el logotipo no se empaquetó con `takab_api.dictamen`"
-    assert layout.LOGOTIPO.exists()
+    assert not pdf.sin_marca, "el logotipo no se empaquetó con `takab_api.documentos`"
+    assert membrete.LOGOTIPO.exists()
 
 
 def test_sin_el_logotipo_el_dictamen_SIGUE_saliendo(monkeypatch: pytest.MonkeyPatch) -> None:
     """Misma regla que la tipografía: una exportación de evidencia no puede caerse por
     un adorno. Sin el fichero, la cabecera vuelve a la palabra compuesta."""
-    monkeypatch.setattr(layout, "LOGOTIPO", layout.Path("/no/existe.png"))
+    monkeypatch.setattr(membrete, "LOGOTIPO", pathlib.Path("/no/existe.png"))
     pdf = layout.TakabPDF("TKB-TEST", "sub")
     assert pdf.sin_marca
     assert render(model()).startswith(b"%PDF")
@@ -223,7 +225,7 @@ def test_el_logotipo_ES_el_maestro_positivo_de_shared_brand() -> None:
         pathlib.Path(__file__).resolve().parents[3] / "shared" / "brand" / "generar.py"
     ).read_text(encoding="utf-8")
     assert "logotipo-positivo.png" in generador
-    assert "dictamen/marca" in generador
+    assert "documentos/marca" in generador
 
 
 def test_el_papel_del_dictamen_pide_el_POSITIVO_y_no_el_negativo() -> None:
@@ -233,7 +235,7 @@ def test_el_papel_del_dictamen_pide_el_POSITIVO_y_no_el_negativo() -> None:
     no leyendo su nombre de fichero."""
     from PIL import Image
 
-    im = Image.open(layout.LOGOTIPO).convert("RGBA")
+    im = Image.open(membrete.LOGOTIPO).convert("RGBA")
     px = im.load()
     ancho, alto = im.size
     opacos = [
@@ -338,26 +340,59 @@ def test_la_huella_de_custodia_va_ENTERA() -> None:
     assert huella_de_custodia(None) == SIN_HASH, "un objeto sin hash tiene que decirlo"
 
 
+def modulos_que_dibujan_documento() -> list[Path]:
+    """Los módulos que PINTAN un papel, derivados en vez de enumerados.
+
+    [T-7.21] Antes esto era una ruta clavada a `dictamen/pdf.py`. Desde que el
+    membrete imprime la huella en el pie de TODAS las páginas, el hash se dibuja
+    también desde `documentos/`, y un barrido que sólo mire el dictamen daría
+    verde sobre un recorte hecho en el chasis compartido. Se derivan: quien añada
+    un documento nuevo queda cubierto sin acordarse de esta lista.
+    """
+    src = Path(__file__).resolve().parents[2] / "src" / "takab_api"
+    return sorted(
+        [src / "dictamen" / "pdf.py", src / "drill_report.py", *(src / "documentos").glob("*.py")]
+    )
+
+
 def test_el_render_no_RECORTA_ninguna_huella() -> None:
-    """El barrido que ata la función a sus dos sitios de uso.
+    """El barrido que ata la función a sus sitios de uso.
 
     Sin esto, alguien puede volver a poner `[:32]` en la línea del render y la
     función seguiría pasando sus tests sola. Se busca la forma exacta del defecto
-    —un corte aplicado a algo que se llama `sha256` o `huella`— en el módulo que
-    dibuja el documento.
+    —un corte aplicado a algo que se llama `sha256` o `huella`— en TODOS los
+    módulos que dibujan documento, no sólo en el del dictamen.
     """
     import re
-    from pathlib import Path
 
-    fuente = (Path(__file__).resolve().parents[2] / "src/takab_api/dictamen/pdf.py").read_text(
-        encoding="utf-8"
-    )
-    cortes = re.findall(r"^\s*[^#\n]*(?:sha256|huella)[^\n]*\[\s*:\s*\d+\s*\]", fuente, re.M)
+    cortes: list[str] = []
+    for ruta in modulos_que_dibujan_documento():
+        fuente = ruta.read_text(encoding="utf-8")
+        for linea in re.findall(
+            r"^\s*[^#\n]*(?:sha256|huella)[^\n]*\[\s*:\s*\d+\s*\]", fuente, re.M
+        ):
+            cortes.append(f"{ruta.name}: {linea.strip()}")
 
     assert not cortes, (
-        "el dictamen vuelve a imprimir un hash recortado mientras su portada "
-        f"instruye verificarlo con sha256sum: {cortes}"
+        "se vuelve a imprimir un hash recortado mientras la portada instruye "
+        f"verificarlo con sha256sum: {cortes}"
     )
+
+
+def test_el_barrido_de_huellas_MIRA_donde_debe() -> None:
+    """Guarda de no-vacuidad del barrido derivado.
+
+    Un `glob` que deje de casar —porque alguien renombre la carpeta— haría que
+    todo lo de arriba pasara sobre una lista vacía.
+    """
+    rutas = modulos_que_dibujan_documento()
+    nombres = {r.name for r in rutas}
+    assert {"pdf.py", "drill_report.py", "membrete.py"} <= nombres, sorted(nombres)
+    assert all(r.exists() for r in rutas)
+    # Y el membrete tiene que estar imprimiendo una huella, o el barrido sobre él
+    # no mide nada.
+    membrete = next(r for r in rutas if r.name == "membrete.py")
+    assert "SHA-256 DEL CONTENIDO" in membrete.read_text(encoding="utf-8")
 
 
 def test_las_dos_secciones_de_custodia_usan_la_MISMA_funcion() -> None:
@@ -421,17 +456,19 @@ def test_las_dos_variantes_NO_comparten_huella() -> None:
 def test_el_papel_YA_NO_promete_huellas_iguales() -> None:
     """La frase vivía solo en el ejecutivo, así que se comprueba donde vivía."""
     visto: list[str] = []
-    original = layout.TakabPDF.text_of
+    # ⚠️ [T-7.21] La BASE, no la subclase: reasignar sobre `TakabPDF` le deja
+    # un `text_of` propio que sombrea al membrete para siempre.
+    original = membrete.MembretePDF.text_of
 
     def espia(self, value: str) -> str:
         visto.append(value)
         return original(self, value)
 
-    layout.TakabPDF.text_of = espia  # type: ignore[method-assign]
+    membrete.MembretePDF.text_of = espia  # type: ignore[method-assign]
     try:
         render(model(), "executive")
     finally:
-        layout.TakabPDF.text_of = original  # type: ignore[method-assign]
+        membrete.MembretePDF.text_of = original  # type: ignore[method-assign]
     texto = "\n".join(visto)
     assert len(texto) > 1000, "el espía no recogió el documento"
     assert "misma que imprime la variante técnica" not in texto
