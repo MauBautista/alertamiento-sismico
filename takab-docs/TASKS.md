@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **417** · `[x]` **360** · `[~]` **10** · `[ ]` **47**
+**Conteo de tareas:** total **418** · `[x]` **360** · `[~]` **10** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14950,6 +14950,43 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     portada imprime `content_sha256()`.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
+
+### [ ] T-7.40 · **Un gabinete subió evidencia de un evento que la nube nunca ingirió** — `SOFTWARE`
+- **Componente:** edge · api · **Depende de:** — · **Prioridad:** F3 · alta
+- **Objetivo:** saber por qué se perdió el evento `11ed80bb-2c71-401d-b97b-687cf7a482ad` entre el
+  gabinete y la nube, y si puede volver a pasar. Roza la **regla de oro 3**: nada se pierde al
+  reconectar.
+- **Cómo se encontró.** No lo dijo una prueba: lo dijo la DLQ. Tras desplegar `9a01278` quedaba un
+  mensaje en `takab-dev-q-backfill-dlq` que mantenía `takab-dev-dlq-backfill` en ALARM. Se
+  reinyectó a la cola principal para que lo viera el código nuevo y dio el error FRESCO que no
+  teníamos: `RETRY: incidente 11ed80bb2c71401db97b687cf7a482ad aún no ingerido`
+  (`backfill/objects.py:308`).
+- **Los hechos medidos** (2026-09-15, nube dev):
+  - El gabinete subió `evidence/d0000000-…-0001/11ed80bb…/bb86faaa….mseed` (192 512 B) a
+    `takab-dev-evidence-634882473845` el **2026-09-15T00:16:20Z**, desde `189.170.205.3`.
+  - **No existe ningún incidente con ese `event_uuid`.** Los tres vivos llevan `ecafbf80…`,
+    `7f64e6eb…` y `31746424…`.
+  - El incidente `06deb24d` abrió a las **00:16:03Z**, 16 s ANTES de esa subida, y ya tiene su
+    propia evidencia miniSEED con otro sha (`8c413f45…`).
+  - ⚠️ **No fue la purga de `T-7.10`**: corrió el 2026-09-14T23:29:34Z, 47 minutos antes. Fue la
+    primera sospecha y es falsa; queda escrita para que nadie la repita.
+- **Criterios de aceptación:**
+  - [ ] Recuperar el `journal` del gabinete del 2026-09-15 entre 00:14 y 00:19 Z **antes de que
+    rote**, y decir qué publicó a `takab/events` en esa ventana. ⚠️ El 2026-09-16T23:0xZ el Pi no
+    era alcanzable desde el portátil (`No route to host` a `192.168.1.86`, y `raspberry-cerebro.local`
+    sin resolver) aunque el censo de conformidad sí lo había alcanzado 15 min antes: **comprobar
+    primero si el gabinete está mudo o sólo fuera del alcance de esta red** (la nube ve sus
+    latidos o no los ve; eso lo decide).
+  - [ ] Decir cuál de las tres cosas pasó, con evidencia: (a) el `LocalEvent` nunca se publicó;
+    (b) se publicó y la nube lo rechazó —mirar la DLQ de `takab-dev-q-events` y el `audit_log`—;
+    o (c) se publicó con un `event_uuid` distinto del que el gabinete usó para nombrar la
+    evidencia, que sería una divergencia DENTRO del gabinete.
+  - [ ] Si se puede reproducir, una prueba de costura que lo fije. Si no, dejar escrito por qué
+    no se puede y qué señal lo delataría la próxima vez.
+  - [ ] **El `.mseed` NO se borra** (regla de oro 11). Lo que se purgó fue la notificación de S3
+    en la DLQ, no la evidencia: el objeto sigue en el bucket y es la prueba de que esto ocurrió.
+- **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
 
 
 ## RUTA CRÍTICA
