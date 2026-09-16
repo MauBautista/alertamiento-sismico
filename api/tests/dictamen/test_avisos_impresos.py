@@ -45,6 +45,7 @@ from takab_api.dictamen.model import (
     CCTV_SIN_CLIP,
     ActionRow,
     CctvBlock,
+    DanoFila,
     EvidenceRow,
     ReportModel,
 )
@@ -93,6 +94,27 @@ def _avisos_declarados() -> dict[str, str]:
         for nombre, valor in vars(modelo_mod).items()
         if nombre.isupper() and isinstance(valor, str) and len(valor) >= 40 and " " in valor
     }
+
+
+def _dano(**over) -> DanoFila:
+    """El reporte de daños MÍNIMO, al que cada escenario le cambia una cosa.
+
+    Sin fotografías a propósito: los avisos que aquí se comprueban son los del
+    reporte, no los de la imagen, y embeber JPEG en cada escenario del censo
+    multiplicaría el coste de la suite sin comprobar nada más.
+    """
+    base = {
+        "report_id": "d-1",
+        "rol": "brigadista",
+        "zona": "Nivel 3",
+        "categorias": [{"key": "grieta", "severity": "alta"}],
+        "personas_en_riesgo": False,
+        "notas": None,
+        "ts": _OPENED,
+        "fotos": [],
+        "fotos_omitidas": 0,
+    }
+    return DanoFila(**{**base, **over})
 
 
 #: Para cada aviso: cómo se fabrica el documento que DEBE llevarlo, y en qué
@@ -207,6 +229,22 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         lambda: model(actions=[ActionRow(_OPENED, "verbo_de_otra_epoca", "system:edge")]),
         frozenset({"technical"}),
     ),
+    # [T-7.22] Los daños del brigadista. Sin reportes NO se calla: la ausencia de
+    # una inspección no es la ausencia de daños, y el hueco se leería como lo
+    # segundo.
+    "SIN_DANOS": (lambda: model(danos=[]), frozenset({"technical"})),
+    # Los cuatro que dependen de CÓMO viene el reporte. Se fabrican con `_dano`,
+    # que es el reporte mínimo al que se le cambia una cosa cada vez.
+    "PERSONAS_EN_RIESGO": (
+        lambda: model(danos=[_dano(personas_en_riesgo=True)]),
+        frozenset({"technical"}),
+    ),
+    "ROL_NO_RESUELTO": (lambda: model(danos=[_dano(rol=None)]), frozenset({"technical"})),
+    "SIN_CATEGORIAS": (lambda: model(danos=[_dano(categorias=[])]), frozenset({"technical"})),
+    "FOTOS_OMITIDAS": (
+        lambda: model(danos=[_dano(fotos_omitidas=3)]),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -311,11 +349,11 @@ def test_el_espia_NO_esta_ciego() -> None:
     `assert ... not in ...` pasarían en verde. Los números van escritos.
     """
     # 13 → 15 en `T-7.38·F`: los dos estados de la poda del vídeo.
-    # 19 → 23 en `T-7.22`: leyenda de reproducción, ausencia del mapa de red,
-    # bitácora vacía y recuento de verbos sin rótulo.
-    assert len(ESCENARIOS) == 23, "cambió el número de avisos declarados"
+    # 19 → 28 en `T-7.22`: leyenda de reproducción, ausencia del mapa de red,
+    # bitácora vacía, verbos sin rótulo y los cinco del reporte de daños.
+    assert len(ESCENARIOS) == 28, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 22, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 27, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

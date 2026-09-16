@@ -16,13 +16,23 @@ determinista y versionado; este módulo solo lo pinta.
 
 from __future__ import annotations
 
+import io
+
 from fpdf.enums import XPos, YPos
 
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
 from takab_api.dictamen.bitacora import rotulo as rotulo_de_accion
 from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
-from takab_api.dictamen.layout import CONTENT_W, INK, MARGIN, MUTED, RULE, TakabPDF
+from takab_api.dictamen.layout import (
+    CONTENT_W,
+    INK,
+    MARGIN,
+    MUTED,
+    RULE,
+    VERDICT_COLORS,
+    TakabPDF,
+)
 from takab_api.dictamen.model import (
     ABSENT,
     CENTROID_NOTE,
@@ -34,15 +44,20 @@ from takab_api.dictamen.model import (
     EPICENTRO_REUBICADO_AQUI,
     EPICENTRO_REUBICADO_EN_LA_RED,
     FELT_LABELS,
+    FOTOS_OMITIDAS,
     NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
     NO_GEOMETRY,
     NO_MMI,
     NO_SPECTRUM,
     ONDA_NO_LEIDA,
+    PERSONAS_EN_RIESGO,
     REPRODUCCION_NOTE,
+    ROL_NO_RESUELTO,
+    SIN_CATEGORIAS,
     SIN_CORRELACION_EN_CATALOGO,
     SIN_CRONOLOGIA,
+    SIN_DANOS,
     SIN_GEOMETRIA_DE_RED,
     SKETCH_NOTE,
     STATUS_ACTIONS,
@@ -98,6 +113,7 @@ def _render_technical(m: ReportModel) -> bytes:
     _chain_section(pdf, m)
     _custody_section(pdf, m)
     _cronologia_section(pdf, m)
+    _danos_section(pdf, m)
     _cctv_section(pdf, m)
     _narrative_section(pdf, m)
     _compliance_section(pdf, m)
@@ -812,6 +828,136 @@ def _cronologia_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.callout(f"{CRONOLOGIA_SIN_ROTULO}{sin_rotulo} de {len(m.actions)}.")
 
 
+#: Ancho de cada fotografía impresa. Dos por fila en el ancho útil, con aire
+#: entre ellas. Más pequeñas no dejan ver una grieta; más grandes obligan a una
+#: página por foto y el documento deja de poder hojearse.
+_FOTO_W = 88.0
+_FOTO_GAP = (CONTENT_W - 2 * _FOTO_W) / 1.0
+#: Alto que se RESERVA por fila de fotos: el máximo posible (una foto de retrato
+#: a 1024×1024 sale cuadrada) más el pie de dos líneas.
+_FOTO_FILA_H = _FOTO_W + 10.0
+
+
+def _danos_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-7.22] Lo que vio quien entró al edificio, con sus fotografías.
+
+    Es la mitad del valor del documento que las cifras no dan: una grieta, un
+    plafón caído, una ruta bloqueada (`D-32`). Hasta ahora `damage_reports` no la
+    leía nadie del lado del papel, y las fotografías aparecían sólo como una línea
+    de `PHOTO <sha256>` en la cadena de custodia — el documento afirmaba que
+    existían y no enseñaba ninguna.
+
+    **Por ROL y nunca por nombre**, que es lo que fija `D-32`. El rol es lo único
+    que este documento necesita para que la observación tenga procedencia.
+
+    **Cada foto lleva TRES huellas** y la diferencia importa: la que DECLARÓ el
+    dispositivo (nunca verificada en servidor), la que se MIDIÓ al leer el blob, y
+    la de lo IMPRESO —que es una derivada redimensionada y sin EXIF, no el
+    original—. Imprimir sólo la del original junto a píxeles que no son ese
+    original convertiría «verifique el sha256» en falso, que es el defecto que
+    `T-5.26` ya cazó una vez con el hash truncado.
+    """
+    pdf.section("13", "DAÑOS REPORTADOS EN CAMPO")
+    if not m.danos:
+        pdf.callout(SIN_DANOS)
+        return
+    for dano in m.danos:
+        pdf.reserva(24.0)
+        quien = dano.rol or ROL_NO_RESUELTO
+        donde = dano.zona or "zona no declarada"
+        pdf.field("REPORTE", f"{quien} · {donde} · {dano.ts:{TS_FMT}}")
+        if dano.personas_en_riesgo:
+            # Lo más importante que puede decir un reporte de campo, y no puede
+            # quedar como una casilla más de la tabla de categorías.
+            pdf.callout(PERSONAS_EN_RIESGO, color=VERDICT_COLORS.get("evacuate", MUTED))
+        if dano.categorias:
+            pdf.set_font(pdf.body_font, "", 7)
+            with pdf.table(col_widths=(60, 34, 92), text_align="LEFT") as table:
+                head = table.row()
+                for h in ("QUÉ", "SEVERIDAD", "NOTA"):
+                    head.cell(pdf.text_of(h))
+                for cat in dano.categorias:
+                    row = table.row()
+                    row.cell(pdf.text_of(str(cat.get("key", "—"))))
+                    row.cell(pdf.text_of(str(cat.get("severity", "—"))))
+                    row.cell(pdf.text_of(str(cat.get("note") or "")))
+        else:
+            pdf.para(SIN_CATEGORIAS, size=7.5, muted=True)
+        if dano.notas:
+            pdf.para(dano.notas, size=7.5)
+        _fotos_del_reporte(pdf, dano)
+        if dano.fotos_omitidas:
+            # El rótulo dice IMPRESAS, así que el número es el de las impresas.
+            # Escribí aquí el de las omitidas y el papel decía «Impresas: 2 de 5»
+            # con tres fotografías delante: un recuento que se contradice con lo
+            # que el lector tiene a la vista es peor que no ponerlo.
+            pdf.callout(
+                f"{FOTOS_OMITIDAS}{len(dano.fotos)} de {len(dano.fotos) + dano.fotos_omitidas}."
+            )
+        pdf.ln(2)
+
+
+def _fotos_del_reporte(pdf: TakabPDF, dano) -> None:  # noqa: ANN001 - DanoFila
+    """Las fotografías, dos por fila, o la razón de que no estén.
+
+    ⚠️ `pdf.image()` NO dispara el salto de página automático de fpdf2, igual que
+    `rect` y `line`: sin `reserva()` la fotografía se pinta encima del filete del
+    pie, sobre el sha256 y la paginación. Lo vigila `test_NINGUNA_caja_pisa_el_PIE`,
+    que desde `T-7.22` sabe leer el operador de imagen.
+    """
+    impresas = [f for f in dano.fotos if f.jpeg is not None]
+    ausentes = [f for f in dano.fotos if f.jpeg is None]
+
+    for i in range(0, len(impresas), 2):
+        pdf.reserva(_FOTO_FILA_H)
+        fila = impresas[i : i + 2]
+        top = pdf.get_y()
+        alto_fila = 0.0
+        for j, foto in enumerate(fila):
+            x = MARGIN + j * (_FOTO_W + _FOTO_GAP)
+            alto = _FOTO_W * (foto.alto / foto.ancho) if foto.ancho and foto.alto else _FOTO_W
+            pdf.image(io.BytesIO(foto.jpeg), x=x, y=top, w=_FOTO_W)
+            alto_fila = max(alto_fila, alto)
+        # El pie de cada foto va DEBAJO de la fila entera, no al lado: dos fotos
+        # de alto distinto dejarían los pies desalineados y sin saber cuál es cuál.
+        pdf.set_y(top + alto_fila + 1)
+        for j, foto in enumerate(fila):
+            pdf.set_x(MARGIN + j * (_FOTO_W + _FOTO_GAP))
+            pdf.set_font(pdf.mono_font, "", 5.2)
+            pdf.set_text_color(*MUTED)
+            pdf.multi_cell(
+                _FOTO_W,
+                2.4,
+                pdf.text_of(_pie_de_foto(foto)),
+                new_x=XPos.LMARGIN,
+                new_y=YPos.NEXT if j else YPos.TOP,
+            )
+        pdf.set_text_color(*INK)
+        pdf.ln(1)
+
+    for foto in ausentes:
+        pdf.callout(f"FOTOGRAFÍA {foto.evidence_id[:8]} NO IMPRESA · {foto.motivo}")
+
+
+def _pie_de_foto(foto) -> str:  # noqa: ANN001 - FotoFila
+    """Las tres huellas y el veredicto sobre si la declarada casa con la medida.
+
+    El desajuste es lo más importante que esta sección puede decir de una
+    fotografía de evidencia: significa que el archivo que hay en el almacén no es
+    el que el dispositivo dijo haber subido.
+    """
+    partes = [f"{foto.ancho}×{foto.alto} px · DERIVADA SIN METADATOS"]
+    partes.append(f"DECLARADA {foto.sha256_declarado or 'SIN DATO'}")
+    if foto.sha256_medido is None:
+        partes.append("MEDIDA: no se pudo leer el archivo")
+    elif foto.sha256_declarado and foto.sha256_medido != foto.sha256_declarado:
+        partes.append(f"⚠ MEDIDA {foto.sha256_medido} · NO COINCIDE CON LA DECLARADA")
+    else:
+        partes.append("MEDIDA: coincide con la declarada")
+    partes.append(f"IMPRESA {foto.sha256_impreso}")
+    return "\n".join(partes)
+
+
 def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     """[T-3.12.c] Analítica de evacuación y custodia del vídeo.
 
@@ -823,7 +969,7 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     inmueble no tiene CCTV o si el generador se lo saltó, que es exactamente la ambigüedad
     que `NO_CCTV` está escrito para cerrar.
     """
-    pdf.section("13", "EVACUACIÓN OBSERVADA (CCTV)")
+    pdf.section("14", "EVACUACIÓN OBSERVADA (CCTV)")
     bloque = m.cctv
 
     if bloque.t90_s is None:
@@ -867,7 +1013,7 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
     """Prosa opcional (T-2.42). Rodea al veredicto; nunca lo produce."""
     if not m.narrative:
         return
-    pdf.section("14", "ANÁLISIS")
+    pdf.section("15", "ANÁLISIS")
     for title, body in m.narrative:
         pdf.set_font(pdf.body_font, "B", 8)
         pdf.cell(0, 5, pdf.text_of(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -888,7 +1034,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
     apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
     que no haga falta llegar a la nota para saber de quién son.
     """
-    pdf.section("15", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    pdf.section("16", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
     block = compliance_block(m.compliance)
     for label, value in block.rows:
         pdf.field(label, value)
@@ -899,7 +1045,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("16", "FIRMA Y DESLINDE")
+    pdf.section("17", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)

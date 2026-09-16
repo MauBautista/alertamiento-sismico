@@ -33,6 +33,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import TYPE_CHECKING
 
+from takab_api.dictamen.bitacora import ROTULOS
 from takab_api.dictamen.model import (
     CCTV_PARCIALMENTE_PURGADO,
     CCTV_PENDIENTE,
@@ -146,6 +147,36 @@ def absences_of(m: ReportModel) -> tuple[str, ...]:
         gaps.append(SIN_FUNDAMENTO_REGISTRADO)
     if (m.felt_thresholds or {}).get("origen") != ORIGEN_INMUEBLE:
         gaps.append(SIN_UMBRALES_DEL_INMUEBLE)
+    # [T-7.22] Y los cinco que trae el informe del evento. Misma razón que el
+    # bloque de arriba: el documento CIERRA sobre esta lista, así que un hueco
+    # declarado en su sección y ausente aquí deja al papel diciendo «no se
+    # detectaron datos ausentes» unas páginas después de haberlo declarado. Ya
+    # ocurrió una vez (`T-7.38·M`); esta lista se enumera a mano y es el precio.
+    if m.estaciones and not any(e.lat is not None and e.lon is not None for e in m.estaciones):
+        gaps.append(
+            "Ninguna estación de la red tiene coordenadas registradas: no se pudo "
+            "situar el mapa de la red."
+        )
+    if not m.actions:
+        gaps.append("No hay acciones registradas en la bitácora de este incidente.")
+    sin_rotulo = [a.kind for a in m.actions if a.kind not in ROTULOS]
+    if sin_rotulo:
+        gaps.append(
+            f"{len(sin_rotulo)} acciones de la cronología se imprimen con su "
+            "identificador técnico: no hay rótulo declarado para ellas."
+        )
+    if not m.danos:
+        gaps.append(
+            "No hay reportes de daños desde el táctico. Eso no dice que el inmueble "
+            "esté sin daños: dice que nadie registró una inspección."
+        )
+    no_impresas = sum(1 for d in m.danos for f in d.fotos if f.jpeg is None)
+    omitidas = sum(d.fotos_omitidas for d in m.danos)
+    if no_impresas or omitidas:
+        gaps.append(
+            f"{no_impresas + omitidas} fotografías de los reportes de daños no se "
+            "imprimen en este documento; quedan en el expediente de evidencia."
+        )
     return tuple(gaps)
 
 

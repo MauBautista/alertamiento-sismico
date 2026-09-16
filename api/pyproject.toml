@@ -28,6 +28,13 @@ dependencies = [
     # webhook. Estaba solo en el extra `dev`, así que el worker `notify` moría al
     # arrancar en cualquier despliegue real (descubierto ejecutando la imagen, T-1.37).
     "httpx>=0.27",
+    # [T-7.22] RUNTIME. Llega transitiva por `fpdf2` (`Pillow!=9.2.*,>=8.3.2`), así
+    # que hoy ya está en la imagen — pero `documentos/fotos.py` la importa a nivel
+    # de módulo para redimensionar las fotos del brigadista y para QUITARLES el
+    # EXIF, y una dependencia que sólo existe porque otra la arrastra desaparece
+    # el día que aquélla cambie de motor. Es el mismo razonamiento de `httpx` dos
+    # líneas arriba, que costó un despliegue.
+    "pillow>=11",
 ]
 
 [project.optional-dependencies]

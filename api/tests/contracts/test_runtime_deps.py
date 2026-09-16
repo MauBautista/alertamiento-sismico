@@ -27,6 +27,11 @@ _SRC = _API_ROOT / "src" / "takab_api"
 # de dejarla implícita.
 _MODULE_TO_DIST: dict[str, str] = {
     "anyio": "fastapi",  # transitiva de starlette (to_thread en routers/commands)
+    # [T-7.22] El módulo se llama `PIL` y la distribución `pillow`, que es
+    # justamente por lo que este mapa existe. `documentos/fotos.py` la importa a
+    # nivel de módulo para redimensionar las fotos del brigadista y para quitarles
+    # el EXIF; llegaba transitiva por fpdf2 y ahora se declara directa.
+    "PIL": "pillow",
     "boto3": "boto3",
     "botocore": "boto3",  # transitiva de boto3
     # [T-2.09] verificación de firmas de intención (device_keys, EC/RSA); venía

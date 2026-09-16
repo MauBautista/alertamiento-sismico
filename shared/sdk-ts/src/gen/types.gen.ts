@@ -997,6 +997,8 @@ export type ErrorFrame = {
 export type EstacionOut = {
     counted?: boolean | null;
     dist_km?: number | null;
+    lat?: number | null;
+    lon?: number | null;
     peak_pga_g?: number | null;
     peak_ts?: string | null;
     sensor_code?: string | null;

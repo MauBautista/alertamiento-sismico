@@ -12,6 +12,7 @@ de una evidencia de compliance.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime
 
@@ -34,13 +35,16 @@ from takab_api.dictamen.model import (
     CctvBlock,
     CctvObjectRow,
     ChannelRow,
+    DanoFila,
     DictamenRow,
     EstacionFila,
     EvidenceRow,
+    FotoFila,
     ReportModel,
     VoteRow,
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
+from takab_api.documentos import fotos as fotos_mod
 from takab_api.estaciones import build_estaciones
 from takab_api.felt import umbral_congelado
 from takab_api.forensics import build_forensics, umbral_de_comparacion
@@ -85,8 +89,30 @@ _ACTIONS = text(
 )
 
 _EVIDENCE = text(
-    "SELECT kind, sha256, created_at, s3_key FROM evidence_objects "
+    # [T-7.22] `evidence_id` para poder resolver el `uuid[]` de
+    # `damage_reports.evidence_ids` contra ESTAS filas, en Python. La alternativa
+    # —una segunda consulta a `evidence_objects`— daría dos lecturas
+    # independientes de la misma tabla que pueden acabar diciendo cosas distintas
+    # en dos páginas del mismo papel.
+    "SELECT evidence_id, kind, sha256, created_at, s3_key FROM evidence_objects "
     "WHERE incident_id = CAST(:id AS uuid) ORDER BY created_at ASC"
+)
+
+_DANOS = text(
+    # El ROL, nunca el nombre (`D-32`). `user_zone_assignments` lo resuelve en la
+    # misma consulta: llamar a Cognito desde un render de evidencia sería meter
+    # una dependencia de red en la generación de un documento.
+    """
+    SELECT d.report_id, d.zone_id, d.categories, d.people_at_risk, d.notes,
+           d.evidence_ids, COALESCE(d.ts_device, d.created_at) AS ts,
+           z.name AS zona, a.role AS rol
+    FROM damage_reports d
+    LEFT JOIN zones z ON z.zone_id = d.zone_id
+    LEFT JOIN user_zone_assignments a
+           ON a.user_id = d.user_sub AND a.site_id = d.site_id
+    WHERE d.incident_id = CAST(:id AS uuid)
+    ORDER BY ts ASC
+    """
 )
 
 
@@ -242,6 +268,8 @@ async def build_model(
         evidence_rows, fetch_object, variant
     )
 
+    danos = await _danos(conn, incident_id, evidence_rows, fetch_object)
+
     estaciones = [
         EstacionFila(
             site_name=e.site_name,
@@ -341,6 +369,7 @@ async def build_model(
         # la consola. Sin `red` no se puede afirmar que NO lo sea, pero un
         # incidente sin evento enlazado tampoco tiene sismo histórico detrás.
         reproduccion=(red.reproduccion if red is not None else False),
+        danos=danos,
         verdict_basis=head_basis,
         # [T-2.82] Marco DECLARADO por el cliente. Sale de la MISMA función que lo
         # sirve a la pantalla de Triage (`queries.compliance.document_for_incident`):
@@ -412,6 +441,100 @@ async def _series(
     for r in rows:
         out.setdefault(r.channel, []).append((r.ts, r.pga_g, bool(r.clipping)))
     return out
+
+
+async def _danos(conn, incident_id: str, evidence_rows, fetch_object) -> list[DanoFila]:
+    """Los reportes de daños del brigadista, con sus fotografías preparadas.
+
+    [T-7.22] Best-effort y fail-soft, igual que el miniSEED: un fallo de S3
+    degrada la FOTO —que imprime su razón— y nunca tumba la exportación. Es el
+    criterio escrito del endpoint, y con N fotos la superficie de fallo es N
+    veces mayor que con un solo objeto.
+
+    Las claves de S3 salen de las filas de `evidence_objects` que el modelo YA
+    leyó: `damage_reports.evidence_ids` es un `uuid[]` sin clave foránea, así que
+    el cruce se hace aquí, contra lo que ya está en memoria. Abrir una segunda
+    consulta a la misma tabla daría dos lecturas que pueden discrepar en dos
+    páginas del mismo papel.
+
+    **La huella se MIDE además de leerse.** `evidence_objects.sha256` es lo que
+    declaró el dispositivo al registrar y el servidor nunca verificó —por eso
+    existe `POST /evidence/{id}/verify` como operación aparte—. Medirlo aquí es
+    gratis: los bytes hay que bajarlos de todos modos para dibujarlos. Y un
+    desajuste es lo más importante que esta sección puede decir de una fotografía
+    de evidencia.
+    """
+    filas = (await conn.execute(_DANOS, {"id": incident_id})).all()
+    if not filas:
+        return []
+
+    por_id = {str(r.evidence_id): r for r in evidence_rows}
+    presupuesto = fotos_mod.MAX_BYTES_FOTOS_DOCUMENTO
+    salida: list[DanoFila] = []
+
+    for fila in filas:
+        ids = [str(v) for v in (fila.evidence_ids or [])]
+        cabe = ids[: fotos_mod.MAX_FOTOS_POR_REPORTE]
+        fotos: list[FotoFila] = []
+        for evidence_id in cabe:
+            objeto = por_id.get(evidence_id)
+            if objeto is None:
+                # La fila de daños apunta a una evidencia que no está en el
+                # incidente. No se calla: el `uuid[]` no tiene clave foránea que
+                # lo impida, así que puede pasar de verdad.
+                fotos.append(
+                    FotoFila(
+                        evidence_id=evidence_id,
+                        sha256_declarado="",
+                        motivo=fotos_mod.SIN_BLOB,
+                    )
+                )
+                continue
+            if presupuesto <= 0 or fetch_object is None:
+                fotos.append(
+                    FotoFila(
+                        evidence_id=evidence_id,
+                        sha256_declarado=objeto.sha256 or "",
+                        motivo=fotos_mod.DOCUMENTO_LLENO
+                        if presupuesto <= 0
+                        else fotos_mod.SIN_BLOB,
+                    )
+                )
+                continue
+            try:
+                crudo = fetch_object(objeto.s3_key)
+            except Exception as exc:  # noqa: BLE001 - un fallo de S3 no tumba la evidencia
+                log.warning("dictamen: foto ilegible (%s): %s", objeto.s3_key, exc)
+                crudo = None
+            derivada = fotos_mod.preparar(crudo)
+            if derivada.ok and derivada.jpeg is not None:
+                presupuesto -= len(derivada.jpeg)
+            fotos.append(
+                FotoFila(
+                    evidence_id=evidence_id,
+                    sha256_declarado=objeto.sha256 or "",
+                    sha256_medido=hashlib.sha256(crudo).hexdigest() if crudo else None,
+                    sha256_impreso=derivada.sha256,
+                    ancho=derivada.ancho,
+                    alto=derivada.alto,
+                    motivo=derivada.motivo,
+                    jpeg=derivada.jpeg,
+                )
+            )
+        salida.append(
+            DanoFila(
+                report_id=str(fila.report_id),
+                rol=fila.rol,
+                zona=fila.zona,
+                categorias=list(fila.categories or []),
+                personas_en_riesgo=bool(fila.people_at_risk),
+                notas=fila.notes,
+                ts=fila.ts,
+                fotos=fotos,
+                fotos_omitidas=max(0, len(ids) - len(cabe)),
+            )
+        )
+    return salida
 
 
 async def _raw_waveform(evidence_rows, fetch_object, variant: str):
