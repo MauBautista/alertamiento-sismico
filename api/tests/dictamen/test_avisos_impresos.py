@@ -37,7 +37,6 @@ from collections.abc import Callable
 import pytest
 
 from takab_api.dictamen import model as modelo_mod
-from takab_api.documentos.membrete import MembretePDF
 from takab_api.dictamen.model import (
     CCTV_PARCIALMENTE_PURGADO,
     CCTV_PENDIENTE,
@@ -49,6 +48,7 @@ from takab_api.dictamen.model import (
     ReportModel,
 )
 from takab_api.dictamen.pdf import render
+from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import _OPENED, model
 
 _VARIANTES = ("technical", "executive")

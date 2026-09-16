@@ -15,9 +15,9 @@ mueve con cualquier cambio del modelo.
 
 from __future__ import annotations
 
-from takab_api.documentos.membrete import MembretePDF
 from takab_api.dictamen.model import TRIGGER_LABELS
 from takab_api.dictamen.pdf import render
+from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import model
 
 #: Abrió el receptor SASMEX; después la red corroboró y la ingesta pisó `trigger`.

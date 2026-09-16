@@ -20,9 +20,9 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from takab_api.documentos.membrete import MembretePDF
 from takab_api.dictamen.model import EstacionFila, ReportModel
 from takab_api.dictamen.pdf import render
+from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import model
 
 RED = [
