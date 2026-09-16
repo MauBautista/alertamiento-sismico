@@ -14972,19 +14972,25 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     primera sospecha y es falsa; queda escrita para que nadie la repita.
 - **Criterios de aceptación:**
   - [ ] Recuperar el `journal` del gabinete del 2026-09-15 entre 00:14 y 00:19 Z **antes de que
-    rote**, y decir qué publicó a `takab/events` en esa ventana. ⚠️ El 2026-09-16T23:0xZ el Pi no
-    era alcanzable desde el portátil (`No route to host` a `192.168.1.86`, y `raspberry-cerebro.local`
-    sin resolver) aunque el censo de conformidad sí lo había alcanzado 15 min antes: **comprobar
-    primero si el gabinete está mudo o sólo fuera del alcance de esta red** (la nube ve sus
-    latidos o no los ve; eso lo decide).
+    rote**, y decir qué publicó a `takab/events` en esa ventana. ⚠️ Hay que hacerlo **desde su
+    red**: el 2026-09-16 el Pi no era alcanzable desde el portátil (`No route to host` a
+    `192.168.1.86`, y `raspberry-cerebro.local` sin resolver).
+    **El gabinete NO está mudo, y está medido**: la nube recibió su latido hace 19 s en esa misma
+    comprobación (`gw-dev-0001`, `device_health`, 2026-09-16T15:16:01Z). Lo que falla es la ruta
+    desde este equipo, no el gabinete — la pregunta se contestó para que nadie la repita.
+    (`gateways.status` decía `offline` con un latido de 19 s: esa columna es el estado de alta de
+    la flota, no la vivacidad; la vivacidad la da el latido.)
   - [ ] Decir cuál de las tres cosas pasó, con evidencia: (a) el `LocalEvent` nunca se publicó;
     (b) se publicó y la nube lo rechazó —mirar la DLQ de `takab-dev-q-events` y el `audit_log`—;
     o (c) se publicó con un `event_uuid` distinto del que el gabinete usó para nombrar la
     evidencia, que sería una divergencia DENTRO del gabinete.
   - [ ] Si se puede reproducir, una prueba de costura que lo fije. Si no, dejar escrito por qué
     no se puede y qué señal lo delataría la próxima vez.
-  - [ ] **El `.mseed` NO se borra** (regla de oro 11). Lo que se purgó fue la notificación de S3
-    en la DLQ, no la evidencia: el objeto sigue en el bucket y es la prueba de que esto ocurrió.
+  - [x] **El `.mseed` NO se borra** (regla de oro 11). Lo purgado fue la notificación de S3 en la
+    DLQ, no la evidencia. Hecho el 2026-09-16: se borró **ese mensaje y sólo ése**, recibiéndolo y
+    comprobando su clave antes de borrarlo por su recibo — `purge-queue` habría vaciado la cola
+    entera, incluido lo que entrara después. Comprobado a continuación: las dos colas a 0 y el
+    objeto de 192 512 B intacto en `takab-dev-evidence-634882473845`.
 - **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
