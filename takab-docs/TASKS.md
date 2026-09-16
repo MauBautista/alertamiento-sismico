@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **418** · `[x]` **360** · `[~]` **10** · `[ ]` **48**
+**Conteo de tareas:** total **419** · `[x]` **360** · `[~]` **10** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14993,6 +14993,48 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     objeto de 192 512 B intacto en `takab-dev-evidence-634882473845`.
 - **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
+
+### [ ] T-7.41 · **Una alarma clavada en ALARM está MUDA, y nadie vigila a los vigilantes** — `SOFTWARE`
+- **Componente:** infra · api · **Depende de:** — · **Prioridad:** alta
+- **Objetivo:** que el sistema se entere de que uno de sus vigilantes dejó de vigilar. Hoy no hay
+  nada que lo note: ni un test, ni una alarma, ni el censo.
+- **El fallo, en una frase.** **SNS sólo notifica TRANSICIONES.** Una alarma que entra en ALARM y
+  se queda ahí no vuelve a transicionar, así que **el siguiente suceso real no avisa a nadie**. El
+  sistema se queda ciego exactamente donde creía tener un vigilante, y la ceguera no se ve: la
+  consola de CloudWatch la pinta en rojo, que es justo lo que uno espera de una alarma que ya
+  avisó.
+- **Dos casos MEDIDOS, no hipotéticos:**
+  - `takab-dev-iot-rule-errors`: **14 días** en ALARM — y encima **por estar sana**, por el
+    `treat_missing_data` equivocado. Catorce días sin poder avisar de un error de regla IoT, que es
+    por donde entra cada latido de cada gabinete.
+  - `takab-dev-dlq-backfill`: del 2026-09-15T00:16Z al 2026-09-16, clavada por **un** mensaje
+    huérfano (`T-7.40`). Se despejó al purgarlo, no porque nadie lo detectara.
+- **Lo que ya existe y NO basta:**
+  - `ALARM_CATALOG` (`api/src/takab_api/ops/muting.py:219`) clasifica cada alarma y obliga a
+    declararla — eso cubre que una alarma **exista**, no que **siga sirviendo**.
+  - `deploy/cloud/conformidad.sh` pregunta «¿hay alguna en ALARM **ahora**?». Dos huecos: se corre
+    **a mano**, y **no mira la EDAD del estado**. Una alarma de hace cinco minutos y otra de hace
+    catorce días se reportan igual, y son cosas distintas: la primera es una incidencia, la segunda
+    es un vigilante muerto.
+  - Nada en el repo lee `StateUpdatedTimestamp`. Verificado el 2026-09-16: cero coincidencias en
+    `.py`, `.sh` y `.tf`.
+- **Criterios de aceptación:**
+  - [ ] Medir la EDAD del estado, no sólo el estado: el censo reporta desde cuándo lleva cada
+    alarma en ALARM, y distingue «acaba de saltar» de «lleva días clavada».
+  - [ ] ⚠️ **El detector NO puede ser otra alarma del mismo tipo**, o hereda el defecto que viene a
+    arreglar: se quedaría clavada igual y nadie lo sabría. Hay que **invertir la polaridad** — algo
+    que tenga que HABLAR periódicamente, de modo que el **silencio** sea la señal. Este repo ya
+    aprendió esto para los gabinetes (`alarma-gateway-offline`: se vigila la AUSENCIA del latido
+    con `SampleCount` y `breaching`, no un LWT); aquí aplica igual.
+  - [ ] Umbral escrito con su razón. Una alarma legítimamente encendida unas horas mientras alguien
+    la atiende no es un vigilante muerto; días sí. El número se declara, no se adivina.
+  - [ ] Cubrir también el caso de `iot-rule-errors`: una alarma en ALARM **por estar sana** es un
+    `treat_missing_data` mal elegido. Si la edad delata a una de éstas, el arreglo es la
+    configuración, no silenciar el detector.
+  - [ ] Una prueba que falle si el detector deja de detectar. La pregunta «¿y quién vigila a éste?»
+    se contesta por construcción (silencio = alarma) o se contesta por escrito; no se deja abierta.
+- **Tests de censo que toca:** `test_muting` (si `ALARM_CATALOG` gana campo) · **Token nuevo:** no
+  · **Cambia algo que un test defiende hoy:** no.
 
 
 ## RUTA CRÍTICA
