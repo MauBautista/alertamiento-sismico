@@ -232,6 +232,17 @@ drift:
 	# por igualdad, celda a celda.
 	cd $(API_DIR) && uv run python scripts/export_rbac_matrix.py
 	git diff --exit-code shared/fixtures/rbac-matrix.json
+	# [T-7.21] La HOJA MEMBRETADA. La dibuja `MembretePDF`, así que cambia cuando
+	# cambia el membrete; si nadie la regenera, el papel comiteado deja de
+	# parecerse al que el sistema emite y nadie se entera — que es el defecto que
+	# este target entero existe para cazar.
+	#
+	# ⚠️ `git diff --exit-code` sobre una ruta SIN RASTREAR devuelve 0: comprobado.
+	# Sin la línea de `ls-files` de abajo, este gate pasaría en vacío el día que
+	# alguien borre los ficheros o los deje sin `git add`.
+	cd $(API_DIR) && uv run python ../shared/brand/generar.py >/dev/null
+	git ls-files --error-unmatch shared/brand/membrete/carta.pdf shared/brand/membrete/carta.svg >/dev/null
+	git diff --exit-code shared/brand/membrete
 
 # El bundler, en su propio target: `test` ya levanta Docker, corre terraform y 4
 # suites; meterle vite lo convertiría en otra cosa. Aquí vive el `vite build` que

@@ -35,7 +35,8 @@ VENTANA_MUESTRAS = 128
 #: Solape entre ventanas. La mitad es el compromiso habitual: sin solape, un
 #: transitorio que caiga en el borde se reparte entre dos columnas y se diluye.
 SOLAPE = 0.5
-#: Cuántas columnas caben en 180 mm de papel sin que se conviertan en ruido.
+#: Cuántas columnas caben en la banda útil del papel (185.9 mm en Carta desde
+#: `T-7.21`; eran 180 en A4) sin que se conviertan en ruido.
 MAX_COLUMNAS = 120
 #: …y cuántas filas. Por encima, dos filas comparten pixel y la figura miente.
 MAX_FILAS = 48

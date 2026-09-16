@@ -17,7 +17,7 @@ firma, en los dos sitios que lo dicen con palabras.
 
 from __future__ import annotations
 
-from takab_api.dictamen.layout import TakabPDF
+from takab_api.documentos.membrete import MembretePDF
 from takab_api.dictamen.model import DictamenRow
 from takab_api.dictamen.pdf import render
 from tests.dictamen.test_pdf import _OPENED, model
@@ -28,17 +28,24 @@ FIRMANTE = "a13b3590-4081-70ae-7d34-ce050f960bda"
 def _texto(m, variante: str = "technical") -> str:
     """Lo que el render pasó por `text_of`, que es por donde va el texto."""
     visto: list[str] = []
-    original = TakabPDF.text_of
+    # ⚠️ [T-7.21] Se espía la BASE `MembretePDF`, no `TakabPDF`. Parchear la
+    # SUBCLASE y luego «restaurar» le instala un atributo PROPIO que sombrea la base
+    # PARA SIEMPRE —medido: `'text_of' in TakabPDF.__dict__` pasa de False a True—, y
+    # a partir de ahí cualquier otro espía puesto sobre el membrete recoge CERO. No
+    # rompía nada mientras el único espía era éste; con el espía general de
+    # `tests/documentos/test_membrete_compartido.py` sale «verde en aislado, rojo en
+    # la suite». Lo vigila `test_la_subclase_NO_sombrea_el_text_of_de_la_base`.
+    original = MembretePDF.text_of
 
-    def espia(self: TakabPDF, value: str) -> str:
+    def espia(self: MembretePDF, value: str) -> str:
         visto.append(value)
         return original(self, value)
 
-    TakabPDF.text_of = espia  # type: ignore[method-assign]
+    MembretePDF.text_of = espia  # type: ignore[method-assign]
     try:
         render(m, variante)
     finally:
-        TakabPDF.text_of = original  # type: ignore[method-assign]
+        MembretePDF.text_of = original  # type: ignore[method-assign]
     return "\n".join(visto)
 
 

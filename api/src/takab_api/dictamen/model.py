@@ -421,7 +421,7 @@ class ReportModel:
 #: un dato inverificable presentado como verificable es peor que no imprimirlo:
 #: quien lo intente concluirá que la evidencia está corrupta.
 #:
-#: No había razón de espacio: 64 hex miden 108.7 mm de los 128 que deja la
+#: No había razón de espacio: 64 hex miden 108.7 mm de los 133.9 que deja la
 #: columna del PDF, así que caben en una sola línea.
 SIN_HASH = "sin hash"
 

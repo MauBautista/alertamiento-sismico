@@ -15,6 +15,15 @@ los maestros.
 
     uv run --with pillow python shared/brand/generar.py
 
+[T-7.21] La HOJA MEMBRETADA (`membrete/carta.pdf` y `carta.svg`) la dibuja el
+propio `MembretePDF` de la API, no este script: si el membrete cambia, la hoja
+cambia con él y no hay una segunda copia del diseño que se quede atrás. Por eso
+esa parte necesita el paquete `takab_api` importable y se SALTA con un aviso si
+no lo está — el resto de iconos no depende de la API y tiene que poder
+generarse igual:
+
+    ( cd api && uv run python ../shared/brand/generar.py )
+
 REGLAS QUE NO SON ESTÉTICAS, SON REQUISITOS
 -------------------------------------------
 - **El icono de iOS no puede tener canal alfa.** La App Store rechaza el envío,
@@ -190,7 +199,9 @@ def main() -> None:
     #
     # 800 px de ancho para ~34 mm de caja impresa: algo más del doble a 300 ppp,
     # que es lo que hace falta para que no se vea blando en papel.
-    guarda(por_ancho(logo_pos, 800), RAIZ / "api/src/takab_api/dictamen/marca/logotipo.png")
+    # [T-7.21] Se mudó de `dictamen/marca` a `documentos/marca` con el chasis:
+    # el membrete ya no es del dictamen, lo comparten los tres documentos.
+    guarda(por_ancho(logo_pos, 800), RAIZ / "api/src/takab_api/documentos/marca/logotipo.png")
 
     print("app movil:")
     # iOS: SIN alfa (ver cabecera).
@@ -208,6 +219,35 @@ def main() -> None:
     )
     # Splash: `imageWidth: 76` en app.json ⇒ 3x = 228 px, sobre `SUPERFICIE`.
     guarda(encaja(iso_neg, 228, 0.92), RAIZ / "mobile/assets/images/splash-icon.png")
+
+    membrete()
+
+
+def membrete() -> None:
+    """[T-7.21] La hoja membretada en blanco, en PDF y en SVG.
+
+    La dibuja `takab_api.documentos.hoja`, que es el MISMO chasis que el dictamen:
+    una segunda implementación del membrete aquí acabaría divergiendo del papel
+    de verdad, que es el defecto que este script entero existe para evitar.
+
+    Se SALTA con un aviso si `takab_api` no es importable, en vez de reventar: el
+    resto de los iconos no depende de la API y tiene que poder generarse desde
+    cualquier venv con Pillow.
+    """
+    print("papel oficial:")
+    try:
+        from takab_api.documentos.hoja import hoja_en_blanco, hoja_svg
+    except ImportError:
+        print("  membrete/carta.pdf y carta.svg: OMITIDOS · `takab_api` no importable")
+        print("    (corre desde el venv de la API: cd api && uv run python ../shared/brand/generar.py)")
+        return
+    destino = MARCA / "membrete"
+    destino.mkdir(parents=True, exist_ok=True)
+    (destino / "carta.pdf").write_bytes(hoja_en_blanco())
+    (destino / "carta.svg").write_text(hoja_svg(), encoding="utf-8")
+    for nombre in ("carta.pdf", "carta.svg"):
+        ruta = destino / nombre
+        print(f"  {ruta.relative_to(RAIZ)!s:56} {ruta.stat().st_size // 1024} KB")
 
 
 if __name__ == "__main__":

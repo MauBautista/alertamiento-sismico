@@ -28,7 +28,7 @@ from datetime import datetime
 
 from fpdf.enums import XPos, YPos
 
-from takab_api.dictamen.layout import MUTED, TakabPDF
+from takab_api.documentos.membrete import MUTED, MembretePDF
 
 #: Lo que el documento declara que NO es. Va impreso, como el del dictamen.
 DESLINDE = (
@@ -216,12 +216,24 @@ def _t(segundos: float | None) -> str:
     return f"{s // 60} min {s % 60:02d} s" if s >= 60 else f"{s} s"
 
 
+class ReportePDF(MembretePDF):
+    """[T-7.21] El reporte de simulacro tiene su PROPIO tipo de documento.
+
+    Usaba `TakabPDF` —la subclase del dictamen— y por eso su pie decía
+    «DICTAMEN», que es falso: un simulacro no dictamina la habitabilidad de
+    nada. Lo destapó el espía general del membrete, no una prueba de este módulo:
+    aquí nadie miraba el pie.
+    """
+
+    tipo = "REPORTE DE SIMULACRO"
+
+
 def render(rep: ReporteSimulacro) -> bytes:
     """PDF determinista del post-simulacro."""
-    pdf = TakabPDF(rep.folio, f"REPORTE DE SIMULACRO · {rep.tenant_name}")
     # La fecha del sello es la del SIMULACRO, no la de la exportación: si fuera la
     # segunda, dos exportaciones del mismo simulacro darían hashes distintos y la
-    # huella dejaría de probar nada.
+    # huella dejaría de probar nada. Va también al PIE, como instante del suceso.
+    pdf = ReportePDF(rep.folio, f"REPORTE DE SIMULACRO · {rep.tenant_name}", sellado=rep.started_at)
     pdf.seal(rep.started_at)
     pdf.add_page()
 

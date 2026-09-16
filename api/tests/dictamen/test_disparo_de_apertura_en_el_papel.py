@@ -6,7 +6,7 @@ origen («se abrió … a partir de X») y el mismo campo decidía el tiempo de 
 ganado. Las dos direcciones del error son reales y opuestas, y las dos se
 comprueban aquí sobre el DOCUMENTO GENERADO, no sobre una constante.
 
-Cómo se comprueba: espiando `TakabPDF.text_of`, que es por donde pasa todo el
+Cómo se comprueba: espiando `MembretePDF.text_of`, que es por donde pasa todo el
 texto que se dibuja. El PDF no se puede leer (flujo comprimido y fuentes
 embebidas ⇒ el texto viaja como índices de glifo), y comparar bytes pasa en verde
 sobre cualquier defecto porque la portada imprime `content_sha256()`, que se
@@ -15,7 +15,7 @@ mueve con cualquier cambio del modelo.
 
 from __future__ import annotations
 
-from takab_api.dictamen.layout import TakabPDF
+from takab_api.documentos.membrete import MembretePDF
 from takab_api.dictamen.model import TRIGGER_LABELS
 from takab_api.dictamen.pdf import render
 from tests.dictamen.test_pdf import model
@@ -27,17 +27,24 @@ _SIN_ESCALAR = {"opened_trigger": "sasmex", "trigger": "sasmex"}
 
 def _texto(m, variante: str) -> str:
     visto: list[str] = []
-    original = TakabPDF.text_of
+    # ⚠️ [T-7.21] Se espía la BASE `MembretePDF`, no `TakabPDF`. Parchear la
+    # SUBCLASE y luego «restaurar» le instala un atributo PROPIO que sombrea la base
+    # PARA SIEMPRE —medido: `'text_of' in TakabPDF.__dict__` pasa de False a True—, y
+    # a partir de ahí cualquier otro espía puesto sobre el membrete recoge CERO. No
+    # rompía nada mientras el único espía era éste; con el espía general de
+    # `tests/documentos/test_membrete_compartido.py` sale «verde en aislado, rojo en
+    # la suite». Lo vigila `test_la_subclase_NO_sombrea_el_text_of_de_la_base`.
+    original = MembretePDF.text_of
 
-    def espia(self: TakabPDF, value: str) -> str:
+    def espia(self: MembretePDF, value: str) -> str:
         visto.append(value)
         return original(self, value)
 
-    TakabPDF.text_of = espia  # type: ignore[method-assign]
+    MembretePDF.text_of = espia  # type: ignore[method-assign]
     try:
         render(m, variante)
     finally:
-        TakabPDF.text_of = original  # type: ignore[method-assign]
+        MembretePDF.text_of = original  # type: ignore[method-assign]
     return "\n".join(visto)
 
 

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **419** · `[x]` **360** · `[~]` **10** · `[ ]` **49**
+**Conteo de tareas:** total **419** · `[x]` **360** · `[~]` **11** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14495,21 +14495,72 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el caso de `AlertBanner.test.tsx`
   que usaba `in_review` para decir «sin animación» y con ello dejaba fijado el defecto 2.
 
-### [ ] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE`
+### [~] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE` · **CONSTRUIDA 2026-09-16 · ESPERA LOS CUATRO DATOS DE §4.8**
 - **Componente:** api · shared · **Depende de:** — · **Prioridad:** F4 · alta
 - **Objetivo:** que dictamen, reporte de simulacro e informe compartan cabecera, pie e
   identidad, y que exista una hoja membretada en blanco para lo que el sistema no genera.
 - **Criterios de aceptación:**
-  - [ ] `takab_api/documentos/membrete.py::MembretePDF`, promoción de `TakabPDF`: tipo de
-    documento, folio, fecha UTC, `build`, página x/y, sha256 en el pie, franja «EVIDENCIA
-    INMUTABLE», logotipo positivo sobre blanco, paleta de `shared/brand/generar.py`, tamaño
-    Carta. `TakabPDF` y `drill_report.py` heredan.
-  - [ ] Censo: toda subclase de `FPDF` en `api/src` deriva de `MembretePDF`.
-  - [ ] `shared/brand/membrete/carta.pdf` y `carta.svg` generados por `generar.py`.
-  - [ ] `api/tests/documentos/test_membrete.py`: `pdftotext` encuentra folio, página y el
-    nombre como texto extraíble; los tests de marca de `test_pdf.py` actualizados.
-- **Tests de censo que toca:** `test_pdf` (pie) · **Token nuevo:** no · **Cambia algo que un
-  test defiende hoy:** sí — los tests que fijan el pie de `layout.py`.
+  - [x] `takab_api/documentos/membrete.py::MembretePDF`, promoción de `TakabPDF`: tipo de
+    documento, folio, fecha, `build`, página x/y, sha256 en el pie, franja «EVIDENCIA
+    INMUTABLE», logotipo positivo sobre blanco, tamaño Carta. Heredan `TakabPDF`,
+    `drill_report.ReportePDF` (nueva) y la hoja en blanco.
+    ⚠️ **La geometría se DERIVA de `PAGE_FORMATS` de fpdf2, no se teclea.** Eran constantes
+    paralelas a las de fpdf2 y ya divergían (A4 real 210.0016 vs `PAGE_W = 210.0`). Ese es el
+    mecanismo que arruina una migración de formato a medias: las tablas usan `epw` y los
+    filetes usaban la constante, así que cambiar sólo `format` dibujaba **200.9 mm de tabla
+    contra un filete en 195.0**, en todas las páginas.
+    ⚠️ **El pie se reparte por ARITMÉTICA**, medido sobre la banda útil (185.9 mm): identidad
+    114.5 + paginación 15.5 en una línea; sha256 118.7 + evento/build 59.6 en otra; y el aviso
+    de tipografía degradada (63.8) en la suya, **sólo cuando hace falta**. `cell()` de fpdf2 no
+    envuelve: lo que sobra se dibuja encima sin poner nada en rojo. El primer diseño daba 179
+    mm en una celda de 155.9 y lo cazó su propia prueba.
+    ⚠️ **La fecha del pie es la SELLADA, no `generated_at`** —que es `datetime.now()`—, y por
+    eso su rótulo dice «EVENTO»: imprimir la hora de generación haría que dos generaciones del
+    mismo modelo dieran archivos distintos.
+  - [x] Censo: toda subclase de `FPDF` en `api/src` deriva de `MembretePDF`. **Derivado por
+    DOS barridos** —herencia en tiempo de ejecución con `walk_packages`, y AST para cazar el
+    `FPDF(...)` suelto, que no es subclase y se escaparía del primero— con guarda de
+    no-vacuidad en cada uno y la única exención (`cls is MembretePDF`) derivada, no enumerada.
+    **Verificado que CAZA**: con un módulo intruso que tenía las dos violaciones, saltaron las
+    dos mitades. Un censo que no puede fallar es ceremonia.
+  - [x] `shared/brand/membrete/carta.pdf` y `carta.svg` generados por `generar.py`. Los dibuja
+    el propio `MembretePDF` —no una segunda copia del diseño que se quede atrás— y son
+    deterministas byte a byte, comprobado entre PROCESOS distintos. ⚠️ Entran en `make drift`,
+    y con la guarda de `git ls-files`: `git diff --exit-code` sobre una ruta **sin rastrear**
+    devuelve 0, así que sin ella el gate pasaría en vacío.
+  - [x] `api/tests/documentos/test_membrete.py` (25 casos) + `test_geometria.py` +
+    `test_censo_fpdf.py` + `test_membrete_compartido.py`. Se usa **`pypdf`, no `pdftotext`**:
+    aquél es un paquete Python y éste es poppler, que sería la primera dependencia de un
+    binario del sistema de la suite — CI hace `pip install -e ".[dev]"` y nada más. El Goal de
+    F4 ya pedía `pypdf` para contar imágenes.
+  - [x] **La guarda de geometría, que no existía.** Medido: `tests/dictamen` daba 243 passed
+    en A4, 243 en Carta y 243 con la migración a medias. La suite era ciega al papel. ⚠️ Mi
+    primera versión también lo era: medía `tm[4]`, que es donde EMPIEZA el fragmento, y una
+    celda alineada a la derecha empieza a la izquierda del filete y se sale por el otro lado.
+    Ahora mide las coordenadas de lo que se DIBUJA, y caza el desborde real.
+- **Lo que queda para cerrarla:** los cuatro datos de `PENDIENTES §4.8` (razón social,
+  domicilio, clasificación, firmante). Mientras faltan, el papel **los declara**: los cuatro
+  rótulos salen siempre con `PENDIENTE · PENDIENTES-MAURICIO §4.8` y un aviso que dice cuáles
+  faltan. De las tres opciones, rellenar con algo verosímil era la peor —un «TAKAB S.A. de
+  C.V.» inventado en un papel firmado— y no imprimir el bloque la segunda peor, porque un
+  hueco se lee como «no aplica». Rellenarlos es UNA edición en `documentos/identidad.py`, y el
+  mismo commit tiene que traer la hoja regenerada porque `make drift` lo exige.
+- **⚠️ Dos defectos vivos que destapó construir esto, y que nadie buscaba:**
+  1. **El reporte de simulacro decía «DICTAMEN» en su pie.** Usaba `TakabPDF` y ninguna prueba
+     de `drill_report` miraba el pie. Un simulacro no dictamina la habitabilidad de nada. Lo
+     encontró el espía general del membrete; ahora tiene su `ReportePDF`.
+  2. **Los CINCO espías del render envenenaban a los demás.** Parcheaban `TakabPDF.text_of` y
+     al «restaurar» reasignaban sobre la SUBCLASE, lo que instala un atributo propio que
+     sombrea la base **para siempre** (medido: `'text_of' in TakabPDF.__dict__` pasa de False
+     a True y no vuelve). No rompía nada mientras fueron los únicos; con el espía general dio
+     «verde en aislado, rojo en la suite». Los cinco parchean ya la base y
+     `test_la_subclase_NO_sombrea_el_text_of_de_la_base` lo caza en cualquier orden.
+     ⚠️ El reconocimiento dijo «los TRES parches»; eran cinco. Un censo a ojo diverge también
+     cuando lo hace un agente.
+- **Tests de censo que toca:** `test_pdf` (pie, barrido de huellas ahora DERIVADO sobre los
+  módulos que dibujan documento en vez de una ruta clavada) · **Token nuevo:** no · **Cambia
+  algo que un test defiende hoy:** sí — el pie, el arte que se mudó a `documentos/` y los
+  cinco espías.
 
 ### [ ] T-7.22 · **El informe del evento con todos los datos e imágenes** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-7.17, T-7.21 · **Prioridad:** F4 · alta

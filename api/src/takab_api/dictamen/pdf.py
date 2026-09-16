@@ -288,7 +288,8 @@ def _raw_section(pdf: TakabPDF, m: ReportModel) -> None:
         muted=True,
     )
     for channel, samples in sorted(m.raw_waveform.items()):
-        # Se diezma para el dibujo: 18 000 muestras no caben en 180 mm y fpdf2
+        # Se diezma para el dibujo: 18 000 muestras no caben en la banda útil
+        # (185.9 mm en Carta desde `T-7.21`; eran 180 en A4) y fpdf2
         # tardaría más en trazarlas que la propia consulta.
         step = max(1, len(samples) // 900)
         crudas = [float(v) for v in samples[::step]]
