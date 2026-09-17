@@ -64,6 +64,7 @@ from takab_api.dictamen.model import (
     STATUS_LABELS,
     TS_FMT,
     ReportModel,
+    cierre_text,
     disparo_line,
     huella_de_custodia,
     lead_time_text,
@@ -142,7 +143,7 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.field("INMUEBLE", f"{m.site_name} ({m.site_code})")
     pdf.field("INCIDENTE", m.incident_id)
     pdf.field("APERTURA", f"{m.opened_at:{TS_FMT}}")
-    pdf.field("CIERRE", f"{m.closed_at:{TS_FMT}}" if m.closed_at else "EN CURSO")
+    pdf.field("CIERRE", cierre_text(m.closed_at, m.state, m.cierre_sin_hora, TS_FMT))
     pdf.field("SEVERIDAD · DISPARO", f"{m.severity} · {disparo_line(m.opened_trigger, m.trigger)}")
     pdf.field("EVENTO DE RED", m.event_id or "SIN EVENTO ASOCIADO")
     pdf.field("FOLIO", m.folio)

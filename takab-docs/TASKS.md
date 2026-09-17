@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **429** · `[x]` **367** · `[~]` **11** · `[ ]` **51**
+**Conteo de tareas:** total **430** · `[x]` **368** · `[~]` **11** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15812,7 +15812,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** el del schema compartido si se toca `HealthSnapshot` · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí (los de `grants.py` y `objects.py`).
 
-### [ ] T-7.51 · **Hay incidentes CERRADOS sin hora de cierre, y su dictamen dice «EN CURSO»** — `SOFTWARE`
+### [x] T-7.51 · **Hay incidentes CERRADOS sin hora de cierre, y su dictamen dice «EN CURSO»** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** api · db · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que un incidente cerrado no pueda decir en papel que sigue abierto.
 - **El fallo, medido en la nube dev el 2026-09-17.** De los cuatro incidentes vivos, **tres tienen
@@ -15838,18 +15838,67 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   entrada de cierre para esos tres. Sí tiene un `in_review` del 2026-09-17. Un cambio de estado sin
   auditoría no vino del ciclo de vida.
 - **Criterios de aceptación:**
-  - [ ] Decir POR DÓNDE se pusieron en `closed` esas tres filas, con evidencia. Candidatos a
-        descartar o confirmar: el arnés de `soc-local`, un sembrador de demostración, un SQL a mano,
-        o una migración. Si no se puede saber, decirlo y pasar al siguiente criterio igual.
-  - [ ] Una guarda en la BASE, no en el código: `state = 'closed'` implica `closed_at NOT NULL`.
-        Un `CHECK` lo hace imposible de escribir mal desde cualquier puerta, incluida la que no
-        encontremos. ⚠️ Antes hay que decidir qué se hace con las filas que ya están así: la
-        evidencia no se poda (regla de oro 11), así que rellenar a ciegas sería inventar un dato —
-        lo honesto puede ser un estado o un rótulo que DECLARE que esa hora no se registró.
-  - [ ] Mientras exista una fila así, el dictamen **no puede decir «EN CURSO»** de un incidente
+  - [x] **ENCONTRADA: el arnés de los E2E móviles.**
+        `infra/scripts/sql/staging-incident/{reset,crisis}.sql` hacían
+        `UPDATE incidents SET state = 'closed' WHERE site_id = … AND state <> 'closed'` **sin
+        `closed_at`**. Y no escribe en una base de staging aparte: `seed_staging_incident.sh`
+        resuelve `TF_DIR` contra `infra/terraform/envs/dev` y abre túnel SSM a la **nube dev**.
+        ⚠️ **Y su `SITE_ID` por defecto es `d1000000-…-0000` = `site-dev`, el sitio del gabinete
+        REAL de Puebla (`gw-dev-0001`)**, así que cerraba incidentes de OPERACIÓN. Corroborado por
+        el propio cierre de `T-7.40`, que documenta `ecafbf80…` como un episodio real ingerido de
+        ese gabinete.
+  - [x] Una guarda en la BASE, no en el código. **Con una vuelta de tuerca que la medición obligó**
+        (ver abajo): no es un `CHECK` a secas sobre `closed_at`.
+  - [x] Mientras exista una fila así, el dictamen **no puede decir «EN CURSO»** de un incidente
         cerrado: o dice la hora, o declara que no se registró. Con su prueba.
 - **Tests de censo que toca:** los de `append_only` y el esquema · **Token nuevo:** no · **Cambia
-  algo que un test defiende hoy:** por ver.
+  algo que un test defiende hoy:** no.
+
+> **Cómo se cerró — y por qué NO es un `CHECK` a secas.**
+>
+> **La hora no se rellenó.** La de aquellos tres cierres **no existe en ninguna parte**: no la
+> guardó nadie. Fabricarla contaminaría la tabla de la que cuelga un dictamen pericial, que es justo
+> lo que `T-7.42` y `T-7.43` acaban de prohibir en ese mismo documento. Se DECLARA la ausencia, como
+> hace `documentos/identidad.py` con los cuatro datos que no tiene: columna `cierre_sin_hora`.
+>
+> **⚠️ Y un `CHECK … NOT VALID` habría convertido esas tres filas en MINAS. Medido**: un `NOT VALID`
+> bloquea también los **UPDATE** de las filas que ya lo violan —no sólo los INSERT—, así que el
+> backfill de picos del dictamen, el UPSERT de la ingesta o `replay/service.py` habrían empezado a
+> fallar al tocarlas. Con la columna quedan declaradas **y siguen siendo escribibles**, y hay una
+> prueba que lo fija.
+>
+> **⚠️ La RLS, que ya mató un despliegue.** `incidents` tiene `FORCE ROW LEVEL SECURITY`: con FORCE
+> ni el dueño se salta las políticas, y `takab_migrator` —que es el dueño— no tiene `BYPASSRLS`. Sin
+> `app.tenant_id`, el marcado habría afectado a **cero filas en silencio** y el `CHECK` habría
+> reventado en producción. Es la trampa que mató el despliegue del 2026-09-14 con la `0063`, y la
+> `0066` usa su mismo remedio (`NO FORCE` leído de `pg_class` y restaurado en el mismo bloque). El
+> `CHECK` se añade **validado a propósito**: si el marcado no tocara nada, revienta en la migración
+> y no tres días después.
+>
+> **El censo mira FUERA de `api/src`, que es por donde entró.** `test_audit_single_writer.py` sólo
+> recorre `api/src/takab_api/**/*.py`, así que un `UPDATE` desde `infra/scripts/` pasaba ese censo
+> **porque no mira**, no porque no infrinja. El nuevo barre los `.sql` del repo entero.
+
+### [ ] T-7.52 · **El arnés de los E2E móviles comparte sitio con el gabinete REAL, y le cierra sus incidentes** — `SOFTWARE` + `DECISIÓN`
+- **Componente:** infra · **Depende de:** T-7.51 · **Prioridad:** F4 · media
+- **Objetivo:** que probar la app no toque incidentes de operación.
+- **El fallo** (sale de `T-7.51`). `infra/scripts/seed_staging_incident.sh` tiene
+  `SITE_ID="${SITE_ID:-d1000000-0000-0000-0000-000000000000}"`, que es `site-dev` — **Puebla, el
+  sitio del gabinete real `gw-dev-0001`** (`db/seeds/prod_fleet.sql`). Y su `reset`/`crisis` cierran
+  **todos** los incidentes abiertos del sitio, no sólo los que el arnés abre. Desde `T-7.51` al
+  menos quedan fechados, pero siguen siendo cierres de incidentes que el arnés no abrió.
+- **Por qué es también DECISIÓN.** Separar el sitio no es gratis: el enrolamiento del `occupant` y
+  el incidente tienen que caer en el MISMO sitio/zona (lo dice el propio script), así que mover el
+  arnés arrastra `seed_mobile_users.sh` y los flujos E2E ya acreditados en el Pixel. Las opciones
+  —sitio propio de arnés, o cierre acotado a lo que el arnés abrió, o correr contra otra base— tienen
+  precios distintos y **la elige Mauricio**.
+- **Criterios de aceptación:**
+  - [ ] El arnés no cierra ningún incidente que no haya abierto él, **o** corre contra un sitio que
+        ningún gabinete real usa. Con la decisión escrita.
+  - [ ] Una guarda que lo impida volver: el arnés no puede escribir sobre un `site_id` que tenga un
+        gateway `online` colgando, o el censo equivalente.
+- **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** sí (`test_seed_staging_incident.py`).
 
 ## RUTA CRÍTICA
 

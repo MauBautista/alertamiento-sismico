@@ -286,8 +286,18 @@ CREATE TABLE incidents (
   event_id    text REFERENCES seismic_events,
   opened_at   timestamptz NOT NULL,
   closed_at   timestamptz,
+  -- [T-7.51] El incidente se cerró sin que nadie registrara la hora. DECLARA la
+  -- ausencia en vez de inventarla: la hora real de aquellos cierres no existe en
+  -- ninguna parte, y fabricarla contaminaría la tabla de la que cuelga un dictamen
+  -- pericial. Sólo lo levantan los cierres anteriores a la migración 0066; ningún
+  -- camino vivo puede ponerlo. El dictamen lo lee para no decir «EN CURSO» de un
+  -- incidente cerrado, que es lo que hacía.
+  cierre_sin_hora boolean NOT NULL DEFAULT false,
   severity    text NOT NULL CHECK (severity IN ('info','watch','warning','critical')),
   state       text NOT NULL DEFAULT 'open' CHECK (state IN ('open','acked','in_review','closed')),
+  -- [T-7.51] Un cierre tiene hora, o DECLARA que no la tiene. No hay tercera opción.
+  CONSTRAINT ck_incidents_cierre_con_hora
+    CHECK (state <> 'closed' OR closed_at IS NOT NULL OR cierre_sin_hora),
   trigger     text NOT NULL CHECK (trigger IN ('sasmex','local_threshold','quorum','manual')),
   -- [T-7.36] Disparo con el que se ABRIÓ el incidente. `trigger` se sobrescribe con
   -- la última escalada (UPSERT de la ingesta), así que no sirve para reconstruir el

@@ -63,6 +63,7 @@ MAX_FFT_SAMPLES = 6000
 _INCIDENT = text(
     """
     SELECT i.incident_id, i.site_id, i.tenant_id, i.event_id, i.opened_at, i.closed_at,
+           i.cierre_sin_hora,
            i.severity, i.state, i.trigger, i.opened_trigger,
            s.name AS site_name, s.code AS site_code, s.criticality,
            ST_Y(s.geom::geometry)::float8 AS site_lat,
@@ -301,6 +302,7 @@ async def build_model(
         site_lon=inc["site_lon"],
         opened_at=inc["opened_at"],
         closed_at=inc["closed_at"],
+        cierre_sin_hora=bool(inc["cierre_sin_hora"]),
         severity=inc["severity"],
         trigger=inc["trigger"],
         opened_trigger=inc["opened_trigger"],
