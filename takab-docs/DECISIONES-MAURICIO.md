@@ -12,10 +12,16 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-11 · **33 decisiones** · 26 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-17 · **34 decisiones** · 28 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
-> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**), 7 delegadas (3 el 2026-08-12, 3 el 2026-09-02,
-> 1 el 2026-09-11).
+> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17), 6 delegadas (3 el 2026-08-12,
+> 2 el 2026-09-02, 1 el 2026-09-11).
+>
+> ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
+> tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
+> cuando el índice sólo tiene **6** — el 2026-09-02 fueron **dos**, no tres. Los tres recuentos del
+> documento discrepaban entre sí. Se corrigen DERIVÁNDOLOS del índice, que es la única enumeración
+> que hay, y queda escrito: el aviso de abajo no bastó porque **seguía sin haber quien contara**.
 >
 > **Esta cabecera mintió, y conviene que conste.** Hasta hoy declaraba «23 decisiones · última
 > 2026-08-22» con **26** dentro y la última del 2026-08-30: tres decisiones invisibles para quien
@@ -83,6 +89,7 @@
 | [D-31](#d-31) | Red de demostración en la nube dev: tres estaciones simuladas **rotuladas DEMO**, latido y features **jamás eventos**, retirada escrita | 2026-09-11 | Mauricio |
 | [D-32](#d-32) | La IA ve los datos del evento sin PII **y las fotos del brigadista**; consentimiento contractual pendiente | 2026-09-11 | Mauricio |
 | [D-33](#d-33) | El incidente tiene fases: la alerta se apaga **por estado**, el registro se cierra por clasificación, dictamen firmado o TTL de horas; `reproduccion` como clasificación y atributo | 2026-09-11 | delegada |
+| [D-34](#d-34) | El arnés de los E2E móviles se muda a un sitio propio con su ocupante; la demostración conserva Puebla y la guarda no lleva excepción | 2026-09-17 | Mauricio |
 
 ---
 
@@ -1653,3 +1660,55 @@ que el servidor ya no sabe.
 Si un cliente exigiera que ningún incidente se cierre sin clasificación humana, se pone
 `incident_review_ttl_s` a cero y el TTL desaparece; las otras dos vías siguen. Lo que **no**
 cambia en ninguna revocación: el cliente jamás cierra ni apaga una alerta por cronómetro propio.
+
+---
+
+<a id="d-34"></a>
+
+## D-34 · El arnés de pruebas tiene **su propio sitio**; el ocupante de la demostración se queda en Puebla
+
+**Fecha:** 2026-09-17 · **Ficha:** `T-7.52` · **Estado:** vigente · **Quién:** Mauricio
+
+### El problema
+
+`seed_staging_incident.sh` y `seed_mobile_users.sh` traen **el mismo sitio por defecto**
+(`d1000000-…-0000` = `site-dev`), que es **Puebla, el del gabinete real `gw-dev-0001`**. El arnés de
+los E2E móviles abre y cierra incidentes ahí: su `reset`/`crisis` cerraban **todos** los incidentes
+abiertos del sitio, no sólo los suyos, y así se cerraron tres incidentes de operación sin hora
+(`T-7.51`). Acotar únicamente los cierres no basta: el arnés seguiría **abriendo crisis falsas en el
+edificio real**, y el teléfono del ocupante de la demostración las recibe.
+
+### La decisión
+
+**El arnés se muda a un sitio propio y la demostración conserva el suyo. Dos enrolamientos, no uno:**
+
+1. **`site-e2e-900`**, con su zona y su `evac_policy`, que **ningún gabinete usa**. Ahí abre y cierra
+   el arnés.
+2. **Un ocupante propio de pruebas** —`…+occupant-e2e@…`, por plus-addressing como los demás—
+   enrolado en ese sitio. Es el que usan los flujos de Maestro.
+3. **El ocupante actual se queda en Puebla · `PB-A`**: es el de la demostración, y el acto 3 ya se
+   acreditó así.
+4. **Guarda dura y sin excepción:** el arnés **rechaza** cualquier `site_id` con un gateway latiendo.
+   Sin bandera de escape.
+5. **Mismo tenant** (`tenant-dev`), para no tocar claims ni RLS. El sitio del arnés lleva rótulo de
+   no-real, como cualquier sitio que no es un edificio con gente dentro.
+
+### Por qué
+
+- **Probar la app no puede tocar datos de operación.** Es la misma frontera que respeta el resto del
+  producto.
+- **La guarda sólo se puede escribir dura si el sitio está separado.** Con el arnés en `site-dev`
+  —donde `gw-dev-0001` late— haría falta un `--permitir-sitio-con-gabinete`, y **una guarda con
+  escape no es una guarda**: es la bandera que alguien usa un día con prisa.
+- **Cuesta poco y no re-escribe nada acreditado:** una fila de sitio, una de zona, un usuario y un
+  código de enrolamiento. Los cuatro flujos del Pixel se re-corren apuntando a otro `.env`; los
+  flujos no se tocan.
+- **Dos identidades evitan el conflicto de fondo:** el ocupante de la demostración tiene que ver la
+  crisis del gabinete **real**, y el de los E2E la del arnés. Con una sola identidad, una de las dos
+  se rompe siempre.
+
+### Cómo se revocaría
+
+Devolver `SITE_ID` al de Puebla en los dos scripts y borrar el ocupante de pruebas. Lo que **no**
+cambia en ninguna revocación: el arnés no cierra incidentes que no abrió, y no escribe sobre un
+sitio con un gabinete latiendo.

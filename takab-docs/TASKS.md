@@ -15867,12 +15867,28 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - ⚠️ **El campo solo no basta**: sin columna destino en `device_health` el handler lo tira, que es
     exactamente donde lleva `disk_used_pct` desde `T-1.53`. Hay que hacerlo entero.
 - **Criterios de aceptación:**
-  - [ ] `HealthSnapshot` lleva la edad del pendiente más viejo, con `SCHEMA_VERSION` y su huella en
+  - [ ] **Viaja la EDAD en segundos del pendiente más viejo, no un booleano.** Un booleano congelaría
+        en el contrato el umbral del gabinete (`_EVIDENCE_STUCK_AFTER_S` = 3 600 s) y dejaría a la
+        consola sin poder decir «49 minutos». Y sobre todo: el predicado que importa —«retiene
+        evidencia **y su incidente ya está en revisión**»— **sólo lo puede evaluar la nube**, porque
+        el gabinete no conoce el estado del incidente.
+  - [ ] **El umbral vive en la nube y no es la hora absoluta.** El caso que abrió esta ficha —49
+        minutos— habría pasado **por debajo** del tope de 3 600 s sin que sonara nada. Lo que se
+        vigila es «pendiente **+** incidente en `in_review`/`closed`».
+  - [ ] `HealthSnapshot` lleva ese campo con `SCHEMA_VERSION` y su huella en
         `edge/takab_edge/schemas.py`.
   - [ ] ⚠️ Su valor por defecto es `None` = «no pude preguntar», **nunca `0`**: un gabinete con el
         backfill caído no puede declarar que no retiene evidencia. Un fallback no puede ser `ok`.
   - [ ] Columna en `device_health` y el dato visible en la flota de la consola.
-  - [ ] Y su alarma, o la razón escrita de por qué no la lleva.
+  - [ ] **Sí lleva alarma, y es UNA**, sobre la condición derivada en la nube (cualquier gabinete por
+        encima del umbral), no una por gabinete. Clasificada en `ALARM_CATALOG`, con
+        `treat_missing_data` elegido por quién publica la métrica: la publica el gabinete ⇒ la
+        ausencia es `breaching`, el mismo remedio que arregló el falso OK de la alarma de presencia.
+  - [ ] **En la MISMA migración entra `disk_used_pct`.** Está en el contrato desde `T-1.53` y
+        **no tiene columna en `db/schema.sql` ni en ninguna migración**: la nube lleva meses
+        tirándolo en silencio. Misma clase de defecto, mismo fichero, una sola migración.
+  - [ ] **Censo que lo impida volver:** todo campo de `HealthSnapshot` tiene columna en
+        `device_health`, o está declarado como no persistido **con su razón**.
 - **Tests de censo que toca:** el del schema compartido · **Token nuevo:** no · **Cambia algo que un
   test defiende hoy:** sí (los del contrato de `HealthSnapshot`).
 
@@ -15954,13 +15970,18 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Por qué es también DECISIÓN.** Separar el sitio no es gratis: el enrolamiento del `occupant` y
   el incidente tienen que caer en el MISMO sitio/zona (lo dice el propio script), así que mover el
   arnés arrastra `seed_mobile_users.sh` y los flujos E2E ya acreditados en el Pixel. Las opciones
-  —sitio propio de arnés, o cierre acotado a lo que el arnés abrió, o correr contra otra base— tienen
-  precios distintos y **la elige Mauricio**.
+  —sitio propio de arnés, o cierre acotado a lo que el arnés abrió, o correr contra otra base— tenían
+  precios distintos, y **la decidió Mauricio el 2026-09-17**.
+- **Decisión tomada:** [`D-34`](DECISIONES-MAURICIO.md#d-34) — sitio propio para el arnés
+  (`site-e2e-900`) con su propio ocupante; el de la demostración se queda en Puebla · `PB-A`.
 - **Criterios de aceptación:**
-  - [ ] El arnés no cierra ningún incidente que no haya abierto él, **o** corre contra un sitio que
-        ningún gabinete real usa. Con la decisión escrita.
-  - [ ] Una guarda que lo impida volver: el arnés no puede escribir sobre un `site_id` que tenga un
-        gateway `online` colgando, o el censo equivalente.
+  - [ ] `seed_staging_incident.sh` y los `.sql` de `staging-incident/` apuntan a `site-e2e-900`.
+  - [ ] `seed_mobile_users.sh` siembra el ocupante de pruebas en ese sitio y su zona; el ocupante de
+        la demostración no se mueve.
+  - [ ] **Guarda sin excepción:** el arnés aborta si el `site_id` destino tiene un gateway con latido
+        reciente. Con su prueba, y sin bandera que la salte.
+  - [ ] Los cuatro flujos de Maestro re-corridos en el Pixel con el `.env` nuevo (cambio de
+        variables, no de flujos).
 - **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** sí (`test_seed_staging_incident.py`).
 
