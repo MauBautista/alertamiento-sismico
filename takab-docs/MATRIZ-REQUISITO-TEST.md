@@ -20,10 +20,10 @@ La única excepción es el sello 🔒: un test que *puede* saltarse pero cuyo sa
 
 | Requisitos de software | Requisitos | Afirmaciones |
 |---|---:|---:|
-| `CUBIERTO` | 11 | 61 |
+| `CUBIERTO` | 11 | 62 |
 | `PARCIAL` | 5 | — |
 | `SIN COBERTURA` | 1 | 6 |
-| **Total** | **17** | **67** |
+| **Total** | **17** | **68** |
 
 Y **10 gates físicos / de despliegue** que ningún test de software puede cerrar: piden hardware en sitio o una cuenta AWS. Se listan al final para que el documento de entrega no dé la impresión de que no queda nada por acreditar presencialmente.
 
@@ -71,6 +71,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 | RO-3.c | La superficie de escritura HTTP tolera el reintento del cliente offline. | `CUBIERTO` | `api/tests/api/test_mobile_core.py:671`<br>`test_checkin_replay_offline_es_idempotente` | Reenviar el mismo `checkin_id` devuelve la fila idéntica; otro portador con el mismo id recibe 409. |
 | RO-3.d | El nonce de intención emitido por el servidor es de un solo uso. | `CUBIERTO` | `api/tests/api/test_command_intent.py:163`<br>`test_intencion_firmada_feliz_y_replay_rechazado` | Primera llamada 201; el replay exacto del intento firmado, 409. |
 | RO-3.e | El anti-replay de configuración firmada sobrevive a un reinicio del edge. | `CUBIERTO` | `edge/tests/test_config.py:240`<br>`test_replay_rejected_across_restart` | Un `ConfigStore` nuevo sobre la misma caché sigue rechazando la versión ya vista. |
+| RO-3.f | Un solo sismo produce UN solo `event_id`, y dos sismos distintos siguen produciendo dos. | `CUBIERTO` | `edge/tests/test_identidad_del_episodio.py:118`<br>`test_un_sismo_AVISADO_por_sasmex_no_se_parte_en_DOS`<br>`edge/tests/test_identidad_del_episodio.py:166`<br>`test_DOS_sismos_de_VERDAD_siguen_siendo_dos` | [T-7.49] El converso de RO-3.a: aquélla impide que un evento se duplique en la nube; ésta impide que el gabinete emita dos identidades para el mismo temblor. El caso es el del aviso SASMEX con ~50 s de viaje de la onda, que es la forma normal del producto.<br>La contraprueba: fundir dos sismos reales sería peor que partir uno. |
 
 ### RO-4 · El proceso GPIO/actuadores es mínimo y auditable.
 
@@ -171,7 +172,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 
 | # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
 |---|---|---|---|---|
-| RO-10.a | El motor de reglas registra una vez por transición de tier, no por evaluación. | `CUBIERTO` | `edge/tests/test_rules.py:205`<br>`test_tier_transition_logged_once_per_change` | Tres evaluaciones con una repetida producen exactamente 2 registros. |
+| RO-10.a | El motor de reglas registra una vez por transición de tier, no por evaluación. | `CUBIERTO` | `edge/tests/test_rules.py:229`<br>`test_tier_transition_logged_once_per_change` | Tres evaluaciones con una repetida producen exactamente 2 registros. |
 | RO-10.b | La salud registra por cambio discreto, no por deriva continua. | `CUBIERTO` | `edge/tests/test_health.py:236`<br>`test_transition_logged_only_on_discrete_change` | La deriva de 25→30 °C bajo umbral no emite; los dos cambios de estado sí. |
 | RO-10.c | La salud del dispositivo llega por latido periódico y etiquetado como tal. | `CUBIERTO` | `edge/tests/test_health.py:249`<br>`test_heartbeat_thread_emits_periodic_snapshots`<br>`api/tests/test_ingest_handlers.py:442`<br>`test_health_default_reason_is_heartbeat` | Con `heartbeat_s=0.05` salen ≥3 instantáneas por temporizador.<br>En la nube, una salud sin motivo se persiste como `heartbeat`. |
 | RO-10.d | En la nube, `rule_evaluations` no gana filas en estado estable. | `SIN COBERTURA`<br><sub>sin test</sub> | — | — |

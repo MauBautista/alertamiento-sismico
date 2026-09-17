@@ -167,13 +167,11 @@ class RuleEngine(EdgeModule):
     def __init__(
         self,
         thresholds: ThresholdBand,
-        dedup_window_s: float = 30.0,
         staleness_s: float = 3.0,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         super().__init__()
         self.thresholds = thresholds
-        self.dedup_window_s = dedup_window_s
         self.staleness_s = staleness_s
         # Reloj ÚNICO de recepción del Pi para correlacionar episodios (no mezclar el
         # reloj de datos del Shake con el de pared del contacto SASMEX).
@@ -183,7 +181,20 @@ class RuleEngine(EdgeModule):
         self._last_decision: TierDecision | None = None
         self._last_latency_s: float | None = None
         self._event_id: str | None = None
-        self._episode_end: datetime | None = None
+        # [T-7.49] La identidad del episodio es UN campo, y su acceso es
+        # read-modify-write desde DOS hilos (el de SeedLink por
+        # `evaluate_features` y el callback del dueño de los pines por
+        # `evaluate_sasmex`). Sin lock, el doble disparo SASMEX+umbral del mismo
+        # sismo —que es el caso NORMAL de un sismo avisado— podía acuñar dos.
+        #
+        # Lock PROPIO y no `_transitions_lock`: aquél lo toman los hilos HTTP del
+        # panel a 1 Hz (`recent_transitions`), y la identidad no debe ser
+        # alcanzable desde un kiosco LAN. Medido en portátil: adquirir y soltar
+        # son ~0.14 µs contra los ~6 µs de `evaluate_features` y los 200 ms de
+        # presupuesto del blueprint §4.3. El reflejo SASMEX→sirena NO pasa por
+        # aquí (vive entero en `gpio._dispatch_sasmex`): lo que queda aguas abajo
+        # es la actuación secundaria.
+        self._episode_lock = threading.Lock()
         # [T-1.53] Últimas transiciones de tier para el panel LAN. Dos hilos
         # escriben aquí (seedlink→evaluate_features y callback gpio→
         # evaluate_sasmex) y los hilos HTTP leen: lock obligatorio. En memoria
@@ -237,9 +248,15 @@ class RuleEngine(EdgeModule):
         """
         old = self._last_tier
         closed_event = self._event_id
-        self._features.clear()
-        self._event_id = None
-        self._episode_end = None
+        # ⚠️ [T-7.49] REBIND y no `.clear()`: `decide()` puede estar iterando este
+        # dict en el hilo de SeedLink, y vaciarlo bajo sus pies lanza
+        # `RuntimeError: dictionary changed size during iteration` — que
+        # `_run_transport` rotularía «SeedLink desconectado» y encendería la
+        # alarma de sensor mudo con el sensor vivo. El rebind es atómico en
+        # CPython y el ciclo en vuelo termina sobre el dict viejo, que es
+        # correcto: ya estaba decidiendo con las features de antes del reset.
+        self._features = {}
+        self.end_episode()
         decision = TierDecision(
             tier=Tier.NORMAL,
             source=AlertSource.MANUAL,
@@ -337,14 +354,59 @@ class RuleEngine(EdgeModule):
         return decision
 
     def _episode_event_id(self, when: datetime) -> str:
-        if self._event_id is None or self._episode_end is None or when > self._episode_end:
-            self._event_id = new_event_id()
-        self._episode_end = when + timedelta(seconds=self.dedup_window_s)
-        return self._event_id
+        """La identidad del episodio en curso. Se ACUÑA, no se consulta.
+
+        ⚠️ **[T-7.49] Aquí vivía el segundo reloj del gabinete**, y por eso un
+        solo sismo se partía en dos incidentes. Caducaba a los 30 s
+        (`dedup_window_s`) mientras el `EpisodeTracker` exige 90 s de silencio
+        para dar el episodio por terminado — y los dos no miden desde el mismo
+        instante, así que **ningún valor los concilia**: con el enclavado SASMEX
+        puesto (que no baja hasta que el operador re-arma) el reloj del silencio
+        ni arranca, y éste caducaba siempre.
+
+        El peor caso no era una calma rara: era **el sismo lejano avisado por
+        SASMEX**, que es la razón de ser del producto. El aviso acuñaba un id, el
+        suelo seguía quieto mientras la onda viajaba —y un `normal` no pasa por
+        aquí, así que no extendía nada— y la sacudida de 50 s después acuñaba
+        otro. El segundo incidente, instrumental y sin cuórum, **tapaba al
+        primero** en el teléfono del ocupante (`T-2.105`).
+
+        Ahora sólo hay un reloj, y es del seguidor: esto acuña una vez y retira
+        cuando `end_episode()` lo dice.
+        """
+        with self._episode_lock:
+            if self._event_id is None:
+                self._event_id = new_event_id()
+            return self._event_id
+
+    def end_episode(self) -> None:
+        """Jubila la identidad en curso. Lo llama quien SABE que el episodio acabó.
+
+        Hoy es el `EpisodeTracker`, que es la única autoridad sobre el final de un
+        episodio y lo decide por dos razones declaradas: silencio o cota. El motor
+        no lo decide por su cuenta a propósito — tener un criterio propio aquí es
+        exactamente lo que `T-7.49` vino a quitar.
+
+        Idempotente y sin I/O: se puede llamar desde el hilo advisory sin que nada
+        pueda propagar al camino de actuación.
+        """
+        with self._episode_lock:
+            self._event_id = None
+
+    def adopt_episode(self, event_id: str) -> None:
+        """Hereda una identidad ya existente. Sólo para el arranque.
+
+        El `EpisodeTracker` persiste su episodio para sobrevivir al corte de luz
+        —la forma más probable de que un sismo real termine— y el motor no
+        persiste nada. Sin esto, tras un reinicio a mitad de sismo el siguiente
+        disparo acuñaría un id nuevo **con probabilidad 1**, que es el segundo
+        camino de divergencia que `T-7.49` cerró.
+        """
+        with self._episode_lock:
+            self._event_id = event_id
 
     def _on_start(self) -> None:
         log.info(
-            "motor de reglas activo (disparo PGA=%.3fg, dedup %.0fs)",
+            "motor de reglas activo (disparo PGA=%.3fg; el episodio lo cierra el seguidor)",
             self.thresholds.pga_trip_g,
-            self.dedup_window_s,
         )

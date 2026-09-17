@@ -163,7 +163,7 @@ def test_engine_ignores_inactive_and_test_sasmex():
 def test_sasmex_and_threshold_same_quake_share_event_id():
     # Doble disparo del MISMO sismo (SASMEX + umbral local) = UN evento, no dos.
     clock = _Clock(START)
-    engine = RuleEngine(TH, dedup_window_s=30.0, clock=clock)
+    engine = RuleEngine(TH, clock=clock)
     sasmex = engine.evaluate_sasmex(SasmexSignal(active=True))
     clock.t = START + timedelta(seconds=2)  # 2 s después (mismo episodio)
     threshold = engine.evaluate_features(_feature(pga=0.12, channel="ENZ"))
@@ -171,12 +171,36 @@ def test_sasmex_and_threshold_same_quake_share_event_id():
 
 
 def test_distinct_events_get_distinct_ids():
+    """Dos sismos distintos, dos identidades. Pero «distinto» ya no lo mide un reloj.
+
+    ⚠️ **[T-7.49] Este test codificaba el defecto.** Exigía que dos alertas
+    separadas 60 s dieran ids distintos, porque el motor tenía una ventana propia
+    de 30 s. Pero la semántica declarada del sistema es otra: un episodio dura
+    hasta que hay `episode_quiet_s` **(90 s)** de silencio, así que a los 60 s
+    seguía siendo el MISMO episodio. Los dos relojes divergían, y el sismo lejano
+    avisado por SASMEX —aviso, ~50 s de viaje, sacudida— se partía en dos
+    incidentes: el segundo, instrumental y sin cuórum, tapaba al primero en el
+    teléfono del ocupante.
+
+    Ahora el motor no caduca por tiempo: acuña una vez y retira cuando el
+    `EpisodeTracker` —la única autoridad sobre el final de un episodio— se lo
+    dice. Lo que separa dos sismos es el FIN del episodio, no un cronómetro.
+    """
     clock = _Clock(START)
-    engine = RuleEngine(TH, dedup_window_s=30.0, clock=clock)
+    engine = RuleEngine(TH, clock=clock)
     first = engine.evaluate_sasmex(SasmexSignal(active=True))
-    clock.t = START + timedelta(seconds=60)  # 60 s después (nuevo evento)
-    later = engine.evaluate_sasmex(SasmexSignal(active=True))
-    assert first.event_id != later.event_id
+
+    clock.t = START + timedelta(seconds=60)
+    dentro = engine.evaluate_sasmex(SasmexSignal(active=True))
+    assert dentro.event_id == first.event_id, (
+        "60 s es MENOS que el silencio que cierra un episodio: sigue siendo el "
+        "mismo sismo, y partirlo aquí es lo que T-7.49 vino a arreglar"
+    )
+
+    engine.end_episode()  # el seguidor dio el episodio por terminado
+    clock.t = START + timedelta(seconds=300)
+    otro = engine.evaluate_sasmex(SasmexSignal(active=True))
+    assert otro.event_id != first.event_id, "el episodio terminó: esto es otro sismo"
 
 
 def test_dedup_uses_reception_clock_not_payload_time():
@@ -184,7 +208,7 @@ def test_dedup_uses_reception_clock_not_payload_time():
     # muy atrasado vs window_start del Shake), el episodio se correlaciona con el reloj de
     # RECEPCIÓN del Pi → el mismo sismo sigue siendo UN evento (hallazgo cross-reloj).
     clock = _Clock(START)
-    engine = RuleEngine(TH, dedup_window_s=30.0, clock=clock)
+    engine = RuleEngine(TH, clock=clock)
     sasmex = engine.evaluate_sasmex(
         SasmexSignal(active=True, received_at=datetime(2000, 1, 1, tzinfo=UTC))
     )
@@ -276,7 +300,7 @@ def test_manual_reset_logs_transition_with_manual_source():
 
 def test_manual_reset_ends_episode_new_event_id_on_retrip():
     clock = _Clock(START)
-    engine = RuleEngine(TH, dedup_window_s=30.0, clock=clock)
+    engine = RuleEngine(TH, clock=clock)
     first = engine.evaluate_features(_feature(pga=0.12, channel="ENZ"))
     engine.reset()
     clock.t = START + timedelta(seconds=2)  # aún dentro de la ventana de dedup original
