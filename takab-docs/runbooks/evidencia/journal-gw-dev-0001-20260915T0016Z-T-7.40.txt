@@ -14,14 +14,22 @@
 # devuelve las 06:12 UTC — seis horas tarde, tres líneas de cron, y la conclusión
 # habría sido «no hay nada en el journal». La ventana 00:14–00:19 UTC es 18:14–18:19 CST.
 #
-# LO QUE DICE (hipótesis (c) de la ficha, confirmada):
+# LO QUE DICE:
 #   00:16:02 → 00:16:16  cascada completa de tiers con event_id=ecafbf80d4244426a9ab…
-#                        (uno de los TRES incidentes vivos en la nube)
 #   00:16:19             backfill sube la evidencia nombrada 11ed80bb2c71401db97b687cf7a482ad
 #
-# Dos event_uuid distintos en el MISMO gabinete con 17 s de diferencia. No es que la
-# nube perdiera el evento: es que la evidencia se nombró con un uuid que el camino de
-# reglas/supervisor nunca publicó. La divergencia es INTERNA al gabinete.
+# ⚠️ CORRECCIÓN DEL 2026-09-17, MISMO DÍA: al capturar esta ventana se concluyó que era
+# la hipótesis (c) —«la evidencia se nombró con un uuid que nadie publicó»— y ES FALSO.
+# Esta ventana NO PUEDE contener el bautizo de esa evidencia, por aritmética del propio
+# código: `evidence_post_s` son 120 s, así que lo que subió a las 00:16:19 se encoló a
+# las 00:14:19 como muy tarde. Y `queue_evidence` era MUDO: no escribía nada al encolar.
+#
+# Lo que zanjó el caso fue la ventana del propio miniSEED, que sigue intacto en S3:
+# 21:26:40.891Z → 21:29:40.891Z, o sea el evento de las 21:27:40.89Z del DÍA ANTERIOR —
+# que este mismo journal registra como episodio 11ed80bb… Ese episodio fue 1 h 52 min
+# ANTES de la purga operativa de T-7.10 (23:29:34Z), que borró su incidente; la evidencia
+# subió 47 min DESPUÉS, porque la pasada de evidencia sólo corría cuando llegaba el
+# episodio siguiente. Fue (b) con retraso, no (c). Ver el cierre de T-7.40.
 #
 # --- captura literal, 45 líneas ---------------------------------------------------
 2026-09-15T00:16:02+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:02,948 WARNING takab_edge.rules — transición de tier normal → restricted (disparo en un sensor: ENN)

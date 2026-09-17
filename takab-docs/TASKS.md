@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **426** · `[x]` **365** · `[~]` **11** · `[ ]` **50**
+**Conteo de tareas:** total **428** · `[x]` **366** · `[~]` **11** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15345,7 +15345,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 
-### [ ] T-7.40 · **Un gabinete subió evidencia de un evento que la nube nunca ingirió** — `SOFTWARE`
+### [x] T-7.40 · **Un gabinete subió evidencia de un evento que la nube nunca ingirió** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** edge · api · **Depende de:** — · **Prioridad:** F3 · alta
 - **Objetivo:** saber por qué se perdió el evento `11ed80bb-2c71-401d-b97b-687cf7a482ad` entre el
   gabinete y la nube, y si puede volver a pasar. Roza la **regla de oro 3**: nada se pierde al
@@ -15362,8 +15362,14 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     `7f64e6eb…` y `31746424…`.
   - El incidente `06deb24d` abrió a las **00:16:03Z**, 16 s ANTES de esa subida, y ya tiene su
     propia evidencia miniSEED con otro sha (`8c413f45…`).
-  - ⚠️ **No fue la purga de `T-7.10`**: corrió el 2026-09-14T23:29:34Z, 47 minutos antes. Fue la
-    primera sospecha y es falsa; queda escrita para que nadie la repita.
+  - ⚠️ ~~**No fue la purga de `T-7.10`**: corrió el 2026-09-14T23:29:34Z, 47 minutos antes. Fue la
+    primera sospecha y es falsa; queda escrita para que nadie la repita.~~
+    **CORREGIDO el 2026-09-17: SÍ fue la purga, y este razonamiento estaba INVERTIDO.** «47 minutos
+    antes» sólo exculpa si la evidencia pertenece a un evento posterior a la purga. Pertenece a uno
+    **anterior**: la ventana del miniSEED que sigue en S3 va de `21:26:40.89Z` a `21:29:40.89Z`, y
+    con `evidence_pre_s=60` eso sitúa el evento en `21:27:40.89Z` — **1 h 52 min ANTES** de la
+    purga. Para un pendiente encolado antes, «antes» no exculpa: es exactamente el orden que
+    fabrica el huérfano. Queda escrito que la refutación era la equivocada, no la sospecha.
 - **Criterios de aceptación:**
   - [x] **RECUPERADO el 2026-09-17**, en cuanto hubo ruta al sitio:
     `takab-docs/runbooks/evidencia/journal-gw-dev-0001-20260915T0016Z-T-7.40.txt`. El journal es
@@ -15387,19 +15393,56 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     desde este equipo, no el gabinete — la pregunta se contestó para que nadie la repita.
     (`gateways.status` decía `offline` con un latido de 19 s: esa columna es el estado de alta de
     la flota, no la vivacidad; la vivacidad la da el latido.)
-  - [ ] Decir cuál de las tres cosas pasó, con evidencia: (a) el `LocalEvent` nunca se publicó;
-    (b) se publicó y la nube lo rechazó —mirar la DLQ de `takab-dev-q-events` y el `audit_log`—;
-    o (c) se publicó con un `event_uuid` distinto del que el gabinete usó para nombrar la
-    evidencia, que sería una divergencia DENTRO del gabinete.
-  - [ ] Si se puede reproducir, una prueba de costura que lo fije. Si no, dejar escrito por qué
-    no se puede y qué señal lo delataría la próxima vez.
+  - [x] **CONTESTADO el 2026-09-17: fue (b), en una forma que la ficha no listaba — la evidencia
+    llegó TARDE y se cruzó con la purga.** No fue (a) ni (c). Tres mediciones independientes:
+    1. **La ventana del propio miniSEED**, que sigue intacto en S3: `21:26:40.891Z → 21:29:40.891Z`,
+       180 s, cuatro trazas (`EHZ`/`ENE`/`ENN`/`ENZ`). Con `evidence_pre_s=60` el evento fue en
+       **`2026-09-14T21:27:40.89Z`**.
+    2. **El journal de esa hora** trae exactamente ese episodio: `21:27:40` transición
+       `normal → restricted` con `event_id=11ed80bb…`. O sea que el gabinete **SÍ lo publicó** —el
+       mismo `decision.event_id` construye el `LocalEvent` y encola la evidencia, en la misma
+       llamada (`supervisor.py:811` y `:826`)—. **Esto refuta (c).**
+    3. **La purga** corrió a las `23:29:34Z` con `DELETE FROM incidents;` **sin `WHERE`**, y los
+       cuatro incidentes vivos hoy son TODOS posteriores. La evidencia subió a las `00:16:19Z`,
+       47 min después de la purga, porque la pasada de evidencia sólo corría cuando llegaba el
+       episodio SIGUIENTE (`ecafbf80…`, a las `00:16:02Z`).
+    ⚠️ **Y una corrección de este mismo día:** por la mañana se dio (c) por confirmada leyendo una
+    ventana de journal de 15 minutos. No la sostenía: `evidence_post_s` son 120 s, así que lo que
+    subió a las `00:16:19` se encoló **a las `00:14:19` como muy tarde** —fuera de esa ventana— y
+    además `queue_evidence` era **mudo**, así que ninguna ventana podría haber mostrado el bautizo.
+    Lo que la ventana probaba es que ese id no se publicó *en esos 15 minutos*, no que no se
+    publicara nunca.
+  - [x] **El retraso, medido y generalizado.** No fue un accidente: la evidencia de CADA episodio
+    se subía cuando ocurría el siguiente. Cinco parejas consecutivas en `gw-dev-0001`, con
+    retrasos de **9 min a 6 h 09 min**. Causa: `_process_pending_evidence` salta toda ventana cuyo
+    `end` siga en el futuro con un «reintentar luego», y los únicos despertadores eran
+    `queue_evidence` (o sea, el evento siguiente) y `_on_online`. **No existía ningún «luego».**
+    Comprobado EN VIVO el 2026-09-17: el panel del gabinete declaraba `pending: 1`, `phase: idle`,
+    con la evidencia del incidente `2aead1d2…` —que la consola tenía **en revisión**— esperando en
+    disco con el enlace sano.
+  - [x] **Sí se puede, y se fijó.** `edge/tests/test_backfill.py::`
+    `test_una_evidencia_MADURA_sube_SOLA_sin_otro_evento_ni_reconexion` —con su contraprueba
+    `test_sin_el_barrido_la_evidencia_madura_SE_QUEDA`, que para **sólo el barrido** y comprueba
+    que entonces la evidencia se queda—. La otra mitad, la que hizo que esto costara tres días:
+    `test_encolar_evidencia_DEJA_RASTRO_de_su_bautizo`, porque `queue_evidence` era mudo y el único
+    rastro de una evidencia era su SUBIDA, horas después y con otro episodio de por medio.
   - [x] **El `.mseed` NO se borra** (regla de oro 11). Lo purgado fue la notificación de S3 en la
     DLQ, no la evidencia. Hecho el 2026-09-16: se borró **ese mensaje y sólo ése**, recibiéndolo y
     comprobando su clave antes de borrarlo por su recibo — `purge-queue` habría vaciado la cola
     entera, incluido lo que entrara después. Comprobado a continuación: las dos colas a 0 y el
     objeto de 192 512 B intacto en `takab-dev-evidence-634882473845`.
-- **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
+
+> **CERRADA el 2026-09-17.** El arreglo es el barrido que faltaba
+> (`_BARRIDO_EVIDENCIA_S = 30 s` en `edge/takab_edge/backfill/__init__.py`, con su razón medida al
+> lado) más el rastro del bautizo. Con los 120 s de post-roll, la evidencia sale ahora a los ≤150 s
+> del evento en vez de esperar al sismo siguiente. El barrido **no toca disco** si el contador en
+> memoria dice que no hay nada, así que un gabinete en calma no paga nada por tenerlo.
+>
+> **Lo que NO se arregló aquí, porque son defectos distintos y se fichan aparte:** los dos relojes
+> del episodio y la carrera de `_episode_event_id` (`T-7.49`); y que el grant de evidencia de la
+> nube no compruebe que el incidente exista, más el reintento eterno del worker (`T-7.50`).
 
 ### [ ] T-7.41 · **Una alarma clavada en ALARM está MUDA, y nadie vigila a los vigilantes** — `SOFTWARE`
 - **Componente:** infra · api · **Depende de:** — · **Prioridad:** alta
@@ -15645,6 +15688,67 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         no lo dice: lo vigila `test_el_papel_NO_manda_hacer_algo_que_HOY_NO_SE_PUEDE`.
 - **Tests de censo que toca:** `consoleImageCensus` no; el gate del SDK sí (`make drift`) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.49 · **Un solo sismo con una calma intermedia se parte en DOS incidentes, y el segundo no se cierra jamás** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** — · **Prioridad:** F3 · **alta**
+- **Objetivo:** que un suceso sísmico tenga UNA identidad, y que el cierre llegue al incidente que
+  el ocupante tiene en pantalla.
+- **El fallo, medido y reproducido** (sale de `T-7.40`). El gabinete lleva **dos relojes distintos
+  para «el mismo episodio»** y divergen:
+  - `RuleEngine` caduca su `event_id` a los **30 s** (`dedup_window_s`, default en
+    `edge/takab_edge/rules/__init__.py`, y `supervisor.py` construye `RuleEngine(s.thresholds)` sin
+    pasar otro).
+  - `EpisodeTracker` exige **90 s** de silencio para dar el episodio por terminado
+    (`episode_quiet_s`, `edge/takab_edge/config/settings.py`).
+  Un solo sismo con una calma intermedia de **entre 30 y 90 s** —la separación P/S a distancia, o
+  una réplica temprana— produce **dos `event_uuid`**: el `LocalEvent` y su evidencia llevan el
+  segundo, y el `tier_transition` de cierre que `T-7.30` introdujo se emite con el primero.
+  Reproducido con el código real: un sismo a `t=0` y `t=40 s` da dos ids de `LocalEvent` y **uno
+  solo** de `tier_transition`.
+- **Por qué es alta.** Ataca exactamente lo que `T-7.30` vino a arreglar: **el teléfono del ocupante
+  se queda contando sobre un incidente que nadie va a cerrar**. Y en la consola son dos incidentes
+  del mismo temblor, lo que rompe cualquier lectura de «cuántos eventos hubo».
+- **Y una carrera en el mismo sitio.** `RuleEngine._episode_event_id` hace *check-then-act* sobre
+  `self._event_id` **sin ningún lock**, y entran dos hilos: el de SeedLink (`_on_packet`) y el
+  callback del dueño de los pines (`_on_sasmex`). El `_transitions_lock` que sí existe protege el
+  ring del panel, no el id.
+- **Criterios de aceptación:**
+  - [ ] Una sola fuente de la identidad del episodio, o los dos relojes CONCILIADOS con su razón
+        escrita. No vale «que coincidan hoy»: tiene que ser imposible que diverjan.
+  - [ ] Una prueba que ejerza la calma intermedia (30 s < t < 90 s) y exija que el cierre llegue al
+        MISMO `event_uuid` que abrió.
+  - [ ] El acceso al id del episodio, bajo lock, con una prueba que ejerza los dos hilos.
+  - [ ] ⚠️ No tocar el camino SASMEX→relé (regla de oro 1): esto es identidad y bitácora, no
+        actuación.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** por ver (`tests/test_rules*`, `tests/test_supervisor.py`).
+
+### [ ] T-7.50 · **La nube firma la subida de una evidencia sin comprobar que su incidente exista, y luego reintenta para siempre** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.40 · **Prioridad:** F4 · media
+- **Objetivo:** que un objeto huérfano se rechace donde es barato, y que lo irreintentable deje de
+  reintentarse.
+- **El fallo** (sale de `T-7.40`). El grant de `mode='evidence'` es el ÚNICO sitio donde la
+  identidad del gabinete y el `event_uuid` se encuentran **antes** de que aterricen 192 KB en S3, y
+  no comprueba que el incidente exista: `api/src/takab_api/backfill/grants.py` sólo exige
+  `event_id` no vacío y que el `sha256` case con su regex — ni siquiera valida que sea un UUID, cosa
+  que el ingestor sí hace. El problema se descubre después, en el worker
+  (`api/src/takab_api/backfill/objects.py`), que responde `RETRY: incidente … aún no ingerido`.
+- **Y ese reintento trata como transitorio algo permanente.** «Aún no ingerido» supone que el
+  incidente viene de camino. Cuando el incidente **fue borrado** —el caso real de `T-7.40`— no
+  viene nunca: el mensaje da vueltas, acaba en la DLQ y clava una alarma que además está muda
+  (`T-7.41`). Un rechazo en el grant habría costado una línea de log y **cero bytes**.
+- **Criterios de aceptación:**
+  - [ ] El grant rechaza —con su motivo— una evidencia cuyo `event_uuid` no exista, y lo dice en un
+        log que se pueda buscar. Ojo a la carrera legítima: la evidencia puede llegar antes que el
+        evento en una reconexión, así que el rechazo tiene que distinguir «todavía no» de «nunca».
+  - [ ] Reintento **acotado** en el worker y, agotado, **huérfana DECLARADA** en vez de DLQ muda.
+        ⚠️ La evidencia **no se borra** (regla de oro 11): se registra diciendo que lo es.
+  - [ ] El gabinete cuenta a la nube su evidencia pendiente. Hoy la edad del pendiente más viejo
+        sólo la compara el panel LAN contra 3 600 s y **`HealthSnapshot` no tiene campo para ello**,
+        así que la nube no puede saber que un gabinete retiene evidencia. Si se añade, es cambio de
+        contrato: `SCHEMA_VERSION` y su huella en `edge/takab_edge/schemas.py`.
+- **Tests de censo que toca:** el del schema compartido si se toca `HealthSnapshot` · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí (los de `grants.py` y `objects.py`).
 
 ## RUTA CRÍTICA
 

@@ -97,6 +97,7 @@ def _rig(
     put_ok: bool = True,
     grant_timeout_s: float = 0.3,
     buffer: object | None = None,
+    clock=None,
 ):
     settings = EdgeSettings(
         dev_mode=True,
@@ -115,7 +116,7 @@ def _rig(
         pending_dir=tmp_path / "pending",
         http_put=put,
         jitter_s=lambda: 0.0,
-        clock=lambda: NOW,
+        clock=clock or (lambda: NOW),
     )
     return settings, transport, connector, manager, put, buffer
 
@@ -257,6 +258,108 @@ def test_evidence_window_not_complete_waits(tmp_path: Path) -> None:
     time.sleep(0.05)
     assert manager.pending_evidence() == [event_id]  # espera la ventana completa
     assert put.calls == []
+
+
+def test_una_evidencia_MADURA_sube_SOLA_sin_otro_evento_ni_reconexion(tmp_path: Path) -> None:
+    """[T-7.40] La otra mitad de `test_evidence_window_not_complete_waits`.
+
+    Aquélla comprobaba que una ventana incompleta ESPERA, y era cierto. Lo que
+    nadie comprobaba es que luego **suba**: `_process_pending_evidence` salta el
+    pendiente con un «reintentar luego» y hasta esta ficha los únicos
+    despertadores eran el evento SIGUIENTE y la reconexión.
+
+    Medido en `gw-dev-0001`: la evidencia de cada episodio se subía cuando
+    ocurría el siguiente —de 9 min a 6 h 09 min de retraso— y la del
+    2026-09-14T21:27:40Z llegó a la nube 47 minutos DESPUÉS de la purga operativa
+    que había borrado su incidente. La nube no perdió nada: la evidencia llegó
+    tarde. Roza la regla de oro 3.
+
+    Aquí no se reconecta ni se encola un segundo evento: sólo pasa el tiempo.
+    """
+    reloj = [NOW]
+    _s, transport, connector, manager, put, _b = _rig(tmp_path, clock=lambda: reloj[0])
+    manager._barrido_s = 0.05  # noqa: SLF001 — el barrido REAL, acelerado
+    event_id = uuid.uuid4().hex
+    manager.queue_evidence(event_id, NOW, NOW + timedelta(seconds=120))
+    connector.set_online(True)
+    manager.start()
+    try:
+        time.sleep(0.3)
+        assert manager.pending_evidence() == [event_id], (
+            "la evidencia subió antes de que su ventana cerrara: el post-roll no se respeta"
+        )
+        assert put.calls == []
+
+        reloj[0] = NOW + timedelta(seconds=121)  # la ventana CIERRA. Nada más ocurre.
+
+        peticiones = lambda: [p for t, p in transport.published if t.endswith(f"request/{THING}")]  # noqa: E731
+        deadline = time.monotonic() + 3.0
+        while not peticiones() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert peticiones(), (
+            "la ventana cerró y NADIE fue a por la evidencia. Sin otro evento y sin "
+            "reconexión, el gabinete la retiene indefinidamente — que es exactamente "
+            "lo que dejó huérfana la evidencia del 2026-09-14 en gw-dev-0001"
+        )
+        _grant_for(transport, key=f"evidence/tenant-x/{event_id}/abc.mseed")
+
+        deadline = time.monotonic() + 3.0
+        while manager.pending_evidence() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert manager.pending_evidence() == []
+        assert len(put.calls) == 1
+    finally:
+        manager.stop()
+
+
+def test_sin_el_barrido_la_evidencia_madura_SE_QUEDA(tmp_path: Path) -> None:
+    """La contraprueba: reproduce el defecto y comprueba que la prueba de arriba
+    lo vería.
+
+    Se para el barrido —y sólo el barrido— dejando todo lo demás igual. Si esta
+    prueba se pusiera roja, la de arriba estaría pasando por otra razón y no
+    vigilaría nada.
+    """
+    reloj = [NOW]
+    _s, transport, connector, manager, put, _b = _rig(tmp_path, clock=lambda: reloj[0])
+    manager._barrido_s = 0.05  # noqa: SLF001
+    event_id = uuid.uuid4().hex
+    manager.queue_evidence(event_id, NOW, NOW + timedelta(seconds=120))
+    connector.set_online(True)
+    manager.start()
+    manager._barrido_stop.set()  # noqa: SLF001 — el defecto de antes de T-7.40
+    try:
+        time.sleep(0.2)
+        reloj[0] = NOW + timedelta(seconds=121)
+        time.sleep(0.5)
+        assert manager.pending_evidence() == [event_id], (
+            "sin barrido la evidencia madura subió igual: hay OTRO despertador y la "
+            "prueba de arriba no está midiendo el barrido"
+        )
+        assert put.calls == []
+    finally:
+        manager.stop()
+
+
+def test_encolar_evidencia_DEJA_RASTRO_de_su_bautizo(tmp_path: Path, caplog) -> None:
+    """[T-7.40] Porque «¿de dónde salió este nombre?» costó tres días.
+
+    `queue_evidence` era MUDO: el único rastro de una evidencia era su SUBIDA,
+    que puede ocurrir horas después y con otro episodio de por medio. Al leer el
+    journal, los dos ids parecían una bifurcación de 17 segundos; en realidad el
+    segundo llevaba dos horas y media esperando. Hubo que deducirlo de la ventana
+    del propio miniSEED archivado.
+    """
+    import logging
+
+    _s, _t, _c, manager, _p, _b = _rig(tmp_path)
+    event_id = uuid.uuid4().hex
+    with caplog.at_level(logging.INFO, logger="takab_edge.backfill"):
+        manager.queue_evidence(event_id, NOW, NOW + timedelta(seconds=120))
+    assert any(event_id in r.getMessage() for r in caplog.records), (
+        "encolar una evidencia no deja rastro: el journal no puede decir cuándo se "
+        f"bautizó {event_id}, sólo cuándo se subió"
+    )
 
 
 def test_evidence_grant_timeout_stays_pending(tmp_path: Path) -> None:

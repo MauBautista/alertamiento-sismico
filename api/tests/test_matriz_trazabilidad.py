@@ -598,6 +598,25 @@ _RO = (
                     ),
                 ),
             ),
+            Afirmacion(
+                "RO-2.e",
+                "La evidencia se sube cuando su ventana MADURA, sin esperar a otro evento.",
+                (
+                    Evidencia(
+                        "edge/tests/test_backfill.py",
+                        "test_una_evidencia_MADURA_sube_SOLA_sin_otro_evento_ni_reconexion",
+                        "[T-7.40] Sólo pasa el tiempo: ni se reconecta ni se encola un segundo "
+                        "evento. Antes el único despertador era el evento siguiente, y la "
+                        "evidencia de un sismo podía esperar horas — medido, hasta 6 h 09 min.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_backfill.py",
+                        "test_sin_el_barrido_la_evidencia_madura_SE_QUEDA",
+                        "La contraprueba: para SÓLO el barrido y comprueba que entonces se "
+                        "queda, para que la de arriba no pueda pasar por otra razón.",
+                    ),
+                ),
+            ),
         ),
     ),
     Requisito(
