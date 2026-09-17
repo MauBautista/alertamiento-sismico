@@ -141,8 +141,20 @@ if [ -z "$COTA" ] || [ "$COTA" = "<no value>" ]; then
   ENVF=/run/takab-db-recreate.env
   if (
     umask 077
-    docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONT" \
-      | grep -E '^(POSTGRES_PASSWORD|POSTGRES_DB)=' >"$ENVF"
+    # ⚠️ SE USA LA FORMA `json`, NO UN `range` DE PLANTILLA DE GO, y la razon no
+    # es de estilo. Un documento SSM interpreta una doble llave con una PALABRA
+    # SUELTA dentro como referencia a un parametro SUYO. El cierre de un `range`
+    # de Go es exactamente eso, asi que `UpdateDocument` rechaza el documento
+    # ENTERO con `InvalidDocumentContent: Parameter "end" is not declared`.
+    # Medido contra AWS el 2026-09-17.
+    #
+    # Y ojo: los comentarios VIAJAN dentro del documento, asi que escribir esas
+    # llaves aqui para explicarlo volveria a romperlo — por eso este parrafo las
+    # describe en vez de citarlas. Las formas con punto o con espacio dentro no
+    # casan con esa sintaxis y pasan sin problema.
+    # Lo vigila `test_el_documento_SSM_no_lleva_sintaxis_de_parametro_sin_declarar`.
+    docker inspect -f '{{json .Config.Env}}' "$CONT" \
+      | python3 -c 'import json,sys; [print(e) for e in json.load(sys.stdin) if e.split("=")[0] in ("POSTGRES_PASSWORD","POSTGRES_DB")]' >"$ENVF"
     grep -q '^POSTGRES_PASSWORD=' "$ENVF"
   ); then
     # `stop` y no `rm -f`: Postgres cierra limpio y se ahorra la recuperacion de
