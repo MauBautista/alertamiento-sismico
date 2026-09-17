@@ -572,6 +572,33 @@ run "el_documento_ssm_publica_el_ancla_y_el_disco" {
     error_message = "El documento SSM debe publicar Takab/Ops/DataDiskUsedPercent midiendo `/data`, que es donde estan `/data/pgdata` y su `pg_wal`. La RAIZ se mide aparte (RootDiskUsedPercent, T-7.46): son dos volumenes y dos modos de fallo distintos."
   }
 
+  # [T-7.47] NINGUN documento SSM puede llevar una doble llave con una palabra
+  # suelta dentro. AWS la interpreta como referencia a un PARAMETRO del documento
+  # y rechaza el `UpdateDocument` entero:
+  #
+  #     InvalidDocumentContent: Parameter "end" is not declared.
+  #
+  # Medido contra AWS el 2026-09-17, aplicando esta misma ficha: el cierre de un
+  # `range` de plantilla de Go dentro de un `docker inspect -f` es exactamente esa
+  # forma. Y los COMENTARIOS viajan dentro del documento, asi que explicar la
+  # trampa citandola vuelve a romperlo — paso las dos veces.
+  #
+  # Las formas con punto o con espacio dentro NO casan con esa sintaxis y son
+  # legitimas: el documento lleva varias y funcionan.
+  #
+  # Se comprueban los TRES documentos del modulo, no solo este: el que se rompa
+  # no tiene por que ser el que se acaba de tocar.
+  assert {
+    condition = alltrue([
+      for c in [
+        aws_ssm_document.pitr.content,
+        aws_ssm_document.backup.content,
+        aws_ssm_document.prune_pii.content,
+      ] : length(regexall("\\{\\{[A-Za-z_][A-Za-z0-9_-]*\\}\\}", c)) == 0
+    ])
+    error_message = "Un documento SSM lleva una doble llave con una palabra suelta dentro. AWS la lee como un parametro del documento y rechaza el UpdateDocument completo con `Parameter \"<x>\" is not declared` — el apply falla y ningun `terraform validate` lo caza antes. Si venia de una plantilla de Go, usa la forma `json` en vez de un `range`; y recuerda que los comentarios tambien viajan dentro del documento."
+  }
+
   # [T-7.47] LA COTA DEL LOG DE `takab-db`, y su guarda idempotente.
   #
   # El contenedor nacio sin `--log-opt`: `LogConfig` en `json-file` con
