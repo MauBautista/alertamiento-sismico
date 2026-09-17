@@ -74,14 +74,14 @@ arriba es la interpretación y no se regenera.
 > vecinos; las MAC que empiezan por `b8:27:eb` o `e4:5f:01` son Raspberry).
 
 <!-- conformidad:inicio -->
-_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-16T15:25:31Z · HEAD `369ccf3` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
+_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-17T00:14:57Z · HEAD `6025846` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
 
 | Pieza | Veredicto | Evidencia |
 |---|---|---|
-| build de la nube | 🟡 AMARILLO | nube 9a01278, HEAD 369ccf3: 3 commits por detrás, solo documentos (nada que la nube ejecute cambió) |
+| build de la nube | 🟡 AMARILLO | nube a986a62, HEAD 6025846: 1 commits por detrás, solo documentos (nada que la nube ejecute cambió) |
 | esquema de la nube | 🟢 VERDE | estado=al_dia aplicada=0065_reproduccion_historica == última migración del repo (0065_reproduccion_historica) |
-| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :9a01278) |
-| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.46s |
+| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :a986a62) |
+| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 14 passed in 0.31s |
 | entorno que la nube exige | 🟢 VERDE | todo en el heredoc de deploy.sh/takab-secrets.sh: Settings.REQUERIDOS_EN_PRODUCCION (8 nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL |
 | bandera TAKAB_API_PUSH_FCM_APPLICATION_ARN | 🟢 VERDE | exportada en deploy.sh · definida en /etc/takab/cloud.env de la instancia |
 | bandera TAKAB_API_OPENROUTER_ENABLED | 🟡 AMARILLO | NO exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → la nube corre con el default de Settings (decisión de la demo) |

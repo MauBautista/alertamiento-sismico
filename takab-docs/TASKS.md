@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **423** · `[x]` **361** · `[~]` **11** · `[ ]` **51**
+**Conteo de tareas:** total **424** · `[x]` **361** · `[~]` **11** · `[ ]` **52**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15300,6 +15300,43 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     se contesta por construcción (silencio = alarma) o se contesta por escrito; no se deja abierta.
 - **Tests de censo que toca:** `test_muting` (si `ALARM_CATALOG` gana campo) · **Token nuevo:** no
   · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.46 · **El disco de la instancia se llenó de imágenes viejas y tumbó un despliegue** — `SOFTWARE`
+- **Componente:** infra · deploy · **Depende de:** — · **Prioridad:** F4 · alta
+- **Objetivo:** que desplegar no dependa de que alguien se acuerde de podar a mano.
+- **Lo que pasó, medido el 2026-09-16.** `make cloud-deploy` murió con
+  `failed to register layer: no space left on device` al bajar la imagen nueva. La raíz de la
+  instancia estaba al **99 %** (20 GiB, **268 MB libres**) con **65 imágenes de Docker y 16,23 GB,
+  de los cuales 11,37 GB recuperables (70 %)**. Las había de **siete semanas atrás**: ningún
+  despliegue ha podado nunca. Se liberaron 7,6 GB con `docker image prune -a -f --filter until=336h`
+  y el despliegue siguió.
+- **El fallo se comportó BIEN, y eso no basta.** `deploy.sh` abortó en `alembic upgrade head`
+  (rc=125) y dejó escrito «la API no se toca»: la nube siguió sirviendo la imagen anterior, entera.
+  Pero eso fue el ORDEN de los pasos, no un diseño: el disco lleno alcanza a todo lo que la
+  instancia hace —Postgres escribe su WAL en otro volumen, pero los logs, el spool de SSM y el
+  propio Docker viven en la raíz—.
+- **La alarma que existe NO cubre esto, y su propio comentario lo predijo.** `db_disk_space`
+  (`infra/terraform/modules/observability/main.tf`) publica `DataDiskUsedPercent` de **`/data`**
+  (40 GiB: datadir de Postgres y `pg_wal`). Las imágenes de Docker viven en **`/`** (20 GiB), que
+  **nadie mide**. Y el comentario que justifica esa alarma enumera, con todas las letras, «un log
+  desbocado, un restore a base lateral, **imagenes de docker acumuladas**» como las causas que
+  quedarían invisibles — y luego vigila el volumen donde no ocurren.
+- **Criterios de aceptación:**
+  - [ ] El publicador de `/etc/cron.d/takab-pitr` mide TAMBIÉN la raíz y publica
+    `RootDiskUsedPercent`; alarma propia con el mismo razonamiento de `missing` que su vecina, y
+    su línea en `ALARM_CATALOG` (que la exige clasificada).
+  - [ ] `deploy.sh` poda antes de bajar la imagen nueva, con una ventana declarada que conserve
+    los objetivos de reversión recientes —no `-a` a secas: `T-2.70` deja una vuelta atrás que
+    depende de tener la imagen anterior a mano—. Lo que se pode se IMPRIME: una poda silenciosa en
+    un despliegue es lo que hace que nadie sepa cuánto margen quedaba.
+  - [ ] El despliegue COMPRUEBA el margen antes de empezar y falla con un mensaje que diga qué
+    hacer. `no space left on device` enterrado en un log de `docker pull` no dice «poda tus
+    imágenes», y costó una corrida entera averiguarlo.
+  - [ ] Decidir si 20 GiB es el tamaño correcto para la raíz y escribirlo. Con ~500 MB por
+    despliegue (432 MB de `cloud` + 63 MB de `console`), veinte despliegues llenan el disco: el
+    problema vuelve en semanas aunque se pode, si nadie fija la cota.
+- **Tests de censo que toca:** `ALARM_CATALOG` (`test_muting`) · alarmas declaradas por escrito ·
+  **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
 
 ## RUTA CRÍTICA
