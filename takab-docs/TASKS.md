@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **430** · `[x]` **368** · `[~]` **11** · `[ ]` **51**
+**Conteo de tareas:** total **431** · `[x]` **369** · `[~]` **11** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15785,7 +15785,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** por ver (`tests/test_rules*`, `tests/test_supervisor.py`).
 
-### [ ] T-7.50 · **La nube firma la subida de una evidencia sin comprobar que su incidente exista, y luego reintenta para siempre** — `SOFTWARE`
+### [x] T-7.50 · **La nube firma la subida de una evidencia sin comprobar que su incidente exista, y luego reintenta para siempre** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** api · **Depende de:** T-7.40 · **Prioridad:** F4 · media
 - **Objetivo:** que un objeto huérfano se rechace donde es barato, y que lo irreintentable deje de
   reintentarse.
@@ -15800,17 +15800,81 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   viene nunca: el mensaje da vueltas, acaba en la DLQ y clava una alarma que además está muda
   (`T-7.41`). Un rechazo en el grant habría costado una línea de log y **cero bytes**.
 - **Criterios de aceptación:**
-  - [ ] El grant rechaza —con su motivo— una evidencia cuyo `event_uuid` no exista, y lo dice en un
-        log que se pueda buscar. Ojo a la carrera legítima: la evidencia puede llegar antes que el
-        evento en una reconexión, así que el rechazo tiene que distinguir «todavía no» de «nunca».
-  - [ ] Reintento **acotado** en el worker y, agotado, **huérfana DECLARADA** en vez de DLQ muda.
+  - [x] **CORREGIDO: el grant rechaza por la FORMA, no por la existencia del incidente.** Ver
+        abajo — rechazar por existencia habría hecho más daño que bien.
+  - [x] Reintento **acotado** en el worker y, agotado, **huérfana DECLARADA** en vez de DLQ muda.
         ⚠️ La evidencia **no se borra** (regla de oro 11): se registra diciendo que lo es.
-  - [ ] El gabinete cuenta a la nube su evidencia pendiente. Hoy la edad del pendiente más viejo
-        sólo la compara el panel LAN contra 3 600 s y **`HealthSnapshot` no tiene campo para ello**,
-        así que la nube no puede saber que un gabinete retiene evidencia. Si se añade, es cambio de
-        contrato: `SCHEMA_VERSION` y su huella en `edge/takab_edge/schemas.py`.
-- **Tests de censo que toca:** el del schema compartido si se toca `HealthSnapshot` · **Token
-  nuevo:** no · **Cambia algo que un test defiende hoy:** sí (los de `grants.py` y `objects.py`).
+  - [~] El gabinete cuenta a la nube su evidencia pendiente. **Fichado aparte como `T-7.53`**: el
+        campo solo no responde la pregunta sin columna destino en `device_health`, y hacerlo entero
+        (edge + contrato + db + consola) mezcla cuatro capas con un arreglo que es puro `api/`.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** sí (la fixture de CCTV usaba un `event_id` que producción nunca manda).
+
+> **Cómo se cerró — y por qué el primer criterio estaba INVERTIDO.**
+>
+> **Rechazar en el grant no acaba con el bucle: lo MUEVE al gabinete, donde nada lo acota.** Un
+> grant denegado es hoy indistinguible de uno perdido —no se publica nada—, así que el edge espera
+> 30 s, **conserva el pendiente** y, desde `T-7.40`, el barrido lo reintenta cada 30 s para siempre.
+> Se cambiaría un bucle ACOTADO en la nube (`maxReceiveCount = 5` ⇒ DLQ) por uno NO acotado en el
+> gabinete: un publish MQTT + un presign cada 30 s, por gabinete y por huérfana. Y la DLQ dejaría de
+> ser un mensaje quieto para ser una **fuente** de ~2 880 al día.
+>
+> **⚠️ Y hay un camino de PÉRDIDA de evidencia.** Cada reintento del edge vuelve a extraer la
+> ventana del ring. Si el rechazo persiste hasta que la ventana se sale del anillo, `extract_window`
+> devuelve vacío y el edge entra en la rama `discarded_no_data`, que **borra el pendiente**: la
+> forma de onda de un sismo real se destruye, y el panel lo cuenta casi como un éxito.
+>
+> **La carrera legítima es real y dura minutos.** En una reconexión `_on_online` dispara la
+> evidencia al instante mientras el spool que lleva el `LocalEvent` espera un jitter de **hasta
+> 120 s**, y los dos caen en la misma cola **sin orden garantizado**. Rechazar por «el incidente no
+> existe» tira evidencia sísmica buena — reglas de oro 3 y 11 a la vez.
+>
+> **Entonces, ¿qué SÍ puede decidir el grant? La FORMA.** `incidents.event_uuid` es de tipo `uuid`,
+> así que un `event_id` que no lo sea **jamás** podrá casar con ninguno: no es «todavía no», es
+> «nunca», y se sabe ahí mismo sin base y sin tiempo. Es la misma exigencia que el ingestor ya hace
+> y que este camino no hacía. **Medido: `urn:uuid:…`, `{uuid}`, `1' OR '1'='1`, una travesía de
+> directorios y una cadena de 10 KB pasaban el contrato JSON Schema y producían key.** Dos de ellas
+> son peores que una huérfana: una key con `../` **no aterriza donde el bucket notifica** —el objeto
+> existiría y el incidente no se enteraría— y una de 10 KB es una key que nadie puede buscar.
+>
+> **El «nunca» se decide donde hay reintentos contados: el worker.** Y el reintento **no era
+> eterno**: `maxReceiveCount = 5` lo acota desde el terraform. El defecto era que esa cota es
+> **CIEGA** — `receive_message` no pedía `ApproximateReceiveCount`, así que el código no podía
+> comportarse distinto en el último intento y el mensaje caía a la DLQ **en silencio**, con la
+> alarma que la vigila muda (`T-7.41`). Ahora se pide el contador, el tope se **LEE del
+> `RedrivePolicy` de la propia cola** —no se teclea: dos sitios opinando sobre el mismo número
+> divergen— y en el último intento la huérfana se **DECLARA** en `audit_log`, que es la tabla que la
+> purga operativa conserva **por nombre**, al revés que `evidence_objects`. El objeto sigue en S3 y
+> su key queda escrita para siempre.
+>
+> **Una fixture que producción nunca manda.** `test_grants_cctv.py` usaba `event_id="ev-abc"`. El
+> `event_id` del CCTV sale del JSON que el propio edge escribe al capturar, con el id del episodio
+> — o sea el hex de `new_event_id()`. La forma irreal se volvió roja en cuanto el grant exigió la
+> de verdad.
+
+### [ ] T-7.53 · **La nube no puede saber que un gabinete retiene evidencia** — `SOFTWARE`
+- **Componente:** edge · api · db · web · **Depende de:** T-7.50 · **Prioridad:** F4 · media
+- **Objetivo:** que un gabinete con evidencia atascada se vea desde el SOC, no sólo desde su LAN.
+- **El fallo** (sale de `T-7.50`). La edad del pendiente más viejo sólo la compara el **panel LAN**
+  contra `_EVIDENCE_STUCK_AFTER_S` (3 600 s), y **`HealthSnapshot` no tiene campo para ello**. Así
+  que el 2026-09-17, con una evidencia de un incidente EN REVISIÓN esperando 49 minutos en el disco
+  del Pi, la nube no tenía forma de enterarse — y lo que lo delató fue mirar el panel a mano.
+- **Lo que ya está medido** y no hay que re-averiguar:
+  - El bump de contrato es **compatible**: el validador `1.16.0` acepta un payload con la clave
+    nueva porque el schema no lleva `additionalProperties`. El sentido peligroso sería consumidor
+    nuevo con emisor viejo, que aquí es inocuo.
+  - El cableado en el edge tiene su patrón exacto (`set_audio`).
+  - ⚠️ **El campo solo no basta**: sin columna destino en `device_health` el handler lo tira, que es
+    exactamente donde lleva `disk_used_pct` desde `T-1.53`. Hay que hacerlo entero.
+- **Criterios de aceptación:**
+  - [ ] `HealthSnapshot` lleva la edad del pendiente más viejo, con `SCHEMA_VERSION` y su huella en
+        `edge/takab_edge/schemas.py`.
+  - [ ] ⚠️ Su valor por defecto es `None` = «no pude preguntar», **nunca `0`**: un gabinete con el
+        backfill caído no puede declarar que no retiene evidencia. Un fallback no puede ser `ok`.
+  - [ ] Columna en `device_health` y el dato visible en la flota de la consola.
+  - [ ] Y su alarma, o la razón escrita de por qué no la lleva.
+- **Tests de censo que toca:** el del schema compartido · **Token nuevo:** no · **Cambia algo que un
+  test defiende hoy:** sí (los del contrato de `HealthSnapshot`).
 
 ### [x] T-7.51 · **Hay incidentes CERRADOS sin hora de cierre, y su dictamen dice «EN CURSO»** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** api · db · **Depende de:** — · **Prioridad:** F4 · media

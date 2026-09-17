@@ -54,7 +54,6 @@ entonces ya no habría forma de declararlas sin superusuario.
 
 from __future__ import annotations
 
-import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0066_cierre_con_hora"
@@ -93,26 +92,45 @@ _CHECK = (
 )
 
 
+#: ⚠️ IDEMPOTENTE, como exige el invariante del proyecto: `db/schema.sql` es el
+#: esquema FINAL y se aplica antes de correr las migraciones, así que la 0002 en
+#: adelante se encuentran su propio trabajo ya hecho. `ADD COLUMN` a secas
+#: reventaba con `DuplicateColumn` y tumbaba la purga de demostración — y el
+#: `ADD CONSTRAINT` no tiene `IF NOT EXISTS`, así que se pregunta a
+#: `pg_constraint`.
+_COLUMNA = (
+    "ALTER TABLE incidents ADD COLUMN IF NOT EXISTS cierre_sin_hora boolean NOT NULL DEFAULT false"
+)
+
+_COMENTARIO = """
+COMMENT ON COLUMN incidents.cierre_sin_hora IS
+  '[T-7.51] El incidente se cerró sin que nadie registrara la hora. DECLARA la '
+  'ausencia en vez de inventarla: la hora real no existe en ninguna parte. Sólo '
+  'lo levantan los cierres anteriores a esta migración; ningún camino vivo puede '
+  'ponerlo.'
+"""
+
+_CHECK_IDEMPOTENTE = f"""
+DO $ck$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conrelid = 'incidents'::regclass
+       AND conname = 'ck_incidents_cierre_con_hora'
+  ) THEN
+    EXECUTE $q${_CHECK}$q$;
+  END IF;
+END $ck$;
+"""
+
+
 def upgrade() -> None:
-    op.add_column(
-        "incidents",
-        sa.Column(
-            "cierre_sin_hora",
-            sa.Boolean(),
-            nullable=False,
-            server_default=sa.text("false"),
-            comment=(
-                "[T-7.51] El incidente se cerró sin que nadie registrara la hora. "
-                "DECLARA la ausencia en vez de inventarla: la hora real no existe "
-                "en ninguna parte. Sólo lo levantan los cierres anteriores a esta "
-                "migración; ningún camino vivo puede ponerlo."
-            ),
-        ),
-    )
+    op.execute(_COLUMNA)
+    op.execute(_COMENTARIO)
     op.execute(_DECLARAR)
-    op.execute(_CHECK)
+    op.execute(_CHECK_IDEMPOTENTE)
 
 
 def downgrade() -> None:
     op.execute("ALTER TABLE incidents DROP CONSTRAINT IF EXISTS ck_incidents_cierre_con_hora")
-    op.drop_column("incidents", "cierre_sin_hora")
+    op.execute("ALTER TABLE incidents DROP COLUMN IF EXISTS cierre_sin_hora")

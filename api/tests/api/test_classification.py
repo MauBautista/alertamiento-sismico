@@ -53,9 +53,12 @@ async def _incidente(*, tenant: str = au.DB_TENANT_PRIV, site: str = au.DB_SITE_
     """Un incidente REAL en la base, para clasificarlo."""
     iid = str(uuid.uuid4())
     await _sql(
+        # ⚠️ [T-7.51] Un `closed` LLEVA `closed_at`: la base lo exige desde la
+        # 0066. Este arnés creaba el estado que hacía que el dictamen de un
+        # incidente cerrado imprimiera «EN CURSO».
         "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, opened_at,"
-        " severity, state, trigger)"
-        " VALUES (:i, :e, :t, :s, now(), 'critical', 'closed', 'sasmex')",
+        " closed_at, severity, state, trigger)"
+        " VALUES (:i, :e, :t, :s, now(), now(), 'critical', 'closed', 'sasmex')",
         i=iid,
         e=str(uuid.uuid4()),
         t=tenant,

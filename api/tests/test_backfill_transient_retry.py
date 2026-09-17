@@ -567,7 +567,7 @@ def _fake_objeto(monkeypatch, fallos: int, sqlstate: str = "55P03") -> dict[str,
 
     contador = {"n": 0}
 
-    def falso(conn, bucket, key, registry, settings, *, s3_client):
+    def falso(conn, bucket, key, registry, settings, *, s3_client, ultimo_intento=False):
         contador["n"] += 1
         if contador["n"] <= fallos:
             raise _ocupada(sqlstate)
@@ -673,7 +673,7 @@ def test_un_fallo_REAL_sigue_agotando_reintentos_y_acaba_en_la_DLQ(
     """El control. Si TODO se reintentara en el sitio, un objeto envenenado
     dejaría el worker girando para siempre y la DLQ no serviría para nada."""
 
-    def falso(conn, bucket, key, registry, settings, *, s3_client):
+    def falso(conn, bucket, key, registry, settings, *, s3_client, ultimo_intento=False):
         raise psycopg.OperationalError("la base se fue")
 
     monkeypatch.setattr(backfill_consumer, "process_s3_object", falso)
@@ -728,7 +728,7 @@ def test_el_COMMIT_del_objeto_tambien_esta_cubierto(sqs, queues, monkeypatch) ->
                 raise _ocupada("40001")
             super().commit()
 
-    def falso(conn, bucket, key, registry, settings, *, s3_client):
+    def falso(conn, bucket, key, registry, settings, *, s3_client, ultimo_intento=False):
         intentos["n"] += 1
         conn.commit()
         return ObjectResult(Outcome.OK, ok=1)

@@ -149,10 +149,13 @@ def make_incident(base_data) -> Callable[..., Awaitable[str]]:
         ts = opened_at or datetime.now(UTC)
         async with engine.begin() as conn:
             await conn.execute(
+                # ⚠️ [T-7.51] Un incidente `closed` LLEVA hora de cierre: la base
+                # lo exige desde la 0066, porque un cerrado sin hora hacía que el
+                # dictamen imprimiera «EN CURSO» de un incidente cerrado.
                 text(
                     "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, "
-                    "event_id, opened_at, severity, state, trigger) "
-                    "VALUES (:i, gen_random_uuid(), :t, :s, :evt, :o, :sev, :st, :trg)"
+                    "event_id, opened_at, closed_at, severity, state, trigger) "
+                    "VALUES (:i, gen_random_uuid(), :t, :s, :evt, :o, :cl, :sev, :st, :trg)"
                 ),
                 {
                     "i": iid,
@@ -160,6 +163,7 @@ def make_incident(base_data) -> Callable[..., Awaitable[str]]:
                     "s": site_id,
                     "evt": event_id,
                     "o": ts,
+                    "cl": ts if state == "closed" else None,
                     "sev": severity,
                     "st": state,
                     "trg": trigger,
