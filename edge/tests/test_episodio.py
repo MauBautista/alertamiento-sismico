@@ -48,6 +48,12 @@ SITIO = "site-dev"
 
 
 def _tracker(**kw) -> EpisodeTracker:
+    # ⚠️ [T-7.49] El reloj va INYECTADO y anclado en `T0`. Desde que el episodio
+    # persistido lleva `opened_at` y tiene cota de edad, un seguidor que restaure
+    # con el reloj de pared vería un episodio abierto en 2026 «hace años» y lo
+    # descartaría — correctamente, pero midiendo otra cosa que la que esta suite
+    # dice medir. Es la misma razón por la que `observe()` recibe `now`.
+    kw.setdefault("now", lambda: T0)
     return EpisodeTracker(quiet_s=QUIET, site_id=SITIO, **kw)
 
 

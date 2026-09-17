@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **428** · `[x]` **366** · `[~]` **11** · `[ ]` **51**
+**Conteo de tareas:** total **429** · `[x]` **367** · `[~]` **11** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15689,7 +15689,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `consoleImageCensus` no; el gate del SDK sí (`make drift`) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.49 · **Un solo sismo con una calma intermedia se parte en DOS incidentes, y el segundo no se cierra jamás** — `SOFTWARE`
+### [x] T-7.49 · **Un solo sismo con una calma intermedia se parte en DOS incidentes, y el segundo no se cierra jamás** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** edge · **Depende de:** — · **Prioridad:** F3 · **alta**
 - **Objetivo:** que un suceso sísmico tenga UNA identidad, y que el cierre llegue al incidente que
   el ocupante tiene en pantalla.
@@ -15713,13 +15713,75 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   callback del dueño de los pines (`_on_sasmex`). El `_transitions_lock` que sí existe protege el
   ring del panel, no el id.
 - **Criterios de aceptación:**
-  - [ ] Una sola fuente de la identidad del episodio, o los dos relojes CONCILIADOS con su razón
+  - [x] Una sola fuente de la identidad del episodio, o los dos relojes CONCILIADOS con su razón
         escrita. No vale «que coincidan hoy»: tiene que ser imposible que diverjan.
-  - [ ] Una prueba que ejerza la calma intermedia (30 s < t < 90 s) y exija que el cierre llegue al
+        **Se eligió lo primero: el segundo reloj NO EXISTE.**
+  - [x] Una prueba que ejerza la calma intermedia (30 s < t < 90 s) y exija que el cierre llegue al
         MISMO `event_uuid` que abrió.
-  - [ ] El acceso al id del episodio, bajo lock, con una prueba que ejerza los dos hilos.
-  - [ ] ⚠️ No tocar el camino SASMEX→relé (regla de oro 1): esto es identidad y bitácora, no
+  - [x] El acceso al id del episodio, bajo lock, con una prueba que ejerza los dos hilos.
+  - [x] ⚠️ No tocar el camino SASMEX→relé (regla de oro 1): esto es identidad y bitácora, no
         actuación.
+
+> **Cómo se cerró — y las DOS cosas que esta ficha decía mal.**
+>
+> **1 · El peor caso no era una calma rara: era el sismo que el producto existe para avisar.** La
+> ficha lo planteó como «una calma intermedia de entre 30 y 90 s». Lo es, pero lo común es peor:
+> **el sismo lejano avisado por SASMEX**. El aviso acuña el id en `t=0`; el suelo sigue quieto
+> mientras la onda viaja —y un `normal` **no** pasaba por `_episode_event_id`, así que no extendía
+> nada—; la sacudida de ~50 s después acuñaba otro id. Ése es el caso Guerrero→CDMX, o sea la forma
+> normal del aviso útil. Reproducido con el código real.
+>
+> **Y con el enclavado la divergencia era CERTEZA, no probabilidad.** `_sasmex_latched` no baja
+> hasta que el operador re-arma, y el reloj del silencio del seguidor **ni arranca** mientras el
+> enclavado esté puesto. Así que el del motor caducaba SIEMPRE y el del seguidor no llegaba NUNCA.
+> Eso **refuta por construcción** la opción de «conciliar los dos números»: ningún valor concilia
+> dos relojes cuando uno no arranca.
+>
+> **2 · «El segundo no se cierra jamás» era FALSO.** La nube no casa el cierre por `event_id`: lo
+> casa por **SITIO** (`incident/lifecycle.py`, `queries/mobile.py::LATEST_TIER`), así que los dos
+> incidentes pasan a `in_review` igual. La consecuencia real es **peor** que la que la ficha
+> describía: `OPEN_INCIDENT` devuelve el incidente abierto **más reciente** del sitio —el
+> instrumental— y `T-2.105` lo oculta entero por no ser autoritativo (una estación sola no ordena
+> evacuar). **El segundo incidente TAPA al primero, el de SASMEX, y el teléfono del ocupante cae a
+> `idle` mientras el edificio se mueve y la sirena suena.** Es exactamente lo que `T-2.105` vino a
+> evitar, entrando por la puerta que `T-2.105` no miró: que haya DOS incidentes abiertos del mismo
+> temblor.
+>
+> **El arreglo: el segundo reloj deja de existir.** `RuleEngine` ya no caduca por tiempo —fuera
+> `dedup_window_s` y `_episode_end`—: acuña una vez y **retira sólo cuando se lo dicen**. Quien se
+> lo dice es el `EpisodeTracker`, única autoridad sobre el final de un episodio, por dos razones
+> declaradas: **silencio** o **cota**. La divergencia no se vuelve improbable; deja de ser posible,
+> porque ya no hay dos cosas que comparar. Lo vigila un censo derivado del árbol
+> (`test_NADIE_MAS_acuña_la_identidad_de_un_episodio`) y una guarda sobre la firma del motor.
+>
+> **Por qué NO se hizo al revés** (que el supervisor estampe el id del seguidor en el `LocalEvent`):
+> los ACKs de actuador se publican ANTES, con `decision.event_id`, así que cada ACK quedaría
+> apuntando a un incidente inexistente y el ingestor los reintentaría hasta la DLQ. Y por qué el
+> motor no pregunta al seguidor: aquél es `critical` y vive en el camino umbral→actuador; éste es
+> advisory y hace I/O de disco. El cable va **advisory → crítico**, nunca al revés.
+>
+> **La cota, declarada y no silenciosa** (`episode_max_s`, 1 h). Sin ella, un enclavado olvidado
+> dejaría al motor sin jubilar el id jamás y el sismo del mes que viene se archivaría dentro del
+> incidente de hoy. Cortar por cota **no es** cerrar por silencio, así que la transición lo DICE con
+> esas palabras y el log también: un fallback no puede ser `ok`.
+>
+> **El otro camino de divergencia, que ningún reloj cubría: el reinicio.** El seguidor persiste su
+> episodio y el motor no persiste nada, así que tras un corte de luz a mitad de sismo el primer
+> disparo acuñaba otro id **con probabilidad 1**. Ahora el motor lo HEREDA (`adopt_episode`) — y por
+> eso el estado guardado necesitaba fecha y techo de edad: un `episodio.json` de hace tres días
+> reutilizaría un `event_uuid` viejo para un sismo nuevo. Un episodio sin fecha (estado de una
+> versión anterior) se descarta **declarándolo**, en vez de suponerlo fresco.
+>
+> **Dos defectos vecinos, arreglados al pasar.** *(a)* `_transicion` tenía un respaldo **triple** que
+> acababa en `new_event_id()`: un fallback que INVENTA la identidad de un hecho de compliance ataría
+> la transición a un incidente inexistente. Colapsado a las dos ramas ciertas. *(b)* `reset()` hacía
+> `self._features.clear()` mientras `decide()` puede estar iterando ese dict en el hilo de SeedLink:
+> `RuntimeError: dictionary changed size during iteration`, que `_run_transport` rotularía «SeedLink
+> desconectado» y encendería la alarma de sensor mudo **con el sensor vivo**. Ahora rebindea.
+>
+> **Un test que codificaba el defecto.** `test_distinct_events_get_distinct_ids` exigía que dos
+> alertas separadas 60 s dieran ids distintos — pero 60 s es MENOS que el silencio que cierra un
+> episodio, así que era el mismo sismo. Reescrito con su razón.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** por ver (`tests/test_rules*`, `tests/test_supervisor.py`).
 
@@ -15749,6 +15811,45 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         contrato: `SCHEMA_VERSION` y su huella en `edge/takab_edge/schemas.py`.
 - **Tests de censo que toca:** el del schema compartido si se toca `HealthSnapshot` · **Token
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí (los de `grants.py` y `objects.py`).
+
+### [ ] T-7.51 · **Hay incidentes CERRADOS sin hora de cierre, y su dictamen dice «EN CURSO»** — `SOFTWARE`
+- **Componente:** api · db · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que un incidente cerrado no pueda decir en papel que sigue abierto.
+- **El fallo, medido en la nube dev el 2026-09-17.** De los cuatro incidentes vivos, **tres tienen
+  `state = 'closed'` y `closed_at` NULO**:
+
+      ecafbf80-…  closed     opened 2026-09-15 00:16:03   closed_at (vacío)
+      7f64e6eb-…  closed     opened 2026-09-15 06:25:05   closed_at (vacío)
+      31746424-…  closed     opened 2026-09-15 21:34:53   closed_at (vacío)
+
+- **Por qué importa, y no es cosmético.** El dictamen imprime el campo `CIERRE` con
+  `f"{m.closed_at:…}" if m.closed_at else "EN CURSO"` (`dictamen/pdf.py`), y `closed_at` sale de
+  `incidents.closed_at` (`dictamen/builder.py`). O sea que **el dictamen pericial de un incidente
+  cerrado afirma que el incidente sigue abierto.** Es la misma clase de defecto que `T-7.38`,
+  `T-7.42` y `T-7.43` cerraron en otras frases del mismo papel: el documento se desmiente contra el
+  dato que lo alimenta. Y la consola deriva de ahí la duración del incidente
+  (`web/src/features/triage/model.ts`), que tampoco puede calcularse.
+- **Lo que YA se descartó, para que nadie lo repita.** No es que falte el código: el único camino
+  que pone `closed` lo pone junto con la hora —`incident/lifecycle.py` hace
+  `closed_at = CASE WHEN … THEN now() END` y `routers/classification.py` hace
+  `SET state = 'closed', closed_at = now()`—. Un barrido del árbol no encuentra **ningún** sitio que
+  escriba `'closed'` sin la hora. Así que esas tres filas llegaron por otra puerta.
+- **Y hay una pista fuerte:** el `audit_log`, que la purga de `T-7.10` **conserva**, no tiene ni una
+  entrada de cierre para esos tres. Sí tiene un `in_review` del 2026-09-17. Un cambio de estado sin
+  auditoría no vino del ciclo de vida.
+- **Criterios de aceptación:**
+  - [ ] Decir POR DÓNDE se pusieron en `closed` esas tres filas, con evidencia. Candidatos a
+        descartar o confirmar: el arnés de `soc-local`, un sembrador de demostración, un SQL a mano,
+        o una migración. Si no se puede saber, decirlo y pasar al siguiente criterio igual.
+  - [ ] Una guarda en la BASE, no en el código: `state = 'closed'` implica `closed_at NOT NULL`.
+        Un `CHECK` lo hace imposible de escribir mal desde cualquier puerta, incluida la que no
+        encontremos. ⚠️ Antes hay que decidir qué se hace con las filas que ya están así: la
+        evidencia no se poda (regla de oro 11), así que rellenar a ciegas sería inventar un dato —
+        lo honesto puede ser un estado o un rótulo que DECLARE que esa hora no se registró.
+  - [ ] Mientras exista una fila así, el dictamen **no puede decir «EN CURSO»** de un incidente
+        cerrado: o dice la hora, o declara que no se registró. Con su prueba.
+- **Tests de censo que toca:** los de `append_only` y el esquema · **Token nuevo:** no · **Cambia
+  algo que un test defiende hoy:** por ver.
 
 ## RUTA CRÍTICA
 

@@ -681,6 +681,26 @@ _RO = (
                     ),
                 ),
             ),
+            Afirmacion(
+                "RO-3.f",
+                "Un solo sismo produce UN solo `event_id`, y dos sismos distintos siguen "
+                "produciendo dos.",
+                (
+                    Evidencia(
+                        "edge/tests/test_identidad_del_episodio.py",
+                        "test_un_sismo_AVISADO_por_sasmex_no_se_parte_en_DOS",
+                        "[T-7.49] El converso de RO-3.a: aquélla impide que un evento se "
+                        "duplique en la nube; ésta impide que el gabinete emita dos "
+                        "identidades para el mismo temblor. El caso es el del aviso SASMEX "
+                        "con ~50 s de viaje de la onda, que es la forma normal del producto.",
+                    ),
+                    Evidencia(
+                        "edge/tests/test_identidad_del_episodio.py",
+                        "test_DOS_sismos_de_VERDAD_siguen_siendo_dos",
+                        "La contraprueba: fundir dos sismos reales sería peor que partir uno.",
+                    ),
+                ),
+            ),
         ),
     ),
     Requisito(

@@ -376,7 +376,23 @@ class EdgeSupervisor:
             s.episode_quiet_s,
             site_id=s.site_id,
             state_path=(Path(s.cloud_spool_dir) / "episodio.json") if s.cloud_spool_dir else None,
+            max_s=s.episode_max_s,
+            # [T-7.49] El seguidor es la ÚNICA autoridad sobre el final de un
+            # episodio, así que es él quien jubila la identidad en el motor. El
+            # cable va advisory → crítico y nunca al revés: que el motor
+            # preguntase aquí metería I/O de disco y una excepción posible en el
+            # hilo que decide la actuación.
+            on_episode_end=self.rules.end_episode,
         )
+        # [T-7.49] Y si el seguidor resucitó un episodio del disco, el motor lo
+        # HEREDA. El seguidor persiste para sobrevivir al corte de luz —la forma
+        # más probable de que un sismo real termine— y el motor no persiste nada:
+        # sin esto, el primer disparo tras el reinicio acuñaría un id nuevo con
+        # probabilidad 1 y el sismo quedaría partido en dos igual que antes.
+        heredado = self.episode.event_id
+        if heredado is not None:
+            log.info("episodio %s heredado del disco tras el arranque", heredado)
+            self.rules.adopt_episode(heredado)
         self.local_api = LocalDashboard(
             self.gpio_link,
             self.rules,

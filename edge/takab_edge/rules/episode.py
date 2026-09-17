@@ -40,10 +40,17 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+import threading
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
-from takab_edge.contracts import AlertSource, Tier, TierDecision, TierTransition, new_event_id
+from takab_edge.contracts import AlertSource, Tier, TierDecision, TierTransition
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
 
 log = logging.getLogger(__name__)
 
@@ -64,15 +71,48 @@ class EpisodeTracker:
     """
 
     def __init__(
-        self, quiet_s: float, *, site_id: str, state_path: Path | str | None = None
+        self,
+        quiet_s: float,
+        *,
+        site_id: str,
+        state_path: Path | str | None = None,
+        max_s: float = 3600.0,
+        on_episode_end: Callable[[], None] | None = None,
+        now: Callable[[], datetime] | None = None,
     ) -> None:
         self.quiet_s = float(quiet_s)
+        #: [T-7.49] Cota DURA de duración de un episodio. No es un segundo reloj
+        #: de identidad —el motor ya no tiene ninguno—: es el suelo bajo el
+        #: silencio. Con el enclavado SASMEX puesto el reloj de `quiet_s` **ni
+        #: arranca** (no baja hasta que el operador re-arma), así que sin cota un
+        #: episodio atascado archivaría el sismo del mes que viene dentro del
+        #: incidente de hoy. Cortar por cota **no es** cerrar por silencio, y por
+        #: eso la transición lo DICE: un fallback no puede ser `ok`.
+        self.max_s = float(max_s)
         self.site_id = site_id
         self._state_path = Path(state_path) if state_path else None
+        self._now = now or _utcnow
+        #: [T-7.49] El seguidor es la única autoridad sobre el final del episodio,
+        #: así que es él quien jubila la identidad en el motor. El cable va en
+        #: esta dirección —advisory → crítico— y no al revés: que el motor
+        #: preguntase aquí metería I/O de disco y una excepción posible en el hilo
+        #: que decide la actuación.
+        self._on_episode_end = on_episode_end
         self._tier: Tier = Tier.NORMAL
         self._event_id: str | None = None
+        self._opened_at: datetime | None = None
         self._quiet_since: datetime | None = None
+        # Mismo read-modify-write y mismos dos hilos que en el motor, y aquí
+        # además se escribe a disco: sin lock se pueden emitir dos cierres o
+        # dejar `episodio.json` a medias.
+        self._lock = threading.RLock()
         self._restaurar()
+
+    @property
+    def event_id(self) -> str | None:
+        """La identidad del episodio en curso, para que el motor la herede al arrancar."""
+        with self._lock:
+            return self._event_id
 
     # --- lo que ve el supervisor ------------------------------------------
 
@@ -84,6 +124,17 @@ class EpisodeTracker:
         `latched` es el enclavado del gabinete: ``None`` significa que no se pudo
         leer, y entonces no se cierra nada.
         """
+        with self._lock:
+            return self._observe(decision, latched=latched, now=now)
+
+    def _observe(
+        self, decision: TierDecision, *, latched: bool | None, now: datetime
+    ) -> TierTransition | None:
+        # [T-7.49] La cota, ANTES de nada: un episodio atascado tiene que jubilar
+        # su identidad aunque la decisión que entra sea una escalada.
+        por_cota = self._cerrar_por_cota(decision, now)
+        if por_cota is not None:
+            return por_cota
         tier = decision.tier
         if _rango(tier) > _rango(self._tier):
             return self._abrir_o_escalar(decision, now)
@@ -103,6 +154,9 @@ class EpisodeTracker:
             # Episodio nuevo: su id es el de ESTA decisión, el mismo que viaja en
             # el `LocalEvent` y acaba siendo `incidents.event_uuid`.
             self._event_id = decision.event_id
+            # [T-7.49] Y cuándo abrió, que es lo que la cota necesita y lo que
+            # permite descartar un `episodio.json` rancio tras un reinicio.
+            self._opened_at = now
         self._tier = decision.tier
         self._quiet_since = None
         self._guardar()
@@ -120,19 +174,81 @@ class EpisodeTracker:
             return None
         if (now - self._quiet_since).total_seconds() < self.quiet_s:
             return None
-        previo, event_id = self._tier, self._event_id
+        return self._cerrar(decision, now, event_id=self._event_id, reasons=None)
+
+    def _cerrar(
+        self,
+        decision: TierDecision,
+        now: datetime,
+        *,
+        event_id: str | None,
+        reasons: list[str] | None,
+    ) -> TierTransition:
+        """El ÚNICO sitio que termina un episodio, por silencio o por cota.
+
+        [T-7.49] Y el único que jubila la identidad en el motor: desde esta ficha
+        el motor no caduca por su cuenta, así que si esto no se llamara el id
+        viviría para siempre.
+        """
+        previo = self._tier
         self._tier = Tier.NORMAL
         self._event_id = None
+        self._opened_at = None
         self._quiet_since = None
         self._guardar()
+        self._jubilar_identidad()
         cierre = self._transicion(decision, previo, Tier.NORMAL, now)
-        return cierre.model_copy(update={"event_id": event_id})
+        actualizado: dict = {"event_id": event_id}
+        if reasons is not None:
+            actualizado["reasons"] = reasons
+        return cierre.model_copy(update=actualizado)
+
+    def _cerrar_por_cota(self, decision: TierDecision, now: datetime) -> TierTransition | None:
+        """Corta un episodio que lleva demasiado abierto — y lo DICE.
+
+        No es un cierre sano y no puede parecerlo: el suelo no se calmó, se acabó
+        el plazo. Un operador que lea la bitácora tiene que poder distinguirlos.
+        """
+        if self._event_id is None or self._opened_at is None:
+            return None
+        edad = (now - self._opened_at).total_seconds()
+        if edad <= self.max_s:
+            return None
+        log.warning(
+            "episodio %s cerrado POR COTA (%.0f s abierto, tope %.0f s), no por silencio",
+            self._event_id,
+            edad,
+            self.max_s,
+        )
+        return self._cerrar(
+            decision,
+            now,
+            event_id=self._event_id,
+            reasons=[
+                f"cerrado por COTA de duración ({edad:.0f} s abierto, tope {self.max_s:.0f} s): "
+                "el suelo no se calmó — revisar el enclavado del gabinete"
+            ],
+        )
+
+    def _jubilar_identidad(self) -> None:
+        if self._on_episode_end is None:
+            return
+        try:
+            self._on_episode_end()
+        except Exception:  # noqa: BLE001 — advisory: jamás al camino de actuación
+            log.exception("no se pudo jubilar la identidad del episodio en el motor")
 
     def _transicion(
         self, decision: TierDecision, previo: Tier, nuevo: Tier, now: datetime
     ) -> TierTransition:
         return TierTransition(
-            event_id=self._event_id or decision.event_id or new_event_id(),
+            # ⚠️ [T-7.49] Aquí había un respaldo TRIPLE que acababa en
+            # `new_event_id()`. Un fallback no puede INVENTAR la identidad de un
+            # hecho de compliance: si ninguna de las dos existiera, un id nuevo
+            # ataría esta transición a un incidente que no existe, y eso es peor
+            # que no emitirla. Las dos ramas que quedan son alcanzables y ciertas:
+            # el episodio en curso, o la decisión que lo abre.
+            event_id=self._event_id or decision.event_id,
             site_id=self.site_id,
             prev_tier=previo,
             new_tier=nuevo,
@@ -156,7 +272,16 @@ class EpisodeTracker:
                 return
             tmp = self._state_path.with_suffix(".tmp")
             tmp.write_text(
-                json.dumps({"tier": self._tier.value, "event_id": self._event_id}),
+                json.dumps(
+                    {
+                        "tier": self._tier.value,
+                        "event_id": self._event_id,
+                        # [T-7.49] Sin fecha, un `episodio.json` de hace tres días
+                        # se heredaba como si fuera de hace un minuto y el próximo
+                        # sismo se archivaba dentro de aquel incidente.
+                        "opened_at": self._opened_at.isoformat() if self._opened_at else None,
+                    }
+                ),
                 encoding="utf-8",
             )
             tmp.replace(self._state_path)  # rename atómico: nunca a medio escribir
@@ -173,8 +298,29 @@ class EpisodeTracker:
             d = json.loads(self._state_path.read_text(encoding="utf-8"))
             self._tier = Tier(d["tier"])
             self._event_id = str(d["event_id"])
+            crudo = d.get("opened_at")
+            self._opened_at = datetime.fromisoformat(crudo) if crudo else None
+            # [T-7.49] Un episodio sin fecha es de una versión anterior a esta
+            # ficha: no se sabe cuándo abrió, y lo que no se sabe se DECLARA en
+            # vez de suponerse fresco.
+            if self._opened_at is None:
+                log.warning(
+                    "el episodio %s viene sin fecha de apertura (estado de una versión "
+                    "anterior): se descarta en vez de heredarlo a ciegas",
+                    self._event_id,
+                )
+                self._tier, self._event_id = Tier.NORMAL, None
+            elif (self._now() - self._opened_at).total_seconds() > self.max_s:
+                log.warning(
+                    "el episodio %s abrió hace %.0f s (tope %.0f): se descarta. Heredarlo "
+                    "archivaría el próximo sismo dentro de aquel incidente",
+                    self._event_id,
+                    (self._now() - self._opened_at).total_seconds(),
+                    self.max_s,
+                )
+                self._tier, self._event_id, self._opened_at = Tier.NORMAL, None, None
         except (OSError, ValueError, KeyError):
             # Corte a mitad de escritura, o fichero de otra versión. Se empieza de
             # cero: peor es no arrancar.
             log.exception("estado de episodio ilegible; se empieza sin episodio")
-            self._tier, self._event_id = Tier.NORMAL, None
+            self._tier, self._event_id, self._opened_at = Tier.NORMAL, None, None

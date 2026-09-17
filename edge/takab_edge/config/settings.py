@@ -366,6 +366,16 @@ class EdgeSettings(BaseSettings):
     #: de crisis antes de que llegue la onda S. 90 s cubre con holgura la fase S
     #: de un sismo lejano; el enclavado del gabinete manda por encima de esto.
     episode_quiet_s: float = Field(default=90.0, gt=0)
+    #: [T-7.49] Cota DURA de duración de un episodio, en segundos. No es un
+    #: segundo reloj de identidad —el motor dejó de tener el suyo, que es lo que
+    #: partía un sismo en dos incidentes—: es el suelo bajo `episode_quiet_s`.
+    #: Con el enclavado SASMEX puesto el reloj del silencio **ni arranca** (no
+    #: baja hasta que el operador re-arma), así que sin cota un episodio atascado
+    #: archivaría el sismo del mes que viene dentro del incidente de hoy.
+    #: Una hora: generosa para una secuencia real con réplicas, finita para que un
+    #: enclavado olvidado no sea eterno. Cortar por cota se DECLARA en la
+    #: transición y en el log — no es lo mismo que cerrar por silencio.
+    episode_max_s: float = Field(default=3600.0, gt=0)
     cloud_backoff_s: float = Field(default=1.0, gt=0)  # base de reconexión
     cloud_backoff_max_s: float = Field(default=60.0, gt=0)  # tope del backoff
     #: Tope de mensajes encolados POR TOPIC de telemetría reponible (features/health):
