@@ -252,13 +252,14 @@ def test_la_huella_de_CONTENIDO_no_arrastra_los_bytes() -> None:
     comprueba sobre el payload, no cronometrando: una prueba de tiempo en CI es
     una prueba intermitente.
     """
-    import json
-    from dataclasses import asdict
+    from takab_api.documentos.huella import payload_de_la_huella
 
-    from takab_api.documentos.huella import para_la_huella
-
+    # ⚠️ [T-7.43] Esto reconstruía la receta a mano con `asdict` para poder mirar el
+    # payload, así que vigilaba una COPIA: una regresión en la receta de verdad —por
+    # ejemplo cambiar `asdict` por `getattr` campo a campo, que mete 2.2 MB de JPEG
+    # crudo— habría dejado este test en verde. Ahora llama a la receta.
     m = model(danos=[_dano([_foto(i) for i in (3, 5, 7, 11)])])
-    payload = json.dumps(asdict(m), sort_keys=True, separators=(",", ":"), default=para_la_huella)
+    payload = payload_de_la_huella(m)
     assert "\\\\x" not in payload, "los bytes de las fotografías se colaron en la huella"
     assert payload.count("<") >= 4, "las fotografías no dejaron su marca de tamaño"
     # Y la huella de cada derivada SÍ está: es lo que hace que el hash cambie.

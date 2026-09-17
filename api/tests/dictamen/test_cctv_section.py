@@ -56,8 +56,17 @@ def test_el_analisis_pendiente_no_se_pinta_como_un_cero() -> None:
 
 
 def test_el_bloque_entra_en_la_huella_del_documento() -> None:
-    """Cambiar lo que el documento afirma sobre cuánto tardó la gente en salir tiene que
-    mover el `content_sha256`, o la huella no sirve para comparar dos exportaciones."""
+    """Cambiar lo que el documento afirma sobre cuánto tardó la gente en salir tiene
+    que mover el `content_sha256`.
+
+    ⚠️ [T-7.43] El motivo ya no es «o la huella no sirve para comparar dos
+    exportaciones»: comparar exportaciones **no se puede** —exportar inserta una
+    fila de evidencia que la siguiente imprime— y el papel dejó de prometerlo. El
+    motivo es que el número identifica esta exportación, y este campo forma parte
+    de lo que afirma. El invariante general vive en
+    `test_que_identifica_la_huella.py::test_NINGUN_campo_del_modelo_es_CIEGO_a_la_huella`;
+    esto lo nombra para este campo en concreto.
+    """
     a = model()
     b = model()
     b.cctv = CctvBlock(estado="análisis disponible", t90_s=50.0, peak_n=40)

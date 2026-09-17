@@ -577,7 +577,10 @@ class ReportModel:
     #: la única parte del documento que TAKAB no midió ni verificó, y por eso viaja
     #: como documento con su propio estado de legibilidad en vez de como lista suelta.
     #: Entra en ``content_sha256``: cambiar lo que el dictamen afirma tiene que mover
-    #: la huella, o la huella no sirve para comparar dos exportaciones.
+    #: la huella. ⚠️ [T-7.43] La razón NO es «para poder comparar dos exportaciones»
+    #: —eso no se puede y ya no se promete—: es que el número identifica ESTA
+    #: exportación, y un campo que no lo moviera quedaría fuera de esa identidad.
+    #: Lo vigila el censo derivado, no esta nota.
     compliance: ComplianceDocument = field(default_factory=ComplianceDocument)
     #: [T-3.12.c] CCTV: analítica de evacuación y cadena de custodia del vídeo. Entra en
     #: ``content_sha256`` como todo lo demás — cambiar lo que el documento afirma sobre

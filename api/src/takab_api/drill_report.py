@@ -359,11 +359,18 @@ def render(rep: ReporteSimulacro) -> bytes:
     # invita a correrle `sha256sum` al archivo y a concluir que no casa — la misma
     # ambigüedad que la portada del dictamen acaba de perder. Aquí no hay portada,
     # así que va donde el documento ya dice qué es y qué no.
+    # [T-7.43] Y dice lo que el dictamen NO puede decir. La asimetría es real y
+    # está medida: este modelo se arma de `drills`/`drill_sites` y **no lee
+    # `evidence_objects`**, así que exportarlo no se añade a sí mismo; tampoco
+    # tiene hora de generación, y su clave S3 es fija. Si los dos papeles dijeran
+    # lo mismo, el lector trasladaría al dictamen una garantía que sólo tiene éste.
     pdf.para(
         "La huella al pie identifica el CONTENIDO de este reporte, no este archivo: "
-        "el SHA-256 de un archivo no cabe dentro de sí mismo. Del ARCHIVO se registra "
-        "su propio SHA-256 como evidencia del simulacro, y ése es el que devuelve "
-        "sha256sum.",
+        "el SHA-256 de un archivo no cabe dentro de sí mismo. A diferencia del "
+        "dictamen de un incidente, aquí dos exportaciones del mismo simulacro dan la "
+        "MISMA huella: este reporte no se añade a sí mismo como evidencia y no lleva "
+        "hora de generación. Del ARCHIVO se registra su propio SHA-256 como evidencia "
+        "del simulacro, y ése es el que devuelve sha256sum.",
         size=7,
         muted=True,
     )

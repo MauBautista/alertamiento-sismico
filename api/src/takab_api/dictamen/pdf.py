@@ -157,12 +157,27 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
     # `T-5.26` —un dato inverificable presentado como verificable—, sólo que por
     # ambigüedad en vez de por truncamiento. La variante ejecutiva ya lo decía
     # bien desde `T-7.38·I`; la pericial, que es la que lee un perito, no.
+    # [T-7.43] Y dice QUÉ identifica, con las puertas por las que se mueve. Un
+    # número que cambia sin explicar por qué se lee como inestable, y un perito que
+    # compare dos exportaciones concluiría que alguien tocó el expediente.
+    #
+    # ⚠️ Aquí decía además «compárelo contra ese registro desde la consola», y era
+    # falso por tres vías medidas: la consola sólo busca `kind === "miniseed"`,
+    # `ReportOut` no devuelve el sha del archivo —`DrillReportOut` sí— y
+    # `POST /evidence/{id}/verify` filtra `kind = 'photo'`, así que para un
+    # `report_pdf` da 404. El sha del archivo de un dictamen HOY no lo puede
+    # obtener nadie. La superficie que falta está fichada; hasta que exista, el
+    # papel no manda hacer lo que no se puede.
     pdf.para(
-        "Esta huella identifica el CONTENIDO de esta exportación, no este archivo: "
-        "el SHA-256 de un archivo no cabe dentro de sí mismo. Es la misma que va al "
-        "pie de todas las páginas. Del ARCHIVO se registra su propio SHA-256 como "
-        "evidencia inmutable del incidente, y ése es el que devuelve sha256sum: "
-        "compárelo contra ese registro desde la consola.",
+        "Esta huella identifica ESTA EXPORTACIÓN: no el incidente, y no este archivo "
+        "—el SHA-256 de un archivo no cabe dentro de sí mismo—. Es la misma que va al "
+        "pie de todas las páginas. Dos exportaciones del mismo incidente NO comparten "
+        "huella, y es correcto: exportar añade este documento a la cadena de custodia "
+        "que imprime la §11. También la mueven una sección que no se pudo leer —el "
+        "papel declara cuál y por qué— y una redacción rehecha por el asesor "
+        "automático. Una huella distinta NO prueba que el dato haya cambiado. Del "
+        "ARCHIVO se registra su propio SHA-256 como evidencia inmutable del incidente; "
+        "ése es el que devuelve sha256sum.",
         size=7.5,
         muted=True,
     )
@@ -1148,10 +1163,13 @@ def _render_executive(m: ReportModel) -> bytes:
     # documentos es el folio sin su letra final.
     pdf.field("HASH DE CONTENIDO", m.content_sha256())
     pdf.para(
-        "Esta huella identifica el CONTENIDO de esta exportación, no este archivo. "
+        "Esta huella identifica ESTA EXPORTACIÓN: no el incidente, y no este archivo. "
         "La variante técnica del mismo incidente lleva su propio folio y su propia "
-        "huella: NO coinciden. Lo que empareja los dos documentos es el FOLIO de "
-        "arriba, idéntico salvo la letra final (-E resumen, -T pericial).",
+        "huella: NO coinciden. Tampoco coinciden dos exportaciones de este mismo "
+        "resumen, porque exportar lo añade a la cadena de custodia y porque una "
+        "sección que no se pudo leer se declara y mueve el número. Lo que empareja "
+        "los dos documentos es el FOLIO de arriba, idéntico salvo la letra final "
+        "(-E resumen, -T pericial).",
         size=7,
         muted=True,
     )
