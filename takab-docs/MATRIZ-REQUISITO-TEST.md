@@ -20,10 +20,10 @@ La única excepción es el sello 🔒: un test que *puede* saltarse pero cuyo sa
 
 | Requisitos de software | Requisitos | Afirmaciones |
 |---|---:|---:|
-| `CUBIERTO` | 11 | 60 |
+| `CUBIERTO` | 11 | 61 |
 | `PARCIAL` | 5 | — |
 | `SIN COBERTURA` | 1 | 6 |
-| **Total** | **17** | **66** |
+| **Total** | **17** | **67** |
 
 Y **10 gates físicos / de despliegue** que ningún test de software puede cerrar: piden hardware en sitio o una cuenta AWS. Se listan al final para que el documento de entrega no dé la impresión de que no queda nada por acreditar presencialmente.
 
@@ -57,7 +57,8 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 | RO-2.a | Sin nube, el gabinete sigue detectando y accionando. | `CUBIERTO` | `edge/tests/test_supervisor.py:192`<br>`test_sasmex_actuates_with_cloud_offline` | Nube caída: tier + sirena energizada + 5 acks encolados localmente. |
 | RO-2.b | Dos horas sin enlace y al reconectar no se pierde ni se duplica un evento. | `CUBIERTO` | `edge/tests/test_cloud.py:65`<br>`test_offline_two_hours_then_reconnect_zero_loss_zero_dup` | Los eventos encolados se drenan en orden y sin `event_id` repetido. |
 | RO-2.c | La cola durable sobrevive al reinicio del proceso. | `CUBIERTO` | `edge/tests/test_cloud.py:81`<br>`test_durable_queue_survives_restart` | Un `CloudConnector` nuevo sobre el mismo spool recupera el atraso. |
-| RO-2.d | La evidencia miniSEED encolada offline se sube al reconectar. | `CUBIERTO` | `edge/tests/test_backfill.py:226`<br>`test_offline_event_evidence_uploads_on_reconnect` | Cero PUT mientras está offline; al volver, sube con su sha256. |
+| RO-2.d | La evidencia miniSEED encolada offline se sube al reconectar. | `CUBIERTO` | `edge/tests/test_backfill.py:227`<br>`test_offline_event_evidence_uploads_on_reconnect` | Cero PUT mientras está offline; al volver, sube con su sha256. |
+| RO-2.e | La evidencia se sube cuando su ventana MADURA, sin esperar a otro evento. | `CUBIERTO` | `edge/tests/test_backfill.py:263`<br>`test_una_evidencia_MADURA_sube_SOLA_sin_otro_evento_ni_reconexion`<br>`edge/tests/test_backfill.py:315`<br>`test_sin_el_barrido_la_evidencia_madura_SE_QUEDA` | [T-7.40] Sólo pasa el tiempo: ni se reconecta ni se encola un segundo evento. Antes el único despertador era el evento siguiente, y la evidencia de un sismo podía esperar horas — medido, hasta 6 h 09 min.<br>La contraprueba: para SÓLO el barrido y comprueba que entonces se queda, para que la de arriba no pueda pasar por otra razón. |
 
 ### RO-3 · Idempotencia en todo dato que cruza el edge→nube.
 
