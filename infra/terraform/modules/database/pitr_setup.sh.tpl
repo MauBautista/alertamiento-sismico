@@ -84,6 +84,97 @@ else
   log "archive_mode ya estaba en on: no se reinicia nada"
 fi
 
+# --- 2b. [T-7.47] LA COTA DEL LOG, que solo se puede poner RECREANDO ----------
+#
+# `takab-db` nacio sin `--log-opt`, asi que su `LogConfig` es `json-file` con
+# configuracion VACIA: sin techo. Los ocho servicios del compose si la declaran
+# (`max-size 10m, max-file 3`). Medido el 2026-09-17: su log ocupaba 84 MB tras
+# 73 dias, o sea ~1,16 MB/dia — el unico consumidor SIN COTA del volumen raiz, y
+# el que `docker image prune` jamas toca.
+#
+# TRES VIAS DESCARTADAS, por escrito, para que nadie las reintente:
+#
+#   · `docker update` NO puede tocar `LogConfig`: su superficie son cgroups y
+#     `--restart`. Sale con codigo 0 y no cambia nada — un arreglo que informa
+#     exito y deja el log sin techo, que es el peor resultado posible.
+#   · El default del demonio (`/etc/docker/daemon.json`) NO alcanza a un
+#     contenedor YA CREADO: `LogConfig` se congela al crearlo y ni `docker
+#     restart`, ni reiniciar dockerd, ni reiniciar la maquina lo re-derivan. Y
+#     reiniciar dockerd aqui es parar TODO, porque no hay `live-restore` y
+#     `takab-cloud.service` cuelga de `docker.service` por `Requires=`.
+#   · Parar dockerd y editar `hostconfig.json` a mano: para TODO para arreglar
+#     UNO, o sea estrictamente peor que recrear un solo contenedor.
+#
+# Asi que se recrea. Y se recrea con la MISMA guarda idempotente que el bloque de
+# arriba: se mide en caliente y solo se actua si falta la cota, de modo que la
+# asociacion diaria puede volver a correr sin tumbar la base cada dia. La segunda
+# pasada entra por el `else` y no toca nada.
+#
+# QUE NO SE PIERDE AL RECREAR, y no es una suposicion: medido el 2026-09-17 con
+# `docker diff takab-db` sobre el contenedor vivo — OCHO entradas, todas en
+# `/run` y `/tmp` (el socket, su lock y temporales de la imagen). El datadir es un
+# bind mount (`/data/pgdata`) y la configuracion anadida despues vive DENTRO de
+# el (`postgresql.auto.conf`, ver el paso 1). Fuera del bind mount no hay nada.
+#
+# POR QUE LA COTA VIVE AQUI Y NO EN `user_data.sh.tpl`, que es donde se crea el
+# contenedor. Tocar aquella plantilla cambia el atributo `user_data` de la
+# INSTANCIA VIVA, y `user_data` no esta en su `lifecycle.ignore_changes`: el
+# siguiente `terraform apply` —cualquiera, aunque venga a otra cosa— la PARA Y LA
+# ARRANCA. Meterlo en `ignore_changes` evitaria eso, pero al precio de que un
+# cambio de `user_data` deje de verse en el plan PARA SIEMPRE, que es una ceguera
+# permanente a cambio de una ventana de 24 h en una instancia que se recrea casi
+# nunca.
+#
+# Asi que manda este documento, con el precedente literal de
+# `backup_setup.sh.tpl`, que reescribe `/etc/cron.d/takab-backup` —el MISMO
+# fichero que creo `user_data`—. El coste declarado: una instancia NUEVA nace sin
+# cota y la adquiere en la primera pasada de la asociacion, o sea en 24 h como
+# mucho. Acotado y auto-curable, que es justo lo que la ceguera del plan no es.
+#
+# LA CONTRASENA se lee del contenedor VIEJO y viaja por env-file 0600 en tmpfs,
+# nunca por linea de comando: `ps` la delataria. Es el mismo patron que
+# `backup_setup.sh.tpl`. Leerla de ahi —y no de Secrets Manager— garantiza que el
+# contenedor nuevo nace con EXACTAMENTE el mismo valor que el que se retira.
+COTA="$(docker inspect -f '{{index .HostConfig.LogConfig.Config "max-size"}}' "$CONT" 2>/dev/null || true)"
+if [ -z "$COTA" ] || [ "$COTA" = "<no value>" ]; then
+  log "takab-db corre SIN cota de log: se recrea con max-size=${log_max_size} max-file=${log_max_file}"
+  ENVF=/run/takab-db-recreate.env
+  if (
+    umask 077
+    docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$CONT" \
+      | grep -E '^(POSTGRES_PASSWORD|POSTGRES_DB)=' >"$ENVF"
+    grep -q '^POSTGRES_PASSWORD=' "$ENVF"
+  ); then
+    # `stop` y no `rm -f`: Postgres cierra limpio y se ahorra la recuperacion de
+    # caida en el arranque siguiente.
+    docker stop "$CONT" >/dev/null
+    docker rm "$CONT" >/dev/null
+    docker run -d --name "$CONT" --restart unless-stopped \
+      --log-opt max-size=${log_max_size} --log-opt max-file=${log_max_file} \
+      -p 5432:5432 \
+      -v /data/pgdata:/home/postgres/pgdata/data \
+      --env-file "$ENVF" \
+      timescale/timescaledb-ha:pg16 >/dev/null
+    rm -f "$ENVF"
+    for _ in $(seq 1 60); do
+      if docker exec "$CONT" pg_isready -U postgres -d takab >/dev/null 2>&1; then
+        break
+      fi
+      sleep 5
+    done
+    # Sin `|| true`: si la base no vuelve, esta asociacion TIENE que fallar
+    # ruidosamente. Un `docker run` que no levanta es lo unico verdaderamente
+    # caro de este bloque.
+    docker exec "$CONT" pg_isready -U postgres -d takab
+    log "takab-db recreado con cota de log y respondiendo"
+  else
+    rm -f "$ENVF"
+    log "AVISO: no se pudo leer el entorno de takab-db; NO se recrea (mejor sin cota que sin base)"
+  fi
+else
+  log "takab-db ya tiene cota de log (max-size=$COTA): no se recrea nada"
+fi
+
 # --- 3. El reloj del RPO: edad del ultimo WAL archivado con exito -------------
 #
 # Se publica desde el HOST (no desde el contenedor) porque el `aws` vive aqui,
@@ -366,6 +457,20 @@ install -d -m 0755 /var/lib/takab
 # base se pone a las 04:00 para no solaparse con ninguno de los dos, y el scan que
 # lo comprueba a las 05:00 — una hora despues, para que el dia que toca backup la
 # edad se refresque el mismo dia y no al siguiente.
+# [T-7.47] POR QUE ESTOS LOGS NO LLEVAN `logrotate`, con la cifra al lado.
+#
+# Tres crones anexan a ficheros de la raiz: este, `takab-backup.log` y
+# `takab-prune-pii.log`. Medido el 2026-09-17: 0 B, 24 KB y 29 KB — **53 KB entre
+# los tres** desde agosto, o sea del orden de 350 KB al ano. Los cuatro
+# publicadores por minuto NO escriben ahi: van a `/dev/null`, que es lo que
+# mantiene la cifra en ese orden de magnitud.
+#
+# `logrotate` seria un mecanismo mas que puede morir en silencio, y en este
+# repositorio eso se paga. Para 350 KB/ano sobre un volumen de 20 GiB no compensa:
+# tardaria SESENTA ANOS en igualar lo que una sola imagen de Docker ocupa. Si
+# algun dia uno de estos scripts se vuelve locuaz, lo dira la alarma
+# `takab-dev-disco-raiz-lleno` (T-7.46), que mide el volumen entero y no depende
+# de que nadie se acuerde de esto.
 cat >/etc/cron.d/takab-pitr <<CRON
 * * * * * root /opt/takab/bin/takab-wal-age.sh >/dev/null 2>&1
 * * * * * root /opt/takab/bin/takab-base-backup-age.sh >/dev/null 2>&1

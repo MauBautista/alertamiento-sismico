@@ -572,6 +572,36 @@ run "el_documento_ssm_publica_el_ancla_y_el_disco" {
     error_message = "El documento SSM debe publicar Takab/Ops/DataDiskUsedPercent midiendo `/data`, que es donde estan `/data/pgdata` y su `pg_wal`. La RAIZ se mide aparte (RootDiskUsedPercent, T-7.46): son dos volumenes y dos modos de fallo distintos."
   }
 
+  # [T-7.47] LA COTA DEL LOG DE `takab-db`, y su guarda idempotente.
+  #
+  # El contenedor nacio sin `--log-opt`: `LogConfig` en `json-file` con
+  # configuracion vacia, o sea sin techo. Medido, 84 MB en 73 dias. `LogConfig` se
+  # congela al CREAR el contenedor —ni `docker update`, ni el default del demonio,
+  # ni reiniciar nada lo cambian—, asi que al que ya existe solo se le pone cota
+  # RECREANDOLO.
+  #
+  # Lo que se asierta es la GUARDA, no la presencia de la cadena: sin la medicion
+  # en caliente, la asociacion diaria recrearia la base CADA DIA. Es la misma
+  # forma que el bloque de `archive_mode`, que mide `SHOW archive_mode` y solo
+  # entonces reinicia.
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "HostConfig.LogConfig.Config")
+      && strcontains(aws_ssm_document.pitr.content, "--log-opt max-size=10m")
+      && strcontains(aws_ssm_document.pitr.content, "--log-opt max-file=3")
+      && strcontains(aws_ssm_document.pitr.content, "no se recrea nada")
+    )
+    error_message = "El documento SSM debe imponer la cota de log a `takab-db` RECREANDOLO, y solo si le falta. Sin la guarda que mide `HostConfig.LogConfig.Config` en caliente, la asociacion diaria tumbaria la base todos los dias; sin la rama que no toca nada, no habria idempotencia que asertar."
+  }
+
+  # Y la recreacion tiene que conservar el bind mount del datadir. Es la unica
+  # linea de todo este documento cuya perdida levanta una base VACIA sobre un
+  # sistema en marcha.
+  assert {
+    condition     = strcontains(aws_ssm_document.pitr.content, "-v /data/pgdata:/home/postgres/pgdata/data")
+    error_message = "La recreacion de `takab-db` perdio el bind mount del datadir: Postgres arrancaria sobre un directorio vacio y la base de produccion quedaria detras de un contenedor que parece sano."
+  }
+
   # [T-7.46] Y el publicador de la RAIZ, que hasta esta ficha no existia.
   #
   # ⚠️ LA ASERCION NO PUEDE ANCLARSE EN `df -P /`: esa cadena es PREFIJO de

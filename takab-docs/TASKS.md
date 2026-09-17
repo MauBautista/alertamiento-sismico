@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **425** · `[x]` **362** · `[~]` **11** · `[ ]` **52**
+**Conteo de tareas:** total **425** · `[x]` **363** · `[~]` **11** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15380,7 +15380,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > falla cuando debe.
 
 
-### [ ] T-7.47 · **El contenedor de la base escribe su log sin techo, y ninguna poda lo toca** — `SOFTWARE`
+### [x] T-7.47 · **El contenedor de la base escribe su log sin techo, y ninguna poda lo toca** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** infra · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que el único consumidor sin cota del volumen raíz deje de serlo.
 - **El fallo, medido el 2026-09-17.** Los ocho servicios de la nube declaran
@@ -15402,16 +15402,75 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   que es parar la DB, la API y los ocho workers. El camino que no para nada es el mismo que usan
   los publicadores: un documento SSM.
 - **Criterios de aceptación:**
-  - [ ] `takab-db` corre con su log acotado, con el mismo `max-size`/`max-file` que declara el
+  - [x] `takab-db` corre con su log acotado, con el mismo `max-size`/`max-file` que declara el
     compose para los demás — o con otro valor y su razón escrita, pero nunca sin cota.
-  - [ ] El cambio NO para la instancia. Si la única vía honesta la parara, se dice y se lleva a
+  - [x] El cambio NO para la instancia. Si la única vía honesta la parara, se dice y se lleva a
     una ventana declarada en vez de colarlo en un despliegue.
-  - [ ] Los tres ficheros de log de cron tienen rotación, o se declara por escrito por qué no la
+  - [x] Los tres ficheros de log de cron tienen rotación, o se declara por escrito por qué no la
     necesitan con una cifra de crecimiento medida al lado.
-  - [ ] Un censo DERIVADO: todo contenedor que la instancia arranque declara su cota de log. Hoy
+  - [x] Un censo DERIVADO: todo contenedor que la instancia arranque declara su cota de log. Hoy
     el compose la declara y `user_data` no, y nada lo cruza.
 - **Tests de censo que toca:** los del documento SSM de `modules/database` · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** no.
+
+> **Cómo se cerró, y las tres vías que hubo que descartar por escrito.**
+>
+> **La cota de log se congela al CREAR el contenedor.** Eso descarta las tres
+> soluciones que parecen obvias: `docker update` no puede tocar `LogConfig` —su
+> superficie son cgroups y `--restart`, así que sale con código 0 y no cambia
+> nada, un arreglo que informa éxito—; el default del demonio en
+> `/etc/docker/daemon.json` no alcanza a un contenedor que ya existe, y reiniciar
+> dockerd aquí es parar TODO porque no hay `live-restore` y `takab-cloud.service`
+> cuelga de `docker.service` por `Requires=`; y parar el demonio para editar
+> `hostconfig.json` a mano es parar todo para arreglar uno.
+>
+> **Así que se recrea, con la guarda idempotente que el repositorio ya tenía
+> escrita.** El bloque de `archive_mode` mide `SHOW archive_mode` en caliente y
+> solo entonces reinicia, para que la asociación diaria pueda volver a correr sin
+> tumbar la base cada día. El equivalente aquí mide
+> `HostConfig.LogConfig.Config` y solo recrea si falta la cota; la segunda pasada
+> entra por el `else` y no toca nada.
+>
+> **Recrear no pierde nada, y no es una suposición.** `docker diff takab-db` sobre
+> el contenedor vivo dio OCHO entradas, **todas en `/run` y `/tmp`**: el socket, su
+> lock y temporales de la imagen. El datadir es un bind mount y la configuración
+> añadida después vive dentro de él.
+>
+> **La cota NO se puso en `user_data.sh.tpl`, y la razón importa.** Tocar esa
+> plantilla cambia el atributo `user_data` de la instancia VIVA, y `user_data` no
+> está en su `ignore_changes`: el siguiente `terraform apply` —cualquiera, aunque
+> venga a otra cosa— la para y la arranca. Meterlo en `ignore_changes` lo evitaría
+> al precio de que un cambio de `user_data` deje de verse en el plan PARA SIEMPRE.
+> Se eligió que mande el documento SSM, con el precedente literal de
+> `backup_setup.sh.tpl`, que reescribe el mismo fichero de cron que creó
+> `user_data`. Coste declarado: una instancia NUEVA nace sin cota y la adquiere en
+> la primera pasada de la asociación — 24 h como mucho, acotado y auto-curable,
+> que es justo lo que la ceguera del plan no sería.
+>
+> **El criterio 2 se cumple tal cual está escrito**: dice «la instancia», y
+> recrear un contenedor no para la instancia. La base sí parpadea unos segundos.
+>
+> **Los logs de cron NO llevan `logrotate`, con la cifra al lado.** Medido: 0 B,
+> 24 KB y 29 KB — **53 KB entre los tres** desde agosto, del orden de 350 KB al
+> año. `logrotate` sería un mecanismo más que puede morir en silencio, y para eso
+> tardaría sesenta años en igualar lo que ocupa UNA imagen de Docker. Si alguno se
+> vuelve locuaz lo dirá la alarma de `T-7.46`, que mide el volumen entero.
+>
+> **El censo deriva su frontera en tres estados**, sin una sola lista de exentos:
+> RESIDENTE (declara política de reinicio ⇒ debe declarar cota), EFÍMERO
+> ACREDITADO (`--rm` o retirado en el mismo fichero ⇒ exento por construcción) y
+> ROJO para lo que no se pueda clasificar. Con un tercer estado para el residente
+> cuya cota impone otro mecanismo — y la cita **no se cree, se comprueba**.
+>
+> **Y un defecto mío que el propio censo cazó**: mi expresión regular ponía la
+> alternativa de continuación de línea DESPUÉS de `[^\n]`, así que el `\` de fin
+> de línea lo consumía ésta y el comando se cortaba ahí. El censo leía medio
+> `docker run` y decía «sin cota» de uno que sí la declara.
+>
+> **Lo que queda sin cota en ese volumen, declarado:** el journal de systemd, con
+> el default de journald (10 % del sistema de ficheros). Medido: 310 MB sobre un
+> techo implícito de ~2 GiB. Acotado, pero por nadie de aquí.
+
 
 
 ## RUTA CRÍTICA
