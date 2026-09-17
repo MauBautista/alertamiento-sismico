@@ -132,6 +132,13 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         "dlq_depth",
         "iot_rule_errors",
         "ghost_gateways",
+        # [T-7.41] Las DOS del vigilante de los vigilantes, y son dos a propósito:
+        # `stuck_alarm_age` pagina cuando alguna lleva demasiado sin transicionar;
+        # `stuck_alarm_coverage` vigila AL REVÉS que el barrido siga mirando algo.
+        # Sin la segunda, un detector roto que devuelve siempre cero publica un
+        # latido perfecto. Callar cualquiera de las dos deja ciega a la otra.
+        "stuck_alarm_age",
+        "stuck_alarm_coverage",
         "wal_archive_stalled",
         # [T-2.72.b/c] Las dos de la Fase 2.6. `wal_archive_stalled` vigila la
         # CADENA de WAL; `base_backup_missing`, su ANCLA — sin ancla, la cadena no

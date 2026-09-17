@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **431** · `[x]` **369** · `[~]` **11** · `[ ]` **51**
+**Conteo de tareas:** total **431** · `[x]` **370** · `[~]` **11** · `[ ]` **50**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15444,7 +15444,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > del episodio y la carrera de `_episode_event_id` (`T-7.49`); y que el grant de evidencia de la
 > nube no compruebe que el incidente exista, más el reintento eterno del worker (`T-7.50`).
 
-### [ ] T-7.41 · **Una alarma clavada en ALARM está MUDA, y nadie vigila a los vigilantes** — `SOFTWARE`
+### [x] T-7.41 · **Una alarma clavada en ALARM está MUDA, y nadie vigila a los vigilantes** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** infra · api · **Depende de:** — · **Prioridad:** alta
 - **Objetivo:** que el sistema se entere de que uno de sus vigilantes dejó de vigilar. Hoy no hay
   nada que lo note: ni un test, ni una alarma, ni el censo.
@@ -15467,24 +15467,83 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     catorce días se reportan igual, y son cosas distintas: la primera es una incidencia, la segunda
     es un vigilante muerto.
   - Nada en el repo lee `StateUpdatedTimestamp`. Verificado el 2026-09-16: cero coincidencias en
-    `.py`, `.sh` y `.tf`.
+    `.py`, `.sh` y `.tf`. **⚠️ Y sigue sin leerlo a propósito: ese campo es el EQUIVOCADO** — se
+    mueve también cuando cambia `EvaluationState`, así que una alarma clavada **rejuvenece sola**.
+    El bueno es `StateTransitionedTimestamp` (ver el cierre, abajo).
 - **Criterios de aceptación:**
-  - [ ] Medir la EDAD del estado, no sólo el estado: el censo reporta desde cuándo lleva cada
+  - [x] Medir la EDAD del estado, no sólo el estado: el censo reporta desde cuándo lleva cada
     alarma en ALARM, y distingue «acaba de saltar» de «lleva días clavada».
-  - [ ] ⚠️ **El detector NO puede ser otra alarma del mismo tipo**, o hereda el defecto que viene a
+  - [x] ⚠️ **El detector NO puede ser otra alarma del mismo tipo**, o hereda el defecto que viene a
     arreglar: se quedaría clavada igual y nadie lo sabría. Hay que **invertir la polaridad** — algo
     que tenga que HABLAR periódicamente, de modo que el **silencio** sea la señal. Este repo ya
     aprendió esto para los gabinetes (`alarma-gateway-offline`: se vigila la AUSENCIA del latido
     con `SampleCount` y `breaching`, no un LWT); aquí aplica igual.
-  - [ ] Umbral escrito con su razón. Una alarma legítimamente encendida unas horas mientras alguien
+  - [x] Umbral escrito con su razón. Una alarma legítimamente encendida unas horas mientras alguien
     la atiende no es un vigilante muerto; días sí. El número se declara, no se adivina.
-  - [ ] Cubrir también el caso de `iot-rule-errors`: una alarma en ALARM **por estar sana** es un
+  - [x] Cubrir también el caso de `iot-rule-errors`: una alarma en ALARM **por estar sana** es un
     `treat_missing_data` mal elegido. Si la edad delata a una de éstas, el arreglo es la
     configuración, no silenciar el detector.
-  - [ ] Una prueba que falle si el detector deja de detectar. La pregunta «¿y quién vigila a éste?»
+  - [x] Una prueba que falle si el detector deja de detectar. La pregunta «¿y quién vigila a éste?»
     se contesta por construcción (silencio = alarma) o se contesta por escrito; no se deja abierta.
 - **Tests de censo que toca:** `test_muting` (si `ALARM_CATALOG` gana campo) · **Token nuevo:** no
   · **Cambia algo que un test defiende hoy:** no.
+
+> **Cómo se cerró — y ⚠️ la propia ficha nombraba el campo equivocado.**
+>
+> **El campo correcto es `StateTransitionedTimestamp`, no `StateUpdatedTimestamp`.** Del modelo de
+> servicio del propio CLI, comprobable sin credenciales: el primero es «the last update to the value
+> of either the **`StateValue` or `EvaluationState`** parameters»; el segundo, «the date and time
+> that the alarm's **`StateValue`** most recently changed». O sea que leyendo el de la ficha **una
+> alarma clavada REJUVENECE sola** en cuanto CloudWatch degrada su evaluación (`PARTIAL_DATA`,
+> `EVALUATION_ERROR`): la de 14 días se habría leído de un minuto y el detector habría nacido ciego
+> **y verde**. Lo probó una mutación, no un razonamiento: `assert 60.0 == 1209600`. Cada doble de
+> `tests/ops/test_vigilante.py` lleva ahora `StateUpdatedTimestamp` puesto como **SEÑUELO** —fresco,
+> apuntando a hace un minuto—, así que quien «simplifique» el detector para leer el campo de la
+> ficha pone la suite en rojo por construcción, sin tener que acordarse del porqué.
+>
+> **Y `StateTransitionedTimestamp` es OPCIONAL en el shape `MetricAlarm`.** Cuando falta no se
+> inventa una edad ni se cae al otro campo: se declara aparte en `StuckAlarmsUnmeasurable`. Un
+> fallback no puede ser «ok».
+>
+> **Las DOS polaridades, que es lo que cierra la recursión** (criterios 2 y 5). `StuckAlarmMaxAgeSeconds`
+> pagina y su alarma va con **`missing`**; `StuckAlarmsExamined` se vigila **al revés**
+> (`LessThanThreshold` + **`breaching`**), porque sin ella «cero alarmas clavadas» y «no miré
+> ninguna» serían **el mismo 0.0**: un detector roto publicaría un latido perfecto. Es el cero
+> explícito de `MaxClockDriftMs` aplicado a la COBERTURA en vez de al valor.
+>
+> **⚠️ Y `missing`, NO `breaching`, en la que pagina — al revés que `gateway_offline`.** Si el
+> publicador muere con esa alarma **ya en ALARM**, `breaching` la deja en ALARM: cero transiciones,
+> cero correo, y el vigilante heredaría **literalmente** el defecto que viene a cerrar, una vuelta
+> más abajo. Con `missing` transiciona siempre, porque INSUFFICIENT_DATA es un **tercer** estado
+> distinto de OK y de ALARM (medido en vivo en este repo el 2026-07-29 con `set-alarm-state`). Las
+> dos mitades van **juntas** en el mismo bloque de `treat_missing_data.tftest.hcl`: es el único par
+> del módulo que tiene que elegir valores opuestos, y separarlas invitaría a «unificarlas por
+> coherencia», que es justo el error.
+>
+> **⚠️ El vigilante se excluye de su propio barrido, y el NOMBRE es el contrato.** Si se contara a
+> sí mismo se **auto-trabaría**: en cuanto salta, su edad no deja de crecer y no vuelve a OK jamás —
+> sería el primer vigilante muerto. La exclusión es por nombre (`<prefijo>-vigilante-clavado`), así
+> que renombrar la alarma en Terraform la rompería en silencio; hay una aserción que lo fija en los
+> dos extremos.
+>
+> **El barrido PAGINA.** Hoy son 18 alarmas y las de por gabinete crecen con la flota;
+> `describe_alarms` devuelve 100 como mucho, y lo que no se examina se leería como sano.
+>
+> **El umbral: 86 400 s = un día** (criterio 3). No es a ojo: la ventana CORTA ya tiene dueño
+> —`ops_ack_deadline_s` (900 s) y el barrido `sweep_unacked`, que persiguen al humano que no acusó
+> el correo—, así que éste empieza donde aquélla acaba. Una alarma encendida unas horas mientras
+> alguien la atiende no es un vigilante muerto; un día entero sin que nadie la moviera, sí.
+>
+> **Un `OK` viejo no es un vigilante muerto.** Medido en la nube el 2026-09-17: `ec2-status-check`
+> llevaba **66,8 días** sin transicionar y está perfectamente sana. Sólo cuentan las no-OK.
+>
+> **Publicación propia, `try` propio.** `GhostGauge` mete sus tres cifras bajo un mismo `try` de
+> base de datos a propósito —son la misma fotografía—; éste **no toca la base** y un fallo de
+> Postgres no puede callar al que vigila a los vigilantes. **El coste, aceptado por escrito:**
+> comparte proceso con el worker `notify`, así que si ese worker muere llegan **tres** correos de
+> INSUFFICIENT_DATA por una sola causa. La alternativa —un cron aparte— compraba independencia de
+> fallo a cambio de perder el criterio 5: en bash la única cobertura posible es `strcontains` sobre
+> la plantilla, y `T-7.46` midió que eso **nace verde por prefijo**.
 
 ### [x] T-7.46 · **El disco de la instancia se llenó de imágenes viejas y tumbó un despliegue** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** infra · deploy · **Depende de:** — · **Prioridad:** F4 · alta
