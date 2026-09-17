@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **425** · `[x]` **364** · `[~]` **11** · `[ ]` **50**
+**Conteo de tareas:** total **426** · `[x]` **365** · `[~]` **11** · `[ ]` **50**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14734,7 +14734,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > ejercer **la guarda** en vez del comportamiento de Python — si no, estrecharla la habría dejado
 > en verde con el defecto delante.
 
-### [ ] T-7.43 · **`content_sha256` cambia con el reloj, y el documento promete lo contrario** — `SOFTWARE`
+### [x] T-7.43 · **`content_sha256` cambia con el reloj, y el documento promete lo contrario** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que «comparar dos exportaciones del mismo incidente sin abrirlas» sea verdad, o
   que deje de prometerse.
@@ -14748,13 +14748,77 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   hash del contenido. `T-7.22` multiplicó esa superficie: ahora también las fotografías entran
   por esa puerta.
 - **Criterios de aceptación:**
-  - [ ] O `generated_at` sale del payload de la huella —y entonces la promesa se cumple—, o el
+  - [x] O `generated_at` sale del payload de la huella —y entonces la promesa se cumple—, o el
     docstring y el papel dejan de prometer la comparación y dicen qué SÍ identifica ese número.
-  - [ ] Lo que se decida, con una prueba que lo fije en los dos sentidos.
-  - [ ] Declarar qué pasa con la degradación best-effort: un documento cuya huella depende de si
+    **Se tomó la segunda rama, porque la PRIMERA ES FALSA** (ver abajo).
+  - [x] Lo que se decida, con una prueba que lo fije en los dos sentidos.
+  - [x] Declarar qué pasa con la degradación best-effort: un documento cuya huella depende de si
     S3 respondió no puede presentarse como identificador del contenido sin decirlo.
 - **Tests de censo que toca:** — · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** sí (`test_la_huella_de_contenido_es_estable_y_cambia_con_el_contenido`).
+
+> **Cómo se cerró — y por qué el primer criterio NO se podía ejecutar tal como estaba escrito.**
+>
+> **La disyuntiva de la ficha estaba mal planteada, y la medición lo demuestra.** «O `generated_at`
+> sale del payload —y entonces la promesa se cumple—» es falso: **no es culpa del reloj**. Exportar
+> inserta una fila `kind='report_pdf'` (`queries/reports.py`) que la exportación SIGUIENTE relee
+> —`builder.py::_EVIDENCE` **no filtra por `kind`**— y la imprime en la §11. Medido con el reloj
+> congelado y el mundo idéntico: `77e75b30c0038ce6` → `76973b9c08d3d56a`. Es un bucle
+> autorreferente: **exportar cambia el contenido del incidente.** Sacar el reloj habría convertido
+> una frase falsa en otra frase falsa más pequeña, que es exactamente lo que `T-7.38·I` prohíbe.
+>
+> **Y hay una segunda razón que no es opinión: está en el DDL desde la migración `0002`.**
+> `uq_evidence_incident_sha256` sobre `(incident_id, sha256)` declara que dos exportaciones del
+> mismo incidente **no pueden ser el mismo archivo**. La pregunta de la ficha tenía respuesta
+> escrita en el esquema, y es «no».
+>
+> **La decisión: el número identifica ESTA EXPORTACIÓN**, y `generated_at` se queda. Con ese
+> significado el reloj **pertenece**: es parte legítima de la identidad de una exportación.
+> Sacarlo dejaría un número que no identifica ni la exportación ni el contenido, y —peor— abriría
+> la colisión de arriba: `insert_evidence` no lleva `ON CONFLICT` y se resuelve con `.scalar_one()`,
+> y `put_object` corre ANTES del INSERT, así que dos exportaciones byte-idénticas darían un **500
+> con el objeto ya subido a S3, huérfano**. Dos exportaciones caben de sobra en el mismo segundo
+> (render medido: 260 ms el pericial, 167 ms el ejecutivo, contra un tope de 6/min).
+> ⚠️ Es decir: **hoy lo único que salva al dictamen de esa colisión es la realimentación que este
+> análisis empezó tratando como defecto.**
+>
+> **Cuarta razón, y la que decide entre dos frases igual de defendibles: nadie lo consume.** Cero
+> ocurrencias de `content_sha256` en `web/src`, `mobile/src` y el SDK; cero lectores de
+> `meta->>'content_sha256'` en todo el árbol. Las únicas comparaciones entre dos huellas viven en
+> seis tests. Construirle un lector a un número que nadie pidió, para sostener una promesa que el
+> esquema prohíbe, sería trabajar al revés.
+>
+> **El papel dice ahora las CUATRO puertas por las que se mueve**, porque un número que cambia sin
+> explicar por qué se lee como inestable: (1) el contenido del expediente; (2) la propia
+> exportación, que se añade a la cadena de custodia; (3) una sección que no se pudo leer —que el
+> papel DECLARA, y por eso debe mover el número: esconderla haría que dos papeles distintos
+> compartieran huella, que es peor—; (4) una redacción rehecha por el asesor automático, que se
+> re-muestrea sin `temperature` ni `seed`. Y dice la **dirección**: huellas iguales implican la
+> misma afirmación, huellas distintas **no** prueban que el dato cambiara.
+>
+> **El criterio 2, derivado y sin lista de exentos.**
+> `test_NINGUN_campo_del_modelo_es_CIEGO_a_la_huella` muta los 58 campos uno a uno —salen de
+> `dataclasses.fields`— y exige que la huella se mueva en todos: 58 de 58, 0 ciegos. Fija los dos
+> sentidos **sin apoyarse en la fixture que clava el reloj**, que es lo que hacía vacuas a las dos
+> guardas anteriores. Lleva su contraprueba.
+>
+> **⚠️ Una frase falsa que esta misma sesión había impreso el día anterior.** `T-7.42` dejó en la
+> portada del pericial «compárelo contra ese registro **desde la consola**». Es falso por tres vías
+> medidas: la consola sólo busca `kind === "miniseed"` (`web/src/features/triage/model.ts`) y lo
+> único que pinta va truncado a 16 de 64; `ReportOut` **no devuelve el sha del archivo** mientras
+> `DrillReportOut` sí; y `POST /evidence/{id}/verify` filtra `kind = 'photo'`, así que para un
+> `report_pdf` devuelve 404. **El sha256 del archivo de un dictamen hoy no lo puede obtener nadie.**
+> La frase se retira; la superficie que falta es `T-7.48`.
+>
+> **Y tres copias supervivientes de la promesa** que `T-7.42` había retirado sólo del docstring
+> (`dictamen/model.py`, `test_cctv_section.py`, `test_compliance_section.py`), más la fila **E5** de
+> `INFORME-V1-COMERCIAL.md`, que marcaba 🟢 citando precisamente el test vacuo.
+>
+> **Una guarda sorda, arreglada al pasar.** `test_la_huella_de_CONTENIDO_no_arrastra_los_bytes`
+> reconstruía la receta a mano con `asdict` para poder mirar el payload, así que vigilaba una
+> COPIA: una regresión en la receta real —por ejemplo `getattr` campo a campo, que mete **2.2 MB**
+> de JPEG crudo en el payload contra los 7.5 KB de hoy— la habría dejado en verde. Ahora la receta
+> expone `payload_de_la_huella()` y el test la llama.
 
 ### [ ] T-7.44 · **Cuatro topes de página calibrados a ojo contra A4, ciegos desde la migración a Carta** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-7.21 · **Prioridad:** F4 · media
@@ -15550,6 +15614,37 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > techo implícito de ~2 GiB. Acotado, pero por nadie de aquí.
 
 
+
+### [ ] T-7.48 · **El sha256 del archivo de un dictamen no lo puede obtener nadie** — `SOFTWARE`
+- **Componente:** api · web · **Depende de:** T-7.43 · **Prioridad:** F4 · media
+- **Objetivo:** que la huella del ARCHIVO —la que sí tiene consumidor y sí se puede verificar—
+  sea obtenible por quien recibe el documento.
+- **Cómo salió.** De `T-7.43`. La portada del pericial mandaba «compárelo contra ese registro
+  desde la consola» y la frase es falsa **por tres vías medidas**:
+  - La consola sólo busca `kind === "miniseed"` (`web/src/features/triage/model.ts`), y lo único
+    que pinta va **truncado a 16 de 64** caracteres (`TriageDetail.tsx`) — que es la clase de
+    defecto que `T-5.26` ya cerró una vez en el papel.
+  - `ReportOut` devuelve `evidence_id`/`url`/`expires_in` y **ningún sha** (`schemas/reports.py`),
+    mientras `DrillReportOut` sí lo lleva. Dos documentos hermanos con contratos distintos.
+  - `POST /evidence/{id}/verify` re-hashea el objeto realmente subido —que es justo lo que hace
+    falta— pero su consulta filtra `AND e.kind = 'photo'` (`queries/mobile.py::EVIDENCE_FOR_VERIFY`),
+    así que para un `report_pdf` devuelve **404**.
+- **Por qué importa.** `T-7.43` decidió que la huella de CONTENIDO identifica una exportación y no
+  se puede comparar entre exportaciones. La del ARCHIVO sí: está en `evidence_objects`, la vigila
+  `uq_evidence_incident_sha256`, la tabla es append-only y el verificador ya existe. Es la única
+  de las dos que un perito puede usar, y hoy no llega a él.
+- **Criterios de aceptación:**
+  - [ ] `ReportOut` devuelve el `sha256` del archivo, en espejo con `DrillReportOut`, con el SDK
+        regenerado (`make drift`).
+  - [ ] El verificador acepta el `report_pdf`, **o se declara por escrito por qué no debe**: el
+        alcance de hoy es `_require_damage_read` y un dictamen no tiene por qué compartirlo.
+        Decidirlo, no heredarlo por descuido.
+  - [ ] La consola pinta el sha del `report_pdf` **entero**, no truncado, y el botón de verificar
+        que ya existe para las fotos alcanza también al dictamen.
+  - [ ] Sólo cuando lo anterior exista, el papel vuelve a decir cómo comprobarlo. Mientras tanto
+        no lo dice: lo vigila `test_el_papel_NO_manda_hacer_algo_que_HOY_NO_SE_PUEDE`.
+- **Tests de censo que toca:** `consoleImageCensus` no; el gate del SDK sí (`make drift`) ·
+  **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
 ## RUTA CRÍTICA
 

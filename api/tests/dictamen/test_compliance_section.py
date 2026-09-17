@@ -121,9 +121,15 @@ def test_dos_etiquetas_DISTINTAS_dan_pdfs_distintos(variant: str) -> None:
 
 
 def test_las_etiquetas_entran_en_la_huella_de_contenido() -> None:
-    """``content_sha256`` es lo que permite comparar dos exportaciones sin abrirlas.
-    Si el marco declarado quedara fuera, se podría cambiar lo que el documento afirma
-    sin que la huella se moviera."""
+    """Si el marco declarado quedara fuera, se podría cambiar lo que el documento
+    afirma sin que la huella se moviera.
+
+    ⚠️ [T-7.43] La primera línea de este docstring decía que `content_sha256` «es lo
+    que permite comparar dos exportaciones sin abrirlas». Es la promesa que la ficha
+    retiró: no se puede cumplir, porque exportar inserta una fila de evidencia que la
+    exportación siguiente lee e imprime. Lo que el número identifica es ESTA
+    exportación.
+    """
     base = model().content_sha256()
     assert base != model(compliance=ComplianceDocument(items=(_MARCO,))).content_sha256()
     assert (

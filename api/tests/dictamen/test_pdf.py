@@ -148,6 +148,20 @@ def test_un_modelo_distinto_produce_bytes_distintos() -> None:
 
 
 def test_la_huella_de_contenido_es_estable_y_cambia_con_el_contenido() -> None:
+    """⚠️ [T-7.43] «Estable» aquí significa MENOS de lo que su nombre sugiere.
+
+    Los dos `model()` los construye la fixture de este módulo, que clava
+    `generated_at=_OPENED`. Con el reloj congelado esta prueba pasa en verde
+    tanto si el reloj entra en la huella como si no — y también pasaría en verde
+    sobre una huella que en producción no se repite jamás, que es justo el caso
+    real: dos exportaciones del mismo incidente NUNCA coinciden, porque exportar
+    inserta una fila de evidencia que la siguiente imprime.
+
+    Lo que sí prueba, y es cierto: el mismo contenido da la misma huella, y un
+    pico distinto la mueve. Lo que NO prueba es que dos exportaciones coincidan.
+    El invariante fuerte —que NINGÚN campo del modelo sea ciego a la huella— vive
+    derivado en `test_que_identifica_la_huella.py`, sin apoyarse en esta fixture.
+    """
     assert model().content_sha256() == model().content_sha256()
     assert model().content_sha256() != model(peak_pga_g=0.9).content_sha256()
 

@@ -35,16 +35,31 @@ def para_la_huella(valor: object) -> str:
     return str(valor)
 
 
-def content_sha256(modelo: object) -> str:
-    """Huella del CONTENIDO de un modelo de documento.
+def payload_de_la_huella(modelo: object) -> str:
+    """Lo que se hashea, en un sitio donde se pueda MIRAR.
 
-    `sort_keys` para que el orden de los campos no la mueva, y `separators` sin
-    espacios para que un cambio de formato de `json` tampoco.
+    [T-7.43] Existe porque la guarda que defendía esta receta —
+    `test_la_huella_de_CONTENIDO_no_arrastra_los_bytes`— la **reconstruía a mano**
+    con `asdict` para poder inspeccionar el payload, así que se habría quedado
+    verde sobre cualquier regresión de la receta de verdad. Una guarda que mira
+    una copia no vigila el original.
+
+    `sort_keys` para que el orden de los campos no mueva la huella, y `separators`
+    sin espacios para que un cambio de formato de `json` tampoco.
+
+    ⚠️ `asdict()` y no `{f.name: getattr(...)}`: aquél aplana los dataclasses
+    anidados, y éste los dejaría caer enteros en `default=para_la_huella`, que los
+    serializaría con `str()` **arrastrando los bytes JPEG crudos**. Medido sobre un
+    modelo con cuatro fotografías: 7 485 caracteres de payload contra 2 209 329.
     """
-    payload = json.dumps(
+    return json.dumps(
         asdict(modelo),  # type: ignore[call-overload]
         sort_keys=True,
         separators=(",", ":"),
         default=para_la_huella,
     )
-    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def content_sha256(modelo: object) -> str:
+    """Huella del CONTENIDO de un modelo de documento."""
+    return hashlib.sha256(payload_de_la_huella(modelo).encode()).hexdigest()
