@@ -76,11 +76,22 @@ class Escenario:
         self, *, state: str = "open", abierto_hace_s: float = 600.0, site: str | None = None
     ) -> str:
         inc = str(uuid.uuid4())
+        # ⚠️ [T-7.51] Un incidente `closed` LLEVA hora de cierre: la base lo exige
+        # desde la 0066, porque un cerrado sin hora hacía que el dictamen
+        # imprimiera «EN CURSO» de un incidente cerrado.
+        abierto = NOW - timedelta(seconds=abierto_hace_s)
         self.conn.execute(
             "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, opened_at, "
-            "severity, state, trigger) VALUES (%s, gen_random_uuid(), %s, %s, %s, "
+            "closed_at, severity, state, trigger) VALUES (%s, gen_random_uuid(), %s, %s, %s, %s, "
             "'critical', %s, 'sasmex')",
-            (inc, self.tenant, site or self.site, NOW - timedelta(seconds=abierto_hace_s), state),
+            (
+                inc,
+                self.tenant,
+                site or self.site,
+                abierto,
+                NOW if state == "closed" else None,
+                state,
+            ),
         )
         self.conn.commit()
         return inc

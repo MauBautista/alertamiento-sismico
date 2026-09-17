@@ -63,9 +63,15 @@ def process_s3_object(
     settings: Settings,
     *,
     s3_client,
+    ultimo_intento: bool = False,
 ) -> ObjectResult:
     """Procesa un ObjectCreated; commit al final si terminó (OK). RETRY ⇒ el
-    consumer NO borra el mensaje (redelivery idempotente)."""
+    consumer NO borra el mensaje (redelivery idempotente).
+
+    [T-7.50] `ultimo_intento` dice que SQS no va a reentregar este mensaje otra
+    vez —lo deriva el consumer de `ApproximateReceiveCount` contra el
+    `maxReceiveCount` de la propia cola—. Lo que hasta ahora se iba a la DLQ en
+    silencio, en ese intento se DECLARA."""
     if key.startswith("backfill/"):
         return _process_ndjson(conn, bucket, key, registry, s3_client=s3_client)
     if key.startswith("evidence/"):
@@ -75,7 +81,9 @@ def process_s3_object(
         if nombre.startswith(("cctv-", "still-")):
             return _process_cctv(conn, bucket, key, s3_client=s3_client)
         if nombre.endswith(".mseed"):
-            return _process_evidence(conn, bucket, key, s3_client=s3_client)
+            return _process_evidence(
+                conn, bucket, key, s3_client=s3_client, ultimo_intento=ultimo_intento
+            )
         return _reconocer_ajeno(key)
     return ObjectResult(Outcome.REJECT, f"key sin ruta conocida: {key!r}")
 
@@ -281,7 +289,7 @@ ON CONFLICT DO NOTHING
 
 
 def _process_evidence(
-    conn: psycopg.Connection, bucket: str, key: str, *, s3_client
+    conn: psycopg.Connection, bucket: str, key: str, *, s3_client, ultimo_intento: bool = False
 ) -> ObjectResult:
     parts = key.split("/")
     if len(parts) != 4 or not parts[3].endswith(".mseed"):
@@ -303,9 +311,43 @@ def _process_evidence(
         )
         row = cur.fetchone()
     if row is None:
-        # El evento pudo venir en el MISMO backfill y aún no ingerirse: RETRY.
         conn.rollback()
-        return ObjectResult(Outcome.RETRY, f"incidente {event_uuid} aún no ingerido")
+        if not ultimo_intento:
+            # El evento pudo venir en el MISMO backfill y aún no ingerirse: RETRY.
+            return ObjectResult(Outcome.RETRY, f"incidente {event_uuid} aún no ingerido")
+        # [T-7.50] Se acabaron las reentregas: «aún no ingerido» deja de ser
+        # cierto. Hasta esta ficha el mensaje caía a la DLQ **en silencio** y la
+        # alarma que lo vigila está muda (`T-7.41`), así que el objeto quedaba en
+        # S3 sin que nada dijera por qué. La evidencia NO SE BORRA (regla de oro
+        # 11): se DECLARA huérfana, con su key, en `audit_log` — que es la tabla
+        # que la purga operativa conserva POR NOMBRE, al revés que
+        # `evidence_objects`. Así el objeto sigue siendo encontrable para siempre
+        # y el motivo también.
+        logger.warning(
+            "evidencia HUÉRFANA declarada: %s (incidente %s no ingerido tras agotar "
+            "las reentregas de la cola)",
+            key,
+            event_uuid,
+        )
+        audit(
+            conn,
+            tenant_id=None,
+            actor="system:backfill",
+            verb="evidence_orphan_declared",
+            obj=key,
+            meta={
+                "event_uuid": event_uuid,
+                "sha256": digest,
+                "bucket": bucket,
+                "motivo": "el incidente no existe y la cola agotó sus reentregas",
+            },
+        )
+        conn.commit()
+        return ObjectResult(
+            Outcome.REJECT,
+            f"evidencia huérfana DECLARADA: el incidente {event_uuid} no existe "
+            "y se agotaron las reentregas",
+        )
     incident_id, incident_tenant = row
     if str(incident_tenant) != tenant_id:
         return ObjectResult(Outcome.REJECT, "tenant de la key ≠ tenant del incidente")

@@ -62,6 +62,10 @@ from takab_api.settings import Settings
 
 log = logging.getLogger("takab_api.backfill")
 
+#: [T-7.50] Centinela: «todavía no le he preguntado a la cola». `None` significa
+#: «pregunté y no tiene redrive», que es un hecho distinto y no hay que re-leer.
+_SIN_LEER = object()
+
 __all__ = ["TRANSIENT_SQLSTATES", "BACKFILL_TRANSIENT_POLICY", "BackfillConsumer"]
 
 #: [T-2.139] El presupuesto de reintento de ESTA cola, que no es el de la
@@ -124,6 +128,7 @@ class BackfillConsumer:
         self._s3 = s3_client or boto3.client("s3", region_name=settings.aws_region)
         self._wait_time_s = wait_time_s
         self._conn: psycopg.Connection | None = None
+        self._tope: object | int | None = _SIN_LEER
         self._stop = threading.Event()
         self._transient = transient_policy or BACKFILL_TRANSIENT_POLICY
 
@@ -151,6 +156,10 @@ class BackfillConsumer:
             QueueUrl=self._queue_url,
             MaxNumberOfMessages=10,
             WaitTimeSeconds=self._wait_time_s,
+            # [T-7.50] Sin esto el código NO PUEDE saber en qué intento va, y la
+            # cota que SQS ya impone (`maxReceiveCount`) es ciega: el mensaje da
+            # sus vueltas y cae a la DLQ sin que nadie llegue a DECLARAR por qué.
+            AttributeNames=["ApproximateReceiveCount"],
         )
         messages = resp.get("Messages", [])
         stats = {
@@ -162,10 +171,13 @@ class BackfillConsumer:
             # que se mira aquí es si esta cifra crece sin que crezca `n_retry`.
             "n_lock_retries": 0,
         }
+        tope = self._tope_de_recepciones()
         for msg in messages:
+            recibido = int(msg.get("Attributes", {}).get("ApproximateReceiveCount", 1))
+            ultimo = tope is not None and recibido >= tope
             try:
                 outcome, reason = self._reintentando(
-                    lambda m=msg: self._handle(m["Body"]), [msg], stats
+                    lambda m=msg, u=ultimo: self._handle(m["Body"], ultimo_intento=u), [msg], stats
                 )
             except TransitorioAgotado:
                 # [T-2.139] El bloqueo no cedió dentro del presupuesto: deja de
@@ -265,7 +277,7 @@ class BackfillConsumer:
 
     # -------------------------------------------------------------- pipeline
 
-    def _handle(self, body: str) -> tuple[Outcome, str]:
+    def _handle(self, body: str, *, ultimo_intento: bool = False) -> tuple[Outcome, str]:
         try:
             raw = json.loads(body)
         except ValueError:
@@ -276,7 +288,7 @@ class BackfillConsumer:
         if raw.get("Event") == "s3:TestEvent":
             return Outcome.OK, ""  # saludo de la configuración de notificaciones
         if "Records" in raw:
-            return self._handle_s3_records(raw["Records"])
+            return self._handle_s3_records(raw["Records"], ultimo_intento=ultimo_intento)
         if raw.get("meta_topic", "").startswith("takab/backfill/request/"):
             return self._handle_request(raw)
         return Outcome.REJECT, "mensaje sin forma conocida (ni S3 ni request)"
@@ -296,7 +308,31 @@ class BackfillConsumer:
         ok, reason = handle_backfill_request(payload, meta, ctx, self._publisher, self._settings)
         return (Outcome.OK, "") if ok else (Outcome.REJECT, reason)
 
-    def _handle_s3_records(self, records: list) -> tuple[Outcome, str]:
+    def _tope_de_recepciones(self) -> int | None:
+        """[T-7.50] `maxReceiveCount` LEÍDO de la cola, no tecleado aquí.
+
+        Lo fija el terraform (`modules/messaging`), y un número copiado a mano en
+        el código es dos sitios opinando sobre lo mismo: el día que suba el del
+        terraform, éste seguiría declarando huérfanas una vuelta antes de tiempo.
+        Se lee una vez y se cachea; si la cola no tiene redrive, no hay último
+        intento que reconocer y se devuelve `None`.
+        """
+        if self._tope is not _SIN_LEER:
+            return self._tope
+        self._tope = None
+        try:
+            attrs = self._sqs.get_queue_attributes(
+                QueueUrl=self._queue_url, AttributeNames=["RedrivePolicy"]
+            ).get("Attributes", {})
+            politica = json.loads(attrs.get("RedrivePolicy") or "{}")
+            self._tope = int(politica["maxReceiveCount"])
+        except Exception:  # noqa: BLE001 — sin tope se sigue como hasta T-7.50
+            log.warning("no se pudo leer maxReceiveCount de la cola; sin cota declarada")
+        return self._tope
+
+    def _handle_s3_records(
+        self, records: list, *, ultimo_intento: bool = False
+    ) -> tuple[Outcome, str]:
         conn = self._ensure_conn()
         for record in records:
             if not isinstance(record, dict) or "s3" not in record:
@@ -304,7 +340,13 @@ class BackfillConsumer:
             bucket = record["s3"]["bucket"]["name"]
             key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
             result = process_s3_object(
-                conn, bucket, key, self._registry, self._settings, s3_client=self._s3
+                conn,
+                bucket,
+                key,
+                self._registry,
+                self._settings,
+                s3_client=self._s3,
+                ultimo_intento=ultimo_intento,
             )
             if result.outcome is not Outcome.OK:
                 return result.outcome, result.reason

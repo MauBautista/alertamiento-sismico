@@ -521,6 +521,11 @@ class ReportModel:
     #: [T-7.38·H] ¿Movió un operador el epicentro a mano? Sale de
     #: `seismic_events.meta ? 'manual_override'`. Con esto puesto, el papel NO puede
     #: seguir llamándolo «centroide de las estaciones»: es un punto humano.
+    #: [T-7.51] El incidente se cerró y NADIE registró la hora. Declara la
+    #: ausencia en vez de que el papel la disimule: sin esto, el campo CIERRE
+    #: imprimía «EN CURSO» de un incidente cerrado, que es el papel
+    #: desmintiendo al dato — la clase de defecto de `T-7.38`/`T-7.42`/`T-7.43`.
+    cierre_sin_hora: bool = False
     epicenter_relocated: bool = False
 
     channels: list[ChannelRow] = field(default_factory=list)
@@ -676,6 +681,25 @@ LEAD_REASONS: dict[str, str] = {
     # sobre ruido ambiente es presumir un logro que no ocurrió.
     "sin_sacudida": "no aplica: la sacudida no superó el umbral de vigilancia del inmueble",
 }
+
+
+def cierre_text(closed_at: datetime | None, state: str, cierre_sin_hora: bool, fmt: str) -> str:
+    """[T-7.51] Qué dice el papel en el campo CIERRE. Tres casos, no dos.
+
+    Decía `"EN CURSO"` siempre que `closed_at` fuera nulo — y en la nube dev
+    había TRES incidentes con `state='closed'` y la hora en nulo, así que **el
+    dictamen pericial de un incidente cerrado afirmaba que seguía abierto**.
+
+    El tercer caso no se rellena con una hora inventada: se DECLARA. La hora real
+    de aquellos cierres no existe en ninguna parte, y fabricarla contaminaría la
+    tabla de la que cuelga este documento — es la doctrina que `T-7.42` y
+    `T-7.43` acaban de imponer en este mismo papel.
+    """
+    if closed_at is not None:
+        return f"{closed_at:{fmt}}"
+    if state == "closed":
+        return "CERRADO · HORA DE CIERRE NO REGISTRADA"
+    return "EN CURSO"
 
 
 def lead_time_text(seconds: float | None, reason: str | None) -> str:

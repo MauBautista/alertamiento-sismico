@@ -72,11 +72,15 @@ def _mk_incident(
     c: psycopg.Connection, inc_id: str, state: str, *, event_id: str = EVENT_ID
 ) -> None:
     c.execute("RESET ROLE")
+    # ⚠️ [T-7.51] Un incidente `closed` LLEVA hora de cierre — la base lo exige
+    # desde la 0066. Este arnés creaba un estado que no puede existir, y por eso
+    # la guarda lo puso rojo: en la nube dev había TRES filas así, y el dictamen
+    # de un incidente cerrado imprimía «EN CURSO».
     c.execute(
         "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, event_id, "
-        "opened_at, severity, state, trigger) VALUES "
-        "(%s, gen_random_uuid(), %s, %s, %s, %s, 'warning', %s, 'quorum')",
-        (inc_id, TENANT, SITE, event_id, NOW, state),
+        "opened_at, closed_at, severity, state, trigger) VALUES "
+        "(%s, gen_random_uuid(), %s, %s, %s, %s, %s, 'warning', %s, 'quorum')",
+        (inc_id, TENANT, SITE, event_id, NOW, NOW if state == "closed" else None, state),
     )
     c.execute("RESET ROLE")
     c.execute('SET ROLE "takab_ingest"')

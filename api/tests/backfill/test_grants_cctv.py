@@ -20,6 +20,7 @@ from takab_api.ingest.handlers import GatewayCtx
 
 THING = "gw-cctv-test"
 TENANT = "d0000000-0000-0000-0000-0000000000aa"
+EVENT_ID = "ab12cd34ef567890ab12cd34ef567890"
 SHA = "b" * 64
 DESDE = datetime(2026, 8, 29, 12, 0, 0, tzinfo=UTC)
 HASTA = datetime(2026, 8, 29, 12, 11, 0, tzinfo=UTC)
@@ -41,7 +42,12 @@ def _ctx() -> GatewayCtx:
 def _payload(mode: str, **extra) -> dict:
     base = {
         "mode": mode,
-        "event_id": "ev-abc",
+        # ⚠️ [T-7.50] Era `"ev-abc"`, una forma que producción NUNCA manda: el
+        # `event_id` del CCTV sale del JSON que el propio edge escribe al
+        # capturar, con el id del episodio — o sea el hex de `new_event_id()`.
+        # Desde que el grant exige esa forma (para cerrar la travesía de
+        # directorios y las keys de 10 KB), la fixture irreal se volvía roja.
+        "event_id": EVENT_ID,
         "sha256": SHA,
         "ts_from": DESDE.isoformat(),
         "ts_to": HASTA.isoformat(),
@@ -57,7 +63,7 @@ def test_el_clip_cae_bajo_el_prefijo_QUE_EL_BUCKET_NOTIFICA() -> None:
     """Una key bajo `cctv/…` aterrizaría y no la ingestaría nadie: el objeto existiría y
     el incidente no se enteraría."""
     bucket, key, tipo = canonical_key(_payload("cctv_clip"), _ctx(), THING)
-    assert key.startswith(f"evidence/{TENANT}/ev-abc/")
+    assert key.startswith(f"evidence/{TENANT}/{EVENT_ID}/")
     assert bucket == "evidence_bucket"
     assert tipo == "video/mp4"
 

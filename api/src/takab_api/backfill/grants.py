@@ -32,6 +32,40 @@ from takab_api.settings import Settings
 logger = logging.getLogger("takab_api.backfill")
 
 _SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+
+#: [T-7.50] Las DOS escrituras de un `event_id` que la key y Postgres comparten:
+#: el hex sin guiones que emite `new_event_id()` en el edge, y la canónica con
+#: guiones. Nada más entra en una key de S3.
+_EVENT_ID_RE = re.compile(r"^[0-9a-f]{32}$|^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$")
+
+
+def _event_id_valido(event_id: str) -> bool:
+    """¿Puede este `event_id` llegar a ser un incidente? Sin base y sin tiempo.
+
+    [T-7.50] Es lo ÚNICO que el grant puede decidir con certeza, y por eso es lo
+    único que rechaza. `incidents.event_uuid` es de tipo `uuid`, así que un
+    `event_id` que no lo sea **jamás** podrá casar con ninguno: no es «todavía
+    no», es «nunca», y se sabe aquí mismo. Es la misma exigencia que el ingestor
+    ya hace (`ingest/handlers.py`), que hasta ahora este camino no hacía.
+
+    Lo que esto cierra, medido: `urn:uuid:…`, `{uuid}`, una cadena de 10 KB, un
+    `1' OR '1'='1` y una travesía de directorios **pasaban el contrato JSON
+    Schema y producían key**. Una key con `../` no aterriza donde el bucket
+    notifica, así que el objeto existiría y el incidente no se enteraría — y una
+    de 10 KB es una key que nadie puede buscar.
+
+    ⚠️ Y lo que NO se comprueba aquí, a propósito: que el incidente EXISTA. En
+    una reconexión la evidencia adelanta legítimamente a su evento —`_on_online`
+    dispara la evidencia al instante mientras el spool del `LocalEvent` espera un
+    jitter de hasta 120 s, y los dos caen en la misma cola sin orden garantizado—,
+    así que rechazar ahí tiraría evidencia sísmica buena. Además no acabaría con
+    el bucle: lo movería al gabinete, donde desde `T-7.40` el barrido reintenta
+    cada 30 s **sin cota**. Esa decisión se toma donde hay reintentos contados:
+    el worker.
+    """
+    return bool(_EVENT_ID_RE.fullmatch(event_id))
+
+
 _TS_FMT = "%Y%m%dT%H%M%SZ"
 
 #: [T-3.11.b] Los dos objetos de CCTV, con su prefijo de nombre y su tipo. El `sha256` va
@@ -69,7 +103,7 @@ def canonical_key(payload: dict, ctx: GatewayCtx, thing: str) -> tuple[str, str,
     if mode == "evidence":
         event_id = payload.get("event_id") or ""
         sha256 = payload.get("sha256") or ""
-        if not event_id or not _SHA256_RE.fullmatch(sha256):
+        if not _event_id_valido(event_id) or not _SHA256_RE.fullmatch(sha256):
             return None
         key = f"evidence/{ctx.tenant_id}/{event_id}/{sha256}.mseed"
         return ("evidence_bucket", key, "application/vnd.fdsn.mseed")
@@ -80,7 +114,7 @@ def canonical_key(payload: dict, ctx: GatewayCtx, thing: str) -> tuple[str, str,
         # ingestaría nadie — el objeto existiría y el incidente no se enteraría.
         event_id = payload.get("event_id") or ""
         sha256 = payload.get("sha256") or ""
-        if not event_id or not _SHA256_RE.fullmatch(sha256):
+        if not _event_id_valido(event_id) or not _SHA256_RE.fullmatch(sha256):
             return None
         try:
             ts_from = datetime.fromisoformat(payload["ts_from"]).astimezone(UTC)
