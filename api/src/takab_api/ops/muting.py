@@ -431,6 +431,35 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
             "de que la retención se ejecutó alguna vez — si no llega, eso es el hallazgo."
         ),
     ),
+    # ⚠️ [T-7.46] LAS ENTRADAS NUEVAS VAN AL FINAL. El runbook de la cadena
+    # on-call cita rangos de línea de este fichero para explicar cada alarma;
+    # insertar en medio los pudre todos en silencio.
+    AlarmKind(
+        resource="root_disk_space",
+        scope=NEVER,
+        name_template="takab-dev-disco-raiz-lleno",
+        why=(
+            "[T-7.46] El volumen RAÍZ, que NO es el que vigila `db_disk_space`. Aquélla mide "
+            "`/data` (40 GiB, Postgres); las imágenes de Docker y los logs de contenedor viven "
+            "en `/` (20 GiB) y hasta esta ficha no los medía nadie. El 2026-09-16 eso tumbó un "
+            "despliegue: la raíz al 99 % —268 MB libres— con 65 imágenes y 16,23 GB acumulados "
+            "porque ningún despliegue había podado nunca. "
+            "Intocable, y aquí el argumento es MÁS fuerte que en su vecina: una ventana de "
+            "plataforma es exactamente cuando se despliega, o sea cuando la raíz crece. "
+            "Silenciarla durante una ventana es apagar el detector del fallo que la ventana "
+            "provoca. "
+            "`missing` y no `breaching`, por la misma razón que `db_disk_space`: su correo "
+            "AFIRMA UNA MEDIDA y sin datapoint esa medida no existe. Pero la ceguera la tapa "
+            "otra cosa: `ec2_status` es PLATFORM-silenciable y durante una ventana no cuenta, "
+            "así que lo que queda es `wal_archive_stalled` (`breaching`, mismo cron) contra el "
+            "cron muerto y su PROPIO `insufficient_data_actions` —que no se mutea porque esta "
+            "alarma es intocable— contra el resto. "
+            "Y no basta por sí sola: con período de 5 min × 2 el aviso tarda 10 minutos en "
+            "existir, así que es un vigilante, no un gate. El despliegue comprueba ADEMÁS su "
+            "propio margen antes de empezar (`deploy/cloud/margen-y-poda.sh`), porque el "
+            "publicador corre en la máquina cuya raíz se está llenando."
+        ),
+    ),
 )
 
 

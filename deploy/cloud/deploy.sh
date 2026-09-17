@@ -198,6 +198,24 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 docker compose version
 
+# [T-7.46] ¿CABE EL DESPLIEGUE? Antes de pisar un solo fichero de la instancia.
+#
+# Va AQUÍ y no más abajo por dos razones medidas. La primera es que las bajadas
+# de imagen de este script son EFECTOS COLATERALES —no hay ningún «docker pull»:
+# bajan el «docker run» de alembic y el «docker compose up» de la unidad—, así
+# que «antes del pull» hay que situarlo a mano. La segunda es más fuerte: unas
+# líneas más abajo se sobrescriben el compose, las dos unidades de systemd y
+# /etc/takab/deploy.env, y ese último pasa a declarar una etiqueta que la
+# instancia todavía NO tiene. Abortar después de ese punto deja a la máquina con
+# un EnvironmentFile que apunta a una imagen ausente: el siguiente arranque de
+# takab-cloud.service no levantaría nada. Abortando aquí, la instancia se queda
+# exactamente como estaba.
+#
+# Por eso este fichero viaja SOLO y se ejecuta antes que los demás.
+echo '$(b64 deploy/cloud/margen-y-poda.sh)'     | base64 -d > /opt/takab/cloud/margen-y-poda.sh
+chmod 0755 /opt/takab/cloud/margen-y-poda.sh
+/opt/takab/cloud/margen-y-poda.sh ${REGISTRY} ${CLOUD_TAG}
+
 echo '$(b64 deploy/cloud/docker-compose.yml)'   | base64 -d > /opt/takab/cloud/docker-compose.yml
 echo '$(b64 deploy/cloud/takab-secrets.sh)'     | base64 -d > /opt/takab/cloud/takab-secrets.sh
 echo '$(b64 deploy/cloud/takab-secrets.service)'| base64 -d > /etc/systemd/system/takab-secrets.service

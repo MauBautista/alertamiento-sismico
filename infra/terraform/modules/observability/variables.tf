@@ -86,6 +86,44 @@ variable "base_backup_warn_age_s" {
 # [T-2.72.c] Este SI lleva default, y la asimetria es deliberada: el de arriba
 # tiene dueño en otro modulo (se derivaria mal si alguien lo teclea aqui); este es
 # una decision de vigilancia que se toma en este modulo y en ningun otro.
+variable "root_disk_used_max_pct" {
+  description = <<-EOT
+    Ocupacion del volumen RAIZ a partir de la cual se avisa, en porcentaje.
+
+    Variable PROPIA y no la de `/data`, aunque hoy el numero coincida. Aquella
+    esta escrita entera sobre la fisica del volumen de datos —40 GiB, `pg_wal` a
+    16 MiB/min, «cada punto porcentual son ~25 minutos»— y ninguna de esas cifras
+    es verdad aqui. La raiz son 20 GiB y no crece por minuto: crece a SALTOS, uno
+    por despliegue. Compartir la variable acoplaria dos volumenes con dinamicas
+    distintas, y bajarla un dia por una razon de WAL moveria el umbral de la raiz
+    sin que nadie lo decidiera.
+
+    LA ARITMETICA, con lo medido el 2026-09-16 en la instancia: sobre 20 GiB un
+    punto porcentual son ~205 MiB. El coste MARGINAL de un despliegue —lo que una
+    etiqueta nueva ocupa sobre las capas base que ya estan— es 279,7 MB de
+    `takab/cloud` mas 2,4 MB de `takab/console`, o sea ~282 MB ≈ 1,4 puntos. Al
+    80 % quedan ~4 GiB: espacio de sobra para el pico transitorio de una bajada
+    (el blob descargado y las capas ya desempaquetadas conviven) y margen para
+    reaccionar.
+
+    El aviso es ACCIONABLE y no una cuenta atras: lo que hay que hacer es podar.
+    Con la poda del despliegue puesta (`deploy/cloud/margen-y-poda.sh`) esta
+    alarma solo habla si esa poda dejo de funcionar.
+  EOT
+  type        = number
+  default     = 80
+
+  validation {
+    # Por encima del 90 % quedan menos de 2 GiB sobre 20 GiB, que es menos que el
+    # margen que el propio despliegue exige para empezar: la alarma llegaria
+    # despues de que el despliegue ya hubiera fallado, y una alarma que avisa de
+    # lo que ya paso no es un aviso. Por debajo de cero no es alcanzable y produce
+    # una alarma que existe y no vigila.
+    condition     = var.root_disk_used_max_pct > 0 && var.root_disk_used_max_pct <= 90
+    error_message = "root_disk_used_max_pct debe estar en (0, 90]. Por encima del 90 % sobre 20 GiB quedan menos de 2 GiB, que es menos que el margen minimo que `margen-y-poda.sh` exige para dejar empezar un despliegue: el aviso llegaria despues del fallo. Un umbral fuera de (0,100] no es alcanzable y produce una alarma que existe y no vigila."
+  }
+}
+
 variable "db_disk_used_max_pct" {
   description = <<-EOT
     Ocupacion de `/data` a partir de la cual se avisa, en porcentaje.

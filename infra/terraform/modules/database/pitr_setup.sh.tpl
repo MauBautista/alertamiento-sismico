@@ -317,6 +317,44 @@ aws cloudwatch put-metric-data \
 EOS
 chmod 0755 /opt/takab/bin/takab-disk-usage.sh
 
+# --- 4d. [T-7.46] El volumen RAIZ, que no medía nadie -------------------------
+#
+# El 2026-09-16 `make cloud-deploy` murio con `no space left on device`. La raiz
+# estaba al 99 % —20 GiB, 268 MB libres— con 65 imagenes de Docker y 16,23 GB,
+# algunas de siete semanas: ningun despliegue habia podado nunca. El bloque de
+# arriba mide `/data`; las imagenes de Docker viven en `/`.
+#
+# ES UN SCRIPT PROPIO Y NO UNA LINEA MAS EN EL DE ARRIBA, por una razon concreta:
+# aquel empieza con `mountpoint -q /data || exit 1` bajo `set -euo pipefail`, asi
+# que medir la raiz alli la dejaria detras de esa guarda. Un `/data` desmontado
+# —o un `put-metric-data` de `/data` que fallara— silenciaria tambien la metrica
+# de la raiz, que SIEMPRE es medible; la alarma de la raiz se iria a
+# INSUFFICIENT_DATA por una causa que su propio correo no puede nombrar.
+#
+# SI COMPARTE EL FICHERO DE CRON, y eso tambien es deliberado: el `missing` de
+# estas alarmas de disco se admite porque un cron muerto lo delata
+# `wal_archive_stalled` en `breaching`, y ese argumento solo vale mientras las
+# lineas vivan en el MISMO `/etc/cron.d/takab-pitr`. En un fichero propio habria
+# que re-derivarlo.
+#
+# LA GUARDA ES DISTINTA porque el peligro es distinto: `df -P /` siempre
+# contesta, asi que aqui no hay nada que comprobar antes de medir. Lo que si se
+# comprueba es que la medida sea un NUMERO — si `awk` no saca el porcentaje, no
+# se publica nada. Nunca un 0: un fallback no puede decir `ok`.
+cat >/opt/takab/bin/takab-root-disk-usage.sh <<EOS
+#!/bin/bash
+set -euo pipefail
+USADO="\$(df -P / | awk 'NR==2 {gsub(/%/,"",\$5); print \$5}')"
+case "\$USADO" in ''|*[!0-9]*) exit 1 ;; esac
+aws cloudwatch put-metric-data \
+  --namespace ${metric_namespace} \
+  --metric-name ${root_disk_metric_name} \
+  --unit Percent \
+  --value "\$USADO" \
+  --region ${region}
+EOS
+chmod 0755 /opt/takab/bin/takab-root-disk-usage.sh
+
 # El instante de referencia mientras no haya ningun backup base. Se escribe UNA
 # vez: si se reescribiera en cada pasada diaria de la asociacion, la edad se
 # reiniciaria cada 24 h y la alarma no llegaria a disparar NUNCA — un respaldo
@@ -332,6 +370,7 @@ cat >/etc/cron.d/takab-pitr <<CRON
 * * * * * root /opt/takab/bin/takab-wal-age.sh >/dev/null 2>&1
 * * * * * root /opt/takab/bin/takab-base-backup-age.sh >/dev/null 2>&1
 * * * * * root /opt/takab/bin/takab-disk-usage.sh >/dev/null 2>&1
+* * * * * root /opt/takab/bin/takab-root-disk-usage.sh >/dev/null 2>&1
 0 5 * * * root /opt/takab/bin/takab-base-backup-scan.sh >>/var/log/takab-pitr.log 2>&1
 0 4 ${base_backup_dom} * * root /opt/takab/bin/takab-base-backup.sh >>/var/log/takab-pitr.log 2>&1
 CRON
@@ -350,5 +389,6 @@ chmod 0644 /etc/cron.d/takab-pitr
 /opt/takab/bin/takab-base-backup-scan.sh || log "AVISO: no se pudo listar el backup base (¿todavia no hay ninguno?)"
 /opt/takab/bin/takab-base-backup-age.sh || log "AVISO: no se pudo publicar la primera edad del backup base"
 /opt/takab/bin/takab-disk-usage.sh || log "AVISO: no se pudo publicar la primera medida de ocupacion de /data"
+/opt/takab/bin/takab-root-disk-usage.sh || log "AVISO: no se pudo publicar la primera medida de ocupacion de la raiz"
 
 log "archivado continuo configurado: $PITR_URL ($SERVER), archive_timeout=${archive_timeout_s}s"

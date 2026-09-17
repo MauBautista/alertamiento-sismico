@@ -271,3 +271,85 @@ run "un_umbral_de_disco_sin_margen_no_se_puede_aplicar" {
 
   expect_failures = [var.db_disk_used_max_pct]
 }
+
+# [T-7.46] EL VOLUMEN RAIZ. Mismo veredicto que su vecina de `/data` y camino
+# distinto — copiar el argumento habria dejado escrita una razon falsa y citable.
+#
+# `missing` porque lo que el correo AFIRMA es una medida: «la raiz paso del N %».
+# Sin datapoint esa medida no existe y el disco podria estar al 3 %. Es la falta
+# que `T-2.60.a` rechaza por escrito.
+#
+# LO QUE NO SE HEREDA. El argumento de `db_disk_space` se apoya en dos cobertores
+# y aqui solo vale uno: `ec2_status` tiene `scope = PLATFORM`, asi que durante una
+# ventana de mantenimiento esta muda — y una ventana es JUSTO cuando se despliega,
+# o sea cuando la raiz crece. Queda `wal_archive_stalled` (`breaching`, intocable,
+# mismo `/etc/cron.d/takab-pitr`) contra el cron muerto, y el propio
+# `insufficient_data_actions` de esta alarma contra lo demas.
+#
+# Y lo que su vecina tiene y esta NO: alli el caso restante es «/data no esta
+# montado», que existe porque su publicador se niega a medir sin `mountpoint`.
+# `df -P /` siempre contesta: ese caso aqui no existe.
+#
+# POR QUE NO `breaching` aunque el disco lleno pueda matar a su propio publicador:
+# medido el 2026-09-16, al 99 % (268 MB libres) SSM, docker, la poda y el propio
+# despliegue funcionaban. La correlacion silencio↔falla solo muerde pegada al
+# 100 %, y elegir `breaching` haria que el correo afirmara una ocupacion que nadie
+# midio. El hueco se cubre por otro lado: el despliegue comprueba su margen antes
+# de empezar, en la maquina y en el momento (`deploy/cloud/margen-y-poda.sh`).
+
+run "t746_la_raiz_declara_su_silencio_por_su_propio_camino" {
+  command = plan
+
+  override_resource {
+    target          = aws_sns_topic.ops_alerts
+    override_during = plan
+    values = {
+      arn = "arn:aws:sns:us-east-2:000000000000:takab-test-ops-alerts"
+    }
+  }
+
+  variables {
+    # Centinela propio, distinto del de `/data`: si las dos alarmas leyeran la
+    # misma variable, esta asercion pasaria por coincidencia.
+    root_disk_used_max_pct = 63
+  }
+
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.root_disk_space.treat_missing_data == "missing"
+      && contains(
+        aws_cloudwatch_metric_alarm.root_disk_space.insufficient_data_actions,
+        aws_sns_topic.ops_alerts.arn
+      )
+    )
+    error_message = "La alarma de la raiz tiene que tratar la ausencia de dato como `missing` Y tener accion de INSUFFICIENT_DATA. Con `missing` a secas, el silencio del publicador —que corre en la maquina cuya raiz se esta llenando— no avisaria a nadie."
+  }
+
+  # Y que NO es la misma metrica que su vecina: son dos volumenes distintos, y el
+  # dia que alguien las unifique uno de los dos deja de vigilarse.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.root_disk_space.metric_name == "RootDiskUsedPercent"
+      && aws_cloudwatch_metric_alarm.db_disk_space.metric_name == "DataDiskUsedPercent"
+      && aws_cloudwatch_metric_alarm.root_disk_space.namespace == "Takab/Ops"
+    )
+    error_message = "Las dos alarmas de disco miden volumenes DISTINTOS: `/` (20 GiB, imagenes de Docker y logs de contenedor) y `/data` (40 GiB, Postgres). Si comparten metrica, uno de los dos discos deja de vigilarse — que es el estado en el que el 2026-09-16 se lleno la raiz sin que nada hablara."
+  }
+
+  # El umbral sigue a SU variable. El de `/data` esta calculado sobre 40 GiB y
+  # `pg_wal` a 16 MiB/min, y ninguna de esas cifras es verdad aqui.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.root_disk_space.threshold == 63
+    error_message = "El umbral de la raiz tiene que seguir a `root_disk_used_max_pct`. Compartir la variable de `/data` acoplaria dos volumenes con dinamicas distintas: bajarla un dia por una razon de WAL moveria el umbral de la raiz sin que nadie lo decidiera."
+  }
+
+  # Y las tres acciones al topic: el correo de OK es la unica señal automatica de
+  # que el publicador llego a publicar alguna vez.
+  assert {
+    condition = (
+      contains(aws_cloudwatch_metric_alarm.root_disk_space.alarm_actions, aws_sns_topic.ops_alerts.arn)
+      && contains(aws_cloudwatch_metric_alarm.root_disk_space.ok_actions, aws_sns_topic.ops_alerts.arn)
+    )
+    error_message = "La alarma de la raiz tiene que avisar en los tres estados. Sin `ok_actions`, la vuelta a la normalidad tras una poda no se acusa y nadie sabe si el margen se recupero."
+  }
+}

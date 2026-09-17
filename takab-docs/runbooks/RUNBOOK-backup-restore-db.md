@@ -358,18 +358,21 @@ de eso, pero lo primero que hay que mirar al recibirla es el espacio libre en `/
 
 ## 7. Las alarmas que vigilan todo esto
 
-> **Son CUATRO, y cada una mira una cosa distinta.** Hasta T-2.72.b/c había una sola
+> **Son CINCO, y cada una mira una cosa distinta.** Hasta T-2.72.b/c había una sola
 > (`wal-archivado-atascado`) y su propio comentario dejaba fichadas las dos ausencias: mide la
-> **cadena** de WAL, no su **ancla** ni el **disco** sobre el que vive todo. T-2.141 añadió la
-> cuarta: el **aviso** del ancla, porque la de T-2.72.b llegaba cuando la ventana ya se había
-> cerrado.
+> **cadena** de WAL, no su **ancla** ni el **disco** sobre el que vive todo. T-2.141 añadió el
+> **aviso** del ancla, porque la de T-2.72.b llegaba cuando la ventana ya se había cerrado. Y
+> **T-7.46 añadió la quinta**: el volumen **RAÍZ**, que no es el mismo disco que `/data` y que
+> hasta entonces no medía nadie — el 2026-09-16 se llenó al 99 % con imágenes de Docker y tumbó
+> un despliegue.
 >
 > | Alarma | Qué mide | Umbral | `treat_missing_data` |
 > |---|---|---|---|
 > | `takab-dev-wal-archivado-atascado` | la cadena de WAL (RPO) | 600 s | `breaching` |
 > | `takab-dev-backup-base-atrasado` | el ancla — **AVISO** | `intervalo` (7 d) | `missing` |
 > | `takab-dev-backup-base-ausente` | el ancla — **última línea** | `intervalo × margen` (14 d) | `breaching` |
-> | `takab-dev-disco-datos-lleno` | ocupación de `/data` | 80 % | `missing` |
+> | `takab-dev-disco-datos-lleno` | ocupación de `/data` (40 GiB, Postgres) | 80 % | `missing` |
+> | `takab-dev-disco-raiz-lleno` | ocupación de `/` (20 GiB, imágenes y logs) | 80 % | `missing` |
 >
 > **Las dos del ancla miran la MISMA métrica** (`Takab/Ops/BaseBackupAgeSeconds`, mismo
 > publicador, mismo host) y solo se diferencian en el umbral, el nombre y lo que dicen. No son
@@ -478,13 +481,14 @@ al topic de on-call.
 
 `insufficient_data_actions` **solo dispara al TRANSITAR**. Una métrica que no arranca NUNCA deja
 la alarma **nacida** en INSUFFICIENT_DATA y aparcada ahí: sin correo, y con cara de "todavía no
-hay datos". El script de configuración publica una primera medida de las tres métricas justo al
+hay datos". El script de configuración publica una primera medida de las cuatro métricas justo al
 terminar, precisamente para forzar la transición — pero **eso hay que verificarlo una vez**:
 
 ```bash
 aws cloudwatch describe-alarms --profile takab-dev --region us-east-2 \
   --alarm-names takab-dev-wal-archivado-atascado takab-dev-backup-base-ausente \
                 takab-dev-backup-base-atrasado takab-dev-disco-datos-lleno \
+                takab-dev-disco-raiz-lleno \
   --query 'MetricAlarms[].[AlarmName,StateValue]' --output table
 ```
 
@@ -493,7 +497,7 @@ Ninguna debe seguir en `INSUFFICIENT_DATA`. Estados esperados el primer día:
 es correcto, y pasa a OK al terminar el primero); **`backup-base-atrasado` → `OK`** (nace en
 INSUFFICIENT_DATA **sin correo** —es su estado inicial y `insufficient_data_actions` solo dispara
 al transitar— y pasa a OK con el primer datapoint, que es su acuse de nacimiento);
-`disco-datos-lleno` → `OK`.
+`disco-datos-lleno` → `OK`; `disco-raiz-lleno` → `OK`.
 Si alguna sigue en `INSUFFICIENT_DATA`, el publicador no está corriendo: mirar
 `/etc/cron.d/takab-pitr` y `/var/log/takab-pitr.log`. **Para `backup-base-atrasado` esta
 comprobación es la única que existe**: es la alarma cuyo nacimiento no manda correo, así que si
@@ -595,8 +599,12 @@ acepta` en la salida del comando). Checklist en §9.3.
   nada. Acopla con el sufijo de compresión de barman: se mide en la ventana.
 - **No hay alarma de BACKUP BASE ausente.** La métrica mide la cadena de WAL, no su ancla. Un
   backup base que falla cada semana es invisible hasta el restore.
-- **No hay alarma de espacio en disco** (exige el agente CloudWatch; `disk_used_percent` no
-  existe en las métricas nativas de EC2). Ver el reloj corto del §6.
+- ~~**No hay alarma de espacio en disco**~~ — **FALSO desde T-2.72.c, y corregido en T-7.46.**
+  `disk_used_percent` sigue sin existir en las métricas nativas de EC2, cierto, pero no hizo
+  falta el agente: se publica desde la instancia por el cron de `/etc/cron.d/takab-pitr`. Hoy hay
+  DOS alarmas de disco, una por volumen (`disco-datos-lleno` y `disco-raiz-lleno`, §7). Esta
+  línea se conserva tachada a propósito: era la segunda copia viva de la creencia que el
+  2026-09-16 dejó el volumen raíz sin vigilar hasta que tumbó un despliegue.
 - **Punto ciego de `stats_reset`**: si las estadísticas se reinician, `last_archived_time` vuelve
   a NULL y la edad se cuenta desde el reinicio; la alarma se pone verde durante como mucho 600 s
   aunque no se archive nada. Se auto-cura.

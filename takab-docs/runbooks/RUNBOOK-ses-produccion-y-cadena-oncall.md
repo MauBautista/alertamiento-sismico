@@ -390,9 +390,15 @@ que llega no distingue sandbox de producción.
 
 ### 3.1 Qué alarma provocar, y por qué esa
 
-Las siete alarmas vivas están en `infra/terraform/modules/observability/main.tf`. Criterios de
-elección: **(a)** no tocar el edificio ni el gabinete, **(b)** que nada la pueda silenciar a
-mitad del ensayo, **(c)** que vuelva sola a `OK` para que el ensayo cierre el círculo.
+Las alarmas vivas están todas en `infra/terraform/modules/observability/main.tf` — **el recuento
+no se escribe aquí a propósito**: esta frase decía «las siete» desde T-2.72 y llevaba tiempo
+desfasada (hoy son quince), porque ningún test la deriva. Para tenerlo al día:
+`grep -c 'resource "aws_cloudwatch_metric_alarm"' infra/terraform/modules/observability/main.tf`.
+
+La tabla de abajo tampoco es un censo: enumera **las candidatas que se consideraron para el
+ensayo** y por qué se descartaron. Criterios de elección: **(a)** no tocar el edificio ni el
+gabinete, **(b)** que nada la pueda silenciar a mitad del ensayo, **(c)** que vuelva sola a `OK`
+para que el ensayo cierre el círculo.
 
 | Alarma | ¿Sirve? | Por qué |
 |---|---|---|
