@@ -161,7 +161,13 @@ _LLAMADAS_DE_RED_PUNTEADAS = frozenset(
 _MARCAS_CONDICIONALES = frozenset({"skipif", "skipIf"})
 
 #: Endpoint por defecto del Shake — los mismos valores que leen los módulos gated.
-_SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "192.168.1.107")
+#: ⚠️ Por NOMBRE, no por IP. El default era `192.168.1.107` y el Shake vive en
+#: `rs.local` (`192.168.1.85` hoy): el gate #3 llevaba saltándose **en silencio**
+#: —«Shake no alcanzable», que es exactamente lo que dice un gabinete apagado— y
+#: el 2026-09-17, con el sensor delante y respondiendo, la suite seguía
+#: declarando 5/5 SALTADOS. Las dos placas se anuncian por mDNS y el Pi resuelve
+#: `rs.local` por NSS; la IP ya se ha mudado tres veces en tres días.
+_SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "rs.local")
 _SHAKE_PORT = os.environ.get("TAKAB_SHAKE_PORT", "18000")
 
 _RE_ENDPOINT = re.compile(r"no alcanzable en (\S+)")
