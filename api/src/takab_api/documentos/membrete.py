@@ -24,10 +24,11 @@ dibujaba las tablas 5.9 mm FUERA de su propio marco, en todas las páginas y con
 la suite en verde. Ahora las dos salen de `PAGE_FORMATS`, que es de dónde las
 saca fpdf2, y `tests/documentos/test_geometria.py` las cruza.
 
-**2 · El pie se reparte POR ARITMÉTICA, no por gusto.** La ficha pide identidad,
-tipo, folio, fecha, `build`, paginación y sha256. Medido sobre la banda útil de
-Carta (185.9 mm) con el peor folio real: identidad 114.5 mm, paginación 15.5,
-sha256 118.7 (mono 6.5), evento+build 59.6, aviso de tipografía degradada 63.8.
+**2 · El pie se reparte POR ARITMÉTICA, no por gusto.** La ficha de `T-7.21`
+pedía identidad, tipo, folio, fecha, `build`, paginación y sha256 — el `build`
+salió después, medido, y su razón es la decisión 4. Sobre la banda útil de Carta
+(185.9 mm) con el peor folio real: identidad 114.5 mm, paginación 15.5, sha256
+118.7 (mono 6.5), evento 39.0, aviso de tipografía degradada 63.8.
 Las dos primeras caben emparejadas y las dos siguientes también; el aviso de
 degradada no cabe con ninguna, así que ocupa su propio renglón **y sólo cuando
 hace falta**. ⚠️ `cell()` de fpdf2 **no envuelve**: lo que sobra se dibuja encima
@@ -39,6 +40,41 @@ del dictamen es `datetime.now(tz=UTC)` (`routers/reports.py`), así que imprimir
 haría que dos generaciones del mismo modelo dieran archivos distintos. El pie
 lleva el instante del SUCESO —el mismo que recibe `seal()`— y por eso su rótulo
 dice «EVENTO», no «generado el»: no es lo mismo y el papel no puede insinuarlo.
+
+**4 · [T-7.42] El `build` NO entra en el pie.** Se evaluó y se descartó, y éstas
+son las medidas, para que no se re-decida a ciegas:
+
+* **No cabría con garantía.** La celda del sello mide 62 mm y «EVENTO … UTC»
+  ocupa 38.97. Un build de 9 caracteres cabe (61.81); uno de 10 se pisa (63.32);
+  el sha entero pide 108.73. Y lo que lo alimentaría es `git rev-parse --short
+  HEAD` —así lo inyecta `deploy/cloud/deploy.sh` en `TAKAB_API_BUILD_SHA`—, cuyo
+  largo **git alarga solo** a medida que el repositorio crece. Sería un
+  desbordamiento esperando a que haya commits, y `cell()` no envuelve: se
+  dibujaría encima de la huella.
+* **Dejaría inverificable evidencia ya registrada.** El reporte de simulacro se
+  guarda bajo una clave FIJA —`evidence/<tenant>/drills/<id>/reporte.pdf`— y
+  cada exportación inserta una fila nueva con el sha256 del archivo. Medido: hoy
+  dos exportaciones del mismo simulacro dan los MISMOS bytes. Con el build
+  dentro, la primera exportación posterior a un despliegue sobrescribiría el
+  objeto y dejaría a todas las filas anteriores citando un sha256 que ya no casa
+  con lo que hay en esa clave. Por la regla de oro 11 esas filas no se podan
+  nunca: se quedarían ahí, apuntando a nada verificable.
+* **La trazabilidad del binario ya existe, y no viaja en el papel.** `/health`
+  publica `build`, y `test_gate_despliegue_nube` juzga con él si lo desplegado es
+  lo que el repositorio dice.
+* **Y en la demostración valdría `unknown`.** `build_sha` sólo lo inyecta el
+  despliegue de nube. Un dictamen pericial que imprima «build unknown» afirma
+  menos que uno que no lo mencione.
+
+Por eso `__init__` ya **no acepta `build=`**. Aceptar un parámetro que nadie pasa
+es exactamente la forma del defecto que esta ficha vino a cerrar —`huella=`
+llevaba así desde `T-7.21`, y el pie de todos los dictámenes decía «ESTE
+DOCUMENTO NO AFIRMA DATOS» mientras su portada imprimía el hash—, así que dejar
+el segundo armado al lado del primero sería no haber aprendido nada.
+
+Si algún día se revoca: la aritmética de arriba hay que rehacerla entera. La
+celda del sello tendría que crecer y la de la huella encoger, y la de la huella
+sólo tiene **5.2 mm** de holgura (5.6 con las fuentes core).
 """
 
 from __future__ import annotations
@@ -83,7 +119,14 @@ CUERPO_Y = 32.0
 _FILETE_Y = 26.0
 
 #: Anchos de las dos columnas derechas del pie, en mm. Medidos sobre el peor
-#: caso real («Pág. 9 de 99» y «EVENTO … UTC · build abc1234»), no elegidos.
+#: caso real («Pág. 9 de 99» y «EVENTO … UTC»), no elegidos.
+#:
+#: ⚠️ [T-7.42] Los 62 mm del sello se midieron cuando el peor caso incluía un
+#: `build`, que ya no existe (decisión 4). NO se encogen a los 39 que hoy bastan:
+#: la celda va alineada a la derecha, así que la holgura no se ve, y encogerla
+#: movería los bytes de TODO documento —incluida la hoja comiteada de
+#: `shared/brand/membrete`— a cambio de nada. Lo que no puede es CRECER: la celda
+#: de la huella es lo que queda, y sólo le sobran 5.2 mm.
 _ANCHO_PAGINA = 18.0
 _ANCHO_SELLO = 62.0
 
@@ -114,6 +157,15 @@ class MembretePDF(FPDF):
     #: Rótulo del tipo de documento en el pie. Lo fija cada subclase.
     tipo: str = "DOCUMENTO"
 
+    #: [T-7.42] ¿Este documento AFIRMA datos? Decide qué dice su pie: el que
+    #: afirma imprime su huella de contenido; el que no, declara la ausencia.
+    #:
+    #: Viaja con la clase —como `tipo`— y no en una lista de exentos, porque una
+    #: lista de exentos crece y acaba tapando justo lo que el censo vigila. Lo
+    #: cruza `test_el_pie_NO_contradice_al_CUERPO` contra el render REAL de cada
+    #: documento: una subclase nueva sin declararlo pone la suite en rojo.
+    afirma_datos: bool = True
+
     def __init__(
         self,
         folio: str,
@@ -121,7 +173,6 @@ class MembretePDF(FPDF):
         *,
         sellado: datetime | None = None,
         huella: str | None = None,
-        build: str | None = None,
     ) -> None:
         super().__init__(format=_FORMATO.capitalize())
         self.folio = folio
@@ -133,7 +184,6 @@ class MembretePDF(FPDF):
         #: `None` es legítimo —una hoja en blanco no tiene contenido— y se
         #: DECLARA en el pie en vez de dejar un hueco mudo.
         self.huella = huella
-        self.build = build
         self.degraded = False
         # Misma regla que la tipografía: si el arte no viajó con el paquete el
         # documento SALE IGUAL, con la palabra compuesta. Una exportación de
@@ -190,7 +240,7 @@ class MembretePDF(FPDF):
         Medido sobre la banda útil de Carta (185.9 mm) con el peor folio real:
 
             identidad · tipo · folio · franja  114.5 mm   +  paginación  15.5
-            SHA-256 del contenido               118.7 mm   +  evento+build 59.6
+            SHA-256 del contenido               118.7 mm   +  evento       39.0
             tipografía degradada                 63.8 mm
 
         Las dos primeras caben emparejadas; la tercera no cabe con ninguna, y por
@@ -222,7 +272,7 @@ class MembretePDF(FPDF):
             self.text_of(self._linea_huella()),
         )
         self.set_font(self.body_font, "", 7)
-        self.cell(_ANCHO_SELLO, 3.4, self.text_of(self._sello_y_build()), align="R")
+        self.cell(_ANCHO_SELLO, 3.4, self.text_of(self._sello()), align="R")
 
         if self.degraded:
             # No se calla: un dictamen al que le faltan caracteres tiene que
@@ -241,21 +291,21 @@ class MembretePDF(FPDF):
             return f"SHA-256 DEL CONTENIDO {self.huella}"
         return "SIN HUELLA DE CONTENIDO · ESTE DOCUMENTO NO AFIRMA DATOS"
 
-    def _sello_y_build(self) -> str:
-        """El instante del SUCESO y la build que lo imprimió.
+    def _sello(self) -> str:
+        """El instante del SUCESO. Nada más — ver la decisión 4 del módulo.
 
         `EVENTO` y no «generado el»: es el instante que recibe `seal()` —el del
         incidente o el del arranque del simulacro—, no la hora de impresión. La
         diferencia no es pedante: `generated_at` es `datetime.now()`, y meterlo
         aquí haría que dos generaciones del mismo modelo dieran archivos
         distintos, con lo que «verifique el sha256» dejaría de ser cierto.
+
+        Vacío cuando no hay instante sellado, y vacío es lo correcto: una hoja en
+        blanco no es de ningún suceso, y ponerle una fecha sería inventarle uno.
         """
-        partes = []
-        if self.sellado is not None:
-            partes.append(f"EVENTO {self.sellado:%Y-%m-%d %H:%M} UTC")
-        if self.build:
-            partes.append(f"build {self.build}")
-        return " · ".join(partes)
+        if self.sellado is None:
+            return ""
+        return f"EVENTO {self.sellado:%Y-%m-%d %H:%M} UTC"
 
     def seal(self, created_at) -> None:
         """Metadatos fijos ⇒ mismas entradas, mismos bytes (y mismo sha256)."""

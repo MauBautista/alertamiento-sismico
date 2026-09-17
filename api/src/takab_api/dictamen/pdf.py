@@ -96,7 +96,23 @@ def _render_technical(m: ReportModel) -> bytes:
     # repite en todas las páginas, y decía PRELIMINAR encima del banner que
     # decía FIRMADO. En un papel con peso legal eso no es una errata.
     estado = "FIRMADO" if _firmado(m) else "PRELIMINAR"
-    pdf = TakabPDF(m.folio, f"DICTAMEN OPERATIVO {estado} · {m.site_name} ({m.site_code})")
+    # [T-7.42] La huella Y el instante del suceso van al PIE, no sólo a la portada.
+    #
+    # Hasta esta ficha ninguno de los dos se pasaba: el pie declaraba «SIN HUELLA
+    # DE CONTENIDO · ESTE DOCUMENTO NO AFIRMA DATOS» en TODAS las páginas de un
+    # papel que imprime su hash dos líneas más abajo y manda verificarlo, y los
+    # 62 mm de su columna derecha salían VACÍOS. Un dictamen se cita por páginas
+    # sueltas, y una página suelta sin huella ni fecha no se puede casar con su
+    # registro.
+    #
+    # El instante es el de APERTURA del incidente, no el de generación: si fuera
+    # el segundo, dos exportaciones del mismo modelo darían pies distintos.
+    pdf = TakabPDF(
+        m.folio,
+        f"DICTAMEN OPERATIVO {estado} · {m.site_name} ({m.site_code})",
+        sellado=m.opened_at,
+        huella=m.content_sha256(),
+    )
     pdf.seal(m.opened_at)
     pdf.add_page()
 
@@ -133,9 +149,20 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
     # Se imprime la huella del CONTENIDO; la del archivo no cabe dentro de sí mismo.
     pdf.field("HASH DE CONTENIDO", m.content_sha256())
     pdf.ln(1)
+    # ⚠️ [T-7.42] Este párrafo decía «el SHA-256 de este archivo queda registrado…
+    # verifíquelo con sha256sum», cuatro milímetros debajo de un número rotulado
+    # «HASH DE CONTENIDO». Son DOS números distintos, y el papel invitaba a
+    # confundirlos: quien corriera `sha256sum` sobre el PDF obtendría otra cosa y
+    # concluiría que la evidencia no casa. Es la misma clase de defecto que
+    # `T-5.26` —un dato inverificable presentado como verificable—, sólo que por
+    # ambigüedad en vez de por truncamiento. La variante ejecutiva ya lo decía
+    # bien desde `T-7.38·I`; la pericial, que es la que lee un perito, no.
     pdf.para(
-        "El SHA-256 de este archivo queda registrado como evidencia inmutable del "
-        "incidente. Verifíquelo desde la consola o con sha256sum contra ese registro.",
+        "Esta huella identifica el CONTENIDO de esta exportación, no este archivo: "
+        "el SHA-256 de un archivo no cabe dentro de sí mismo. Es la misma que va al "
+        "pie de todas las páginas. Del ARCHIVO se registra su propio SHA-256 como "
+        "evidencia inmutable del incidente, y ése es el que devuelve sha256sum: "
+        "compárelo contra ese registro desde la consola.",
         size=7.5,
         muted=True,
     )
@@ -1066,7 +1093,15 @@ def _closing(pdf: TakabPDF, m: ReportModel) -> None:
 
 def _render_executive(m: ReportModel) -> bytes:
     """Una o dos páginas para quien decide, no para quien peritea."""
-    pdf = TakabPDF(m.folio, f"RESUMEN EJECUTIVO · {m.site_name} ({m.site_code})")
+    # [T-7.42] Misma razón que el pericial. Y la huella es DISTINTA de la suya a
+    # propósito —son dos documentos y dicen cosas distintas—; lo que los empareja
+    # es el FOLIO, que el pie también lleva (`T-7.38·I`).
+    pdf = TakabPDF(
+        m.folio,
+        f"RESUMEN EJECUTIVO · {m.site_name} ({m.site_code})",
+        sellado=m.opened_at,
+        huella=m.content_sha256(),
+    )
     pdf.seal(m.opened_at)
     pdf.add_page()
 

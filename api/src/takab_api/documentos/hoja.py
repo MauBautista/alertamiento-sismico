@@ -51,6 +51,10 @@ _SUBTITULO = "HOJA MEMBRETADA · el contenido lo aporta quien la usa"
 
 class _Hoja(MembretePDF):
     tipo = "HOJA EN BLANCO"
+    #: [T-7.42] La ÚNICA que no afirma datos, y por eso la única cuyo pie declara
+    #: la ausencia de huella. El contenido lo aporta quien la use: firmar el vacío
+    #: verificaría que el vacío no cambió, que no es respaldar un dato.
+    afirma_datos = False
 
 
 def hoja_en_blanco(identidad: Identidad = TAKAB) -> bytes:

@@ -59,6 +59,8 @@ class TakabPDF(MembretePDF):
     """El membrete, más la banda de veredicto que sólo el dictamen usa."""
 
     tipo = "DICTAMEN"
+    #: [T-7.42] Afirma un veredicto de habitabilidad: su pie imprime la huella.
+    afirma_datos = True
 
     def verdict_banner(self, status: str, label: str, signed: bool) -> None:
         color = VERDICT_COLORS.get(status, MUTED)
