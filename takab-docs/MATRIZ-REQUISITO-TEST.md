@@ -272,8 +272,8 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 
 | # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
 |---|---|---|---|---|
-| G-03.a | El Shake entrega 100 sps y el stream se sostiene sin reconectar. | `SIN COBERTURA`<br><sub>sólo tests que no corren (skipif)</sub> | `edge/tests/test_seedlink_hardware.py:104`<br>`test_real_shake_streams_100sps`<br>⚠️ *no corre: skipif* | Contra el Shake real. |
-| G-03.b | El resume por número de secuencia da cero pérdida tras un hueco. | `SIN COBERTURA`<br><sub>sólo tests que no corren (skipif)</sub> | `edge/tests/test_seedlink_hardware.py:154`<br>`test_real_shake_backfills_via_seqnum_resume`<br>⚠️ *no corre: skipif* | Contra el Shake real. |
+| G-03.a | El Shake entrega 100 sps y el stream se sostiene sin reconectar. | `SIN COBERTURA`<br><sub>sólo tests que no corren (skipif)</sub> | `edge/tests/test_seedlink_hardware.py:110`<br>`test_real_shake_streams_100sps`<br>⚠️ *no corre: skipif* | Contra el Shake real. |
+| G-03.b | El resume por número de secuencia da cero pérdida tras un hueco. | `SIN COBERTURA`<br><sub>sólo tests que no corren (skipif)</sub> | `edge/tests/test_seedlink_hardware.py:160`<br>`test_real_shake_backfills_via_seqnum_resume`<br>⚠️ *no corre: skipif* | Contra el Shake real. |
 
 - **`SIN COBERTURA` · G-03.a** (sólo tests que no corren (skipif)) — El test existe y **en CI nunca corre**: su `pytestmark` es un `skipif` de alcanzabilidad por socket al Shake, que un runner de GitHub jamás cumple. Está censado en `edge/tests/test_hardware_gates.py::GATES_HARDWARE` justo para que el verde del job no se lea como acreditación (T-2.63).
 - **`SIN COBERTURA` · G-03.b** (sólo tests que no corren (skipif)) — Mismo `skipif` de socket: no acredita nada en CI.
