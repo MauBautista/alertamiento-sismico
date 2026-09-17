@@ -71,6 +71,19 @@ locals {
   # que quedarian invisibles — y luego vigila el volumen donde no ocurren.
   root_disk_metric_name = "RootDiskUsedPercent"
 
+  # [T-7.47] La cota del log de CUALQUIER contenedor residente de esta maquina.
+  #
+  # Los mismos numeros que `deploy/cloud/docker-compose.yml` declara para sus
+  # ocho servicios, y estan aqui porque Terraform no puede leer aquel fichero: el
+  # par vive en dos sitios por necesidad, no por descuido. Lo que impide que
+  # diverjan es `test_censo_de_cotas_de_log.py`, que los cruza.
+  #
+  # `takab-db` nacio sin cota —`json-file` con configuracion vacia— y medido el
+  # 2026-09-17 llevaba 84 MB en 73 dias: ~1,16 MB/dia, el unico consumidor sin
+  # techo del volumen raiz y el que la poda de `T-7.46` jamas toca.
+  log_max_size = "10m"
+  log_max_file = "3"
+
   # [T-2.78.b] Identidades desde las que el worker `notify` puede enviar. El ARN
   # del dominio se COMPONE aqui (no llega hecho) por la misma razon que los topics
   # de IoT: leer el output de `module.identity` cerraria el ciclo
@@ -168,6 +181,12 @@ locals {
     base_backup_metric_name = local.base_backup_metric_name
     data_disk_metric_name   = local.data_disk_metric_name
     root_disk_metric_name   = local.root_disk_metric_name
+
+    # [T-7.47] La cota del log de `takab-db`, que este script impone recreando el
+    # contenedor una sola vez (bloque 2b). Baja de un local porque el mismo par
+    # tiene que llegar a `user_data` para que una instancia NUEVA nazca acotada.
+    log_max_size = local.log_max_size
+    log_max_file = local.log_max_file
 
     # La cadencia del backup base SALE del intervalo declarado, que es el mismo
     # numero con el que `modules/storage` calcula la retencion. `*/N` en el dia
@@ -626,13 +645,16 @@ resource "aws_instance" "db" {
   # diciendo 20 GiB y la alarma, que mide PORCENTAJE, leyendo el mismo numero:
   # un arreglo que parece hecho y no lo esta.
   #
-  # LO QUE ESTA COTA NO MODELA, declarado y no callado: los logs de contenedor.
-  # `takab-db` lo arranca `user_data` con `docker run` SIN opciones de logging,
-  # mientras que los ocho servicios del compose si estan acotados (`json-file`
-  # 10m × 3). Su log JSON vive en `/var/lib/docker/containers` —o sea en este
-  # volumen— y crece sin techo: medido el 2026-09-17, 85 MB frente a los 44-84 KB
-  # de los acotados. No es lo que tumbo el despliegue (eso fueron 16 GB de
-  # imagenes) y `docker image prune` no lo tocaria. Fichado aparte.
+  # LOS LOGS DE CONTENEDOR: ya no son un hueco. `T-7.46` los dejo declarados como
+  # el termino que esta cota no modelaba —`takab-db` nacia sin `--log-opt` y su
+  # log crecia sin techo, 84 MB en 73 dias (~1,16 MB/dia)— y `T-7.47` los cerro:
+  # el documento SSM del PITR recrea el contenedor UNA vez con `max-size` y
+  # `max-file`, con guarda idempotente, y `test_censo_de_cotas_de_log.py` exige
+  # que todo contenedor RESIDENTE declare su cota.
+  #
+  # Con eso, el unico crecimiento no acotado que queda en este volumen es el
+  # journal de systemd, que corre con el default de journald (10 % del sistema de
+  # ficheros): medido el 2026-09-17, 310 MB sobre un techo implicito de ~2 GiB.
   root_block_device {
     volume_type = "gp3"
     volume_size = 20
