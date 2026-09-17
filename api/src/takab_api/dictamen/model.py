@@ -9,14 +9,13 @@ detalle de formato.
 
 from __future__ import annotations
 
-import hashlib
-import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from takab_api.compliance import ComplianceDocument
 from takab_api.dictamen.duracion import Duracion
 from takab_api.dictamen.espectrograma import Espectrograma
+from takab_api.documentos.huella import content_sha256 as huella_de_contenido
 
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
@@ -366,7 +365,7 @@ class FotoFila:
     #: Por qué no se imprime, si es el caso. Nunca un hueco mudo.
     motivo: str | None = None
     #: Los bytes JPEG a embeber. **No entran crudos en `content_sha256`**: ver
-    #: `_para_la_huella`. Su `sha256_impreso` sí, que es lo que identifica el
+    #: `documentos/huella.para_la_huella`. Su `sha256_impreso` sí, que identifica el
     #: contenido sin arrastrar megabytes por el serializador en cada llamada.
     jpeg: bytes | None = None
 
@@ -592,31 +591,21 @@ class ReportModel:
     def content_sha256(self) -> str:
         """Huella del CONTENIDO (no del archivo): identifica qué se afirmó.
 
-        El sha256 del PDF no puede imprimirse dentro de sí mismo; este sí, y permite
-        comparar dos exportaciones del mismo incidente sin abrirlas.
+        El sha256 del PDF no puede imprimirse dentro de sí mismo; éste sí, y desde
+        `T-7.42` va en la portada Y en el pie de todas las páginas.
+
+        ⚠️ **La segunda frase de este docstring prometía «comparar dos
+        exportaciones del mismo incidente sin abrirlas», y es FALSA**: medido en
+        `T-7.43`, `generated_at` es campo del modelo, así que dos exportaciones
+        separadas por un segundo dan huellas distintas y nunca coinciden. Se retira
+        la promesa en vez de dejarla: elegir entre sacar `generated_at` del payload
+        o decir qué identifica este número de verdad **es `T-7.43`**, y no se
+        adelanta aquí. Lo que sí se puede decir hoy es lo que este número identifica
+        con certeza: una exportación concreta. El del simulacro sí es estable
+        (`drill_report.ReporteSimulacro.content_sha256`), porque su modelo no tiene
+        reloj de generación.
         """
-        payload = json.dumps(
-            asdict(self), sort_keys=True, separators=(",", ":"), default=_para_la_huella
-        )
-        return hashlib.sha256(payload.encode()).hexdigest()
-
-
-def _para_la_huella(valor: object) -> str:
-    """Cómo se serializa lo que `json` no sabe, al calcular `content_sha256`.
-
-    [T-7.22] Los BYTES de una fotografía se sustituyen por su tamaño. No es una
-    omisión: la huella de esa misma derivada (`FotoFila.sha256_impreso`) SÍ entra
-    en el payload, así que dos informes con fotografías distintas siguen dando
-    huellas distintas — que es lo que
-    `test_la_huella_de_contenido_es_estable_y_cambia_con_el_contenido` exige.
-
-    Lo que se evita es arrastrar megabytes de `repr` por el serializador en CADA
-    llamada, y `content_sha256()` se llama al menos dos veces por documento (la
-    portada y el pie).
-    """
-    if isinstance(valor, bytes):
-        return f"<{len(valor)} bytes>"
-    return str(valor)
+        return huella_de_contenido(self)
 
 
 #: [T-5.26] Lo que se imprime donde va la huella de un objeto de evidencia.

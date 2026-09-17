@@ -236,7 +236,8 @@ def test_la_huella_de_CONTENIDO_cambia_con_las_fotografias() -> None:
     incidente con fotografías DISTINTAS imprimirían el MISMO «SHA-256 DEL
     CONTENIDO» en el pie — y es justo el número que el documento manda verificar.
 
-    Los bytes no entran crudos en esa huella (`_para_la_huella`); su sha256 sí, y
+    Los bytes no entran crudos en esa huella (`documentos/huella.para_la_huella`);
+    su sha256 sí, y
     esto es lo que lo demuestra.
     """
     a = model(danos=[_dano([_foto(3)])])
@@ -254,10 +255,10 @@ def test_la_huella_de_CONTENIDO_no_arrastra_los_bytes() -> None:
     import json
     from dataclasses import asdict
 
-    from takab_api.dictamen.model import _para_la_huella
+    from takab_api.documentos.huella import para_la_huella
 
     m = model(danos=[_dano([_foto(i) for i in (3, 5, 7, 11)])])
-    payload = json.dumps(asdict(m), sort_keys=True, separators=(",", ":"), default=_para_la_huella)
+    payload = json.dumps(asdict(m), sort_keys=True, separators=(",", ":"), default=para_la_huella)
     assert "\\\\x" not in payload, "los bytes de las fotografías se colaron en la huella"
     assert payload.count("<") >= 4, "las fotografías no dejaron su marca de tamaño"
     # Y la huella de cada derivada SÍ está: es lo que hace que el hash cambie.

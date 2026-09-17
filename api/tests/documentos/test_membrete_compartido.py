@@ -28,6 +28,12 @@ from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import model
 from tests.documentos.test_censo_fpdf import _descendientes
 
+#: Las dos formas HONESTAS de la línea de huella del pie. Se teclean aquí en vez
+#: de importarse de `membrete.py`: es texto de un documento de EVIDENCIA, y
+#: cambiarlo tiene que poner en rojo a quien lo afirma, no seguirle la corriente.
+ROTULO_HUELLA = "SHA-256 DEL CONTENIDO"
+AUSENCIA_HUELLA = "SIN HUELLA DE CONTENIDO · ESTE DOCUMENTO NO AFIRMA DATOS"
+
 
 @contextmanager
 def espia() -> Iterator[list[str]]:
@@ -93,8 +99,19 @@ def test_todo_papel_lleva_el_MISMO_membrete(documento) -> None:
     texto = "\n".join(visto)
     assert "TAKAB AILERT" in texto, "un papel sin el nombre de quien lo firma"
     assert "EVIDENCIA INMUTABLE" in texto
-    assert any(v.startswith("SHA-256 DEL CONTENIDO") or "SIN HUELLA" in v for v in visto), (
-        "el pie no dice ni la huella ni su ausencia"
+    con = [v for v in visto if v.startswith(ROTULO_HUELLA)]
+    sin_ella = [v for v in visto if AUSENCIA_HUELLA in v]
+    # ⚠️ [T-7.42] Aquí había un `or` entre las DOS frases, y un `or` entre una
+    # afirmación y su negación no puede fallar. Mientras tanto el dictamen
+    # imprimía «ESTE DOCUMENTO NO AFIRMA DATOS» en el pie de todas sus páginas y
+    # el hash en su portada, y esta prueba lo daba por bueno. Se exige UNA de las
+    # dos, nunca las dos ni ninguna; cuál le toca a cada documento lo decide
+    # `afirma_datos`, y lo cruza contra el cuerpo del mismo render
+    # `test_el_pie_NO_contradice_al_CUERPO`.
+    assert bool(con) != bool(sin_ella), (
+        "el pie tiene que decir su huella o declarar su ausencia, y exactamente "
+        f"una de las dos cosas: {len(con)} líneas con huella y {len(sin_ella)} "
+        "declarando que no la hay"
     )
 
 
@@ -134,6 +151,41 @@ def test_el_sellado_de_la_hoja_NO_es_el_reloj() -> None:
     assert hoja_en_blanco() == hoja_en_blanco()
 
 
+def _sombras() -> list[str]:
+    """Los MÉTODOS que una subclase reinstala con el MISMO objeto del ancestro.
+
+    Sólo mira lo que es invocable o descriptor —función, `property`,
+    `classmethod`, `staticmethod`—, porque ésa es la forma exacta del defecto:
+    un espía intercepta una LLAMADA, y lo que sombrea es la llamada.
+
+    ⚠️ **[T-7.42] La premisa de la versión anterior caducó.** Marcaba cualquier
+    atributo idéntico al del ancestro, con esta razón escrita: «un
+    `tipo = "DICTAMEN"` es una redefinición legítima porque su valor es DISTINTO
+    del de la base». Dejó de ser cierta el día en que `afirma_datos` obligó a
+    cada documento a declararse: `TakabPDF` y `ReportePDF` afirman datos, la
+    base también, y `True` **es** `True` — el mismo objeto sin que nadie haya
+    parcheado nada. Mantenerla habría empujado a lo contrario de lo que T-7.42
+    pide: a no declarar y heredar en silencio, que es justo como nace un
+    documento con el pie desmintiéndose.
+    """
+    from takab_api.documentos.membrete import MembretePDF
+
+    sombras: list[str] = []
+    for clase in _descendientes(MembretePDF) | {MembretePDF}:
+        for nombre, valor in vars(clase).items():
+            if nombre.startswith("__"):
+                continue
+            if not callable(valor) and not hasattr(type(valor), "__get__"):
+                continue
+            for ancestro in clase.__mro__[1:]:
+                if nombre not in vars(ancestro):
+                    continue
+                if vars(ancestro)[nombre] is valor:
+                    sombras.append(f"{clase.__name__}.{nombre} (idéntico a {ancestro.__name__})")
+                break
+    return sombras
+
+
 def test_NINGUNA_subclase_sombrea_un_metodo_HEREDADO() -> None:
     """La guarda del defecto de arriba, generalizada — y la razón de que exista.
 
@@ -154,19 +206,7 @@ def test_NINGUNA_subclase_sombrea_un_metodo_HEREDADO() -> None:
     sobre la BASE recoge CERO — **en silencio y solo según el orden de la
     suite**, que es la peor forma de fallar.
     """
-    from takab_api.documentos.membrete import MembretePDF
-
-    sombras: list[str] = []
-    for clase in _descendientes(MembretePDF) | {MembretePDF}:
-        for nombre, valor in vars(clase).items():
-            if nombre.startswith("__"):
-                continue
-            for ancestro in clase.__mro__[1:]:
-                if nombre not in vars(ancestro):
-                    continue
-                if vars(ancestro)[nombre] is valor:
-                    sombras.append(f"{clase.__name__}.{nombre} (idéntico a {ancestro.__name__})")
-                break
+    sombras = _sombras()
     assert not sombras, (
         "hay atributos reinstalados sobre una subclase con el MISMO objeto del "
         "ancestro: algún espía parcheó la clase derivada y «restauró» "
@@ -195,6 +235,31 @@ def test_la_guarda_de_sombreado_CAZA_un_espia_mal_restaurado() -> None:
             "Python cambió esto, la guarda de arriba ya no hace falta"
         )
         assert vars(MembretePDF)["text_of"] is TakabPDF.__dict__["text_of"]
+        # ⚠️ [T-7.42] Y que la guarda LO VEA, que es lo que la contraprueba no
+        # comprobaba: antes sólo verificaba el comportamiento de Python, así que
+        # estrechar el barrido —como acaba de hacerse— la habría dejado pasar en
+        # verde con el defecto delante.
+        assert "TakabPDF.text_of (idéntico a MembretePDF)" in _sombras()
     finally:
         del TakabPDF.text_of
     assert "text_of" not in TakabPDF.__dict__
+    assert not _sombras()
+
+
+def test_declarar_un_DATO_con_el_mismo_valor_de_la_base_NO_es_sombrear() -> None:
+    """La otra mitad de la regla, y la que le costó la premisa a la anterior.
+
+    `afirma_datos = True` en `TakabPDF` es el MISMO objeto que en la base —`True`
+    es un singleton— y aun así es exactamente lo que `T-7.42` exige: que cada
+    documento se declare en vez de heredar en silencio. Si esta prueba se pone
+    roja, la guarda volvió a castigar la declaración explícita.
+    """
+    from takab_api.dictamen.layout import TakabPDF
+    from takab_api.documentos.membrete import MembretePDF
+
+    assert "afirma_datos" in vars(TakabPDF), "el dictamen dejó de declararse"
+    assert TakabPDF.afirma_datos is MembretePDF.afirma_datos, (
+        "esta prueba vigila el caso IDÉNTICO; si los valores ya no coinciden, "
+        "no está midiendo lo que dice medir"
+    )
+    assert not [s for s in _sombras() if "afirma_datos" in s]

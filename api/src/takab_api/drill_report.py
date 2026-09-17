@@ -28,6 +28,7 @@ from datetime import datetime
 
 from fpdf.enums import XPos, YPos
 
+from takab_api.documentos.huella import content_sha256 as huella_de_contenido
 from takab_api.documentos.membrete import MUTED, MembretePDF
 
 #: Lo que el documento declara que NO es. Va impreso, como el del dictamen.
@@ -176,6 +177,24 @@ class ReporteSimulacro:
     #: [T-6.16] `manual` | `aborted` | `cancelled` | `executed` | None.
     stop_reason: str | None = None
 
+    def content_sha256(self) -> str:
+        """[T-7.42] Huella del CONTENIDO: identifica qué acredita este reporte.
+
+        Hasta esta ficha el pie decía «SIN HUELLA DE CONTENIDO · ESTE DOCUMENTO
+        NO AFIRMA DATOS» a cuatro renglones de un §4 que dice que **ACREDITA** qué
+        gabinetes acusaron la orden y en cuánto tiempo. El papel se negaba a sí
+        mismo.
+
+        No se le inventó una huella: se le dio la que le corresponde, con la MISMA
+        receta que el dictamen (`documentos/huella.py`) y no con una copia.
+
+        Y es más honesta que la del dictamen: este modelo **no tiene reloj de
+        generación** —todos sus campos salen de la base y el sellado es
+        `started_at`—, así que dos exportaciones del mismo simulacro dan la MISMA
+        huella. El dictamen no puede prometer eso todavía (`T-7.43`).
+        """
+        return huella_de_contenido(self)
+
     # --- los tres grupos, derivados y sin colapsar -------------------------
     @property
     def acusaron(self) -> list[SitioReporte]:
@@ -226,6 +245,9 @@ class ReportePDF(MembretePDF):
     """
 
     tipo = "REPORTE DE SIMULACRO"
+    #: [T-7.42] Acredita qué gabinetes acusaron y en cuánto tiempo: afirma
+    #: datos, así que su pie imprime la huella en vez de negarlos.
+    afirma_datos = True
 
 
 def render(rep: ReporteSimulacro) -> bytes:
@@ -233,7 +255,12 @@ def render(rep: ReporteSimulacro) -> bytes:
     # La fecha del sello es la del SIMULACRO, no la de la exportación: si fuera la
     # segunda, dos exportaciones del mismo simulacro darían hashes distintos y la
     # huella dejaría de probar nada. Va también al PIE, como instante del suceso.
-    pdf = ReportePDF(rep.folio, f"REPORTE DE SIMULACRO · {rep.tenant_name}", sellado=rep.started_at)
+    pdf = ReportePDF(
+        rep.folio,
+        f"REPORTE DE SIMULACRO · {rep.tenant_name}",
+        sellado=rep.started_at,
+        huella=rep.content_sha256(),
+    )
     pdf.seal(rep.started_at)
     pdf.add_page()
 
@@ -327,4 +354,17 @@ def render(rep: ReporteSimulacro) -> bytes:
 
     pdf.section("4", "DESLINDE")
     pdf.callout(DESLINDE, (20, 24, 30))
+    # [T-7.42] Desde esta ficha el pie de TODAS las páginas lleva la huella del
+    # contenido. Un número de 64 hex sin explicar, en un papel que dice ACREDITA,
+    # invita a correrle `sha256sum` al archivo y a concluir que no casa — la misma
+    # ambigüedad que la portada del dictamen acaba de perder. Aquí no hay portada,
+    # así que va donde el documento ya dice qué es y qué no.
+    pdf.para(
+        "La huella al pie identifica el CONTENIDO de este reporte, no este archivo: "
+        "el SHA-256 de un archivo no cabe dentro de sí mismo. Del ARCHIVO se registra "
+        "su propio SHA-256 como evidencia del simulacro, y ése es el que devuelve "
+        "sha256sum.",
+        size=7,
+        muted=True,
+    )
     return bytes(pdf.output())

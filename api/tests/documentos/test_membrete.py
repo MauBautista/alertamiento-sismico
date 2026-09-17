@@ -24,10 +24,12 @@ from __future__ import annotations
 
 import io
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from pypdf import PdfReader
 
+from takab_api.documentos import membrete
 from takab_api.documentos.hoja import hoja_en_blanco, hoja_svg
 from takab_api.documentos.identidad import PENDIENTE, TAKAB, Identidad
 from takab_api.documentos.membrete import (
@@ -130,16 +132,32 @@ def test_sin_huella_se_DECLARA_en_vez_de_dejar_el_hueco() -> None:
 
 
 @pytest.mark.parametrize("degradado", [False, True])
-def test_el_pie_CABE_en_su_celda(degradado: bool) -> None:
+def test_el_pie_CABE_en_su_celda(degradado: bool, monkeypatch) -> None:
     """`cell()` no envuelve: lo que no cabe se dibuja encima de lo de al lado.
 
     Se miden **las mismas cadenas que el pie imprime** —no una copia escrita en
     el test— y con el PEOR caso real: el folio más largo que produce el
-    generador, con `build` y con instante sellado. El que revienta nunca es el
-    caso corto, y una copia en el test se separa del código a la primera.
+    generador, con la huella entera y con instante sellado. El que revienta
+    nunca es el caso corto, y una copia en el test se separa del código a la
+    primera.
+
+    ⚠️ **[T-7.42] El caso `degradado` era un NO-OP.** Ponía `pdf.degraded = True`
+    DESPUÉS de construir, y para entonces `_install_fonts` ya había elegido las
+    DejaVu: se medían las anchuras de la tipografía BUENA transcodificando el
+    texto a latin-1, que es justo lo que no ocurre cuando las fuentes faltan.
+    Ahora se le esconde el directorio —la avería real: la imagen sin los
+    `.ttf`— y las anchuras salen de Helvetica y Courier, que es lo que fpdf2
+    usaría. Importa desde esta ficha y no antes: hasta hoy `_linea_huella()`
+    devolvía en todo documento real la frase corta de ausencia, y desde hoy son
+    85 caracteres de monoespaciada en el pie de TODAS las páginas.
     """
-    pdf = MembretePDF("TKB-FOLIO-MUY-LARGO-DE-PRUEBA-01", "sub", sellado=SELLO, build="abc1234")
-    pdf.degraded = degradado
+    if degradado:
+        monkeypatch.setattr(membrete, "_FONTS", Path("/tipografia/que/no/viajo/en/la/imagen"))
+    pdf = MembretePDF("TKB-FOLIO-MUY-LARGO-DE-PRUEBA-01", "sub", sellado=SELLO, huella="f" * 64)
+    assert pdf.degraded is degradado, (
+        "el caso no está ejerciendo el camino que dice: si esto falla, la prueba "
+        "vuelve a medir la tipografía que no se va a usar"
+    )
     pdf.add_page()
 
     def ancho(texto: str, fuente: str, tam: float) -> float:
@@ -149,8 +167,8 @@ def test_el_pie_CABE_en_su_celda(degradado: bool) -> None:
     banda = CONTENT_W
     assert ancho(pdf._linea_identidad(), pdf.body_font, 7) <= banda - _ANCHO_PAGINA
     assert ancho("Pág. 9 de 99", pdf.body_font, 7) <= _ANCHO_PAGINA
-    assert ancho("SHA-256 DEL CONTENIDO " + "f" * 64, pdf.mono_font, 6.5) <= banda - _ANCHO_SELLO
-    assert ancho(pdf._sello_y_build(), pdf.body_font, 7) <= _ANCHO_SELLO
+    assert ancho(pdf._linea_huella(), pdf.mono_font, 6.5) <= banda - _ANCHO_SELLO
+    assert ancho(pdf._sello(), pdf.body_font, 7) <= _ANCHO_SELLO
     if degradado:
         assert ancho(AVISO_DEGRADADA, pdf.body_font, 7) <= banda
 

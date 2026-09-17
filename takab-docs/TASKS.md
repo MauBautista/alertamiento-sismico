@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **425** · `[x]` **363** · `[~]` **11** · `[ ]` **51**
+**Conteo de tareas:** total **425** · `[x]` **364** · `[~]` **11** · `[ ]` **50**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14645,7 +14645,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > **Lo que queda y no es software:** correr la meta de F4 contra la nube con un incidente de
 > reproducción real. Necesita desplegar, y el `Dockerfile` cambió en el punto 1.
 
-### [ ] T-7.42 · **El pie del dictamen dice que el documento no afirma datos, y la portada imprime su hash** — `SOFTWARE`
+### [x] T-7.42 · **El pie del dictamen dice que el documento no afirma datos, y la portada imprime su hash** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** api · **Depende de:** T-7.21 · **Prioridad:** F4 · alta
 - **Objetivo:** que el pie deje de desmentir a la portada del mismo papel.
 - **El fallo, medido.** Espiando el render del dictamen: el pie imprime, en todas sus páginas,
@@ -14657,17 +14657,82 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   se registra como evidencia. Un cambio de formato del número que el papel manda verificar es un
   hecho que se cuenta, no un efecto secundario de otra ficha.
 - **Criterios de aceptación:**
-  - [ ] Todo documento que AFIRMA datos pasa su huella al membrete; sólo la hoja en blanco
+  - [x] Todo documento que AFIRMA datos pasa su huella al membrete; sólo la hoja en blanco
     declara la ausencia. La guarda actual acepta cualquiera de las dos frases con un `or`
     (`tests/documentos/test_membrete_compartido.py`) y hay que endurecerla.
-  - [ ] Decidir, con su razón escrita, si `Settings().build_sha` entra en el pie. Hoy el
+  - [x] Decidir, con su razón escrita, si `Settings().build_sha` entra en el pie. Hoy el
     `build` NO se imprime en ningún documento real —sólo un test lo pasa— y meterlo hace que el
     MISMO modelo dé bytes distintos según el despliegue: hay que elegir entre trazabilidad del
     binario y sha256 reproducible.
-  - [ ] El reporte de simulacro no tiene `content_sha256()`: o se dice de dónde sale su huella,
+  - [x] El reporte de simulacro no tiene `content_sha256()`: o se dice de dónde sale su huella,
     o se queda declarando su ausencia. No se inventa una.
 - **Tests de censo que toca:** espía general del membrete · **Token nuevo:** no · **Cambia algo
   que un test defiende hoy:** sí (el pie de los tres documentos y sus bytes).
+
+> **Cómo se cerró — y el segundo cable suelto que la ficha no nombraba.**
+>
+> **`sellado=` tampoco llegaba.** Además de `huella=`, el dictamen no pasaba el instante del
+> suceso, así que los **62 mm** de la columna derecha del pie —medidos y reservados en `T-7.21`—
+> salían VACÍOS en todas las páginas de las dos variantes. Una hoja suelta de un dictamen no decía
+> de qué sismo hablaba. Dos parámetros aceptados y no pasados, en el mismo constructor.
+>
+> **El arreglo no ponía rojo nada.** Medido antes de tocar código: con el defecto vivo, las suites
+> de documentos daban 349 en verde. Y el repositorio ya afirmaba por escrito —en tres sitios, uno
+> de ellos un comentario escrito durante `T-7.22`— que el pie imprimía el hash. Las tres guardas
+> que había veían cada una media verdad: una comprobaba que la cadena estuviera en el FICHERO
+> fuente, otra medía el ANCHO de una línea que ningún documento dibujaba, y la tercera aceptaba
+> cualquiera de las dos frases con un `or` — un `or` entre una afirmación y su negación no puede
+> fallar. Cada una correcta; el conjunto, ciego.
+>
+> **La regla quedó DERIVADA.** Cada subclase de `MembretePDF` declara `afirma_datos`, como ya
+> declaraba `tipo`. `test_el_pie_no_se_desmiente.py` cruza las dos mitades del MISMO render —pie
+> contra cuerpo— para cada documento del censo, y el censo sale de `_descendientes(MembretePDF)`:
+> un documento nuevo sin declararse pone la suite en rojo. Consecuencia elegante: una vez
+> cableados los dos dictámenes y el simulacro, **la única `huella=None` que queda es la hoja en
+> blanco**, así que la frase «ESTE DOCUMENTO NO AFIRMA DATOS» pasó a ser cierta y el artefacto
+> comiteado de `shared/brand/membrete` no se movió.
+>
+> **La decisión del `build`: NO, y el parámetro se retiró.** Está escrita con sus medidas en
+> `documentos/membrete.py` (decisión 4). Las cuatro razones: *(1)* la celda del sello mide 62 mm y
+> «EVENTO … UTC» ya ocupa 38.97 — un abreviado de 9 caracteres cabe (61.81), uno de **10 se pisa**
+> (63.32) y el sha entero pide 108.73; lo que lo alimenta es `git rev-parse --short HEAD`, cuyo
+> largo **git alarga solo** al crecer el repositorio, y `cell()` no envuelve. *(2)* El reporte de
+> simulacro se guarda bajo clave **FIJA** y cada exportación inserta una fila de evidencia nueva
+> con el sha256 del archivo; medido, hoy dos exportaciones dan los MISMOS bytes, y con el build
+> dentro la primera exportación posterior a un despliegue dejaría a todas las filas anteriores
+> citando un sha256 que ya no casa — filas que por la regla de oro 11 no se podan nunca. *(3)*
+> `/health` ya publica el build y `test_gate_despliegue_nube` juzga con él. *(4)* En la
+> demostración valdría `unknown`. Y `build=` se **retiró de la firma**: aceptar un parámetro que
+> nadie pasa es la forma exacta del defecto que esta ficha vino a cerrar, y dejar el segundo
+> armado al lado del primero sería no haber aprendido nada. Lo vigila
+> `test_el_membrete_NO_ACEPTA_un_build_que_nadie_le_pasa`.
+>
+> **La huella del simulacro no se inventó.** `ReporteSimulacro.content_sha256()` usa la MISMA
+> receta que el dictamen —extraída a `documentos/huella.py` para que no haya dos definiciones de
+> «huella de contenido» divergiendo justo en el número que los dos papeles mandan verificar— y es
+> más honesta que aquélla: ese modelo **no tiene reloj de generación**, así que dos exportaciones
+> del mismo simulacro dan la misma huella. El dictamen no puede prometer eso todavía (`T-7.43`).
+>
+> **Una tercera contradicción, encontrada de paso.** La portada del pericial imprimía
+> «HASH DE CONTENIDO \<sha256\>» y, cuatro milímetros debajo, «el SHA-256 de **este archivo**
+> queda registrado… verifíquelo con `sha256sum`». Son dos números distintos: quien obedeciera
+> obtendría otro y concluiría que la evidencia no casa. La variante ejecutiva ya lo decía bien
+> desde `T-7.38·I`; la pericial —la que lee un perito— no. Ahora lo dicen las dos, y el reporte de
+> simulacro también, que desde hoy lleva la huella al pie sin portada donde explicarla.
+>
+> **Dos guardas que mentían, arregladas al pasar.** *(a)* El caso `degradado` de
+> `test_el_pie_CABE_en_su_celda` era un **NO-OP**: ponía `pdf.degraded = True` después de
+> construir, cuando `_install_fonts` ya había elegido las DejaVu, así que medía la tipografía
+> buena. Ahora se le esconde el directorio de fuentes —la avería real— y mide Helvetica y Courier;
+> importa justo desde esta ficha, porque hasta hoy la línea de huella era la frase corta de
+> ausencia y desde hoy son 85 caracteres de monoespaciada. Cabe: **5.6 mm** de holgura en Courier,
+> 5.2 con DejaVu. *(b)* La guarda de sombreado marcaba cualquier atributo idéntico al del ancestro
+> con esta premisa escrita: «una redefinición legítima tiene valor DISTINTO de la base». Caducó
+> hoy — `TakabPDF.afirma_datos` y `MembretePDF.afirma_datos` son ambos `True`, el mismo objeto,
+> sin que nadie haya parcheado nada. Se estrechó a lo invocable o descriptor, que es la forma
+> exacta del defecto que vigila (un espía intercepta una LLAMADA), y su contraprueba pasó a
+> ejercer **la guarda** en vez del comportamiento de Python — si no, estrecharla la habría dejado
+> en verde con el defecto delante.
 
 ### [ ] T-7.43 · **`content_sha256` cambia con el reloj, y el documento promete lo contrario** — `SOFTWARE`
 - **Componente:** api · **Depende de:** — · **Prioridad:** F4 · media
