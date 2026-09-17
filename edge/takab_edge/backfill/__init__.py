@@ -53,6 +53,24 @@ _EVIDENCE_LIST_MAX = 8
 #: hora no es impaciencia — es la frontera entre "va a subir" y "no va a subir".
 _EVIDENCE_STUCK_AFTER_S = 3600.0
 
+#: [T-7.40] Cada cuánto se vuelve a mirar si una evidencia pendiente YA MADURÓ.
+#:
+#: ⚠️ No es un sondeo caprichoso: es el «luego» que `_process_pending_evidence`
+#: prometía y que nadie daba. Esa pasada salta toda ventana cuyo `end` siga en el
+#: futuro —`evidence_post_s` son 120 s— con el comentario «reintentar luego», y
+#: hasta esta ficha los ÚNICOS despertadores eran el evento SIGUIENTE y la
+#: reconexión. Medido en `gw-dev-0001`: la evidencia de cada episodio se subía
+#: cuando ocurría el siguiente, con retrasos de 9 min a 6 h 09 min; la del
+#: 2026-09-14T21:27:40Z subió a las 00:16:19Z del día siguiente, **47 minutos
+#: después de la purga operativa que había borrado su incidente**, y acabó en la
+#: DLQ como evidencia huérfana. Un gabinete en calma con el enlace sano podía
+#: retener la evidencia de un sismo indefinidamente (regla de oro 3).
+#:
+#: 30 s contra los 120 del post-roll: la evidencia sale a los ≤150 s del evento.
+#: El barrido NO toca disco si el contador EN MEMORIA dice que no hay nada, así
+#: que un gabinete sin eventos no paga nada por tenerlo.
+_BARRIDO_EVIDENCIA_S = 30.0
+
 #: Sufijo de CUARENTENA de un pendiente cuyo contenido es irreparable.
 #: Mismo patrón que `DurableSpool.load` (`.corrupt`): sale de la ruta de subida
 #: pero NO del disco — se conserva para el forense y sigue contando en el panel.
@@ -117,6 +135,10 @@ class BackfillManager(EdgeModule):
         self._pending_dir.mkdir(parents=True, exist_ok=True)
         self._in_progress = threading.Event()
         self._evidence_in_progress = threading.Event()
+        # [T-7.40] Barrido de evidencia madura. Se crea aquí y no en `_on_start`
+        # para que `stop()` sea seguro aunque nadie haya arrancado el módulo.
+        self._barrido_stop = threading.Event()
+        self._barrido_s = _BARRIDO_EVIDENCIA_S
         self._cooldown_until: datetime | None = None
         self._grants: dict[str, dict] = {}
         self._grant_arrived = threading.Condition()
@@ -269,6 +291,17 @@ class BackfillManager(EdgeModule):
             # de confirmar un evento — releer el directorio aquí sería pagar
             # disco en el peor momento posible.
             self._add_pending(event_id, start)
+            # ⚠️ [T-7.40] Este método era MUDO: el único rastro de una evidencia
+            # era su SUBIDA, que puede ocurrir horas después y con otro episodio
+            # de por medio. Por eso «¿de dónde salió este nombre?» no se pudo
+            # contestar leyendo el journal, y hubo que deducirlo de la ventana
+            # del propio miniSEED. Una línea por evento — regla de oro 10.
+            log.info(
+                "backfill: evidencia %s encolada (ventana %s → %s)",
+                event_id,
+                start.isoformat(),
+                end.isoformat(),
+            )
         if self._cloud.online:
             self._kick_evidence()
 
@@ -578,8 +611,36 @@ class BackfillManager(EdgeModule):
         if seconds > 0:
             threading.Event().wait(seconds)
 
+    def _run_barrido_evidencia(self) -> None:
+        """[T-7.40] Vuelve a mirar la evidencia pendiente hasta que madure.
+
+        `_process_pending_evidence` salta toda ventana cuyo `end` siga en el
+        futuro con un «reintentar luego», y hasta esta ficha no existía ningún
+        «luego»: los únicos despertadores eran el evento SIGUIENTE y la
+        reconexión. Ver la razón medida en `_BARRIDO_EVIDENCIA_S`.
+
+        Barato por construcción: consulta el contador EN MEMORIA y sólo entonces
+        despierta la pasada, que es la que toca disco. Y `_kick_evidence` ya se
+        guarda de sí mismo, así que llamarlo de más no solapa pasadas.
+        """
+        while not self._barrido_stop.wait(self._barrido_s):
+            try:
+                if self._evidence_state["pending"] and self._cloud.online:
+                    self._kick_evidence()
+            except Exception:  # noqa: BLE001 — el barrido jamás mata al proceso
+                log.exception("backfill: el barrido de evidencia falló; se reintenta")
+
+    def _on_stop(self) -> None:
+        self._barrido_stop.set()
+
     def _on_start(self) -> None:
         self._refresh_pending_state()  # el directorio manda sobre lo que hubiera en memoria
+        # [T-7.40] El despertador que faltaba. Daemon como los demás hilos del
+        # módulo: si el proceso muere, nada que drenar.
+        self._barrido_stop.clear()
+        threading.Thread(
+            target=self._run_barrido_evidencia, name="backfill-evidencia-barrido", daemon=True
+        ).start()
         snap = self._evidence_state
         log.info(
             "backfill activo (umbral %.0fs, jitter ≤%.0fs, %d evidencias pendientes%s)",
