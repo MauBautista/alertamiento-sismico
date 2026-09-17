@@ -1,0 +1,71 @@
+# Journal del gabinete gw-dev-0001 · ventana del evento perdido de T-7.40
+#
+# Capturado el 2026-09-17T08:2x UTC desde la red del sitio, en cuanto hubo ruta.
+# Origen: raspberry-cerebro.local (Raspberry-Cerebro, Pi 4), boot único
+# fdd80c8282a94eb99691ca45a86a3d56 (2026-09-14 06:45 CST → vivo). Journal PERSISTENTE
+# (/var/log/journal), así que la ventana seguía disponible 2 días después.
+#
+# Comando (marcas de salida en UTC, sin filtrar):
+#   journalctl --utc --no-pager -o short-iso \
+#     --since '2026-09-14 18:10:00' --until '2026-09-14 18:25:00'
+#
+# ⚠️ TRAMPA MEDIDA: `--utc` cambia SÓLO el formato de salida. `--since`/`--until` se
+# interpretan en hora LOCAL del Pi (CST, UTC-6). Pedir `--since '2026-09-15 00:12'`
+# devuelve las 06:12 UTC — seis horas tarde, tres líneas de cron, y la conclusión
+# habría sido «no hay nada en el journal». La ventana 00:14–00:19 UTC es 18:14–18:19 CST.
+#
+# LO QUE DICE (hipótesis (c) de la ficha, confirmada):
+#   00:16:02 → 00:16:16  cascada completa de tiers con event_id=ecafbf80d4244426a9ab…
+#                        (uno de los TRES incidentes vivos en la nube)
+#   00:16:19             backfill sube la evidencia nombrada 11ed80bb2c71401db97b687cf7a482ad
+#
+# Dos event_uuid distintos en el MISMO gabinete con 17 s de diferencia. No es que la
+# nube perdiera el evento: es que la evidencia se nombró con un uuid que el camino de
+# reglas/supervisor nunca publicó. La divergencia es INTERNA al gabinete.
+#
+# --- captura literal, 45 líneas ---------------------------------------------------
+2026-09-15T00:16:02+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:02,948 WARNING takab_edge.rules — transición de tier normal → restricted (disparo en un sensor: ENN)
+2026-09-15T00:16:02+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:02,949 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=restricted event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:08+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:08,573 ERROR  obspy.clients.seedlink [rs.local:18000] — socket read error: timed out, reconnecting in 30ss
+2026-09-15T00:16:08+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:08,573 INFO  obspy.clients.seedlink [rs.local:18000] — network socket closed
+2026-09-15T00:16:09+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:09,074 WARNING  obspy.clients.seedlink [rs.local:18000] — terminating collect loop
+2026-09-15T00:16:09+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:09,074 WARNING takab_edge.seedlink — SeedLink desconectado (fin de stream); reconectando en 1.0s
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,260 INFO  obspy.clients.seedlink [rs.local:18000] — network socket opened
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,262 INFO  obspy.clients.seedlink [rs.local:18000] — connected to: 'SeedLink v3.1 (2009.075)'
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,267 INFO  obspy.clients.seedlink [rs.local:18000] — requesting resume data from 0x0X11557 (decimal: 70999)
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,268 INFO  obspy.clients.seedlink [rs.local:18000] — 1 station(s) accepted
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,321 WARNING takab_edge.rules — transición de tier restricted → evacuate_or_hold (disparo confirmado por 2 sensores: ['ENE', 'ENN'])
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,322 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,544 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:10+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:10,746 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:11+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:11,216 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:11+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:11,419 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:11+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:11,620 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:12+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:12,262 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:12+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:12,422 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:12+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:12,595 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:12+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:12,769 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:13+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:13,448 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:13+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:13,617 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:13+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:13,784 WARNING takab_edge.rules — transición de tier evacuate_or_hold → restricted (disparo en un sensor: ENE)
+2026-09-15T00:16:13+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:13,784 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=restricted event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:13+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:13,949 WARNING takab_edge.rules — transición de tier restricted → watch (cautela en 1 sensor(es): ['ENZ'])
+2026-09-15T00:16:14+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:14,641 WARNING takab_edge.rules — transición de tier watch → restricted (disparo en un sensor: EHZ)
+2026-09-15T00:16:14+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:14,642 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=restricted event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:14+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:14,818 WARNING takab_edge.rules — transición de tier restricted → evacuate_or_hold (disparo confirmado por 2 sensores: ['EHZ', 'ENN'])
+2026-09-15T00:16:14+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:14,819 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:14+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:14,992 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:15+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:15,059 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:15+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:15,651 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:15+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:15,813 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=evacuate_or_hold event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:16+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:16,015 WARNING takab_edge.rules — transición de tier evacuate_or_hold → restricted (disparo en un sensor: ENE)
+2026-09-15T00:16:16+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:16,016 WARNING takab_edge.supervisor — AVISO instrumental SIN actuación (política T-2.32): tier=restricted event_id=ecafbf80d4244426a9abb604c3fceea0
+2026-09-15T00:16:16+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:16,183 WARNING takab_edge.rules — transición de tier restricted → normal (-)
+2026-09-15T00:16:16+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:16,673 WARNING takab_edge.seedlink — gap en EHZ: 6.75s
+2026-09-15T00:16:17+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:17,463 WARNING takab_edge.seedlink — gap en ENN: 6.75s
+2026-09-15T00:16:17+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:17,502 WARNING takab_edge.seedlink — gap en ENZ: 6.75s
+2026-09-15T00:16:17+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:17,540 WARNING takab_edge.seedlink — gap en ENE: 6.75s
+2026-09-15T00:16:19+00:00 Raspberry-Cerebro takab-edge[989]: 2026-09-14 18:16:19,364 INFO takab_edge.backfill — backfill: evidencia 11ed80bb2c71401db97b687cf7a482ad subida (evidence/d0000000-0000-0000-0000-000000000001/11ed80bb2c71401db97b687cf7a482ad/bb86faaaca5ba56892095f6a725c8172f8c4d8f5c1f4bf1519d1cca079232aa7.mseed)
+2026-09-15T00:17:02+00:00 Raspberry-Cerebro CRON[4009]: pam_unix(cron:session): session opened for user root(uid=0) by root(uid=0)
+2026-09-15T00:17:02+00:00 Raspberry-Cerebro CRON[4011]: (root) CMD (cd / && run-parts --report /etc/cron.hourly)
+2026-09-15T00:17:02+00:00 Raspberry-Cerebro CRON[4009]: pam_unix(cron:session): session closed for user root

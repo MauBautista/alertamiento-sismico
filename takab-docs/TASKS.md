@@ -15301,7 +15301,20 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - ⚠️ **No fue la purga de `T-7.10`**: corrió el 2026-09-14T23:29:34Z, 47 minutos antes. Fue la
     primera sospecha y es falsa; queda escrita para que nadie la repita.
 - **Criterios de aceptación:**
-  - [ ] Recuperar el `journal` del gabinete del 2026-09-15 entre 00:14 y 00:19 Z **antes de que
+  - [x] **RECUPERADO el 2026-09-17**, en cuanto hubo ruta al sitio:
+    `takab-docs/runbooks/evidencia/journal-gw-dev-0001-20260915T0016Z-T-7.40.txt`. El journal es
+    persistente (`/var/log/journal`) y el boot era el mismo, así que la ventana seguía entera dos
+    días después. ⚠️ **`--utc` cambia sólo el FORMATO DE SALIDA**: `--since`/`--until` van en hora
+    local del Pi (CST), así que `--since '2026-09-15 00:12'` devuelve las 06:12 Z y la conclusión
+    habría sido «el journal no tiene nada». La ventana es `18:14–18:19` CST.
+    **Lo que dice, y contesta la pregunta de abajo: fue (c).** Entre `00:16:02` y `00:16:16` el
+    edge corrió la cascada entera de tiers con `event_id=ecafbf80d4244426a9ab…` —uno de los TRES
+    incidentes vivos en la nube— y a las `00:16:19` el backfill subió la evidencia nombrada
+    `11ed80bb2c71401db97b687cf7a482ad`. **Dos `event_uuid` distintos dentro del mismo gabinete,
+    con 17 s de diferencia.** La nube no perdió nada: la evidencia se nombró con un uuid que el
+    camino de reglas/supervisor nunca publicó. Falta localizar dónde se bifurcan los dos caminos
+    dentro de `edge/` y si puede repetirse.
+    Recuperar el `journal` del gabinete del 2026-09-15 entre 00:14 y 00:19 Z **antes de que
     rote**, y decir qué publicó a `takab/events` en esa ventana. ⚠️ Hay que hacerlo **desde su
     red**: el 2026-09-16 el Pi no era alcanzable desde el portátil (`No route to host` a
     `192.168.1.86`, y `raspberry-cerebro.local` sin resolver).
