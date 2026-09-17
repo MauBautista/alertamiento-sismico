@@ -1830,6 +1830,75 @@ def test_la_bitacora_de_decisiones_declara_su_conteo_real() -> None:
     )
 
 
+def _reparto_del_indice() -> tuple[dict[str, int], dict[tuple[str, str], int]]:
+    """Quién decidió qué y cuándo, DERIVADO del índice — la única enumeración."""
+    por_quien: dict[str, int] = {}
+    por_fecha: dict[tuple[str, str], int] = {}
+    for linea in DECISIONES.read_text(encoding="utf-8").splitlines():
+        if not re.match(r"^\| \[D-\d+\]", linea):
+            continue
+        campos = [c.strip() for c in linea.strip("|").split("|")]
+        fecha, quien = campos[-2], campos[-1]
+        por_quien[quien] = por_quien.get(quien, 0) + 1
+        por_fecha[(quien, fecha)] = por_fecha.get((quien, fecha), 0) + 1
+    return por_quien, por_fecha
+
+
+def _cabecera_en_una_linea() -> str:
+    """La cabecera va partida con `>` y con negritas; aquí se lee como una frase."""
+    texto = DECISIONES.read_text(encoding="utf-8")
+    m = re.search(r"\*\*Última actualización:.*?\)\.", texto, re.S)
+    assert m, "la cabecera no declara su reparto"
+    return re.sub(r"\s*\n>\s*", " ", m.group(0)).replace("**", "")
+
+
+def test_el_REPARTO_de_la_cabecera_tambien_se_deriva_del_indice() -> None:
+    """⚠️ El total cuadraba y el REPARTO no. Es la tercera vez que esta cabecera miente.
+
+    La guarda de arriba compara el total —34 = secciones = filas— y por eso dejó
+    pasar, el 2026-09-17, un titular que decía «27 tomadas por Mauricio · 7
+    delegadas» con un índice que enumeraba **28 y 6**, y con su PROPIA lista de
+    fechas sumando 28 y 7. Tres recuentos en el mismo documento, y ninguno igual
+    al otro, en el papel cuya razón de existir es poder revocar con conocimiento.
+
+    El documento ya se lo había reprochado a sí mismo por escrito —«`TASKS.md` no
+    diverge porque un test lo cuenta; esta cabecera no tenía ninguno»— y el aviso
+    no bastó, porque un aviso no cuenta filas. Esto sí.
+    """
+    por_quien, por_fecha = _reparto_del_indice()
+    plano = _cabecera_en_una_linea()
+
+    for quien, patron in (
+        ("Mauricio", r"(\d+) tomadas por Mauricio"),
+        ("delegada", r"(\d+) delegadas"),
+    ):
+        m = re.search(patron, plano)
+        assert m, f"la cabecera no declara cuántas son `{quien}`"
+        assert int(m.group(1)) == por_quien.get(quien, 0), (
+            f"la cabecera dice {m.group(1)} decisiones `{quien}` y el índice enumera "
+            f"{por_quien.get(quien, 0)}.\n" + _COMO_CONTAR
+        )
+
+    # Y la lista de fechas de la propia cabecera, que es donde estaba el sobrante:
+    # decía «3 el 2026-09-02» cuando el índice sólo tiene dos de ese día.
+    tramos = {
+        "Mauricio": plano.split("tomadas por Mauricio")[1].split("delegadas")[0],
+        "delegada": plano.split("delegadas")[1],
+    }
+    for quien, tramo in tramos.items():
+        for n, fecha in re.findall(r"(\d+) el (20[\d-]{8})", tramo):
+            real = por_fecha.get((quien, fecha), 0)
+            assert int(n) == real, (
+                f"la cabecera dice «{n} el {fecha}» para `{quien}` y el índice tiene "
+                f"{real}.\n" + _COMO_CONTAR
+            )
+        declarado = sum(int(n) for n, _f in re.findall(r"(\d+) el (20[\d-]{8})", tramo))
+        assert declarado == por_quien.get(quien, 0), (
+            f"la lista de fechas de `{quien}` suma {declarado} pero el índice enumera "
+            f"{por_quien.get(quien, 0)}: el titular y su propia lista no se creen.\n" + _COMO_CONTAR
+        )
+
+
 def test_ninguna_decision_se_queda_sin_fila_ni_sin_seccion() -> None:
     """Por identificador, no por cuenta: dos errores que se compensan darían el
     mismo total. Es exactamente lo que habría pasado si al añadir `D-28` sin fila
