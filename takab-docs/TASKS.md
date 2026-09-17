@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **424** · `[x]` **361** · `[~]` **11** · `[ ]` **52**
+**Conteo de tareas:** total **425** · `[x]` **362** · `[~]` **11** · `[ ]` **52**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15301,7 +15301,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_muting` (si `ALARM_CATALOG` gana campo) · **Token nuevo:** no
   · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.46 · **El disco de la instancia se llenó de imágenes viejas y tumbó un despliegue** — `SOFTWARE`
+### [x] T-7.46 · **El disco de la instancia se llenó de imágenes viejas y tumbó un despliegue** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** infra · deploy · **Depende de:** — · **Prioridad:** F4 · alta
 - **Objetivo:** que desplegar no dependa de que alguien se acuerde de podar a mano.
 - **Lo que pasó, medido el 2026-09-16.** `make cloud-deploy` murió con
@@ -15322,21 +15322,96 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   desbocado, un restore a base lateral, **imagenes de docker acumuladas**» como las causas que
   quedarían invisibles — y luego vigila el volumen donde no ocurren.
 - **Criterios de aceptación:**
-  - [ ] El publicador de `/etc/cron.d/takab-pitr` mide TAMBIÉN la raíz y publica
+  - [x] El publicador de `/etc/cron.d/takab-pitr` mide TAMBIÉN la raíz y publica
     `RootDiskUsedPercent`; alarma propia con el mismo razonamiento de `missing` que su vecina, y
     su línea en `ALARM_CATALOG` (que la exige clasificada).
-  - [ ] `deploy.sh` poda antes de bajar la imagen nueva, con una ventana declarada que conserve
+  - [x] `deploy.sh` poda antes de bajar la imagen nueva, con una ventana declarada que conserve
     los objetivos de reversión recientes —no `-a` a secas: `T-2.70` deja una vuelta atrás que
     depende de tener la imagen anterior a mano—. Lo que se pode se IMPRIME: una poda silenciosa en
     un despliegue es lo que hace que nadie sepa cuánto margen quedaba.
-  - [ ] El despliegue COMPRUEBA el margen antes de empezar y falla con un mensaje que diga qué
+  - [x] El despliegue COMPRUEBA el margen antes de empezar y falla con un mensaje que diga qué
     hacer. `no space left on device` enterrado en un log de `docker pull` no dice «poda tus
     imágenes», y costó una corrida entera averiguarlo.
-  - [ ] Decidir si 20 GiB es el tamaño correcto para la raíz y escribirlo. Con ~500 MB por
+  - [x] Decidir si 20 GiB es el tamaño correcto para la raíz y escribirlo. **Se quedan en 20.** Con ~500 MB por
     despliegue (432 MB de `cloud` + 63 MB de `console`), veinte despliegues llenan el disco: el
     problema vuelve en semanas aunque se pode, si nadie fija la cota.
 - **Tests de censo que toca:** `ALARM_CATALOG` (`test_muting`) · alarmas declaradas por escrito ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+> **Cómo se cerró, y las cuatro cosas que el reconocimiento cambió del plan.**
+>
+> **1. La premisa de esta ficha sobre `T-2.70` era FALSA.** Decía que la ventana de la poda tenía
+> que conservar la imagen anterior «por la vuelta atrás de `T-2.70`». `T-2.70` es el canary del
+> EDGE y opera sobre directorios de release: su ficha entera no menciona Docker ni ECR ni una
+> imagen. La vuelta atrás de la NUBE está escrita en `deploy/lib/guardas.sh` y es
+> `CLOUD_TAG=<sha-viejo> make cloud-deploy`, que **re-descarga de ECR**. Lo que la copia local
+> compra es velocidad, no una capacidad. La cota real de cuántas reversiones EXISTEN es la
+> política de ciclo de vida del registro, y ahora lo ata una prueba.
+>
+> **2. La ventana NO es por fecha.** El `--filter until=336h` que se tecleó el día del incidente
+> es el criterio que `T-2.70` ya midió mal en campo: la poda por fecha se llevó la release
+> heredada la misma noche del estreno, porque toda release nueva es más reciente que ella. Y no
+> acota: sin desplegar tres semanas borra hasta la que corre. Se conserva **por identidad** —lo
+> que corre, lo que se despliega y las 3 más recientes por repositorio— y la poda nombra sus dos
+> repositorios, así que la imagen de TimescaleDB no puede caer por accidente.
+>
+> **3. El mensaje culpaba a alembic de un disco lleno.** `docker run` devuelve 125 cuando el
+> demonio no puede arrancar el contenedor, y no hay ningún `docker pull` en el despliegue: las
+> bajadas son efectos colaterales. Así que el único texto legible decía «alembic upgrade head
+> FALLÓ (rc=125)» y mandaba a mirar migraciones. Ésa fue la hora que costó.
+>
+> **4. Y había un defecto contiguo, peor, que esta ficha MITIGA sin arreglar del todo.**
+> `/etc/takab/deploy.env` se sobrescribía apuntando a la etiqueta nueva **antes** de que la
+> imagen estuviera en disco, y `takab-cloud.service` lo lee en cada arranque. Entre esas dos
+> líneas, un reinicio habría levantado una etiqueta ausente: la nube entera abajo, no «la API no
+> se toca». El día del incidente caímos justo en esa ventana y la nube siguió en pie sólo porque
+> nada se reinició. El guardia nuevo corre ANTES de ese punto, así que abortar por disco deja la
+> instancia intacta; escribir `deploy.env` después del pull es otra ficha.
+>
+> **Lo medido, que sustituyó a lo estimado.** La ficha calculaba ~500 MB por despliegue sumando
+> los tamaños de las dos imágenes. El coste MARGINAL —lo que una etiqueta nueva ocupa sobre las
+> capas base compartidas— es **279,7 MB de `cloud` + 2,4 MB de `console` = ~282 MB**. Sobre eso
+> se fijan el umbral de la alarma y el margen mínimo del despliegue, y por eso los 20 GiB se
+> quedan: la causa no era el tamaño, era que nadie podaba.
+>
+> **Y una aserción que no se vio en rojo no es cobertura.** La obvia para el publicador nuevo
+> —`strcontains(content, "df -P /")`— **ya estaba verde**, porque es prefijo de `df -P /data`.
+> Se ancla en el nombre de la métrica y en la ruta del script, y se comprobó por mutación que
+> falla cuando debe.
+
+
+### [ ] T-7.47 · **El contenedor de la base escribe su log sin techo, y ninguna poda lo toca** — `SOFTWARE`
+- **Componente:** infra · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que el único consumidor sin cota del volumen raíz deje de serlo.
+- **El fallo, medido el 2026-09-17.** Los ocho servicios de la nube declaran
+  `logging: json-file, max-size 10m, max-file 3` (`deploy/cloud/docker-compose.yml`). `takab-db`
+  **no**: lo arranca `user_data.sh.tpl` con un `docker run` sin opciones de logging, así que su
+  `LogConfig` sale `json-file map[]` — sin tope. Su log vive en
+  `/var/lib/docker/containers/<id>/<id>-json.log`, o sea en la RAÍZ, y crece de forma monótona
+  desde que se aprovisionó la instancia. Medido: **85 MB**, frente a los 44–84 KB de los ocho
+  acotados. TimescaleDB-HA (patroni + postgres) es locuaz.
+- **No es lo que tumbó el despliegue del 2026-09-16** —eso fueron 16 GB de imágenes— **y por eso
+  va aparte.** Pero `docker image prune` no lo habría liberado, y la cota escrita en `T-7.46`
+  junto a `root_block_device` sólo modela imágenes: nombra este término y lo deja declarado.
+- **Y tampoco hay `logrotate` en ninguna parte:** cero coincidencias en `infra/` y `deploy/`. Tres
+  crones anexan a ficheros de la raíz (`takab-pitr.log`, `takab-backup.log`,
+  `takab-prune-pii.log`); hoy son de decenas de KB, pero crecen igual y nadie los mira.
+- **La trampa que hace esto menos barato de lo que parece.** El tope de un contenedor se fija al
+  CREARLO: `docker update` no cambia `LogConfig`. Y el vehículo natural —`user_data`— corre una
+  sola vez y sale al encontrar su marcador; cambiarlo, además, **para y arranca la instancia**,
+  que es parar la DB, la API y los ocho workers. El camino que no para nada es el mismo que usan
+  los publicadores: un documento SSM.
+- **Criterios de aceptación:**
+  - [ ] `takab-db` corre con su log acotado, con el mismo `max-size`/`max-file` que declara el
+    compose para los demás — o con otro valor y su razón escrita, pero nunca sin cota.
+  - [ ] El cambio NO para la instancia. Si la única vía honesta la parara, se dice y se lleva a
+    una ventana declarada en vez de colarlo en un despliegue.
+  - [ ] Los tres ficheros de log de cron tienen rotación, o se declara por escrito por qué no la
+    necesitan con una cifra de crecimiento medida al lado.
+  - [ ] Un censo DERIVADO: todo contenedor que la instancia arranque declara su cota de log. Hoy
+    el compose la declara y `user_data` no, y nada lo cruza.
+- **Tests de censo que toca:** los del documento SSM de `modules/database` · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** no.
 
 
 ## RUTA CRÍTICA

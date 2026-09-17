@@ -485,6 +485,7 @@ run "t271_no_debilito_ninguna_alarma_para_poder_silenciarla" {
       && aws_cloudwatch_metric_alarm.base_backup_late.treat_missing_data == "missing"
       && aws_cloudwatch_metric_alarm.db_disk_space.treat_missing_data == "missing"
       && aws_cloudwatch_metric_alarm.pii_retention_stalled.treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.root_disk_space.treat_missing_data == "missing"
     )
     error_message = "Alguna alarma cambio su treat_missing_data. Si el motivo fue 'para que no moleste durante un mantenimiento', la respuesta es NO: eso la debilita para siempre. El silencio acotado lo da una alarm mute rule (api/src/takab_api/ops/muting.py), que no puede existir sin Duration y que al BORRARLA desilencia en el acto disparando lo que quedara en ALARM."
   }

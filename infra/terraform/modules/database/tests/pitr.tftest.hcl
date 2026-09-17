@@ -554,15 +554,54 @@ run "el_documento_ssm_publica_el_ancla_y_el_disco" {
 
   # El otro extremo del cable de `db_disk_space`. `disk_used_percent` no existe en
   # las metricas nativas de EC2 —el hipervisor no ve dentro del filesystem—, asi
-  # que o hay agente de CloudWatch o se publica desde la instancia. Y tiene que
-  # mirar `/data`, que es donde vive el datadir (`/data/pgdata`) y donde crece
-  # `pg_wal`: medir el volumen raiz seria vigilar el disco equivocado.
+  # que o hay agente de CloudWatch o se publica desde la instancia. Mide `/data`,
+  # que es donde vive el datadir (`/data/pgdata`) y donde crece `pg_wal`.
+  #
+  # ⚠️ [T-7.46] AQUI HABIA ESCRITA UNA CREENCIA FALSA, y el 2026-09-16 costo un
+  # despliegue. Este mismo mensaje decia que medir el volumen raiz «seria vigilar
+  # un disco de 20 GiB QUE NO SE LLENA». Se lleno: 99 %, 268 MB libres, 65
+  # imagenes de Docker y 16,23 GB acumulados porque ningun despliegue podaba. La
+  # raiz tiene ahora su propio publicador y su propia alarma, y las dos metricas
+  # son COMPLEMENTARIAS: ni una sustituye a la otra, y ninguna de las dos hace
+  # innecesaria a la otra.
   assert {
     condition = (
       strcontains(aws_ssm_document.pitr.content, "DataDiskUsedPercent")
       && strcontains(aws_ssm_document.pitr.content, "df -P /data")
     )
-    error_message = "El documento SSM debe publicar Takab/Ops/DataDiskUsedPercent midiendo `/data`, que es donde estan `/data/pgdata` y su `pg_wal`. Medir el volumen RAIZ seria vigilar un disco de 20 GiB que no se llena, mientras el de 40 GiB que sostiene la base se acaba."
+    error_message = "El documento SSM debe publicar Takab/Ops/DataDiskUsedPercent midiendo `/data`, que es donde estan `/data/pgdata` y su `pg_wal`. La RAIZ se mide aparte (RootDiskUsedPercent, T-7.46): son dos volumenes y dos modos de fallo distintos."
+  }
+
+  # [T-7.46] Y el publicador de la RAIZ, que hasta esta ficha no existia.
+  #
+  # ⚠️ LA ASERCION NO PUEDE ANCLARSE EN `df -P /`: esa cadena es PREFIJO de
+  # `df -P /data`, asi que la condicion estaria verde desde antes de escribir una
+  # linea de codigo. Una asercion que nunca se ha visto en rojo no es cobertura.
+  # Se ancla en lo que no es prefijo de nada existente: el nombre de la metrica y
+  # la RUTA del script propio.
+  #
+  # Es un script SEPARADO del de `/data` a proposito: aquel arranca con
+  # `mountpoint -q /data || exit 1` bajo `set -euo pipefail`, y medir la raiz
+  # detras de esa guarda la silenciaria cuando `/data` no estuviera montado — por
+  # una causa que el correo de la alarma de la raiz no podria nombrar.
+  assert {
+    condition = (
+      strcontains(aws_ssm_document.pitr.content, "RootDiskUsedPercent")
+      && strcontains(aws_ssm_document.pitr.content, "/opt/takab/bin/takab-root-disk-usage.sh")
+      && strcontains(aws_ssm_document.pitr.content, "* * * * * root /opt/takab/bin/takab-root-disk-usage.sh")
+      && strcontains(aws_ssm_document.pitr.content, "/opt/takab/bin/takab-root-disk-usage.sh || log")
+    )
+    error_message = "El documento SSM debe publicar Takab/Ops/RootDiskUsedPercent desde su PROPIO script, cada minuto y con una primera medida al configurar. Sin la primera medida la alarma nace en INSUFFICIENT_DATA y se queda aparcada ahi sin correo; dentro del script de `/data` quedaria detras de la guarda de montaje."
+  }
+
+  # [T-7.46] Y la raiz NO puede colgar del script de `/data`: si su medida
+  # apareciera dentro de aquel heredoc, la guarda de montaje la silenciaria.
+  assert {
+    condition = !strcontains(
+      aws_ssm_document.pitr.content,
+      "mountpoint -q /data || exit 1\nUSADO=\"$(df -P / |"
+    )
+    error_message = "La medida de la raiz quedo DENTRO del script de `/data`, detras de `mountpoint -q /data || exit 1`. Un volumen de datos desmontado silenciaria tambien la metrica de la raiz, que siempre es medible."
   }
 
   # Los dos publican POR MINUTO aunque el listado de backups sea diario. La cadencia

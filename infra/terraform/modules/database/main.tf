@@ -60,6 +60,17 @@ locals {
   # demonio mas que puede morir en silencio.
   data_disk_metric_name = "DataDiskUsedPercent"
 
+  # [T-7.46] Y el volumen RAIZ, que hasta el 2026-09-16 no lo medía nadie. Ese dia
+  # `make cloud-deploy` murio con `no space left on device`: la raiz estaba al 99 %
+  # —20 GiB, 268 MB libres— con 65 imagenes de Docker y 16,23 GB acumulados, porque
+  # ningun despliegue habia podado nunca. La alarma de arriba mide `/data`, que es
+  # otro volumen: las imagenes viven en `/`.
+  #
+  # Ironia util para quien lea esto: el comentario que justifica la metrica de
+  # `/data` enumera «imagenes de docker acumuladas» entre las causas de disco lleno
+  # que quedarian invisibles — y luego vigila el volumen donde no ocurren.
+  root_disk_metric_name = "RootDiskUsedPercent"
+
   # [T-2.78.b] Identidades desde las que el worker `notify` puede enviar. El ARN
   # del dominio se COMPONE aqui (no llega hecho) por la misma razon que los topics
   # de IoT: leer el output de `module.identity` cerraria el ciclo
@@ -156,6 +167,7 @@ locals {
     # namespace+metrica no pueda divergir de las alarmas que los vigilan.
     base_backup_metric_name = local.base_backup_metric_name
     data_disk_metric_name   = local.data_disk_metric_name
+    root_disk_metric_name   = local.root_disk_metric_name
 
     # La cadencia del backup base SALE del intervalo declarado, que es el mismo
     # numero con el que `modules/storage` calcula la retencion. `*/N` en el dia
@@ -576,6 +588,51 @@ resource "aws_instance" "db" {
     http_put_response_hop_limit = 2
   }
 
+  # [T-7.46] LOS 20 GiB SE QUEDAN, y esto es la decision escrita que faltaba.
+  #
+  # El 2026-09-16 este volumen se lleno y tumbo un despliegue: 99 %, 268 MB
+  # libres, 65 imagenes de Docker y 16,23 GB. La pregunta obvia era si 20 GiB son
+  # pocos. NO LO SON: la causa no era el tamaño sino que NADIE PODABA. Ningun
+  # despliegue habia retirado una imagen en siete semanas.
+  #
+  # LA ARITMETICA, medida en la instancia y no estimada. El coste MARGINAL de un
+  # despliegue —lo que una etiqueta nueva ocupa sobre las capas base que ya
+  # estan— es 279,7 MB de `takab/cloud` mas 2,4 MB de `takab/console`: ~282 MB,
+  # no los 432 MB que dice `docker images` (esa cifra incluye 152,5 MB de capas
+  # compartidas que no se pagan dos veces). Con la poda del despliegue
+  # conservando 3 etiquetas por repositorio, el residuo de imagenes de TAKAB se
+  # estabiliza en ~1,1 GB. Sobre 20 GiB, con ~1,9 GB de sistema y el resto de
+  # `/var`, eso deja el estacionario holgadamente por debajo del 80 % en el que
+  # habla la alarma.
+  #
+  # DOBLAR A 40 GiB NO ARREGLARIA NADA que la poda no arregle: un acumulador sin
+  # freno llena cualquier disco, solo que mas tarde. Comprar tiempo en vez de
+  # arreglar el acumulador habria sido cambiar la fecha del mismo incidente.
+  #
+  # LA TERCERA OPCION, NOMBRADA PARA RECHAZARLA: mover el data-root de Docker al
+  # volumen de datos, que tiene 40 GiB y ya tiene alarma. Se rechaza porque toda
+  # la aritmetica del umbral de `/data` esta construida sobre `pg_wal` a 16
+  # MiB/min (ver `db_disk_used_max_pct`); meter alli un acumulador de imagenes
+  # invalida ese calculo y mezcla dos modos de fallo bajo una sola alarma.
+  #
+  # SI ALGUN DIA SE SUBE, lo que hay que saber antes —y por eso se escribe aqui,
+  # al lado del numero, como el `http_put_response_hop_limit` de arriba—:
+  # `volume_size` NO esta en el `ignore_changes` de esta instancia, asi que el
+  # cambio entra en el plan; AWS lo aplica EN CALIENTE (`ModifyVolume`) y no
+  # recrea ni para la maquina. Pero AWS agranda el VOLUMEN, no el sistema de
+  # ficheros: la raiz es `xfs` y NADA en este repositorio corre `growpart` ni
+  # `xfs_growfs` (cero coincidencias en todo el arbol), y `user_data` no sirve
+  # —sale al encontrar su marcador—. Un `apply complete` dejaria `df -P /`
+  # diciendo 20 GiB y la alarma, que mide PORCENTAJE, leyendo el mismo numero:
+  # un arreglo que parece hecho y no lo esta.
+  #
+  # LO QUE ESTA COTA NO MODELA, declarado y no callado: los logs de contenedor.
+  # `takab-db` lo arranca `user_data` con `docker run` SIN opciones de logging,
+  # mientras que los ocho servicios del compose si estan acotados (`json-file`
+  # 10m × 3). Su log JSON vive en `/var/lib/docker/containers` —o sea en este
+  # volumen— y crece sin techo: medido el 2026-09-17, 85 MB frente a los 44-84 KB
+  # de los acotados. No es lo que tumbo el despliegue (eso fueron 16 GB de
+  # imagenes) y `docker image prune` no lo tocaria. Fichado aparte.
   root_block_device {
     volume_type = "gp3"
     volume_size = 20

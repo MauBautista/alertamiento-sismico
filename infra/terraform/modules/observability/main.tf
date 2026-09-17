@@ -667,6 +667,70 @@ resource "aws_cloudwatch_metric_alarm" "db_disk_space" {
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
 
+# [T-7.46] EL VOLUMEN RAIZ, que hasta el 2026-09-16 no medía nadie.
+#
+# Ese dia `make cloud-deploy` murio con `no space left on device`: la raiz estaba
+# al 99 % —20 GiB, 268 MB libres— con 65 imagenes de Docker y 16,23 GB acumulados
+# porque ningun despliegue habia podado nunca. La alarma de arriba mide `/data`;
+# las imagenes de Docker viven en `/`. El comentario que justifica aquella enumera
+# «imagenes de docker acumuladas» entre las causas que quedarian invisibles, y
+# acto seguido vigila el volumen donde no ocurren.
+#
+# `missing` COMO SU VECINA, PERO POR OTRO CAMINO. El veredicto se transfiere; la
+# justificacion NO, y copiarla habria dejado en el repositorio una razon falsa y
+# citable.
+#
+#   (a) POR QUE `missing`: lo que el correo de esta alarma AFIRMA es una medida —
+#       «la raiz paso del N %»—. Sin datapoint esa medida no existe y el disco
+#       podria estar al 3 %. Una alarma que afirma lo que no sabe se deja de
+#       creer, y arrastra consigo a las que si saben.
+#
+#   (b) LA CEGUERA NO QUEDA TAPADA, pero lo que la tapa es distinto. En
+#       `db_disk_space` el argumento se apoya en `ec2_status` y en
+#       `wal_archive_stalled`. Aqui `ec2_status` NO cuenta: tiene `scope =
+#       PLATFORM` en el catalogo, asi que durante una ventana de mantenimiento
+#       esta muda — y una ventana de plataforma es JUSTO cuando se despliega, o
+#       sea cuando la raiz crece. Lo que si cubre es `wal_archive_stalled`
+#       (`breaching`, intocable, mismo `/etc/cron.d/takab-pitr` y mismo
+#       `/opt/takab/bin`) contra el cron muerto, y su PROPIO
+#       `insufficient_data_actions` contra el resto — que aqui es el caso que
+#       importa, porque esta alarma es intocable y sus acciones no se mutean.
+#
+#   (c) UNA CAUSA DE SILENCIO QUE `/data` NO TIENE, y es la razon por la que la
+#       alarma no basta y el despliegue comprueba ademas su propio margen: el
+#       publicador corre en la maquina cuya raiz se esta llenando. Pegado al
+#       100 % podria no poder escribir. Medido el 2026-09-16: al 99 % (268 MB
+#       libres) SSM, docker, la poda y el propio despliegue funcionaban, asi que
+#       la correlacion silencio↔falla solo muerde en el ultimo tramo. Y el correo
+#       sale igual, porque la metrica venia publicandose: la transicion
+#       OK → INSUFFICIENT_DATA dispara.
+#
+#   (d) Y LO QUE NO TIENE: aqui NO hay guarda de montaje. `df -P /` siempre
+#       contesta, asi que el caso «el volumen no esta montado» —el mas importante
+#       de su vecina— sencillamente no existe para esta.
+#
+# CORREO DUPLICADO, DECLARADO: si muere `/etc/cron.d/takab-pitr` llegan DOS
+# INSUFFICIENT_DATA (este y el de `/data`) mas el `breaching` de
+# `wal_archive_stalled`. Se acepta por la misma razon escrita para `clock_drift`:
+# dicen la misma verdad sobre cosas distintas, y callar una para no repetir seria
+# elegir cual de los dos discos deja de vigilarse.
+resource "aws_cloudwatch_metric_alarm" "root_disk_space" {
+  alarm_name          = "takab-dev-disco-raiz-lleno"
+  alarm_description   = "El volumen RAIZ de la instancia (20 GiB: sistema, logs de contenedor e imagenes de Docker) supero el umbral de ocupacion. NO es el mismo disco que vigila takab-dev-disco-datos-lleno: aquel es /data (40 GiB, Postgres). Aqui lo que crece son imagenes de Docker, ~282 MB por despliegue, y los logs de contenedor. Primero `docker system df` y `du -xh --max-depth=2 /var`; el despliegue poda solo (deploy/cloud/margen-y-poda.sh), asi que si esta alarma habla es que la poda dejo de funcionar o que lo que crece NO son imagenes. Si queda en INSUFFICIENT_DATA, el publicador esta callado: el cron de /etc/cron.d/takab-pitr o el `aws` de la instancia.${local.ack_sufijo}"
+  namespace           = "Takab/Ops"
+  metric_name         = "RootDiskUsedPercent"
+  statistic           = "Maximum"
+  period              = 300
+  evaluation_periods  = 2
+  threshold           = var.root_disk_used_max_pct
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "missing"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   alarm_name          = "takab-dev-gateway-retirado-sigue-reportando"
   alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie.${local.ack_sufijo}"

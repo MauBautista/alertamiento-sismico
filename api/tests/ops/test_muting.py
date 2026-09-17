@@ -170,6 +170,13 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         # duplicado a cambio de no cegar la única vigilancia de la hora — y sin
         # hora confiable no vale ninguna evidencia que se selle en ese rato.
         "clock_drift",
+        # [T-7.46] El volumen RAÍZ, y aquí el argumento es MÁS fuerte que en su
+        # vecina de `/data`: una ventana de plataforma es exactamente cuando se
+        # despliega, o sea cuando la raíz crece (~282 MB por despliegue, medido).
+        # Silenciarla durante una ventana es apagar el detector del fallo que la
+        # ventana provoca. Y ese fallo ya ocurrió: el 2026-09-16 la raíz al 99 %
+        # tumbó un despliegue, con 65 imágenes acumuladas porque nadie podaba.
+        "root_disk_space",
     }
     for kind in ALARM_CATALOG:
         if kind.scope == NEVER:
