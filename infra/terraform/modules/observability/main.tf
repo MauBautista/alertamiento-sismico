@@ -731,6 +731,78 @@ resource "aws_cloudwatch_metric_alarm" "root_disk_space" {
   insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
 }
 
+# ---------------------------------------------------------------------------
+# [T-7.41] QUIEN VIGILA A LOS VIGILANTES.
+#
+# SNS solo notifica TRANSICIONES. Una alarma que entra en ALARM y se queda ahi no
+# vuelve a transicionar, asi que EL SIGUIENTE SUCESO REAL NO AVISA A NADIE. Y la
+# ceguera no se ve: la consola la pinta en rojo, que es lo que uno espera de una
+# alarma que ya aviso. Medido: `iot-rule-errors` paso 14 DIAS asi, y
+# `dlq-backfill` quedo clavada por UN mensaje huerfano hasta que alguien lo purgo
+# a mano.
+#
+# Lo publica `takab_api.ops.vigilante` desde el worker `notify`, leyendo
+# `StateTransitionedTimestamp` — NO `StateUpdatedTimestamp`, que se mueve tambien
+# con `EvaluationState` y hace que una alarma clavada REJUVENEZCA sola.
+#
+# SON DOS ALARMAS DE POLARIDAD OPUESTA, y esa es la respuesta a «y quien vigila a
+# esta»:
+resource "aws_cloudwatch_metric_alarm" "stuck_alarm_age" {
+  alarm_name        = "takab-dev-vigilante-clavado"
+  alarm_description = "Hay alarma(s) que llevan mas de un dia sin transicionar de estado. SNS solo notifica transiciones, asi que mientras sigan ahi el siguiente suceso real NO avisa a nadie: son vigilantes muertos con cara de estar avisando.${local.ack_sufijo}"
+  namespace         = "Takab/Ops"
+  metric_name       = "StuckAlarmMaxAgeSeconds"
+  statistic         = "Maximum"
+  period            = 300
+  # Dos periodos: la metrica se publica cada 60 s, asi que dos ventanas de 5 min
+  # descartan un hueco de publicacion sin retrasar el aviso mas de lo razonable
+  # para un hallazgo que, por definicion, ya lleva un dia ahi.
+  evaluation_periods = 2
+  # 86 400 s = UN DIA sin transicionar. No es un numero a ojo: la ventana CORTA ya
+  # tiene dueno —`ops_ack_deadline_s` (900 s) y el barrido `sweep_unacked`, que
+  # persiguen al humano que no acuso el correo—, asi que aqui empieza donde
+  # aquella acaba. Una alarma legitimamente encendida unas horas mientras alguien
+  # la atiende NO es un vigilante muerto; un dia entero sin que nadie la moviera
+  # si lo es.
+  threshold           = 86400
+  comparison_operator = "GreaterThanThreshold"
+  # ⚠️ `missing` y NO `breaching`, al reves que `gateway_offline`. Si el
+  # publicador muere con esta alarma YA en ALARM, `breaching` la deja en ALARM:
+  # cero transiciones, cero correo — el vigilante heredaria literalmente el
+  # defecto que viene a cerrar. Con `missing` transiciona SIEMPRE, porque
+  # INSUFFICIENT_DATA es un TERCER estado distinto de OK y de ALARM (verificado en
+  # vivo el 29-jul-2026 con `set-alarm-state`, ver la nota de arriba).
+  treat_missing_data = "missing"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "stuck_alarm_coverage" {
+  alarm_name        = "takab-dev-vigilante-mudo"
+  alarm_description = "El vigilante de las alarmas dejo de examinar alarmas. Sin esta cifra, «ninguna clavada» y «no mire ninguna» son el MISMO 0.0 en la metrica de edad: un detector roto publicaria un latido perfecto.${local.ack_sufijo}"
+  namespace         = "Takab/Ops"
+  metric_name       = "StuckAlarmsExamined"
+  # `Minimum`: basta con que UNA publicacion de la ventana venga vacia.
+  statistic          = "Minimum"
+  period             = 300
+  evaluation_periods = 3
+  # Menos de una alarma examinada es imposible en una nube sana: el propio modulo
+  # declara mas de una docena. Cero significa que el barrido no vio nada, que es
+  # un fallo de LECTURA (permiso, red, prefijo cambiado), no una nube tranquila.
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  # ⚠️ Aqui SI `breaching`, y es lo contrario de la de arriba a proposito: el
+  # SILENCIO de esta metrica tiene que alarmar. Es la polaridad invertida que pide
+  # T-7.41 — la misma que `gateway_offline` usa para vigilar la AUSENCIA del
+  # latido de un gabinete.
+  treat_missing_data = "breaching"
+
+  alarm_actions = [aws_sns_topic.ops_alerts.arn]
+  ok_actions    = [aws_sns_topic.ops_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "ghost_gateways" {
   alarm_name          = "takab-dev-gateway-retirado-sigue-reportando"
   alarm_description   = "Hay gabinete(s) dados de baja en la nube que llevan >1 h enviando latidos. O el edificio sigue protegido y el retiro fue un error (restaurar), o el hardware sigue enchufado y nadie fue a desmontarlo. Mientras dure, ese sitio esta fuera del inventario y su supervision no la mira nadie.${local.ack_sufijo}"

@@ -284,6 +284,32 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
         ),
     ),
     AlarmKind(
+        resource="stuck_alarm_age",
+        scope=NEVER,
+        name_template="takab-dev-vigilante-clavado",
+        why=(
+            "[T-7.41] ES el vigilante de los vigilantes. SNS sólo notifica TRANSICIONES, "
+            "así que una alarma que entra en ALARM y se queda ahí está MUDA para el "
+            "siguiente suceso real — medido: `iot-rule-errors` pasó 14 días así. Ésta "
+            "publica la EDAD de la más vieja sin transicionar. Callarla es apagar la única "
+            "señal de que las demás dejaron de servir, y hacerlo durante una ventana de "
+            "mantenimiento sería callarla justo cuando más alarmas se quedan colgadas."
+        ),
+    ),
+    AlarmKind(
+        resource="stuck_alarm_coverage",
+        scope=NEVER,
+        name_template="takab-dev-vigilante-mudo",
+        why=(
+            "[T-7.41] La POLARIDAD OPUESTA de la anterior, y entra por separado porque "
+            "callarla no es callar «la misma alarma otra vez»: sin ella, «ninguna alarma "
+            "clavada» y «no examiné ninguna» son el MISMO 0.0. Vigila que la cifra de "
+            "cobertura no BAJE (`LessThanThreshold` + `breaching`), de modo que el silencio "
+            "del vigilante sea él mismo la señal. Es la respuesta por construcción a «¿y "
+            "quién vigila a éste?»."
+        ),
+    ),
+    AlarmKind(
         resource="clock_drift",
         scope=NEVER,
         name_template="takab-dev-reloj-a-la-deriva",

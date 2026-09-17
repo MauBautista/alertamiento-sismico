@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from functools import partial
 from typing import TYPE_CHECKING
@@ -27,6 +28,7 @@ from takab_api.ops.metrics import (
     count_retired_alive,
     max_clock_drift_ms,
 )
+from takab_api.ops.vigilante import VigilanteDeAlarmas
 
 if TYPE_CHECKING:
     from takab_api.settings import Settings
@@ -70,6 +72,35 @@ def build_ghost_gauge(settings: Settings) -> GhostGauge:
     )
 
 
+def build_vigilante(settings: Settings) -> VigilanteDeAlarmas:
+    """[T-7.41] El vigilante de los vigilantes, listo para el bucle.
+
+    Mismo patrón que `build_ghost_gauge` —boto3 dentro, inerte sin AWS—, pero con
+    **cliente y publicación propios**: éste no toca la base, y un fallo de
+    Postgres no puede callar al que vigila a las alarmas.
+    """
+    alarmas = metricas = None
+    if settings.ops_metrics_enabled:
+        try:
+            import boto3
+
+            cw = boto3.client("cloudwatch", region_name=settings.aws_region)
+            alarmas = metricas = cw
+        except Exception:
+            logger.warning("no se pudo crear el cliente de CloudWatch", exc_info=True)
+    return VigilanteDeAlarmas(
+        namespace=settings.ops_metrics_namespace,
+        prefijo=settings.ops_alarm_prefix,
+        # Su propia alarma se excluye del barrido: contarse a sí misma la
+        # auto-traba (en cuanto salta, su edad no deja de crecer).
+        propia=f"{settings.ops_alarm_prefix}-vigilante-clavado",
+        every_s=settings.ops_metrics_interval_s,
+        alarmas=alarmas,
+        metricas=metricas,
+        clock=time.monotonic,
+    )
+
+
 class NotifyWorker:
     """Orquestador en bucle. Firma espejo de ``IncidentEngine``:
     ``NotifyWorker(conn_factory, settings, *, poll_s=2.0, providers=None)``."""
@@ -82,6 +113,7 @@ class NotifyWorker:
         poll_s: float = 2.0,
         providers: dict[str, NotifyProvider] | None = None,
         ghost_gauge: GhostGauge | None = None,
+        vigilante: VigilanteDeAlarmas | None = None,
     ) -> None:
         self._conn_factory = conn_factory
         self._settings = settings
@@ -95,6 +127,10 @@ class NotifyWorker:
         # Se inyecta como colaborador (`ghost_gauge`) para poder probar el bucle
         # sin AWS delante.
         self._ghost_gauge = ghost_gauge if ghost_gauge is not None else build_ghost_gauge(settings)
+        # [T-7.41] Y el vigilante de las alarmas, que viaja de gorra en el mismo
+        # bucle por la misma razón. NO comparte el `try` de base del anterior: no
+        # necesita la DB, y un fallo de Postgres no puede callarlo.
+        self._vigilante = vigilante if vigilante is not None else build_vigilante(settings)
 
     def run(self) -> None:
         """Escucha y despacha hasta ``stop()``; reconecta con backoff."""
@@ -114,6 +150,8 @@ class NotifyWorker:
                     # sobre publicar una métrica de inventario. `maybe_publish`
                     # se estrangula sola y no lanza (contrato de GhostGauge).
                     self._ghost_gauge.maybe_publish(conn=work_conn)
+                    # [T-7.41] Sin `conn` a propósito: lee CloudWatch, no la base.
+                    self._vigilante.maybe_publish()
                     self._declarar_silencios(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("notify: DB no disponible; reconecta")

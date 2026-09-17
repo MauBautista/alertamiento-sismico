@@ -586,3 +586,96 @@ run "reloj_a_la_deriva_no_miente_cuando_no_sabe" {
     error_message = "clock_drift debe alarmar por ENCIMA de var.clock_drift_max_ms: un umbral escrito a mano aqui diverge del que usan la consola y el panel."
   }
 }
+
+# [T-7.41] Las DOS polaridades del vigilante de los vigilantes, JUNTAS a proposito.
+#
+# Es el unico par de este archivo en el que las dos mitades tienen que elegir valores
+# OPUESTOS, y separarlas invitaria a "unificarlas por coherencia" — que es justo el
+# error. Van con su razon escrita porque la razon no se deduce del `.tf`.
+run "el_vigilante_de_los_vigilantes_no_hereda_el_defecto_que_cierra" {
+  command = plan
+
+  override_resource {
+    target          = aws_sns_topic.ops_alerts
+    override_during = plan
+    values = {
+      arn = "arn:aws:sns:us-east-2:000000000000:takab-test-ops-alerts"
+    }
+  }
+
+  # ⚠️ LA MITAD QUE PAGINA: `missing`, y NO `breaching`.
+  #
+  # El defecto que esta alarma viene a cerrar es que SNS solo notifica TRANSICIONES:
+  # una alarma clavada en ALARM esta MUDA para el siguiente suceso real
+  # (`takab-dev-iot-rule-errors` estuvo asi 14 dias). Con `breaching`, si el
+  # publicador muere mientras ESTA alarma ya esta en ALARM, CloudWatch la deja en
+  # ALARM — cero transiciones, cero correo — y el detector heredaria LITERALMENTE el
+  # defecto que vino a cerrar, una vuelta mas abajo y sin que nada parezca roto.
+  #
+  # Con `missing` transiciona siempre, porque INSUFFICIENT_DATA es un TERCER estado
+  # distinto de OK y de ALARM (probado en vivo en este repo el 29-jul-2026 con
+  # `set-alarm-state`). Y por eso `insufficient_data_actions` es obligatorio aqui:
+  # `missing` SIN accion deja la alarma muda, que es el fallo de 17 h del 29-jul-2026.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.stuck_alarm_age.treat_missing_data == "missing"
+      && try(length(aws_cloudwatch_metric_alarm.stuck_alarm_age.insufficient_data_actions), 0) == 1
+    )
+    error_message = "stuck_alarm_age debe ser 'missing' CON insufficient_data_actions: con 'breaching', un publicador muerto con la alarma YA en ALARM la deja en ALARM (cero transiciones, cero correo) y el vigilante hereda el defecto que viene a cerrar; 'missing' sin accion lo deja mudo en INSUFFICIENT_DATA (paso el 29-jul-2026, 17 h)."
+  }
+
+  # ⚠️ LA OTRA MITAD: `breaching`, lo CONTRARIO de la de arriba, y es deliberado.
+  #
+  # Aqui la metrica se vigila AL REVES (`LessThanThreshold`): lo que alarma es un
+  # numero BAJO. Su silencio no puede significar "no hay nada que mirar" — significa
+  # que nadie esta mirando, que es exactamente la condicion vigilada. Misma polaridad
+  # que `gateway_offline`, que vigila la AUSENCIA del latido de un gabinete.
+  #
+  # Sin esta mitad, «cero alarmas clavadas» y «no examine ninguna» serian el MISMO
+  # 0.0 en la metrica de arriba: un detector roto publicaria un latido perfecto.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.stuck_alarm_coverage.treat_missing_data == "breaching"
+      && aws_cloudwatch_metric_alarm.stuck_alarm_coverage.comparison_operator == "LessThanThreshold"
+    )
+    error_message = "stuck_alarm_coverage debe ser 'breaching' y alarmar por DEBAJO: su silencio ES la falla que vigila (nadie esta examinando alarmas). Con 'missing' o 'notBreaching', un barrido que no ve nada quedaria indistinguible de una nube tranquila."
+  }
+
+  # El par namespace+metric_name es el otro extremo del cable con `ops/vigilante.py`
+  # (`METRIC_EDAD` y `METRIC_EXAMINADAS`). Si divergen, la alarma vigila una metrica
+  # que nadie escribe: `missing` la dejaria en INSUFFICIENT_DATA para siempre y
+  # `breaching` mandaria un correo perpetuo. Terraform no puede leer Python.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.stuck_alarm_age.namespace == "Takab/Ops"
+      && aws_cloudwatch_metric_alarm.stuck_alarm_age.metric_name == "StuckAlarmMaxAgeSeconds"
+      && aws_cloudwatch_metric_alarm.stuck_alarm_coverage.namespace == "Takab/Ops"
+      && aws_cloudwatch_metric_alarm.stuck_alarm_coverage.metric_name == "StuckAlarmsExamined"
+    )
+    error_message = "stuck_alarm_age/coverage apuntan a metricas que `ops/vigilante.py` no publica."
+  }
+
+  # ⚠️ EL NOMBRE ES PARTE DEL CONTRATO, no cosmetica. `notify/worker.py` excluye del
+  # barrido la alarma llamada `<prefijo>-vigilante-clavado`; si aqui se renombra, el
+  # vigilante deja de excluirse y se AUTO-TRABA: en cuanto salta se cuenta a si mismo
+  # como clavado, su edad no deja de crecer y no vuelve a OK jamas.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.stuck_alarm_age.alarm_name == "takab-dev-vigilante-clavado"
+    error_message = "renombrar esta alarma AUTO-TRABA al vigilante: `notify/worker.py` la excluye por el nombre `<prefijo>-vigilante-clavado`. Si cambia aqui, cambia alli."
+  }
+
+  # `Maximum`, no `Average`: la cifra publicada ya es la PEOR alarma de la flota en
+  # cada barrido. Promediar los datapoints del periodo diluiria la clavada de 14 dias
+  # entre los ceros de los barridos sanos, que es justo lo que se vigila.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.stuck_alarm_age.statistic == "Maximum"
+    error_message = "stuck_alarm_age debe usar 'Maximum': con 'Average' la alarma clavada se diluye entre los ceros del periodo."
+  }
+
+  # `Minimum` en la cobertura, por la razon simetrica: basta con que UNA publicacion
+  # de la ventana venga vacia para que haya habido un barrido ciego.
+  assert {
+    condition     = aws_cloudwatch_metric_alarm.stuck_alarm_coverage.statistic == "Minimum"
+    error_message = "stuck_alarm_coverage debe usar 'Minimum': con 'Average' un barrido ciego se esconde entre los que si vieron alarmas."
+  }
+}
