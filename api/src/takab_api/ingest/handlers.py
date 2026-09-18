@@ -328,8 +328,9 @@ _HEALTH_SQL = """
 INSERT INTO device_health
   (ts, tenant_id, gateway_id, reason, seedlink_lag_s, ntp_offset_ms, mqtt_rtt_ms,
    cpu_temp_c, power_status, battery_pct, cert_days_remaining, battery_min_left,
-   relays_state, packet_loss_pct)
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+   relays_state, packet_loss_pct, disk_used_pct,
+   evidence_pending, evidence_oldest_age_s, evidence_oldest_event_id)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT (ts, gateway_id) DO NOTHING
 """
 
@@ -347,6 +348,32 @@ RELAYS_STOPPED = "stopped"
 #: sin cierre de gas, sin retorno de ascensores y sin retenedores — mientras
 #: `takab-edge` late perfectamente y `gateway_offline` no dispara.
 RELAYS_UNREADABLE = "unreadable"
+
+
+def _event_uuid_o_nulo(crudo: object) -> str | None:
+    """[T-7.53] El `event_id` del pendiente más viejo, o NULL si no es un uuid.
+
+    ⚠️ **Se valida la forma y no se deja reventar el INSERT.** La columna es
+    `uuid` para que el cruce con `incidents.event_uuid` sea directo, pero un
+    identificador malformado no puede tumbar el latido entero: eso convertiría un
+    campo informativo en un modo de fallo del dato de SALUD de un gabinete, que es
+    lo último que se quiere perder. Malformado ⇒ NULL ⇒ «no se puede vincular»,
+    que es la verdad.
+
+    Las dos escrituras que acepta son las mismas que `T-7.50` fijó en el grant: el
+    hex de 32 sin guiones que emite `new_event_id()` en el gabinete, y la canónica.
+    """
+    if not isinstance(crudo, str) or not crudo:
+        return None
+    try:
+        return str(uuid.UUID(crudo))
+    except (ValueError, AttributeError, TypeError):
+        # El NULL ES la declaración, y está escrita donde se lee el dato: el
+        # COMMENT de la columna dice que un identificador malformado aterriza
+        # como NULL. Este módulo no tiene logger —rechaza devolviendo motivo— y
+        # añadirle uno por esto sería meter un canal nuevo para un caso que la
+        # propia columna ya explica.
+        return None
 
 
 def _relays_state(payload: dict) -> str | None:
@@ -458,8 +485,10 @@ def handle_health_snapshot(
     ntp/battery/cert/mqtt_rtt llegan ``None`` cuando la fuente no existe y se
     persisten como NULL — la flota pinta S/D, no un invento. Desde
     T-5.24 `packet_loss_pct` SÍ aterriza: era la señal que se degrada antes de
-    que falten datos y el SOC no podía verla de ningún sitio. Sin columna
-    destino queda `disk_used_pct` (T-1.53, consumo local del panel LAN). De
+    que falten datos y el SOC no podía verla de ningún sitio. [T-7.53]
+    `disk_used_pct` también, por fin: viajaba desde T-1.53 y este handler lo
+    RECIBÍA Y LO TIRABA por no tener columna, así que la nube llevaba meses sin
+    verlo. Y con él llegan los tres campos de la evidencia retenida. De
     ``relays`` no se persiste el censo canal a canal (sin consumidor en la nube)
     sino **si el gabinete pudo obtenerlo**, en ``relays_state``
     (T-2.70.a·B1) — ver ``_relays_state`` para los tres hechos que ese campo
@@ -510,6 +539,16 @@ def handle_health_snapshot(
             # «el gabinete no opina» ⇒ S/D, nunca un cero — que aquí diría
             # «enlace perfecto», que es la mentira cara.
             payload.get("packet_loss_pct"),
+            # [T-7.53] El disco. Estaba en el contrato desde T-1.53 y este
+            # handler lo TIRABA por no tener columna destino: la nube llevaba
+            # meses sin poder ver el disco de ningún gabinete, y nada avisaba.
+            payload.get("disk_used_pct"),
+            # [T-7.53] La evidencia retenida. `evidence_pending` NULL = «no pude
+            # preguntar», 0 = «pregunté y no retengo nada»; la distinción es el
+            # punto de los tres campos.
+            payload.get("evidence_pending"),
+            payload.get("evidence_oldest_age_s"),
+            _event_uuid_o_nulo(payload.get("evidence_oldest_event_id")),
         ),
     )
     # `gateways.fw_version` (T-1.74): la version la DECLARA el gabinete. Antes se

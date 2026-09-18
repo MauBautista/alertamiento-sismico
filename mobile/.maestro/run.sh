@@ -21,20 +21,37 @@ set -euo pipefail
 AQUI="$(cd "$(dirname "$0")" && pwd)"
 [ $# -ge 1 ] || { echo "uso: $0 <flujo.yaml> [args de maestro]" >&2; exit 2; }
 
-if [ ! -f "$AQUI/.env" ]; then
-  echo "ERROR: falta $AQUI/.env — lo escribe 'make cloud-mobile-users'." >&2
+# [T-7.52] El fichero de entorno se elige, y por eso existe `.env.e2e`: desde
+# `D-34` los flujos corren contra el SITIO DEL ARNÉS, no contra Puebla, y sus
+# identidades son otras. `.env` sigue siendo el de siempre para no romper lo
+# acreditado; `TAKAB_MAESTRO_ENV=.env.e2e` apunta al del arnés.
+ENTORNO="${TAKAB_MAESTRO_ENV:-.env}"
+
+if [ ! -f "$AQUI/$ENTORNO" ]; then
+  echo "ERROR: falta $AQUI/$ENTORNO — lo escribe 'make cloud-mobile-users'." >&2
   echo "       La fuente de verdad es el secreto takab/dev/mobile/users." >&2
   exit 1
 fi
 
-set -a; . "$AQUI/.env"; set +a
+set -a; . "$AQUI/$ENTORNO"; set +a
 
 faltan=()
 for v in OCCUPANT_EMAIL OCCUPANT_PASSWORD TACTICO_EMAIL TACTICO_PASSWORD SITE_CODE; do
   [ -n "${!v:-}" ] || faltan+=("$v")
 done
 if [ ${#faltan[@]} -gt 0 ]; then
-  echo "ERROR: el .env no define: ${faltan[*]}" >&2
+  echo "ERROR: $ENTORNO no define: ${faltan[*]}" >&2
+  exit 1
+fi
+
+# ⚠️ [T-7.52] Los E2E NUNCA contra el sitio del gabinete real. `site-dev` es
+# Puebla, y el arnés que prepara la fase CIERRA todos los incidentes abiertos del
+# sitio: correr aquí contra él es cerrar incidentes de operación. La guarda dura
+# vive en `guarda.sql`; ésta sólo evita gastar una corrida para descubrirlo.
+if [ "${SITE_CODE:-}" = "site-dev" ]; then
+  echo "ERROR: SITE_CODE=site-dev es el sitio del gabinete REAL (Puebla)." >&2
+  echo "       Los E2E van contra el sitio del arnés: usa TAKAB_MAESTRO_ENV=.env.e2e" >&2
+  echo "       y siémbralo con 'make cloud-e2e-site'." >&2
   exit 1
 fi
 

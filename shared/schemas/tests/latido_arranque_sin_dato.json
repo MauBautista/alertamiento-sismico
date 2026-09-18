@@ -86,7 +86,20 @@
     "Las claves `_comentario` y `sondas_sin_dato` NO viajan en el mensaje: el",
     "cuerpo que fue a la cola es `mensaje` y nada más. Los dos tests lo leen de",
     "ahí (`_fixture()` en la nube, `_vector()` en el gabinete, que además quita",
-    "las tres claves `meta_*` porque el gabinete no las escribe)."
+    "las tres claves `meta_*` porque el gabinete no las escribe).",
+    "",
+    "⚠️ AÑADIDO EL 2026-09-18 (T-7.53), Y NO VENÍA EN LA COLA. El contrato ganó",
+    "`evidence_pending`, `evidence_oldest_age_s` y `evidence_oldest_event_id`",
+    "(esquema 1.17.0). Los tres se escriben aquí con `null`, que es EXACTAMENTE lo",
+    "que el gabinete de aquella noche —firmware 1.16.0— habría emitido bajo el",
+    "contrato nuevo: un firmware que no conoce el campo no lo manda, y su ausencia",
+    "se lee como «no pude preguntar».",
+    "",
+    "Se anota aquí y no se calla porque la PROCEDENCIA es lo que da valor a este",
+    "fichero: sin esta nota, el documento afirmaría que estas tres claves salieron",
+    "de la cola, y no salieron. El test que obliga a tocarlo lo dice con todas las",
+    "letras: «el día que el contrato gane o pierda un campo, este vector deja de",
+    "ser el cuerpo que fue a la DLQ y hay que regenerarlo a conciencia»."
   ],
   "sondas_sin_dato": [
     "packet_loss_pct",
@@ -117,6 +130,9 @@
       "test_path": "/opt/takab/releases/20260910T222639Z-f19aa06/edge/takab_edge/audio/assets/prueba.wav",
       "simulacro_path": null
     },
+    "evidence_pending": null,
+    "evidence_oldest_age_s": null,
+    "evidence_oldest_event_id": null,
     "relays": [
       {
         "channel": "siren",

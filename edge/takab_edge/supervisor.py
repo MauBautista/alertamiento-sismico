@@ -369,6 +369,12 @@ class EdgeSupervisor:
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)
+        # [T-7.53] El latido lleva la evidencia RETENIDA. Va aquí y no en el
+        # constructor del monitor porque el backfill se construye después — mismo
+        # patrón que `set_audio`. Sin esta línea los tres campos viajan como
+        # `None`, que significa «no pude preguntar»: honesto, pero la nube se
+        # quedaría sin poder ver un gabinete que retiene evidencia.
+        self.health.set_backfill(self.backfill)
         # [T-7.30] El episodio de alerta, con su estado en disco: la forma más
         # probable de que un sismo real termine es cortando la luz, y un episodio
         # que solo viva en RAM deja el cierre sin emisor.

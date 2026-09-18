@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import io
 
-from fpdf.enums import XPos, YPos
+from fpdf.enums import MethodReturnValue, XPos, YPos
 
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, sketch
@@ -73,8 +73,20 @@ from takab_api.dictamen.model import (
 )
 from takab_api.felt import ORIGEN_INMUEBLE, ORIGEN_REFERENCIA, umbral_desde_dict
 
+#: [T-7.44] Los altos de las CINCO figuras, en un solo sitio. Los saltos de
+#: página se derivan de aquí con `reserva()`, no de números absolutos calibrados
+#: contra el alto de A4 — que es lo que había y lo que la migración a Carta dejó
+#: ciego: la hoja se acortó 17,6 mm y ninguno de los cuatro topes se movió.
 _TRACE_H = 18.0
 _SKETCH_H = 78.0
+_ESPECTRO_H = 26.0
+_ESPECTROGRAMA_H = 32.0
+
+#: Lo que cada figura ocupa ADEMÁS de su recuadro: el `ln(2)` de separación, el
+#: rótulo y el pie de la figura. Va explícito porque reservar sólo el recuadro
+#: deja el rótulo huérfano al final de una página, que es el otro defecto que
+#: estos topes evitaban sin decirlo.
+_ROTULO_Y_PIE = 12.0
 
 
 def render(model: ReportModel, variant: str = "technical") -> bytes:
@@ -217,6 +229,12 @@ def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.callout(NO_GEOMETRY)
         return
 
+    # ⚠️ [T-7.44] Ésta es la caja MÁS ALTA del documento (78 mm) y era la única de
+    # las cinco figuras SIN guarda de ninguna clase: ni `reserva()`, ni siquiera
+    # uno de los cuatro topes absolutos. La ficha hablaba de «las cuatro»; los
+    # topes eran cuatro, pero las figuras son cinco. Va DESPUÉS del `return` por
+    # ausencia: un croquis sin geometría no debe saltar de página para no dibujar.
+    pdf.reserva(_SKETCH_H + 6)
     top = pdf.get_y()
     pdf.set_draw_color(*RULE)
     pdf.rect(MARGIN, top, CONTENT_W, _SKETCH_H)
@@ -302,8 +320,8 @@ def _trace(
     una señal con signo (el crudo del ADC sin su continua). En falso el cero queda
     abajo, que es lo correcto para magnitudes positivas como el PGA.
     """
-    if pdf.get_y() > 240:
-        pdf.add_page()
+    # [T-7.44] Derivado del alto real, no el `> 240` calibrado contra A4.
+    pdf.reserva(_TRACE_H + 3)
     top = pdf.get_y()
     box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, _TRACE_H)
     scale = plot.scale_of(values)
@@ -386,51 +404,58 @@ def _duracion(pdf: TakabPDF, m) -> None:
     Y cuando no se pudo medir, lo dice. Un `0.0 s` aquí se leería como «no tembló», que es
     lo contrario de lo que pasó: lo que faltó fue la onda, no la sacudida.
     """
-    if pdf.get_y() > 240:
-        pdf.add_page()
+    d = m.shaking_duration
+    if d is None:
+        texto = (
+            "SIN DATO · no se pudo medir sobre la onda archivada. No es cero: es que no "
+            "hubo traza suficiente de la que medirla."
+        )
+    else:
+        texto = (
+            f"{d.etiqueta} — intervalo en el que se acumula del 5 % al 95 % de la Intensidad "
+            f"de Arias, medido sobre el canal {d.canal} del miniSEED archivado "
+            f"({d.muestras} muestras, de t+{d.desde_s:.1f} s a t+{d.hasta_s:.1f} s desde el "
+            "inicio de la traza). Definición de Trifunac & Brady (1975); NO es comparable con "
+            "una duración «bracketed», que se mide entre cruces de un umbral de aceleración."
+        )
+
+    # ⚠️ [T-7.44] Éste es el distinto de los cuatro topes, y por eso lleva su
+    # razón escrita: **este bloque no dibuja nada**. Es `cell` + `multi_cell`, las
+    # dos texto, y el texto ya lo parte `set_auto_page_break`. Su `> 240` no era
+    # una guarda de colisión con el pie: era una guarda de **rótulo huérfano** —
+    # que el título no se quedara solo al final de una página con su párrafo en la
+    # siguiente.
+    #
+    # Y su alto NO es constante: el párrafo lleva dentro la etiqueta, el canal,
+    # las muestras y los dos instantes, y la rama de ausencia es mucho más corta
+    # (medido: 16,2 mm con dato contra 9,4 sin él). Por eso se MIDE con `dry_run`
+    # en vez de teclear un número — que además se ajusta solo cuando el modo
+    # degradado cambia la tipografía y el texto refluye.
+    pdf.set_font(pdf.body_font, "", 7)
+    alto_parrafo = pdf.multi_cell(0, 3.4, texto, dry_run=True, output=MethodReturnValue.HEIGHT)
+    pdf.reserva(2 + 4 + alto_parrafo)  # el `ln(2)`, el rótulo y el párrafo medido
+
     pdf.ln(2)
     pdf.set_font(pdf.body_font, "B", 8)
     pdf.cell(0, 4, "DURACIÓN INSTRUMENTAL DE LA SACUDIDA", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font(pdf.body_font, "", 7)
-    d = m.shaking_duration
-    if d is None:
-        pdf.multi_cell(
-            0,
-            3.4,
-            "SIN DATO · no se pudo medir sobre la onda archivada. No es cero: es que no "
-            "hubo traza suficiente de la que medirla.",
-            new_x="LMARGIN",
-            new_y="NEXT",
-        )
-        return
-    pdf.multi_cell(
-        0,
-        3.4,
-        f"{d.etiqueta} — intervalo en el que se acumula del 5 % al 95 % de la Intensidad "
-        f"de Arias, medido sobre el canal {d.canal} del miniSEED archivado "
-        f"({d.muestras} muestras, de t+{d.desde_s:.1f} s a t+{d.hasta_s:.1f} s desde el "
-        "inicio de la traza). Definición de Trifunac & Brady (1975); NO es comparable con "
-        "una duración «bracketed», que se mide entre cruces de un umbral de aceleración.",
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+    pdf.multi_cell(0, 3.4, texto, new_x="LMARGIN", new_y="NEXT")
 
 
 def _spectrum(pdf: TakabPDF, freqs: list[float], amps: list[float], peak_hz: float | None) -> None:
-    if pdf.get_y() > 220:
-        pdf.add_page()
+    pdf.reserva(_ESPECTRO_H + _ROTULO_Y_PIE)
     pdf.ln(2)
     pdf.set_font(pdf.body_font, "B", 8)
     pdf.cell(0, 5, pdf.text_of("ESPECTRO DE AMPLITUD"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
     top = pdf.get_y()
-    box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, 26.0)
+    box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, _ESPECTRO_H)
     scale = plot.scale_of([float(a) for a in amps])
     pdf.set_draw_color(*RULE)
     pdf.rect(box.x, box.y, box.w, box.h)
     pdf.set_draw_color(20, 24, 30)
     for seg in plot.segments([float(a) for a in amps], box, scale):
         pdf.polyline(seg)
-    pdf.set_y(top + 27)
+    pdf.set_y(top + _ESPECTRO_H + 1)
     pdf.set_font(pdf.body_font, "", 6.5)
     pdf.set_text_color(*MUTED)
     top_hz = freqs[-1] if freqs else 0.0
@@ -475,8 +500,9 @@ def _spectrogram(pdf: TakabPDF, esp) -> None:  # noqa: ANN001 - Espectrograma
     filas, columnas = len(esp.frecuencias_hz), len(esp.celdas)
     if filas == 0 or columnas == 0:
         return
-    if pdf.get_y() > 200:
-        pdf.add_page()
+    # Va DESPUÉS del `return` por figura vacía de arriba: un espectrograma sin
+    # celdas no debe saltar de página para luego no dibujar nada.
+    pdf.reserva(_ESPECTROGRAMA_H + _ROTULO_Y_PIE)
     pdf.ln(2)
     pdf.set_font(pdf.body_font, "B", 8)
     pdf.cell(
@@ -488,7 +514,7 @@ def _spectrogram(pdf: TakabPDF, esp) -> None:  # noqa: ANN001 - Espectrograma
     )
 
     top = pdf.get_y()
-    alto = 32.0
+    alto = _ESPECTROGRAMA_H
     box = plot.Box(MARGIN + 20, top, CONTENT_W - 22, alto)
     dx, dy = box.w / columnas, box.h / filas
 

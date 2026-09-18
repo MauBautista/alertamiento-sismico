@@ -128,7 +128,22 @@ from takab_edge.contracts import (  # noqa: I001
 #: topic: uno nuevo obliga a tocar la política de fleet y un topic no autorizado
 #: desconecta al gabinete en cada publish. Un consumidor 1.15.0 ignora el mensaje
 #: nuevo (no lo entiende, no lo rompe); el sentido peligroso sería el contrario.
-SCHEMA_VERSION = "1.16.0"
+#: 1.17.0 (T-7.53): HealthSnapshot + `evidence_pending`, `evidence_oldest_age_s` y
+#: `evidence_oldest_event_id` — la evidencia que el gabinete RETIENE. Hasta ahora
+#: esa edad sólo la comparaba el panel LAN contra su propio umbral, así que una
+#: evidencia esperando 49 minutos con su incidente EN REVISIÓN era invisible desde
+#: la nube: lo delató mirar el panel a mano el 2026-09-17.
+#:
+#: SON TRES Y NO UNO a propósito. Con una sola edad anulable, `None` tendría que
+#: significar «no retengo nada» y «no pude preguntar» a la vez — y el estado SANO
+#: produce `None` (medido en `gw-dev-0001`). Y sin el `event_id` la nube no puede
+#: evaluar el predicado que importa, «retiene evidencia Y su incidente ya está en
+#: revisión», porque no sabe de qué incidente es el pendiente.
+#:
+#: ADITIVO: tres claves opcionales nullables; un payload 1.16.0 sigue validando y
+#: su ausencia se lee como «no pude preguntar», que es lo correcto para un
+#: firmware que literalmente no sabe contestar.
+SCHEMA_VERSION = "1.17.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -189,6 +204,7 @@ def huella_del_contenido() -> str:
 HUELLA_POR_VERSION: dict[str, str] = {
     "1.15.0": "11d28237b98491a9eaaf1fb600ed88c74a38d31ae3d5c36bc9bb07c0f66a57b0",
     "1.16.0": "1c0bcb6f44a608b2f923f6b195b5bbd8e1f546bb9f8be611bc82c239db71bf17",
+    "1.17.0": "98196dd4d7e1326a012466b88e0eb83b433449e2127b76db59eea3da0e09f7ad",
 }
 
 

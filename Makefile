@@ -1,4 +1,4 @@
-.PHONY: cloud-demo-red cloud-demo-red-down
+.PHONY: cloud-demo-red cloud-demo-red-down cloud-e2e-site cloud-e2e-site-down
 # [T-7.11] La red de demostración: tres estaciones simuladas de tres tipos, para
 # que /fleet enseñe una RED y no un gabinete solo. Va APARTE de `deploy.sh` a
 # propósito — una red de adorno re-sembrada en cada despliegue acaba pareciendo
@@ -8,6 +8,15 @@ cloud-demo-red: ## Siembra la red de demostración en la nube (idempotente)
 
 cloud-demo-red-down: ## La retira. La estación REAL no se toca (guardia dentro)
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/demo_red.sh down
+
+# [T-7.52 · D-34] El sitio del ARNÉS de los E2E móviles. Aparte de `deploy.sh` por
+# lo mismo que el de arriba. ⚠️ Sin esto, `seed_staging_incident.sh` aborta: su
+# sitio por defecto dejó de ser el de Puebla, que es el del gabinete REAL.
+cloud-e2e-site: ## Siembra el sitio del arnés E2E en la nube (idempotente)
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/e2e_site.sh up
+
+cloud-e2e-site-down: ## Lo retira. Aborta si le hubieran puesto un gabinete
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/e2e_site.sh down
 
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \

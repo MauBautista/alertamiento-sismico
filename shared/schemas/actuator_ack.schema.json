@@ -141,6 +141,6 @@
   "title": "ActuatorAck",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/actuator_ack/v1.16.0",
-  "version": "1.16.0"
+  "$id": "https://takab.mx/schemas/actuator_ack/v1.17.0",
+  "version": "1.17.0"
 }

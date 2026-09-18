@@ -202,11 +202,12 @@ anterior, el teléfono se queda contando igual que el 2026-09-12:
 ssh takab-pi5 'journalctl -u takab-edge -n 200 | grep -c tier_transition'   # > 0 tras un episodio
 ```
 
-Si por lo que sea hiciera falta forzarlo (gabinete viejo, ensayo sin radio), el arnés sigue ahí:
-
-```bash
-AWS_PROFILE=takab-dev bash infra/scripts/seed_staging_incident.sh conclude
-```
+⚠️ **El arnés YA NO SIRVE PARA ESTO, y son dos razones.** La primera es que dejó de hacer falta:
+`T-7.30` hizo que la nube se entere sola de que la sacudida terminó (ver la nota del final de este
+runbook). La segunda es que **desde `T-7.52` el arnés aborta contra el sitio de Puebla**: su sitio
+por defecto es ahora el del arnés, y `guarda.sql` rechaza cualquier sitio que tenga un gabinete —
+sin bandera que la salte. Correrlo aquí cerraba incidentes de operación, que es el defecto que
+`T-7.51` destapó.
 
 Y dilo en voz alta delante del cliente, porque se ve: **durante la alerta el brigadista tampoco
 puede trabajar** — su teléfono enseña la instrucción, no las pestañas. Desde `T-7.29` tiene un
@@ -246,12 +247,18 @@ mobile/.maestro/run.sh 03-dictamen-liberacion.yaml
 
 ```bash
 curl -X POST http://<ip-del-gabinete>:8080/api/reset          # suelta el enclavado
-AWS_PROFILE=takab-dev bash infra/scripts/seed_staging_incident.sh reset   # cierra el incidente
 ```
 
-Y en la consola: **clasificar el incidente como `prueba`**. Sin esto queda contando como un sismo
-real en las métricas del sitio, que es exactamente la clase de dato sucio que el sistema promete
-no tener.
+Y en la consola: **clasificar el incidente como `prueba`**. Eso es lo que lo cierra, y es la vía
+correcta: deja `closed_at`, escribe la acción y audita el verbo. Sin esto queda contando como un
+sismo real en las métricas del sitio, que es exactamente la clase de dato sucio que el sistema
+promete no tener.
+
+⚠️ **Aquí había un `seed_staging_incident.sh reset` y se quitó** (`T-7.52`). Ese arnés es de los
+E2E móviles, no de la demostración, y cerraba **todos** los incidentes abiertos del sitio sin hora
+de cierre — el defecto de `T-7.51`, cuyo síntoma era un dictamen pericial diciendo «EN CURSO» de un
+incidente cerrado. Desde `T-7.52` abortaría de todas formas: el arnés no escribe sobre un sitio con
+gabinete.
 
 ---
 

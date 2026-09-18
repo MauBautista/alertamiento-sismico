@@ -284,6 +284,19 @@ ALARM_CATALOG: tuple[AlarmKind, ...] = (
         ),
     ),
     AlarmKind(
+        resource="stuck_evidence",
+        scope=NEVER,
+        name_template="takab-dev-evidencia-retenida",
+        why=(
+            "[T-7.53] Dice que alguien está decidiendo si un edificio se ocupa mientras la "
+            "prueba de lo que pasó sigue en el disco del gabinete. El dictamen que salga de "
+            "ahí se firma SIN esa evidencia, y `evidence_objects` no admite reescritura: lo "
+            "que se emita mal no se corrige, se anexa. Callarla durante una ventana de "
+            "mantenimiento sería callarla justo cuando los gabinetes se reinician y más "
+            "probable es que una subida se quede a medias."
+        ),
+    ),
+    AlarmKind(
         resource="stuck_alarm_age",
         scope=NEVER,
         name_template="takab-dev-vigilante-clavado",

@@ -475,6 +475,28 @@ class GatewayOut(BaseModel):
     # sin dueño de pines —que late perfectamente— mostraba sus cinco actuadores
     # en ARMADO. Regla de oro 7: un dato que no se pudo obtener no se pinta bueno.
     relays_state: str | None = None
+    # ── [T-7.53] La evidencia RETENIDA, y el disco ──────────────────────────
+    #
+    # El 2026-09-17 una evidencia llevaba 49 minutos en el disco del gabinete con
+    # su incidente EN REVISIÓN, y la nube no tenía forma de enterarse: la edad
+    # sólo la comparaba el panel LAN contra su propio umbral. Lo delató mirar ese
+    # panel a mano.
+    #
+    # ⚠️ `evidence_pending` distingue DOS hechos que un solo número anulable
+    # fundiría: `None` = **el gabinete no pudo preguntar** (su barrido del
+    # directorio falló) y `0` = preguntó y no retiene nada. Un gabinete con el
+    # backfill caído no puede declarar que no retiene evidencia — sería el
+    # fallback optimista que la regla de oro 7 prohíbe.
+    #
+    # **Viaja pero NO degrada el estado**, por la misma razón que
+    # `packet_loss_pct`: el umbral que importa no es una hora absoluta sino
+    # «retiene evidencia Y su incidente ya está en revisión», y eso lo evalúa la
+    # métrica de ops, no la pill de una tarjeta.
+    evidence_pending: int | None = None
+    evidence_oldest_age_s: float | None = None
+    # [T-7.53] El disco del gabinete. Viajaba en el contrato desde `T-1.53` y la
+    # ingesta lo TIRABA por no tener columna: la consola no lo ha visto nunca.
+    disk_used_pct: float | None = None
     # [T-2.60.a] Retirado PERO sigue latiendo. No es un estado más del gabinete:
     # es una CONTRADICCIÓN entre lo que la organización cree (dado de baja) y lo
     # que el aparato hace (reportar). Por eso va aparte de `status` y de

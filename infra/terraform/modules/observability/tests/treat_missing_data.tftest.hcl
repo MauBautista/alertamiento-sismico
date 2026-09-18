@@ -679,3 +679,65 @@ run "el_vigilante_de_los_vigilantes_no_hereda_el_defecto_que_cierra" {
     error_message = "stuck_alarm_coverage debe usar 'Minimum': con 'Average' un barrido ciego se esconde entre los que si vieron alarmas."
   }
 }
+
+# [T-7.53] La evidencia RETENIDA. Va con su razon escrita porque la ficha pedia
+# justo lo contrario, y su argumento era una premisa FALSA.
+run "la_evidencia_retenida_la_deriva_la_nube_no_el_gabinete" {
+  command = plan
+
+  override_resource {
+    target          = aws_sns_topic.ops_alerts
+    override_during = plan
+    values = {
+      arn = "arn:aws:sns:us-east-2:000000000000:takab-test-ops-alerts"
+    }
+  }
+
+  # ⚠️ `missing` + insufficient_data_actions, NO `breaching`.
+  #
+  # La ficha decia: «la publica el gabinete ⇒ la ausencia es breaching, el mismo
+  # remedio que arreglo el falso OK de la alarma de presencia». La premisa es
+  # falsa: **el gabinete NO publica esta metrica**. La DERIVA la nube cruzando
+  # `device_health` con `incidents`, porque el predicado que importa —«retiene
+  # evidencia Y su incidente ya esta en revision»— exige saber el estado del
+  # incidente, y eso el gabinete no lo conoce.
+  #
+  # Quien publica es el worker `notify`, el mismo que publica GhostGatewaysAlive
+  # y MaxClockDriftMs, y las dos usan `missing` por la misma razon: su silencio no
+  # significa «hay evidencia retenida» ni «no la hay» — significa que el que mide
+  # esta callado, y de eso habla INSUFFICIENT_DATA, no una ALARMA que afirmaria lo
+  # que nadie ha leido. Con `breaching` el correo diria que hay gabinetes
+  # reteniendo pruebas cada vez que el worker se reinicia.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.stuck_evidence.treat_missing_data == "missing"
+      && try(length(aws_cloudwatch_metric_alarm.stuck_evidence.insufficient_data_actions), 0) == 1
+    )
+    error_message = "stuck_evidence debe ser 'missing' CON insufficient_data_actions: la metrica la DERIVA la nube (worker notify) cruzando device_health con incidents, no la publica el gabinete. Con 'breaching' el correo afirmaria que hay gabinetes reteniendo pruebas cada vez que el worker se reinicia; 'missing' sin accion lo dejaria mudo (el fallo de 17 h del 29-jul-2026)."
+  }
+
+  # El otro extremo del cable con `ops/metrics.py`
+  # (`METRIC_NAME_STUCK_EVIDENCE = "StuckEvidenceGateways"`). Si divergen, la
+  # alarma vigila una metrica que nadie escribe y se queda en INSUFFICIENT_DATA
+  # para siempre sin que nada parezca roto.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.stuck_evidence.namespace == "Takab/Ops"
+      && aws_cloudwatch_metric_alarm.stuck_evidence.metric_name == "StuckEvidenceGateways"
+    )
+    error_message = "stuck_evidence apunta a una metrica que `ops/metrics.py` no publica."
+  }
+
+  # `> 0`: UN solo gabinete reteniendo la prueba de un incidente que ya se revisa
+  # es el suceso, no un umbral de volumen. Y `Maximum`, no `Average`: con la
+  # metrica publicada cada 60 s, promediar los datapoints del periodo diluiria un
+  # gabinete atascado entre los minutos en que nadie lo estaba.
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.stuck_evidence.threshold == 0
+      && aws_cloudwatch_metric_alarm.stuck_evidence.comparison_operator == "GreaterThanThreshold"
+      && aws_cloudwatch_metric_alarm.stuck_evidence.statistic == "Maximum"
+    )
+    error_message = "stuck_evidence debe alarmar con Maximum > 0: un solo gabinete reteniendo la prueba de un incidente en revision ya es el suceso, y 'Average' lo diluiria entre los periodos sanos."
+  }
+}

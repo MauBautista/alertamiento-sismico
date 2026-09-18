@@ -580,3 +580,44 @@ describe("SiteCard · entrada a la ficha del edificio", () => {
     expect(screen.getByTestId("card-building-link")).toBeInTheDocument();
   });
 });
+
+// [T-7.53] LA EVIDENCIA QUE EL GABINETE TODAVÍA NO HA SUBIDO.
+//
+// El 2026-09-17 una evidencia llevaba 49 minutos en el disco del Pi con su
+// incidente EN REVISIÓN, y desde el SOC no había forma de saberlo: esa edad sólo
+// la comparaba el panel LAN del propio gabinete contra su umbral. Lo delató mirar
+// ese panel a mano. Alguien estaba decidiendo si un edificio se ocupa mientras la
+// prueba de lo que pasó seguía sin llegar.
+describe("[T-7.53] evidencia sin subir", () => {
+  it("dice cuántas y desde cuándo", () => {
+    render(
+      <SiteCard cabinet={cabinet({}, { evidence_pending: 2, evidence_oldest_age_s: 2940 })} />,
+    );
+    expect(screen.getByText(/2 sin subir · la más vieja 49 min/)).toBeInTheDocument();
+  });
+
+  it("⚠️ `null` NO es cero: declara que el gabinete no pudo mirar", () => {
+    // La distinción es el punto de todo el diseño. Un gabinete con el backfill
+    // caído no puede afirmar que no retiene evidencia; pintarlo como «sin
+    // pendientes» sería el fallback optimista que la regla de oro 7 prohíbe, y
+    // apagaría en la consola justo la señal que delata el fallo.
+    render(<SiteCard cabinet={cabinet({}, { evidence_pending: null })} />);
+    expect(screen.getByText(/s\/d · el gabinete no pudo mirar/)).toBeInTheDocument();
+    expect(screen.queryByText(/sin pendientes/)).not.toBeInTheDocument();
+  });
+
+  it("cero pendientes es un HECHO y se dice", () => {
+    render(<SiteCard cabinet={cabinet({}, { evidence_pending: 0 })} />);
+    expect(screen.getByText(/sin pendientes/)).toBeInTheDocument();
+  });
+
+  it("no usa la palabra RETENIDA, que el glosario reserva para otra cosa", () => {
+    // `shared/glossary/estados.json` da la raíz RETENID al eje `vejez`: «el dato
+    // existe pero es viejo, se está mirando una foto congelada». Eso es otro
+    // hecho, y usar aquí esa palabra diría una cosa distinta de la que pasa.
+    const { container } = render(
+      <SiteCard cabinet={cabinet({}, { evidence_pending: 2, evidence_oldest_age_s: 2940 })} />,
+    );
+    expect(container.textContent ?? "").not.toMatch(/RETENID/i);
+  });
+});

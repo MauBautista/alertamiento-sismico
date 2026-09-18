@@ -540,6 +540,28 @@ CREATE TABLE device_health (
   -- NULL = el gabinete no opina (contrato ≤1.9.0 o clave ausente) ⇒ S/D.
   relays_state text CHECK (relays_state IS NULL
                            OR relays_state IN ('reported','stopped','unreadable')),
+  -- [T-7.53 · migración 0067] El disco del gabinete. Viajaba en el contrato
+  -- desde T-1.53 y NO TENÍA COLUMNA: el handler lo recibía y lo tiraba, así que
+  -- la nube —que es desde donde se vigila la flota— no lo ha visto nunca. Un
+  -- campo del contrato sin destino no avisa de nada: simplemente desaparece.
+  -- NULL = el gabinete no opina ⇒ S/D, jamás un cero.
+  disk_used_pct real,
+  -- [T-7.53] LA EVIDENCIA QUE EL GABINETE RETIENE. Hasta ahora esa edad sólo la
+  -- comparaba el panel LAN contra su propio umbral, así que una evidencia
+  -- esperando 49 min con su incidente EN REVISIÓN era invisible desde la nube.
+  --
+  -- NULL en `evidence_pending` = **NO PUDO PREGUNTAR** (barrido fallido);
+  -- 0 = preguntó y no retiene nada. La distinción es el punto: un gabinete con
+  -- el backfill caído no puede declarar que no retiene evidencia.
+  evidence_pending int,
+  -- Segundos del más viejo, medidos contra el reloj del GABINETE.
+  evidence_oldest_age_s real,
+  -- ⚠️ El VÍNCULO con el incidente, y sin él el predicado que importa no se
+  -- puede evaluar: «retiene evidencia Y su incidente ya está en revisión». Es el
+  -- mismo id que la nube convierte en `incidents.event_uuid`. El umbral no es la
+  -- hora absoluta — el caso que abrió la ficha eran 49 min, por debajo del tope
+  -- del gabinete (3 600 s), y nadie se enteró.
+  evidence_oldest_event_id uuid,
   PRIMARY KEY (ts, gateway_id)
 );
 SELECT create_hypertable('device_health','ts');

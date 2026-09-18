@@ -45,7 +45,14 @@ logger = logging.getLogger("takab_api.replay")
 #: `site-simon-01`, y equivocarse en esa dirección —armar una reproducción sobre
 #: un edificio con gente dentro— es el error caro.
 #: Los dos espejos los compara `api/tests/replay/test_service.py`.
-PATRON_SITIO_DEMO = r"^site-sim-[0-9]+$"
+#:
+#: [T-7.52] La alternancia, no dos constantes: este literal lo usan **SQL** (con
+#: `~`) y Python (con `re`), así que tiene que seguir siendo uno. El sitio del
+#: arnés de los E2E entra por la misma razón que los simulados —tampoco es un
+#: edificio con gente dentro, y armar una reproducción ahí es inofensivo—, y
+#: dejarlo fuera habría separado este espejo del de la consola, que es lo que el
+#: censo de `test_service.py` existe para impedir.
+PATRON_SITIO_DEMO = r"^(site-sim-[0-9]+|site-e2e-[0-9]+)$"
 
 #: Tope de la ventana. Espejo del CHECK de la base, que es quien manda: aquí está
 #: para contestar 4xx en vez de dejar que reviente la restricción.

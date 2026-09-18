@@ -53,11 +53,21 @@ set -euo pipefail
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)"
 
-# Mismos IDs de siembra que seed_mobile_users.sh (para que el enrolamiento del
-# occupant y el incidente caigan en el MISMO sitio/zona). Overridables por env.
+# El enrolamiento del occupant y el incidente tienen que caer en el MISMO
+# sitio/zona, así que estos IDs son los mismos que usa `seed_mobile_users.sh`.
+# Overridables por entorno.
+#
+# ⚠️ [T-7.52 · D-34] EL SITIO POR DEFECTO ES EL DEL ARNÉS, NO EL DE PUEBLA.
+# Hasta el 2026-09-17 era `d1000000-…-0000` = `site-dev` = **el sitio del
+# gabinete REAL `gw-dev-0001`**, y como `reset`/`crisis` cierran TODOS los
+# incidentes abiertos del sitio, este arnés cerraba incidentes de OPERACIÓN. Lo
+# destapó `T-7.51`: tres incidentes cerrados sin hora, cuyo dictamen pericial
+# decía «EN CURSO». El sitio del arnés lo siembra `db/seeds/e2e_harness.sql`
+# (`make cloud-e2e-site`), y `guarda.sql` aborta contra cualquier sitio que
+# tenga gabinete — sin bandera para saltársela.
 TENANT_ID="${TENANT_ID:-d0000000-0000-0000-0000-000000000001}"
-SITE_ID="${SITE_ID:-d1000000-0000-0000-0000-000000000000}"
-ZONE_ID="${ZONE_ID:-d2000000-0000-0000-0000-000000000001}"
+SITE_ID="${SITE_ID:-d1000000-0000-0000-0000-000000000900}"
+ZONE_ID="${ZONE_ID:-d2000000-0000-0000-0000-000000000900}"
 
 # [T-6.18] Sin valor por defecto: `crisis` genera uno nuevo y el resto resuelve
 # el incidente ABIERTO del sitio. Fijarlo sigue siendo posible por entorno.
@@ -102,9 +112,17 @@ PSQL=(psql -h 127.0.0.1 -p "$DB_LOCAL_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ER
 
 # Guard: sin el sitio, las FK fallan con un mensaje peor que este.
 if [[ "$("${PSQL[@]}" -tAc "SELECT count(*) FROM sites WHERE site_id = '$SITE_ID'")" != "1" ]]; then
-  echo "  ✗ el sitio $SITE_ID no existe en la nube — aplica db/seeds/prod_fleet.sql" >&2
+  echo "  ✗ el sitio $SITE_ID no existe en la nube — siémbralo con 'make cloud-e2e-site'" >&2
+  echo "    (o aplica db/seeds/e2e_harness.sql; el de Puebla sale de prod_fleet.sql)" >&2
   exit 1
 fi
+
+# ⚠️ [T-7.52] LA GUARDA, y va ANTES que cualquier fase: este script CIERRA todos
+# los incidentes abiertos del sitio, así que contra un sitio con gabinete estaría
+# cerrando incidentes de operación. Aborta por EXISTENCIA de gabinete, no por
+# latido reciente — un gabinete caído no deja de ser un gabinete, y el sitio real
+# ha estado mudo dos veces. Sin bandera que la salte, a propósito.
+"${PSQL[@]}" -v site="$SITE_ID" -f "$SQL_DIR/guarda.sql"
 
 # --- Resolución del incidente ------------------------------------------------
 # `crisis` abre uno NUEVO; el resto trabaja sobre el que esté abierto en el
