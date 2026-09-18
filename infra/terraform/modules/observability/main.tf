@@ -747,6 +747,41 @@ resource "aws_cloudwatch_metric_alarm" "root_disk_space" {
 #
 # SON DOS ALARMAS DE POLARIDAD OPUESTA, y esa es la respuesta a «y quien vigila a
 # esta»:
+# [T-7.53] Un gabinete RETIENE la prueba de un incidente que ya se está
+# revisando. El caso que abrió la ficha: el 2026-09-17 una evidencia llevaba 49
+# minutos en el disco del Pi con su incidente EN REVISIÓN, y la nube no tenía
+# forma de enterarse — lo delató mirar el panel LAN a mano.
+resource "aws_cloudwatch_metric_alarm" "stuck_evidence" {
+  alarm_name        = "takab-dev-evidencia-retenida"
+  alarm_description = "Hay gabinete(s) reteniendo evidencia de un incidente que la nube ya esta REVISANDO o dio por cerrado. Alguien esta decidiendo si un edificio se ocupa mientras la prueba sigue sin llegar, y el dictamen que salga de ahi se firma sin ella.${local.ack_sufijo}"
+  namespace         = "Takab/Ops"
+  metric_name       = "StuckEvidenceGateways"
+  statistic         = "Maximum"
+  period            = 300
+  # Dos periodos: la metrica se publica cada 60 s y la condicion ya trae dentro
+  # su propia gracia de 300 s (`GRACIA_EVIDENCIA_S`), que es la que deja pasar la
+  # carrera legitima que midio T-7.50. Encadenar mas espera aqui seria contar dos
+  # veces el mismo margen.
+  evaluation_periods  = 2
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  # ⚠️ `missing`, NO `breaching`, y la ficha pedia lo contrario. Su razon era «la
+  # publica el gabinete ⇒ la ausencia es breaching», y **el gabinete no publica
+  # esta metrica**: la DERIVA la nube cruzando `device_health` con `incidents`,
+  # porque el predicado —«retiene evidencia Y su incidente ya esta en revision»—
+  # exige saber el estado del incidente, que el gabinete no conoce.
+  #
+  # Quien publica es el worker `notify`, igual que `GhostGatewaysAlive` y
+  # `MaxClockDriftMs`, y las dos usan `missing` + `insufficient_data_actions` por
+  # la misma razon: su silencio no significa «hay evidencia retenida» ni «no la
+  # hay» — significa que el que mide esta callado, y eso se dice aparte.
+  treat_missing_data = "missing"
+
+  alarm_actions             = [aws_sns_topic.ops_alerts.arn]
+  ok_actions                = [aws_sns_topic.ops_alerts.arn]
+  insufficient_data_actions = [aws_sns_topic.ops_alerts.arn]
+}
+
 resource "aws_cloudwatch_metric_alarm" "stuck_alarm_age" {
   alarm_name        = "takab-dev-vigilante-clavado"
   alarm_description = "Hay alarma(s) que llevan mas de un dia sin transicionar de estado. SNS solo notifica transiciones, asi que mientras sigan ahi el siguiente suceso real NO avisa a nadie: son vigilantes muertos con cara de estar avisando.${local.ack_sufijo}"

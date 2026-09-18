@@ -45,6 +45,11 @@ _LIST_SQL = """
            -- sirena, sin cierre de gas, sin retorno de ascensores y sin
            -- retenedores, con todas las demás métricas perfectas.
            h.relays_state,
+           -- [T-7.53] La evidencia que el gabinete RETIENE. `evidence_pending`
+           -- NULL = no pudo preguntar; 0 = preguntó y no retiene nada.
+           h.evidence_pending,
+           h.evidence_oldest_age_s::float8 AS evidence_oldest_age_s,
+           h.disk_used_pct::float8 AS disk_used_pct,
            EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s,
            r.ts    AS retired_at,
            r.actor AS retired_by
@@ -53,7 +58,8 @@ _LIST_SQL = """
     LEFT JOIN LATERAL (
         SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
                dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.relays_state,
-               dh.packet_loss_pct
+               dh.packet_loss_pct, dh.evidence_pending, dh.evidence_oldest_age_s,
+               dh.disk_used_pct
         FROM device_health dh
         WHERE dh.gateway_id = g.gateway_id
         ORDER BY dh.ts DESC

@@ -26,6 +26,7 @@ from takab_api.ops.metrics import (
     GhostGauge,
     count_ghosts,
     count_retired_alive,
+    count_stuck_evidence,
     max_clock_drift_ms,
 )
 from takab_api.ops.vigilante import VigilanteDeAlarmas
@@ -69,6 +70,9 @@ def build_ghost_gauge(settings: Settings) -> GhostGauge:
         # misma publicación porque comparte fotografía y periodo: una tercera
         # llamada a CloudWatch por lo mismo sería coste sin dato nuevo.
         drift_gauge=partial(max_clock_drift_ms, alive_s=alive_s),
+        # [T-7.53] El predicado que sólo la nube puede evaluar: retiene
+        # evidencia Y su incidente ya está en revisión o cerrado.
+        stuck_evidence_gauge=partial(count_stuck_evidence, alive_s=alive_s),
     )
 
 

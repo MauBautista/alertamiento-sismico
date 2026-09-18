@@ -500,6 +500,40 @@ class HealthSnapshot(BaseModel):
     # haya columna destino, y el panel LAN ya lo muestra. Sirve para responder
     # "¿qué gabinetes se quedaron atrás de un cambio de catálogo?" sin ir uno a uno.
     audio: dict | None = None
+    # ── [T-7.53] LA EVIDENCIA QUE EL GABINETE RETIENE ───────────────────────
+    #
+    # El defecto: la edad del pendiente más viejo sólo la comparaba el PANEL LAN
+    # contra su propio umbral, así que el 2026-09-17, con la evidencia de un
+    # incidente EN REVISIÓN esperando 49 minutos en el disco del Pi, la nube no
+    # tenía forma de enterarse — lo delató mirar el panel a mano.
+    #
+    # ⚠️ SON TRES CAMPOS Y NO UNO, y la ficha pedía uno. Con una sola edad
+    # anulable, `None` tendría que significar dos hechos incompatibles, y el
+    # estado SANO produce `None`: medido en `gw-dev-0001` el 2026-09-18,
+    # `pending = 0` y `oldest_pending_age_s = null`. O sea que «no retengo nada»
+    # y «no pude preguntar» serían el mismo byte — el defecto que el criterio 4
+    # de la propia ficha prohíbe, cometido por su propio diseño.
+    #
+    # · `evidence_pending`  — `None` = **no pude preguntar** (el barrido del
+    #   directorio falló). `0` = pregunté y no retengo nada. Es la distinción.
+    # · `evidence_oldest_age_s` — segundos que lleva esperando el más viejo.
+    #   `None` cuando no hay pendientes o no se pudo medir.
+    # · `evidence_oldest_event_id` — ⚠️ **sin esto la nube no puede evaluar el
+    #   predicado que el criterio 2 exige.** «Retiene evidencia Y su incidente ya
+    #   está en revisión» necesita saber DE QUÉ incidente es el pendiente, y el
+    #   vínculo es exacto: este `event_id` es el que la nube convierte en
+    #   `incidents.event_uuid`. Una edad sola no lo permite.
+    #
+    # El umbral NO viaja: vive en la nube, porque el caso que abrió la ficha —49
+    # minutos— pasaba por debajo del tope del gabinete (3 600 s) sin que sonara
+    # nada. Lo que se vigila no es una hora absoluta.
+    #
+    # ADITIVO (schema 1.17.0): un firmware viejo no los manda y entran como
+    # `None`, que es «no pude preguntar» — la lectura correcta para un gabinete
+    # que literalmente no sabe contestar.
+    evidence_pending: int | None = None
+    evidence_oldest_age_s: float | None = None
+    evidence_oldest_event_id: str | None = None
     # [T-2.70.a·B1] Censo eléctrico de los relés, y su AUSENCIA. RELAJANTE
     # (schema 1.10.0): un payload 1.9.0 con `[]` o con filas sigue validando.
     #

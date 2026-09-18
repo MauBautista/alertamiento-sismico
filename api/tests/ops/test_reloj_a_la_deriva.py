@@ -171,8 +171,15 @@ def test_el_worker_real_la_cablea() -> None:
             return self
 
         def fetchone(self) -> dict:
-            # Las tres consultas con la forma de fila que devuelve `dict_row`.
-            return {"ghosts": 0, "retired_alive": 0, "drift_ms": 0.0}
+            # Las CUATRO consultas con la forma de fila que devuelve `dict_row`.
+            # [T-7.53] `atascados` entra aquí porque el gauge publica ahora
+            # también la evidencia retenida: la fila la comparten las cuatro.
+            return {
+                "ghosts": 0,
+                "retired_alive": 0,
+                "drift_ms": 0.0,
+                "atascados": 0,
+            }
 
     gauge.maybe_publish(conn=_Conn())
 

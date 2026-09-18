@@ -1286,7 +1286,10 @@ export type GatewayOut = {
     cert_days_remaining?: number | null;
     degrade_reasons?: Array<string>;
     derived_state: string;
+    disk_used_pct?: number | null;
     equipment?: EquipmentProfile;
+    evidence_oldest_age_s?: number | null;
+    evidence_pending?: number | null;
     fw_running?: string | null;
     fw_version?: string | null;
     gateway_id: string;

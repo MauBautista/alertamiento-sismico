@@ -137,6 +137,7 @@ def test_las_intocables_lo_son_por_escrito() -> None:
         # `stuck_alarm_coverage` vigila AL REVÉS que el barrido siga mirando algo.
         # Sin la segunda, un detector roto que devuelve siempre cero publica un
         # latido perfecto. Callar cualquiera de las dos deja ciega a la otra.
+        "stuck_evidence",
         "stuck_alarm_age",
         "stuck_alarm_coverage",
         "wal_archive_stalled",

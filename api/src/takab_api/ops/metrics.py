@@ -238,6 +238,65 @@ def max_clock_drift_ms(conn: Any, *, alive_s: float) -> float:
     return float(row["drift_ms"]) if row else 0.0
 
 
+#: [T-7.53] Gabinetes que RETIENEN evidencia de un incidente que la nube ya está
+#: revisando o dio por cerrado. La publica la NUBE, no el gabinete, y eso decide
+#: su `treat_missing_data` (ver la alarma en `modules/observability`).
+METRIC_NAME_STUCK_EVIDENCE = "StuckEvidenceGateways"
+
+#: La CARRERA LEGÍTIMA, y por eso no se alarma al instante. `T-7.50` la midió: al
+#: reconectar, `_on_online` dispara la evidencia mientras el spool del evento
+#: espera un jitter de hasta 120 s, y los dos caen en la misma cola sin orden
+#: garantizado; además una ventana de miniSEED tarda en extraerse y subirse. Cinco
+#: minutos dejan pasar esa carrera y siguen estando MUY por debajo de los 49 min
+#: del caso que abrió la ficha — que es el punto: el tope del gabinete (3 600 s)
+#: no se alcanzaba nunca y por eso nadie se enteró.
+GRACIA_EVIDENCIA_S = 300.0
+
+#: ⚠️ El predicado que el criterio 2 exige, y que **sólo la nube puede evaluar**:
+#: el gabinete no conoce el estado del incidente. Cruza el `event_id` del
+#: pendiente más viejo —que el gabinete manda desde el contrato 1.17.0— con
+#: `incidents.event_uuid`.
+#:
+#: `evidence_pending > 0` descarta el NULL de «no pude preguntar» **a propósito**:
+#: de ese hecho habla la ausencia de dato, no esta métrica, igual que
+#: `max_clock_drift_ms` excluye al gabinete sin reloj en vez de contarlo como
+#: cero. Un gabinete que no puede mirar su directorio no es un gabinete que
+#: retenga evidencia: es un gabinete que no sabe.
+_STUCK_EVIDENCE_SQL = """
+SELECT count(*)::int AS atascados
+FROM gateways g
+JOIN LATERAL (
+    SELECT dh.ts, dh.evidence_pending, dh.evidence_oldest_age_s, dh.evidence_oldest_event_id
+    FROM device_health dh
+    WHERE dh.gateway_id = g.gateway_id
+    ORDER BY dh.ts DESC
+    LIMIT 1
+) h ON true
+JOIN incidents i ON i.event_uuid = h.evidence_oldest_event_id
+WHERE g.status <> 'retired'
+  AND h.ts > now() - make_interval(secs => %(alive_s)s)
+  AND h.evidence_pending > 0
+  AND h.evidence_oldest_age_s > %(gracia_s)s
+  AND i.state IN ('in_review', 'closed')
+"""
+
+
+def count_stuck_evidence(conn: Any, *, alive_s: float, gracia_s: float = GRACIA_EVIDENCIA_S) -> int:
+    """Gabinetes que retienen evidencia de un incidente YA en revisión o cerrado.
+
+    El caso que abrió `T-7.53`: el 2026-09-17 una evidencia llevaba 49 minutos en
+    el disco del Pi, su incidente estaba EN REVISIÓN, y la nube no tenía forma de
+    saberlo — lo delató mirar el panel LAN a mano.
+
+    **No se vigila una hora absoluta**, y ésa es la corrección que la ficha pedía:
+    aquellos 49 minutos pasaban por debajo del tope del propio gabinete (3 600 s)
+    sin que sonara nada. Lo que importa es que alguien esté decidiendo sobre un
+    incidente mientras la prueba sigue sin llegar.
+    """
+    row = conn.execute(_STUCK_EVIDENCE_SQL, {"alive_s": alive_s, "gracia_s": gracia_s}).fetchone()
+    return int(row["atascados"]) if row else 0
+
+
 def count_retired_alive(conn: Any, *, alive_s: float) -> int:
     """TODOS los retirados que siguen latiendo, avisados o no (B3).
 
@@ -265,6 +324,7 @@ class GhostGauge:
         counter: Callable[[Any], int],
         total_counter: Callable[[Any], int] | None = None,
         drift_gauge: Callable[[Any], float] | None = None,
+        stuck_evidence_gauge: Callable[[Any], int] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._namespace = namespace
@@ -273,6 +333,7 @@ class GhostGauge:
         self._counter = counter
         self._total_counter = total_counter
         self._drift_gauge = drift_gauge
+        self._stuck_evidence_gauge = stuck_evidence_gauge
         self._clock = clock
         self._last: float | None = None
 
@@ -298,6 +359,12 @@ class GhostGauge:
             # [T-5.24] En la MISMA fotografía y bajo el mismo `try`: si la DB
             # falla no sale ninguna de las tres, por la razón de arriba.
             drift = self._drift_gauge(conn) if self._drift_gauge is not None else None
+            # [T-7.53] En la MISMA fotografía por lo mismo: es otra lectura de la
+            # misma base, y publicarla aparte haría que un fallo de Postgres
+            # dejara unas cifras y otras no, que es peor que no dejar ninguna.
+            atascados = (
+                self._stuck_evidence_gauge(conn) if self._stuck_evidence_gauge is not None else None
+            )
         except Exception:
             logger.warning("no se pudo contar los gabinetes fantasma", exc_info=True)
             return
@@ -310,6 +377,16 @@ class GhostGauge:
                     "MetricName": METRIC_NAME_CLOCK_DRIFT,
                     "Value": drift,
                     "Unit": "Milliseconds",
+                }
+            )
+        if atascados is not None:
+            # El CERO se publica igual: sin él, «ningún gabinete retiene
+            # evidencia» sería indistinguible de «el que mide está callado».
+            datos.append(
+                {
+                    "MetricName": METRIC_NAME_STUCK_EVIDENCE,
+                    "Value": float(atascados),
+                    "Unit": "Count",
                 }
             )
         try:

@@ -105,6 +105,28 @@ export default function SiteCard({
   // consejo local del panel del gabinete—, así que teñir aquí sería que la
   // consola se inventara una salud que la API no afirma.
   const perdida = gw.packet_loss_pct != null ? `${gw.packet_loss_pct.toFixed(1)} %` : "s/d";
+  // [T-7.53] La evidencia que el gabinete todavía no ha subido. Hasta ahora esto
+  // sólo se veía en el panel LAN del propio gabinete: el 2026-09-17 una evidencia
+  // llevaba 49 minutos ahí con su incidente EN REVISIÓN y desde el SOC no había
+  // forma de saberlo.
+  //
+  // ⚠️ Se dice «sin subir» y NO «retenida»: `shared/glossary/estados.json` reserva
+  // la raíz RETENID para el eje `vejez` —«el dato existe pero es viejo, se está
+  // mirando una foto congelada»—, que es otro hecho. Usar esa palabra aquí diría
+  // una cosa distinta de la que pasa, y además el censo del glosario lo caza.
+  //
+  // `null` en `evidence_pending` es «el gabinete no pudo preguntar», que NO es
+  // cero: por eso tiene su propio texto en vez de caer en el caso sano.
+  const evidenciaValue =
+    gw.evidence_pending == null
+      ? "s/d · el gabinete no pudo mirar"
+      : gw.evidence_pending === 0
+        ? "sin pendientes"
+        : `${gw.evidence_pending} sin subir${
+            gw.evidence_oldest_age_s != null
+              ? ` · la más vieja ${Math.round(gw.evidence_oldest_age_s / 60)} min`
+              : ""
+          }`;
   const seedlinkValue = offline
     ? "— sin enlace —"
     : `${gw.seedlink_lag_s != null ? `lag ${gw.seedlink_lag_s.toFixed(2)} s` : "lag s/d"} · pérdida ${perdida}`;
@@ -216,6 +238,13 @@ export default function SiteCard({
           label="SEEDLINK · RS4D"
           icon={<Activity size={12} aria-hidden />}
           value={seedlinkValue}
+          frameAgeMs={frameAgeMs}
+        />
+        <LinkPill
+          kind={linkKind}
+          label="EVIDENCIA"
+          icon={<Activity size={12} aria-hidden />}
+          value={evidenciaValue}
           frameAgeMs={frameAgeMs}
         />
       </div>

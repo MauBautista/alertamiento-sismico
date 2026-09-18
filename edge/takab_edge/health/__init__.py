@@ -26,6 +26,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+# [T-7.53] El parser de fechas del backfill, importado y NO reescrito: dos
+# lecturas de la misma fecha que divergen es el patrón de espejo que este
+# repositorio ya paga en otros sitios. Es el dueño del formato de `start`.
+from takab_edge.backfill import _stamp as _instante
 from takab_edge.config import EdgeSettings
 from takab_edge.contracts import HealthSnapshot, RelayState, UpsStatus
 from takab_edge.gpio_link import GpioLink, as_link
@@ -318,6 +322,14 @@ class HealthMonitor(EdgeModule):
         """[T-2.49] Enlaza el módulo de audio (se construye después del monitor)."""
         self._audio = audio
 
+    def set_backfill(self, backfill: object | None) -> None:
+        """[T-7.53] Enlaza el backfill, para que el latido lleve la evidencia retenida.
+
+        Mismo patrón que `set_audio`: el módulo se construye después del monitor,
+        así que no puede entrar por el constructor.
+        """
+        self._backfill = backfill
+
     def on_snapshot(self, callback: Callable[[HealthSnapshot], None]) -> None:
         """Registra un consumidor de snapshots (p.ej. publicar a la nube, T-1.11)."""
         self._callbacks.append(callback)
@@ -453,6 +465,9 @@ class HealthMonitor(EdgeModule):
             # [T-2.49] Perfil de tonos efectivo. `None` si no hay módulo de audio
             # (getattr: los fakes de los tests y los edges sin audio no lo traen).
             audio=self._audio_report(),
+            # [T-7.53] La evidencia que este gabinete RETIENE. Tres campos, no
+            # uno: ver el bloque de `HealthSnapshot` en `contracts.py`.
+            **self._evidencia_report(),
             relays=relays,
             transition_reason=transition_reason,
         )
@@ -461,6 +476,49 @@ class HealthMonitor(EdgeModule):
         for callback in self._callbacks:
             callback(snap)
         return snap
+
+    def _evidencia_report(self) -> dict:
+        """Lo que el gabinete retiene, o la DECLARACIÓN de que no pudo preguntar.
+
+        ⚠️ Los tres valores por defecto son `None`, y eso es «no pude
+        preguntar» — nunca `0`. Un gabinete con el backfill caído no puede
+        afirmar que no retiene evidencia; afirmarlo sería el fallback optimista
+        que la regla de oro 7 prohíbe, y además apagaría en la nube justo la
+        alarma que existe para detectarlo.
+
+        La EDAD se calcula aquí, contra el reloj del gabinete, por lo mismo que
+        la calcula el panel y no el navegador del kiosco: `oldest_pending_at` es
+        un instante, y restarlo en el otro extremo mide también la deriva del
+        reloj ajeno.
+        """
+        vacio = {
+            "evidence_pending": None,
+            "evidence_oldest_age_s": None,
+            "evidence_oldest_event_id": None,
+        }
+        backfill = getattr(self, "_backfill", None)
+        if backfill is None:
+            return vacio
+        try:
+            snap = backfill.evidence_snapshot()
+            pendientes = int(snap["pending"])
+            desde = snap.get("oldest_pending_at")
+            items = snap.get("items") or []
+            edad = None
+            cuando = _instante(desde)
+            if cuando is not None:
+                edad = max(0.0, (datetime.now(UTC) - cuando).total_seconds())
+            return {
+                "evidence_pending": pendientes,
+                "evidence_oldest_age_s": edad,
+                # El `event_id` del más viejo: es el que la nube convierte en
+                # `incidents.event_uuid`, y sin él no puede saber si el incidente
+                # de ESTE pendiente ya está en revisión.
+                "evidence_oldest_event_id": (items[0].get("event_id") if items else None),
+            }
+        except Exception:  # noqa: BLE001 — el latido sobrevive a cualquier sonda
+            log.warning("estado de la evidencia ilegible; se reporta sin dato", exc_info=True)
+            return vacio
 
     def _audio_report(self) -> dict | None:
         """Perfil de tonos que el gabinete puede sonar, o ``None`` si no hay audio."""

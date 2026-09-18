@@ -204,6 +204,42 @@
       "default": null,
       "title": "Audio"
     },
+    "evidence_pending": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Pending"
+    },
+    "evidence_oldest_age_s": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Oldest Age S"
+    },
+    "evidence_oldest_event_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidence Oldest Event Id"
+    },
     "relays": {
       "anyOf": [
         {
@@ -231,6 +267,6 @@
   "title": "HealthSnapshot",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://takab.mx/schemas/health_snapshot/v1.16.0",
-  "version": "1.16.0"
+  "$id": "https://takab.mx/schemas/health_snapshot/v1.17.0",
+  "version": "1.17.0"
 }
