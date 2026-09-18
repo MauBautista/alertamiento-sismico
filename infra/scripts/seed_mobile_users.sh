@@ -30,7 +30,12 @@
 set -euo pipefail
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)"
-SECRET_ID="takab/dev/mobile/users"
+# ⚠️ [T-7.52] EL SECRETO LLEVA EL PERFIL. Sin esto, sembrar un perfil PISA la
+# fuente de verdad del otro: el sufijo separaba la identidad en Cognito pero las
+# dos escribían el mismo secreto, así que al sembrar `-e2e` el secreto pasó a
+# guardar las credenciales del arnés y las del perfil de siempre sólo sobrevivían
+# en el `.env` local de una máquina. Medido el 2026-09-18, arreglado el mismo día.
+SECRET_ID="takab/dev/mobile/users${PERFIL_SUFIJO}"
 
 # Tenant y sitio del seed de flota real (db/seeds/prod_fleet.sql). Sin estos el
 # token entra pero la app no ve nada (RLS + R2 no encuentran sitio).

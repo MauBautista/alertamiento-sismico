@@ -16186,6 +16186,10 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         demostración no se mueven. Y son **DOS**, no una: ver [`D-35`](DECISIONES-MAURICIO.md#d-35).
   - [x] **Guarda sin excepción**, con su prueba y sin bandera. ⚠️ **Y sin RELOJ**, que es más fuerte
         que lo que pedía el criterio: aborta por EXISTENCIA de gabinete, no por latido reciente.
+        **Verificada EN LA NUBE REAL el 2026-09-18**, por el camino de `psql -f` y no sólo por el del
+        test —que es donde vivía la trampa del bloque `$$`—: contra `site-dev` (Puebla) devuelve
+        `rc=3` con «ARNÉS ABORTADO … tiene 4 gabinete(s)», y contra `site-e2e-900` devuelve `rc=0`.
+        El arnés corrió después contra el sitio propio y abrió su incidente allí.
   - [ ] **BLOQUEADO — falta el Pixel.** Los cuatro flujos re-corridos en el `41270DLJG000WB` con el
         `.env.e2e`. Medido el 2026-09-18: `adb devices` no lista ningún dispositivo. Además exige
         ventana AWS (sembrar el sitio y las identidades en la nube), que **una persona teclee un
