@@ -321,11 +321,16 @@ class MembretePDF(FPDF):
 
         ⚠️ **fpdf2 no hace esto solo para el dibujo.** `set_auto_page_break` sólo
         mira el texto; `rect`, `line` y `polyline` se pintan donde se les diga,
-        incluso encima del filete del pie. Todas las figuras del dictamen —la
-        traza, la duración, el espectro, el espectrograma y el croquis— se
-        dibujan así, y ninguna tenía guarda: sus topes eran cuatro números
-        absolutos calibrados a ojo contra el corte de A4, y el croquis, que es la
-        caja más alta del documento con sus 78 mm, no tenía ni eso.
+        incluso encima del filete del pie.
+
+        [T-7.44] Las cinco figuras del dictamen —la traza, la duración, el
+        espectro, el espectrograma y el croquis— **ya pasan por aquí**. Hasta
+        entonces cuatro decidían con un número absoluto calibrado a ojo contra el
+        corte de A4, que la migración a Carta dejó ciego sin que nada avisara (la
+        hoja se acortó 17,6 mm y ninguno se movió); y el croquis, que es la caja
+        más alta del documento con sus 78 mm, no tenía ni eso. Que no vuelva a
+        aparecer un tope absoluto lo vigila un censo por AST sobre todo
+        `api/src/takab_api`, en `tests/documentos/test_geometria.py`.
         """
         if self.get_y() + alto > PAGE_H - PIE_MM:
             self.add_page()
