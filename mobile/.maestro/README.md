@@ -28,6 +28,36 @@ sitio con incidente activo en staging.
   `TACTICO_EMAIL`, `TACTICO_PASSWORD`, `SITE_CODE`. Las escribe
   `make cloud-mobile-users`; la fuente de verdad es el secreto `takab/dev/mobile/users`.
 
+### ⚠️ Los E2E van contra el SITIO DEL ARNÉS, nunca contra Puebla
+
+`site-dev` es **el sitio del gabinete REAL `gw-dev-0001`**. El arnés que prepara la fase
+(`seed_staging_incident.sh`) **cierra todos los incidentes abiertos del sitio**, así que correrlo
+contra Puebla cerraba incidentes de operación — es el defecto que destapó `T-7.51`: tres incidentes
+cerrados sin hora, con su dictamen pericial diciendo «EN CURSO». Lo decidió `D-34`.
+
+Desde `T-7.52` hay **dos ficheros de entorno**, y se elige con `TAKAB_MAESTRO_ENV`:
+
+| fichero | sitio | identidades | para qué |
+|---|---|---|---|
+| `.env` (defecto) | el que tuviera | las de siempre | lo ya acreditado, sin tocar |
+| `.env.e2e` | `site-e2e-900` | `…+occupant-e2e@…` y `…+brigadista-e2e@…` | los E2E |
+
+```bash
+make cloud-e2e-site                        # siembra el sitio del arnés (una vez)
+PERFIL_SUFIJO=-e2e SITE_ID=d1000000-0000-0000-0000-000000000900   ZONE_ID=d2000000-0000-0000-0000-000000000900 SITE_CODE=E2E-OCUPANTE   make cloud-mobile-users                  # las DOS identidades del arnés
+TAKAB_MAESTRO_ENV=.env.e2e .maestro/run.sh 01a-crisis.yaml
+```
+
+**Son DOS identidades y no una** (`D-35`): dos de los cuatro flujos son del brigadista, y el
+brigadista resuelve su sitio por `custom:site_scope`, del que la app toma el **`[0]`** de una lista
+que `/me` devuelve **ordenada** — así que Puebla (`…-000000`) le gana siempre al arnés
+(`…-000900`). Darle los dos sitios a la identidad de hoy la dejaría mirando justo el sitio del que
+se la quiere sacar.
+
+`run.sh` aborta si `SITE_CODE=site-dev`, para no gastar una corrida descubriéndolo. La guarda dura
+—sin bandera que la salte— está en `infra/scripts/sql/staging-incident/guarda.sql`: el arnés no
+escribe sobre un sitio que tenga un gabinete, esté latiendo o no.
+
 ## Correr
 El orden importa: la fase del incidente de staging es una precondición de casi
 todos, y cada archivo declara la suya en su cabecera.

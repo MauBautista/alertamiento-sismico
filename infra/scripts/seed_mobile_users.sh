@@ -46,6 +46,19 @@ ZONE_LEVEL="${ZONE_LEVEL:-PB}"
 ZONE_POLICY="${ZONE_POLICY:-evacuate}" # CHECK de DB: evacuate | shelter
 
 SITE_CODE="${SITE_CODE:-DEV-OCUPANTE}"
+
+# ⚠️ [T-7.52 · D-35] PERFIL ≠ ROL. El sufijo distingue una IDENTIDAD de otra sin
+# tocar el rol: `…+brigadista-e2e@…` sigue siendo del rol `brigadista`, con su
+# grupo `brigadista` y su `custom:role=brigadista`. Confundir las dos cosas
+# intentaría meter al usuario en un grupo `brigadista-e2e` que no existe y el
+# alta fallaría con un mensaje que no dice esto.
+#
+# Hacen falta DOS identidades y no una, que es lo que `D-34` no había presupuestado:
+# dos de los cuatro flujos son del brigadista, y el brigadista resuelve su sitio
+# por `custom:site_scope` — del que la app toma el `[0]` de una lista que `/me`
+# devuelve ORDENADA, así que Puebla (…-000000) le gana siempre al arnés (…-000900).
+# Por eso la identidad del arnés lleva SÓLO el sitio del arnés.
+PERFIL_SUFIJO="${PERFIL_SUFIJO:-}"
 CODE_MAX_USES="${CODE_MAX_USES:-100}"
 CODE_TTL_DAYS="${CODE_TTL_DAYS:-90}"
 DB_LOCAL_PORT="${DB_LOCAL_PORT:-5435}" # 5435 y no 5434: no choca con `make db-tunnel`
@@ -80,7 +93,7 @@ DOMAIN="${BASE_EMAIL#*@}"
 
 echo "pool principal = $MAIN_POOL   pool ocupantes = $OCC_POOL   region = $REGION"
 echo "tenant = $TENANT_ID   sitio = $SITE_ID"
-echo "roles: ${ROLES[*]}"
+echo "roles: ${ROLES[*]}${PERFIL_SUFIJO:+  (perfil: ${PERFIL_SUFIJO#-})}"
 echo
 
 CREDS="{}"
@@ -88,7 +101,7 @@ for ROLE in "${ROLES[@]}"; do
   # Plus-addressing: mismo buzón real, identidad Cognito distinta. `+occupant`
   # vive en OTRO pool que `+brigadista`, así que no colisionan entre sí ni con
   # los de consola (que no siembran roles móviles).
-  EMAIL="${LOCAL_PART}+${ROLE}@${DOMAIN}"
+  EMAIL="${LOCAL_PART}+${ROLE}${PERFIL_SUFIJO}@${DOMAIN}"
   # Política de ambos pools: ≥12, mayúscula, minúscula y dígito (símbolos no).
   PASS="Takab$(openssl rand -hex 6)Aa1"
 

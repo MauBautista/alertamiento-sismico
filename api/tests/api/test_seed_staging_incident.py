@@ -287,3 +287,144 @@ async def test_la_replica_del_script_no_se_separa_del_endpoint(
 
     await _correr("reset.sql", v)
     assert await _replica_del_script(v) == await _fase(client) == "idle"
+
+
+# ── [T-7.52 · D-34] LA GUARDA: el arnés no escribe donde hay un gabinete ─────
+#
+# Hasta el 2026-09-17 el sitio por defecto del arnés era `site-dev` = **Puebla, el
+# del gabinete REAL `gw-dev-0001`**, y como `reset`/`crisis` cierran TODOS los
+# incidentes abiertos del sitio, el arnés cerraba incidentes de OPERACIÓN. Lo
+# destapó `T-7.51`: tres cerrados sin hora, con su dictamen diciendo «EN CURSO».
+
+
+async def _sitio_para_la_guarda(sufijo: str, *, con_gabinete: bool) -> str:
+    """Un sitio propio por prueba. ⚠️ El TRUNCATE del conftest es POR SESIÓN, así
+    que un gabinete insertado en una prueba sobrevive a la siguiente: compartir
+    sitio hacía que `DEJA_PASAR` abortara por el gabinete de la anterior."""
+    site = f"7e180000-0000-0000-0000-00000000c{sufijo}"
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES "
+                "(:s, :t, :c, 'Sitio de la guarda', "
+                "ST_SetSRID(ST_MakePoint(-98.2, 19.0), 4326)::geography) "
+                "ON CONFLICT (site_id) DO NOTHING"
+            ),
+            {"s": site, "t": au.DB_TENANT_PRIV, "c": f"S-GUARDA-{sufijo}"},
+        )
+        if con_gabinete:
+            await conn.execute(
+                text(
+                    "INSERT INTO gateways "
+                    "(gateway_id, tenant_id, site_id, serial, iot_thing, status) VALUES "
+                    "(:g, :t, :s, :n, :n, 'provisioned') "
+                    "ON CONFLICT (gateway_id) DO NOTHING"
+                ),
+                {
+                    "g": f"7e180000-0000-0000-0000-00000000a{sufijo}",
+                    "t": au.DB_TENANT_PRIV,
+                    "s": site,
+                    "n": f"gw-guarda-{sufijo}",
+                },
+            )
+    return site
+
+
+def _aborta(exc) -> None:
+    """⚠️ La PRIMERA línea del error, no el texto completo.
+
+    Un `ProgrammingError` de psycopg viene **citando el SQL entero**, así que
+    buscar la frase en todo el mensaje casa con el propio fichero y la prueba
+    pasa por fallar ANTES de la guarda, no por la guarda. Pasó el 2026-09-18 con
+    los marcadores de formato de `RAISE`.
+    """
+    assert "ARNÉS ABORTADO" in str(exc.value).splitlines()[0], str(exc.value)[:300]
+
+
+async def test_la_guarda_ABORTA_contra_un_sitio_con_gabinete(base_data, variables) -> None:
+    """Un guardia que sólo se ha visto en verde no ha demostrado que sepa ponerse rojo."""
+    variables = {**variables, "site": await _sitio_para_la_guarda("001", con_gabinete=True)}
+    with pytest.raises(Exception) as exc:
+        await _correr("guarda.sql", variables)
+    _aborta(exc)
+
+
+async def test_la_guarda_DEJA_PASAR_un_sitio_sin_gabinete(base_data, variables) -> None:
+    """La otra mitad: una guarda que no deja pasar nada tampoco sirve."""
+    variables = {**variables, "site": await _sitio_para_la_guarda("002", con_gabinete=False)}
+    await _correr("guarda.sql", variables)  # no lanza
+
+
+async def test_la_guarda_ABORTA_aunque_el_gabinete_lleve_MESES_MUDO(base_data, variables) -> None:
+    """⚠️ Por qué la condición es EXISTENCIA y no «latido reciente».
+
+    La ficha y `D-34` decían «un gateway con latido reciente». Eso deja el agujero
+    justo donde más duele: mientras `gw-dev-0001` está CAÍDO —ha pasado dos veces,
+    la energía del 28-jul y el hilo de reconexión que lo dejó mudo—, Puebla no
+    tiene latido y una guarda con reloj **dejaría pasar al arnés contra el sitio
+    real**. Un gabinete apagado no deja de ser un gabinete.
+    """
+    site = await _sitio_para_la_guarda("003", con_gabinete=True)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        # Ni una sola fila en `device_health`: este gabinete nunca ha reportado.
+        n = (
+            await conn.execute(
+                text(
+                    "SELECT count(*) FROM device_health dh JOIN gateways g USING (gateway_id) "
+                    "WHERE g.site_id = :s"
+                ),
+                {"s": site},
+            )
+        ).scalar_one()
+    assert n == 0, "el gabinete de la prueba tiene latidos: no mide lo que dice medir"
+
+    with pytest.raises(Exception) as exc:
+        await _correr("guarda.sql", {**variables, "site": site})
+    _aborta(exc)
+
+
+def test_la_guarda_NO_depende_de_interpolar_dentro_de_un_bloque() -> None:
+    """⚠️ La trampa que la habría dejado VERDE EN CI E INERTE EN LA NUBE.
+
+    **Medido el 2026-09-18 contra Postgres:** psql NO interpola sus variables
+    dentro de un cuerpo con comillas de dólar —llega el literal `:'site'`—, pero
+    el `_sustituir` de este fichero SÍ las sustituye. Una guarda escrita de la
+    forma obvia pasaría estas pruebas y no protegería nada donde importa: el
+    mismo patrón de espejo que este repositorio ya ha pagado cuatro veces.
+
+    Por eso el valor entra con `set_config` FUERA del bloque y se lee con
+    `current_setting` DENTRO, y por eso esto se comprueba leyendo el fichero.
+    """
+    sql = (SQL_DIR / "guarda.sql").read_text("utf-8")
+    cuerpos = re.findall(r"\$[a-z_]*\$(.*?)\$[a-z_]*\$", sql, re.S)
+    assert cuerpos, "no se encontró ningún bloque con comillas de dólar en guarda.sql"
+    dentro = [v for cuerpo in cuerpos for v in re.findall(r":'([a-z_]+)'", cuerpo)]
+    assert not dentro, (
+        f"`guarda.sql` interpola {sorted(set(dentro))} DENTRO de un bloque: psql no lo hace "
+        "(llega el literal), pero `_sustituir` de este test sí. La guarda pasaría en CI y "
+        "llegaría INERTE a la nube. Mete el valor con `set_config` fuera y léelo con "
+        "`current_setting` dentro"
+    )
+    assert "set_config(" in sql and "current_setting(" in sql, (
+        "`guarda.sql` dejó de usar el par `set_config`/`current_setting`, que es lo único que "
+        "hace que el valor llegue de verdad al cuerpo del bloque"
+    )
+
+
+def test_la_guarda_no_lleva_marcadores_de_formato() -> None:
+    """El mismo fichero lo corre `psql -f` y lo corre **psycopg** desde el test.
+
+    psycopg toma el signo de porcentaje como marcador suyo y revienta con «only
+    's', 'b', 't' are allowed» ANTES de ejecutar nada — y **escanea también los
+    comentarios**, así que ni siquiera se puede explicar el problema usándolo.
+    Medido el 2026-09-18: con el signo dentro, las dos pruebas de aborto pasaban
+    por casar su texto contra el SQL que el error viene citando.
+    """
+    sql = (SQL_DIR / "guarda.sql").read_text("utf-8")
+    assert "%" not in sql, (
+        "`guarda.sql` tiene un signo de porcentaje: psycopg lo toma como marcador suyo y el "
+        "fichero deja de poder correrse desde el arnés de pruebas — con lo que lo que se "
+        "prueba deja de ser lo que se corre"
+    )

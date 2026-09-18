@@ -95,3 +95,34 @@ describe("[T-7.11] la red de demostración lleva cinta", () => {
     expect(esDeDemostracion("R4F74")).toBe(false);
   });
 });
+
+// [T-7.52] EL SITIO DEL ARNÉS de los E2E móviles, que también va a la nube.
+//
+// Es el tercer origen de identificadores que no son inventario real, y el primero
+// que NO casaba con los patrones existentes: `site-e2e-900` se habría pintado como
+// un edificio REAL. Ésa es la dirección cara del error —el propio fichero declara
+// que rotular de demostración un edificio con gente dentro es peor que no rotular
+// nada, y esto es exactamente lo contrario de rotularlo.
+describe("[T-7.52] el sitio del arnés E2E lleva cinta", () => {
+  const E2E = identificadores("e2e_harness.sql");
+
+  it("el seed se lee y trae identificadores (no-vacuidad)", () => {
+    // Sin esto, renombrar el seed dejaría este censo vacío y en verde.
+    expect(E2E.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("TODO lo del seed del arnés sale marcado", () => {
+    expect(E2E.filter((id) => !esDeDemostracion(id))).toEqual([]);
+  });
+
+  it("el código del arnés es de demostración", () => {
+    expect(esDeDemostracion("site-e2e-900")).toBe(true);
+  });
+
+  it("y la estación REAL de Puebla sigue sin cinta", () => {
+    // La mitad que importa: ampliar los patrones no puede empezar a marcar
+    // inventario de verdad.
+    expect(esDeDemostracion("site-dev")).toBe(false);
+    expect(esDeDemostracion("gw-dev-0001")).toBe(false);
+  });
+});

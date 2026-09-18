@@ -66,10 +66,14 @@ def test_el_patron_de_sitio_DEMO_es_el_mismo_que_el_de_la_consola() -> None:
     ).read_text(encoding="utf-8")
     patrones = re.findall(r"/\^([^/]+)\$/", fuente)
     assert patrones, "el bloque de patrones de la consola se movió: esto no mide nada"
-    # El de sitios, traducido de la sintaxis de JS (`\d`) a la de Postgres (`[0-9]`).
+    # Los de sitios, traducidos de la sintaxis de JS (`\d`) a la de Postgres
+    # (`[0-9]`). [T-7.52] Son VARIOS desde que existe el sitio del arnés E2E, y
+    # el servidor los lleva en una sola alternancia porque su literal lo usan a
+    # la vez SQL (`~`) y Python (`re`).
     sitios = [p for p in patrones if p.startswith("site-")]
-    assert len(sitios) == 1, sitios
-    equivalente = "^" + sitios[0].replace(r"\d", "[0-9]") + "$"
+    assert len(sitios) >= 1, sitios
+    partes = [s.replace(r"\d", "[0-9]") for s in sitios]
+    equivalente = "^" + partes[0] + "$" if len(partes) == 1 else "^(" + "|".join(partes) + ")$"
     assert equivalente == PATRON_SITIO_DEMO, (
         f"la consola usa {equivalente!r} y el servidor {PATRON_SITIO_DEMO!r}"
     )

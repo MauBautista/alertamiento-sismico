@@ -12,10 +12,10 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-17 · **34 decisiones** · 28 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-18 · **35 decisiones** · 29 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
-> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17), 6 delegadas (3 el 2026-08-12,
-> 2 el 2026-09-02, 1 el 2026-09-11).
+> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18), 6 delegadas
+> (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
 > tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
@@ -90,6 +90,7 @@
 | [D-32](#d-32) | La IA ve los datos del evento sin PII **y las fotos del brigadista**; consentimiento contractual pendiente | 2026-09-11 | Mauricio |
 | [D-33](#d-33) | El incidente tiene fases: la alerta se apaga **por estado**, el registro se cierra por clasificación, dictamen firmado o TTL de horas; `reproduccion` como clasificación y atributo | 2026-09-11 | delegada |
 | [D-34](#d-34) | El arnés de los E2E móviles se muda a un sitio propio con su ocupante; la demostración conserva Puebla y la guarda no lleva excepción | 2026-09-17 | Mauricio |
+| [D-35](#d-35) | El arnés necesita **DOS** identidades, no una: el táctico resuelve su sitio por el `[0]` de `site_scope`, así que con una sola el brigadista mira Puebla | 2026-09-18 | Mauricio |
 
 ---
 
@@ -1712,3 +1713,41 @@ edificio real**, y el teléfono del ocupante de la demostración las recibe.
 Devolver `SITE_ID` al de Puebla en los dos scripts y borrar el ocupante de pruebas. Lo que **no**
 cambia en ninguna revocación: el arnés no cierra incidentes que no abrió, y no escribe sobre un
 sitio con un gabinete latiendo.
+
+## D-35 · El arnés necesita **DOS** identidades, no una
+
+**Fecha:** 2026-09-18 · **Quién:** Mauricio · **Sale de:** `T-7.52`, al implementar [`D-34`](#d-34)
+
+### El problema
+
+`D-34` presupuestó «un ocupante propio de pruebas». La implementación midió que **no basta**: de los
+cuatro flujos de Maestro que hay que re-correr, **dos son del brigadista**, no del ocupante — el
+`02-tactico-foto-danos` y el `05a` de pase de lista.
+
+Y el brigadista **no resuelve su sitio por el enrolamiento**, como el ocupante, sino por el claim
+`custom:site_scope` de su token. El detalle que lo decide: cuando ese claim trae varios sitios, la
+app se queda con **`site_scope[0]`**, y `/me` los devuelve **ORDENADOS**. Como
+`d1000000-…-000000` (Puebla) ordena antes que `d1000000-…-000900` (el arnés), **Puebla gana
+siempre**. Darle los dos sitios a la identidad de hoy no la arregla: la deja mirando exactamente el
+sitio del que `D-34` la quiere sacar.
+
+### Lo decidido
+
+**Una segunda identidad táctica propia del arnés** (`…+brigadista-e2e@…`), con `custom:site_scope`
+conteniendo **sólo** `site-e2e-900`. Es la misma razón que `D-34` da para el ocupante —«con una sola
+identidad, una de las dos se rompe siempre»—, aplicada al rol que `D-34` no había mirado.
+
+**Lo que NO se hace, y por qué:** resolverlo con una lista de dos sitios en el claim. El `[0]` lo
+decide el orden, no la intención, así que sería una decisión tomada por un `ORDER BY`.
+
+### El precio, declarado
+
+Un usuario más en el pool de consola y un grupo más que asignar en el alta. `D-34` decía «cuesta
+poco y no re-escribe nada acreditado»: sigue siendo cierto de los FLUJOS —sólo cambian variables de
+entorno, no pasos—, pero el alta de usuarios de prueba pasa de uno a dos.
+
+### Cómo se revocaría
+
+Borrar la identidad `brigadista-e2e` y devolver los flujos 02 y 05a al táctico de Puebla. Lo que
+**no** cambia en ninguna revocación: dos de los cuatro flujos son del brigadista, y el `[0]` de
+`site_scope` seguirá decidiéndose por orden.

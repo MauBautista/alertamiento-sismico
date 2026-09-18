@@ -20,21 +20,27 @@
 // —rotular de demo un edificio con gente dentro— es peor que no rotular nada.
 
 /**
- * Exactamente lo que generan los DOS seeds de flota simulada, y nada más:
+ * Exactamente lo que generan los TRES seeds que no son inventario real, y nada más:
  *
- *   `db/seeds/sim_fleet.sql`  · 20 sitios del desarrollo local, JAMÁS en la nube
- *   `db/seeds/demo_red.sql`   · [T-7.11] los 3 de la red de demostración, que SÍ
- *                               van a la nube y por eso son los que un cliente ve
+ *   `db/seeds/sim_fleet.sql`    · 20 sitios del desarrollo local, JAMÁS en la nube
+ *   `db/seeds/demo_red.sql`     · [T-7.11] los 3 de la red de demostración, que SÍ
+ *                                 van a la nube y por eso son los que un cliente ve
+ *   `db/seeds/e2e_harness.sql`  · [T-7.52] el sitio del arnés de los E2E móviles
  *
- * Los patrones ya los cubrían sin tocarlos —`site-sim-101` casa igual que
- * `site-sim-001`—, y eso es la ventaja de derivar del prefijo: el segundo seed no
- * obligó a cambiar la regla. Lo que sí obliga es a decirlo aquí, porque «y nada
- * más» dejó de ser cierto en cuanto hubo un segundo origen.
+ * Los dos primeros comparten prefijo y por eso el segundo no obligó a cambiar la
+ * regla —`site-sim-101` casa igual que `site-sim-001`—, que es la ventaja de
+ * derivar del prefijo.
+ *
+ * ⚠️ El TERCERO sí obligó, y es la dirección de error que importa: `site-e2e-900`
+ * no casaba con ningún patrón, así que la consola lo habría pintado como un
+ * **edificio REAL**. El comentario de arriba dice que equivocarse en el otro
+ * sentido es peor; éste es el peor de los dos y estuvo a punto de entrar.
  */
 const PATRONES = [
   /^site-sim-\d+$/, // sitios     · site-sim-001 … 020 (local) y 101 … 103 (demo)
   /^gw-sim-\d+$/, //   gabinetes · gw-sim-0001 … 0004 y 0101 … 0103
   /^SIM\d+$/, //       sensores  · SIM001 … SIM020 y SIM101 … SIM103
+  /^site-e2e-\d+$/, // arnés E2E · site-e2e-900 (sin gabinete: ver `guarda.sql`)
 ];
 
 /**
