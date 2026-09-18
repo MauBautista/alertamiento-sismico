@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **431** · `[x]` **370** · `[~]` **11** · `[ ]` **50**
+**Conteo de tareas:** total **432** · `[x]` **373** · `[~]` **12** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -14820,7 +14820,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > de JPEG crudo en el payload contra los 7.5 KB de hoy— la habría dejado en verde. Ahora la receta
 > expone `payload_de_la_huella()` y el test la llama.
 
-### [ ] T-7.44 · **Cuatro topes de página calibrados a ojo contra A4, ciegos desde la migración a Carta** — `SOFTWARE`
+### [x] T-7.44 · **Cuatro topes de página calibrados a ojo contra A4, ciegos desde la migración a Carta** — `SOFTWARE` · **CERRADA 2026-09-18**
 - **Componente:** api · **Depende de:** T-7.21 · **Prioridad:** F4 · media
 - **Objetivo:** que ninguna figura del dictamen decida si cabe con un número escrito a mano.
 - **El fallo.** `dictamen/pdf.py` decide el salto de página de sus figuras con cuatro
@@ -14832,15 +14832,63 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   tope de `PAGE_H - PIE_MM`. `T-7.22` la estrenó en el mapa de la red y en las fotografías; las
   cuatro figuras antiguas siguen con su número.
 - **Criterios de aceptación:**
-  - [ ] Las cuatro pasan a `reserva()`, con el alto REAL de cada figura.
-  - [ ] Una prueba que rinda el documento con las cuatro figuras y compruebe, con el barrido de
-    geometría de `T-7.22` —que ya sabe leer imágenes y el eje vertical—, que ninguna pisa el pie.
-  - [ ] Barrido derivado que prohíba un tope absoluto nuevo: `get_y() > <número>` en
-    `dictamen/pdf.py` se convierte en un defecto que CI caza.
+  - [x] Pasan a `reserva()` con el alto REAL de cada figura — y son **CINCO**, no cuatro (ver abajo).
+  - [x] Una prueba que rinda el documento con las cinco figuras y compruebe que ninguna pisa el pie.
+        ⚠️ Con una precondición que la ficha daba por hecha y era falsa: **el barrido de `T-7.22` no
+        sabía leer el eje vertical de un rectángulo**, medía su cima.
+  - [x] Barrido derivado que prohíbe un tope absoluto nuevo, por AST y sobre **todo
+        `api/src/takab_api`** (no sólo `dictamen/pdf.py`: el defecto es de forma, no de fichero), con
+        su prueba de no-vacuidad.
 - **Tests de censo que toca:** `test_geometria` · **Token nuevo:** no · **Cambia algo que un test
-  defiende hoy:** no.
+  defiende hoy:** sí (`test_la_guarda_del_PIE_caza_una_figura_que_lo_invade` era una ceremonia).
 
-### [ ] T-7.45 · **Descargar evidencia gasta el techo del usuario pero NO el del edificio** — `SOFTWARE`
+> **Cómo se cerró — y ⚠️ la GUARDA estaba rota, que es peor que los topes.**
+>
+> **`cajas_dibujadas` medía la CIMA de un rectángulo, no su fondo.** fpdf2 emite el rect como
+> `x (H-y) w -h re` —altura **negativa**, `y` en el borde superior— mientras que una imagen va como
+> `w 0 0 h x y cm /In Do`, cuya traslación **sí** es la esquina inferior izquierda. El helper aplicaba
+> la aritmética de la imagen a las dos, y el campo se llamaba `y_inferior`. Por eso `T-7.22` no lo
+> vio: lo estrenó con fotos, que era el único caso donde la fórmula acertaba.
+>
+> **Medido:** una caja de 78 mm con la cima en 250,0 mm y el fondo en 328,0 —o sea **68,6 mm de tinta
+> por debajo del filete del pie, y fuera del papel**— la guarda la daba por buena.
+>
+> **Y el test que decía cazar una invasión era una ceremonia.** Su caja empezaba en
+> `PAGE_H - PIE_MM + 4`, con la cima ya 4 mm **por debajo** del pliegue: pasaba con la fórmula rota
+> exactamente igual que con la buena. La única forma de caja que las distingue —y la que sale de
+> verdad de olvidar `reserva()`— es la que empieza **arriba** del pliegue y termina abajo.
+>
+> **Son CINCO figuras, no cuatro.** Los topes eran cuatro; las figuras, cinco. El croquis del evento
+> —`_SKETCH_H = 78.0`, **la caja más alta del documento**— no tenía guarda de ninguna clase: ni
+> `reserva()`, ni siquiera uno de los cuatro números. El propio docstring de `reserva()` lo decía en
+> pasado («y el croquis … no tenía ni eso») siendo presente.
+>
+> **Y tres de las cuatro figuras JAMÁS habían pasado por el barrido del pie.**
+> `test_NINGUNA_caja_pisa_el_PIE` renderizaba el `model()` compartido, que sólo trae `series`: el
+> espectro, el espectrograma y la duración se quedaban en sus valores por defecto y sus funciones no
+> se llamaban nunca. Hay ahora un modelo **local** con las cinco (no se amplía el compartido: eso
+> pondría `test_avisos_impresos` en rojo, que fija `NO_SPECTRUM` y `ONDA_NO_LEIDA` sobre él).
+>
+> **⚠️ El documento de hoy no desborda, y por eso hacía falta otra prueba.** El croquis tiene ~43 mm
+> de holgura, así que **quitarle su `reserva()` deja el barrido del documento en VERDE** — medido. El
+> trabajo de esta ficha no habría estado protegido por nada. `test_cada_figura_respeta_el_PIE_ENTRE_
+> DONDE_ENTRE` hace entrar a cada figura, una a una, en cada tramo bajo de la página: ahí la mutación
+> sí sale roja (el croquis baja hasta 279,0 mm).
+>
+> **`_duracion` es el distinto de los cinco, y lleva su razón escrita.** No dibuja nada —es `cell` +
+> `multi_cell`, las dos texto, y el texto ya lo parte `set_auto_page_break`—, así que su tope no era
+> una guarda de colisión con el pie sino **de rótulo huérfano**. Y su alto **no es constante**: 16,2 mm
+> con dato contra 9,4 sin él. Se **mide** con `dry_run` en vez de teclearse, y se ajusta solo cuando el
+> modo degradado cambia la tipografía. Su prueba tampoco puede ser geométrica: mira que el rótulo y el
+> **final** del párrafo caigan en la misma página (mirar el principio no basta — con la reserva corta,
+> la primera línea todavía cabe junto al rótulo y la mutación se queda verde).
+>
+> **Los saltos se mueven en las DOS direcciones**, y conviene saberlo: la traza corta ahora en 238,4
+> (antes 240, **más** agresivo); el espectro en 221,4 (antes 220, menos); el espectrograma en 215,4
+> (antes 200, **15,4 mm menos** agresivo). La paginación del dictamen cambia, y es el precio de que
+> los cortes signifiquen algo.
+
+### [x] T-7.45 · **Descargar evidencia gasta el techo del usuario pero NO el del edificio** — `SOFTWARE` · **CERRADA 2026-09-18**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que los dos techos del freno de exportación cuenten lo mismo.
 - **El fallo.** El freno cuenta filas de `audit_log` con `verb='export_pdf'` y lo hace por dos
@@ -14853,12 +14901,56 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   se audita como `export_miniseed`. Cuando alguien abra la ficha de la cadena de custodia de
   fotografías, ese verbo es el que decidirá qué se cuenta contra qué techo.
 - **Criterios de aceptación:**
-  - [ ] Decidir si una descarga debe gastar el techo del edificio. Si sí, `exports.py` escribe el
-    `site_id` en `meta`; si no, se DECLARA por qué los dos techos cuentan cosas distintas.
-  - [ ] El verbo de auditoría dice qué se descargó. Una foto no es un miniSEED.
-  - [ ] Prueba que fije la simetría elegida, en los dos sentidos.
-- **Tests de censo que toca:** — · **Token nuevo:** no · **Cambia algo que un test defiende
-  hoy:** sí (`tests/api/test_reports.py`, los casos del freno).
+  - [x] Decidido, y por una **tercera vía** que la ficha no contemplaba: no se le añade `meta` a la
+    descarga — se le cambia el VERBO. Así los dos techos cuentan la misma población (las
+    generaciones) **por construcción**, en vez de por mantener dos escritores de `meta`
+    sincronizados para siempre, que es justo como nació este defecto.
+  - [x] El verbo de auditoría dice qué se descargó, DERIVADO del `kind` (`download_<kind>`).
+  - [x] Prueba que fije la simetría elegida, en los dos sentidos, más el censo por AST que impide
+    que el verbo del freno vuelva a tener dos escritores.
+- **Tests de censo que toca:** `test_freno_de_exportacion_cuenta_lo_mismo` (NUEVO) · **Token
+  nuevo:** no · **Cambia algo que un test defiende hoy:** sí (`tests/api/test_exports.py` y
+  `tests/api/test_reports.py`).
+
+> **Cómo se cerró — y ⚠️ el modo de fallo estaba INVERTIDO en la ficha.**
+>
+> **El daño no era un techo laxo: era un 429 prematuro.** La ficha decía que «la mitad que falta es
+> justo la que importa en una demostración, donde un solo operador genera y descarga». Al revés: con
+> UN solo operador el techo que ata es el de **usuario** (6/min), no el del edificio (20/min) — un
+> operador solo nunca llega a 20. Así que el techo de usuario no era la mitad que faltaba, era la que
+> **sobrecontaba**: seis descargas baratas en Triage devolvían **429 a la primera generación de
+> dictamen**. Un tope de gasto convertido en **negación de evidencia** sobre una superficie de vida,
+> que es exactamente lo que `T-5.18` se prohíbe a sí misma por escrito.
+>
+> **Los rótulos malos eran TRES, no uno.** El ternario tenía **dos ramas para cuatro `kind`**, así
+> que `photo` y `log` caían los dos en `export_miniseed` — la cadena de custodia de una fotografía de
+> daños quedaba rotulada como forma de onda. Y la rama de `report_pdf` cubría también el **reporte de
+> simulacro**, que al generarse se audita con otro verbo (`export_drill_report`).
+>
+> **Por qué NO se le escribió el `site_id` al `meta`** (la opción que la ficha proponía): no se puede
+> escribir limpiamente. `evidence_objects.incident_id` es NULLABLE y un `report_pdf` puede colgar de
+> un `drill_id`, y un simulacro abarca VARIOS sitios. Precedente del propio repo para la vía elegida:
+> `routers/cctv.py` ya audita su descarga como `cctv_download`, no como un `export_*`.
+>
+> **⚠️ Y el censo nació CIEGO a su propio defecto, por cuarta vez en este repo.** La primera versión
+> sólo miraba `verb=` cuando era `ast.Constant` — pero el escritor de más no ponía la cadena en la
+> llamada: la asignaba a una local con un ternario y pasaba `verb=verb`, o sea un `ast.Name`. Medido:
+> con el defecto repuesto, **3 passed**. Ahora `_constantes_posibles()` resuelve un nivel de variable
+> y las dos ramas del ternario, y la mutación nombra al culpable.
+>
+> **La misma trampa, en la prueba de simetría.** La primera versión descargaba **miniSEED**, y con el
+> ternario eso escribía `export_miniseed`, que el freno **no cuenta**: pasaba con el defecto repuesto.
+> Sólo la rama de `report_pdf` gastaba el techo. La prueba descarga ahora `report_pdf` y reproduce el
+> `429` exacto.
+>
+> **Sin migración ni backfill, y conviene que quede escrito:** la ventana del freno son 60 s y
+> `audit_log` no se poda jamás (regla de oro 11), así que las filas históricas de `export_pdf`
+> escritas por descargas dejan de influir **sesenta segundos** después del despliegue. Y el encadenado
+> de `privacy_audit_digest` mete el verbo con prefijo de longitud, así que cambiar el verbo de las
+> filas FUTURAS no invalida ninguna huella ya emitida.
+>
+> **Lo que este arreglo deja abierto, fichado en `T-7.54`:** la descarga se queda **sin freno propio**.
+> Hasta hoy sólo estaba frenada por robar el presupuesto de otro, que no es un diseño sino un efecto.
 
 ### [ ] T-7.23 · **Panel SISMÓGRAFO en el gabinete: trazas, espectrograma y helicorder** — `SOFTWARE`
 - **Componente:** edge · docs · **Depende de:** — · **Prioridad:** F5 · media
@@ -15911,7 +16003,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > — o sea el hex de `new_event_id()`. La forma irreal se volvió roja en cuanto el grant exigió la
 > de verdad.
 
-### [ ] T-7.53 · **La nube no puede saber que un gabinete retiene evidencia** — `SOFTWARE`
+### [x] T-7.53 · **La nube no puede saber que un gabinete retiene evidencia** — `SOFTWARE` · **CERRADA 2026-09-18**
 - **Componente:** edge · api · db · web · **Depende de:** T-7.50 · **Prioridad:** F4 · media
 - **Objetivo:** que un gabinete con evidencia atascada se vea desde el SOC, no sólo desde su LAN.
 - **El fallo** (sale de `T-7.50`). La edad del pendiente más viejo sólo la compara el **panel LAN**
@@ -15926,30 +16018,82 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - ⚠️ **El campo solo no basta**: sin columna destino en `device_health` el handler lo tira, que es
     exactamente donde lleva `disk_used_pct` desde `T-1.53`. Hay que hacerlo entero.
 - **Criterios de aceptación:**
-  - [ ] **Viaja la EDAD en segundos del pendiente más viejo, no un booleano.** Un booleano congelaría
+  - [x] **Viaja la EDAD en segundos del pendiente más viejo, no un booleano.** Un booleano congelaría
         en el contrato el umbral del gabinete (`_EVIDENCE_STUCK_AFTER_S` = 3 600 s) y dejaría a la
         consola sin poder decir «49 minutos». Y sobre todo: el predicado que importa —«retiene
         evidencia **y su incidente ya está en revisión**»— **sólo lo puede evaluar la nube**, porque
         el gabinete no conoce el estado del incidente.
-  - [ ] **El umbral vive en la nube y no es la hora absoluta.** El caso que abrió esta ficha —49
+  - [x] **El umbral vive en la nube y no es la hora absoluta.** El caso que abrió esta ficha —49
         minutos— habría pasado **por debajo** del tope de 3 600 s sin que sonara nada. Lo que se
         vigila es «pendiente **+** incidente en `in_review`/`closed`».
-  - [ ] `HealthSnapshot` lleva ese campo con `SCHEMA_VERSION` y su huella en
+  - [x] `HealthSnapshot` lleva ese campo con `SCHEMA_VERSION` y su huella en
         `edge/takab_edge/schemas.py`.
-  - [ ] ⚠️ Su valor por defecto es `None` = «no pude preguntar», **nunca `0`**: un gabinete con el
+  - [x] ⚠️ Su valor por defecto es `None` = «no pude preguntar», **nunca `0`**: un gabinete con el
         backfill caído no puede declarar que no retiene evidencia. Un fallback no puede ser `ok`.
-  - [ ] Columna en `device_health` y el dato visible en la flota de la consola.
-  - [ ] **Sí lleva alarma, y es UNA**, sobre la condición derivada en la nube (cualquier gabinete por
+  - [x] Columna en `device_health` y el dato visible en la flota de la consola.
+  - [x] **Sí lleva alarma, y es UNA**, sobre la condición derivada en la nube (cualquier gabinete por
         encima del umbral), no una por gabinete. Clasificada en `ALARM_CATALOG`, con
         `treat_missing_data` elegido por quién publica la métrica: la publica el gabinete ⇒ la
         ausencia es `breaching`, el mismo remedio que arregló el falso OK de la alarma de presencia.
-  - [ ] **En la MISMA migración entra `disk_used_pct`.** Está en el contrato desde `T-1.53` y
+  - [x] **En la MISMA migración entra `disk_used_pct`.** Está en el contrato desde `T-1.53` y
         **no tiene columna en `db/schema.sql` ni en ninguna migración**: la nube lleva meses
         tirándolo en silencio. Misma clase de defecto, mismo fichero, una sola migración.
-  - [ ] **Censo que lo impida volver:** todo campo de `HealthSnapshot` tiene columna en
+  - [x] **Censo que lo impida volver:** todo campo de `HealthSnapshot` tiene columna en
         `device_health`, o está declarado como no persistido **con su razón**.
 - **Tests de censo que toca:** el del schema compartido · **Token nuevo:** no · **Cambia algo que un
   test defiende hoy:** sí (los del contrato de `HealthSnapshot`).
+
+> **Cómo se cerró — y ⚠️ la ficha se equivocaba en OCHO puntos, tres de ellos de diseño.**
+>
+> **1· El campo no podía ser UNO: son TRES.** Con una sola edad anulable, `None` tendría que
+> significar «no retengo nada» y «no pude preguntar» a la vez — y el estado **sano** produce `None`:
+> medido en `gw-dev-0001` el 2026-09-18, `pending = 0` y `oldest_pending_age_s = null`. O sea que el
+> propio diseño de la ficha cometía el defecto que su criterio 4 prohíbe. Ahora `evidence_pending`
+> distingue `None` (no pude preguntar) de `0` (pregunté y no retengo nada).
+>
+> **2· Y hacía falta el `event_id`, que la ficha no pedía.** Su criterio 2 exige evaluar «retiene
+> evidencia **y** su incidente ya está en revisión», y **eso no se puede con una edad**: la nube no
+> sabría de qué incidente es el pendiente. El vínculo existe y es exacto —ese `event_id` es el que la
+> nube convierte en `incidents.event_uuid`— pero sólo si VIAJA.
+>
+> **3· ⚠️ `treat_missing_data` es `missing`, no `breaching`,** y el argumento de la ficha era una
+> premisa FALSA: «la publica el gabinete». **No la publica el gabinete.** La DERIVA la nube cruzando
+> `device_health` con `incidents`, porque el predicado exige saber el estado del incidente, que el
+> gabinete no conoce. Quien publica es el worker `notify`, igual que `GhostGatewaysAlive` y
+> `MaxClockDriftMs`, y las dos usan `missing` + `insufficient_data_actions` por la misma razón: su
+> silencio significa «el que mide está callado», no «hay evidencia sin subir». Con `breaching`
+> llegaría un correo afirmándolo cada vez que el worker se reinicia.
+>
+> **4· `disk_used_pct` no era el único huérfano: `audio` también.** Y el predicado del censo tal como
+> lo escribía la ficha («columna en `device_health`») habría marcado como defecto dos campos que **sí**
+> se persisten, en `gateways`. El censo real declara los tres no persistidos **con su razón**.
+>
+> **5· `HealthSnapshot` no vive en `schemas.py`** sino en `contracts.py`; quien leyera el criterio 3 al
+> pie de la letra abría el fichero equivocado.
+>
+> **6· `device_health` NO tiene `FORCE ROW LEVEL SECURITY`,** y es deliberado: los jobs de retención de
+> TimescaleDB corren como dueño y con FORCE verían cero filas. El bloque `NO FORCE` de la `0063`/`0066`
+> sobra aquí, y ponerlo habría puesto en rojo `test_rls_no_force_declarada`, que compara la lista por
+> IGUALDAD.
+>
+> **7· ⚠️ EL GLOSARIO RESERVA LA PALABRA DEL TÍTULO.** `RETENID` es raíz del eje `vejez`, cuyo
+> significado canónico es **«el dato existe pero es viejo: se está mirando una foto congelada»**. Eso
+> es otro hecho. La consola dice **«sin subir»**, y hay una prueba que lo fija — usar la palabra de la
+> ficha habría dicho en pantalla una cosa distinta de la que pasa.
+>
+> **8· El umbral no es una hora.** El caso que abrió la ficha —49 minutos— pasaba **por debajo** del
+> tope del gabinete (3 600 s) sin que sonara nada. Lo que se vigila es el predicado, con una gracia de
+> 300 s que deja pasar la carrera legítima que `T-7.50` midió (al reconectar, la evidencia adelanta a
+> su evento por el jitter del spool).
+>
+> **Lo que además se arregló de camino:** `disk_used_pct` llevaba **desde `T-1.53`** viajando en cada
+> latido y el handler lo tiraba por no tener columna. La nube no había visto nunca el disco de ningún
+> gabinete, y nada avisaba — porque un campo del contrato sin destino no falla, desaparece. Entra en la
+> misma migración, y el censo nuevo impide que vuelva a pasar.
+>
+> **El vector de oro de la DLQ se regeneró A CONCIENCIA**, como su propio test exige, declarando en el
+> fichero que las tres claves nuevas **no venían de la cola**: son el default aditivo del contrato
+> 1.17.0. Sin esa nota, el documento afirmaría una procedencia falsa, que es lo único que le da valor.
 
 ### [x] T-7.51 · **Hay incidentes CERRADOS sin hora de cierre, y su dictamen dice «EN CURSO»** — `SOFTWARE` · **CERRADA 2026-09-17**
 - **Componente:** api · db · **Depende de:** — · **Prioridad:** F4 · media
@@ -16018,7 +16162,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > recorre `api/src/takab_api/**/*.py`, así que un `UPDATE` desde `infra/scripts/` pasaba ese censo
 > **porque no mira**, no porque no infrinja. El nuevo barre los `.sql` del repo entero.
 
-### [ ] T-7.52 · **El arnés de los E2E móviles comparte sitio con el gabinete REAL, y le cierra sus incidentes** — `SOFTWARE` + `DECISIÓN`
+### [~] T-7.52 · **El arnés de los E2E móviles comparte sitio con el gabinete REAL, y le cierra sus incidentes** — `SOFTWARE` + `DECISIÓN` · **SOFTWARE COMPLETO 2026-09-18 · falta el Pixel**
 - **Componente:** infra · **Depende de:** T-7.51 · **Prioridad:** F4 · media
 - **Objetivo:** que probar la app no toque incidentes de operación.
 - **El fallo** (sale de `T-7.51`). `infra/scripts/seed_staging_incident.sh` tiene
@@ -16034,15 +16178,85 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Decisión tomada:** [`D-34`](DECISIONES-MAURICIO.md#d-34) — sitio propio para el arnés
   (`site-e2e-900`) con su propio ocupante; el de la demostración se queda en Puebla · `PB-A`.
 - **Criterios de aceptación:**
-  - [ ] `seed_staging_incident.sh` y los `.sql` de `staging-incident/` apuntan a `site-e2e-900`.
-  - [ ] `seed_mobile_users.sh` siembra el ocupante de pruebas en ese sitio y su zona; el ocupante de
-        la demostración no se mueve.
-  - [ ] **Guarda sin excepción:** el arnés aborta si el `site_id` destino tiene un gateway con latido
-        reciente. Con su prueba, y sin bandera que la salte.
-  - [ ] Los cuatro flujos de Maestro re-corridos en el Pixel con el `.env` nuevo (cambio de
-        variables, no de flujos).
-- **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
-  defiende hoy:** sí (`test_seed_staging_incident.py`).
+  - [x] El arnés apunta a `site-e2e-900`. ⚠️ **Corregido respecto al enunciado:** los seis `.sql`
+        **no llevan sitio dentro** —todos toman `:'site'` como variable de psql—, así que meterles
+        `site-e2e-900` habría roto los dos consumidores que pasan el suyo. Lo que cambia es el
+        **DEFAULT del script**, que es donde estaba el defecto.
+  - [x] `seed_mobile_users.sh` siembra las identidades del arnés en ese sitio y su zona; las de la
+        demostración no se mueven. Y son **DOS**, no una: ver [`D-35`](DECISIONES-MAURICIO.md#d-35).
+  - [x] **Guarda sin excepción**, con su prueba y sin bandera. ⚠️ **Y sin RELOJ**, que es más fuerte
+        que lo que pedía el criterio: aborta por EXISTENCIA de gabinete, no por latido reciente.
+  - [ ] **BLOQUEADO — falta el Pixel.** Los cuatro flujos re-corridos en el `41270DLJG000WB` con el
+        `.env.e2e`. Medido el 2026-09-18: `adb devices` no lista ningún dispositivo. Además exige
+        ventana AWS (sembrar el sitio y las identidades en la nube), que **una persona teclee un
+        TOTP** de seis dígitos en el login del táctico, una **foto con la cámara real** y que un
+        inspector **firme un dictamen en la consola** durante la corrida.
+- **Tests de censo que toca:** `datosDeDemostracion` (el sitio del arnés necesita cinta) ·
+  **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí
+  (`test_seed_staging_incident.py`).
+
+> **Cómo se cerró el software — y ⚠️ la guarda obvia estaba mal de dos formas distintas.**
+>
+> **1· «Latido reciente» deja el agujero donde más duele.** Mientras `gw-dev-0001` está CAÍDO —ha
+> pasado dos veces: la energía del 28-jul y el hilo de reconexión que lo dejó mudo— Puebla no tiene
+> latido, y una guarda con reloj **habría dejado pasar al arnés contra el sitio real** justo cuando
+> nadie está mirando. Además obligaba a un segundo umbral de «vivo» fuera de `sin_enlace_min`. La
+> condición es **existencia**: si el sitio tiene cualquier fila en `gateways`, no es sitio de arnés.
+> Más fuerte que el criterio, y no se puede desincronizar de nada.
+>
+> **2· ⚠️ Y escrita de la forma obvia habría salido VERDE EN CI E INERTE EN LA NUBE.** **Medido el
+> 2026-09-18 contra Postgres:** psql **no** interpola sus variables dentro de un cuerpo `$$ … $$`
+> —llega el literal `:'site'`—, pero el `_sustituir` de `test_seed_staging_incident.py` **sí** las
+> sustituye. Una guarda con `:'site'` dentro del bloque pasa las pruebas y no protege nada donde
+> importa: el quinto espejo que este repositorio paga. El valor entra con `set_config` FUERA y se lee
+> con `current_setting` DENTRO, y hay una prueba que lee el fichero y lo exige.
+>
+> **3· El sitio nuevo se habría pintado como un EDIFICIO REAL.** La cinta de «no es inventario» se
+> deriva del prefijo del código con patrones anclados, y `site-e2e-900` no casaba con ninguno. El
+> propio fichero declara que rotular de demostración un edificio con gente dentro es peor que no
+> rotular nada; esto era el error contrario, que es el caro. Añadido `/^site-e2e-\d+$/` con su censo.
+>
+> **4· El RUNBOOK de la demostración mandaba correr el arnés contra Puebla en DOS sitios**, uno
+> dentro de «Limpieza — parte del guion». Con la guarda, esas dos líneas abortan. Se quitaron: la
+> primera ya estaba muerta desde `T-7.30` (lo dice el propio runbook más abajo) y la segunda tiene
+> sustituto correcto escrito dos líneas más abajo —clasificar como `prueba` en la consola—, que sí
+> deja `closed_at`, acción y verbo.
+>
+> **5· Hacen falta DOS identidades, no una** ([`D-35`](DECISIONES-MAURICIO.md#d-35)). `D-34`
+> presupuestó «un ocupante»; dos de los cuatro flujos son del **brigadista**, que resuelve su sitio
+> por `custom:site_scope` — y la app toma el **`[0]`** de una lista que `/me` devuelve **ordenada**,
+> así que Puebla (`…-000000`) le gana siempre al arnés (`…-000900`). Darle los dos sitios no lo
+> arregla: lo deja mirando el sitio del que se le quiere sacar.
+
+### [ ] T-7.54 · **Descargar evidencia no tiene freno propio** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-7.45 · **Prioridad:** F4 · baja
+- **Objetivo:** que descargar evidencia tenga un tope pensado para lo que cuesta descargar.
+- **De dónde sale.** `T-7.45` desacopló la descarga del freno de exportación, porque gastaba el
+  presupuesto de GENERAR —renderizar un PDF, subirlo a S3 y pagar una llamada de IA— sin hacer
+  ninguna de las tres, y devolvía 429 a la primera generación de dictamen. Al desacoplarla, queda
+  sin tope: hasta ahora sólo estaba frenada **por robar el presupuesto de otro**, que no es un
+  diseño sino un efecto colateral.
+- **Por qué no se hizo en `T-7.45`.** Habría sido inventar números sin medir. El freno de generación
+  se calibra contra el coste del render y del tope mensual de IA; el de descarga se calibra contra
+  el **egreso de S3** y el TTL del presignado, que son otra magnitud y hoy no están medidos.
+- **Lo que ya se sabe y no hay que re-averiguar:**
+  - El presignado se firma **en proceso, sin red** (`routers/_s3.py`), así que el coste de emitirlo
+    es despreciable: lo que cuesta dinero es el GET que el cliente hace después, y ése **no pasa por
+    la API**. Un freno aquí acota cuántas URLs se emiten, no cuántos bytes salen.
+  - `audit_log` ya tiene una fila por descarga con verbo propio (`download_<kind>`) desde `T-7.45`,
+    así que el contador no necesita tabla nueva. La consulta tiene que anclarse en `ts > :since`
+    (único índice servible; la RLS de lectura es un `OR` que impide apoyarse en `tenant_id`).
+- **Criterios de aceptación:**
+  - [ ] Medir primero: cuánto egreso de S3 genera una descarga típica por `kind`, y cuántas
+    descargas hace de verdad una sesión de Triage. El número se DECLARA con su medición, no se
+    adivina.
+  - [ ] Un tope propio, y **su razón escrita**: qué protege exactamente y por qué ese número.
+  - [ ] ⚠️ El 429 **no puede caer sobre la evidencia de un incidente en curso**. Es la misma
+    doctrina que `T-5.18` se aplicó a sí misma y que `T-7.45` tuvo que reparar: un tope de gasto que
+    niega evidencia en una emergencia es peor que no tener tope.
+  - [ ] Prueba en los dos sentidos: que el tope corta, y que NO corta lo que no debe.
+- **Tests de censo que toca:** `test_freno_de_exportacion_cuenta_lo_mismo` (el verbo del freno sigue
+  con un solo escritor) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
 ## RUTA CRÍTICA
 
