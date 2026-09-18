@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **432** · `[x]` **373** · `[~]` **12** · `[ ]` **47**
+**Conteo de tareas:** total **434** · `[x]` **373** · `[~]` **12** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16190,11 +16190,15 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         test —que es donde vivía la trampa del bloque `$$`—: contra `site-dev` (Puebla) devuelve
         `rc=3` con «ARNÉS ABORTADO … tiene 4 gabinete(s)», y contra `site-e2e-900` devuelve `rc=0`.
         El arnés corrió después contra el sitio propio y abrió su incidente allí.
-  - [ ] **BLOQUEADO — falta el Pixel.** Los cuatro flujos re-corridos en el `41270DLJG000WB` con el
-        `.env.e2e`. Medido el 2026-09-18: `adb devices` no lista ningún dispositivo. Además exige
-        ventana AWS (sembrar el sitio y las identidades en la nube), que **una persona teclee un
-        TOTP** de seis dígitos en el login del táctico, una **foto con la cámara real** y que un
-        inspector **firme un dictamen en la consola** durante la corrida.
+  - [~] **TRES DE CUATRO acreditados en el Pixel real el 2026-09-18** con `.env.e2e`, contra
+        `site-e2e-900`: `01a` (crisis), `01b` (check-in→sync), `02` (foto forense→daños, con reporte
+        y evidencia `kind=photo` verificados en la nube) y la cadena `05a/b/c` completa
+        (`offline-first acreditado de punta a punta`). **El `03` NO pasa, y no por esta ficha**: lo
+        rompió `D-33`, que cierra el incidente 3 s después de firmar el dictamen habitable — fichado
+        en `T-7.55`. ⚠️ Y hubo que resolver a mano dos cosas que no estaban escritas: el teléfono
+        tenía un *development build* sin bundle (hubo que compilar el APK de release) y la cookie de
+        la Hosted UI sobrevive al `clearState`, así que el táctico entraba como el ocupante anterior
+        (`T-7.56`).
 - **Tests de censo que toca:** `datosDeDemostracion` (el sitio del arnés necesita cinta) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí
   (`test_seed_staging_incident.py`).
@@ -16261,6 +16265,60 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - [ ] Prueba en los dos sentidos: que el tope corta, y que NO corta lo que no debe.
 - **Tests de censo que toca:** `test_freno_de_exportacion_cuenta_lo_mismo` (el verbo del freno sigue
   con un solo escritor) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.55 · **`D-33` rompió el E2E del reingreso, y nadie lo vio en una semana** — `SOFTWARE`
+- **Componente:** mobile · api · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que el flujo que acredita el reingreso vuelva a poder acreditarlo.
+- **El fallo, MEDIDO el 2026-09-18 contra la nube dev.** `mobile/.maestro/03-dictamen-liberacion.yaml`
+  afirma `assertVisible: id: reentry-banner`, y esa franja existe mientras el incidente está abierto
+  con un dictamen habitable. Desde `D-33` (2026-09-11) el motor de incidentes **cierra el incidente
+  por dictamen firmado** (`incident/lifecycle.py`, razón `dictamen_signed`). Medido:
+
+      18:11:28  se firma `inhabit_monitor` (habitable)
+      18:11:31  el incidente queda `closed`  ← TRES SEGUNDOS después
+
+  Con el incidente cerrado la app no pinta nada: el flujo entra, se enrola y no encuentra la franja.
+- **⚠️ Lo que este defecto NO es.** El cierre está BIEN: deja `closed_at`, `cierre_sin_hora=false` y
+  acción `close` —o sea `T-7.51` funcionando— y la política la decidió `D-33` a propósito. Lo que se
+  rompió es el **documento ejecutable** que afirmaba otra cosa. Es la misma clase de defecto que
+  `make demo-fase1` fuera de `make test`: nadie lo notó porque **los flujos no se habían vuelto a
+  correr desde el 2026-08-09**, y un E2E que no se corre se pudre en silencio.
+- **Lo que ya se descartó**, para que nadie lo repita: no lo causa el arnés. `reentry.sql` no toca
+  `state` ni `closed_at` (verificado); quien cierra es el motor.
+- **Criterios de aceptación:**
+  - [ ] Decidir qué debe afirmar el flujo: o la franja dentro de la ventana que `D-33` deja, o el
+        CERTIFICADO de reingreso en el historial del incidente ya cerrado — que es lo que un ocupante
+        real consultaría al volver al edificio. La decisión se DECLARA, no se adivina.
+  - [ ] El flujo vuelve a pasar en el Pixel real, con su precondición escrita en la cabecera como
+        hacen los demás.
+  - [ ] **Una guarda contra la próxima vez:** los E2E de Maestro no entran en `make test` y no hay
+        forma de que CI los corra (necesitan teléfono). Lo que sí se puede es que un cambio de
+        política de ciclo de vida **declare** qué flujos ejerce, o que el flujo afirme su precondición
+        contra el endpoint antes de tocar la pantalla y falle diciendo POR QUÉ.
+- **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
+  defiende hoy:** no.
+
+### [ ] T-7.56 · **Cambiar de identidad entre flujos E2E no funciona: la cookie de la Hosted UI sobrevive** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · baja
+- **Objetivo:** poder encadenar un flujo de ocupante y uno de táctico sin intervención manual.
+- **El fallo, medido el 2026-09-18.** Todos los flujos empiezan con `launchApp: clearState`, que
+  limpia la app — **pero no la cookie de Cognito**, que vive en el navegador del sistema (Custom
+  Tabs). Medido: tras correr `01b` (ocupante), el `05a` (táctico) entró **como el ocupante**, porque
+  `/oauth2/authorize` redirigió solo con la sesión de antes. El flujo murió buscando una pestaña que
+  esa identidad no tiene.
+- **El propio `login-tactico.yaml` ya avisaba** de que «entre corridas `/oauth2/authorize` redirige
+  solo», pero no hay nada que lo resuelva: no existe un subflujo de cierre de sesión.
+- **Por qué importa ahora más.** `D-35` añadió una SEGUNDA identidad táctica (`brigadista-e2e`), así
+  que la corrida de aceptación cambia de identidad al menos dos veces.
+- **El remedio que funcionó a mano**, y que hay que meter en el repo: abrir
+  `https://<dominio>/logout?client_id=…&logout_uri=…` antes del login. Es acotado —cierra sólo la
+  sesión de Cognito— y no toca el resto del navegador, que en un teléfono PERSONAL importa.
+- **Criterios de aceptación:**
+  - [ ] Un subflujo `shared/cerrar-sesion.yaml` (o un paso en `run.sh`) que cierre la sesión de la
+        Hosted UI antes de cada login, con su razón escrita.
+  - [ ] Una corrida que encadene ocupante → táctico sin tocar el teléfono a mano.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
 
 ## RUTA CRÍTICA
 
