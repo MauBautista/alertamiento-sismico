@@ -59,6 +59,12 @@ takab-docs/design/Design System/Dashboard Alertamiento Sismico.zip
 .claude/settings.local.json
 
 # Terraform plans y material sensible de aprovisionamiento
+# ⚠️ Un fichero de plan lleva DENTRO los valores de las variables, y
+# `envs/dev/local.auto.tfvars` trae la contraseña de la base: un plan guardado es
+# material sensible, no un artefacto de trabajo. `tfplan*` cubre también los
+# nombrados con sufijo (`tfplan.t741`), que los dos patrones de abajo dejaban
+# fuera — medido el 2026-09-17 guardando uno así para revisarlo antes de aplicar.
+tfplan*
 *.tfplan
 tfplan
 certs-*/
