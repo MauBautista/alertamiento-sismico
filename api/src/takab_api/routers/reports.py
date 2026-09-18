@@ -167,6 +167,18 @@ _VENTANA_S = 60.0
 #: que **no se poda nunca** (regla de oro 11): no hace falta tabla nueva ni un
 #: contador que se pueda perder. El de usuario sale del `actor`; el del edificio,
 #: del `site_id` que el `meta` empezó a llevar en esta misma ficha.
+#:
+#: ⚠️ [T-7.45] EL INVARIANTE QUE HACE CONTABLES ESTOS DOS NÚMEROS: `export_pdf`
+#: tiene **un solo escritor**, `generate_report`, unas líneas más arriba. Mientras
+#: eso se cumpla, las dos consultas cuentan la misma población —las GENERACIONES—
+#: y el techo estrecho no puede rebasarse por actos que el ancho no ve.
+#:
+#: Se rompió justo así: `routers/exports.py` escribía `export_pdf` al DESCARGAR y
+#: sin `meta`, de modo que una descarga gastaba el techo de usuario y era invisible
+#: para el del edificio. Seis descargas devolvían 429 a la primera generación.
+#: Ahora la descarga tiene verbo propio (`download_<kind>`), y quien lo vigila es
+#: `tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`, que deriva de
+#: ESTAS dos cadenas quién puede escribir el verbo y qué clave tiene que llevar.
 _CUENTA_USUARIO = text(
     "SELECT count(*) FROM audit_log WHERE verb = 'export_pdf' AND actor = :actor AND ts > :since"
 )

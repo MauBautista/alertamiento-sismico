@@ -9,6 +9,37 @@
 
 El presigned URL se firma en proceso (sin red): boto3 usa las credenciales del
 rol de la tarea ECS en prod y las de moto en tests.
+
+## [T-7.45] Descargar NO es exportar, y el verbo lo dice
+
+Este endpoint auditaba con ``export_pdf``/``export_miniseed``, los mismos verbos
+que escribe ``routers/reports.py`` al GENERAR. Y el freno de exportación cuenta
+exactamente esas filas, así que **una descarga gastaba el techo de generar**.
+
+El daño no era un techo laxo, que es como lo contaba la ficha: era el contrario.
+Con un solo operador el techo que ata es el de usuario (6/min), de modo que seis
+descargas baratas en Triage devolvían **429 a la primera generación de dictamen**
+— un tope de gasto convertido en negación de evidencia sobre una superficie de
+vida, que es justo lo que ``T-5.18`` se prohíbe a sí misma por escrito.
+
+Y el rótulo estaba mal en **tres** sitios, no en uno: el ternario tenía dos ramas
+para cuatro ``kind``, así que ``photo`` y ``log`` caían los dos en
+``export_miniseed``; y la rama de ``report_pdf`` cubría también el reporte de
+simulacro, que al generarse se audita con otro verbo (``export_drill_report``).
+
+**El arreglo es el verbo, no el ``meta``.** Añadir aquí el ``site_id`` que el
+freno lee habría dejado dos escritores del mismo verbo que hay que mantener
+sincronizados para siempre —que es como nació este defecto— y además no se puede
+escribir limpiamente: ``evidence_objects.incident_id`` es NULLABLE y un
+``report_pdf`` puede colgar de un ``drill_id`` que abarca varios sitios.
+Derivando el verbo del ``kind``, los dos contadores del freno pasan a contar la
+MISMA población —las generaciones— **por construcción**. Precedente en el repo:
+``routers/cctv.py`` ya audita su descarga como ``cctv_download``.
+
+⚠️ Esto deja la descarga **sin freno propio**: hoy sólo estaba frenada por robar
+el presupuesto de otro, que no es un diseño sino un efecto. Un tope de descargas
+necesita sus propios números (egreso de S3, no render) y está fichado aparte en
+``T-7.54``.
 """
 
 from __future__ import annotations
@@ -62,7 +93,11 @@ async def download_evidence(
     if row is None:
         raise http_error(404, "evidencia no encontrada")
 
-    verb = "export_pdf" if row.kind == "report_pdf" else "export_miniseed"
+    # [T-7.45] DERIVADO del `kind`, no un ternario con menos ramas que casos: el
+    # CHECK de `evidence_objects.kind` admite cuatro valores y el ternario tenía
+    # dos, así que `photo` y `log` compartían rótulo. Así un quinto `kind` nace
+    # con verbo propio el día que alguien lo añada, en vez de heredar el ajeno.
+    verb = f"download_{row.kind}"
     url = presign_get(settings, row.s3_key)
 
     await audit_async(

@@ -19,6 +19,7 @@ from sqlalchemy import text
 import auth_utils as au
 from takab_api.db.engine import get_engine
 from takab_api.main import create_app
+from takab_api.routers.exports import router as exports_router
 from takab_api.routers.reports import router as reports_router
 
 pytestmark = pytest.mark.asyncio
@@ -31,6 +32,10 @@ _REGION = "us-east-2"
 def app() -> FastAPI:
     application = create_app()
     application.include_router(reports_router)
+    # [T-7.45] También el de exports: la simetría de los dos techos sólo se puede
+    # medir cruzando los DOS endpoints. ⚠️ Sin esta línea la descarga daría 404 y
+    # el test de la simetría pasaría por la razón equivocada.
+    application.include_router(exports_router)
     return application
 
 
@@ -310,3 +315,98 @@ async def test_el_freno_de_un_sitio_no_frena_al_de_al_lado(
         b = await make_incident(au.DB_TENANT_PRIV2, au.DB_SITE_PRIV2)
         otro = au.bearer(au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV2))
         assert (await client.post(f"/incidents/{b}/report", headers=otro)).status_code == 201
+
+
+# ── [T-7.45] La simetría de los dos techos ─────────────────────────────────
+#
+# Los dos contadores del freno cuentan `verb = 'export_pdf'`. Mientras ese verbo
+# tuviera dos escritores —generar y DESCARGAR—, el techo del usuario se gastaba
+# con actos que el del edificio no veía. Estas dos pruebas fijan las DOS
+# direcciones de la simetría; el censo por AST que impide que vuelva a haber un
+# segundo escritor vive en `tests/contracts/`.
+
+
+async def test_descargar_evidencia_NO_gasta_el_techo_de_la_generacion(
+    client, make_incident, monkeypatch
+) -> None:
+    """⚠️ El daño real de T-7.45, y va al revés de como lo contaba la ficha.
+
+    Con un solo operador el techo que ata es el de USUARIO, así que unas pocas
+    descargas baratas en Triage devolvían **429 a la primera generación**: un
+    tope de gasto convertido en negación de evidencia sobre el documento del que
+    depende decidir si un edificio se ocupa. Descargar no renderiza, no sube nada
+    y no llama a la IA de pago — las tres cosas que el freno existe para proteger.
+    """
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_USER_PER_MIN", "1")
+    monkeypatch.setenv("TAKAB_API_REPORT_RATE_SITE_PER_MIN", "1")
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        tok = au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV))
+
+        # ⚠️ Las descargas son de `report_pdf`, y el `kind` NO es decorativo: con
+        # el ternario que había, descargar un miniSEED escribía `export_miniseed`
+        # —que el freno no cuenta— y sólo la rama del PDF gastaba el techo. Una
+        # versión de esta prueba con `miniseed` pasa con el defecto repuesto, o
+        # sea que estaría midiendo el caso inocuo. Medido antes de escribirla así.
+        engine = get_engine()
+        for i in range(3):
+            eid = str(uuid4())
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text(
+                        "INSERT INTO evidence_objects (evidence_id, tenant_id, incident_id, "
+                        "kind, s3_key, sha256) VALUES (:e, :t, :i, 'report_pdf', :k, :sha)"
+                    ),
+                    {
+                        "e": eid,
+                        "t": au.DB_TENANT_PRIV,
+                        "i": iid,
+                        "k": f"dictamen/EVT/{i}.pdf",
+                        "sha": f"{i:064x}",
+                    },
+                )
+            bajada = await client.post(f"/evidence/{eid}/download", headers=tok)
+            assert bajada.status_code == 200, bajada.text
+
+        generado = await client.post(f"/incidents/{iid}/report", headers=tok)
+
+    assert generado.status_code == 201, (
+        f"generar el dictamen devolvió {generado.status_code} tras tres DESCARGAS. El freno "
+        "está contando actos que no protege, y el que se queda sin dictamen es quien decide "
+        "si se ocupa un edificio (T-7.45)"
+    )
+
+
+async def test_generar_deja_UNA_fila_y_la_fila_lleva_el_sitio(
+    client, make_incident, monkeypatch
+) -> None:
+    """La otra dirección: lo que el techo del EDIFICIO necesita para poder contar.
+
+    Sin `site_id` en el `meta`, `_CUENTA_SITIO` cuenta cero y el techo del
+    edificio no existe. Se afirma aquí sobre la fila real, no sobre el fuente.
+    """
+    _env_bucket(monkeypatch)
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        tok = au.bearer(au.make_token("inspector", tenant=au.DB_TENANT_PRIV))
+        assert (await client.post(f"/incidents/{iid}/report", headers=tok)).status_code == 201
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        filas = (
+            await conn.execute(
+                text(
+                    "SELECT meta->>'site_id' AS site FROM audit_log "
+                    "WHERE tenant_id = :t AND verb = 'export_pdf'"
+                ),
+                {"t": au.DB_TENANT_PRIV},
+            )
+        ).all()
+    assert len(filas) == 1, f"una generación dejó {len(filas)} filas `export_pdf`, no una"
+    assert filas[0].site == str(au.DB_SITE_PRIV), (
+        "la fila de `export_pdf` no lleva `site_id` en su `meta`: el techo del EDIFICIO "
+        "contaría cero y dejaría de existir"
+    )
