@@ -41,6 +41,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from takab_edge.contracts import utcnow
+from takab_edge.durable import escribir_durable
 
 log = logging.getLogger("takab_edge.catalog")
 
@@ -276,10 +277,13 @@ class CatalogStore:
         try:
             on_disk = dict(payload)
             on_disk[_FEED_VERSION_KEY] = version
-            tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(on_disk, ensure_ascii=False), "utf-8")
-            os.chmod(tmp, 0o644)
-            os.replace(tmp, self._path)
+            # [T-7.59] Durable, no sólo atómico: si vuelve vacío tras un corte se
+            # pierde el catálogo Y su high-water, que es lo que impide reinstalar
+            # una versión vieja firmada. El `chmod` va DESPUÉS del rename: antes
+            # se aplicaba al temporal, que ya no es nuestro cuando el helper
+            # termina.
+            escribir_durable(self._path, json.dumps(on_disk, ensure_ascii=False))
+            os.chmod(self._path, 0o644)
         except OSError:
             # La ruta puede no existir en dev: el swap en memoria vale igual,
             # solo se pierde la persistencia (y el high-water) ante un reinicio.

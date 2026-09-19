@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
+import stat
 import time
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -707,24 +709,38 @@ def test_encolar_evidencia_escribe_atomico(tmp_path: Path) -> None:
     """Sin tmp+replace, un corte de energía a media escritura deja un `.json`
     truncado — y la cuarentena de arriba se comería una evidencia LEGÍTIMA que
     otra pasada está escribiendo justo ahora. El fichero aparece entero o no
-    aparece: mismo patrón que `DurableSpool.append` y `CatalogStore._write_atomic`.
+    aparece.
+
+    ⚠️ [T-7.59] El espía cambió de sitio y **no es un detalle de fontanería**.
+    Antes colgaba de `Path.write_text`; desde que esto pasa por
+    `takab_edge.durable.escribir_durable` —que escribe con `open()` para poder
+    hacer `fsync` del descriptor— aquel espía no se disparaba nunca y el test
+    pasaba sobre una lista VACÍA. Un test que no observa nada es verde.
+
+    Ahora cuelga del `fsync` del FICHERO, que ocurre justo antes del rename, y
+    de paso afirma más: en ese instante los datos ya están en el disco y el
+    nombre definitivo todavía no existe. Ése es el orden que hace durable la
+    escritura, no sólo atómica.
     """
     _s, _t, _c, manager, _p, _b = _rig(tmp_path)
     pending = tmp_path / "pending"
     vistos: list[list[str]] = []
-    real = Path.write_text
+    real_fsync = os.fsync
 
-    def _espia(self: Path, data: str, *args, **kwargs):  # noqa: ANN202
-        salida = real(self, data, *args, **kwargs)
-        vistos.append(sorted(p.name for p in pending.glob("*.json")))
-        return salida
+    def _espia(fd: int) -> None:
+        real_fsync(fd)
+        if not stat.S_ISDIR(os.fstat(fd).st_mode):  # el del fichero, no el del dir
+            vistos.append(sorted(q.name for q in pending.glob("*.json")))
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(Path, "write_text", _espia)
+        mp.setattr(os, "fsync", _espia)
         manager.queue_evidence("evt-atomico", NOW, NOW + timedelta(seconds=120))
 
-    # En el instante de escribir el contenido, el nombre DEFINITIVO no existe aún.
-    assert vistos and all("evt-atomico.json" not in visto for visto in vistos)
+    # En el instante de bajar el contenido al disco, el nombre DEFINITIVO no
+    # existe aún. Si se observara, el rename habría ido primero y un corte
+    # dejaría el nombre apuntando a datos a medias.
+    assert vistos, "el fsync del fichero no ocurrió: la escritura no es durable"
+    assert all("evt-atomico.json" not in visto for visto in vistos)
     assert manager.pending_evidence() == ["evt-atomico"]
 
 

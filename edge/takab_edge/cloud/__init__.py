@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from collections import Counter, OrderedDict, deque
@@ -29,6 +28,7 @@ from pydantic import BaseModel
 
 from takab_edge.cloud.continuo import serie_de_muestras
 from takab_edge.config import EdgeSettings
+from takab_edge.durable import escribir_durable
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.cloud")
@@ -124,23 +124,16 @@ class DurableSpool:
             self._counter += 1
             name = f"{self._counter:012d}-{record.get('event_id') or 'na'}.json"
             path = self.root / name
-            tmp = path.with_suffix(".tmp")
             # fsync del archivo + del directorio ANTES de retornar: durable ante corte de
             # energía (un sismo suele cortar la luz al Pi justo tras escribir el evento).
-            with open(tmp, "w") as fh:
-                fh.write(json.dumps(record))
-                fh.flush()
-                os.fsync(fh.fileno())
-            tmp.replace(path)  # rename atómico: nunca un archivo a medio escribir
-            self._fsync_dir()
+            #
+            # [T-7.59] La receta se mudó a `takab_edge.durable`, donde está escrito POR QUÉ
+            # el rename no basta. Estaba aquí, y `rules/episode.py` —que necesitaba
+            # exactamente lo mismo— tenía su propia versión sin los `fsync`: perdió el
+            # estado del episodio en el primer corte real. Dos copias de un procedimiento
+            # con una trampa dentro se separan solas.
+            escribir_durable(path, json.dumps(record))
             return name
-
-    def _fsync_dir(self) -> None:
-        fd = os.open(self.root, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
 
     def remove(self, name: str) -> None:
         with self._lock:

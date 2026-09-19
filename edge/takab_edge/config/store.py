@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
@@ -25,6 +24,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from takab_edge.config.settings import EdgeSettings
+from takab_edge.durable import escribir_durable
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.config")
@@ -140,11 +140,17 @@ class ConfigStore(EdgeModule):
             "sig": self._applied_sig,
         }
         try:
-            path = Path(self._cache_path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(doc), "utf-8")
-            os.replace(tmp, path)
+            # ⚠️ [T-7.59] DURABLE, no sólo atómico, y aquí la diferencia tiene dos
+            # precios distintos. Si este fichero vuelve VACÍO tras un corte:
+            #   · `command_enabled` y el equipamiento regresan a los valores de
+            #     fábrica —donde el edge RECHAZA los comandos de la nube—, que es
+            #     justo lo que el corte del 2026-08-03 enseñó;
+            #   · y `high_water` vuelve a cero, así que **se reabre la ventana de
+            #     replay** de configuraciones firmadas viejas. Eso no es comodidad
+            #     perdida: es una regresión de seguridad.
+            # El rename atómico no lo impide: sin `fsync` el nombre puede llegar
+            # al disco antes que los datos.
+            escribir_durable(Path(self._cache_path), json.dumps(doc))
         except OSError:
             log.warning("caché de config no persistida (sigue en memoria)", exc_info=True)
 

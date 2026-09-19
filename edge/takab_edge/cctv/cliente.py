@@ -58,6 +58,7 @@ from takab_edge.cctv.recorder import (
     segmentos_de_la_ventana,
 )
 from takab_edge.config.settings import CctvConfig
+from takab_edge.durable import escribir_durable
 
 log = logging.getLogger("takab_edge.cctv")
 
@@ -255,7 +256,11 @@ class ClienteCctv:
         self, base: str, sesion: Sesion, cubierto: float, desde: datetime, hasta: datetime
     ) -> None:
         """El JSON que el subidor necesita. Va al lado del clip y **sin credenciales**."""
-        (self._pendientes() / f"{base}.json").write_text(
+        # [T-7.59] Durable: el clip ya está en disco y este JSON es lo ÚNICO que
+        # dice a qué incidente pertenece. Sin él, el subidor tiene un vídeo
+        # huérfano — evidencia que existe y que nadie puede atribuir.
+        escribir_durable(
+            self._pendientes() / f"{base}.json",
             json.dumps(
                 {
                     "event_id": sesion.disparo.event_id,

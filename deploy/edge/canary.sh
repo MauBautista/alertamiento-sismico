@@ -272,9 +272,25 @@ escribir_veredicto() {
   # una release que quizá no arranca. Los valores no llevan comillas ni saltos
   # (son ids de release y frases nuestras), y la razón se sanea por si acaso.
   razon="$(printf '%s' "$razon" | tr -d '"\\' | tr '\n' ' ')"
+  # ⚠️ [T-7.59] TEMPORAL + `sync` + `mv -T` + `sync` del directorio, y no un
+  # `>"$VEREDICTO"` a secas. Este fichero se escribe en la línea ANTERIOR a
+  # reiniciar el servicio, y su trabajo entero es decirle a `revertir_manual` a
+  # qué release volver si el gabinete se queda colgado. Escrito con un redirect
+  # no era ni siquiera atómico: un corte durante el remojo lo dejaba truncado o
+  # en cero, y entonces `revertir_manual` dice «no consta una release anterior
+  # completa a la que volver» y aborta — sin reversor, con el symlink ya
+  # apuntando a la versión nueva.
+  #
+  # Veinte líneas más abajo este mismo fichero razona sobre el corte de luz para
+  # el symlink, con su `mv -T`. Le faltaba hacerlo para el veredicto.
   printf '{"resultado":"%s","destino":"%s","anterior":"%s","razon":"%s","ts":"%s"}\n' \
     "$resultado" "$destino" "$anterior" "$razon" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    >"$VEREDICTO"
+    >"${VEREDICTO}.tmp"
+  # `dd conv=fsync` y no `sync -f`: el primero está en coreutils desde siempre y
+  # el segundo no, y esto corre en el Pi de un cliente, no en este portátil.
+  dd if="${VEREDICTO}.tmp" of="${VEREDICTO}.tmp" conv=notrunc,fsync status=none 2>/dev/null || true
+  mv -T "${VEREDICTO}.tmp" "$VEREDICTO"   # rename atómico: nadie lo lee a medias
+  sync "$ESTADO_DIR" 2>/dev/null || sync  # y el NOMBRE al disco, no sólo los datos
 }
 
 # Repunta el symlink. Se escribe a un nombre temporal y se RENOMBRA encima, en
