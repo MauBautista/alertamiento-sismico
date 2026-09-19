@@ -11,22 +11,11 @@ appId: com.takab.ailert
 # El onboarding va DESPUÉS: con un incidente abierto, el vigilante monta la toma
 # de check-in ENCIMA del onboarding, así que antes no es siquiera visible.
 - runFlow: shared/onboarding-tactico.yaml
-# ⚠️ [T-7.56] SEGUNDA VUELTA AL PAR, y no es redundancia.
-#
-# Las dos tomas de pantalla —el check-in de vida y el asistente de configuración—
-# aparecen cuando el estado del servidor termina de cargar, que es DESPUÉS de que
-# los subflujos de arriba comprueben su visibilidad AL INSTANTE. Y se destapan
-# una a otra: atender el check-in deja el asistente delante.
-#
-# Medido el 2026-09-19 con un incidente recién abierto: primera vuelta, ninguna
-# visible, las dos se saltan; aparece el check-in y tapa las pestañas. Se
-# responde, y entonces aparece el asistente. El flujo moría con un «no encuentro
-# LISTA» que apunta a la app en vez de a la carrera.
-#
-# Las dos son condicionales: en una corrida sana no hacen nada y no cambian el
-# camino. Repetir el PAR es lo que cubre el destape mutuo.
-- runFlow: shared/atender-checkin.yaml
-- runFlow: shared/onboarding-tactico.yaml
+# [T-7.57] Y aquí se ESPERA a que el armazón esté montado, atendiendo lo que
+# salga. La segunda vuelta al par que puso `T-7.56` subía la tasa de acierto pero
+# no la cerraba: las tomas se destapan una a otra y aparecen cuando el estado
+# termina de llegar. El subflujo espera sobre un ancla en vez de mirar más veces.
+- runFlow: shared/esperar-pestanas-tacticas.yaml
 
 
 # 2.4 · Formulario de daños con foto forense (2.3).
@@ -39,9 +28,23 @@ appId: com.takab.ailert
 - tapOn: "CÁMARA FORENSE"
 # Cámara: capturar y usar (la marca de agua se hornea en el pixel).
 - tapOn: "CAPTURAR"
+# ⚠️ [T-7.57] Dejar que el obturador TERMINE antes de confirmar. Medido el
+# 2026-09-19: los tres toques de la cámara completaban y la foto no se contaba
+# —ni esperando 20 s a la cuenta—, porque «USAR ESTA FOTO» se tocaba mientras la
+# captura seguía en curso y se descartaba. El problema no era la espera del
+# final: era tocar demasiado pronto.
+- waitForAnimationToEnd:
+    timeout: 5000
 - tapOn: "USAR ESTA FOTO"
-- assertVisible:
-    text: ".*1 foto\\(s\\).*"
+# ⚠️ [T-7.57] Se ESPERA, no se afirma al instante. La marca de agua «se hornea en
+# el pixel» (lo dice el comentario de arriba), y eso tarda: medido el 2026-09-19,
+# los tres toques de la cámara completaban y esta aserción fallaba a continuación
+# porque la foto todavía no estaba contada. Un `assertVisible` aquí es una carrera
+# contra el procesado de una imagen.
+- extendedWaitUntil:
+    visible:
+      text: ".*1 foto\\(s\\).*"
+    timeout: 20000
 - tapOn: "ENVIAR REPORTE"
 # La verificación de que aparece en Triage de la consola con hash verificado
 # se hace en la web (StructuralTriage) durante la corrida de aceptación.

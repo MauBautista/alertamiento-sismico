@@ -17,13 +17,25 @@ appId: com.takab.ailert
     when:
       visible: "¿Se encuentra bien?"
     commands:
-      - tapOn: "ESTOY BIEN"
+      # ⚠️ [T-7.57] `optional`, y no es dejadez: la comprobación del `when` y este
+      # toque **no son atómicos**. Medido el 2026-09-19 — la condición dio
+      # verdadero y un instante después la pantalla ya había pasado a otra cosa,
+      # así que el toque fallaba y se llevaba la corrida entera. Dentro de un bucle
+      # de reintento idempotente eso es ruido: la vuelta siguiente vuelve a mirar.
+      # Lo que NO es opcional es el RESULTADO: si el check-in queda sin responder,
+      # el ancla `tabs-tacticas` no aparece y el flujo falla diciéndolo.
+      - tapOn:
+          text: "ESTOY BIEN"
+          optional: true
       # La app declara DÓNDE quedó el dato — «guardado en este dispositivo» no es
       # «recibido por el servidor», y no puede fingir lo segundo.
       - extendedWaitUntil:
           visible:
             text: ".*(GUARDADO EN ESTE DISPOSITIVO|RECIBIDO POR EL SERVIDOR).*"
           timeout: 20000
+          # Por lo mismo: si el toque de arriba no llegó a darse, esperar su
+          # confirmación no puede matar la vuelta.
+          optional: true
 
 # Y SALIR de la toma. Respondido el check-in, la app se queda aparcada en la
 # línea de tiempo del incidente («REINGRESO PROHIBIDO · Dictamen técnico ·

@@ -24,22 +24,11 @@ appId: com.takab.ailert
 # El onboarding va DESPUÉS: con un incidente abierto, el vigilante monta la toma
 # de check-in ENCIMA del onboarding, así que antes no es siquiera visible.
 - runFlow: shared/onboarding-tactico.yaml
-# ⚠️ [T-7.56] SEGUNDA VUELTA AL PAR, y no es redundancia.
-#
-# Las dos tomas de pantalla —el check-in de vida y el asistente de configuración—
-# aparecen cuando el estado del servidor termina de cargar, que es DESPUÉS de que
-# los subflujos de arriba comprueben su visibilidad AL INSTANTE. Y se destapan
-# una a otra: atender el check-in deja el asistente delante.
-#
-# Medido el 2026-09-19 con un incidente recién abierto: primera vuelta, ninguna
-# visible, las dos se saltan; aparece el check-in y tapa las pestañas. Se
-# responde, y entonces aparece el asistente. El flujo moría con un «no encuentro
-# LISTA» que apunta a la app en vez de a la carrera.
-#
-# Las dos son condicionales: en una corrida sana no hacen nada y no cambian el
-# camino. Repetir el PAR es lo que cubre el destape mutuo.
-- runFlow: shared/atender-checkin.yaml
-- runFlow: shared/onboarding-tactico.yaml
+# [T-7.57] Y aquí se ESPERA a que el armazón esté montado, atendiendo lo que
+# salga. La segunda vuelta al par que puso `T-7.56` subía la tasa de acierto pero
+# no la cerraba: las tomas se destapan una a otra y aparecen cuando el estado
+# termina de llegar. El subflujo espera sobre un ancla en vez de mirar más veces.
+- runFlow: shared/esperar-pestanas-tacticas.yaml
 
 # Se deja la app EN LA LISTA, lista para trabajar sin red.
 - tapOn: "LISTA"
