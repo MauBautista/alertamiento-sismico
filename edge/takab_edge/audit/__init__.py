@@ -104,6 +104,7 @@ from takab_edge.contracts import (
     AlertSource,
     utcnow,
 )
+from takab_edge.durable import fsync_dir
 from takab_edge.gpio_link import GPIO_ACTIONS
 
 if TYPE_CHECKING:
@@ -337,13 +338,6 @@ class ActuationLedger:
                 origen.replace(self.directory / f"{_LEDGER_NAME}.{n + 1}")
         vivo.replace(self.directory / f"{_LEDGER_NAME}.1")
 
-    def _fsync_dir(self) -> None:
-        fd = os.open(self.directory, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
     # -------------------------------------------------------------------- escritura
 
     def record(
@@ -405,7 +399,7 @@ class ActuationLedger:
                     fh.write(linea + "\n")
                     fh.flush()
                     os.fsync(fh.fileno())  # un sismo suele cortar la luz al Pi
-                self._fsync_dir()
+                fsync_dir(self.directory)
                 self._writable = True
         except Exception as exc:  # noqa: BLE001 — vida: la sirena suena igual
             self._fail(f"no se pudo escribir la fila ({type(exc).__name__}: {exc})")
@@ -477,7 +471,7 @@ class ActuationLedger:
             fh.flush()
             os.fsync(fh.fileno())
         tmp.replace(self._watermark_path)  # atómico: la marca nunca queda a medias
-        self._fsync_dir()
+        fsync_dir(self.directory)
 
     def pending(self) -> list[dict]:
         """Filas que la nube todavía no confirmó (más viejas primero)."""

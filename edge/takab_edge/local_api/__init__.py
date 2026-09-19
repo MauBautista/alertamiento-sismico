@@ -33,7 +33,6 @@ from __future__ import annotations
 import hmac
 import json
 import logging
-import os
 import threading
 import time
 import urllib.parse
@@ -46,6 +45,7 @@ from pathlib import Path
 from takab_edge.catalog import DEGRADED as _CATALOG_DEGRADED
 from takab_edge.catalog import CatalogStore
 from takab_edge.contracts import ActuatorChannel, utcnow
+from takab_edge.durable import escribir_durable
 from takab_edge.gpio_link import GpioLink, GpioLinkUnavailable, GpioSnapshot, as_link
 from takab_edge.health import HealthMonitor
 from takab_edge.module import EdgeModule
@@ -123,7 +123,7 @@ class RoseZeroStore:
     nivelado: la brújula pasa a medir desviaciones respecto a la INSTALACIÓN,
     no respecto a una media rodante que absorbe inclinaciones sostenidas.
     Misma doctrina de archivo que `CatalogStore`: carga única, escritura
-    atómica (tmp + os.replace), sin path ⇒ solo memoria (tests/parcial), y un
+    DURABLE (`takab_edge.durable`), sin path ⇒ solo memoria (tests/parcial), y un
     archivo ilegible degrada a "sin calibrar" — jamás un cero inventado.
     Jamás toca umbrales, rules ni actuadores.
     """
@@ -163,9 +163,10 @@ class RoseZeroStore:
             self._current = snapshot
             if self._path is not None:
                 try:
-                    tmp = self._path.with_suffix(self._path.suffix + ".tmp")
-                    tmp.write_text(json.dumps(snapshot), "utf-8")
-                    os.replace(tmp, self._path)
+                    # [T-7.59] El punto 0 se mide UNA vez con el gabinete quieto:
+                    # perderlo en un corte obliga a repetir una calibración
+                    # presencial, así que es justo lo que tiene que ser durable.
+                    escribir_durable(self._path, json.dumps(snapshot))
                 except Exception:  # noqa: BLE001 — sin disco sigue vivo en memoria
                     log.warning(
                         "no se pudo persistir el punto 0 (%s); queda en memoria",

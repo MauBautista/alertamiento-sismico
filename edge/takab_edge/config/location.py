@@ -35,6 +35,7 @@ from pathlib import Path
 
 from takab_edge.config.settings import EdgeSettings, NeighborStation
 from takab_edge.contracts import utcnow
+from takab_edge.durable import escribir_durable
 
 log = logging.getLogger("takab_edge.config")
 
@@ -113,10 +114,12 @@ class SiteLocationCache:
                 },
                 ensure_ascii=False,
             )
-            tmp = self._path.with_suffix(".tmp")
-            tmp.write_text(payload, "utf-8")
-            os.chmod(tmp, 0o644)  # legible: no es secreto, y lo lee el panel de a pie
-            os.replace(tmp, self._path)
+            # [T-7.59] Durable: la ubicación se APRENDE (del GPS o del vecindario)
+            # y perderla en un corte deja al gabinete sin saber dónde está hasta
+            # que vuelva a aprenderla. El `chmod` va después del rename — antes se
+            # aplicaba al temporal, que ya no existe cuando el helper termina.
+            escribir_durable(self._path, payload)
+            os.chmod(self._path, 0o644)  # legible: no es secreto, y lo lee el panel de a pie
             log.info("ubicación aprendida y cacheada en %s", self._path)
         except OSError:
             log.warning("no se pudo escribir la caché de ubicación (%s)", self._path)

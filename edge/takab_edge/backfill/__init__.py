@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from takab_edge.contracts import BackfillRequest, EvidenceObject, utcnow
+from takab_edge.durable import escribir_durable
 from takab_edge.evidence import sha256_hex
 from takab_edge.module import EdgeModule
 
@@ -273,19 +274,27 @@ class BackfillManager(EdgeModule):
         """Encola durable la evidencia de un evento (se sube al reconectar)."""
         path = self._pending_dir / f"{event_id}.json"
         nuevo = not path.exists()  # re-encolar el MISMO evento no suma dos veces
-        # ATÓMICO (tmp + replace, como `DurableSpool.append` y `CatalogStore.
-        # _write_atomic`): un corte de energía a media escritura —el escenario
-        # típico, porque esto corre justo después de actuar en un sismo— dejaba
-        # un `.json` TRUNCADO. Con la cuarentena de `_load_spec` eso sería
-        # apartar evidencia legítima, y el `.tmp` intermedio también podía verse
-        # desde una pasada concurrente. Ahora el fichero aparece entero o no
-        # aparece. Sin `fsync`: esto está en el hilo de detección y la ventana
-        # de post-roll da minutos de margen; la durabilidad dura la da el rename.
-        tmp = path.with_name(path.name + ".tmp")  # fuera del glob `*.json`
-        tmp.write_text(
-            json.dumps({"event_id": event_id, "start": start.isoformat(), "end": end.isoformat()})
+        # ATÓMICO **Y DURABLE**: un corte de energía —el escenario típico, porque
+        # esto corre justo después de actuar en un sismo— dejaba un `.json`
+        # truncado, y con la cuarentena de `_load_spec` eso es apartar evidencia
+        # legítima. El `.tmp` intermedio tampoco puede verse desde una pasada
+        # concurrente: `escribir_durable` lo nombra `<id>.json.tmp`, **fuera del
+        # glob `*.json`** — sutil, y por eso se dice.
+        #
+        # ⚠️ [T-7.59] Aquí decía «Sin `fsync`: esto está en el hilo de detección
+        # […]; la durabilidad dura la da el rename». Las tres partes eran falsas:
+        #   · el rename da atomicidad, NO durabilidad (ver `takab_edge.durable`);
+        #   · el post-roll retrasa la SUBIDA, no esta escritura — el fichero se
+        #     queda quieto en disco igual, así que no encoge ninguna ventana;
+        #   · y este hilo YA paga `fsync` tres líneas antes, en `cloud.publish` y
+        #     en el ledger de actuación. Uno más no es una clase de coste nueva.
+        # Lo que se protege es la ÚNICA copia del puntero a la prueba de un sismo:
+        # la forma de onda sobrevive en el ring de disco, pero sin este papel
+        # nadie sabe qué ventana extraer, y `_load_spec` la manda a cuarentena.
+        escribir_durable(
+            path,
+            json.dumps({"event_id": event_id, "start": start.isoformat(), "end": end.isoformat()}),
         )
-        tmp.replace(path)
         if nuevo:
             # Alta EN MEMORIA: esto corre en el hilo de detección, justo después
             # de confirmar un evento — releer el directorio aquí sería pagar

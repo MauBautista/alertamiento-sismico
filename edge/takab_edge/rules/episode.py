@@ -46,6 +46,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from takab_edge.contracts import AlertSource, Tier, TierDecision, TierTransition
+from takab_edge.durable import escribir_durable
 
 
 def _utcnow() -> datetime:
@@ -266,12 +267,17 @@ class EpisodeTracker:
         if self._state_path is None:
             return
         try:
-            self._state_path.parent.mkdir(parents=True, exist_ok=True)
             if self._event_id is None:
                 self._state_path.unlink(missing_ok=True)
                 return
-            tmp = self._state_path.with_suffix(".tmp")
-            tmp.write_text(
+            # ⚠️ [T-7.59] `escribir_durable` y no `write_text` + `replace`. El rename
+            # es atómico —nadie lee un fichero a medias— pero eso NO es lo que este
+            # fichero necesita: necesita sobrevivir a que le quiten la corriente al
+            # Pi, y sin `fsync` el rename puede confirmarse antes que los datos.
+            # Medido el 2026-09-19 en el gabinete real: volvió con CERO BYTES
+            # (`JSONDecodeError: Expecting value: line 1 column 1 (char 0)`).
+            escribir_durable(
+                self._state_path,
                 json.dumps(
                     {
                         "tier": self._tier.value,
@@ -282,9 +288,7 @@ class EpisodeTracker:
                         "opened_at": self._opened_at.isoformat() if self._opened_at else None,
                     }
                 ),
-                encoding="utf-8",
             )
-            tmp.replace(self._state_path)  # rename atómico: nunca a medio escribir
         except OSError:
             # Un disco lleno no puede impedir detectar. Se pierde la continuidad
             # del episodio entre reinicios, que es exactamente el riesgo que este

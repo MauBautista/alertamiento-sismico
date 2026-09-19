@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **436** · `[x]` **378** · `[~]` **11** · `[ ]` **47**
+**Conteo de tareas:** total **439** · `[x]` **379** · `[~]` **11** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16484,6 +16484,173 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   **sin prueba** —`watermark.ts` y `fileHash.ts` sí la tenían— y ahí vivía el defecto: la ficha le
   pone una, con un disco de mentira cuyo `move()` **tarda un tick de verdad** (sin eso la prueba no
   distingue el código con `await` del que no lo tiene).
+
+### [x] T-7.59 · **El estado del episodio NO sobrevive al corte de luz que dice sobrevivir** — `SOFTWARE` · **CERRADA 2026-09-19**
+- **Componente:** edge · **Depende de:** — · **Prioridad:** F4 · alta
+- **Objetivo:** que `episodio.json` siga siendo legible después de que al gabinete le quiten la
+  corriente, que es el único escenario para el que ese fichero existe.
+- **El fallo, MEDIDO en el gabinete real el 2026-09-19.** Al arrancar:
+
+  ```
+  ERROR takab_edge.rules.episode — estado de episodio ilegible; se empieza sin episodio
+  json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+  ```
+
+  `char 0` es **fichero vacío**, no fichero a medias. Lo provocó desconectar el Pi para moverlo de
+  sitio —apagado duro, que es exactamente un corte de luz— y volver a conectarlo a la mañana
+  siguiente.
+- **Por qué pasa, y por qué el comentario que hay encima es engañoso.** `_guardar()` escribe a un
+  `.tmp` y hace `tmp.replace(...)`, con el comentario «rename atómico: nunca a medio escribir».
+  Eso es **cierto frente a un proceso que muere** y **falso frente a un corte de corriente**: sin
+  `fsync`, el sistema de ficheros puede confirmar el cambio de nombre —que es metadato— antes de
+  bajar los datos del fichero, y al volver la luz el nombre apunta a cero bytes. Es la diferencia
+  entre atomicidad y durabilidad, y el comentario las mezcla.
+- **⚠️ Y el repositorio YA SABE hacerlo bien.** `cloud/__init__.py` hace `fh.flush()`,
+  `os.fsync(fh.fileno())` **y** `fsync` del directorio, con el comentario «durable ante corte de
+  luz». El mismo defecto está resuelto en un módulo y abierto en su hermano — que es la forma que
+  toma este defecto cuando nadie lo busca.
+- **Por qué importa más que un fichero perdido.** La sección se titula «estado que sobrevive al
+  corte de luz» y su razón, escrita en `supervisor.py`, es que **la forma más probable de que un
+  sismo real termine es cortando la luz**, y un episodio que sólo viva en RAM deja el cierre sin
+  emisor. Esta vez degradó con honestidad —lo declaró y arrancó sin episodio— porque no había
+  sismo. Durante uno, el episodio se habría perdido en el peor momento posible.
+- **Criterios de aceptación:**
+  - [x] `_guardar()` hace `fsync` del fichero **y** del directorio antes de dar por buena la
+        escritura, como ya hace `cloud/__init__.py`. Reutilizar aquella pieza en vez de escribir
+        una segunda copia: dos implementaciones de lo mismo divergen. → `takab_edge/durable.py`,
+        con la razón escrita: **el rename da atomicidad, el `fsync` da durabilidad**, y el orden
+        (datos → nombre → entrada del directorio) es parte del contrato.
+  - [x] Una prueba que distinga **atomicidad** de **durabilidad**: que el `fsync` se llame de
+        verdad, no que el fichero exista. Un test que sólo relea lo escrito pasa hoy en verde.
+        → `tests/test_durable.py` espía las llamadas al sistema y fija el ORDEN. Y trae su propia
+        contraprueba: el código anterior se ejecuta dentro del test y se comprueba que **no** pasa
+        —y que aun así relee perfectamente—, que es justo por lo que nadie lo vio.
+  - [x] El comentario del `replace` deja de prometer lo que no cumple.
+  - [x] Barrer si hay otros estados en disco del edge con la misma promesa y sin `fsync`. **El
+        censo salió peor de lo que la ficha suponía: 20 sitios barridos, SIETE defectuosos**, y no
+        eran los cuatro que enumeraba arriba (`rose-zero.json` resultó ser el punto 0 del
+        acelerómetro y `canary/veredicto.json` no era del edge sino del despliegue).
+- **⚠️ Lo que el censo encontró, por severidad**, todo arreglado en esta ficha salvo lo último:
+  1. **`config/store.py` — `config-cache.json`.** El peor, y no por comodidad: con el fichero en
+     cero bytes el `high_water` anti-replay vuelve a cero y **se reabre la ventana de replay de
+     configuraciones firmadas viejas**. Eso es una regresión de seguridad. Además `command_enabled`
+     y el equipamiento regresan a los valores de fábrica —donde el edge RECHAZA los comandos de la
+     nube—, que es exactamente lo que el corte del 2026-08-03 enseñó y lo único para lo que ese
+     fichero existe.
+  2. **`deploy/edge/canary.sh` — `veredicto.json`.** El único del censo que **ni siquiera era
+     atómico** (un `>` a pelo), y se escribe en la línea ANTERIOR a reiniciar el servicio. Sin él,
+     `revertir_manual` dice «no consta una release anterior completa a la que volver» y aborta:
+     un reversor que no sabe a dónde volver no es un reversor. El mismo fichero, veinte líneas más
+     abajo, razona correctamente sobre el corte de luz — pero para el symlink.
+  3. **`backfill/` — el puntero a la prueba de un sismo.** Llevaba escrito «Sin `fsync`: esto está
+     en el hilo de detección […]; la durabilidad dura la da el rename». Las tres afirmaciones eran
+     falsas: el rename no da durabilidad; el post-roll retrasa la SUBIDA, no esta escritura; y ese
+     hilo **ya paga `fsync` tres líneas antes** (`cloud.publish` y el ledger de actuación). La
+     forma de onda sobrevive en el ring de disco, pero sin este papel nadie sabe qué ventana
+     extraer y `_load_spec` la manda a cuarentena — evidencia de un sismo real perdida por la
+     regla de oro 11.
+  4. `catalog.py` (el catálogo SSN y su high-water), `local_api/` (el punto 0, que perderlo obliga
+     a repetir una calibración presencial), `cctv/cliente.py` (el sidecar sin el cual el clip es un
+     vídeo huérfano) y `config/location.py` (la ubicación aprendida).
+  5. **`audit/__init__.py` tenía su propio `_fsync_dir`**, byte por byte igual al de la pieza
+     nueva. Ya reutiliza la compartida.
+  6. **`audit/reflejo.py` NO se arregla aquí y no es un olvido:** su defecto no es el `fsync` sino
+     que reescribe el fichero ENTERO (leer 200 filas, recortar, volcar). Se arregla pasándolo a
+     append como el ledger, que es otro cambio y con otro riesgo. **Fichado en `T-7.61`.**
+- **Tests de censo que toca:** **trae uno nuevo**, `edge/tests/test_durable.py::test_CENSO_…` —
+  barrido AST de toda escritura a disco de `takab_edge/`, con los exentos declarados **uno a uno y
+  con su razón** (el ring de forma de onda y las capturas del CCTV se reconstruyen, y un `fsync`
+  por paquete a 100 sps sería I/O en el camino de detección: regla de oro 1). · **Token nuevo:**
+  no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.60 · **Las duraciones del gabinete se miden con un reloj que SALTA** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** — · **Prioridad:** F4 · **alta**
+- **Objetivo:** que ninguna duración medida en este gabinete dependa de que nadie ajuste el reloj.
+- **⚠️ LA FICHA NACIÓ PEQUEÑA Y EL CENSO LA CORRIGIÓ.** Se abrió como «el panel miente sobre el
+  uptime». El barrido de los 51 ficheros del edge encontró **17 sitios con el mismo defecto**, y
+  el uptime es el menos grave de todos — es sólo el único que alguien miró. Los tres que importan:
+  1. **`rules/episode.py:176` — el reloj que declara TERMINADO un episodio sísmico.**
+     `if (now - self._quiet_since).total_seconds() < self.quiet_s`. Un salto de reloj hacia
+     adelante lo satisface de golpe: el gabinete da la sacudida por acabada y **saca al ocupante
+     de «EVACÚE»**. Es la inversión exacta de lo que cerró `T-7.30`, y aquel arreglo existe porque
+     el ingenuo hacía justo esto antes de la onda S. En un Pi sin RTC el salto no es hipotético:
+     pasó el 2026-09-19 y fueron 13 h 25 min.
+  2. **`health/__init__.py:510` — `evidence_oldest_age_s`, que VIAJA EN EL LATIDO** y la nube
+     vigila con una alarma (la ficha que la creó nació por 49 minutos de retención). Tras el salto
+     publica ~48 300 s: alarma falsa en un gabinete recién arrancado y limpio.
+  3. **`seedlink/__init__.py:173` — el caso mixto.** Con paquetes resta contra `packet.endtime`
+     del Shake, que es ajeno y correcto. **Sin ningún paquete todavía** —o sea, justo al
+     arrancar— resta contra nuestro propio `_started_at`, así que publica ~48 300 s de
+     `seedlink_lag_s` y la consola degrada el gabinete por un ajuste de reloj, no por estar ciego.
+- **El fallo, MEDIDO el 2026-09-19.** El panel decía **77 851 s (21.6 h)**; el kernel decía
+  **30 323 s (8.4 h)**. Trece horas de diferencia, y la que se enseña es la falsa.
+- **Por qué.** El Pi 4 **no tiene RTC** (`timedatectl` → `RTC time: n/a`). Al arrancar restaura la
+  última hora guardada y sigue con ella hasta que NTP contesta. Medido en el arranque de ese día:
+
+  ```
+  2026-09-18T18:14:05  kernel: Booting Linux              ← reloj restaurado, equivocado
+  2026-09-19T07:39:30  systemd-timesyncd: Initial clock synchronization
+  ```
+
+  Un salto de **13 h 25 min** hacia adelante. El uptime se calcula restando dos marcas del reloj
+  de pared, así que el salto entra entero en la resta.
+- **Por qué importa, y no es cosmético.** El uptime es lo primero que se mira para saber si un
+  gabinete se reinició. Un valor inflado **esconde exactamente el suceso que se está buscando**:
+  ese día el gabinete había arrancado hacía ocho horas y el panel afirmaba que llevaba
+  veintiuna sin interrupción. Es un dato congelado presentado como vivo — regla de oro 7.
+- **El criterio que separa los 17 de los 19 correctos**, y es lo único que hay que saber para
+  tocar esto: una duración que mide **tiempo transcurrido EN ESTA MÁQUINA** (uptime, un cronómetro,
+  un backoff, un cooldown, la edad de algo que guardamos nosotros) tiene que ser **monotónica**.
+  Una que compara con una **fecha ajena** (la marca de un paquete del sismógrafo, un `ts_device` de
+  la app, el sello de un catálogo, la validez de un certificado) tiene que seguir en reloj de
+  **pared**, porque la otra mitad de la resta viene de fuera — pasarla a monotónico la rompe.
+  ⚠️ El censo encontró un ejemplo de cada lado en el MISMO fichero (`seedlink/__init__.py`), y un
+  contraejemplo que **no hay que tocar**: `supervisor.py:846-851` ancla la ventana de evidencia al
+  reloj de pared del Pi porque la consume `buffer.extract_window` contra el eje de muestras del
+  Shake.
+- **Criterios de aceptación:**
+  - [ ] Los 17 sitios pasan a reloj monotónico. Los `perf_counter`/`monotonic` que ya existen
+        —el reflejo SASMEX, el lockout del PIN, el token bucket de `pinlink`, los reintentos
+        LoRa— son la referencia: **la mitad del gabinete ya lo hace bien**, y eso es lo que
+        convierte esto en una divergencia y no en una decisión.
+  - [ ] Una prueba que **ejerza el salto**: mover el reloj de pared +13 h y comprobar que ninguna
+        de esas duraciones se mueve. Sin ejercerlo, el arreglo no se distingue del defecto.
+  - [ ] **Y la del episodio va aparte y primero**: que un salto de reloj **no** cierre un episodio
+        abierto. Es la que protege una vida, no un número de panel.
+  - [ ] Censo DERIVADO, no lista a mano — es la quinta vez que este repositorio aprende lo mismo.
+        Barrido AST de toda resta de instantes en `takab_edge/`, exigiendo que cada sitio **declare
+        de qué lado está** en un marcador en su línea (`reloj: ajeno` / `reloj: datos` /
+        `reloj: monotonico`). La clasificación no es decidible leyendo el AST —`now - x` no dice de
+        dónde salió `x`—, así que no se adivina: se exige declararla, y un sitio nuevo sin marcador
+        rompe CI.
+  - [ ] Y el disfraz, que es el que se escapa: una marca guardada como fecha ISO **cuyo único
+        consumidor la resta** (`checked_at`→`checked_age_s`, `spooled_at`→`spool_span_s`) es un
+        cronómetro disfrazado de fecha. Esa capa es la que habría cazado el `uptime_s` sin que
+        nadie mirara el panel.
+  - [ ] Considerar si el panel debe DECLARAR el arranque además del uptime: quien mira un gabinete
+        después de un corte quiere la hora, no una duración que tiene que restar de cabeza.
+- **Tests de censo que toca:** traerá uno nuevo (el barrido de marcadores) · **Token nuevo:** no ·
+  **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.61 · **El acta del reflejo se reescribe ENTERA en cada fila** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** T-7.59 · **Prioridad:** F4 · media
+- **Objetivo:** que registrar un reflejo SASMEX→sirena no ponga en riesgo las 199 actas anteriores.
+- **De dónde sale.** Del censo de `T-7.59`. `audit/reflejo.py::registrar()` **lee el fichero
+  entero**, le añade la fila nueva, recorta a `MAX_ACTAS=200` y **vuelve a escribirlo entero**
+  encima, sin temporal y sin rename. Un corte de luz a media escritura no pierde la fila nueva:
+  pierde **todas**.
+- **Por qué no se arregló con el resto.** Porque aquí `fsync` no es la respuesta: el arreglo es
+  convertirlo en **append**, como ya hace `ActuationLedger.record()` (NDJSON, una fila una línea).
+  Es otro cambio, con otro riesgo, sobre el fichero que acredita el camino crítico de activación —
+  y esa es exactamente la razón para que lleve su propia ficha y su propia revisión.
+- **Criterios de aceptación:**
+  - [ ] `registrar()` es append puro: abrir en `"a"`, una línea, `fsync`. Ni leer, ni recortar.
+  - [ ] El recorte a 200 deja de hacerse al escribir. O al leer, o por rotación como el ledger —
+        pero no en el camino que registra el acta.
+  - [ ] Una prueba que corte a media escritura y compruebe que las actas anteriores **siguen ahí**.
+        Hoy ninguna lo mira.
+- **Tests de censo que toca:** el de `T-7.59` (hay que sacarlo de `exentos` al cerrarla) ·
+  **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
 ## RUTA CRÍTICA
 
