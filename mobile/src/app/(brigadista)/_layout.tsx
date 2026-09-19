@@ -37,7 +37,18 @@ export default function BrigadistaLayout() {
   // [T-6.19] La franja de avisos (simulacro · modo demostración) va en el
   // navegador, no en una pestaña: se ve igual en todas.
   return (
-    <View style={styles.root}>
+    // [T-7.57] ⚠️ EL ANCLA DE «YA CARGÓ», y no es decoración de pruebas.
+    //
+    // Tres pantallas pueden TOMAR el control tras entrar —el check-in de vida, el
+    // asistente de configuración y la línea de tiempo— y aparecen cuando el estado
+    // del servidor termina de cargar, que es DESPUÉS de que un flujo E2E mire. Y
+    // se destapan una a otra. Sin un ancla, los flujos esperaban «que se vea la
+    // pestaña LISTA», que además depende de `allowed_actions`: un fallo de permiso
+    // y uno de carga se leían igual. Medido: 2 de 4 corridas fallaban.
+    //
+    // Esto dice UNA cosa y sólo una: el armazón de pestañas del táctico está
+    // montado, o sea que ninguna toma de pantalla está delante.
+    <View style={styles.root} testID="tabs-tacticas">
       {/* [T-7.29] Va ARRIBA de los avisos del sitio y con relleno sólido: si
           el táctico salió de la toma de crisis para trabajar, la alerta viva
           tiene que seguir siendo lo primero que ve en todas las pestañas. */}

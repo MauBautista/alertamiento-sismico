@@ -12,11 +12,25 @@
 # correcto, no el atajo.
 appId: com.takab.ailert
 ---
+# ⚠️ [T-7.57] LOS TRES TOQUES SON `optional`, y no es dejadez.
+#
+# La comprobación del `when` y el toque **no son atómicos**: medido el 2026-09-19,
+# la condición dio verdadero y un instante después la pantalla ya había pasado a
+# otra cosa, así que el toque fallaba y se llevaba la corrida entera. Pasó en este
+# subflujo con «Continuar» y en `atender-checkin` con «ESTOY BIEN»: es el mismo
+# defecto, y por eso se arreglan igual.
+#
+# Este subflujo se llama desde un BUCLE de reintento (`esperar-pestanas-tacticas`),
+# así que un toque que llega tarde es ruido: la vuelta siguiente vuelve a mirar.
+# Lo que NO es opcional es el RESULTADO — si el asistente se queda sin atender, el
+# ancla `tabs-tacticas` no aparece y el flujo falla diciéndolo.
 - runFlow:
     when:
       visible: "CONFIGURACIÓN · PASO 1 DE 3"
     commands:
-      - tapOn: "Continuar"
+      - tapOn:
+          text: "Continuar"
+          optional: true
 
 - runFlow:
     when:
@@ -25,6 +39,7 @@ appId: com.takab.ailert
     commands:
       - tapOn:
           id: "privacy-accept"
+          optional: true
 
 - runFlow:
     when:
@@ -33,3 +48,4 @@ appId: com.takab.ailert
     commands:
       - tapOn:
           id: "enrolamiento-continuar-sin-vincular"
+          optional: true

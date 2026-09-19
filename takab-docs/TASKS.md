@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **435** · `[x]` **375** · `[~]` **12** · `[ ]` **48**
+**Conteo de tareas:** total **436** · `[x]` **376** · `[~]` **12** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16334,7 +16334,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 
-### [ ] T-7.57 · **Los E2E del táctico son INTERMITENTES: las tomas de pantalla llegan tarde** — `SOFTWARE`
+### [x] T-7.57 · **Los E2E del táctico son INTERMITENTES: las tomas de pantalla llegan tarde** — `SOFTWARE` · **CERRADA 2026-09-19**
 - **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que una corrida de aceptación signifique algo. Hoy, repetirla cambia el resultado.
 - **El fallo, MEDIDO el 2026-09-19 en el Pixel real.** Con entrada idéntica: **2 de 4 corridas de
@@ -16351,11 +16351,63 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   son los que sostienen `GATE-HW`. Es la misma doctrina que `T-2.63`: un test que se salta no es
   cobertura — aquí es peor, porque el verde llega por azar.
 - **Criterios de aceptación:**
-  - [ ] La espera se hace sobre un ANCLA del estado cargado, no sobre la visibilidad instantánea de
-        cada toma. Que el flujo declare qué espera y falle diciendo qué encontró en su lugar.
-  - [ ] **Diez corridas seguidas en verde** del mismo flujo, sin tocar el teléfono. Menos que eso no
-        distingue un arreglo de una racha.
-  - [ ] La razón escrita en el subflujo, como las demás trampas de esta carpeta.
+  - [x] El ancla es `tabs-tacticas`, un `testID` en el armazón de pestañas del táctico, y dice UNA
+        cosa: ninguna toma de pantalla está delante. ⚠️ **No vale esperar «que se vea LISTA»**, que es
+        lo que se hacía: esa pestaña depende de `allowed_actions`, así que un fallo de PERMISO y uno
+        de CARGA se leían igual — el mensaje culpaba a la app cuando el problema era el reloj.
+  - [x] **10 corridas seguidas en verde de `05a`, cero fallos**, sin tocar el teléfono (2026-09-19).
+        El punto de partida medido eran 2 de 4.
+  - [x] Escrita en `shared/esperar-pestanas-tacticas.yaml`, con los tres números que salieron de
+        medir y no de estimar.
+
+> **Cómo se cerró — y ⚠️ tres cosas que sólo se supieron midiendo.**
+>
+> **1· `repeat` con `while` da UNA vuelta.** `repeat: { times: 8, while: { notVisible: … } }` Maestro
+> lo acepta y lo anuncia («Repeat while … up to 8 times»), pero el log muestra **una sola vuelta**. No
+> se pelea con esa semántica en el sitio que decide si una corrida de aceptación significa algo: el
+> bucle lleva un número fijo, y la corrida sana lo salta entero con un condicional sobre el ancla, así
+> que no paga las pausas.
+>
+> **2· ⚠️ La comprobación de un `when` y el toque que le sigue NO SON ATÓMICOS.** Medido: la condición
+> dio verdadero y un instante después la pantalla ya había pasado a otra cosa, así que el toque
+> fallaba y **se llevaba la corrida entera**. Pasó con «ESTOY BIEN» y con «Continuar». Los toques
+> dentro de los condicionales son ahora `optional`: en un bucle de reintento idempotente, un toque que
+> llega tarde es ruido. Lo que NO es opcional es el resultado — sin atender la toma, el ancla no
+> aparece y el flujo falla diciéndolo.
+>
+> **3· El presupuesto se dimensiona midiendo.** Con seis vueltas de 2 s más 20 s de espera final, la
+> décima corrida se quedó corta: las seis se saltaron TODO y el ancla llegó después. No faltaba un
+> manejador, faltaba tiempo. Ahora son 25 s de camino rápido + 10 vueltas + 30 s finales.
+>
+> **Lo que NO cierra, fichado en `T-7.58`:** el flujo `02` sigue fallando en la cuenta de la foto.
+> Es otro defecto —la cámara, no las tomas de pantalla— y se descubrió al verificar éste. El arreglo
+> de los toques `optional` sí le quitó una de sus dos causas.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
+
+### [ ] T-7.58 · **La foto forense no siempre se cuenta, y el flujo 02 falla por eso** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que capturar una foto de daños sea un acto fiable, no uno que sale bien a veces.
+- **El fallo, MEDIDO el 2026-09-19 en el Pixel real.** En `02-tactico-foto-danos` los tres toques de
+  la cámara —`CÁMARA FORENSE`, `CAPTURAR`, `USAR ESTA FOTO`— completan, y a continuación
+  `.*1 foto\(s\).*` **no aparece**. Falla ~1 de cada 2 corridas.
+- **Lo que YA se descartó**, para que nadie lo repita:
+  - **No es la aserción instantánea.** Se cambió por una espera de 20 s y sigue fallando.
+  - **No es el obturador sin terminar.** Se metió una pausa de 5 s entre `CAPTURAR` y
+    `USAR ESTA FOTO` y sigue fallando.
+  - **No son las tomas de pantalla** de `T-7.57`: el flujo llega a `TRIAGE` y al formulario sin
+    problema; el ancla se resuelve antes.
+- **Por qué importa más que un test.** La foto forense es EVIDENCIA: lleva marca de agua horneada en
+  el pixel y acaba en `evidence_objects`, que no admite reescritura. Una captura que a veces no se
+  cuenta es una captura que a veces **se pierde**, y el brigadista que la tomó cree que la mandó.
+  Si eso pasa en un edificio de verdad, la foto de un daño estructural no llega a Triage.
+- **Criterios de aceptación:**
+  - [ ] Averiguar si la foto se PIERDE o sólo se cuenta tarde: mirar `evidence_objects` y el spool
+        local tras una corrida que falle. Las dos respuestas piden arreglos distintos y la ficha no
+        puede elegir por adelantado.
+  - [ ] Si se pierde: la app lo DECLARA en vez de dejar el contador a cero — un brigadista no puede
+        creer que mandó una prueba que no salió.
+  - [ ] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 

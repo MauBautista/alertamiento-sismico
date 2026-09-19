@@ -1,0 +1,72 @@
+# Subflujo · espera a que el armazón TÁCTICO esté montado, atendiendo lo que salga.
+#
+# ⚠️ [T-7.57] POR QUÉ EXISTE, medido y no supuesto: **2 de 4 corridas de `05a`
+# fallaban** con entrada idéntica, siempre en `Tap on "LISTA"`, y **sin
+# correlación con el flujo anterior** — fallaba igual corriendo sola, así que no
+# era la identidad (eso lo cerró `T-7.56` aparte).
+#
+# LA CAUSA. Tres pantallas pueden TOMAR el control después de entrar:
+#
+#   · el check-in de vida      («¿Se encuentra bien?»)
+#   · el asistente             («CONFIGURACIÓN · PASO 1 DE 3»)
+#   · la línea de tiempo       («LÍNEA DE TIEMPO»)
+#
+# y aparecen cuando el estado del servidor TERMINA DE CARGAR, que es después de
+# que los subflujos comprueben su visibilidad AL INSTANTE. Peor: se destapan una
+# a otra —atender el check-in deja el asistente delante—, así que ni siquiera una
+# segunda vuelta al par las cubre (se probó en `T-7.56`: mejoró la tasa, no la
+# cerró).
+#
+# EL ARREGLO ES ESPERAR SOBRE UN ANCLA, no mirar más veces. `tabs-tacticas` dice
+# UNA cosa: el armazón de pestañas está montado, o sea que ninguna toma está
+# delante. Mientras no aparezca, se atiende lo que haya y se vuelve a mirar.
+#
+# ⚠️ Y el ancla NO es «que se vea la pestaña LISTA», que es lo que se esperaba
+# antes: esa pestaña depende de `allowed_actions` (T-6.22), así que un fallo de
+# PERMISO y uno de CARGA se leían igual — el mensaje culpaba a la app cuando el
+# problema era el reloj.
+appId: com.takab.ailert
+---
+# ── 1· el camino SANO sale por aquí ────────────────────────────────────────
+# Si el armazón se monta sin que nadie tome la pantalla, esto devuelve en cuanto
+# aparece y las vueltas de abajo ni se ejecutan. `optional` porque NO encontrarlo
+# es el caso interesante, no un error: de eso se ocupa el paso 2.
+- extendedWaitUntil:
+    visible:
+      id: "tabs-tacticas"
+    timeout: 25000
+    optional: true
+
+# ── 2· y si algo tomó la pantalla, se atiende ──────────────────────────────
+# Envuelto en un condicional para que una corrida sana no pague las pausas.
+#
+# ⚠️ DIEZ VUELTAS Y NO SEIS, y el número sale de una MEDICIÓN, no de un gusto:
+# con seis vueltas de 2 s (12 s) más 20 s de espera final, la décima corrida de la
+# tanda de aceptación se quedó corta — las seis vueltas se saltaron TODO y el ancla
+# llegó después. El presupuesto era pequeño, no faltaba un manejador.
+#
+# Sin `while`: se probó `repeat: { times: 8, while: { notVisible: … } }`, Maestro
+# lo acepta y lo anuncia («up to 8 times»), pero **dio una sola vuelta** y salió.
+# Un número fijo es predecible y se razona mirándolo.
+- runFlow:
+    when:
+      notVisible:
+        id: "tabs-tacticas"
+    commands:
+      - repeat:
+          times: 10
+          commands:
+            - runFlow: atender-checkin.yaml
+            - runFlow: onboarding-tactico.yaml
+            # No hay `sleep` en Maestro; esto es la pausa entre vueltas. Sin ella
+            # las diez se gastan en menos de un segundo y no se espera nada.
+            - waitForAnimationToEnd:
+                timeout: 2000
+
+# ── 3· y si aun así no llegó, se dice ──────────────────────────────────────
+# El fallo declara QUÉ se esperaba. Mira la captura de los artefactos: casi
+# siempre hay una de las tres tomas de arriba todavía en pantalla.
+- extendedWaitUntil:
+    visible:
+      id: "tabs-tacticas"
+    timeout: 30000
