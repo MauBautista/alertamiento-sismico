@@ -1162,3 +1162,133 @@ async def test_drill_rechazado_por_el_gabinete_no_esta_activo_en_movil(base_data
         assert body["active"] is False
         assert body["execution"] == "rejected"
         assert body["sites_total"] == 1 and body["sites_executing"] == 0
+
+
+# ── [T-7.55] LA AUTORIZACIÓN DE REINGRESO SOBREVIVE AL CIERRE ────────────────
+#
+# Desde `D-33` el motor cierra el incidente en cuanto se firma el dictamen.
+# Medido en la nube el 2026-09-18: se firma a las 18:11:28 y el incidente queda
+# `closed` a las 18:11:31 — TRES SEGUNDOS. Como `mobile-state` sólo miraba
+# incidentes no cerrados, la fase caía a `idle` y **al ocupante la prohibición de
+# reingreso se le desvanecía sin que nadie le dijera que ya podía volver**: tenía
+# que deducirlo de la AUSENCIA de un cartel, estando fuera del edificio.
+
+
+async def _cerrar_incidente(incident_id: str, *, hace_s: float = 0.0) -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "UPDATE incidents SET state = 'closed', "
+                "closed_at = now() - make_interval(secs => :hace) WHERE incident_id = :i"
+            ),
+            {"i": incident_id, "hace": hace_s},
+        )
+
+
+@pytest.mark.anyio
+async def test_el_reingreso_SIGUE_declarado_con_el_incidente_ya_cerrado(
+    base_data, make_incident
+) -> None:
+    """El defecto de `T-7.55`, en una prueba: la app tiene que seguir diciéndolo."""
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        headers = au.bearer(_occ())
+        await _seed_dictamen(incident_id, status="inhabit_monitor", signed=True)
+        assert (await client.get(url, headers=headers)).json()["phase"] == "reentry_approved"
+
+        # …y ahora el motor lo cierra, que es lo que `D-33` hace tres segundos después.
+        await _cerrar_incidente(incident_id)
+        estado = (await client.get(url, headers=headers)).json()
+
+    assert estado["phase"] == "reentry_approved", (
+        "con el incidente cerrado la app deja de declarar el reingreso: el ocupante ve "
+        "desaparecer la prohibición sin que nadie le diga que ya puede volver a entrar"
+    )
+    assert estado["reentry"]["blocked"] is False
+    assert estado["reentry"]["dictamen_signed"] is True
+
+
+@pytest.mark.anyio
+async def test_un_incidente_ABIERTO_gana_SIEMPRE_a_una_autorizacion_vieja(
+    base_data, make_incident
+) -> None:
+    """⚠️ LA GARANTÍA DE SEGURIDAD, y la razón de que esto vaya en un `else`.
+
+    Si una autorización de ayer pudiera tapar el incidente de hoy, un ocupante en
+    plena alerta leería «REINGRESO AUTORIZADO» donde tiene que leer «EVACÚE». Es
+    la dirección del error que este sistema no se puede permitir, y por eso la
+    autorización superviviente sólo se consulta cuando NO hay incidente abierto —
+    en vez de ampliar la consulta de incidentes para que traiga cerrados, donde el
+    orden de un `ORDER BY` decidiría lo que lee alguien que está fuera del edificio.
+    """
+    await _seed_zone_and_code()
+    viejo = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        headers = au.bearer(_occ())
+        await _seed_dictamen(viejo, status="normal_operation", signed=True)
+        await _cerrar_incidente(viejo, hace_s=60.0)
+        assert (await client.get(url, headers=headers)).json()["phase"] == "reentry_approved"
+
+        # Tiembla otra vez: incidente NUEVO, abierto, con el tier en evacuación.
+        await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        await _seed_tier("evacuate_or_hold")
+        estado = (await client.get(url, headers=headers)).json()
+
+    assert estado["phase"] == "alert_active", (
+        f"un incidente ABIERTO quedó tapado por una autorización anterior (fase "
+        f"{estado['phase']!r}): el ocupante leería «REINGRESO AUTORIZADO» en plena alerta"
+    )
+    assert estado["reentry"]["blocked"] is True
+
+
+@pytest.mark.anyio
+async def test_pasada_su_ventana_la_autorizacion_DEJA_de_declararse(
+    base_data, make_incident
+) -> None:
+    """Una afirmación que no caduca acaba colgada: `reentry_declare_s` la acota.
+
+    La ventana es para alguien que está FUERA del edificio y mira el teléfono al
+    volver, no para que la app siga diciéndolo días después de un sismo que ya
+    nadie recuerda.
+    """
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    await _seed_dictamen(incident_id, status="inhabit_monitor", signed=True)
+    # Cerrado hace MÁS que la ventana por defecto (8 h).
+    await _cerrar_incidente(incident_id, hace_s=9 * 3600.0)
+
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        estado = (await client.get(url, headers=au.bearer(_occ()))).json()
+
+    assert estado["phase"] == "idle", (
+        f"la autorización sigue declarándose 9 h después del cierre (fase {estado['phase']!r})"
+    )
+
+
+@pytest.mark.anyio
+async def test_un_dictamen_SIN_FIRMAR_no_libera_aunque_el_incidente_se_cierre(
+    base_data, make_incident
+) -> None:
+    """Un preliminar automático no autoriza a nadie a volver a entrar en un edificio."""
+    await _seed_zone_and_code()
+    incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    await _seed_dictamen(incident_id, status="inhabit_monitor", signed=False)
+    await _cerrar_incidente(incident_id)
+
+    url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
+    async with au.client_for(create_app()) as client:
+        await _enroll(client, _occ())
+        estado = (await client.get(url, headers=au.bearer(_occ()))).json()
+
+    assert estado["phase"] == "idle", (
+        "un dictamen preliminar SIN firma liberó el reingreso: la firma de un inspector "
+        "es lo único que autoriza volver a entrar"
+    )

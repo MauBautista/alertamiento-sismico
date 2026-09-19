@@ -428,3 +428,41 @@ def test_la_guarda_no_lleva_marcadores_de_formato() -> None:
         "fichero deja de poder correrse desde el arnés de pruebas — con lo que lo que se "
         "prueba deja de ser lo que se corre"
     )
+
+
+def test_la_ventana_de_reingreso_no_se_separa_del_ajuste() -> None:
+    """[T-7.55] Tres sitios dicen lo mismo con números distintos, y ninguno vigilaba al otro.
+
+    - `Settings.reentry_declare_s` — cuánto sigue el ENDPOINT declarando el reingreso.
+    - `phase.sql` — la réplica que el arnés imprime al operador.
+    - `reset.sql` — cuánto retrodata el cierre para que el sitio vuelva a `idle`.
+
+    Si la réplica se quedara corta diría `idle` donde la app dice «REINGRESO
+    AUTORIZADO», que es la divergencia que `T-6.18` puso a vigilar. Y si el
+    retrodatado no superara la ventana, **`reset` dejaría de resetear**: el sitio
+    seguiría declarando el reingreso durante horas después de limpiarlo.
+
+    Los tres se leen de su fuente; ninguno se teclea aquí.
+    """
+    from takab_api.settings import Settings
+
+    ventana_s = Settings().reentry_declare_s
+
+    replica = (SQL_DIR / "phase.sql").read_text("utf-8")
+    m = re.search(r"closed_at > now\(\) - interval '(\d+) hours'", replica)
+    assert m, "la réplica dejó de acotar la ventana de reingreso: ya no puede coincidir"
+    assert int(m.group(1)) * 3600 == ventana_s, (
+        f"la réplica usa {m.group(1)} h y `reentry_declare_s` vale {ventana_s / 3600:.0f} h: "
+        "el arnés diría una fase y la app otra"
+    )
+
+    reset = (SQL_DIR / "reset.sql").read_text("utf-8")
+    r = re.search(r"closed_at = now\(\) - interval '(\d+) days'", reset)
+    assert r, (
+        "`reset.sql` volvió a cerrar con `now()`: con la ventana de reingreso viva, el sitio "
+        "seguiría diciendo «REINGRESO AUTORIZADO» después de resetearlo"
+    )
+    assert int(r.group(1)) * 86400 > ventana_s, (
+        f"`reset` retrodata {r.group(1)} d y la ventana es de {ventana_s / 3600:.0f} h: "
+        "no la supera, así que resetear no devuelve el sitio a `idle`"
+    )

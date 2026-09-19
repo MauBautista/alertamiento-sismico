@@ -25,8 +25,15 @@ sitio con incidente activo en staging.
   > además `armeabi-v7a`, `x86` y `x86_64` multiplica por ~4 el tiempo de
   > compilación nativa para ABIs que ningún teléfono de prueba usa.
 - Variables en `.maestro/.env` (NO commitear): `OCCUPANT_EMAIL`, `OCCUPANT_PASSWORD`,
-  `TACTICO_EMAIL`, `TACTICO_PASSWORD`, `SITE_CODE`. Las escribe
-  `make cloud-mobile-users`; la fuente de verdad es el secreto `takab/dev/mobile/users`.
+  `TACTICO_EMAIL`, `TACTICO_PASSWORD`, `SITE_CODE` y `HOSTED_UI_LOGOUT_URL`. Las escribe
+  `make cloud-mobile-users`; la fuente de verdad es el secreto `takab/dev/mobile/users`
+  (o `…/users-e2e` para el perfil del arnés).
+
+  ⚠️ **`HOSTED_UI_LOGOUT_URL` va ENTRECOMILLADA y con `https://`.** Dos trampas medidas el
+  2026-09-18: el valor lleva `?` y `&`, y sin comillas el `source` del `.env` toma el `&` como
+  «ejecuta en segundo plano» y parte la línea —la variable queda vacía y `run.sh` avisa de que no
+  existe aunque esté escrita—; y `hosted_ui_domain` **no trae esquema**, y un `am start -d` sin
+  `https://` no casa el intent `VIEW`, así que el navegador no se abre y nadie se entera.
 
 ### ⚠️ Los E2E van contra el SITIO DEL ARNÉS, nunca contra Puebla
 

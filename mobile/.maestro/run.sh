@@ -55,6 +55,32 @@ if [ "${SITE_CODE:-}" = "site-dev" ]; then
   exit 1
 fi
 
+# ⚠️ [T-7.56] CERRAR LA SESIÓN DE COGNITO ANTES DE CADA FLUJO.
+#
+# `launchApp: clearState` limpia la app — **pero no la cookie de la Hosted UI**,
+# que vive en el navegador del sistema (Custom Tabs). Medido el 2026-09-18: tras
+# correr `01b` (ocupante), el `05a` (táctico) entró **como el ocupante**, porque
+# `/oauth2/authorize` redirige solo con la sesión de antes. El síntoma engaña —
+# «no encuentro la pestaña LISTA»— porque las pestañas se derivan del rol, así que
+# parece un fallo de la app y es una identidad equivocada.
+#
+# El propio `login-tactico.yaml` ya avisaba del redirect, pero nada lo resolvía.
+# `D-35` lo hace más probable: hay DOS identidades tácticas y la corrida de
+# aceptación cambia de identidad al menos dos veces.
+#
+# ⚠️ Se cierra SOLO la sesión de Cognito, por su endpoint `/logout`. Nada de
+# borrar los datos del navegador: estos flujos corren en un teléfono **PERSONAL**,
+# y una corrida de pruebas no tiene por qué llevarse las sesiones de nadie.
+if [ -n "${HOSTED_UI_LOGOUT_URL:-}" ]; then
+  adb shell am start -a android.intent.action.VIEW -d "$HOSTED_UI_LOGOUT_URL" >/dev/null 2>&1 || true
+  sleep 5
+  adb shell input keyevent KEYCODE_HOME >/dev/null 2>&1 || true
+else
+  echo "AVISO: $ENTORNO no define HOSTED_UI_LOGOUT_URL." >&2
+  echo "       Sin eso, un flujo que cambie de identidad entrará con la ANTERIOR:" >&2
+  echo "       la cookie de Cognito sobrevive al clearState de la app (T-7.56)." >&2
+fi
+
 FLUJO="$1"; shift
 case "$FLUJO" in /*) ;; *) FLUJO="$AQUI/$FLUJO" ;; esac
 

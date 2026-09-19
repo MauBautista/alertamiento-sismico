@@ -250,6 +250,38 @@ async def mobile_state(
             phase = "shaking_concluded"
         else:
             phase = "alert_active"
+    else:
+        # [T-7.55] ⚠️ LA AUTORIZACIÓN SOBREVIVE AL CIERRE DEL INCIDENTE.
+        #
+        # Desde `D-33` el motor cierra el incidente en cuanto se firma el dictamen
+        # —medido: TRES SEGUNDOS—, y hasta aquí eso hacía que la fase cayera a
+        # `idle`. Para el ocupante eso es que **la prohibición de reingreso
+        # desaparece sin que nadie le diga que ya puede volver**: tenía que
+        # deducirlo de la ausencia de un cartel. Es la misma clase de defecto que
+        # `T-7.51` cerró en el dictamen —un documento que se desmiente— visto
+        # desde la pantalla del que está fuera del edificio.
+        #
+        # Va en el `else` **a propósito, y es la garantía de seguridad de este
+        # bloque**: si hay incidente abierto manda ése, siempre. Al revés, un
+        # ocupante en plena alerta leería «REINGRESO AUTORIZADO» donde debe leer
+        # «EVACÚE». Por eso no se amplía `OPEN_INCIDENT` para que traiga cerrados:
+        # esa vía haría que el orden de un `ORDER BY` decidiera qué lee alguien
+        # que está decidiendo si entra a un edificio.
+        #
+        # Y no se resucita el incidente: lo que persiste es el HECHO de la
+        # autorización, que es lo que el ocupante necesita. `incident` sigue en
+        # `None`, así que `reentry.blocked` queda en falso por el mismo camino de
+        # siempre.
+        reentry_row = (
+            await conn.execute(
+                q.REENTRY_STILL_DECLARED,
+                {"site": str(site_id), "ventana_s": settings.reentry_declare_s},
+            )
+        ).first()
+        if reentry_row is not None and reentry_row.status in _HABITABLE:
+            dictamen_status = reentry_row.status
+            dictamen_signed = True
+            phase = "reentry_approved"
 
     # [T-2.106] ALARMA DEL INMUEBLE. El quórum de pánico emite un `siren/activate`
     # firmado y NO crea incidente, así que hasta aquí no llegaba nada: el edificio
