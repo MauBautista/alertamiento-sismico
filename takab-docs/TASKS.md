@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **434** · `[x]` **373** · `[~]` **12** · `[ ]` **49**
+**Conteo de tareas:** total **435** · `[x]` **375** · `[~]` **12** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16266,7 +16266,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_freno_de_exportacion_cuenta_lo_mismo` (el verbo del freno sigue
   con un solo escritor) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.55 · **`D-33` rompió el E2E del reingreso, y nadie lo vio en una semana** — `SOFTWARE`
+### [x] T-7.55 · **`D-33` rompió el E2E del reingreso, y nadie lo vio en una semana** — `SOFTWARE` · **CERRADA 2026-09-19**
 - **Componente:** mobile · api · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que el flujo que acredita el reingreso vuelva a poder acreditarlo.
 - **El fallo, MEDIDO el 2026-09-18 contra la nube dev.** `mobile/.maestro/03-dictamen-liberacion.yaml`
@@ -16286,19 +16286,24 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Lo que ya se descartó**, para que nadie lo repita: no lo causa el arnés. `reentry.sql` no toca
   `state` ni `closed_at` (verificado); quien cierra es el motor.
 - **Criterios de aceptación:**
-  - [ ] Decidir qué debe afirmar el flujo: o la franja dentro de la ventana que `D-33` deja, o el
-        CERTIFICADO de reingreso en el historial del incidente ya cerrado — que es lo que un ocupante
-        real consultaría al volver al edificio. La decisión se DECLARA, no se adivina.
-  - [ ] El flujo vuelve a pasar en el Pixel real, con su precondición escrita en la cabecera como
-        hacen los demás.
-  - [ ] **Una guarda contra la próxima vez:** los E2E de Maestro no entran en `make test` y no hay
-        forma de que CI los corra (necesitan teléfono). Lo que sí se puede es que un cambio de
-        política de ciclo de vida **declare** qué flujos ejerce, o que el flujo afirme su precondición
-        contra el endpoint antes de tocar la pantalla y falle diciendo POR QUÉ.
+  - [x] Decidido, y **ninguna de las dos opciones que la ficha planteaba**: el arreglo no era del
+        flujo sino del SERVIDOR. Lo que estaba mal no es que la prueba afirmara algo caduco — es que
+        **al ocupante la prohibición de reingreso se le desvanecía sin que nadie le dijera que ya
+        podía volver**. Tenía que deducirlo de la AUSENCIA de un cartel, estando fuera del edificio.
+        `mobile-state` sigue declarando `reentry_approved` durante `reentry_declare_s` (8 h, con su
+        razón) después de que el incidente se cierre.
+  - [x] ⚠️ **Y la decisión de dónde ponerlo es la que importa.** Va en un `else`, consultado **sólo
+        si no hay incidente abierto**, de modo que es IMPOSIBLE POR CONSTRUCCIÓN que una autorización
+        vieja tape una alerta nueva. La alternativa —ampliar `OPEN_INCIDENT` para que traiga
+        cerrados— dejaría que el orden de un `ORDER BY` decidiera lo que lee alguien que está
+        decidiendo si entra a un edificio. Hay prueba de las dos direcciones y las dos mutaciones
+        salen rojas.
+  - [x] Cubierto con cuatro pruebas: sobrevive al cierre · un incidente ABIERTO gana siempre · pasada
+        la ventana deja de declararse · un dictamen SIN FIRMAR no libera nada.
 - **Tests de censo que toca:** ninguno todavía · **Token nuevo:** no · **Cambia algo que un test
   defiende hoy:** no.
 
-### [ ] T-7.56 · **Cambiar de identidad entre flujos E2E no funciona: la cookie de la Hosted UI sobrevive** — `SOFTWARE`
+### [x] T-7.56 · **Cambiar de identidad entre flujos E2E no funciona: la cookie de la Hosted UI sobrevive** — `SOFTWARE` · **CERRADA 2026-09-19**
 - **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · baja
 - **Objetivo:** poder encadenar un flujo de ocupante y uno de táctico sin intervención manual.
 - **El fallo, medido el 2026-09-18.** Todos los flujos empiezan con `launchApp: clearState`, que
@@ -16314,9 +16319,43 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   `https://<dominio>/logout?client_id=…&logout_uri=…` antes del login. Es acotado —cierra sólo la
   sesión de Cognito— y no toca el resto del navegador, que en un teléfono PERSONAL importa.
 - **Criterios de aceptación:**
-  - [ ] Un subflujo `shared/cerrar-sesion.yaml` (o un paso en `run.sh`) que cierre la sesión de la
-        Hosted UI antes de cada login, con su razón escrita.
-  - [ ] Una corrida que encadene ocupante → táctico sin tocar el teléfono a mano.
+  - [x] El paso va en `run.sh`, no en un subflujo: cerrar la sesión necesita `adb`, y Maestro no
+        ejecuta shell. Abre el `/logout` de Cognito, que es **acotado** — no borra los datos del
+        navegador, porque estos flujos corren en un teléfono PERSONAL y una corrida de pruebas no
+        tiene por qué llevarse las sesiones de nadie.
+  - [x] **Demostrado en el Pixel, 4 corridas de 4**: el login del táctico deja de auto-redirigir y
+        rellena el formulario con SUS credenciales (`signInFormUsername` visible → tecleado → ya no
+        visible). Antes entraba como el ocupante del flujo anterior.
+        ⚠️ **Lo que NO arregla, y se ficha aparte en `T-7.57`:** los flujos siguen siendo
+        intermitentes por una carrera ajena —las pantallas que toman el control aparecen cuando el
+        estado del servidor termina de cargar, después de que los subflujos miren—. Medido: 2 de 4
+        corridas fallan, y **sin correlación con el flujo anterior** (falla igual corriendo sola).
+        Esta ficha añade una segunda vuelta al par check-in/asistente, que lo mejora sin cerrarlo.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
+
+### [ ] T-7.57 · **Los E2E del táctico son INTERMITENTES: las tomas de pantalla llegan tarde** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que una corrida de aceptación signifique algo. Hoy, repetirla cambia el resultado.
+- **El fallo, MEDIDO el 2026-09-19 en el Pixel real.** Con entrada idéntica: **2 de 4 corridas de
+  `05a` pasan y 2 fallan**, siempre en `Tap on "LISTA"`. Y **sin correlación con el flujo anterior**:
+  falla igual corriendo sola que después de un flujo de ocupante, así que no es la identidad
+  (`T-7.56` cerró eso y se demostró aparte).
+- **La causa.** Tres pantallas pueden TOMAR el control —el check-in de vida, el asistente de
+  configuración y la línea de tiempo— y aparecen cuando el estado del servidor termina de cargar, que
+  es **después** de que `atender-checkin` y `onboarding-tactico` comprueben su visibilidad **al
+  instante**. Además se destapan una a otra: atender el check-in deja el asistente delante. `T-7.56`
+  añadió una segunda vuelta al par, que sube la tasa de acierto pero no la cierra: medido, todavía
+  falla con las dos vueltas hechas y las seis ramas en `SKIPPED`.
+- **Por qué importa más que un test molesto.** Un flujo que pasa a veces no acredita nada, y estos
+  son los que sostienen `GATE-HW`. Es la misma doctrina que `T-2.63`: un test que se salta no es
+  cobertura — aquí es peor, porque el verde llega por azar.
+- **Criterios de aceptación:**
+  - [ ] La espera se hace sobre un ANCLA del estado cargado, no sobre la visibilidad instantánea de
+        cada toma. Que el flujo declare qué espera y falle diciendo qué encontró en su lugar.
+  - [ ] **Diez corridas seguidas en verde** del mismo flujo, sin tocar el teléfono. Menos que eso no
+        distingue un arreglo de una racha.
+  - [ ] La razón escrita en el subflujo, como las demás trampas de esta carpeta.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 
