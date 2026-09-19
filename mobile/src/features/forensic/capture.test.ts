@@ -8,10 +8,17 @@
 // se midió en el Pixel el 2026-09-19 vivía justo ahí — la foto se perdía al
 // moverla y lo que veía el usuario era el `ENOENT` crudo de la plataforma.
 //
-// El disco de mentira de abajo implementa el contrato DOCUMENTADO de
-// `expo-file-system` (SDK 57): «Moves a file synchronously. Updates the `uri`
-// property that now points to the new location» — `move()` muta el objeto
-// ORIGEN, y el objeto que se le pasa como destino NO se actualiza.
+// El disco de mentira de abajo implementa el contrato REAL de
+// `expo-file-system@57.0.1`, y son dos cosas:
+//
+//   · `move(destination, options?): Promise<void>` — **es ASÍNCRONO**. Existe
+//     `moveSync()` aparte, y las vecinas del módulo (`delete`, `create`,
+//     `write`) sí son síncronas, que es lo que hacía pasar desapercibida una
+//     promesa sin esperar. Por eso el `move` de aquí abajo tarda un tick de
+//     verdad: sin eso la prueba no distingue el código con `await` del que no
+//     lo tiene, y ése era EL defecto.
+//   · «Updates the `uri` property that now points to the new location» —
+//     muta el objeto ORIGEN, y el objeto destino NO se actualiza.
 import { captureForensicPhoto } from "./capture";
 import type { ForensicMeta } from "./watermark";
 
@@ -22,6 +29,8 @@ const mockDirs = new Set<string>();
 /** Con esto en `true`, `move()` vacía el origen y NO escribe el destino: es el
  *  estado que se midió en el teléfono (el fichero no estaba en ningún lado). */
 const mockFalla = { elMovimientoPierdeElFichero: false };
+/** Orden real de los eventos del disco: es lo que delata la carrera. */
+const mockTraza: string[] = [];
 
 jest.mock("expo-file-system", () => {
   class FakeDirectory {
@@ -47,7 +56,11 @@ jest.mock("expo-file-system", () => {
     delete(): void {
       mockDisco.delete(this.uri);
     }
-    move(destino: { uri: string }): void {
+    // ASÍNCRONO, como el de verdad, y tardando un tick real: si el código de
+    // producción no lo espera, lo que sigue corre con el fichero sin mover.
+    async move(destino: { uri: string }): Promise<void> {
+      mockTraza.push("move:inicio");
+      await new Promise((listo) => setTimeout(listo, 0));
       const bytes = mockDisco.get(this.uri);
       if (bytes === undefined) {
         throw new Error(`ENOENT: ${this.uri}`);
@@ -58,8 +71,10 @@ jest.mock("expo-file-system", () => {
       }
       // El ORIGEN es el que se actualiza. `destino` queda intacto a propósito.
       this.uri = destino.uri;
+      mockTraza.push("move:fin");
     }
     async bytes(): Promise<Uint8Array> {
+      mockTraza.push("bytes");
       const b = mockDisco.get(this.uri);
       if (b === undefined) {
         // Literalmente lo que imprimió el teléfono antes del arreglo.
@@ -113,6 +128,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockDisco.clear();
   mockDirs.clear();
+  mockTraza.length = 0;
   mockFalla.elMovimientoPierdeElFichero = false;
   mockCaptureRef.mockResolvedValue(SELLADA);
   mockDisco.set(SELLADA, new Uint8Array([1, 2, 3]));
@@ -148,6 +164,17 @@ describe("captureForensicPhoto", () => {
   });
 
   // ── el corazón de T-7.58 ────────────────────────────────────────────────
+  it("NO lee el fichero hasta que el movimiento TERMINÓ — `move()` es asíncrono", async () => {
+    // `move(destination, options?): Promise<void>` en expo-file-system@57.0.1.
+    // Sin esperarla, la lectura corre contra el movimiento nativo y el
+    // resultado sale a cara o cruz: el flujo E2E `02` fallaba ~1 de cada 2
+    // corridas, y el teléfono imprimía el ENOENT con la ruta de la CACHÉ.
+    await captureForensicPhoto(VISTA_COMPUESTA, META, "inc9");
+
+    expect(mockTraza).toEqual(["move:inicio", "move:fin", "bytes"]);
+  });
+
+
   it("si la foto no quedó en el disco tras moverla, FALLA declarándolo", async () => {
     mockFalla.elMovimientoPierdeElFichero = true;
 

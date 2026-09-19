@@ -16401,15 +16401,24 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   el pixel y acaba en `evidence_objects`, que no admite reescritura. Una captura que a veces no se
   cuenta es una captura que a veces **se pierde**, y el brigadista que la tomó cree que la mandó.
   Si eso pasa en un edificio de verdad, la foto de un daño estructural no llega a Triage.
-- **LA CAUSA, hallada el 2026-09-19 y NO supuesta.** La foto **se pierde**. La pantalla del
-  teléfono decía `Call to function 'FileSystemFile.bytes' has been rejected. →
-  java.io.FileNotFoundException: /data/user/0/com.takab.ailert/files/forensic/evidence-….jpg:
-  open failed: ENOENT`, y la nube confirmaba el otro extremo: `evidencia del incidente: (ninguna)`
-  y `reportes de danos: 0`. El motivo está en la API de `expo-file-system` (SDK 57):
-  **`File.move(destino)` muta el objeto ORIGEN** —«Updates the `uri` property that now points to
-  the new location»— y **no actualiza el objeto destino**. `capture.ts` hacía
-  `new File(shotUri).move(dest)`, tiraba el origen y leía `dest.uri`: una ruta construida a mano
-  en la que se confiaba.
+- **LA CAUSA, hallada el 2026-09-19 y NO supuesta. La foto se pierde, y es una CARRERA.**
+  En `expo-file-system@57.0.1`, `FileSystemFile` declara
+  **`move(destination, options?): Promise<void>`** — y, aparte, `moveSync(): void`. `capture.ts`
+  llamaba `origen.move(dest);` **sin `await`** y leía el fichero en la línea siguiente: la lectura
+  corría contra el movimiento nativo y se resolvía a cara o cruz. De ahí el «~1 de cada 2».
+  - **Por qué engaña, y por eso lleva censo y no comentario:** las vecinas del mismo objeto
+    —`delete()`, `create()`, `write()`— **sí son síncronas**, así que la línea no desentonaba;
+    existe `moveSync()` aparte, y el nombre corto **parece** el síncrono; y `tsc --noEmit` no la
+    caza, porque una promesa suelta no es un error de tipos (este árbol no tiene lint con
+    información de tipos).
+  - **Y un segundo error, encima:** se leía `dest.uri` y no el origen. La API dice «Updates the
+    `uri` property that now points to the new location» — `move()` muta el objeto **ORIGEN** y no
+    actualiza el destino, así que `dest.uri` era una ruta construida a mano en la que se confiaba.
+  - **Las dos versiones del fallo se fotografiaron, y la ruta del `ENOENT` las distingue:** con el
+    código viejo el teléfono nombraba `…/files/forensic/evidence-….jpg` (el destino, que aún no
+    existía); con el origen ya arreglado pero todavía sin `await`, nombraba
+    `…/cache/ReactNative-snapshot-image….jpg` (el origen, leído antes de moverse). La nube
+    confirmaba el otro extremo: `evidencia del incidente: (ninguna)` · `reportes de danos: 0`.
 - **Y un SEGUNDO defecto, de la misma familia que `T-7.57` y encontrado al medir éste:**
   `shared/login-tactico.yaml` **daba por bueno un login a medias**. Su ancla final era
   «`signInFormUsername` ya no se ve», y eso se cumple **al pasar a la pantalla del TOTP**, no al
@@ -16430,9 +16439,13 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         que cada corrida pide **un TOTP nuevo** que Maestro no puede generar. Van 3 verdes y
         ninguna pérdida de foto desde el arreglo; las dos rojas de hoy fueron TOTPs sin teclear,
         y ahora el log lo dice con ese nombre.
-- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
-  hoy:** no. `capture.ts` era la única pieza de la costura forense **sin prueba** —`watermark.ts` y
-  `fileHash.ts` sí la tenían— y ahí vivía el defecto: la ficha le pone una.
+- **Tests de censo que toca:** **trae uno nuevo**, `src/expoFileSystemCensus.test.ts` — todo
+  `.move(`/`.copy(` de un fichero va precedido de `await` o `return`. Son justo las dos con gemela
+  `*Sync`, que es lo que hace creer que la corta es la síncrona. · **Token nuevo:** no · **Cambia
+  algo que un test defiende hoy:** no. `capture.ts` era además la única pieza de la costura forense
+  **sin prueba** —`watermark.ts` y `fileHash.ts` sí la tenían— y ahí vivía el defecto: la ficha le
+  pone una, con un disco de mentira cuyo `move()` **tarda un tick de verdad** (sin eso la prueba no
+  distingue el código con `await` del que no lo tiene).
 
 ## RUTA CRÍTICA
 
