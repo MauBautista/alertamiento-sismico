@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **436** · `[x]` **376** · `[~]` **12** · `[ ]` **48**
+**Conteo de tareas:** total **436** · `[x]` **377** · `[~]` **12** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16385,7 +16385,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 
-### [ ] T-7.58 · **La foto forense no siempre se cuenta, y el flujo 02 falla por eso** — `SOFTWARE`
+### [x] T-7.58 · **La foto forense no siempre se cuenta, y el flujo 02 falla por eso** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que capturar una foto de daños sea un acto fiable, no uno que sale bien a veces.
 - **El fallo, MEDIDO el 2026-09-19 en el Pixel real.** En `02-tactico-foto-danos` los tres toques de
@@ -16401,15 +16401,57 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   el pixel y acaba en `evidence_objects`, que no admite reescritura. Una captura que a veces no se
   cuenta es una captura que a veces **se pierde**, y el brigadista que la tomó cree que la mandó.
   Si eso pasa en un edificio de verdad, la foto de un daño estructural no llega a Triage.
+- **LA CAUSA, hallada el 2026-09-19 y NO supuesta. La foto se pierde, y es una CARRERA.**
+  En `expo-file-system@57.0.1`, `FileSystemFile` declara
+  **`move(destination, options?): Promise<void>`** — y, aparte, `moveSync(): void`. `capture.ts`
+  llamaba `origen.move(dest);` **sin `await`** y leía el fichero en la línea siguiente: la lectura
+  corría contra el movimiento nativo y se resolvía a cara o cruz. De ahí el «~1 de cada 2».
+  - **Por qué engaña, y por eso lleva censo y no comentario:** las vecinas del mismo objeto
+    —`delete()`, `create()`, `write()`— **sí son síncronas**, así que la línea no desentonaba;
+    existe `moveSync()` aparte, y el nombre corto **parece** el síncrono; y `tsc --noEmit` no la
+    caza, porque una promesa suelta no es un error de tipos (este árbol no tiene lint con
+    información de tipos).
+  - **Y un segundo error, encima:** se leía `dest.uri` y no el origen. La API dice «Updates the
+    `uri` property that now points to the new location» — `move()` muta el objeto **ORIGEN** y no
+    actualiza el destino, así que `dest.uri` era una ruta construida a mano en la que se confiaba.
+  - **Las dos versiones del fallo se fotografiaron, y la ruta del `ENOENT` las distingue:** con el
+    código viejo el teléfono nombraba `…/files/forensic/evidence-….jpg` (el destino, que aún no
+    existía); con el origen ya arreglado pero todavía sin `await`, nombraba
+    `…/cache/ReactNative-snapshot-image….jpg` (el origen, leído antes de moverse). La nube
+    confirmaba el otro extremo: `evidencia del incidente: (ninguna)` · `reportes de danos: 0`.
+- **Y un SEGUNDO defecto, de la misma familia que `T-7.57` y encontrado al medir éste:**
+  `shared/login-tactico.yaml` **daba por bueno un login a medias**. Su ancla final era
+  «`signInFormUsername` ya no se ve», y eso se cumple **al pasar a la pantalla del TOTP**, no al
+  entrar. El subflujo decía COMPLETED con la Hosted UI delante pidiendo el código, el flujo se iba
+  a esperar `tabs-tacticas` —imposible, con el navegador encima— y moría 75 s después acusando a la
+  app. Los 120 s que decían «hay una persona tecleando seis dígitos» se gastaban en cero segundos.
 - **Criterios de aceptación:**
-  - [ ] Averiguar si la foto se PIERDE o sólo se cuenta tarde: mirar `evidence_objects` y el spool
+  - [x] Averiguar si la foto se PIERDE o sólo se cuenta tarde: mirar `evidence_objects` y el spool
         local tras una corrida que falle. Las dos respuestas piden arreglos distintos y la ficha no
-        puede elegir por adelantado.
-  - [ ] Si se pierde: la app lo DECLARA en vez de dejar el contador a cero — un brigadista no puede
-        creer que mandó una prueba que no salió.
-  - [ ] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`.
-- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
-  hoy:** no.
+        puede elegir por adelantado. — **se pierde**, medido por los dos extremos (ver arriba).
+  - [x] Si se pierde: la app lo DECLARA en vez de dejar el contador a cero — un brigadista no puede
+        creer que mandó una prueba que no salió. Tres declaraciones donde antes había silencio:
+        la POSTCONDICIÓN de `capture.ts` (`la foto sellada no quedó en el disco tras moverla`) y
+        las dos causas del `return` MUDO de `use()` en `camera.tsx`, que se nombran por separado
+        porque piden cosas distintas (reintentar sirve para una y no para la otra).
+  - [x] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`. **10/10 el
+        2026-09-19**, 45 pasos cada una, cero fallos, con la foto contada y el reporte enviado en
+        las diez. ⚠️ La tanda **necesita a una persona delante**: cada corrida cierra la sesión de
+        Cognito (`T-7.56`), así que pide **un TOTP nuevo** que Maestro no genera — el secreto vive
+        en el authenticator, no en Secrets Manager. Son ~45 min, y está escrito en
+        `mobile/.maestro/README.md` junto al `timeout` de 420 s que hace falta.
+  - [x] **Y se comprobó el OTRO extremo, que es lo que de verdad importaba:** en la nube,
+        `site-e2e-900` tiene **10 reportes de daños en la última hora** —uno por corrida— y las
+        19 filas de `damage_reports` del día llevan **exactamente 1 foto cada una**, con
+        **0 fotos sin `sha256`** en `evidence_objects`. Cero reportes sin evidencia adjunta. La
+        cuenta de la pantalla ya no es la única palabra: la prueba llegó.
+- **Tests de censo que toca:** **trae uno nuevo**, `src/expoFileSystemCensus.test.ts` — todo
+  `.move(`/`.copy(` de un fichero va precedido de `await` o `return`. Son justo las dos con gemela
+  `*Sync`, que es lo que hace creer que la corta es la síncrona. · **Token nuevo:** no · **Cambia
+  algo que un test defiende hoy:** no. `capture.ts` era además la única pieza de la costura forense
+  **sin prueba** —`watermark.ts` y `fileHash.ts` sí la tenían— y ahí vivía el defecto: la ficha le
+  pone una, con un disco de mentira cuyo `move()` **tarda un tick de verdad** (sin eso la prueba no
+  distingue el código con `await` del que no lo tiene).
 
 ## RUTA CRÍTICA
 

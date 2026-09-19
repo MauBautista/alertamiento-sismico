@@ -152,7 +152,27 @@ export default function Camera() {
   };
 
   const use = () => {
-    if (composeRef.current === null || incidentId === null) {
+    // ⚠️ [T-7.58] ESTE `return` ERA MUDO, y es el peor sitio del recorrido para
+    // callarse: el brigadista toca «USAR ESTA FOTO», no pasa NADA —ni foto, ni
+    // aviso, ni navegación— y se va creyendo que mandó la prueba de un daño
+    // estructural. La foto forense acaba en `evidence_objects`, que no admite
+    // reescritura: lo que no se capturó no se recupera después.
+    //
+    // Las dos causas piden cosas distintas y por eso se nombran por separado:
+    // sin vista de composición no hay nada que sellar (la pantalla aún no ha
+    // terminado de montarse, y reintentar funciona); sin incidente no hay a qué
+    // colgar la evidencia, y reintentar no va a arreglarlo solo.
+    if (composeRef.current === null) {
+      setCapturaError(
+        "La vista de la foto aún no está lista. No se ha guardado nada: vuelva a intentarlo.",
+      );
+      return;
+    }
+    if (incidentId === null) {
+      setCapturaError(
+        "No hay incidente al que adjuntar la foto. No se ha guardado nada: vuelva a la pantalla " +
+          "anterior y entre otra vez desde el reporte de daños.",
+      );
       return;
     }
     setBusy(true);

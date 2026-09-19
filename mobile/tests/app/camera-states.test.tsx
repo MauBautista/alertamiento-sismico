@@ -42,8 +42,9 @@ const AHORA = Date.now();
 
 // ------------------------------------------------------------------ mocks
 
+const mockBack = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn() }),
+  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: mockBack }),
 }));
 
 jest.mock("expo-crypto", () => ({ randomUUID: () => "ev-1" }));
@@ -88,16 +89,18 @@ jest.mock("@/auth/session.store", () => ({
   useSessionStore: (sel: (s: { me: { sub: string } }) => unknown) => sel({ me: { sub: "op-abc12345" } }),
 }));
 
+const mockCapturar = jest.fn(async () => ({ uri: "file:///x.jpg", sha256: "h", bytes: 10 }));
 jest.mock("@/features/forensic/capture", () => ({
-  captureForensicPhoto: jest.fn(async () => ({ uri: "file:///x.jpg", sha256: "h", bytes: 10 })),
+  captureForensicPhoto: (...a: unknown[]) => mockCapturar(...(a as [])),
 }));
 jest.mock("@/features/damage/draft.store", () => ({
   useDamageDraft: (sel: (s: { addEvidence: () => void }) => unknown) =>
     sel({ addEvidence: jest.fn() }),
 }));
+const mockEncolar = jest.fn(async () => ({ id: "q-1" }));
 jest.mock("@/offline/queue.store", () => ({
   useQueueStore: Object.assign(jest.fn(), {
-    getState: () => ({ enqueueEvidence: jest.fn(async () => ({ id: "q-1" })) }),
+    getState: () => ({ enqueueEvidence: mockEncolar }),
   }),
 }));
 jest.mock("@/offline/sync", () => ({ drainQueue: jest.fn(async () => undefined) }));
@@ -143,6 +146,9 @@ function instantanea(over: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
+  mockCapturar.mockResolvedValue({ uri: "file:///x.jpg", sha256: "h", bytes: 10 });
+  mockEncolar.mockResolvedValue({ id: "q-1" });
   mockPermiso = { granted: true };
   mockSitio = SITE;
   mockSnapshot = instantanea();
@@ -345,5 +351,65 @@ describe("2.3 · cámara forense · contrato de 4 estados (regla de oro 7)", () 
     expect(v.getByText(/necesita permiso de cámara/)).toBeTruthy();
     expect(v.queryByTestId("state-empty")).toBeNull();
     expect(v.queryByTestId("state-error")).toBeNull();
+  });
+});
+
+describe("2.3 · cámara forense · [T-7.58] «USAR ESTA FOTO» no puede no hacer nada", () => {
+  /** Lleva hasta el botón de confirmar, que es donde se decide si hay evidencia. */
+  async function confirmar(v: RenderResult): Promise<void> {
+    await act(async () => {
+      fireEvent.press(v.getByTestId("use-photo"));
+    });
+    await asentar();
+  }
+
+  it("si la foto sellada no quedó en el disco, LO DICE y no se vuelve atrás", async () => {
+    // El fallo que se midió en el Pixel el 2026-09-19: la foto se perdía al
+    // moverla al directorio privado. Lo único que veía el brigadista era el
+    // `ENOENT` crudo de la plataforma, y el flujo `02` se quedaba en «0 foto(s)».
+    // Lo que NO puede pasar es volver a la pantalla anterior como si nada:
+    // el reporte se enviaría sin la prueba del daño y nadie se enteraría.
+    mockSnapshot = instantanea({ data: estado() });
+    mockCapturar.mockRejectedValue(
+      new Error(
+        "la foto sellada no quedó en el disco tras moverla " +
+          "(file:///doc/forensic/evidence-ev-1.jpg). No se ha guardado nada.",
+      ),
+    );
+
+    const v = await render(<Camera />);
+    await asentar();
+    await capturar(v);
+    await confirmar(v);
+
+    expect(v.getByText(/No se pudo guardar la evidencia en este teléfono/)).toBeTruthy();
+    // El motivo viaja hasta la pantalla (T-7.31): sin él no se distingue un
+    // teléfono sin espacio de una captura que reventó.
+    expect(v.getByText(/no quedó en el disco tras moverla/)).toBeTruthy();
+    expect(v.getByText(/No se ha guardado nada/)).toBeTruthy();
+    // Y sobre todo: ni se encola evidencia falsa ni se sale de la cámara.
+    expect(mockEncolar).not.toHaveBeenCalled();
+    expect(mockBack).not.toHaveBeenCalled();
+  });
+
+  it("con la foto en el disco, se encola con SU huella y entonces sí se vuelve", async () => {
+    // El contraste que le da sentido al anterior: el camino sano encola el
+    // PUNTERO al archivo privado con el SHA-256 sellado en la captura.
+    mockSnapshot = instantanea({ data: estado() });
+
+    const v = await render(<Camera />);
+    await asentar();
+    await capturar(v);
+    await confirmar(v);
+
+    expect(mockEncolar).toHaveBeenCalledTimes(1);
+    const [registro, huella] = mockEncolar.mock.calls[0] as unknown as [
+      Record<string, unknown>,
+      string,
+    ];
+    expect(registro.incident_id).toBe("inc-1");
+    expect(registro.uri).toBe("file:///x.jpg");
+    expect(huella).toBe("h");
+    expect(mockBack).toHaveBeenCalledTimes(1);
   });
 });

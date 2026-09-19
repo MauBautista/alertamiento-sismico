@@ -95,6 +95,31 @@ por eso son tres archivos: el login necesita red y lo que se mide necesita no te
 `maestro test .maestro/` (la carpeta entera) **no** sirve para una corrida de
 aceptación: no hay forma de intercalar los cambios de fase entre flujos.
 
+### Acreditar un flujo intermitente (la tanda de diez)
+
+Cuando un flujo falla a veces, la vara es **diez corridas seguidas en verde** — se fijó en
+`T-7.57` y la heredan `T-7.58` y las que vengan. Se corre así:
+
+```bash
+cd mobile && export PATH="$HOME/.maestro/bin:$PATH" TAKAB_MAESTRO_ENV=.env.e2e
+for i in $(seq 10); do
+  printf 'corrida %s: ' "$i"
+  timeout 420 .maestro/run.sh 02-tactico-foto-danos.yaml >/tmp/tanda$i.log 2>&1 \
+    && echo OK || { echo "FALLO — mira /tmp/tanda$i.log"; break; }
+done
+```
+
+⚠️ **Dos cosas que cuestan una tanda entera, las dos medidas:**
+
+1. **El `timeout` por corrida tiene que sobrar.** El flujo `02` tarda ~263 s; con 260 s el
+   `timeout` cortaba a mitad de una aserción y se leía como un fallo del flujo. De ahí los 420 s:
+   entran también los 120 s del TOTP.
+2. **Un flujo táctico NO se acredita solo.** Desde `T-7.56` cada corrida cierra la sesión de
+   Cognito, así que **cada corrida pide un TOTP nuevo** y Maestro no lo genera: el secreto vive en
+   el authenticator de la persona, no en Secrets Manager. Diez corridas son ~45 min **con alguien
+   delante del teléfono**. Si nadie teclea, el log lo dice con ese nombre
+   (`id: totpCodeInput is not visible ... FAILED`) y no acusa a la app — eso lo arregló `T-7.58`.
+
 ## Cobertura (criterios de aceptación T-2.14)
 | Flujo | Archivo | Acceptance | Precondición |
 |---|---|---|---|
