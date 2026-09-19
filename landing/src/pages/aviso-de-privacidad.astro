@@ -4,7 +4,10 @@
 // Referencia legal genérica a propósito: la ley de datos personales vigente es
 // la LFPDPPP publicada en 2025; NO citar la ley de 2010 ni al INAI
 // (RESIDENCIA-DE-DATOS §6.2: eso está desactualizado y hay que corregirlo).
-// La razón social está pendiente (pregunta abierta #1 del plan).
+// [T-7.21 · D-36] La razón social y el domicilio YA NO están pendientes: los
+// aportó Mauricio el 2026-09-19 y son los mismos que imprime el membrete
+// (`api/src/takab_api/documentos/identidad.py`). Un aviso de privacidad que
+// nombra un responsable que no es la persona moral no identifica a nadie.
 import Base from "../layouts/Base.astro";
 import { CONTACTO_EMAIL } from "../config";
 ---
@@ -18,16 +21,20 @@ import { CONTACTO_EMAIL } from "../config";
     <div class="marco">
       <header>
         <h1 class="titulo">Aviso de privacidad</h1>
-        <p class="mono humo">Actualizado · agosto 2026</p>
+        <p class="mono humo">Actualizado · septiembre 2026</p>
       </header>
       <div class="seccion__cuerpo prosa">
         <p>
           Este aviso corresponde al sitio <strong>takabailert.com</strong>,
           operado por
-          <strong>TAKAB TECHNOLOGY</strong> (México), responsable del tratamiento
-          de los datos personales que aquí se describen, conforme a la legislación
-          mexicana vigente en materia de protección de datos personales en posesión
-          de los particulares.
+          <strong>
+            TAKAB, SISTEMAS TECNOLOGICOS INTELIGENTES &amp; SERVICIOS
+            INTEGRALES, S. de R.L. de C.V.
+          </strong>, con domicilio en Priv. 48 Norte #1239, Agrícola
+          Resurgimiento, Heroica Puebla de Zaragoza, Puebla (México),
+          responsable del tratamiento de los datos personales que aquí se
+          describen, conforme a la legislación mexicana vigente en materia de
+          protección de datos personales en posesión de los particulares.
         </p>
 
         <h2 class="subtitulo">Lo que este sitio no hace</h2>
