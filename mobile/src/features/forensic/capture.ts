@@ -44,7 +44,28 @@ export async function captureForensicPhoto(
   if (dest.exists) {
     dest.delete();
   }
-  new File(shotUri).move(dest);
-  const { bytes, sha256 } = await readAndHash(dest.uri);
-  return { uri: dest.uri, sha256, bytes: bytes.length, meta };
+  // ⚠️ [T-7.58] SE LEE DEL OBJETO ORIGEN, NO DEL DESTINO, y lo dice la API:
+  // «Moves a file synchronously. Updates the `uri` property that now points to
+  // the new location» (docs de `expo-file-system`, SDK 57) — `move()` muta el
+  // ORIGEN; el objeto que se pasa como destino NO se actualiza.
+  //
+  // El código anterior descartaba el origen (`new File(shotUri).move(dest)`) y
+  // leía `dest.uri`, o sea una ruta construida a mano en la que se CONFIABA.
+  // Medido en el Pixel el 2026-09-19: fallaba alrededor de una de cada dos veces
+  // con `FileNotFoundException … ENOENT` al leer los bytes, y el brigadista se
+  // quedaba sin la foto del daño.
+  const origen = new File(shotUri);
+  origen.move(dest);
+
+  // Y la POSTCONDICIÓN, porque un `ENOENT` tres líneas más abajo no dice en qué
+  // paso se perdió el fichero. Esta evidencia va a `evidence_objects`, que no
+  // admite reescritura: lo que no se capturó no se recupera luego.
+  if (!origen.exists) {
+    throw new Error(
+      `la foto sellada no quedó en el disco tras moverla (${origen.uri}). No se ha guardado nada.`,
+    );
+  }
+
+  const { bytes, sha256 } = await readAndHash(origen.uri);
+  return { uri: origen.uri, sha256, bytes: bytes.length, meta };
 }
