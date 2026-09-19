@@ -35,6 +35,14 @@ dependencies = [
     # el día que aquélla cambie de motor. Es el mismo razonamiento de `httpx` dos
     # líneas arriba, que costó un despliegue.
     "pillow>=11",
+    # [T-7.21] RUNTIME, y por la MISMA razón que las dos de arriba: llega
+    # transitiva por `fpdf2`, pero `documentos/hoja.py` la importa para medir la
+    # tipografía real al envolver el texto del SVG de la hoja membretada. Una
+    # dependencia que sólo existe porque otra la arrastra desaparece el día que
+    # aquélla cambie de motor — y aquí la consecuencia sería silenciosa: sin
+    # fontTools se mide con el avance declarado de respaldo y el papel sale con
+    # los renglones partidos donde no toca, sin que nada falle.
+    "fonttools>=4.50",
 ]
 
 [project.optional-dependencies]
