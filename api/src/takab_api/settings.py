@@ -420,6 +420,21 @@ class Settings(BaseSettings):
     dictamen_pga_no_inhabit_g: float = 0.25
     dictamen_pga_monitor_g: float = 0.05
     dictamen_settle_s: float = 60.0
+    # [T-7.55] ⚠️ CUÁNTO SIGUE DECLARÁNDOSE «REINGRESO AUTORIZADO» DESPUÉS DE QUE
+    # EL INCIDENTE SE CIERRE.
+    #
+    # Desde `D-33` el motor cierra el incidente por dictamen firmado, y medido el
+    # 2026-09-18 tarda TRES SEGUNDOS. Como `mobile-state` sólo miraba incidentes
+    # no cerrados, la fase caía a `idle` y al ocupante **la prohibición de
+    # reingreso simplemente se le desvanecía**: nadie le decía que ya podía
+    # volver. Tenía que inferirlo de la AUSENCIA de un cartel, que es la forma de
+    # comunicación que este sistema no usa en ninguna otra parte.
+    #
+    # El número es para una persona que está FUERA del edificio: se fue a otro
+    # sitio y mira el teléfono cuando vuelve. Ocho horas cubren una jornada sin
+    # que la afirmación se quede colgada días. Y no hace falta que cubra más:
+    # si abre otro incidente, ése manda (ver la precedencia en `mobile_site.py`).
+    reentry_declare_s: float = 8 * 3600.0
     # Ventana ASIMÉTRICA del pico de PGA del dictamen (T-1.48): en un incidente
     # SASMEX la sacudida llega DESPUÉS de la alerta (ese es el punto de la
     # alerta temprana) — el ±5 s simétrico perdía el pico. Solo afecta la

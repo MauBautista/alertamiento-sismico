@@ -151,6 +151,29 @@ OPEN_INCIDENT = text(
     "ORDER BY i.opened_at DESC LIMIT 1"
 )
 
+# [T-7.55] LA AUTORIZACIÓN DE REINGRESO QUE SIGUE EN PIE, con el incidente ya
+# cerrado. Se consulta SÓLO cuando no hay incidente abierto (ver `mobile_site.py`),
+# y ésa es la garantía que importa: **un incidente abierto nunca puede quedar
+# tapado por uno cerrado**. Al revés, un ocupante en plena alerta leería
+# «REINGRESO AUTORIZADO» donde debería leer «EVACÚE», que es la dirección cara del
+# error y la única que este sistema no se puede permitir.
+#
+# Pide el dictamen FIRMADO más reciente del incidente —no cualquiera—: un
+# preliminar automático no autoriza a nadie a volver a entrar en un edificio.
+REENTRY_STILL_DECLARED = text(
+    "SELECT i.incident_id, d.status, d.signed_by "
+    "FROM incidents i JOIN LATERAL ("
+    "  SELECT status, signed_by FROM dictamens dd "
+    "   WHERE dd.incident_id = i.incident_id "
+    "   ORDER BY dd.created_at DESC LIMIT 1"
+    ") d ON true "
+    "WHERE i.site_id = CAST(:site AS uuid) AND i.state = 'closed' "
+    "  AND i.closed_at IS NOT NULL "
+    "  AND i.closed_at > now() - make_interval(secs => :ventana_s) "
+    "  AND d.signed_by IS NOT NULL "
+    "ORDER BY i.closed_at DESC LIMIT 1"
+)
+
 LATEST_TIER = text(
     "SELECT new_tier FROM rule_evaluations WHERE site_id = CAST(:site AS uuid) "
     "ORDER BY ts DESC LIMIT 1"

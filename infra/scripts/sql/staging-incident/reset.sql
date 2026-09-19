@@ -7,10 +7,17 @@
 -- seguía abierto. Se midieron TRES así en la nube dev el 2026-09-17, y una de
 -- ellas era un incidente REAL ingerido de `gw-dev-0001`.
 --
--- ⚠️ Y LO QUE ESTO SIGUE HACIENDO, que el software no puede decidir solo: el
--- `SITE_ID` por defecto del arnés es `d1000000-…-0000` = `site-dev`, **el sitio
--- del gabinete real de Puebla**. Así que esta línea cierra incidentes de
--- OPERACIÓN, no sólo los que el arnés abre. Separar el sitio del arnés está
--- fichado; hasta entonces, al menos el cierre queda fechado.
-UPDATE incidents SET state = 'closed', closed_at = now()
+-- [T-7.52] El sitio por defecto ya NO es el de Puebla: es `site-e2e-900`, y
+-- `guarda.sql` aborta contra cualquier sitio que tenga gabinete. Esta línea ya no
+-- puede cerrar incidentes de operación.
+--
+-- ⚠️ [T-7.55] EL CIERRE VA RETRODATADO, y no es un truco: desde que la
+-- autorización de reingreso sobrevive al cierre durante `reentry_declare_s` (8 h),
+-- un `reset` con `closed_at = now()` dejaría el sitio diciendo «REINGRESO
+-- AUTORIZADO» toda esa ventana — o sea, `reset` dejaría de resetear. Y no se puede
+-- borrar el dictamen: `dictamens` es append-only a propósito. Retrodatar el cierre
+-- es decir lo que de verdad se quiere decir: «esto ya es historia vieja».
+-- Los 30 días tienen que superar la ventana, y que no se separen lo comprueba
+-- `test_la_ventana_de_reingreso_no_se_separa_del_ajuste`.
+UPDATE incidents SET state = 'closed', closed_at = now() - interval '30 days'
  WHERE site_id = :'site'::uuid AND state <> 'closed';
