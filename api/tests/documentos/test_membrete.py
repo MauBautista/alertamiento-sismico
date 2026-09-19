@@ -56,21 +56,49 @@ def _documento(**kw) -> bytes:
 
 
 # ───────────────────────────────────────────── 1 · la identidad no se inventa
+#
+# [T-7.21 · PENDIENTES §4.8] Los cuatro datos LLEGARON el 2026-09-19, así que
+# estos casos cambiaron de lado: antes fijaban que la ausencia se declaraba,
+# ahora fijan que lo impreso es lo declarado. Lo que NO se retira es la
+# maquinaria de declarar: se prueba contra una `Identidad()` construida vacía
+# aquí mismo, porque el día que se añada un quinto campo —o se revoque uno de
+# los cuatro— tiene que seguir funcionando, y la constante ya no la ejerce.
 
 
-def test_los_cuatro_datos_que_FALTAN_se_declaran() -> None:
+def test_los_cuatro_datos_ESTAN_y_el_bloque_sigue_teniendo_cuatro_renglones() -> None:
     """Y se declaran los CUATRO: un bloque que encoge esconde que falta algo."""
-    assert not TAKAB.completa
+    assert TAKAB.completa
     rotulos = [r for r, _ in TAKAB.lineas()]
     assert rotulos == ["RAZÓN SOCIAL", "DOMICILIO", "CLASIFICACIÓN", "FIRMA POR TAKAB"]
-    assert all(v == PENDIENTE for _, v in TAKAB.lineas())
+    assert PENDIENTE not in dict(TAKAB.lineas()).values()
+    assert TAKAB.aviso() is None
 
 
-def test_el_aviso_dice_QUE_falta_y_DONDE_esta_fichado() -> None:
-    aviso = TAKAB.aviso()
+def test_la_maquinaria_de_declarar_la_ausencia_SIGUE_viva() -> None:
+    """La constante ya no la ejerce; el mecanismo tiene que seguir en pie."""
+    aviso = Identidad().aviso()
     assert aviso is not None
     assert "razón social" in aviso and "domicilio" in aviso
     assert "§4.8" in PENDIENTE
+
+
+def test_una_cadena_VACIA_no_cuenta_como_dato() -> None:
+    """`completa` y `lineas()` tenían criterios distintos, y se contradecían.
+
+    Con `is not None`, un `firmante=""` daba `completa is True` **y** un papel
+    que imprimía `PENDIENTE` en ese renglón. Es justo la contradicción que este
+    módulo existe para impedir, y estaba esperando a la primera cadena vacía —
+    que es la tentación obvia para expresar «no hay firmante nominal».
+    """
+    casi = Identidad(
+        razon_social="Ejemplo de prueba",
+        domicilio="Calle de prueba 1",
+        clasificacion="confidencial",
+        firmante="",
+    )
+    assert not casi.completa
+    assert casi.aviso() is not None
+    assert dict(casi.lineas())["FIRMA POR TAKAB"] == PENDIENTE
 
 
 def test_con_los_cuatro_datos_el_aviso_DESAPARECE() -> None:
@@ -86,10 +114,19 @@ def test_con_los_cuatro_datos_el_aviso_DESAPARECE() -> None:
     assert PENDIENTE not in dict(completa.lineas()).values()
 
 
-def test_la_hoja_en_blanco_NO_inventa_una_razon_social() -> None:
+def test_la_hoja_en_blanco_IMPRIME_la_razon_social_declarada() -> None:
+    """Y la declarada es la de `identidad.py`, no una parecida.
+
+    El cruce va contra la constante y no contra un literal repetido aquí: una
+    copia del nombre legal en un test es otro sitio donde diverge.
+    """
     texto = _texto(hoja_en_blanco())
     assert "RAZÓN SOCIAL" in texto
-    assert "PENDIENTE" in texto
+    assert TAKAB.razon_social is not None
+    assert TAKAB.razon_social in " ".join(texto.split())
+    assert "PENDIENTE" not in texto
+    # La guarda antifalsificación se queda: el papel no puede inventarse una
+    # forma societaria que el acta no dice.
     assert "S.A. de C.V." not in texto, "el papel se inventó una razón social"
 
 
@@ -218,3 +255,156 @@ def test_el_svg_y_el_pdf_miden_LO_MISMO() -> None:
     caja = PdfReader(io.BytesIO(hoja_en_blanco())).pages[0].mediabox
     assert abs(float(caja.width) / 72 * 25.4 - PAGE_W) < 0.05
     assert abs(float(caja.height) / 72 * 25.4 - PAGE_H) < 0.05
+
+
+# ──────────────────── 6 · [T-7.21] el emisor legal, y lo que puede desbordar
+#
+# Dos superficies nuevas, y las dos son de la misma familia que el resto del
+# fichero: sitios donde algo se dibuja FUERA y nada se pone en rojo.
+
+
+def test_el_EMISOR_del_pie_cabe_en_su_banda() -> None:
+    """`cell()` no envuelve, y el pie ganó dos renglones con datos LARGOS.
+
+    La razón social son 84 caracteres y el domicilio 79. Medido a 7 pt sobre la
+    banda útil suman 236.7 mm contra 185.9 disponibles — por eso van en dos
+    renglones y a 6 pt. Si mañana crece el domicilio, o alguien sube el cuerpo
+    de letra, esto se pone rojo antes de que el papel salga pisado.
+    """
+    pdf = MembretePDF("TKB-MEM-001", "prueba", sellado=SELLO, huella=None)
+    pdf.add_page()
+    pdf.set_font(pdf.body_font, "", 6)
+    for texto in pdf._lineas_emisor():
+        ancho = pdf.get_string_width(pdf.text_of(texto))
+        assert ancho <= CONTENT_W, (
+            f"el renglón del emisor mide {ancho:.1f} mm y la banda son {CONTENT_W}: "
+            f"se dibujaría encima de lo de al lado · {texto!r}"
+        )
+
+
+def test_los_dos_renglones_del_emisor_NO_caben_emparejados() -> None:
+    """La razón por la que son dos, medida y no supuesta.
+
+    Si un día caben juntos, esta prueba se pone roja y quien la lea decide con
+    el número delante — que es lo contrario de heredar una decisión sin su
+    aritmética, que es como se arruinó la migración de formato de esta ficha.
+    """
+    pdf = MembretePDF("TKB-MEM-001", "prueba", sellado=SELLO, huella=None)
+    pdf.add_page()
+    pdf.set_font(pdf.body_font, "", 7)
+    juntos = pdf.get_string_width(pdf.text_of(" · ".join(pdf._lineas_emisor())))
+    assert juntos > CONTENT_W
+
+
+def test_la_hoja_en_blanco_NO_repite_el_emisor_en_el_pie() -> None:
+    """Es el único papel cuyo cuerpo ya lo dice entero — y con los CUATRO datos."""
+    from takab_api.documentos.hoja import _Hoja
+
+    assert _Hoja.emisor_en_pie is False
+    assert MembretePDF.emisor_en_pie is True
+    texto = " ".join(_texto(hoja_en_blanco()).split())
+    assert TAKAB.razon_social is not None
+    assert texto.count(TAKAB.razon_social) == 1
+
+
+def test_la_RESERVA_del_pie_se_deriva_de_sus_renglones() -> None:
+    """Era un `20.0` tecleado al lado de un `set_y(-19)`: dos números a mano.
+
+    El pie acaba de ganar dos renglones. Con la reserva tecleada, subirla se
+    quedaba en «acordarse», y olvidarlo no rompe nada visible: el texto salta de
+    página, pero el pie se dibuja encima del cuerpo de la última.
+    """
+    esperado = (
+        membrete._PIE_TRAS_FILETE
+        + sum(membrete._PIE_RENGLONES)
+        + membrete._PIE_DEGRADADA
+        + membrete._PIE_AIRE
+    )
+    assert membrete.PIE_MM == pytest.approx(esperado)
+    assert len(membrete._PIE_RENGLONES) == 4, "el pie tiene cuatro renglones fijos"
+
+
+def test_NINGUN_texto_del_SVG_se_sale_de_la_hoja() -> None:
+    """La pieza que NO tenía guarda, y que estaba rota.
+
+    ⚠️ Medido el 2026-09-19 sobre el `carta.svg` COMITEADO: el `<text>` del
+    aviso —203 caracteres en sans a 2.6 desde x=15— terminaba en x=292.8, es
+    decir **91.9 mm fuera del filete y 76.9 fuera de una hoja de 215.9**. Nadie
+    lo vio nunca porque `test_el_svg_y_el_pdf_miden_LO_MISMO` compara el
+    `viewBox` con el `/MediaBox`: mide la HOJA, no lo dibujado.
+
+    Se comprueban las DOS identidades a propósito. La vacía es la que estaba
+    rota, y es la que vuelve el día que se añada un campo nuevo.
+    """
+    import re
+
+    from takab_api.documentos import hoja as _hoja
+
+    tope = membrete.PAGE_W - membrete.MARGIN
+    patron = re.compile(r'<text x="([\d.]+)" y="[\d.]+" class="(\w+)">(.*?)</text>')
+    fuentes = {
+        "valor": (_hoja._MONO, _hoja._FS_VALOR, _hoja._AVANCE_MONO),
+        "rotulo": (_hoja._SANS, _hoja._FS_VALOR, _hoja._AVANCE_SANS),
+        "aviso": (_hoja._SANS, _hoja._FS_AVISO, _hoja._AVANCE_SANS),
+        "subtitulo": (_hoja._SANS, 2.6, _hoja._AVANCE_SANS),
+        "pie": (_hoja._SANS, 2.5, _hoja._AVANCE_SANS),
+    }
+    for nombre, identidad in (("real", TAKAB), ("vacía", Identidad())):
+        svg = hoja_svg(identidad)
+        for x, clase, texto in patron.findall(svg):
+            crudo = texto.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+            fichero, tamano, respaldo = fuentes[clase]
+            fin = float(x) + _hoja._ancho(crudo, fichero, tamano, respaldo)
+            assert fin <= tope, (
+                f"identidad {nombre}: el <text class={clase!r}> termina en {fin:.2f} mm "
+                f"y el filete está en {tope} · {crudo[:60]!r}"
+            )
+
+
+def test_el_AVANCE_declarado_es_el_de_la_tipografia_REAL() -> None:
+    """Un número de tipografía tecleado envejece en silencio.
+
+    `_AVANCE_MONO` sólo se usa cuando la fuente no viajó, así que un valor mal
+    no rompe nada hasta el día degradado — el peor día para descubrirlo.
+    """
+    from fontTools.ttLib import TTFont
+
+    from takab_api.documentos import hoja as _hoja
+
+    for fichero, declarado in ((_hoja._MONO, _hoja._AVANCE_MONO), (_hoja._SANS, None)):
+        fuente = TTFont(membrete._FONTS / fichero)
+        upm = fuente["head"].unitsPerEm
+        hmtx = fuente["hmtx"]
+        anchos = {hmtx[n][0] for n in set(fuente.getBestCmap().values()) if n in hmtx.metrics}
+        if declarado is not None:
+            assert len(anchos) == 1, "la monoespaciada dejó de serlo"
+            assert anchos.pop() / upm == pytest.approx(declarado, abs=1e-6)
+
+
+def test_el_SVG_envuelve_lo_que_no_cabe_en_un_renglon() -> None:
+    """Y que envuelva de verdad: la razón social son 84 caracteres y caben 79."""
+    from takab_api.documentos import hoja as _hoja
+
+    caben = int(_hoja._ANCHO_VALOR // (_hoja._FS_VALOR * _hoja._AVANCE_MONO))
+    assert TAKAB.razon_social is not None
+    assert len(TAKAB.razon_social) > caben, "el caso interesante dejó de serlo"
+    renglones = _hoja._envuelve(
+        TAKAB.razon_social, _hoja._MONO, _hoja._FS_VALOR, _hoja._ANCHO_VALOR, _hoja._AVANCE_MONO
+    )
+    assert len(renglones) == 2
+    assert " ".join(renglones) == TAKAB.razon_social, "envolver no puede perder ni añadir texto"
+
+
+def test_el_SVG_parte_una_PALABRA_que_no_cabe_entera() -> None:
+    """Una URL o un hash no tienen espacios, y el contrato es que nada se sale."""
+    from takab_api.documentos import hoja as _hoja
+
+    palabra = "x" * 400
+    renglones = _hoja._envuelve(
+        palabra, _hoja._MONO, _hoja._FS_VALOR, _hoja._ANCHO_VALOR, _hoja._AVANCE_MONO
+    )
+    assert len(renglones) > 1
+    assert "".join(renglones) == palabra
+    for renglon in renglones:
+        ancho = _hoja._ancho(renglon, _hoja._MONO, _hoja._FS_VALOR, _hoja._AVANCE_MONO)
+        assert ancho <= _hoja._ANCHO_VALOR

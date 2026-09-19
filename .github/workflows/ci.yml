@@ -77,6 +77,20 @@ jobs:
         run: |
           python scripts/export_rbac_matrix.py
           git -C .. diff --exit-code shared/fixtures/rbac-matrix.json
+      - name: Drift gate · hoja membretada (shared/brand/membrete)
+        # [T-7.21] La hoja la DIBUJA `MembretePDF`, así que cambia cuando cambia
+        # el membrete o la identidad del emisor. Este gate vivía SÓLO en
+        # `make drift`, y `make drift` no entra en `make test`: hasta hoy un PR
+        # podía cambiar el papel y quedarse verde con el artefacto comiteado
+        # diciendo otra cosa — que es justo lo que el target existe para cazar.
+        #
+        # ⚠️ El `ls-files` no sobra: `git diff --exit-code` sobre una ruta SIN
+        # RASTREAR devuelve 0, así que sin él este paso pasaría en vacío el día
+        # que alguien borre los ficheros o los deje sin `git add`.
+        run: |
+          python ../shared/brand/generar.py >/dev/null
+          git -C .. ls-files --error-unmatch shared/brand/membrete/carta.pdf shared/brand/membrete/carta.svg >/dev/null
+          git -C .. diff --exit-code shared/brand/membrete
 
   sdk:
     name: sdk-ts · generate + tsc

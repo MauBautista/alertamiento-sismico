@@ -20,10 +20,15 @@ peor opción posible de las tres que había:
   (`SIN DATO EXTERNO`, `S/D`, `NO MEDIDO`, `SIN LUGAR EN EL CATÁLOGO`). El papel
   dice qué le falta y a quién se lo pide.
 
-Cuando los cuatro lleguen, **es UNA edición**: se rellenan las constantes de
-abajo, se regenera la hoja en blanco y el mismo commit lleva las dos cosas.
-⚠️ Y tiene que llevarlas: `make drift` compara el artefacto comiteado, así que
-editar esto sin regenerar pone el árbol en rojo — a propósito.
+**Los cuatro llegaron el 2026-09-19** y están abajo. El mecanismo de arriba NO
+se retira: sigue siendo lo que pasa si mañana se añade un campo nuevo o se
+revoca uno de éstos. Lo que cambió es que hoy no hay ninguno en `None`.
+
+⚠️ Y una edición aquí **obliga a regenerar la hoja en el mismo commit**:
+`make drift` compara el artefacto comiteado (`shared/brand/membrete/`), así que
+tocar esto sin regenerar pone el árbol en rojo — a propósito.
+
+    ( cd api && uv run python ../shared/brand/generar.py )
 """
 
 from __future__ import annotations
@@ -45,15 +50,23 @@ class Identidad:
     domicilio: str | None = None
     #: Clasificación del documento: público, confidencial…
     clasificacion: str | None = None
-    #: Quién firma por TAKAB (nombre y cargo).
+    #: Quién firma por TAKAB. Un nombre y su cargo, **o** la declaración de que
+    #: no hay firmante nominal — ver `FIRMA_INSTITUCIONAL` y `D-36`. Lo que NO
+    #: puede ser es `""`: eso imprimiría `PENDIENTE` (ver `completa`).
     firmante: str | None = None
 
     @property
     def completa(self) -> bool:
-        return all(
-            v is not None
-            for v in (self.razon_social, self.domicilio, self.clasificacion, self.firmante)
-        )
+        """Completa = **ninguna línea del papel dice PENDIENTE**, ni más ni menos.
+
+        ⚠️ Se deriva de `lineas()` a propósito. Antes era
+        `all(v is not None ...)`, que es OTRO criterio: con `firmante=""` el
+        objeto se declaraba completo **y a la vez** el papel imprimía
+        `PENDIENTE` en ese renglón y `aviso()` seguía avisando de que faltaba
+        algo. Esa contradicción es justo lo que este módulo existe para impedir,
+        y estaba armada esperando a la primera cadena vacía.
+        """
+        return all(v != PENDIENTE for _, v in self.lineas())
 
     def lineas(self) -> list[tuple[str, str]]:
         """`(rótulo, valor)` del bloque de emisor, con las ausencias declaradas.
@@ -85,6 +98,29 @@ class Identidad:
         )
 
 
-#: La identidad de TAKAB. **Los cuatro valores siguen en `None` a propósito.**
-#: Rellenarlos es la edición que cierra `PENDIENTES §4.8`.
-TAKAB = Identidad()
+#: [D-36] Lo que va en el renglón de la firma cuando **no hay firmante nominal**.
+#:
+#: ⚠️ NO es `None`, y la diferencia importa: `None` significa «no se sabe» y el
+#: papel imprimiría `PENDIENTE · PENDIENTES-MAURICIO §4.8`, que a partir del
+#: 2026-09-19 sería FALSO — no falta el dato, está decidido que no lo hay. Un
+#: hueco declarado como pendiente es tan engañoso como un hueco mudo cuando lo
+#: que se sabe es la ausencia misma.
+#:
+#: Quien emite es la persona moral. El renglón lo dice en vez de dejar en blanco
+#: un sitio donde el lector espera un nombre.
+FIRMA_INSTITUCIONAL = "La persona moral emisora · este documento no lleva firmante nominal"
+
+#: La identidad de TAKAB. Aportada por Mauricio el **2026-09-19**, cierra
+#: `PENDIENTES §4.8`.
+#:
+#: ⚠️ La razón social va **literal, como está registrada**: sin acentos y con la
+#: forma societaria detrás de la coma. No se «corrige» la ortografía de un
+#: nombre legal — lo que va en un papel firmado es lo que dice el acta.
+TAKAB = Identidad(
+    razon_social=(
+        "TAKAB, SISTEMAS TECNOLOGICOS INTELIGENTES & SERVICIOS INTEGRALES, S. de R.L. de C.V."
+    ),
+    domicilio="PRIV. 48 NORTE #1239 AGRICOLA RESURGIMIENTO, HEROICA PUEBLA DE ZARAGOZA, PUEBLA",
+    clasificacion="USO INTERNO",
+    firmante=FIRMA_INSTITUCIONAL,
+)
