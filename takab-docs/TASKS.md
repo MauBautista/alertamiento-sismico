@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **436** · `[x]` **378** · `[~]` **11** · `[ ]` **47**
+**Conteo de tareas:** total **438** · `[x]` **378** · `[~]` **11** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16484,6 +16484,83 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   **sin prueba** —`watermark.ts` y `fileHash.ts` sí la tenían— y ahí vivía el defecto: la ficha le
   pone una, con un disco de mentira cuyo `move()` **tarda un tick de verdad** (sin eso la prueba no
   distingue el código con `await` del que no lo tiene).
+
+### [ ] T-7.59 · **El estado del episodio NO sobrevive al corte de luz que dice sobrevivir** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** — · **Prioridad:** F4 · alta
+- **Objetivo:** que `episodio.json` siga siendo legible después de que al gabinete le quiten la
+  corriente, que es el único escenario para el que ese fichero existe.
+- **El fallo, MEDIDO en el gabinete real el 2026-09-19.** Al arrancar:
+
+  ```
+  ERROR takab_edge.rules.episode — estado de episodio ilegible; se empieza sin episodio
+  json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+  ```
+
+  `char 0` es **fichero vacío**, no fichero a medias. Lo provocó desconectar el Pi para moverlo de
+  sitio —apagado duro, que es exactamente un corte de luz— y volver a conectarlo a la mañana
+  siguiente.
+- **Por qué pasa, y por qué el comentario que hay encima es engañoso.** `_guardar()` escribe a un
+  `.tmp` y hace `tmp.replace(...)`, con el comentario «rename atómico: nunca a medio escribir».
+  Eso es **cierto frente a un proceso que muere** y **falso frente a un corte de corriente**: sin
+  `fsync`, el sistema de ficheros puede confirmar el cambio de nombre —que es metadato— antes de
+  bajar los datos del fichero, y al volver la luz el nombre apunta a cero bytes. Es la diferencia
+  entre atomicidad y durabilidad, y el comentario las mezcla.
+- **⚠️ Y el repositorio YA SABE hacerlo bien.** `cloud/__init__.py` hace `fh.flush()`,
+  `os.fsync(fh.fileno())` **y** `fsync` del directorio, con el comentario «durable ante corte de
+  luz». El mismo defecto está resuelto en un módulo y abierto en su hermano — que es la forma que
+  toma este defecto cuando nadie lo busca.
+- **Por qué importa más que un fichero perdido.** La sección se titula «estado que sobrevive al
+  corte de luz» y su razón, escrita en `supervisor.py`, es que **la forma más probable de que un
+  sismo real termine es cortando la luz**, y un episodio que sólo viva en RAM deja el cierre sin
+  emisor. Esta vez degradó con honestidad —lo declaró y arrancó sin episodio— porque no había
+  sismo. Durante uno, el episodio se habría perdido en el peor momento posible.
+- **Criterios de aceptación:**
+  - [ ] `_guardar()` hace `fsync` del fichero **y** del directorio antes de dar por buena la
+        escritura, como ya hace `cloud/__init__.py`. Reutilizar aquella pieza en vez de escribir
+        una segunda copia: dos implementaciones de lo mismo divergen.
+  - [ ] Una prueba que distinga **atomicidad** de **durabilidad**: que el `fsync` se llame de
+        verdad, no que el fichero exista. Un test que sólo relea lo escrito pasa hoy en verde.
+  - [ ] El comentario del `replace` deja de prometer lo que no cumple: decir qué protege el rename
+        y qué protege el `fsync`, que no es lo mismo.
+  - [ ] Barrer si hay otros estados en disco del edge con la misma promesa y sin `fsync`
+        (`rose-zero.json`, `config-cache.json`, `canary/veredicto.json`, el ledger de actuación).
+        Un censo, no una lista a mano: la próxima la escribe alguien que no leyó esta ficha.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
+
+### [ ] T-7.60 · **El panel miente sobre el uptime después de cualquier corrección de reloj** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que el tiempo que el gabinete dice llevar encendido sea el que lleva encendido.
+- **El fallo, MEDIDO el 2026-09-19.** El panel decía **77 851 s (21.6 h)**; el kernel decía
+  **30 323 s (8.4 h)**. Trece horas de diferencia, y la que se enseña es la falsa.
+- **Por qué.** El Pi 4 **no tiene RTC** (`timedatectl` → `RTC time: n/a`). Al arrancar restaura la
+  última hora guardada y sigue con ella hasta que NTP contesta. Medido en el arranque de ese día:
+
+  ```
+  2026-09-18T18:14:05  kernel: Booting Linux              ← reloj restaurado, equivocado
+  2026-09-19T07:39:30  systemd-timesyncd: Initial clock synchronization
+  ```
+
+  Un salto de **13 h 25 min** hacia adelante. El uptime se calcula restando dos marcas del reloj
+  de pared, así que el salto entra entero en la resta.
+- **Por qué importa, y no es cosmético.** El uptime es lo primero que se mira para saber si un
+  gabinete se reinició. Un valor inflado **esconde exactamente el suceso que se está buscando**:
+  ese día el gabinete había arrancado hacía ocho horas y el panel afirmaba que llevaba
+  veintiuna sin interrupción. Es un dato congelado presentado como vivo — regla de oro 7.
+- **Criterios de aceptación:**
+  - [ ] El uptime sale del reloj **monotónico**, que por definición no salta, y no de restar dos
+        marcas de pared.
+  - [ ] Una prueba que mueva el reloj de pared hacia adelante y compruebe que el uptime **no** se
+        mueve con él. Sin eso el arreglo no se distingue del defecto.
+  - [ ] Barrer qué otras duraciones del edge se calculan restando marcas de pared y cuáles de
+        ellas se enseñan (`checked_age_s`, `oldest_pending_age_s`, `aborted_age_s`,
+        `seedlink_lag_s`…). Las que midan **tiempo transcurrido en esta máquina** tienen el mismo
+        defecto; las que comparen con una fecha ajena —la de un paquete, la de un dictamen— tienen
+        que seguir en reloj de pared, y la diferencia hay que dejarla escrita.
+  - [ ] Considerar si el panel debe DECLARAR el arranque además del uptime: quien mira un gabinete
+        después de un corte quiere la hora, no una duración que tiene que restar de cabeza.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
 
 ## RUTA CRÍTICA
 
