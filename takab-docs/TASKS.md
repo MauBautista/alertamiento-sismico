@@ -16401,15 +16401,38 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   el pixel y acaba en `evidence_objects`, que no admite reescritura. Una captura que a veces no se
   cuenta es una captura que a veces **se pierde**, y el brigadista que la tomó cree que la mandó.
   Si eso pasa en un edificio de verdad, la foto de un daño estructural no llega a Triage.
+- **LA CAUSA, hallada el 2026-09-19 y NO supuesta.** La foto **se pierde**. La pantalla del
+  teléfono decía `Call to function 'FileSystemFile.bytes' has been rejected. →
+  java.io.FileNotFoundException: /data/user/0/com.takab.ailert/files/forensic/evidence-….jpg:
+  open failed: ENOENT`, y la nube confirmaba el otro extremo: `evidencia del incidente: (ninguna)`
+  y `reportes de danos: 0`. El motivo está en la API de `expo-file-system` (SDK 57):
+  **`File.move(destino)` muta el objeto ORIGEN** —«Updates the `uri` property that now points to
+  the new location»— y **no actualiza el objeto destino**. `capture.ts` hacía
+  `new File(shotUri).move(dest)`, tiraba el origen y leía `dest.uri`: una ruta construida a mano
+  en la que se confiaba.
+- **Y un SEGUNDO defecto, de la misma familia que `T-7.57` y encontrado al medir éste:**
+  `shared/login-tactico.yaml` **daba por bueno un login a medias**. Su ancla final era
+  «`signInFormUsername` ya no se ve», y eso se cumple **al pasar a la pantalla del TOTP**, no al
+  entrar. El subflujo decía COMPLETED con la Hosted UI delante pidiendo el código, el flujo se iba
+  a esperar `tabs-tacticas` —imposible, con el navegador encima— y moría 75 s después acusando a la
+  app. Los 120 s que decían «hay una persona tecleando seis dígitos» se gastaban en cero segundos.
 - **Criterios de aceptación:**
-  - [ ] Averiguar si la foto se PIERDE o sólo se cuenta tarde: mirar `evidence_objects` y el spool
+  - [x] Averiguar si la foto se PIERDE o sólo se cuenta tarde: mirar `evidence_objects` y el spool
         local tras una corrida que falle. Las dos respuestas piden arreglos distintos y la ficha no
-        puede elegir por adelantado.
-  - [ ] Si se pierde: la app lo DECLARA en vez de dejar el contador a cero — un brigadista no puede
-        creer que mandó una prueba que no salió.
-  - [ ] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`.
+        puede elegir por adelantado. — **se pierde**, medido por los dos extremos (ver arriba).
+  - [x] Si se pierde: la app lo DECLARA en vez de dejar el contador a cero — un brigadista no puede
+        creer que mandó una prueba que no salió. Tres declaraciones donde antes había silencio:
+        la POSTCONDICIÓN de `capture.ts` (`la foto sellada no quedó en el disco tras moverla`) y
+        las dos causas del `return` MUDO de `use()` en `camera.tsx`, que se nombran por separado
+        porque piden cosas distintas (reintentar sirve para una y no para la otra).
+  - [ ] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`. **Pendiente, y
+        necesita a una persona delante:** cada corrida cierra la sesión de Cognito (`T-7.56`), así
+        que cada corrida pide **un TOTP nuevo** que Maestro no puede generar. Van 3 verdes y
+        ninguna pérdida de foto desde el arreglo; las dos rojas de hoy fueron TOTPs sin teclear,
+        y ahora el log lo dice con ese nombre.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
-  hoy:** no.
+  hoy:** no. `capture.ts` era la única pieza de la costura forense **sin prueba** —`watermark.ts` y
+  `fileHash.ts` sí la tenían— y ahí vivía el defecto: la ficha le pone una.
 
 ## RUTA CRÍTICA
 

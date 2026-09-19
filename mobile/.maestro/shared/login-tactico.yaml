@@ -72,6 +72,47 @@ appId: com.takab.ailert
       - hideKeyboard
       - tapOn:
           text: ".*(Sign in|Iniciar sesión).*"
+      # La hoja del gestor puede saltar aquí y TAPAR la pantalla del TOTP: sin
+      # descartarla, el paso siguiente no vería el campo y volveríamos al verde
+      # falso por otro camino.
+      - runFlow: descartar-autofill.yaml
+      # ── el MFA, que hasta hoy se saltaba solo ─────────────────────────────
+      #
+      # ⚠️ [T-7.58] EL FINAL DE ESTE SUBFLUJO DABA POR BUENO UN LOGIN A MEDIAS,
+      # y el fallo salía 75 segundos después culpando a otro. Medido el
+      # 2026-09-19, corrida `2026-09-19_130209`: `login-tactico` decía COMPLETED
+      # con la Hosted UI todavía delante pidiendo «Por favor, introduzca el
+      # código de su aplicación de contraseña», y el flujo se iba a esperar
+      # `tabs-tacticas` —que no podía aparecer, porque el navegador estaba
+      # encima— hasta agotar sus 75 s. El artefacto acusaba a la app; nadie
+      # había tecleado el TOTP.
+      #
+      # La causa: el ancla de abajo (`signInFormUsername` invisible) se cumple
+      # **al pasar a la pantalla del TOTP**, no al entrar. Los 120 s que decían
+      # «hay una persona mirando su authenticator» se consumían en cero
+      # segundos: la persona nunca los tuvo. Es la lección de `T-7.57` —esperar
+      # sobre un ancla de lo que de verdad se quiere— al otro lado del login.
+      #
+      # MFA obligatorio del pool táctico (RBAC §4.3): el TOTP lo teclea una
+      # PERSONA, Maestro no genera el código. Va DENTRO de esta rama a
+      # propósito: sólo hay reto si acabamos de teclear credenciales, así que
+      # la corrida que entra por cookie no paga ni un segundo de espera.
+      - extendedWaitUntil:
+          visible:
+            id: "totpCodeInput"
+          timeout: 20000
+          optional: true
+      - runFlow:
+          when:
+            visible:
+              id: "totpCodeInput"
+          commands:
+            # Aquí hay alguien escribiendo seis dígitos. Si esto falla, el
+            # mensaje ya no engaña: dice que el campo del TOTP sigue delante.
+            - extendedWaitUntil:
+                notVisible:
+                  id: "totpCodeInput"
+                timeout: 120000
 
 - runFlow: descartar-autofill.yaml
 
@@ -79,10 +120,7 @@ appId: com.takab.ailert
 # del gestor sale por abajo y tapa el segundo mientras el primero sigue visible,
 # así que esperar por el de contraseña daba un verde falso y el flujo seguía con
 # el formulario todavía en pantalla.
-# MFA obligatorio del pool táctico (RBAC §4.3): el TOTP lo teclea una PERSONA —
-# Maestro no genera el código. El timeout largo es por eso, no por lentitud de
-# red: hay alguien mirando su authenticator y escribiendo seis dígitos.
 - extendedWaitUntil:
     notVisible:
       id: "signInFormUsername"
-    timeout: 120000
+    timeout: 30000
