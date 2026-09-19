@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **436** · `[x]` **376** · `[~]` **12** · `[ ]` **48**
+**Conteo de tareas:** total **436** · `[x]` **377** · `[~]` **12** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16385,7 +16385,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
 
-### [ ] T-7.58 · **La foto forense no siempre se cuenta, y el flujo 02 falla por eso** — `SOFTWARE`
+### [x] T-7.58 · **La foto forense no siempre se cuenta, y el flujo 02 falla por eso** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que capturar una foto de daños sea un acto fiable, no uno que sale bien a veces.
 - **El fallo, MEDIDO el 2026-09-19 en el Pixel real.** En `02-tactico-foto-danos` los tres toques de
@@ -16434,11 +16434,17 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         la POSTCONDICIÓN de `capture.ts` (`la foto sellada no quedó en el disco tras moverla`) y
         las dos causas del `return` MUDO de `use()` en `camera.tsx`, que se nombran por separado
         porque piden cosas distintas (reintentar sirve para una y no para la otra).
-  - [ ] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`. **Pendiente, y
-        necesita a una persona delante:** cada corrida cierra la sesión de Cognito (`T-7.56`), así
-        que cada corrida pide **un TOTP nuevo** que Maestro no puede generar. Van 3 verdes y
-        ninguna pérdida de foto desde el arreglo; las dos rojas de hoy fueron TOTPs sin teclear,
-        y ahora el log lo dice con ese nombre.
+  - [x] Diez corridas seguidas en verde de `02`, con la misma vara que `T-7.57`. **10/10 el
+        2026-09-19**, 45 pasos cada una, cero fallos, con la foto contada y el reporte enviado en
+        las diez. ⚠️ La tanda **necesita a una persona delante**: cada corrida cierra la sesión de
+        Cognito (`T-7.56`), así que pide **un TOTP nuevo** que Maestro no genera — el secreto vive
+        en el authenticator, no en Secrets Manager. Son ~45 min, y está escrito en
+        `mobile/.maestro/README.md` junto al `timeout` de 420 s que hace falta.
+  - [x] **Y se comprobó el OTRO extremo, que es lo que de verdad importaba:** en la nube,
+        `site-e2e-900` tiene **10 reportes de daños en la última hora** —uno por corrida— y las
+        19 filas de `damage_reports` del día llevan **exactamente 1 foto cada una**, con
+        **0 fotos sin `sha256`** en `evidence_objects`. Cero reportes sin evidencia adjunta. La
+        cuenta de la pantalla ya no es la única palabra: la prueba llegó.
 - **Tests de censo que toca:** **trae uno nuevo**, `src/expoFileSystemCensus.test.ts` — todo
   `.move(`/`.copy(` de un fichero va precedido de `await` o `return`. Son justo las dos con gemela
   `*Sync`, que es lo que hace creer que la corta es la síncrona. · **Token nuevo:** no · **Cambia
