@@ -20,16 +20,18 @@
 //     este árbol no tiene lint con información de tipos
 //     (`@typescript-eslint/no-floating-promises` pide `projectService`).
 //
-// Se vigilan `move` y `copy`: son exactamente las dos que tienen gemela `*Sync`,
-// que es lo que hace creer que la corta es la síncrona.
+// SE VIGILAN TODAS LAS QUE DEVUELVEN `Promise` en la declaración instalada
+// (`node_modules/expo-file-system/build/internal/NativeFileSystem.types.d.ts`).
+// `move` y `copy` van primero porque son las dos con gemela `*Sync`, que es lo
+// que hace creer que la corta es la síncrona — pero ninguna se puede soltar.
 /// <reference types="node" />
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 const SRC = resolve(process.cwd(), "src");
 
-/** Las que devuelven `Promise` y tienen gemela `*Sync` que induce al error. */
-const ASINCRONAS = ["move", "copy"] as const;
+/** Las que devuelven `Promise`. Las dos primeras tienen gemela `*Sync`. */
+const ASINCRONAS = ["move", "copy", "bytes", "text", "base64", "upload"] as const;
 
 function fuentes(dir: string): string[] {
   return readdirSync(dir).flatMap((entrada) => {
@@ -52,7 +54,7 @@ function soloCodigo(texto: string): string {
 }
 
 describe("[T-7.58] censo · ninguna promesa de expo-file-system se queda sin esperar", () => {
-  it("todo `.move(`/`.copy(` de un fichero va precedido de `await` o `return`", () => {
+  it("toda llamada que devuelve promesa va precedida de `await` o `return`", () => {
     const sueltas: string[] = [];
 
     for (const fichero of fuentes(SRC)) {
@@ -80,8 +82,10 @@ describe("[T-7.58] censo · ninguna promesa de expo-file-system se queda sin esp
               }
             }
           }
+          // `new` se cuela entre el `await` y el receptor —`await new File(u).bytes()`—
+          // y sin contemplarlo el censo acusaba a `fileHash.ts`, que sí espera.
           const antes = codigo.slice(Math.max(0, i - 40), i);
-          if (/\b(await|return)\s+$/.test(antes)) {
+          if (/\b(await|return)\s+(new\s+)?$/.test(antes)) {
             continue;
           }
           const linea = codigo.slice(0, m.index).split("\n").length;
@@ -94,10 +98,11 @@ describe("[T-7.58] censo · ninguna promesa de expo-file-system se queda sin esp
 
     if (sueltas.length > 0) {
       throw new Error(
-        "PROMESA DE `expo-file-system` SIN ESPERAR. `move()` y `copy()` devuelven " +
-          "`Promise<void>` (sus gemelas síncronas son `moveSync()`/`copySync()`), así que " +
-          "lo que venga después corre CONTRA la operación nativa. Aquí eso significa leer " +
-          "una foto de evidencia que todavía no se ha movido — y perderla.\n\n  " +
+        "PROMESA DE `expo-file-system` SIN ESPERAR. Estos métodos devuelven `Promise` " +
+          "(`move`/`copy` tienen además gemela `moveSync()`/`copySync()`, que es lo que hace " +
+          "creer que la corta es la síncrona), así que lo que venga después corre CONTRA la " +
+          "operación nativa. Aquí eso significó leer una foto de evidencia que todavía no se " +
+          "había movido — y perderla.\n\n  " +
           sueltas.join("\n  "),
       );
     }
