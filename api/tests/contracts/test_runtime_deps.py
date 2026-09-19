@@ -38,6 +38,12 @@ _MODULE_TO_DIST: dict[str, str] = {
     # por pyjwt[crypto] pero commands/intent.py la importa directa.
     "cryptography": "cryptography",
     "fastapi": "fastapi",
+    # [T-7.21] Otro módulo cuyo nombre de import no es el de su distribución
+    # (`fontTools` / `fonttools`) — el segundo caso del par que justifica este
+    # mapa, después de `PIL`/`pillow`. `documentos/hoja.py` lo usa para medir la
+    # tipografía REAL al envolver el texto del SVG: un `<text>` no envuelve solo,
+    # y el ancho de una cadena no se estima, se mide.
+    "fontTools": "fonttools",
     "fpdf": "fpdf2",
     "httpx": "httpx",
     "jsonschema": "jsonschema",

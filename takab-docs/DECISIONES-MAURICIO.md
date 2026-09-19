@@ -12,10 +12,10 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-18 · **35 decisiones** · 29 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-19 · **36 decisiones** · 30 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
-> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18), 6 delegadas
-> (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
+> 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
+> 2026-09-19), 6 delegadas (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
 > tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
@@ -91,6 +91,7 @@
 | [D-33](#d-33) | El incidente tiene fases: la alerta se apaga **por estado**, el registro se cierra por clasificación, dictamen firmado o TTL de horas; `reproduccion` como clasificación y atributo | 2026-09-11 | delegada |
 | [D-34](#d-34) | El arnés de los E2E móviles se muda a un sitio propio con su ocupante; la demostración conserva Puebla y la guarda no lleva excepción | 2026-09-17 | Mauricio |
 | [D-35](#d-35) | El arnés necesita **DOS** identidades, no una: el táctico resuelve su sitio por el `[0]` de `site_scope`, así que con una sola el brigadista mira Puebla | 2026-09-18 | Mauricio |
+| [D-36](#d-36) | El papel de TAKAB **no lleva firmante nominal**: emite y responde la persona moral, y el renglón de la firma lo dice en vez de quedarse en blanco | 2026-09-19 | Mauricio |
 
 ---
 
@@ -1751,3 +1752,65 @@ entorno, no pasos—, pero el alta de usuarios de prueba pasa de uno a dos.
 Borrar la identidad `brigadista-e2e` y devolver los flujos 02 y 05a al táctico de Puebla. Lo que
 **no** cambia en ninguna revocación: dos de los cuatro flujos son del brigadista, y el `[0]` de
 `site_scope` seguirá decidiéndose por orden.
+
+---
+
+## D-36 · El papel no lleva firmante nominal: firma la persona moral
+
+**Fecha:** 2026-09-19 · **Quién:** Mauricio · **Sale de:** `T-7.21` / `PENDIENTES §4.8`
+
+### El problema
+
+`T-7.21` construyó el membrete único y dejó cuatro datos esperando a una persona: razón social,
+domicilio, clasificación y **firmante**. Los tres primeros son datos; el cuarto resultó no serlo.
+
+Mientras faltaban, el papel imprimía los cuatro rótulos con `PENDIENTE · PENDIENTES-MAURICIO §4.8`
+y un aviso que decía cuáles. Eso es correcto para un dato que falta y **falso** para uno que no
+existe: si nadie firma por nombre, decir «pendiente» promete un nombre que no va a llegar.
+
+Y la tentación obvia —dejarlo en `None`, o peor, en `""`— estaba armada. Medido: con `firmante=""`
+el objeto se declaraba `completa` y **a la vez** el papel imprimía `PENDIENTE` en ese renglón,
+porque `completa` miraba `is not None` y `lineas()` componía con `or`. Dos criterios sobre el mismo
+campo, contradiciéndose en silencio.
+
+### Lo decidido
+
+**Quien emite y responde es la persona moral, no una persona física.** El renglón de la firma lo
+DECLARA —«La persona moral emisora · este documento no lleva firmante nominal»— en vez de quedarse
+en blanco o de prometer un nombre. Vive en `documentos/identidad.py::FIRMA_INSTITUCIONAL`, con su
+razón escrita al lado.
+
+Y con la decisión llega el resto de la identidad: razón social **TAKAB, SISTEMAS TECNOLOGICOS
+INTELIGENTES & SERVICIOS INTEGRALES, S. de R.L. de C.V.**, domicilio en Puebla y clasificación
+**USO INTERNO**.
+
+**Lo que NO se hace, y por qué:**
+
+* **Dejar el renglón en blanco.** Un hueco donde el lector espera un nombre se lee como «no
+  aplica», que es lo contrario de «lo firma la empresa». Es la misma doctrina que el resto del
+  sistema —lo que no se sabe se declara— aplicada a lo que **sí** se sabe.
+* **Poner `""` o `None`.** Lo primero dejaba el objeto contradiciéndose; lo segundo imprimiría
+  `PENDIENTE` citando una sección de pendientes que ya está cerrada.
+* **Inventar un nombre y un cargo.** Es la mentira más cara que puede contar este producto: va en
+  un papel firmado que un perito puede llevar a una reclamación, y nadie revisa un pie.
+* **Bajar la CLASIFICACIÓN al pie de los documentos que se entregan.** Hoy vale «USO INTERNO», y
+  estamparlo en un dictamen que se le da a un tercero diría de ese papel lo contrario de lo que es.
+  Se queda en la hoja membretada, que es interna por definición.
+
+### El precio, declarado
+
+Un documento sin firmante nominal **no sustituye una firma autógrafa** donde la ley o el cliente la
+exijan: para eso sigue haciendo falta que una persona firme el papel impreso. Lo que esta decisión
+resuelve es de quién es el membrete, no quién rubrica.
+
+Y el pie de los tres documentos generados —dictamen, reporte de simulacro, informe del evento—
+crece dos renglones para llevar razón social y domicilio. La reserva del pie pasa de 20.0 a
+23.0 mm, así que el cuerpo tiene 3 mm menos por página. Medido: ningún documento de las pruebas
+gana páginas por ello.
+
+### Cómo se revocaría
+
+El día que haya un firmante nominal —un representante legal con cargo—, se sustituye
+`FIRMA_INSTITUCIONAL` por su nombre y cargo en `identidad.py` y se regenera la hoja en el mismo
+commit (`make drift` lo exige). Lo que **no** cambia en ninguna revocación: el renglón nunca se
+queda en blanco, y `""` nunca es una forma válida de decir nada.

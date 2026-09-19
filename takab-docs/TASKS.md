@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **436** · `[x]` **377** · `[~]` **12** · `[ ]` **47**
+**Conteo de tareas:** total **436** · `[x]` **378** · `[~]` **11** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13498,7 +13498,7 @@ una sesión real de Cognito que llega con `T-7.09`; `T-7.24` ejecuta `T-3.09` (m
 Dos más se apoyan en fichas ajenas sin depender de ellas: `T-7.07` toma el procedimiento de
 alerta real del runbook de `T-2.95`, y `T-7.26` deja escrito el registro de procedencia que
 `T-3.01` pide. Ninguna ficha de este bloque espera a un gate físico; lo que espera a una
-persona está en [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) (§2.13, §3.7, §4.7, §4.8).
+persona está en [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) (§2.13, §3.7, §4.7).
 
 **Tres invariantes que este bloque no negocia**, porque cada una se midió como riesgo real al
 planificarlo: los simuladores **jamás publican `takab/events`** (un `LocalEvent` simulado abre
@@ -14495,7 +14495,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   nuevo:** no · **Cambia algo que un test defiende hoy:** sí — el caso de `AlertBanner.test.tsx`
   que usaba `in_review` para decir «sin animación» y con ello dejaba fijado el defecto 2.
 
-### [~] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE` · **CONSTRUIDA 2026-09-16 · ESPERA LOS CUATRO DATOS DE §4.8**
+### [x] T-7.21 · **Un membrete para todo papel que sale del sistema** — `SOFTWARE` · **CERRADA 2026-09-19 · los cuatro datos llegaron y el emisor bajó al pie**
 - **Componente:** api · shared · **Depende de:** — · **Prioridad:** F4 · alta
 - **Objetivo:** que dictamen, reporte de simulacro e informe compartan cabecera, pie e
   identidad, y que exista una hoja membretada en blanco para lo que el sistema no genera.
@@ -14538,13 +14538,45 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     primera versión también lo era: medía `tm[4]`, que es donde EMPIEZA el fragmento, y una
     celda alineada a la derecha empieza a la izquierda del filete y se sale por el otro lado.
     Ahora mide las coordenadas de lo que se DIBUJA, y caza el desborde real.
-- **Lo que queda para cerrarla:** los cuatro datos de `PENDIENTES §4.8` (razón social,
-  domicilio, clasificación, firmante). Mientras faltan, el papel **los declara**: los cuatro
-  rótulos salen siempre con `PENDIENTE · PENDIENTES-MAURICIO §4.8` y un aviso que dice cuáles
-  faltan. De las tres opciones, rellenar con algo verosímil era la peor —un «TAKAB S.A. de
-  C.V.» inventado en un papel firmado— y no imprimir el bloque la segunda peor, porque un
-  hueco se lee como «no aplica». Rellenarlos es UNA edición en `documentos/identidad.py`, y el
-  mismo commit tiene que traer la hoja regenerada porque `make drift` lo exige.
+- **Cómo se cerró, el 2026-09-19.** Llegaron los cuatro datos de `PENDIENTES §4.8`. Razón
+  social **TAKAB, SISTEMAS TECNOLOGICOS INTELIGENTES & SERVICIOS INTEGRALES, S. de R.L. de
+  C.V.**, domicilio en Puebla, clasificación **USO INTERNO** — y el cuarto **no era un dato**:
+  no hay firmante nominal, emite y responde la persona moral, y eso es [`D-36`](DECISIONES-MAURICIO.md#d-36).
+  Por eso no se quedó en `None`: `None` significa «no se sabe» y el papel habría seguido
+  imprimiendo `PENDIENTE` citando una sección ya cerrada. La maquinaria de declarar la ausencia
+  **no se retira** —sigue cubierta contra una `Identidad()` vacía—, porque es lo que pasa el día
+  que se añada un quinto campo.
+  - **Y el emisor BAJÓ AL PIE de los tres documentos generados.** Hasta hoy el bloque sólo salía
+    en la hoja membretada: el dictamen pericial, el reporte de simulacro y el informe del evento
+    llevaban «TAKAB AILERT», que es la marca del producto, **no la persona moral que responde de
+    lo que el papel afirma**. Son dos renglones y es aritmética, no gusto: medido a 7 pt sobre la
+    banda útil de 185.9 mm, razón social 117.0 y domicilio 117.3 — cada una cabe sola, juntas
+    suman 236.7 y `cell()` no envuelve. A 6 pt son 100.3 y 100.6. La **clasificación NO baja**:
+    hoy vale «USO INTERNO» y estamparla en un dictamen que se entrega a un tercero diría de ese
+    papel lo contrario de lo que es.
+  - **La reserva del pie se DERIVA de sus renglones.** Era un `PIE_MM = 20.0` tecleado al lado de
+    un `set_y(-19)`: dos números que había que mover juntos y a mano cada vez que el pie ganara
+    una línea — y acaba de ganar dos. Ahora sale de la tupla de altos. Pasa a 23.0 mm; medido,
+    ningún documento de las pruebas gana páginas.
+- **⚠️ Tres defectos que destapó rellenar los datos, y que llevaban vivos desde que se construyó:**
+  1. **El `carta.svg` comiteado DESBORDABA 91.9 mm.** Un `<text>` de SVG no envuelve, y el del
+     aviso son 203 caracteres en sans a 2.6 desde x=15: terminaba en x=292.8, o sea **76.9 mm
+     fuera de una hoja de 215.9**. Nadie lo vio nunca porque `test_el_svg_y_el_pdf_miden_LO_MISMO`
+     compara el `viewBox` con el `/MediaBox`: mide la HOJA, no lo dibujado. Rellenar la identidad
+     lo borra —el aviso desaparece—, pero el agujero era la falta de guarda, no el aviso: ahora
+     `hoja_svg` envuelve midiendo con la **tipografía real** (fontTools sobre el `.ttf` del
+     paquete, no un «más o menos 0.6 em») y hay una guarda que mide cada `<text>` contra el
+     filete, con las DOS identidades.
+  2. **`multi_cell` justifica por defecto**, y el domicilio es el primer valor de este papel que
+     ha envuelto jamás: fpdf2 repartía los 9.6 mm sobrantes entre sus 9 espacios y cada uno pasaba
+     de 1.699 a 2.763 mm, deformando la rejilla monoespaciada. `align="L"` explícito.
+  3. **`completa` y `lineas()` usaban criterios DISTINTOS** sobre los mismos campos —`is not None`
+     contra `or`—, así que un `firmante=""` daba el objeto por completo **y** el papel imprimiendo
+     `PENDIENTE` en ese renglón. La cadena vacía era justo la tentación para expresar «no hay
+     firmante». `completa` se deriva ahora de `lineas()`.
+- **Lo que este cierre NO acredita**, y conviene decirlo: la hoja y los tres documentos llevan ya
+  el emisor legal, pero **un papel sin firmante nominal no sustituye una firma autógrafa** donde
+  la ley o el cliente la exijan. `D-36` lo declara como precio.
 - **⚠️ Dos defectos vivos que destapó construir esto, y que nadie buscaba:**
   1. **El reporte de simulacro decía «DICTAMEN» en su pie.** Usaba `TakabPDF` y ninguna prueba
      de `drill_report` miraba el pie. Un simulacro no dictamina la habitabilidad de nada. Lo

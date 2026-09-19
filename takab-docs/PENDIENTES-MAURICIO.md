@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-12 · **31 puntos abiertos** (§2: 12 · §3: 8 · §4: 8 · §5: 3),
+> **Última actualización:** 2026-09-19 · **30 puntos abiertos** (§2: 12 · §3: 8 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -17,6 +17,17 @@
 > esté tachado o lleve ✅. Única excepción, el **§4.3** — su ✅ dice que la compra está
 > *autorizada*, no hecha. (La tabla de decisiones de la §1 también lleva ✅ y no son puntos.)
 >
+> ## Lo que cambió el 2026-09-19
+>
+> **Salió la §4.8 — los datos del membrete.** Aportaste la razón social, el domicilio y la
+> clasificación, y el cuarto punto resultó **no ser un dato**: no hay firmante nominal, emite y
+> responde la persona moral. Eso es una decisión, no una espera, y por eso vive en
+> [`D-36`](DECISIONES-MAURICIO.md#d-36) y no aquí. [`T-7.21`](TASKS.md) queda cerrada.
+>
+> Y de paso bajó al pie del dictamen, del reporte de simulacro y del informe del evento: hasta hoy
+> el papel que se lleva el cliente decía «TAKAB AILERT», que es la marca del producto, no la
+> persona moral que responde de lo que afirma.
+
 > ## Lo que cambió el 2026-09-12
 >
 > Salieron **dos**, las dos sin gastar una ventana tuya: el **§2.11** (el worker de backfill ya
@@ -1031,12 +1042,24 @@ es contractual: una cláusula en el contrato con el cliente y el aviso en la cá
 móvil. El software pone el aviso; la cláusula la redacta quien redacte el contrato. Hasta
 entonces, el prototipo lo enseña con el tenant de demostración.
 
-### 4.8 · [`T-7.21`](TASKS.md) · Datos del membrete: razón social, domicilio y firmante
+### 4.8 · ~~[`T-7.21`](TASKS.md) · Datos del membrete: razón social, domicilio y firmante~~ — ✅ **APORTADOS el 2026-09-19**
+
+> **No se borra esta sección aunque esté cerrada**, y la razón es concreta: el código la cita por
+> número. `documentos/identidad.py` construye con ella el texto que imprimiría si mañana faltara
+> un dato (`PENDIENTE · PENDIENTES-MAURICIO §4.8`), y un `§` que apunte a nada es peor que uno
+> cerrado.
 
 El membrete único de los documentos (dictamen, reporte de simulacro, informe del evento y la hoja
-en blanco de `shared/brand/membrete/`) necesita la **razón social** exacta, el **domicilio** que
-deba aparecer al pie, la **clasificación** del documento (público, confidencial) y quién **firma**
-por TAKAB. Nada de esto está en el repositorio, y no debe inventarse.
+en blanco de `shared/brand/membrete/`) necesitaba la **razón social** exacta, el **domicilio** que
+deba aparecer al pie, la **clasificación** del documento y quién **firma** por TAKAB.
+
+**Aportados el 2026-09-19:** razón social `TAKAB, SISTEMAS TECNOLOGICOS INTELIGENTES & SERVICIOS
+INTEGRALES, S. de R.L. de C.V.`, domicilio en Puebla, clasificación `USO INTERNO`.
+
+⚠️ **El cuarto no era un dato.** No hay firmante nominal: emite y responde la persona moral. Eso
+es una decisión con precio declarado y vive en [`D-36`](DECISIONES-MAURICIO.md#d-36) —incluido el
+precio: un papel sin firmante nominal **no sustituye una firma autógrafa** donde la ley o el
+cliente la exijan.
 
 ## 5 · CIERRE DEL PROYECTO
 

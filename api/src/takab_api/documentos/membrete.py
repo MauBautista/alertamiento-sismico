@@ -86,6 +86,8 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 from fpdf.fpdf import PAGE_FORMATS
 
+from takab_api.documentos.identidad import TAKAB
+
 _ARTE = Path(__file__).parent
 
 #: [T-6.33] El logotipo de la cabecera, en su variante POSITIVA. Es el único
@@ -109,10 +111,30 @@ PAGE_H = round(PAGE_FORMATS[_FORMATO][1] * _PT_A_MM, 4)
 MARGIN = 15.0
 CONTENT_W = round(PAGE_W - 2 * MARGIN, 4)
 
+#: Altos de los renglones del pie, en mm, EN ORDEN. De aquí sale la reserva:
+#: era un `20.0` tecleado que había que recordar subir a mano cada vez que el
+#: pie ganaba una línea, y el pie acaba de ganar dos (`T-7.21`, el emisor legal).
+#: Un número paralelo al contenido que describe es el mecanismo que ya arruinó
+#: la migración de formato de esta misma ficha.
+_PIE_RENGLONES = (
+    3.6,  # identidad de producto · tipo · folio · franja  +  paginación
+    3.4,  # SHA-256 del contenido  +  sello del evento
+    2.8,  # [T-7.21] razón social
+    2.8,  # [T-7.21] domicilio
+)
+#: El aviso de tipografía degradada va aparte: sólo aparece cuando hace falta,
+#: pero la reserva tiene que contemplarlo SIEMPRE o el día que aparezca se sale.
+_PIE_DEGRADADA = 3.4
+#: Aire bajo el último renglón. No es estética: por debajo de ~5 mm una
+#: impresora de oficina recorta.
+_PIE_AIRE = 6.0
+#: Separación entre el filete del pie y su primer renglón.
+_PIE_TRAS_FILETE = 1.0
+
 #: Alto que el pie reserva. `set_auto_page_break(margin=…)` marca el corte por
 #: debajo del cual fpdf2 salta de página SOLO para texto: `rect` y `polyline` no
 #: lo disparan, y de ahí `reserva()`.
-PIE_MM = 20.0
+PIE_MM = round(_PIE_TRAS_FILETE + sum(_PIE_RENGLONES) + _PIE_DEGRADADA + _PIE_AIRE, 4)
 #: La y donde el cuerpo empieza en cada página, bajo el filete de cabecera.
 CUERPO_Y = 32.0
 #: La y del filete de la cabecera.
@@ -234,6 +256,12 @@ class MembretePDF(FPDF):
         self.set_y(CUERPO_Y)
         self.set_text_color(*INK)
 
+    #: [T-7.21] ¿El pie lleva el emisor legal? La hoja membretada en blanco lo
+    #: apaga: ya imprime los CUATRO datos en el cuerpo, que es su razón de ser,
+    #: y repetir dos de ellos abajo sería ruido en el único papel cuyo cuerpo
+    #: está vacío a propósito.
+    emisor_en_pie = True
+
     def footer(self) -> None:  # noqa: D102 - contrato de fpdf2
         """El membrete, repartido en líneas POR ARITMÉTICA.
 
@@ -249,10 +277,13 @@ class MembretePDF(FPDF):
         así que esto no es una preferencia de diseño — es la única forma de que
         el pie no se pise a sí mismo. Lo vigila `test_el_pie_CABE_en_su_celda`.
         """
-        self.set_y(-19)
+        # Derivado, no tecleado: el filete va 1 mm por debajo del corte de
+        # página. Era `set_y(-19)` contra un `PIE_MM = 20.0`, dos números que
+        # había que mover juntos y a mano.
+        self.set_y(-(PIE_MM - _PIE_TRAS_FILETE))
         self.set_draw_color(*RULE)
         self.line(MARGIN, self.get_y(), PAGE_W - MARGIN, self.get_y())
-        self.ln(1)
+        self.ln(_PIE_TRAS_FILETE)
         self.set_font(self.body_font, "", 7)
         self.set_text_color(*MUTED)
         # [T-6.33] El NOMBRE, en texto y en todas las páginas. La cabecera lleva
@@ -274,12 +305,43 @@ class MembretePDF(FPDF):
         self.set_font(self.body_font, "", 7)
         self.cell(_ANCHO_SELLO, 3.4, self.text_of(self._sello()), align="R")
 
+        # [T-7.21 · PENDIENTES §4.8] QUIÉN EMITE, en letra de pie y en todas las
+        # páginas. Hasta hoy el papel que se lleva el cliente sólo decía «TAKAB
+        # AILERT», que es la marca del producto, no la persona moral que
+        # responde de lo que el documento afirma. Un dictamen pericial sin
+        # emisor legal es un papel que nadie ha firmado.
+        #
+        # ⚠️ DOS RENGLONES, y es aritmética, no gusto: medido a 7 pt sobre la
+        # banda útil de 185.9 mm, la razón social ocupa 117.0 mm y el domicilio
+        # 117.3 — cada una cabe sola, juntas suman 236.7 y `cell()` no envuelve.
+        # A 6 pt son 100.3 y 100.6: el tamaño de letra chica de pie es el que
+        # deja holgura de sobra en el peor caso.
+        #
+        # La CLASIFICACIÓN no baja al pie a propósito: hoy vale «USO INTERNO» y
+        # estamparla en un dictamen que se entrega a un tercero diría de ese
+        # papel lo contrario de lo que es.
+        if self.emisor_en_pie:
+            self.set_font(self.body_font, "", 6)
+            for texto in self._lineas_emisor():
+                self.ln(2.8)
+                self.cell(0, 2.8, self.text_of(texto))
+
         if self.degraded:
             # No se calla: un dictamen al que le faltan caracteres tiene que
             # decirlo, y no cabe emparejado con nada. Su propia línea.
             self.ln(3.4)
             self.set_font(self.body_font, "", 7)
             self.cell(0, 3.4, self.text_of("TIPOGRAFÍA DEGRADADA (fuente Unicode ausente)"))
+
+    def _lineas_emisor(self) -> tuple[str, ...]:
+        """Razón social y domicilio, o nada si aún no se supieran.
+
+        Devuelve sólo lo que se SABE: si un día se revoca un dato y vuelve a
+        `None`, el pie no imprime `PENDIENTE` —ese trabajo es del bloque de
+        emisor de la hoja membretada, que tiene sitio para explicarlo—, se
+        calla esa línea y el aviso sigue estando donde se puede leer entero.
+        """
+        return tuple(v for v in (TAKAB.razon_social, TAKAB.domicilio) if v)
 
     def _linea_identidad(self) -> str:
         """Quién firma, qué tipo de papel es y su folio. En TODAS las páginas."""
@@ -356,7 +418,14 @@ class MembretePDF(FPDF):
         self.cell(52, 4.8, self.text_of(label))
         self.set_font(self.mono_font, "", 8)
         self.set_text_color(*INK)
-        self.multi_cell(0, 4.8, self.text_of(value), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        # ⚠️ [T-7.21] `align="L"` EXPLÍCITO: `multi_cell` justifica por defecto
+        # (`Align.J`). Nadie lo había visto porque ningún valor había envuelto
+        # jamás —los cuatro medían los 36 caracteres de `PENDIENTE`—, y el
+        # primero que envuelve es el domicilio real: fpdf2 repartía los 9.6 mm
+        # sobrantes entre sus 9 espacios y cada uno pasaba de 1.699 a 2.763 mm,
+        # deformando la rejilla monoespaciada que es justo lo que hace legible
+        # un dato así. Una tipografía mono justificada no es mono.
+        self.multi_cell(0, 4.8, self.text_of(value), align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
     def callout(self, text: str, color: tuple[int, int, int] = MUTED) -> None:
         """Recuadro de AUSENCIA: por qué un dato no está, en vez de un hueco mudo."""

@@ -275,7 +275,8 @@ python shared/brand/generar.py && git diff --exit-code shared/brand/membrete
 ```
 
 **Subagentes.** `T-7.21` primero y `T-7.22` después (hereda del membrete). **Aporta Mauricio.**
-Razón social, domicilio, clasificación del documento y firmante (pendientes §4.8).
+Razón social, domicilio y clasificación **aportadas el 2026-09-19**; el firmante no era un
+dato — no lo hay, firma la persona moral (`D-36`). `PENDIENTES §4.8` cerrada.
 
 ### F5 · Sismología visual · 4 sesiones (puede solaparse con F6)
 
@@ -415,7 +416,7 @@ Un plan sin lista de descartes es una lista de deseos.
 | F1 | Sesión con el WR-1 y el Pixel; destinatarios propios en la cascada; `audio_siren_enabled` decidido | `PENDIENTES §3.7` |
 | F2 | SSO; apply de las tres cosas IoT; nombres de las estaciones si quiere otros | `PENDIENTES §3.7` |
 | F3 | Pixel; sismo a reproducir; `alert_hold_min_s` e `incident_review_ttl_s` | `D-33` |
-| F4 | Razón social, domicilio, clasificación y firmante del membrete | `PENDIENTES §4.8` |
+| F4 | ~~Razón social, domicilio, clasificación y firmante del membrete~~ — ✅ aportado el 2026-09-19; el firmante lo resolvió `D-36` (no hay nominal) | `D-36` |
 | F5 | Acceso al Pi para medir el coste del sismógrafo | — |
 | F6 | Cuenta y clave de OpenRouter en Secrets Manager, tope mensual, modelo, cláusula de consentimiento | `PENDIENTES §2.13`, `§4.7` |
 | F7 | Los dos ensayos con él delante y el veredicto de flujos | — |
