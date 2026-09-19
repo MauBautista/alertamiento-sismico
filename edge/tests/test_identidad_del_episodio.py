@@ -54,11 +54,35 @@ SITIO = "11111111-1111-1111-1111-111111111111"
 
 
 class _Reloj:
+    """Los DOS relojes del gabinete, atados — y separables a propósito.
+
+    ⚠️ [T-7.60] `t` es el de pared (fecha lo que viaja a la nube) y `mono` el
+    monotónico (cuenta lo que transcurre aquí). Moverlos juntos con `avanzar()`
+    es «pasó el tiempo». Mover sólo `t` es «saltó el reloj», que es lo que hace
+    un Pi sin RTC cuando NTP contesta — 13 h 25 min el 2026-09-19 — y NO puede
+    dar por terminado un episodio sísmico.
+    """
+
     def __init__(self, t: datetime) -> None:
         self.t = t
+        self.mono = 0.0
 
     def __call__(self) -> datetime:
         return self.t
+
+    def avanzar(self, segundos: float) -> None:
+        """Pasa el tiempo: los dos relojes, como en la realidad."""
+        self.t = self.t + timedelta(seconds=segundos)
+        self.mono += segundos
+
+    def saltar(self, segundos: float) -> None:
+        """SÓLO el de pared. El tiempo no ha pasado; el reloj se corrigió."""
+        self.t = self.t + timedelta(seconds=segundos)
+
+    def en(self, t: float) -> None:
+        """Coloca los dos relojes en el segundo `t` desde el origen."""
+        self.t = T0 + timedelta(seconds=t)
+        self.mono = t
 
 
 class _Gabinete:
@@ -79,6 +103,8 @@ class _Gabinete:
             state_path=(tmp_path / "episodio.json") if tmp_path else None,
             max_s=max_s,
             on_episode_end=self.motor.end_episode,
+            now=self.reloj,
+            mono=lambda: self.reloj.mono,
         )
         self.eventos: list[tuple[float, str]] = []  # LocalEvent que saldrían
         self.cierres: list[tuple[float, str, str]] = []  # (t, event_id, motivo)
@@ -92,17 +118,17 @@ class _Gabinete:
             self.cierres.append((t, transicion.event_id, "; ".join(transicion.reasons)))
 
     def sasmex(self, t: float, *, latched: bool | None = False) -> None:
-        self.reloj.t = T0 + timedelta(seconds=t)
+        self.reloj.en(t)  # [T-7.60] los DOS relojes: t es «el instante t», no «la fecha t»
         self._observar(self.motor.evaluate_sasmex(SasmexSignal(active=True)), latched)
 
     def sacudida(self, t: float, pga: float = 0.12, *, latched: bool | None = False) -> None:
-        self.reloj.t = T0 + timedelta(seconds=t)
+        self.reloj.en(t)  # [T-7.60] los DOS relojes: t es «el instante t», no «la fecha t»
         cuando = T0 + timedelta(seconds=t)
         decision = self.motor.evaluate_features(_feature(pga=pga, channel="ENZ", when=cuando))
         self._observar(decision, latched)
 
     def calma(self, t: float, *, latched: bool | None = False) -> None:
-        self.reloj.t = T0 + timedelta(seconds=t)
+        self.reloj.en(t)  # [T-7.60] los DOS relojes: t es «el instante t», no «la fecha t»
         cuando = T0 + timedelta(seconds=t)
         decision = self.motor.evaluate_features(_feature(pga=0.0001, channel="ENZ", when=cuando))
         self._observar(decision, latched)
@@ -359,3 +385,74 @@ def test_los_ajustes_DECLARAN_la_cota_del_episodio() -> None:
         "la cota del episodio no puede ser menor que el silencio que lo cierra: "
         "cortaría por cota episodios perfectamente sanos"
     )
+
+
+# ═══════════════ [T-7.60] el salto de reloj, que NO es el paso del tiempo
+
+
+def test_un_SALTO_de_reloj_NO_cierra_un_episodio_sismico() -> None:
+    """La prueba que acredita `T-7.60`, y la que mide lo que de verdad pasó.
+
+    ⚠️ EL ESCENARIO ES REAL, no un caso de laboratorio. El Raspberry Pi 4 **no
+    tiene RTC** (`timedatectl` responde `RTC time: n/a`): al arrancar restaura la
+    última hora guardada y sigue con ella hasta que NTP contesta. El 2026-09-19,
+    en el gabinete de Puebla, ese salto fue de **13 h 25 min hacia adelante, en
+    un instante**.
+
+    Con el silencio contado en reloj de pared, ese salto lo satisfacía de golpe:
+    el gabinete daba la sacudida por terminada y sacaba al ocupante de «EVACÚE»
+    mientras el suelo seguía moviéndose. Es la inversión exacta de lo que cerró
+    `T-7.30`.
+
+    Aquí el suelo NO se ha calmado ni un segundo —el monotónico no avanza— y el
+    reloj de pared se va trece horas. El episodio tiene que seguir abierto.
+    """
+    g = _Gabinete(quiet_s=90.0)
+    g.sasmex(0.0, latched=True)
+    assert g.eventos, "el episodio no llegó a abrirse; este test no mide nada"
+    abierto = g.eventos[-1][1]
+
+    # El reloj salta trece horas y media. El tiempo NO ha pasado.
+    g.reloj.saltar(13 * 3600 + 25 * 60)
+    g._observar(g.motor.evaluate_sasmex(SasmexSignal(active=True)), True)  # noqa: SLF001
+
+    assert not g.cierres, (
+        "un SALTO de reloj cerró el episodio. Con el suelo moviéndose, eso saca "
+        f"al ocupante de «EVACÚE» por un ajuste de NTP. Cierres: {g.cierres}"
+    )
+    assert g.eventos[-1][1] == abierto, "y sigue siendo el MISMO episodio"
+
+
+def test_el_salto_de_reloj_tampoco_lo_corta_POR_COTA() -> None:
+    """La otra mitad, y se escapa aunque se arregle el silencio.
+
+    La cota dura (`max_s`) también restaba dos marcas de pared. Un salto mayor
+    que la cota cortaba el episodio «por cota» —diciéndolo, eso sí— sobre un
+    sismo de hace un minuto.
+    """
+    g = _Gabinete(quiet_s=90.0, max_s=3600.0)
+    g.sasmex(0.0, latched=True)
+    assert g.eventos
+
+    g.reloj.saltar(13 * 3600 + 25 * 60)  # muy por encima de la cota de 1 h
+    g._observar(g.motor.evaluate_sasmex(SasmexSignal(active=True)), True)  # noqa: SLF001
+
+    assert not g.cierres, (
+        f"el salto de reloj cortó por COTA un episodio recién abierto: {g.cierres}"
+    )
+
+
+def test_pero_el_tiempo_que_SI_pasa_lo_cierra_igual() -> None:
+    """La contraprueba: que las dos de arriba no pasen por estar rotas.
+
+    Si el episodio no cerrara NUNCA, aquéllas serían verdes por la peor razón
+    posible. Aquí el tiempo transcurre de verdad —los dos relojes— y el episodio
+    tiene que cerrar por silencio, como siempre.
+    """
+    g = _Gabinete(quiet_s=90.0)
+    g.sasmex(0.0, latched=True)
+    g.calma(10.0, latched=False)
+    g.calma(10.0 + 91.0, latched=False)
+
+    assert g.cierres, "el episodio no cerró con el silencio cumplido"
+    assert "cota" not in g.cierres[-1][2].lower(), "cerró por cota, no por silencio"

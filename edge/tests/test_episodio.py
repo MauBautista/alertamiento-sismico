@@ -47,6 +47,34 @@ def _d(tier: Tier, source: AlertSource = AlertSource.THRESHOLD) -> TierDecision:
 SITIO = "site-dev"
 
 
+class _TrackerDePrueba(EpisodeTracker):
+    """El seguidor con los DOS relojes atados al `now` que pasa cada test.
+
+    ⚠️ [T-7.60] Desde que el silencio se cuenta con reloj monotónico, adelantar
+    sólo el de pared ya no adelanta nada — y eso es el arreglo, no un estorbo:
+    un salto de NTP **no** puede dar por terminado un episodio sísmico.
+
+    Pero estos 36 casos usan `now=T0 + Ns` para decir «pasaron N segundos», que
+    es una forma legítima de escribirlo y se lee bien. Así que el rig ata los dos
+    relojes: el `now` que recibe `observe()` mueve también el monotónico, y los
+    casos siguen midiendo lo que dicen medir.
+
+    Lo que NO puede hacer este rig es esconder la diferencia, y por eso existe
+    `test_un_SALTO_de_reloj_no_cierra_un_episodio`: allí el reloj de pared salta
+    trece horas y el monotónico **no se mueve**, que es lo que de verdad pasó en
+    el gabinete el 2026-09-19.
+    """
+
+    def __init__(self, *args, **kw) -> None:
+        self._mono_box = [0.0]
+        kw.setdefault("mono", lambda: self._mono_box[0])
+        super().__init__(*args, **kw)
+
+    def observe(self, decision, *, latched, now):  # noqa: ANN001, ANN201
+        self._mono_box[0] = (now - T0).total_seconds()
+        return super().observe(decision, latched=latched, now=now)
+
+
 def _tracker(**kw) -> EpisodeTracker:
     # ⚠️ [T-7.49] El reloj va INYECTADO y anclado en `T0`. Desde que el episodio
     # persistido lleva `opened_at` y tiene cota de edad, un seguidor que restaure
@@ -54,7 +82,7 @@ def _tracker(**kw) -> EpisodeTracker:
     # descartaría — correctamente, pero midiendo otra cosa que la que esta suite
     # dice medir. Es la misma razón por la que `observe()` recibe `now`.
     kw.setdefault("now", lambda: T0)
-    return EpisodeTracker(quiet_s=QUIET, site_id=SITIO, **kw)
+    return _TrackerDePrueba(quiet_s=QUIET, site_id=SITIO, **kw)
 
 
 # --------------------------------------------------------------------- abrir

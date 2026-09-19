@@ -113,6 +113,7 @@ def _age_s(now: datetime, then: datetime | None) -> float | None:
     `capturado` en el futuro) no puede rejuvenecer la instantánea."""
     if then is None:
         return None
+    # reloj: ajeno — la fecha la sella el SSN, no esta máquina
     return max(0.0, (now - then).total_seconds())
 
 
@@ -234,7 +235,11 @@ class CatalogStore:
             "origin": origin,
             "installed_at": installed_at.isoformat() if installed_at else None,
             "captured_at": captured_at,
+            # reloj: ajeno — `captured_at` lo sella el SSN, no esta máquina
             "captured_age_s": _age_s(now, _parse_ts(captured_at)),
+            # reloj: heredado — [T-7.60] `installed_at` sale del `mtime` del
+            # fichero del catálogo, así que por definición viene de otra vida
+            # del proceso. Pared, a sabiendas.
             "installed_age_s": _age_s(now, installed_at),
             "stale_after_s": CATALOG_STALE_AFTER_S,
         }

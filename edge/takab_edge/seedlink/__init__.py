@@ -30,6 +30,7 @@ from typing import Protocol, runtime_checkable
 from takab_edge.config import EdgeSettings
 from takab_edge.contracts import WaveformPacket, utcnow
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono as _mono
 
 log = logging.getLogger("takab_edge.seedlink")
 
@@ -78,6 +79,7 @@ class SeedLinkClient(EdgeModule):
         # Métricas / estado de ingesta
         self._packets_seen = 0
         self._reconnects = 0
+        self._arranque_mono: float | None = None
         self._duplicates = 0
         self._gaps = 0
         self._last_packet_end: datetime | None = None
@@ -120,6 +122,7 @@ class SeedLinkClient(EdgeModule):
 
         last_end = self._last_end.get(packet.channel)
         if last_end is not None:
+            # reloj: datos — `packet.starttime` va en el eje de muestras
             gap_s = (packet.starttime - last_end).total_seconds()
             sample_dt = 1.0 / packet.sample_rate if packet.sample_rate else 0.0
             if gap_s > sample_dt + _GAP_TOLERANCE_S:
@@ -169,13 +172,26 @@ class SeedLinkClient(EdgeModule):
         Sin ningún paquete todavía, se mide desde el arranque del módulo: un gabinete
         que jamás vio el sensor tampoco puede reportar 0 s de lag.
         """
-        ref = self._last_packet_end or self._started_at
-        return None if ref is None else (utcnow() - ref).total_seconds()
+        if self._last_packet_end is not None:
+            # reloj: ajeno — `packet.endtime` lo sella el Shake, no esta máquina.
+            # Aquí la pared es lo correcto y pasarlo a monotónico lo rompería.
+            return (utcnow() - self._last_packet_end).total_seconds()
+        # ⚠️ [T-7.60] El FALLBACK sí es nuestro, y con pared mentía justo cuando
+        # más se mira: al arrancar. El Pi no tiene RTC, así que NTP corrige el
+        # reloj unos segundos después del arranque —13 h 25 min el 2026-09-19— y
+        # este lag publicaba ~48 300 s. La consola degradaba el gabinete por un
+        # ajuste de reloj, no por estar ciego.
+        if self._arranque_mono is None:
+            return None
+        # reloj: monotonico — «cuánto llevo sin ver un paquete» es de esta máquina
+        return _mono() - self._arranque_mono
 
     # --- Ciclo de vida ---
     def _on_start(self) -> None:
         self._stop.clear()
-        self._started_at = utcnow()  # referencia del lag mientras no llegue el 1er paquete
+        self._started_at = utcnow()  # la FECHA de arranque, para quien la imprima
+        # [T-7.60] Y el cronómetro, que es lo que mide el lag sin paquetes.
+        self._arranque_mono = _mono()
         if self._transport is not None:
             self._thread = threading.Thread(
                 target=self._run_transport, name="seedlink", daemon=True

@@ -49,6 +49,7 @@ from takab_edge.durable import escribir_durable
 from takab_edge.gpio_link import GpioLink, GpioLinkUnavailable, GpioSnapshot, as_link
 from takab_edge.health import HealthMonitor
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import Cronometro
 from takab_edge.rules import RuleEngine
 
 log = logging.getLogger("takab_edge.local_api")
@@ -105,6 +106,13 @@ def _age_s(raw: object, now: datetime) -> float | None:
         return None
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=UTC)
+    # reloj: heredado — ⚠️ [T-7.60] Todas las marcas que pasan por aquí
+    # (`checked_at`, `last_result_at`, `oldest_pending_at`, el `start` de un
+    # pendiente) son fechas ISO que el backfill publica, y algunas sobreviven a
+    # un reinicio: no hay monotónico compartido con el proceso que las selló.
+    # El tope contra el uptime lo pone quien las enseña; aquí se mide con pared
+    # a sabiendas, que es distinto de medirla sin saberlo.
+    # reloj: heredado — marcas ISO del backfill; ver arriba
     return max(0.0, (now - stamp).total_seconds())
 
 
@@ -491,6 +499,7 @@ class LocalDashboard(EdgeModule):
         self._server: _DashboardServer | None = None
         self._thread: threading.Thread | None = None
         self._started_at: datetime | None = None
+        self._arranque: Cronometro | None = None
         # Acciones LAN recordadas para la lista de eventos (append desde los
         # hilos HTTP; lectura desde status()): lock propio.
         self._actions: deque[dict] = deque(maxlen=_ACTIONS_MAX)
@@ -578,6 +587,7 @@ class LocalDashboard(EdgeModule):
                 "health_score": feature.health_score,
                 "window_start": feature.window_start.isoformat(),
                 "received_at": received_at.isoformat(),
+                # reloj: heredado — `received_at` lo sella `signal`; ver `_age_s`
                 "age_s": max(0.0, (now - received_at).total_seconds()),
             }
             if last_received is None or received_at > last_received:
@@ -607,6 +617,7 @@ class LocalDashboard(EdgeModule):
             "temperature_c": snap.temperature_c,
             "cert_days_remaining": snap.cert_days_remaining,
             "disk_used_pct": snap.disk_used_pct,
+            # reloj: heredado — `captured_at` puede ser de otra vida
             "captured_at": snap.captured_at.isoformat(),
             "age_s": max(0.0, (now - snap.captured_at).total_seconds()),
         }
@@ -1204,7 +1215,15 @@ class LocalDashboard(EdgeModule):
             log.warning("panel LAN: last_decision no disponible", exc_info=True)
             last_tier = None
         health = self._health_section(now)
-        uptime = (now - self._started_at).total_seconds() if self._started_at else None
+        # ⚠️ [T-7.60] MONOTÓNICO. Medido el 2026-09-19 en el gabinete real:
+        # aquí decía 77 851 s (21.6 h) y el kernel 30 323 s (8.4 h). El Pi no
+        # tiene RTC, así que NTP corrigió el reloj 13 h 25 min hacia adelante
+        # unos segundos después del arranque y la resta de pared se lo tragó
+        # entero. Y no es cosmético: el uptime es lo PRIMERO que se mira para
+        # saber si un gabinete se reinició, así que un valor inflado esconde
+        # justo el suceso que se está buscando.
+        # reloj: monotonico — tiempo encendido de ESTA máquina
+        uptime = self._arranque.transcurrido() if self._arranque else None
         # [T-2.68] Filas y diagnóstico salen de UNA sola lectura: pedirlos por
         # separado los dejaría desincronizados entre sí (dos snapshots distintos
         # del mismo lock) y el rótulo explicaría una lista que ya no es esa.
@@ -1300,6 +1319,7 @@ class LocalDashboard(EdgeModule):
             "active": active,
             "results": results,
             "finished_at": None if acabada is None else acabada.isoformat(),
+            # reloj: heredado — la última prueba de actuación se persiste
             "age_s": None
             if acabada is None
             else round(max(0.0, (now - acabada).total_seconds()), 1),
@@ -1554,7 +1574,8 @@ class LocalDashboard(EdgeModule):
         return self._server.server_address if self._server else None
 
     def _on_start(self) -> None:
-        self._started_at = utcnow()
+        self._started_at = utcnow()  # la FECHA de arranque, que sí se imprime
+        self._arranque = Cronometro()  # [T-7.60] y el cronómetro, que la mide
         self._server = _DashboardServer((self._host, self._port), self)
         self._thread = threading.Thread(
             target=self._server.serve_forever, name="local-api", daemon=True

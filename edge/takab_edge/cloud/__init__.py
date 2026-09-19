@@ -396,6 +396,12 @@ class CloudConnector(EdgeModule):
                     oldest = ts
         if oldest is None:
             return 0.0
+        # reloj: heredado — ⚠️ [T-7.60] `spooled_at` puede ser de antes de un
+        # reinicio: el spool es DURABLE a propósito (`takab_edge.durable`), así
+        # que su registro más viejo suele haber sobrevivido al proceso que lo
+        # encoló. No hay monotónico que compartir con él. Se mide con pared a
+        # sabiendas; el umbral que decide si conviene S3 tolera el error.
+        # reloj: heredado — el spool es durable: cruza reinicios
         return max(0.0, (now - oldest).total_seconds())
 
     def peek_spool(self) -> list[tuple[str | None, dict]]:

@@ -32,10 +32,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from takab_edge.durable import escribir_durable, fsync_dir
 
 log = logging.getLogger("takab_edge.audit.reflejo")
 
@@ -85,14 +88,36 @@ class ActaDeReflejoStore:
         return self._path
 
     def registrar(self, acta: ActaDeReflejo) -> bool:
-        """Añade el acta. Devuelve si se pudo; jamás propaga."""
+        """Añade el acta. Devuelve si se pudo; jamás propaga.
+
+        ⚠️ [T-7.61] **APPEND PURO, y el read-modify-write de antes no era un
+        detalle de estilo.** Esto leía el fichero entero, le añadía la fila,
+        recortaba a `MAX_ACTAS` y lo volvía a escribir encima, sin temporal y
+        sin rename. Un corte de luz a media escritura no perdía la fila nueva:
+        **perdía las 200**. Y este fichero acredita el camino crítico de
+        activación — el reflejo SASMEX→sirena—, o sea justo lo que hay que poder
+        demostrar después de un sismo, que es cuando se va la luz.
+
+        Ahora se abre en `"a"`, se escribe UNA línea y se baja al disco. Una
+        escritura corta al final de un fichero es lo más cerca de atómico que da
+        un sistema de ficheros, y lo peor que puede dejar un corte es una línea
+        a medias — que `actas()` ya salta desde siempre, diciéndolo.
+
+        El recorte se mudó a la LECTURA. No es equivalente: el fichero crece sin
+        tope. Se acota con `_rotar_si_toca`, como el ledger de actuación, en vez
+        de reescribirlo en el peor momento posible.
+        """
         try:
             with self._lock:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
-                lineas = self._leer_crudo()
-                lineas.append(json.dumps(acta.to_json(), ensure_ascii=False))
-                # Se recorta por el PRINCIPIO: lo último medido es lo que se cita.
-                self._path.write_text("\n".join(lineas[-MAX_ACTAS:]) + "\n", encoding="utf-8")
+                linea = json.dumps(acta.to_json(), ensure_ascii=False)
+                assert "\n" not in linea  # noqa: S101 — NDJSON: una fila, una línea
+                with open(self._path, "a", encoding="utf-8") as fh:
+                    fh.write(linea + "\n")
+                    fh.flush()
+                    os.fsync(fh.fileno())  # un sismo suele cortar la luz al Pi
+                fsync_dir(self._path.parent)
+                self._rotar_si_toca()
             return True
         except Exception:  # noqa: BLE001 — advisory: el camino de vida no se cae por esto
             self.fallos += 1
@@ -102,7 +127,35 @@ class ActaDeReflejoStore:
     def _leer_crudo(self) -> list[str]:
         if not self._path.is_file():
             return []
-        return [ln for ln in self._path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        lineas = [ln for ln in self._path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+        # [T-7.61] El recorte vive AQUÍ desde que `registrar` es append: se
+        # devuelven las últimas, se guardan todas. Lo último medido es lo que se
+        # cita, igual que antes; lo que cambió es que recortar ya no pone en
+        # riesgo lo que hay escrito.
+        return lineas[-MAX_ACTAS:]
+
+    def _rotar_si_toca(self) -> None:
+        """Acota el fichero cuando dobla el tope, rotando en vez de reescribir.
+
+        Mismo patrón que `ActuationLedger`: el fichero vivo se RENOMBRA —rename
+        atómico— y el siguiente empieza vacío. Nunca se reescribe algo que ya
+        está en disco, que es la propiedad entera de esta ficha.
+
+        Se deja crecer hasta el DOBLE a propósito: rotar en cada escritura
+        pasado el tope sería volver a tocar el disco en cada acta.
+        """
+        try:
+            if sum(1 for _ in self._path.open(encoding="utf-8")) <= MAX_ACTAS * 2:
+                return
+            vivas = self._leer_crudo()  # ya recortadas a MAX_ACTAS
+            relevo = self._path.with_suffix(self._path.suffix + ".nuevo")
+            escribir_durable(relevo, "\n".join(vivas) + "\n")
+            relevo.replace(self._path)
+            fsync_dir(self._path.parent)
+        except OSError:
+            # Que no se pueda rotar no puede impedir registrar: el fichero crece
+            # y ya está. Perder un acta sí importaría.
+            log.warning("no se pudo rotar el acta del reflejo (sigue creciendo)", exc_info=True)
 
     def actas(self) -> list[dict[str, Any]]:
         """Las actas guardadas, de la más vieja a la más nueva."""

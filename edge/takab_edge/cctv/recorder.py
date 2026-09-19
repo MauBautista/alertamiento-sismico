@@ -116,12 +116,14 @@ def cobertura(segmentos: list[Segmento], desde: datetime, hasta: datetime) -> fl
     Un clip que empieza 12 s tarde porque el gabinete arrancó hace un minuto sigue siendo
     evidencia útil; uno que dice cubrir `T−60 s` sin cubrirlo es una mentira en un reporte.
     """
+    # reloj: datos — los dos extremos son del eje del vídeo
     total = (hasta - desde).total_seconds()
     if total <= 0:
         return 0.0
     cubierto = 0.0
     for s in segmentos_de_la_ventana(segmentos, desde, hasta):
         ini = max(s.inicio, desde)
+        # reloj: datos — cobertura de los trozos, en su propio eje
         fin = min(s.fin, hasta)
         cubierto += max(0.0, (fin - ini).total_seconds())
     return min(1.0, cubierto / total)
