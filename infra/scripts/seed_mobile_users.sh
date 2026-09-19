@@ -265,3 +265,18 @@ jq -r '
 if [[ "$need_code" == 1 ]]; then
   echo "  SITE_CODE=$SITE_CODE"
 fi
+# [T-7.56] `run.sh` cierra la sesión de la Hosted UI antes de cada flujo: sin
+# esto, un flujo que cambie de identidad entra con la ANTERIOR, porque la cookie
+# de Cognito sobrevive al `clearState` de la app.
+if HOSTED_UI="$(terraform -chdir="$TF_DIR" output -raw hosted_ui_domain 2>/dev/null)" \
+   && CLIENT="$(terraform -chdir="$TF_DIR" output -raw client_id 2>/dev/null)" \
+   && VUELTA="$(terraform -chdir="$TF_DIR" output -raw console_url 2>/dev/null)"; then
+  # ⚠️ El esquema, y va ENTRECOMILLADO. Dos trampas medidas el 2026-09-18:
+  #  · `hosted_ui_domain` NO trae `https://`, y un `am start -d` sin esquema no
+  #    casa el intent VIEW: el navegador no se abre y nadie se entera.
+  #  · El valor lleva `?` y `&`; sin comillas, el `source` del `.env` toma el `&`
+  #    como «ejecuta en segundo plano» y parte la línea — la variable queda vacía
+  #    y `run.sh` avisa de que no existe aunque esté escrita en el fichero.
+  [[ "$HOSTED_UI" == http*://* ]] || HOSTED_UI="https://$HOSTED_UI"
+  echo "  HOSTED_UI_LOGOUT_URL='${HOSTED_UI}/logout?client_id=${CLIENT}&logout_uri=${VUELTA}/'"
+fi
