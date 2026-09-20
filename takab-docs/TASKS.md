@@ -13478,10 +13478,29 @@ sesión, vive en [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md); a
 fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
 
-> **Estado de las fases (2026-09-14): `F0` y `F1` CERRADAS.** `F1` cerró con el acto 2 mirado en
-> la consola —lo último que le faltaba—, y con ello el guion de punta a punta está ejecutado y
-> medido contra el gabinete real. `F2` **CERRADA** (`T-7.10`, `T-7.11`, `T-7.12`). Sigue `F3`: la vida
-> del sismo en la consola.
+> **Estado de las fases (2026-09-20): `F0`, `F1`, `F2`, `F3` y `F4` CERRADAS. Sigue `F5`.** `F1`
+> cerró con el acto 2 mirado en la consola —lo último que le faltaba—, y con ello el guion de punta
+> a punta está ejecutado y medido contra el gabinete real. `F2` **CERRADA** (`T-7.10`, `T-7.11`,
+> `T-7.12`). `F3` **CERRADA**: las ocho fichas de la vida del sismo más `T-7.39`, `T-7.40` y
+> `T-7.49`, con `vida_del_sismo.spec.ts` corrido en un navegador de verdad el 2026-09-16 y las
+> líneas de `api` y `edge` de su «Goal» re-corridas en verde el 2026-09-20 (53 y 24 pruebas).
+>
+> `F4` **CERRADA el 2026-09-20** con sus **24 fichas en `[x]`** y las dos líneas ejecutables de su
+> «Goal» en verde: 414 pruebas de papel y el membrete regenerado sin deriva. Los dos `[~]` que
+> quedan dentro de fichas ya cerradas están declarados por su causa y no son deuda oculta: el mapa
+> de intensidad del informe espera a `T-7.24` —la única viñeta diferida del blueprint— y el aviso
+> de evidencia retenida se fichó aparte como `T-7.53`, que está en `[x]`.
+>
+> **La tercera línea del «Goal» es a mano contra la nube, y se cierra con lo que se MIDIÓ.** Con la
+> nube desplegada en `26bde26`, el informe que la nube generó y guardó como evidencia trae el
+> membrete entero: franja, tipo, folio y paginación en las cuatro páginas, y el sha256 en el pie.
+> Eso acredita lo que bloqueaba esta meta —el glosario de procedencia no viajaba en la imagen, y
+> en la nube era un fallo de fichero ausente—. Lo que **no** se pudo medir hoy, dicho aquí para que
+> no se lea como verde: el conteo de fotografías necesita el informe de un incidente CON fotos
+> —los hay: 13 subidas desde el Pixel al incidente `848b0b47`—, y generarlo exige la consola, o sea
+> una persona con su segundo factor; y que el texto diga «REPRODUCCIÓN» exige un pulso del WR-1
+> dentro de una ventana armada, o sea el gabinete. Las dos se miden en `F7`, que es la fase que
+> tiene delante a la persona y al gabinete.
 
 **El orden es de criticidad, no de gusto**, y se ejecuta en ocho fases: conformidad (F0), el
 guion de punta a punta con lo que hay (F1), datos demo (F2), la vida del sismo (F3), papel
