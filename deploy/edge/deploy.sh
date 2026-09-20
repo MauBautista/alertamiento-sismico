@@ -229,7 +229,21 @@ done
 # SHA que se esta desplegando. `--dirty` es deliberado: si el arbol tiene cambios sin
 # commitear, lo que corre en el gabinete NO es ese commit y la ficha de la flota debe
 # decirlo en vez de fingir limpieza.
-FW_VERSION="$(git -C "$ROOT" describe --always --dirty --abbrev=7)"
+#
+# [T-7.64] LA VARIABLE ES UNA SOLA, y eso es el criterio 2 de la ficha: de aquí
+# salen LAS DOS puntas de la comparación —lo que se escribe en el `FW_VERSION`
+# del gabinete (paso 6.b) y lo que se publica en el registro de la nube (paso 8)—
+# porque la deriva se mide por IGUALDAD EXACTA. Repetir la expresión en el
+# publicador habría bastado para que un `--abbrev` distinto volviera DESCONOCIDA
+# a toda la flota.
+#
+# El `TAKAB_DEPLOY_FW_VERSION` es un seam de PRUEBA, hermano de
+# `TAKAB_REMOTE_ROOT`: `edge/tests/test_deploy_sh.py` necesita decidir si el
+# árbol está limpio o sucio para ejercer las dos ramas del paso 8, y no puede
+# ensuciar el repo real para conseguirlo. En producción nadie lo exporta y vale
+# lo que dice git. Y como sale de la MISMA variable, exportarlo no puede
+# descuadrar las dos puntas: movería las dos a la vez.
+FW_VERSION="${TAKAB_DEPLOY_FW_VERSION:-$(git -C "$ROOT" describe --always --dirty --abbrev=7)}"
 echo "→ versión a desplegar: ${FW_VERSION}"
 case "$FW_VERSION" in
 *-dirty) echo "  OJO: árbol sucio; el gabinete reportará '${FW_VERSION}' (no es un commit reproducible)" ;;
@@ -1079,6 +1093,57 @@ journalctl -u takab-edge -n 8 --no-pager | tail -8 || true
 REMOTO
 
 echo "✓ edge desplegado en ${HOST}, con los pines del gabinete RECLAMADOS"
+
+# --- 8. EL REGISTRO DE RELEASES (T-7.64) -------------------------------------
+#
+# LO QUE FALTABA, MEDIDO EL 2026-09-20: `SELECT count(*) FROM fw_releases` → 0.
+# El registro estaba vacío y siempre lo había estado, porque NADIE lo escribía —
+# no había una sola línea de este script que lo hiciera. Y sin registro, la
+# derivación cae en su rama 3 (`SIN REFERENCIA`) para TODA la flota: se sabe qué
+# corre cada gabinete, no si eso es lo actual. Un gabinete con código de hace un
+# mes y otro recién desplegado se veían IDÉNTICOS en /fleet.
+#
+# Las últimas líneas de este mismo script llevaban meses mandando a mirar si el
+# estado quedaba «AL DÍA». Ese rótulo **no podía aparecer para ningún gabinete**.
+# Un estado inalcanzable no da error: da una consola que parece funcionar.
+#
+# VA AQUÍ Y NO ANTES, y el orden es la mitad del arreglo: después del canary y
+# después de la verificación de propiedad, o sea sólo si la release quedó ACTIVA
+# y SANA. `set -e` garantiza que no se llega hasta aquí de otro modo. Registrar
+# lo que no llegó a correr sería peor que no registrar nada: el registro es la
+# referencia contra la que se mide la flota entera, así que una versión publicada
+# que ningún gabinete ejecuta vuelve `ATRASADA` a todos los que están bien.
+PUBLICADOR="${TAKAB_DEPLOY_PUBLICADOR:-${ROOT}/infra/scripts/publish_release.sh}"
+case "$FW_VERSION" in
+*-dirty)
+  # La regla vive en el CLI, que es el que escribe (`ops/publish_release.py`);
+  # esto es sólo un atajo local para no pedir credenciales de nube en un
+  # despliegue de depuración en sitio, que es el caso en el que el árbol está
+  # sucio. Si alguien llama al publicador a mano con un `-dirty`, lo rechaza él.
+  echo "→ NO se publica '${FW_VERSION}' en el registro: árbol sucio."
+  echo "  El gabinete saldrá DESCONOCIDA en /fleet, que es la verdad — publicar"
+  echo "  un '-dirty' lo pintaría AL DÍA sobre código que no existe en ningún"
+  echo "  commit, y borraría justo la señal que lo delata."
+  ;;
+*)
+  # `|| ESTADO_PUBLICACION=$?` y no `|| true`: el fallo NO tumba el despliegue
+  # —el gabinete ya está corriendo el código bueno y no se puede des-desplegar—
+  # pero tampoco se traga. Se DECLARA, con el comando exacto para rellenarlo
+  # después; un fallback silencioso aquí devolvería el defecto entero.
+  ESTADO_PUBLICACION=0
+  "$PUBLICADOR" "$FW_VERSION" "desplegado a ${HOST} · ${RELEASE_ID}" || ESTADO_PUBLICACION=$?
+  if [ "$ESTADO_PUBLICACION" != 0 ]; then
+    echo "" >&2
+    echo "⚠ EL DESPLIEGUE FUE BIEN; lo que falló es REGISTRAR la versión." >&2
+    echo "  El gabinete corre '${FW_VERSION}' y está protegiendo. Lo que queda mal" >&2
+    echo "  es la consola: sin esta fila, /fleet no puede decir si algún gabinete" >&2
+    echo "  está al día — sale SIN REFERENCIA la flota entera." >&2
+    echo "  NO revierta nada. Reintente cuando tenga sesión de AWS:" >&2
+    echo "    make cloud-publish-release VERSION=${FW_VERSION}" >&2
+  fi
+  ;;
+esac
+
 echo "  OJO: 'con dueño' NO es 'corriendo el código nuevo'. Eso lo confirma el"
 echo "  siguiente latido en la consola (columna del gabinete en /fleet): el"
 echo "  estado de versión debe quedar AL DÍA, no SIN REINICIAR."

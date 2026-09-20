@@ -20,7 +20,8 @@ cloud-e2e-site-down: ## Lo retira. Aborta si le hubieran puesto un gabinete
 
 .PHONY: dev down lint test test-db fmt drift build verify api web edge mobile db install db-tunnel \
         cloud-stop cloud-start \
-        billing cloud-users cloud-mobile-users cloud-staging-incident demo-fase1 demo-db \
+        billing cloud-users cloud-mobile-users cloud-staging-incident cloud-publish-release \
+        demo-fase1 demo-db \
         objetos \
         cloud-images cloud-deploy cloud-conformidad cloud-apply cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
@@ -424,6 +425,15 @@ cloud-mobile-users:
 # (default crisis). Siembra por SQL vía túnel SSM; no hay POST /incidents.
 cloud-staging-incident:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/seed_staging_incident.sh $(PHASE)
+
+# [T-7.64] Registrar a mano una version de firmware en `fw_releases`. El
+# despliegue del edge ya lo hace solo al final; esto es el REINTENTO para cuando
+# aquello falla (sin sesion de AWS, por ejemplo) y lo declara en su salida. Sin
+# esta fila, /fleet no puede decir si un gabinete esta al dia: sale SIN
+# REFERENCIA la flota entera, que es como estuvo desde siempre hasta T-7.64.
+cloud-publish-release:
+	@test -n "$(VERSION)" || { echo "falta VERSION=<el FW_VERSION exacto del gabinete>" >&2; exit 2; }
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) bash infra/scripts/publish_release.sh $(VERSION)
 
 # --- [T-3.12.b] Imagen del Lambda de conteo de CCTV --------------------------
 #
