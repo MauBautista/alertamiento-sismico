@@ -19,5 +19,32 @@
 -- es decir lo que de verdad se quiere decir: «esto ya es historia vieja».
 -- Los 30 días tienen que superar la ventana, y que no se separen lo comprueba
 -- `test_la_ventana_de_reingreso_no_se_separa_del_ajuste`.
+--
+-- ⚠️ [T-7.62] Y EL `WHERE` YA NO MIRA EL `state`, que es donde `T-7.55` se quedó
+-- corta sin que nada lo viera. Aquel arreglo retrodató el cierre precisamente
+-- para que el sitio volviera a `idle`, pero lo ató a `state <> 'closed'` — y el
+-- incidente de una corrida de `reentry` **ya viene cerrado**: lo cierra el motor
+-- por `dictamen_signed` tres segundos después de firmar (`D-33`,
+-- `incident/lifecycle.py`). Así que el `UPDATE` lo saltaba, su `closed_at` se
+-- quedaba en `now()` y la autorización de reingreso sobrevivía las 8 h de
+-- `reentry_declare_s`: **`reset` no reseteaba**.
+--
+-- Medido en la nube el 2026-09-20 corriendo la tanda de diez del flujo `03`:
+--     tras reset:    phase=reentry_approved   ← debería ser idle
+--     tras crisis:   phase=alert_active
+--     tras reentry:  phase=reentry_approved
+--
+-- Ahora se retrodata TODO incidente del sitio, cerrado o no, que es lo que
+-- aquella línea quería decir. Sobre los ya retrodatados el UPDATE es un no-op
+-- de contenido, así que sigue siendo idempotente.
+--
+-- ⚠️ Y el `state = 'closed'` se mantiene en el SET aunque la mayoría ya lo
+-- estén: quitarlo dejaría de cerrar los abiertos, que es la otra mitad del
+-- trabajo de este fichero.
+--
+-- La guarda de arriba (`guarda.sql`) sigue siendo lo que impide que esto toque
+-- un sitio con gabinete: ampliar el alcance del UPDATE no amplía el de la
+-- purga, porque el sitio ya estaba acotado antes de llegar aquí.
 UPDATE incidents SET state = 'closed', closed_at = now() - interval '30 days'
- WHERE site_id = :'site'::uuid AND state <> 'closed';
+ WHERE site_id = :'site'::uuid
+   AND (state <> 'closed' OR closed_at IS NULL OR closed_at > now() - interval '30 days');
