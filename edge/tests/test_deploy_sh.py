@@ -1674,3 +1674,104 @@ def test_la_poda_JAMAS_se_lleva_la_release_heredada(gabinete) -> None:
     assert sorted(gabinete.releases.glob("*vieja")) == [], (
         "premisa: la poda SÍ tenía que llevarse las otras antiguas"
     )
+
+
+# --- [T-7.64] El registro de releases: el paso que no existía ----------------
+#
+# El defecto no era un bug, era un HUECO: `SELECT count(*) FROM fw_releases` daba
+# 0 el 2026-09-20 y siempre lo había dado, porque ninguna línea de `deploy.sh`
+# escribía ahí. Con el registro vacío toda la flota sale `SIN REFERENCIA` y los
+# siete estados de versión de T-2.69 no pueden distinguir un gabinete recién
+# desplegado de otro con código de hace un mes. Estos tests fijan las tres
+# propiedades que hacen que ese paso sea seguro: va DESPUÉS de que la release
+# quedara activa y sana, NO publica un árbol sucio, y NO puede tumbar nada.
+
+
+def _publicador(tmp_path, *, salida: int = 0):
+    """Un publicador de mentira que apunta su argv y devuelve lo que se le pida."""
+    guion = tmp_path / "publicador-falso.sh"
+    apunte = tmp_path / "publicado.txt"
+    guion.write_text(f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> {apunte}\nexit {salida}\n')
+    guion.chmod(0o755)
+    return guion, apunte
+
+
+def test_un_despliegue_sano_PUBLICA_la_version_que_acaba_de_activar(gabinete, tmp_path) -> None:
+    """El criterio 1 y el 2 a la vez: se publica, y se publica EXACTAMENTE lo que
+    el gabinete va a reportar.
+
+    La comparación de la deriva es por igualdad, así que «casi» la misma cadena
+    es `DESCONOCIDA` para toda la flota que corra ese código. Por eso se comprueba
+    contra el `FW_VERSION` que quedó ESCRITO en el gabinete, no contra un literal.
+    """
+    guion, apunte = _publicador(tmp_path)
+    r = gabinete.desplegar(TAKAB_DEPLOY_PUBLICADOR=str(guion), TAKAB_DEPLOY_FW_VERSION="62f3f1e")
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+
+    escrita = (gabinete.vivo / "FW_VERSION").read_text().strip()
+    publicada = apunte.read_text().split()[0]
+    assert publicada == escrita == "62f3f1e", (
+        "lo publicado tiene que ser IDÉNTICO a lo que el gabinete reportará; "
+        f"gabinete='{escrita}' registro='{publicada}'"
+    )
+
+
+def test_publicar_va_DESPUES_de_que_la_release_quede_activa(gabinete, tmp_path) -> None:
+    """Registrar lo que no llegó a correr es peor que no registrar nada.
+
+    El registro es la referencia contra la que se mide la flota ENTERA: publicar
+    una versión que ningún gabinete ejecuta vuelve `ATRASADA` a todos los que
+    están bien. Así que si el despliegue aborta, no se publica nada — y el sitio
+    donde vive el paso (tras el canary y tras la verificación de propiedad) es lo
+    que lo garantiza.
+    """
+    guion, apunte = _publicador(tmp_path)
+    r = gabinete.desplegar(
+        FALLA_COMPILEALL="1",
+        TAKAB_DEPLOY_PUBLICADOR=str(guion),
+        TAKAB_DEPLOY_FW_VERSION="62f3f1e",
+    )
+    assert r.returncode != 0, "premisa: este despliegue tiene que abortar"
+    assert not apunte.exists(), "se publicó una versión que el gabinete nunca llegó a activar"
+
+
+def test_un_arbol_sucio_NO_se_publica(gabinete, tmp_path) -> None:
+    """La rama 4 de `derive_version_drift` manda los `-dirty` a DESCONOCIDA a
+    propósito: la comparación es por igualdad y `62f3f1e-dirty` no es `62f3f1e`.
+
+    Publicarlo no añadiría información — borraría esa señal, y el gabinete que
+    corre código sin commitear saldría `AL DÍA`, el rótulo más tranquilizador del
+    panel, sobre algo que no existe en ningún commit.
+    """
+    guion, apunte = _publicador(tmp_path)
+    r = gabinete.desplegar(
+        TAKAB_DEPLOY_PUBLICADOR=str(guion), TAKAB_DEPLOY_FW_VERSION="62f3f1e-dirty"
+    )
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert not apunte.exists(), "un árbol sucio no puede entrar en el registro"
+    assert "DESCONOCIDA" in r.stdout, (
+        "y hay que DECIRLO: si el operador no lee por qué su gabinete sale "
+        "DESCONOCIDA, lo leerá como una avería"
+    )
+
+
+def test_que_falle_la_publicacion_NO_tumba_el_despliegue_pero_se_DECLARA(
+    gabinete, tmp_path
+) -> None:
+    """El criterio 3. El gabinete ya está corriendo el código bueno y no se puede
+    des-desplegar: convertir esto en un despliegue fallido invita a revertir, y
+    revertir es reiniciar —que mueve GAS_VALVE y DOOR_RETAINER— a cambio de un
+    problema que está en la consola, no en el edificio.
+
+    Pero tampoco se traga: un fallback silencioso aquí devolvería el defecto
+    entero, que es justo «nadie escribe en el registro y nadie se entera».
+    """
+    guion, apunte = _publicador(tmp_path, salida=1)
+    r = gabinete.desplegar(TAKAB_DEPLOY_PUBLICADOR=str(guion), TAKAB_DEPLOY_FW_VERSION="62f3f1e")
+    assert r.returncode == 0, "un registro que no se pudo escribir NO es un despliegue fallido"
+    assert apunte.exists(), "premisa: el publicador tenía que haberse intentado"
+    assert "EL DESPLIEGUE FUE BIEN" in r.stderr
+    assert "NO revierta" in r.stderr
+    assert "make cloud-publish-release VERSION=62f3f1e" in r.stderr, (
+        "declarar el fallo sin el comando exacto para repararlo es medio aviso"
+    )

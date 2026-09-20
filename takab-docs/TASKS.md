@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **386** · `[~]` **10** · `[ ]` **46**
+**Conteo de tareas:** total **442** · `[x]` **387** · `[~]` **10** · `[ ]` **45**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16845,7 +16845,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   `timeout:` pasa a barrer también lo que las cabeceras AFIRMAN) · **Token nuevo:** no · **Cambia
   algo que un test defiende hoy:** no.
 
-### [ ] T-7.64 · **La deriva de versiones de la flota no puede funcionar: nadie publica los releases** — `SOFTWARE`
+### [x] T-7.64 · **La deriva de versiones de la flota no puede funcionar: nadie publica los releases** — `SOFTWARE` · **CERRADA 2026-09-20**
 - **Componente:** api · deploy · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que la consola pueda decir si un gabinete corre lo último, que es para lo que
   `T-2.69` construyó los siete estados de versión.
@@ -16872,23 +16872,55 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **⚠️ Cómo se descubrió, que dice algo del defecto:** se le pidió a Mauricio que mirara `/fleet`
   para confirmar un despliegue y que buscara «AL DÍA». Ese rótulo **no puede aparecer hoy para
   ningún gabinete**. Un estado inalcanzable no da error: da una consola que parece funcionar.
+- **⚠️ POR QUÉ NO ES UN `curl` AL ENDPOINT, que es lo primero que uno intenta.** `POST
+  /fleet/releases` exige `takab_superadmin`, y ese pool es **SRP + MFA TOTP obligatorio**: no hay
+  cliente `client_credentials` en el terraform de identidad, así que **ninguna máquina puede
+  presentarse**. Un despliegue que dependiera de que alguien teclee seis dígitos publicaría
+  exactamente lo que se publicaba hasta hoy: nada. Así que el despliegue llega por donde ya llega
+  todo lo operativo —`aws ssm send-command`, sin ingreso SSH— y corre un CLI DENTRO del contenedor
+  `api`, que es la forma que este repo ya tiene para esto (`prune_pii`, `prune_cctv`,
+  `restore_check`). Con eso se reusa **la misma consulta, el mismo verbo de auditoría y la misma
+  RLS**: `fw_rel_publish` sigue exigiendo `app_role() = 'takab_superadmin'` y es la base quien lo
+  impone. Lo único que cambia frente al router es el ACTOR que queda escrito —`deploy:<quien>@<donde>`
+  en vez de `user:<uuid>`—, que es la verdad: no lo publicó una persona en una consola.
 - **Criterios de aceptación:**
-  - [ ] `deploy/edge/deploy.sh` publica el `FW_VERSION` que acaba de activar, **después** del
-        canary y sólo si la release quedó activa: registrar lo que no llegó a correr es peor que no
-        registrar nada.
-  - [ ] ⚠️ La versión publicada tiene que ser **EXACTAMENTE** la que el gabinete escribe en su
-        `FW_VERSION` — el propio endpoint lo avisa: la comparación es por igualdad, y «un espacio de
-        más aquí volvería `DESCONOCIDA` a toda la flota que corra ese código». Derivarla del mismo
-        sitio, no repetirla.
-  - [ ] Que publicar NO pueda tumbar un despliegue. Si la nube no contesta, el gabinete ya está
-        corriendo el código bueno; el registro se puede rellenar después y el fallo se DECLARA.
-  - [ ] Decidir qué pasa con los `-dirty`: la rama 4 de la derivación los manda a `DESCONOCIDA` a
-        propósito, y eso está bien. Publicarlos borraría esa señal.
-  - [ ] Una prueba que ejerza el camino entero: desplegar ⇒ publicar ⇒ que `derive_version_drift`
-        diga `AL DÍA`. Hoy ninguna lo cruza de punta a punta.
+  - [x] `deploy/edge/deploy.sh` publica en su **paso 8**, después del canary y después de la
+        verificación de propiedad de los pines — o sea sólo si la release quedó ACTIVA y SANA, que
+        `set -e` garantiza. Registrar lo que no llegó a correr no es un detalle de orden: el
+        registro es la referencia contra la que se mide la flota ENTERA, así que una versión
+        publicada que ningún gabinete ejecuta vuelve `ATRASADA` a todos los que están bien.
+  - [x] **UNA sola variable produce las dos puntas.** `FW_VERSION` es de donde salen lo que se
+        escribe en el gabinete (paso 6.b) y lo que se publica (paso 8). Repetir la expresión en el
+        publicador habría bastado para que un `--abbrev` distinto volviera `DESCONOCIDA` a toda la
+        flota. El test lo comprueba contra el fichero `FW_VERSION` que quedó ESCRITO, no contra un
+        literal.
+  - [x] Publicar no puede tumbar un despliegue, y tampoco se traga: `|| ESTADO_PUBLICACION=$?` y un
+        aviso que dice **«EL DESPLIEGUE FUE BIEN»**, que NO se revierta —revertir es reiniciar, y
+        reiniciar mueve `GAS_VALVE` y `DOOR_RETAINER`— y el comando exacto del reintento
+        (`make cloud-publish-release VERSION=…`). Un fallback silencioso aquí habría devuelto el
+        defecto entero.
+  - [x] Los `-dirty` **no se publican**, y la regla vive en el que ESCRIBE (`ops/publish_release.py`),
+        no sólo en el que llama. Publicar uno no añadiría información: **borraría la señal**. El
+        registro pasaría a contener una versión que nadie puede reconstruir desde el repo y el
+        gabinete que la corre saldría `AL DÍA` —el rótulo más tranquilizador del panel— sobre código
+        que no existe en ningún commit.
+  - [x] El camino entero, y por el camino que usará el despliegue (el CLI, no un INSERT a mano):
+        `SIN REFERENCIA` antes, `AL DÍA` después, con el registro **leído de la base**. Más la
+        contraprueba de que publicar no maquilla a nadie — el gabinete que no se actualizó pasa de
+        indistinguible a delatado.
+  - [x] Y un desenlace que el router no tiene: **republicar la misma versión es benigno aquí**. Un
+        redespliegue del mismo SHA es rutina (tras un canary fallido, o el mismo commit a dos
+        gabinetes) y lo que se protege no es el código de salida, es `released_at` — es lo que
+        `release_age_s` convierte en «cuánto lleva la flota corriendo código viejo», así que
+        reescribirlo reescribiría a posteriori la deriva de todos.
+- **⚠️ LAS CUATRO GUARDAS SE PROBARON ROMPIÉNDOLAS** (quitar el paso 8, dejar pasar un `-dirty`,
+  hacer fatal el fallo de publicación, publicar ANTES de desplegar): 3, 1, 1 y 4 tests en rojo
+  respectivamente. **Y la primera medición dijo «0 en rojo» en las cuatro** — el defecto estaba en
+  el instrumento, no en las guardas: el `grep` de fallos no casaba porque pytest antepone los
+  códigos de color a `FAILED`. Quinta vez que este repo paga por un censo ciego a su propio
+  defecto, y la primera en que el ciego era la regla que medía a las otras.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
-  hoy:** no — `derive_version_drift` ya está probada con releases inyectadas; lo que falta es que
-  en producción existan.
+  hoy:** no — `derive_version_drift` no se toca; lo que faltaba es que sus datos existieran.
 
 ## RUTA CRÍTICA
 
