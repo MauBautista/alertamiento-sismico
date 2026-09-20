@@ -260,3 +260,90 @@ async def test_download_no_bucket_503(client, make_incident, monkeypatch) -> Non
     tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(f"/evidence/{ev}/download", headers=au.bearer(tok))
     assert r.status_code == 503
+
+
+# ═══════════════ [T-7.54] el freno propio de la descarga, en los DOS sentidos
+#
+# ⚠️ QUÉ PROTEGE, MEDIDO el 2026-09-20 sobre el bucket real y no supuesto: el
+# objeto más grande es un miniSEED de 204 KB, una foto son 53 KB y el bucket
+# ENTERO pesa 6.8 MB. A ~$0.09/GB, descargarlo completo mil veces cuesta menos de
+# un dólar — así que un tope «contra el egreso de S3», que es lo que la ficha
+# suponía, habría sido un número con aire de medido que no mide nada. Lo que este
+# freno acota es la EXTRACCIÓN EN BLOQUE con un token robado.
+
+
+async def _descargar(client, ev, tok):  # noqa: ANN001, ANN202
+    return await client.post(f"/evidence/{ev}/download", headers=au.bearer(tok))
+
+
+async def test_el_freno_de_descarga_CORTA_al_rebasar_el_techo(
+    client, make_incident, monkeypatch
+) -> None:
+    """Que el tope existe y muerde."""
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_EVIDENCE_DOWNLOAD_RATE_USER_PER_MIN", "3")
+    with mock_aws():
+        _make_bucket()
+        # CERRADO a propósito: un incidente EN CURSO no se frena nunca, y ése es
+        # el caso del test de abajo.
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, state="closed")
+        ev = await _add_evidence(iid, au.DB_TENANT_PRIV, kind="miniseed", s3_key="e/a.mseed")
+        tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
+
+        codigos = [(await _descargar(client, ev, tok)).status_code for _ in range(5)]
+
+    assert codigos[:3] == [200, 200, 200], f"el freno cortó antes de tiempo: {codigos}"
+    assert codigos[3] == 429, f"el freno NO cortó al rebasar el techo: {codigos}"
+
+
+async def test_el_freno_NO_cae_sobre_la_evidencia_de_un_incidente_EN_CURSO(
+    client, make_incident, monkeypatch
+) -> None:
+    """⚠️ La mitad que de verdad importa, y la que este repositorio ya rompió dos veces.
+
+    Es la doctrina que `T-5.18` tuvo que aplicarse a sí misma y que `T-7.45` vino
+    a reparar: un tope de gasto que niega evidencia durante una emergencia es
+    peor que no tener tope. Quien mira fotos de daños con el edificio evacuado no
+    puede recibir un 429 por mirar deprisa.
+
+    El techo se pone en 1 para que, sin la excepción, la SEGUNDA descarga fuera
+    429. Con ella, las seis pasan.
+    """
+    _env_bucket(monkeypatch)
+    monkeypatch.setenv("TAKAB_API_EVIDENCE_DOWNLOAD_RATE_USER_PER_MIN", "1")
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, state="open")
+        ev = await _add_evidence(iid, au.DB_TENANT_PRIV, kind="photo", s3_key="e/dano.jpg")
+        tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
+
+        codigos = [(await _descargar(client, ev, tok)).status_code for _ in range(6)]
+
+    assert codigos == [200] * 6, (
+        "el freno negó evidencia de un incidente ABIERTO. Es exactamente el "
+        f"defecto que T-7.45 tuvo que reparar en el otro freno: {codigos}"
+    )
+
+
+async def test_el_freno_de_descarga_NO_gasta_el_techo_de_GENERAR(
+    client, make_incident, monkeypatch
+) -> None:
+    """La razón por la que `T-7.45` los desacopló, fijada desde este lado.
+
+    Antes, descargar escribía `export_pdf` y seis descargas devolvían 429 a la
+    primera generación de dictamen. Los dos frenos cuentan poblaciones distintas
+    y esta prueba lo ata: las descargas dejan `download_<kind>` y ni una sola
+    fila `export_pdf`.
+    """
+    _env_bucket(monkeypatch)
+    with mock_aws():
+        _make_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV, state="closed")
+        ev = await _add_evidence(iid, au.DB_TENANT_PRIV, kind="photo", s3_key="e/x.jpg")
+        tok = au.make_token("takab_superadmin", tenant=au.DB_TENANT_PRIV)
+        for _ in range(4):
+            assert (await _descargar(client, ev, tok)).status_code == 200
+
+    verbos = await _audit_verbs(au.DB_TENANT_PRIV)
+    assert "download_photo" in verbos
+    assert "export_pdf" not in verbos, "descargar volvió a gastar el techo de generar"

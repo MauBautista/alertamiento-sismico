@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **441** · `[x]` **383** · `[~]` **10** · `[ ]` **48**
+**Conteo de tareas:** total **441** · `[x]` **384** · `[~]` **10** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16320,7 +16320,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > así que Puebla (`…-000000`) le gana siempre al arnés (`…-000900`). Darle los dos sitios no lo
 > arregla: lo deja mirando el sitio del que se le quiere sacar.
 
-### [ ] T-7.54 · **Descargar evidencia no tiene freno propio** — `SOFTWARE`
+### [x] T-7.54 · **Descargar evidencia no tiene freno propio** — `SOFTWARE` · **CERRADA 2026-09-20**
 - **Componente:** api · **Depende de:** T-7.45 · **Prioridad:** F4 · baja
 - **Objetivo:** que descargar evidencia tenga un tope pensado para lo que cuesta descargar.
 - **De dónde sale.** `T-7.45` desacopló la descarga del freno de exportación, porque gastaba el
@@ -16338,15 +16338,39 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - `audit_log` ya tiene una fila por descarga con verbo propio (`download_<kind>`) desde `T-7.45`,
     así que el contador no necesita tabla nueva. La consulta tiene que anclarse en `ts > :since`
     (único índice servible; la RLS de lectura es un `OR` que impide apoyarse en `tenant_id`).
+- **⚠️ LA MEDICIÓN CAMBIÓ LA FICHA: el tope NO protege dinero.** Medido el 2026-09-20 sobre el
+  bucket real (`takab-dev-evidence-…`, 80 objetos):
+
+  | kind | n | mediana | p95 | máx |
+  |---|---|---|---|---|
+  | `report_pdf` | 30 | 101.8 KB | 103.6 KB | 104.3 KB |
+  | `photo` | 28 | 52.8 KB | 53.0 KB | 53.1 KB |
+  | `miniseed` | 22 | 168.0 KB | 200.0 KB | **204.0 KB** |
+
+  **El bucket ENTERO pesa 6.8 MB.** A ~$0.09/GB de egreso, descargarlo completo mil veces cuesta
+  menos de un dólar. Un tope calibrado «contra el egreso de S3» —que es lo que esta ficha
+  suponía— habría sido un número con aire de medido que no mide nada.
+  - **Y la otra mitad de la medición: no hay tráfico que medir.** El `audit_log` de la nube dev
+    tiene **CERO** filas `download_*` desde que ese verbo existe (`T-7.45`). La pregunta «cuántas
+    descargas hace una sesión de Triage» no tiene respuesta observada, y fingirla habría sido
+    peor que decirlo.
+- **Lo que el tope SÍ acota, que es lo que quedó escrito en el código:** la **extracción en
+  bloque** con un token robado. Y se declara también lo que NO puede hacer: el presignado se firma
+  en proceso y **el GET que gasta el egreso no pasa por la API**, así que esto limita cuántas URLs
+  se emiten, no cuántos bytes salen — una URL ya emitida sirve descargas ilimitadas durante sus
+  300 s. El número (30/min/usuario) sale del incidente más cargado de la nube dev —22 evidencias,
+  o sea que cabe entero en una ráfaga— más margen; el día que haya uso real se re-mide.
 - **Criterios de aceptación:**
-  - [ ] Medir primero: cuánto egreso de S3 genera una descarga típica por `kind`, y cuántas
-    descargas hace de verdad una sesión de Triage. El número se DECLARA con su medición, no se
-    adivina.
-  - [ ] Un tope propio, y **su razón escrita**: qué protege exactamente y por qué ese número.
-  - [ ] ⚠️ El 429 **no puede caer sobre la evidencia de un incidente en curso**. Es la misma
-    doctrina que `T-5.18` se aplicó a sí misma y que `T-7.45` tuvo que reparar: un tope de gasto que
-    niega evidencia en una emergencia es peor que no tener tope.
-  - [ ] Prueba en los dos sentidos: que el tope corta, y que NO corta lo que no debe.
+  - [x] Medir primero. Hecho, y el resultado está arriba: **invirtió la premisa de la ficha**.
+  - [x] Un tope propio con su razón escrita — en `settings.py`, con la medición al lado para que
+    quien lo cambie vea contra qué se calibró.
+  - [x] ⚠️ El 429 **no cae sobre la evidencia de un incidente en curso**. `GET_EVIDENCE` trae ahora
+    el `state` del incidente —con `LEFT JOIN`, porque el `report_pdf` de un simulacro tiene
+    `incident_id` NULL y un INNER habría convertido su descarga en un 404— y `open`/`in_review`
+    salen del freno antes de contar nada.
+  - [x] Prueba en los dos sentidos, y **verificado que las dos cazan**: quitando el freno cae la
+    del corte; quitando la excepción cae la del incidente abierto. Más una tercera que fija lo que
+    `T-7.45` desacopló: descargar deja `download_<kind>` y **ni una sola fila `export_pdf`**.
 - **Tests de censo que toca:** `test_freno_de_exportacion_cuenta_lo_mismo` (el verbo del freno sigue
   con un solo escritor) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
