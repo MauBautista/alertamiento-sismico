@@ -190,7 +190,9 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
         "papel declara cuál y por qué— y una redacción rehecha por el asesor "
         "automático. Una huella distinta NO prueba que el dato haya cambiado. Del "
         "ARCHIVO se registra su propio SHA-256 como evidencia inmutable del incidente; "
-        "ése es el que devuelve sha256sum.",
+        "ése es el que devuelve sha256sum, y la consola lo imprime ENTERO junto a este "
+        "dictamen en Triage, donde además se puede re-verificar contra el objeto "
+        "archivado.",
         size=7.5,
         muted=True,
     )

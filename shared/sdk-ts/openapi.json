@@ -9212,6 +9212,10 @@
             "title": "Expires In",
             "type": "integer"
           },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
           "url": {
             "title": "Url",
             "type": "string"
@@ -9219,6 +9223,7 @@
         },
         "required": [
           "evidence_id",
+          "sha256",
           "url",
           "expires_in"
         ],
@@ -13298,7 +13303,7 @@
     },
     "/evidence/{evidence_id}/verify": {
       "post": {
-        "description": "[T-2.10 · 2.3] Re-hashea el objeto realmente subido y lo confronta con la\nhuella declarada en captura. Alterar un byte del blob ⇒ ``verified=false``.\nLo consumen Triage (consola) y los tácticos que revisan su propia evidencia.",
+        "description": "[T-2.10 · 2.3] Re-hashea el objeto realmente subido y lo confronta con la\nhuella declarada en captura. Alterar un byte del blob ⇒ ``verified=false``.\nLo consumen Triage (consola) y los tácticos que revisan su propia evidencia.\n\n[T-7.48] Y el dictamen pericial, que es el documento que sale del sistema en\nla mano de un perito. El permiso ya no lo fija la firma —era el de leer\ndaños, para todo— sino `_ALCANCE_DE_VERIFICACION`, porque cada documento lo\nverifica quien tiene derecho a leerlo.",
         "operationId": "verify_evidence_evidence__evidence_id__verify_post",
         "parameters": [
           {

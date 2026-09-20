@@ -1,46 +1,11 @@
 // Triage Estructural (T-2.10): los reportes de daños que el táctico levantó en
 // campo (2.4), con sus evidencias forenses y la verificación de hash bajo
 // demanda. "Personas en riesgo" se resalta y ordena al frente.
-import { useState } from "react";
-
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
-import { orderedDamageReports, verifyLabel, type VerifyState } from "./structural";
-import { useDamageReports, useVerifyEvidence } from "./useDamageReports";
-
-function EvidenceVerifier({ evidenceId }: { evidenceId: string }) {
-  const verify = useVerifyEvidence();
-  const [state, setState] = useState<VerifyState>("idle");
-
-  const run = () => {
-    setState("verifying");
-    verify.mutate(evidenceId, {
-      onSuccess: (res) => setState(res.verified ? "verified" : "tampered"),
-      onError: () => setState("error"),
-    });
-  };
-
-  const cls =
-    state === "verified" ? "ok" : state === "tampered" || state === "error" ? "crit" : "muted";
-
-  return (
-    <button
-      className={`structural-verify structural-verify--${cls}`}
-      disabled={state === "verifying"}
-      title={
-        state === "verifying"
-          ? "Verificando la evidencia…"
-          : "Verifica la integridad de esta evidencia"
-      }
-      onClick={run}
-      type="button"
-      data-testid={`verify-${evidenceId}`}
-    >
-      <span className="structural-verify__id">{evidenceId.slice(0, 8)}</span>
-      <span className="structural-verify__state">{verifyLabel(state)}</span>
-    </button>
-  );
-}
+import EvidenceVerifier from "./EvidenceVerifier";
+import { orderedDamageReports } from "./structural";
+import { useDamageReports } from "./useDamageReports";
 
 export default function StructuralTriage({ incidentId }: { incidentId: string }) {
   const { reports, loading, error, staleSince } = useDamageReports(incidentId);

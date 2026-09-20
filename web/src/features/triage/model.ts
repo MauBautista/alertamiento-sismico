@@ -226,6 +226,26 @@ export function miniseedOf(evidence: EvidenceObject[] | undefined): EvidenceObje
 }
 
 /**
+ * [T-7.48] El DICTAMEN archivado del incidente — el PDF que se lleva un perito.
+ *
+ * Se devuelve el MÁS RECIENTE y no el primero, y la diferencia importa: un
+ * incidente puede exportarse varias veces (la variante ejecutiva y la técnica,
+ * o el mismo modelo dos días distintos), y `evidence_objects` es append-only,
+ * así que están todas. Quien abre Triage quiere comprobar el papel que tiene en
+ * la mano, que es el último emitido.
+ *
+ * ⚠️ La API devuelve la lista ordenada `created_at DESC` (`LIST_EVIDENCE`), pero
+ * eso es una promesa de otra capa: aquí se ordena otra vez. Confiar en el orden
+ * de una respuesta ajena es la clase de suposición que se rompe el día que
+ * alguien añade un `ORDER BY` distinto y nadie cruza los dos sitios.
+ */
+export function dictamenPdfOf(evidence: EvidenceObject[] | undefined): EvidenceObject | null {
+  const pdfs = (evidence ?? []).filter((e) => e.kind === "report_pdf");
+  if (pdfs.length === 0) return null;
+  return pdfs.reduce((mas_nuevo, e) => (e.created_at > mas_nuevo.created_at ? e : mas_nuevo));
+}
+
+/**
  * [T-2.43] Ventana en la que el crudo del evento todavía puede estar subiendo.
  *
  * El gabinete no transmite waveform en continuo: lo archiva y lo sube DESPUÉS de que

@@ -216,28 +216,116 @@ def test_el_papel_NO_promete_comparar_exportaciones(variante: str) -> None:
         )
 
 
-def test_el_papel_NO_manda_hacer_algo_que_HOY_NO_SE_PUEDE() -> None:
-    """⚠️ La frase que `T-7.42` dejó y que es falsa por tres vías.
+def _sin_comentarios(ts: str) -> str:
+    """El marcado SIN sus comentarios, para poder contar lo que de verdad hace.
 
-    Decía «compárelo contra ese registro desde la consola». Medido: la consola
-    sólo busca `kind === "miniseed"` (`web/src/features/triage/model.ts`), lo
-    único que pinta va truncado a 16 de 64 caracteres, `ReportOut` **no devuelve
-    el sha del archivo** —`DrillReportOut` sí— y `POST /evidence/{id}/verify`
-    filtra `kind = 'photo'`, así que para un `report_pdf` devuelve 404.
-
-    O sea: el sha256 del archivo del dictamen HOY no lo puede obtener nadie. El
-    papel dice que ese sha queda registrado como evidencia, que es cierto, y deja
-    de mandar una comprobación que no existe. La superficie que falta está fichada
-    aparte; mientras no exista, el papel no la promete.
+    ⚠️ CUARTA VEZ que este repositorio paga esto. Un barrido estructural que no
+    enmascara los comentarios cuenta la prosa que EXPLICA el defecto como si
+    fuera el defecto: aquí, el comentario que documenta «antes se pintaba
+    `sha.slice(0, 16)`» hacía creer a la guarda que el truncado seguía vivo.
+    Escribir bien por qué algo se arregló no puede poner rojo el arreglo.
     """
+    import re as _re
+
+    sin_bloque = _re.sub(r"/\*.*?\*/", " ", ts, flags=_re.S)
+    return _re.sub(r"(^|[^:])//[^\n]*", r"\1 ", sin_bloque)
+
+
+def _capacidades_reales() -> dict[str, bool]:
+    """Las TRES capacidades que la frase del papel presupone, leídas de su fuente.
+
+    ⚠️ [T-7.48] Esto sustituye a un `assert "desde la consola" not in texto` y el
+    cambio es de clase, no de redacción. Aquella guarda tenía dos agujeros:
+
+    · **Enumeraba una cadena a mano.** «en la consola» o «desde el panel» la
+      evadían sin tocar una línea de esta prueba, y el papel volvía a prometer lo
+      que no se puede.
+    · **Y no ataba la prohibición a NADA.** El día que las tres capacidades
+      existieran, el único modo de reponer la frase era borrar el assert — o sea,
+      apagar la guarda para usar lo que la guarda protegía.
+
+    Ahora se lee de dónde salen de verdad. Si mañana alguien vuelve a truncar el
+    hash en la consola o reintroduce el filtro por `kind`, esta prueba lo dice
+    **y** el papel deja de poder afirmarlo.
+    """
+    verificador = (_RAIZ / "src/takab_api/queries/mobile.py").read_text(encoding="utf-8")
+    consulta = re.search(r"EVIDENCE_FOR_VERIFY = text\((.*?)\n\)", verificador, re.S)
+    assert consulta, "no se encontró EVIDENCE_FOR_VERIFY: la guarda quedó ciega"
+
+    alcance = (_RAIZ / "src/takab_api/routers/mobile_incident.py").read_text(encoding="utf-8")
+    esquema = (_RAIZ / "src/takab_api/schemas/reports.py").read_text(encoding="utf-8")
+    panel = _sin_comentarios(
+        (_RAIZ.parent / "web/src/features/triage/TriageDetail.tsx").read_text(encoding="utf-8")
+    )
+    modelo = _sin_comentarios(
+        (_RAIZ.parent / "web/src/features/triage/model.ts").read_text(encoding="utf-8")
+    )
+
+    return {
+        # 1· la API devuelve la huella del ARCHIVO, en espejo con el simulacro
+        "la_api_lo_devuelve": "sha256: str" in esquema.split("class ReportOut")[1],
+        # 2· el verificador acepta ese `kind` — ni filtrado en la consulta ni
+        #    excluido del reparto de alcances del router
+        "el_verificador_lo_acepta": (
+            "kind = 'photo'" not in consulta.group(1)
+            and '"report_pdf":' in alcance.split("_ALCANCE_DE_VERIFICACION")[1]
+        ),
+        # 3· la consola lo busca, y lo pinta ENTERO. El truncado es el defecto
+        #    que `T-5.26` cerró en el papel y que seguía vivo en la pantalla.
+        "la_consola_lo_pinta_entero": (
+            "report_pdf" in modelo and "dictamenPdfOf" in panel and ".slice(0, 16)" not in panel
+        ),
+    }
+
+
+def test_el_papel_SOLO_manda_lo_que_HOY_SE_PUEDE() -> None:
+    """⚠️ La frase de `T-7.42`, atada a las capacidades que presupone.
+
+    `T-7.42` dejó escrito «compárelo contra ese registro desde la consola» y era
+    falso por tres vías medidas: `ReportOut` no devolvía el sha del archivo
+    —`DrillReportOut` sí—, el verificador filtraba `kind = 'photo'` y devolvía
+    404 para un `report_pdf`, y la consola sólo buscaba `miniseed` y lo pintaba
+    truncado a 16 de 64 caracteres.
+
+    `T-7.48` construyó las tres. Esta prueba ya no prohíbe una frase: **exige que
+    el papel y el código digan lo mismo**, en la dirección que toque.
+    """
+    capacidades = _capacidades_reales()
     with espia_del_render() as cap:
         render(model())
     texto = cap.texto.lower()
-    assert "desde la consola" not in texto, (
-        "el papel vuelve a mandar comparar el sha del archivo desde la consola. "
-        "Antes de reponer esa frase hace falta que la consola pinte el sha de la "
-        "fila `report_pdf` y que el verificador acepte ese `kind`"
-    )
+    manda_comprobar = "sha256sum" in texto or "consola" in texto
+
+    if manda_comprobar:
+        faltan = [nombre for nombre, hay in capacidades.items() if not hay]
+        assert not faltan, (
+            "el papel manda comprobar la huella del ARCHIVO y eso HOY no se puede. "
+            f"Falta: {faltan}. O se construye la capacidad, o el papel deja de "
+            "mandarlo — pero no las dos cosas a la vez, que es como nació T-7.48."
+        )
+    else:
+        assert not all(capacidades.values()), (
+            "las tres capacidades existen y el papel NO lo dice. Un dictamen que "
+            "se puede verificar y no explica cómo deja al perito sin la única "
+            "comprobación que puede hacer solo."
+        )
+
+
+@pytest.mark.parametrize("variante", ["technical", "executive"])
+def test_la_guarda_del_papel_mira_LAS_DOS_variantes(variante: str) -> None:
+    """El segundo agujero de la guarda vieja, y costaba un descuido.
+
+    Renderizaba `render(model())` a secas, o sea **sólo la variante técnica**
+    (`variant="technical"` es el default de `render`), mientras sus dos vecinas
+    de este mismo fichero sí están parametrizadas con las dos. El resumen
+    ejecutivo podía prometer lo que quisiera sin que nada lo mirara.
+    """
+    with espia_del_render() as cap:
+        render(model(), variant=variante)
+    texto = cap.texto.lower()
+    if "sha256sum" in texto or "consola" in texto:
+        faltan = [nombre for nombre, hay in _capacidades_reales().items() if not hay]
+        assert not faltan, f"la variante {variante} promete lo que no se puede: {faltan}"
 
 
 # ──────────────── criterio 3 · la degradación best-effort, DECLARADA

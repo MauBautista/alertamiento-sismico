@@ -381,6 +381,11 @@ export const downloadEvidenceEvidenceEvidenceIdDownloadPost = <ThrowOnError exte
  * [T-2.10 · 2.3] Re-hashea el objeto realmente subido y lo confronta con la
  * huella declarada en captura. Alterar un byte del blob ⇒ ``verified=false``.
  * Lo consumen Triage (consola) y los tácticos que revisan su propia evidencia.
+ *
+ * [T-7.48] Y el dictamen pericial, que es el documento que sale del sistema en
+ * la mano de un perito. El permiso ya no lo fija la firma —era el de leer
+ * daños, para todo— sino `_ALCANCE_DE_VERIFICACION`, porque cada documento lo
+ * verifica quien tiene derecho a leerlo.
  */
 export const verifyEvidenceEvidenceEvidenceIdVerifyPost = <ThrowOnError extends boolean = false>(options: Options<VerifyEvidenceEvidenceEvidenceIdVerifyPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<VerifyEvidenceEvidenceEvidenceIdVerifyPostResponse, VerifyEvidenceEvidenceEvidenceIdVerifyPostError, ThrowOnError>({

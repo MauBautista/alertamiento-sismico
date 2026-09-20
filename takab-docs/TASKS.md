@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **439** · `[x]` **381** · `[~]` **11** · `[ ]` **47**
+**Conteo de tareas:** total **439** · `[x]` **382** · `[~]` **11** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15841,7 +15841,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 
 
 
-### [ ] T-7.48 · **El sha256 del archivo de un dictamen no lo puede obtener nadie** — `SOFTWARE`
+### [x] T-7.48 · **El sha256 del archivo de un dictamen no lo puede obtener nadie** — `SOFTWARE` · **CERRADA 2026-09-20**
 - **Componente:** api · web · **Depende de:** T-7.43 · **Prioridad:** F4 · media
 - **Objetivo:** que la huella del ARCHIVO —la que sí tiene consumidor y sí se puede verificar—
   sea obtenible por quien recibe el documento.
@@ -15860,15 +15860,52 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   `uq_evidence_incident_sha256`, la tabla es append-only y el verificador ya existe. Es la única
   de las dos que un perito puede usar, y hoy no llega a él.
 - **Criterios de aceptación:**
-  - [ ] `ReportOut` devuelve el `sha256` del archivo, en espejo con `DrillReportOut`, con el SDK
-        regenerado (`make drift`).
-  - [ ] El verificador acepta el `report_pdf`, **o se declara por escrito por qué no debe**: el
-        alcance de hoy es `_require_damage_read` y un dictamen no tiene por qué compartirlo.
-        Decidirlo, no heredarlo por descuido.
-  - [ ] La consola pinta el sha del `report_pdf` **entero**, no truncado, y el botón de verificar
-        que ya existe para las fotos alcanza también al dictamen.
-  - [ ] Sólo cuando lo anterior exista, el papel vuelve a decir cómo comprobarlo. Mientras tanto
-        no lo dice: lo vigila `test_el_papel_NO_manda_hacer_algo_que_HOY_NO_SE_PUEDE`.
+  - [x] `ReportOut` devuelve el `sha256` del archivo, en espejo con `DrillReportOut`, con el SDK
+        regenerado (`make drift`). El router **ya lo calculaba** para insertar la evidencia y lo
+        tiraba: era descuido, no falta de dato.
+  - [x] El verificador acepta el `report_pdf`, y el alcance se DECIDIÓ: **lo fija el tipo de
+        documento**, no la firma del endpoint. La foto sigue pidiendo `damage_read`; el dictamen
+        pide `dictamen_read`; `miniseed` y `log` se quedan fuera **a propósito** —nadie los recibe
+        en la mano, así que nadie necesita comprobar que el fichero que tiene es el que el sistema
+        emitió, que es la única pregunta que ese endpoint contesta—. Heredar `damage_read` habría
+        hecho de la verificación la puerta MÁS ancha de las tres sobre el mismo objeto (generar es
+        `inspector`+`superadmin`, descargar añade `gov_operator`), al revés que todas las demás.
+        ⚠️ 404 y no 403 cuando el rol no alcanza: un 403 confirmaría que ese `evidence_id` existe
+        y de qué tipo es.
+  - [x] La consola pinta el sha del `report_pdf` **entero** y el verificador alcanza al dictamen.
+  - [x] El papel vuelve a decir cómo comprobarlo, y la guarda que lo vigila **pasó a ser
+        derivada**.
+- **⚠️ Cuatro defectos que el barrido destapó y que la ficha no nombraba:**
+  1. **El hash se pintaba en MAYÚSCULAS.** La clase `soc-meta` lleva `text-transform: uppercase`
+     y `sha256sum` emite minúsculas. El portapapeles daba el texto bueno, pero quien comparaba **a
+     la vista** —que es lo que hace un perito con el papel delante— veía dos cadenas distintas.
+  2. **64 caracteres no caben en la columna de detalle**, que es una pista FIJA de 420 px. Sin
+     `overflow-wrap` un hash es una palabra sin espacios: no rompe, se sale, y empuja una barra
+     horizontal en la pantalla donde se firma un dictamen.
+  3. **El verificador colapsaba TRES desenlaces del servidor en dos.** `verified=false` con
+     `actual_sha256: null` es «registrada y aún sin subir», y se pintaba **HASH ALTERADO**:
+     acusar de manipulación a un documento que sólo no ha llegado. Ahora dice «SIN OBJETO QUE
+     VERIFICAR», y en gris — no hay nada roto, hay algo que no ha llegado.
+  4. **El truncado del miniSEED llevaba ahí desde siempre** y ninguna prueba lo miraba:
+     `grep -rn sha256 web/src --include=*.test.*` no devolvía nada de este panel. Por eso
+     sobrevivió a `T-5.26`, que cerró exactamente ese defecto en el papel.
+- **⚠️ Y la guarda del papel era del tipo que no puede cumplir su función.** Era
+  `assert "desde la consola" not in texto`: una cadena **enumerada a mano**, con dos agujeros
+  medidos. Se evadía escribiendo «en la consola» o «desde el panel». Y no ataba la prohibición a
+  nada, así que el día que las tres capacidades existieran **el único modo de reponer la frase era
+  borrar el assert** — apagar la guarda para poder usar lo que la guarda protegía. Ahora lee las
+  tres capacidades de su fuente real y exige que papel y código digan lo mismo **en las dos
+  direcciones**: si el papel promete y falta una, rojo; si las tres existen y el papel calla,
+  también. Verificado quitando cada capacidad por separado: caza las tres.
+  - Y la vieja **sólo miraba la variante técnica** (`render(model())` a secas), mientras sus dos
+    vecinas del mismo fichero sí están parametrizadas con las dos. El resumen ejecutivo podía
+    prometer lo que quisiera. Ahora se barren las dos.
+- **⚠️ Lo que este cierre NO alcanza, dicho:** el `report_pdf` de un **simulacro** sigue sin ser
+  verificable, y no por el filtro de `kind`. Se inserta con `drill_id` e `incident_id` NULL, así
+  que el `JOIN incidents` —que es INNER— lo deja fuera igualmente. Cubrirlo pide `LEFT JOIN` más
+  una segunda vía de alcance, porque un simulacro abarca VARIOS sitios y `site_id` no es único.
+  No hace falta para esta ficha: el reporte de simulacro ya entrega su sha por contrato y su papel
+  sólo promete `sha256sum`, que se corre sobre el fichero descargado y no necesita el endpoint.
 - **Tests de censo que toca:** `consoleImageCensus` no; el gate del SDK sí (`make drift`) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
