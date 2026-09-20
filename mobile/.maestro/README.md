@@ -80,8 +80,18 @@ make cloud-staging-incident PHASE=conclude
 .maestro/run.sh 01b-checkin-sync.yaml
 .maestro/run.sh 02-tactico-foto-danos.yaml  # pide el TOTP del táctico
 make cloud-staging-incident PHASE=roster    # ocupantes SIN reportar
-.maestro/run-offline.sh                     # las 3 partes del offline, con el radio
+.maestro/run-offline.sh                     # las 3 partes del offline, con el radio (TOTP)
+
+make cloud-staging-incident PHASE=reset     # ← el 03 va APARTE y empieza por reset
+make cloud-staging-incident PHASE=crisis
+make cloud-staging-incident PHASE=reentry
+.maestro/run.sh 03-dictamen-liberacion.yaml # sin TOTP: corre solo
 ```
+
+**El `03` empieza por `reset` y eso no es ceremonia:** sin él, el dictamen de la vuelta anterior
+sigue dentro de la ventana de `reentry_declare_s` (8 h) y la app enseñaría el banner sin que esta
+corrida haya probado nada — un verde falso. Lo cerró `T-7.62`, que hizo que `reset` retrodate
+también los incidentes que `D-33` ya había cerrado.
 
 **Siempre por `run.sh`, nunca `maestro test` a secas**: Maestro NO hereda el entorno del shell
 —solo `-e`— y los flujos declaraban `env: FOO: ${FOO}`, una autorreferencia que produce la
@@ -121,22 +131,47 @@ done
    (`id: totpCodeInput is not visible ... FAILED`) y no acusa a la app — eso lo arregló `T-7.58`.
 
 ## Cobertura (criterios de aceptación T-2.14)
-| Flujo | Archivo | Acceptance | Precondición |
-|---|---|---|---|
-| Toma de crisis | `01a-crisis.yaml` | takeover con verbo de zona, sin magnitud ni cuenta regresiva | incidente `crisis` |
-| Check-in de vida | `01b-checkin-sync.yaml` | el check-in declara si está en el dispositivo o en el servidor | incidente `conclude` |
-| Táctico: foto → daños → Triage | `02-tactico-foto-danos.yaml` | evidencia forense + reporte llegan a Triage con hash | incidente + **TOTP del táctico** |
-| Dictamen → liberación | `03-dictamen-liberacion.yaml` | consola-firma → push → PDF → reingreso liberado | **firma de un inspector en la consola** |
-| Pánico quórum-de-2 | `04-panico-quorum.yaml` | 1er voto queda en `1 DE 2`; NO es alerta sísmica | ninguna |
-| Offline-first (3 partes) | `05a/05b/05c` + `run-offline.sh` | declara MODO OFFLINE, deja el trabajo PENDIENTE, la cola drena sola | incidente `conclude` + `roster` + **TOTP** |
+| Flujo | Archivo | TOTP | Acceptance | Precondición |
+|---|---|---|---|---|
+| Toma de crisis | `01a-crisis.yaml` | no | takeover con verbo de zona, sin magnitud ni cuenta regresiva | `PHASE=crisis` |
+| Check-in de vida | `01b-checkin-sync.yaml` | no | el check-in declara si está en el dispositivo o en el servidor | `PHASE=conclude` |
+| Táctico: foto → daños → Triage | `02-tactico-foto-danos.yaml` | **sí** | evidencia forense + reporte llegan a Triage con hash | `PHASE=crisis` **y luego `conclude`** |
+| Dictamen → liberación | `03-dictamen-liberacion.yaml` | no | dictamen firmado → reingreso liberado en la app | `PHASE=reset` → `crisis` → `reentry` |
+| Pánico quórum-de-2 | `04-panico-quorum.yaml` | no | 1er voto queda en `1 DE 2`; NO es alerta sísmica | ninguna |
+| Offline-first (3 partes) | `05a-offline-preparar.yaml` → `05b` → `05c`, por `run-offline.sh` | **sí** | declara MODO OFFLINE, deja el trabajo PENDIENTE, la cola drena sola | `PHASE=crisis` → `conclude` → `roster` |
+
+### La columna TOTP es la que decide si hace falta una persona
+
+**Los flujos con `sí` entran por el pool PRINCIPAL, cuyo MFA es obligatorio** (RBAC §4.3), y
+desde `T-7.56` `run.sh` cierra la sesión de Cognito antes de cada corrida: **cada corrida pide
+un código nuevo**, y Maestro no lo genera —el secreto vive en el authenticator de la persona,
+no en Secrets Manager—. Los de `no` entran por el pool de OCUPANTES, con MFA opcional: corren
+solos, de noche, sin nadie delante.
+
+Planificar una tanda es esto y nada más: **`sí` = ~45 min de alguien tecleando; `no` = déjalo
+corriendo**. Estaba escrito en las cabeceras de tres de los ocho flujos y mal en un cuarto, así
+que lo deriva un censo —`mobile/tests/flujos-maestro.test.ts`— del subflujo de login que cada
+uno invoca de verdad: `login-tactico.yaml` teclea en `totpCodeInput`, `login-occupant.yaml` no.
+Una cabecera que diga lo contrario, o que se calle, deja el job `mobile` en rojo.
+
+> ⚠️ **[T-7.63] El `03` NO necesita que nadie firme en la consola web**, y esta tabla decía que
+> sí. `reentry.sql` inserta el dictamen **ya firmado** (`signed_by` no nulo, estado
+> `inhabit_monitor`): la precondición es una orden de `make`, no una persona. Se llegó a
+> planificar una tanda de diez contando con diez firmas manuales. Y el `02` pedía «incidente
+> activo» cuando necesita la sacudida **concluida**: con la fase en `crisis` el brigadista ve la
+> instrucción a pantalla completa y el flujo muere en `Tap on TRIAGE` por una razón que no tiene
+> nada que ver con la cámara. Barridos los ocho el 2026-09-20; los otros seis decían la verdad.
 
 **Lo que estos flujos NO acreditan solos**, y hace falta decirlo porque un gate
 que se da por cerrado sin correrse es peor que uno declarado abierto:
 - **El 2º voto del quórum de pánico** exige dos occupants del mismo sitio en dos
   dispositivos. `04` cubre el primero y comprueba que uno solo **no** dispara.
 - **El TOTP del táctico** no lo genera Maestro: lo teclea una persona en el
-  primer login del pool principal (MFA obligatorio).
-- **La firma del dictamen de `03`** ocurre en la consola web, con otro usuario.
+  primer login del pool principal (MFA obligatorio) — son el `02` y el trío `05`.
+- **El PUSH del `03`.** El flujo acredita que la app pasa a `reentry_approved`, pero sembrando
+  por SQL **no se dispara la notificación** —eso lo hace la consola al firmar—, así que lo que
+  mide es el siguiente sondeo de `mobile-state`. De ahí la espera de 60 s. Que el push LLEGUE
+  al teléfono sigue siendo un hueco declarado, no un verde.
 
 > Estos flujos son la **evidencia ejecutable de `GATE-HW`** (ver
 > `takab-docs/runbooks/RUNBOOK-cierre-fase2.md`): se corren en dispositivo real

@@ -3,6 +3,9 @@
 # PRECONDICIÓN: incidente ACTIVO en el sitio del occupant.
 #     make cloud-staging-incident PHASE=crisis
 #
+# NO PIDE TOTP: `login-occupant.yaml` entra por el pool de OCUPANTES, cuyo MFA
+# es opcional. Una tanda de este flujo corre sola.
+#
 # CONTINÚA EN: `01b-checkin-sync.yaml`, y en medio el servidor tiene que concluir
 # la sacudida:
 #     make cloud-staging-incident PHASE=conclude
