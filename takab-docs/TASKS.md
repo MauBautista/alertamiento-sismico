@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **439** · `[x]` **382** · `[~]` **11** · `[ ]` **46**
+**Conteo de tareas:** total **441** · `[x]` **383** · `[~]` **10** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16231,7 +16231,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > recorre `api/src/takab_api/**/*.py`, así que un `UPDATE` desde `infra/scripts/` pasaba ese censo
 > **porque no mira**, no porque no infrinja. El nuevo barre los `.sql` del repo entero.
 
-### [~] T-7.52 · **El arnés de los E2E móviles comparte sitio con el gabinete REAL, y le cierra sus incidentes** — `SOFTWARE` + `DECISIÓN` · **SOFTWARE COMPLETO 2026-09-18 · falta el Pixel**
+### [x] T-7.52 · **El arnés de los E2E móviles comparte sitio con el gabinete REAL, y le cierra sus incidentes** — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-20**
 - **Componente:** infra · **Depende de:** T-7.51 · **Prioridad:** F4 · media
 - **Objetivo:** que probar la app no toque incidentes de operación.
 - **El fallo** (sale de `T-7.51`). `infra/scripts/seed_staging_incident.sh` tiene
@@ -16259,15 +16259,30 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         test —que es donde vivía la trampa del bloque `$$`—: contra `site-dev` (Puebla) devuelve
         `rc=3` con «ARNÉS ABORTADO … tiene 4 gabinete(s)», y contra `site-e2e-900` devuelve `rc=0`.
         El arnés corrió después contra el sitio propio y abrió su incidente allí.
-  - [~] **TRES DE CUATRO acreditados en el Pixel real el 2026-09-18** con `.env.e2e`, contra
-        `site-e2e-900`: `01a` (crisis), `01b` (check-in→sync), `02` (foto forense→daños, con reporte
-        y evidencia `kind=photo` verificados en la nube) y la cadena `05a/b/c` completa
-        (`offline-first acreditado de punta a punta`). **El `03` NO pasa, y no por esta ficha**: lo
-        rompió `D-33`, que cierra el incidente 3 s después de firmar el dictamen habitable — fichado
-        en `T-7.55`. ⚠️ Y hubo que resolver a mano dos cosas que no estaban escritas: el teléfono
-        tenía un *development build* sin bundle (hubo que compilar el APK de release) y la cookie de
-        la Hosted UI sobrevive al `clearState`, así que el táctico entraba como el ocupante anterior
-        (`T-7.56`).
+  - [x] **LOS CUATRO acreditados en el Pixel real** con `.env.e2e`, contra `site-e2e-900`: `01a`
+        (crisis), `01b` (check-in→sync), `02` (foto forense→daños, **10/10** el 2026-09-19 tras
+        `T-7.58`), la cadena `05a/b/c` completa, y el **`03` (reingreso) 10/10 el 2026-09-20**.
+        ⚠️ Hubo que resolver a mano cuatro cosas que no estaban escritas: el teléfono tenía un
+        *development build* sin bundle (hubo que compilar el APK de release), la cookie de la
+        Hosted UI sobrevive al `clearState` (`T-7.56`), los E2E del táctico esperaban sobre una
+        mirada y no sobre un ancla (`T-7.57`) y la foto forense se perdía al moverla (`T-7.58`).
+- **⚠️ Y lo que de verdad tenía parado el `03` NO era `D-33` ni esta ficha: era que LA NUBE CORRÍA
+  CÓDIGO ANTERIOR AL ARREGLO.** `T-7.55` cerró el defecto el 2026-09-19 y nadie desplegó: el
+  2026-09-20 `/api/health` seguía diciendo `build: 24a1d59`, del **18-09**, y `git merge-base`
+  confirmó que el commit del arreglo no estaba dentro. La base de datos estaba bien y `main` estaba
+  bien; el que contestaba al teléfono era el de antes. Desplegada a `e6ece3c`, el flujo pasó **a la
+  primera**.
+  - **La lección, que es de método y no de este flujo:** el arnés imprime una **réplica SQL** de la
+    derivación y avisa por escrito de que «la verdad es el endpoint». Se leyó esa réplica —decía
+    `reentry_approved`— y se dio por buena. La réplica va con el código del REPOSITORIO y el
+    endpoint con el DESPLEGADO, así que es exactamente el sitio donde los dos pueden discrepar. Una
+    ficha que dependa de un despliegue tiene que empezar comprobando `/health`.
+- **Cómo se acreditó el `03`, para que la próxima tanda no se improvise.** Cada corrida necesita el
+  ciclo **completo** `reset` → `crisis` → `reentry`, y las diez llevan su prueba de no ser vacuas:
+  `alert_active` en la siembra (el ocupante estuvo BLOQUEADO antes de la liberación), **diez
+  incidentes con UUID distinto**, y las DOS aserciones del flujo, no sólo la primera. ⚠️ Y una
+  guarda de USB antes de cada corrida: la primera tanda se perdió en la cuarta por un
+  `device not found` que se lee como fallo del flujo y no lo es.
 - **Tests de censo que toca:** `datosDeDemostracion` (el sitio del arnés necesita cinta) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** sí
   (`test_seed_staging_incident.py`).
@@ -16696,6 +16711,75 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         Hoy ninguna lo mira.
 - **Tests de censo que toca:** el de `T-7.59` (hay que sacarlo de `exentos` al cerrarla) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+
+### [ ] T-7.62 · **`PHASE=reset` del arnés NO borra la autorización de reingreso** — `SOFTWARE`
+- **Componente:** infra · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que `reset` deje el sitio del arnés como estaba antes de la corrida, que es lo
+  único que promete.
+- **El fallo, MEDIDO el 2026-09-20** corriendo la tanda de diez del flujo `03`:
+
+  ```
+  tras reset:    phase=reentry_approved   ← debería ser idle
+  tras crisis:   phase=alert_active
+  tras reentry:  phase=reentry_approved
+  ```
+
+- **Por qué pasa, y por qué el arreglo de `T-7.55` no lo cubre.** `reset.sql` retrodata el cierre
+  30 días —`closed_at = now() - interval '30 days'`—, y `T-7.55` escribió esa línea **exactamente
+  para esto**: sin ella, un `reset` dejaría el sitio diciendo «REINGRESO AUTORIZADO» durante las
+  8 h de `reentry_declare_s`, o sea «reset dejaría de resetear». Pero su `WHERE` es
+  `state <> 'closed'`, y **el incidente de una corrida de `reentry` ya está cerrado**: lo cerró
+  `D-33` tres segundos después de firmar el dictamen, con `closed_at = now()`. El `UPDATE` lo salta
+  y la autorización sobrevive.
+- **Por qué importa más que un estado sucio.** Es un **falso verde esperando a ocurrir**: una
+  corrida cuya siembra fallara en silencio vería el banner de la vuelta anterior y saldría en
+  verde sin haber probado nada. La tanda del 2026-09-20 no cayó en él porque se comprobó aparte
+  que cada corrida pasara por `alert_active` y usara un `incident_id` distinto — pero eso fue
+  disciplina de quien la corrió, no una propiedad del arnés.
+- **Criterios de aceptación:**
+  - [ ] Tras `PHASE=reset`, la fase derivada es `idle`. Sin excepciones y sin depender de cuánto
+        tiempo lleve cerrado el último incidente.
+  - [ ] El arreglo NO puede ser borrar dictámenes: `dictamens` es append-only a propósito
+        (regla de oro 11). Lo que hay que mover es el `closed_at` de **todos** los incidentes del
+        sitio, cerrados o no — que es lo que la línea de `T-7.55` quería decir.
+  - [ ] Una prueba que corra `reentry` y luego `reset` y exija `idle`. Hoy
+        `test_el_sembrador_recorre_las_cuatro_fases` no cubre ese orden.
+  - [ ] Y que el arnés DECLARE lo que deja: un `reset` que no resetea y no lo dice es la misma
+        clase de silencio que esta ficha existe para cerrar.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** sí — `test_seed_staging_incident.py`.
+
+### [ ] T-7.63 · **El flujo `03` dice que hace falta firmar en la consola, y no hace falta** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · baja
+- **Objetivo:** que la precondición escrita en un documento ejecutable sea la que el documento
+  necesita de verdad.
+- **El fallo.** `mobile/.maestro/03-dictamen-liberacion.yaml` abre con
+  «Precondición: un inspector firma un dictamen HABITABLE en la consola web ANTES o DURANTE este
+  flujo». **Es falso desde que el arnés existe**: `infra/scripts/sql/staging-incident/reentry.sql`
+  inserta el dictamen ya FIRMADO (`signed_by` no nulo, `status = 'inhabit_monitor'`), y el propio
+  `seed_staging_incident.sh` lo dice en su salida —«el push OPS real lo dispara la consola al
+  firmar; por SQL la app levanta `reentry_approved` en su próximo poll ≤ ~60 s»—, que es justo la
+  espera de 60 s que el flujo ya tiene.
+- **Lo que costó.** Se planificó la sesión del 2026-09-20 contando con **diez firmas manuales en
+  la consola**, una por corrida, con una persona delante. Ninguna hacía falta. Un comentario falso
+  en un documento ejecutable no rompe el flujo: **rompe la planificación de quien lo lee**, y esta
+  clase de defecto ya tiene precedente aquí (`demo-fase1` exigía una política que `T-2.32` había
+  invertido, y estuvo un mes en rojo sin que nadie lo viera).
+- **⚠️ Y hay una segunda mentira en el mismo fichero**, más sutil: el flujo `03` usa
+  `login-occupant.yaml`, cuyo pool tiene **MFA opcional**, así que **no pide TOTP**. La memoria del
+  proyecto y la planificación lo trataban como si lo pidiera, porque los flujos tácticos sí. Que un
+  flujo necesite o no a una persona delante es lo que decide si una tanda de diez son cinco minutos
+  o cuarenta.
+- **Criterios de aceptación:**
+  - [ ] La cabecera del `03` dice la precondición REAL: `PHASE=reentry` del arnés, y que el dictamen
+        llega firmado por SQL. Con la nota de que el push no se dispara por esa vía y por eso la
+        espera es de 60 s.
+  - [ ] Queda escrito qué flujos piden TOTP y cuáles no, donde lo lea quien planifica una tanda —
+        `mobile/.maestro/README.md` ya tiene la tabla de flujos y su fase.
+  - [ ] Barrer si hay más precondiciones escritas a mano en los ocho flujos que ya no sean ciertas.
+        Un censo si se puede; si no, una lectura y su fecha.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no.
 
 ## RUTA CRÍTICA
 
