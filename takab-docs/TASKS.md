@@ -16736,7 +16736,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** el de `T-7.59` (hay que sacarlo de `exentos` al cerrarla) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.62 · **`PHASE=reset` del arnés NO borra la autorización de reingreso** — `SOFTWARE`
+### [x] T-7.62 · **`PHASE=reset` del arnés NO borra la autorización de reingreso** — `SOFTWARE` · **CERRADA 2026-09-20**
 - **Componente:** infra · **Depende de:** — · **Prioridad:** F4 · media
 - **Objetivo:** que `reset` deje el sitio del arnés como estaba antes de la corrida, que es lo
   único que promete.
@@ -16760,16 +16760,28 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   verde sin haber probado nada. La tanda del 2026-09-20 no cayó en él porque se comprobó aparte
   que cada corrida pasara por `alert_active` y usara un `incident_id` distinto — pero eso fue
   disciplina de quien la corrió, no una propiedad del arnés.
+- **⚠️ Y LA PRUEBA QUE DEBÍA CAZARLO PASABA, porque le faltaba la mitad de la producción.**
+  `test_el_sembrador_recorre_las_cuatro_fases` corre `crisis → conclude → reentry → reset` y
+  afirma `idle` al final. Pasaba — y pasaba **porque el motor de incidentes no corre en ella**:
+  quien cierra el incidente al firmarse el dictamen es `incident/lifecycle.py` por la vía
+  `dictamen_signed` (`D-33`), y ese worker vive fuera del test. Así que allí el incidente seguía
+  ABIERTO cuando llegaba `reset`, el `WHERE state <> 'closed'` lo alcanzaba y todo cuadraba. En la
+  nube ya estaba cerrado. **Una prueba de fases que no reproduce el cierre automático no está
+  probando las fases de este producto**, y es exactamente la clase de verde que esta sesión ya vio
+  tres veces.
 - **Criterios de aceptación:**
-  - [ ] Tras `PHASE=reset`, la fase derivada es `idle`. Sin excepciones y sin depender de cuánto
-        tiempo lleve cerrado el último incidente.
-  - [ ] El arreglo NO puede ser borrar dictámenes: `dictamens` es append-only a propósito
-        (regla de oro 11). Lo que hay que mover es el `closed_at` de **todos** los incidentes del
-        sitio, cerrados o no — que es lo que la línea de `T-7.55` quería decir.
-  - [ ] Una prueba que corra `reentry` y luego `reset` y exija `idle`. Hoy
-        `test_el_sembrador_recorre_las_cuatro_fases` no cubre ese orden.
-  - [ ] Y que el arnés DECLARE lo que deja: un `reset` que no resetea y no lo dice es la misma
-        clase de silencio que esta ficha existe para cerrar.
+  - [x] Tras `PHASE=reset`, la fase derivada es `idle`. El `WHERE` ya no mira el `state`: se
+        retrodata **todo** incidente del sitio cuyo cierre no esté ya fuera de la ventana. Sigue
+        siendo idempotente —sobre los ya retrodatados el UPDATE no cambia nada— y de paso repara
+        las filas con `closed_at` NULL que `T-7.51` dejó fichadas.
+  - [x] No se borra ningún dictamen: `dictamens` es append-only a propósito (regla de oro 11).
+  - [x] La prueba que faltaba, **y con el cierre de `D-33` reproducido a mano** en
+        `_cerrar_como_lo_hace_D33()`, que es lo único que la hace una prueba de producción. Más
+        una segunda de idempotencia: correr `reset` dos veces deja lo mismo y no reabre nada.
+  - [x] **Verificado contra la nube real**, que es donde se midió el defecto: el ciclo
+        `reset → crisis → reentry → reset` da ahora `idle → alert_active → reentry_approved →
+        idle`. Y el primer `reset` de esa corrida ya dio `idle` donde por la mañana daba
+        `reentry_approved`: limpió el arrastre que la tanda de diez había dejado.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** sí — `test_seed_staging_incident.py`.
 

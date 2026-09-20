@@ -466,3 +466,93 @@ def test_la_ventana_de_reingreso_no_se_separa_del_ajuste() -> None:
         f"`reset` retrodata {r.group(1)} d y la ventana es de {ventana_s / 3600:.0f} h: "
         "no la supera, así que resetear no devuelve el sitio a `idle`"
     )
+
+
+# ═══════════════ [T-7.62] el `reset` que no reseteaba, y la prueba que no lo veía
+
+
+async def _cerrar_como_lo_hace_D33(variables: dict[str, str]) -> None:
+    """El cierre automático por dictamen firmado, que es lo que pasa en producción.
+
+    ⚠️ **ESTO ES LA MITAD QUE LE FALTABA A `test_el_sembrador_recorre_las_cuatro_fases`.**
+    Esa prueba corre `crisis → conclude → reentry → reset` y afirma `idle` al
+    final — y pasa. Pero pasa porque el **motor de incidentes no corre en ella**:
+    quien cierra el incidente al firmarse el dictamen es
+    `incident/lifecycle.py` por la vía `dictamen_signed` (`D-33`, medido: tres
+    segundos), y ese worker vive fuera del test. Así que allí el incidente sigue
+    ABIERTO cuando llega `reset`, `reset` lo cierra retrodatado y todo cuadra.
+
+    En la nube no: el incidente ya está cerrado, con `closed_at = now()`, y el
+    `UPDATE` de `reset.sql` —cuyo `WHERE` es `state <> 'closed'`— **lo salta**.
+    La autorización de reingreso sobrevive las 8 h de `reentry_declare_s` y el
+    sitio no vuelve a `idle`.
+
+    Aquí se reproduce a mano lo que el motor haría, que es lo único que hace a
+    esta prueba una prueba de producción y no de laboratorio.
+    """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.exec_driver_sql(
+            "UPDATE incidents SET state = 'closed', closed_at = now() "
+            f"WHERE site_id = '{variables['site']}' AND state <> 'closed'"
+        )
+
+
+async def test_reset_devuelve_a_IDLE_aunque_D33_ya_hubiera_cerrado_el_incidente(
+    client, sitio_del_occupant, variables
+) -> None:
+    """El defecto de `T-7.62`, medido en la nube el 2026-09-20 corriendo la tanda del `03`:
+
+        tras reset:    phase=reentry_approved   ← debería ser idle
+        tras crisis:   phase=alert_active
+        tras reentry:  phase=reentry_approved
+
+    `T-7.55` retrodató el cierre 30 días **exactamente para esto** —sin eso, un
+    `reset` dejaría el sitio diciendo «REINGRESO AUTORIZADO» toda la ventana, o
+    sea que «reset dejaría de resetear»—. Pero lo ató a `state <> 'closed'`, y el
+    incidente de una corrida de `reentry` ya viene cerrado de fábrica.
+
+    Por qué importa más que un estado sucio: es un **falso verde**. Una corrida
+    del `03` cuya siembra fallara en silencio vería el banner de la vuelta
+    anterior y saldría en verde sin haber probado nada.
+    """
+    v = await _crisis(variables)
+    await _correr("reentry.sql", v)
+    assert await _fase(client) == "reentry_approved"
+
+    await _cerrar_como_lo_hace_D33(v)
+    assert await _fase(client) == "reentry_approved", (
+        "tras el cierre automático la fase debe SEGUIR declarando el reingreso "
+        "(eso es T-7.55 y está bien); lo que no puede es sobrevivir al reset"
+    )
+
+    await _correr("reset.sql", v)
+    assert await _fase(client) == "idle", (
+        "`reset` NO devolvió el sitio a `idle`: el incidente ya estaba cerrado por "
+        "D-33 y el `WHERE state <> 'closed'` lo saltó. La autorización sobrevive "
+        "8 h y la siguiente corrida del 03 vería el banner sin probar nada"
+    )
+
+
+async def test_reset_es_idempotente_y_no_resucita_nada(
+    client, sitio_del_occupant, variables
+) -> None:
+    """Correrlo dos veces deja lo mismo, y no reabre un incidente ya cerrado."""
+    v = await _crisis(variables)
+    await _correr("reentry.sql", v)
+    await _cerrar_como_lo_hace_D33(v)
+
+    await _correr("reset.sql", v)
+    assert await _fase(client) == "idle"
+    await _correr("reset.sql", v)
+    assert await _fase(client) == "idle"
+
+    engine = get_engine()
+    async with engine.begin() as conn:
+        abiertos = (
+            await conn.exec_driver_sql(
+                f"SELECT count(*) FROM incidents WHERE site_id = '{v['site']}' "
+                "AND state <> 'closed'"
+            )
+        ).scalar_one()
+    assert abiertos == 0, "el reset dejó (o reabrió) un incidente"
