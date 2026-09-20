@@ -16639,7 +16639,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   por paquete a 100 sps sería I/O en el camino de detección: regla de oro 1). · **Token nuevo:**
   no · **Cambia algo que un test defiende hoy:** no.
 
-### [x] T-7.60 · **Las duraciones del gabinete se miden con un reloj que SALTA** — `SOFTWARE` · **CERRADA 2026-09-19**
+### [x] T-7.60 · **Las duraciones del gabinete se miden con un reloj que SALTA** — `SOFTWARE` · **CERRADA 2026-09-19 · criterios del DISFRAZ y del ARRANQUE cerrados 2026-09-20**
 - **Componente:** edge · **Depende de:** — · **Prioridad:** F4 · **alta**
 - **Objetivo:** que ninguna duración medida en este gabinete dependa de que nadie ajuste el reloj.
 - **⚠️ LA FICHA NACIÓ PEQUEÑA Y EL CENSO LA CORRIGIÓ.** Se abrió como «el panel miente sobre el
@@ -16707,12 +16707,53 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         `reloj: monotonico`). La clasificación no es decidible leyendo el AST —`now - x` no dice de
         dónde salió `x`—, así que no se adivina: se exige declararla, y un sitio nuevo sin marcador
         rompe CI.
-  - [~] Y el disfraz, que es el que se escapa: una marca guardada como fecha ISO **cuyo único
-        consumidor la resta** (`checked_at`→`checked_age_s`, `spooled_at`→`spool_span_s`) es un
-        cronómetro disfrazado de fecha. Esa capa es la que habría cazado el `uptime_s` sin que
-        nadie mirara el panel.
-  - [ ] Considerar si el panel debe DECLARAR el arranque además del uptime: quien mira un gabinete
-        después de un corte quiere la hora, no una duración que tiene que restar de cabeza.
+  - [x] **EL DISFRAZ, y el punto ciego que destapó.** El censo de las restas no podía verlo:
+        `local_api._age_s` es **UNA sola resta compartida por cuatro marcas de clases distintas**
+        (`checked_at`, `last_result_at`, `oldest_pending_at`, el `start` de un pendiente), y el
+        `# reloj: heredado` de allí dentro las declaraba a las cuatro. Dos no heredaban nada: las
+        sella ese mismo proceso en memoria, nacen en `None` y no se persisten jamás. Declararlas
+        heredadas no era sólo impreciso — **las marcaba como inarreglables siendo las arreglables**.
+        Por eso la capa nueva no cuenta restas: cuenta **duraciones publicadas con nombre propio**
+        (`test_toda_duracion_PUBLICADA_declara_de_que_reloj_sale`), que es donde las cuatro vuelven
+        a ser cuatro hechos. Dos disparadores, y hacen falta los dos: **por nombre** (`*_age_s`,
+        `*_span_s`, `latency_s`, `uptime_s`) y **por forma** (clave `*_s` cuyo valor contiene una
+        resta o un `total_seconds`/`transcurrido`) — éste último es el que habría cazado el
+        `uptime_s` antes de que el nombre existiera. Un umbral (`stale_after_s`) queda fuera solo:
+        no mide nada, declara.
+  - [x] Convertidas las tres que sí eran cronómetros: `checked_at`→`checked_mono`,
+        `last_result_at`→`last_result_mono` y la **edad del canal vivo** de `signal`. Esta tercera
+        es la que tenía consecuencia operativa y no salió en la ficha original: `age_s` es lo que
+        decide entre pintar el canal y borrarlo con **«SIN SEÑAL DEL SENSOR»** a los 5 s, así que
+        el salto del arranque mataba los tres canales con el sismógrafo entregando — y con SeedLink
+        caído de verdad, inflaba justo la edad que el operador lee para saber cuánto lleva ciego.
+  - [x] **⚠️ Y UNO DE LOS DOS EJEMPLOS DE LA PROPIA FICHA ERA FALSO.** `spooled_at` → `spool_span_s`
+        **no** es un disfraz: ese campo viaja dentro del NDJSON del respaldo y **la nube lo parsea
+        como instante** (`api/.../backfill/objects.py::_spooled_at` lo convierte en el `ts` de la
+        fila ingerida). Un consumidor legítimo al otro lado de la red basta. Lo mismo pasó con
+        `oldest_pending_at`, que el propio `backfill` compara contra otra marca. De 25 candidatos
+        barridos quedaron **6 disfraces**, y de ésos **3 eran corregibles**: los otros tres
+        (`opened_at` del episodio en disco, `installed_at` del catálogo por mtime, `issued_at` del
+        comando de actuación) ya estaban declarados `heredado` con su razón escrita.
+  - [x] **El panel DECLARA la hora de arranque** (`booted_at`), y la parte que importa es cómo:
+        **se DERIVA de `now - uptime`, jamás se recuerda**. Si el proceso la guardara al iniciarse
+        guardaría la hora ANTERIOR a que NTP corrigiera —el Pi no tiene RTC— y ese error de 13 h
+        25 min quedaría sellado para siempre; derivándola, el `now` ya viene corregido y el valor
+        **se arregla solo** en cuanto NTP sincroniza. Es el defecto de esta ficha visto del revés:
+        allí una fecha se disfrazaba de duración, y aquí la fecha buena sólo se consigue restando
+        la duración buena. El test comprueba la COHERENCIA de los dos campos, no su presencia.
+- **⚠️ LAS GUARDAS SE PROBARON ROMPIÉNDOLAS, Y TRES NACIERON CIEGAS.** (1) La prueba del canal vivo
+  miraba `live_by_channel()` en vez del `age_s` que publica el panel: al revertir el arreglo a mano
+  seguía verde — «el dato existe» no es «el consumidor lo usa». (2) La del arranque rehacía la
+  aritmética en vez de llamar a `status()`, y además el fixture arranca con uptime ≈ 0, donde
+  «hace cero segundos» y «ahora mismo» son la misma fecha: pasaba en verde con `booted_at = now`.
+  (3) El censo nuevo heredaba el marcador de la entrada vecina, así que una duración pegada a otra
+  ya declarada entraba sin declarar; por eso su ventana es **por entrada del diccionario** y no de
+  tres líneas — compartir marcador es justo el defecto que persigue. Estrecharla cazó en el acto un
+  caso real más: el `age_s` del latido compartía declaración con `captured_at`.
+- **Y una de la prueba misma:** el cronómetro falso empezaba en `1000.0` y `_edad_mono` mide contra
+  el monotónico REAL del proceso, así que la primera versión dio 722 217 s. **La marca y la medida
+  tienen que salir del mismo origen** — un cronómetro medido contra otro cronómetro distinto da un
+  número tan falso como el que esta ficha vino a arreglar.
 - **Tests de censo que toca:** traerá uno nuevo (el barrido de marcadores) · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** no.
 

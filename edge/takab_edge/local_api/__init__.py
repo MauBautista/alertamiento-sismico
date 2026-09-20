@@ -37,7 +37,7 @@ import threading
 import time
 import urllib.parse
 from collections import deque
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
@@ -49,7 +49,7 @@ from takab_edge.durable import escribir_durable
 from takab_edge.gpio_link import GpioLink, GpioLinkUnavailable, GpioSnapshot, as_link
 from takab_edge.health import HealthMonitor
 from takab_edge.module import EdgeModule
-from takab_edge.reloj import Cronometro
+from takab_edge.reloj import Cronometro, mono
 from takab_edge.rules import RuleEngine
 
 log = logging.getLogger("takab_edge.local_api")
@@ -114,6 +114,24 @@ def _age_s(raw: object, now: datetime) -> float | None:
     # a sabiendas, que es distinto de medirla sin saberlo.
     # reloj: heredado — marcas ISO del backfill; ver arriba
     return max(0.0, (now - stamp).total_seconds())
+
+
+def _edad_mono(origen: object) -> float | None:
+    """Edad de un CRONÓMETRO, no de una fecha. Inmune a los saltos de reloj.
+
+    [T-7.60·disfraz] Hermano de `_age_s`, y la diferencia es todo el asunto: éste
+    recibe una marca monotónica que selló ESTE proceso, así que su edad no puede
+    llevarse dentro un ajuste de NTP. `_age_s` recibe fechas de pared que a veces
+    sobreviven a un reinicio, y por eso está declarado `heredado`.
+
+    Tenerlos separados es lo que permite que la declaración sea por MARCA y no
+    por resta: `_age_s` es una sola resta compartida por cuatro marcas de clases
+    distintas, y un único marcador ahí las tapaba a todas.
+    """
+    if not isinstance(origen, (int, float)):
+        return None
+    # reloj: monotonico — el origen lo selló este proceso
+    return max(0.0, mono() - float(origen))
 
 
 class ActionUnavailable(RuntimeError):
@@ -577,7 +595,7 @@ class LocalDashboard(EdgeModule):
             return None
         channels: dict[str, dict] = {}
         last_received: datetime | None = None
-        for channel, (feature, received_at) in sorted(live.items()):
+        for channel, (feature, received_at, recibido_mono) in sorted(live.items()):
             channels[channel] = {
                 "pga_g": feature.pga,
                 "pgv_cms": feature.pgv,
@@ -586,9 +604,16 @@ class LocalDashboard(EdgeModule):
                 "clipping": feature.clipping,
                 "health_score": feature.health_score,
                 "window_start": feature.window_start.isoformat(),
+                # La FECHA se sigue publicando: quien depura un gabinete quiere
+                # saber a qué hora llegó el último paquete, y ése es un instante
+                # legítimo que el panel enseña junto a su propio `now`.
                 "received_at": received_at.isoformat(),
-                # reloj: heredado — `received_at` lo sella `signal`; ver `_age_s`
-                "age_s": max(0.0, (now - received_at).total_seconds()),
+                # [T-7.60·disfraz] Pero la EDAD sale del cronómetro, no de esa
+                # fecha. Es la que decide si el canal se pinta o se borra con
+                # «SIN SEÑAL DEL SENSOR» (5 s), así que un ajuste de NTP metido
+                # en la resta declaraba muerto un sensor que estaba entregando.
+                # reloj: monotonico — el origen lo selló `signal` en este proceso
+                "age_s": max(0.0, mono() - recibido_mono),
             }
             if last_received is None or received_at > last_received:
                 last_received = received_at
@@ -619,6 +644,10 @@ class LocalDashboard(EdgeModule):
             "disk_used_pct": snap.disk_used_pct,
             # reloj: heredado — `captured_at` puede ser de otra vida
             "captured_at": snap.captured_at.isoformat(),
+            # Declarada APARTE de `captured_at` aunque la razón sea la misma: que
+            # un marcador valga para dos entradas es el defecto exacto que este
+            # censo persigue (`_age_s` tapaba cuatro marcas con uno solo).
+            # reloj: heredado — el latido cacheado puede ser de otra vida
             "age_s": max(0.0, (now - snap.captured_at).total_seconds()),
         }
 
@@ -1080,8 +1109,13 @@ class LocalDashboard(EdgeModule):
                 # tenant_id y jamás sale por este GET abierto en la LAN).
                 "unreadable": int(snap.get("unreadable") or 0),
                 "unreadable_items": [str(name) for name in snap.get("unreadable_items", ())],
+                # reloj: heredado — `oldest_pending_at` es el `start` de una ventana
+                # leída del `.json` pendiente, que sobrevive a los reinicios. Ésta SÍ
+                # es una de las que `_age_s` declara bien.
                 "oldest_pending_age_s": _age_s(snap.get("oldest_pending_at"), now),
-                "checked_age_s": _age_s(snap.get("checked_at"), now),
+                # [T-7.60·disfraz] Del cronómetro, no de una fecha: ver `_edad_mono`.
+                # reloj: monotonico — la selló ESTE proceso, en memoria, y nunca se guarda
+                "checked_age_s": _edad_mono(snap.get("checked_mono")),
                 "phase": str(snap.get("phase") or "idle"),
                 "durable": bool(snap.get("durable")),
                 "uploaded_total": int(snap["uploaded_total"]),
@@ -1092,7 +1126,9 @@ class LocalDashboard(EdgeModule):
                 "failed_total": int(snap["failed_total"]),
                 "extract_failed_total": int(snap["extract_failed_total"]),
                 "last_result": snap.get("last_result"),
-                "last_result_age_s": _age_s(snap.get("last_result_at"), now),
+                # [T-7.60·disfraz] Del cronómetro, no de una fecha: ver `_edad_mono`.
+                # reloj: monotonico — la selló ESTE proceso, en memoria, y nunca se guarda
+                "last_result_age_s": _edad_mono(snap.get("last_result_mono")),
                 "stale_after_s": float(snap["stale_after_s"]),
             }
         except Exception:  # noqa: BLE001 — sección no-crítica
@@ -1243,7 +1279,28 @@ class LocalDashboard(EdgeModule):
             "iot_thing": self._iot_thing,
             "station_code": self._station_code,
             "now": now.isoformat(),
+            # reloj: monotonico — `uptime` es un `Cronometro`; ver el bloque de arriba
             "uptime_s": uptime,
+            # [T-7.60] EL ARRANQUE, Y SE DERIVA — jamás se recuerda.
+            #
+            # Quien llega a un gabinete después de un corte quiere LA HORA a la
+            # que arrancó, no una duración que tiene que restar de cabeza; y un
+            # `uptime_s` a secas obliga a eso justamente cuando hay prisa.
+            #
+            # ⚠️ Y la forma de obtenerlo es contraintuitiva: si este proceso
+            # guardara su arranque como fecha al iniciarse, guardaría la hora
+            # ANTERIOR a que NTP corrigiera —el Pi no tiene RTC—, o sea el error
+            # de 13 h 25 min del 2026-09-19 sellado para siempre. Restando el
+            # uptime MONOTÓNICO del `now` ya corregido sale la hora verdadera, y
+            # además se corrige sola en cuanto NTP sincroniza.
+            #
+            # Es el defecto de esta ficha visto del revés: allí una fecha se
+            # disfrazaba de duración, y aquí la fecha buena sólo se consigue
+            # restando la duración buena.
+            # reloj: monotonico — `uptime` es un cronómetro; `now` es pared ya corregida
+            "booted_at": (
+                (now - timedelta(seconds=uptime)).isoformat() if uptime is not None else None
+            ),
             "refresh_ms": self._refresh_ms,
             # Distinguir alerta REAL vs. sirena sonando vs. silenciado (regla de oro 7):
             "sasmex_active": snap.sasmex_active if snap is not None else None,

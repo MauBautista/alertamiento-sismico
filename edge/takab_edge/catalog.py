@@ -71,7 +71,11 @@ def _absent_provenance() -> dict:
         "origin": ORIGIN_ABSENT,
         "installed_at": None,
         "captured_at": None,
+        # reloj: ajeno — `captured_at` lo sella QUIEN CAPTURÓ el catálogo (la nube),
+        # así que la otra mitad de la resta viene de fuera y pared es lo correcto.
         "captured_age_s": None,
+        # reloj: heredado — `installed_at` sale del mtime del fichero en disco: lo
+        # escribió un proceso que ya murió y no hay monotónico que compartir con él.
         "installed_age_s": None,
         "stale_after_s": CATALOG_STALE_AFTER_S,
     }

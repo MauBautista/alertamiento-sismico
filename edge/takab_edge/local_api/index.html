@@ -684,6 +684,12 @@ function fmtV(v, cal){ const u = cal ? ' cm/s' : ' cm/s rel.'; if (v == null) re
    ilegible justo en el rango donde el rótulo importa. */
 function fmtAge(s){ if (s == null) return 'S/D'; if (s < 90) return Math.round(s)+' s'; if (s < 5400) return Math.round(s/60)+' m'; if (s < 86400) return (s/3600).toFixed(1)+' h'; return (s/86400).toFixed(1)+' d'; }
 function fmtUptime(s){ if (s == null) return 'S/D'; const h = Math.floor(s/3600), m = Math.floor(s%3600/60); return h+' h '+pad2(m)+' m'; }
+/* [T-7.60] La HORA del arranque, no sólo cuánto lleva encendido: quien llega a un
+   gabinete tras un corte quiere el instante, y restar de cabeza es justo lo que no
+   se hace bien con prisa. La deriva el Pi (`booted_at` = now - uptime monotonico),
+   NUNCA la recuerda: guardarla al arrancar guardaria la hora de ANTES de que NTP
+   corrigiera — el error de 13 h 25 min del 2026-09-19 sellado para siempre. */
+function fmtArranque(iso){ return iso ? String(iso).slice(11, 16) + ' UTC' : null; }
 function haversine(a, b){ const R=6371, rad=Math.PI/180; const dLat=(b.lat-a.lat)*rad, dLon=(b.lon-a.lon)*rad; const s=Math.sin(dLat/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLon/2)**2; return 2*R*Math.asin(Math.sqrt(s)); }
 function bearing(a, b){ const rad=Math.PI/180; const y=Math.sin((b.lon-a.lon)*rad)*Math.cos(b.lat*rad); const x=Math.cos(a.lat*rad)*Math.sin(b.lat*rad)-Math.sin(a.lat*rad)*Math.cos(b.lat*rad)*Math.cos((b.lon-a.lon)*rad); const d=(Math.atan2(y,x)/rad+360)%360; return ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'][Math.round(d/22.5)%16]; }
 const magColor = (m) => m >= 6 ? C.crit : m >= 4.5 ? C.warn : m >= 3.5 ? '#FFD700' : C.ok;
@@ -804,7 +810,7 @@ function baseStatus(){
   const now = new Date().toISOString();
   return {
     gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla', iot_thing:'gw-demo-0000',
-    station_code:'AM.R4F74', now, uptime_s: 14520, refresh_ms: 1000,
+    station_code:'AM.R4F74', now, uptime_s: 14520, booted_at: new Date(Date.now()-14520e3).toISOString(), refresh_ms: 1000,
     sasmex_active:false, siren_sounding:false, audible_silenced:false, alert_latched:false, network_alert:null, last_tier:'normal',
     lora:{enabled:true, heartbeat_s:90, secondaries:[
       {id:258, name:'AZOTEA-NORTE', zone:'Torre B', age_s:34, battery_mv:3870, rssi_dbm:-92, snr_db:7.5, alarm_active:false, link:'online', acked:null, pending:null},
@@ -947,7 +953,7 @@ const SCENES = {
     return s; },
   arranque_frio: () => ({ gateway_id:'gw-demo-0000', site_name:'Sitio Demo Puebla',
     iot_thing:'gw-demo-0000', station_code:'AM.R4F74',
-    now:new Date().toISOString(), uptime_s:4, refresh_ms:1000, sasmex_active:false, siren_sounding:false,
+    now:new Date().toISOString(), uptime_s:4, booted_at:new Date(Date.now()-4e3).toISOString(), refresh_ms:1000, sasmex_active:false, siren_sounding:false,
     audible_silenced:false, last_tier:null, relays:[],
     /* [T-2.68] Esta escena se llama "arranque en frío" y ese estado NO existe en
        el gabinete real (gpio va poblado antes de que el panel escuche): una lista
@@ -1419,7 +1425,8 @@ function renderHistory(st, cal){
     const b = document.createElement('span'); b.className = 'val'; b.style.color = C.warn; b.textContent = 'S/D · módulo de señal caído';
     r.append(a, f, b); rows.appendChild(r); return;
   }
-  $('hist-since').textContent = 'DESDE EL ARRANQUE · ' + fmtUptime(st.uptime_s);
+  $('hist-since').textContent = 'DESDE EL ARRANQUE · ' + fmtUptime(st.uptime_s)
+    + (fmtArranque(st.booted_at) ? ' · ' + fmtArranque(st.booted_at) : '');
   const chans = Object.keys(sh.by_channel || {});
   let hourMax = null, dayMax = null, series = [];
   chans.forEach(c => {
@@ -1886,7 +1893,8 @@ function renderEvents(st){
   const events = (st.events || []).slice(0, 10);
   if (!events.length){
     const r = document.createElement('div'); r.className = 'meta';
-    r.textContent = 'Sin eventos · DESDE EL ARRANQUE · ' + fmtUptime(st.uptime_s); box.appendChild(r); return;
+    r.textContent = 'Sin eventos · DESDE EL ARRANQUE · ' + fmtUptime(st.uptime_s)
+      + (fmtArranque(st.booted_at) ? ' · ' + fmtArranque(st.booted_at) : ''); box.appendChild(r); return;
   }
   events.forEach(e => {
     const r = document.createElement('div'); r.style.cssText = 'display:flex;align-items:baseline;gap:9px';

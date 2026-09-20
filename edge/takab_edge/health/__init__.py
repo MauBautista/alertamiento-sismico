@@ -499,6 +499,9 @@ class HealthMonitor(EdgeModule):
         """
         vacio = {
             "evidence_pending": None,
+            # reloj: heredado — nace de `oldest_pending_at`, el `start` de una ventana
+            # que puede haber sellado un arranque anterior. Aquí vale `None` (no se
+            # sabe), que no es lo mismo que cero.
             "evidence_oldest_age_s": None,
             "evidence_oldest_event_id": None,
         }
@@ -534,6 +537,9 @@ class HealthMonitor(EdgeModule):
                         edad = tope
             return {
                 "evidence_pending": pendientes,
+                # reloj: heredado — y por eso se ACOTA al uptime unas líneas arriba:
+                # nada que este proceso encoló puede ser más viejo que él, así que una
+                # edad mayor sólo puede venir de un reinicio o de un salto de reloj.
                 "evidence_oldest_age_s": edad,
                 # El `event_id` del más viejo: es el que la nube convierte en
                 # `incidents.event_uuid`, y sin él no puede saber si el incidente

@@ -77,6 +77,10 @@ def _base() -> dict:
         "station_code": "AM.R4F74",
         "now": _NOW,
         "uptime_s": 14520.0,
+        # [T-7.60] La HORA del arranque, DERIVADA de `now - uptime` en cada
+        # respuesta. Nunca recordada: guardarla al arrancar guardaría la hora
+        # anterior a que NTP corrigiera, que en un Pi sin RTC son 13 h de error.
+        "booted_at": "2026-07-09T08:02:00+00:00",
         "refresh_ms": 1000,
         "sasmex_active": False,
         "siren_sounding": False,
