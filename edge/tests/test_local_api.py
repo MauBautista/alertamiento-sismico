@@ -306,6 +306,42 @@ def test_status_includes_signal_per_channel(supervisor):
     assert status["signal"]["stale_after_s"] == 5.0
 
 
+def test_el_panel_declara_LA_HORA_del_arranque_y_cuadra_con_su_uptime(supervisor):
+    """[T-7.60] Quien llega tras un corte quiere el instante, no una duración.
+
+    Y se DERIVA de `now - uptime`, jamás se recuerda: si el proceso guardara su
+    arranque como fecha al iniciarse, guardaría la hora ANTERIOR a que NTP
+    corrigiera —el Pi no tiene RTC— y ese error de 13 h 25 min quedaría sellado
+    para siempre. Derivándolo, el `now` ya viene corregido y además el valor se
+    arregla solo en cuanto NTP sincroniza.
+
+    Se comprueba la COHERENCIA de los dos campos y no sólo su presencia: dar una
+    hora que no cuadre con el uptime de al lado es peor que no darla.
+    """
+    from datetime import datetime
+
+    from takab_edge.reloj import Cronometro
+
+    # ⚠️ Con el uptime del fixture (≈0 s) esta prueba no distingue nada: «hace
+    # cero segundos» y «ahora mismo» son la misma fecha, y una versión anterior
+    # pasaba en verde con `booted_at = now`. Así que se le da un uptime REAL —
+    # las 8.4 h que el kernel medía el día del defecto.
+    pasos = [0.0]
+    supervisor.local_api._arranque = Cronometro(fuente=lambda: pasos[0])
+    pasos[0] = 8.4 * 3600
+
+    st = supervisor.local_api.status()
+    assert st["booted_at"] is not None, "el panel dejó de declarar la hora de arranque"
+    assert st["uptime_s"] == pytest.approx(8.4 * 3600)
+
+    arranque = datetime.fromisoformat(st["booted_at"])
+    ahora = datetime.fromisoformat(st["now"])
+    assert (ahora - arranque).total_seconds() == pytest.approx(st["uptime_s"], abs=1.0), (
+        "la hora de arranque y el uptime no cuentan la misma historia: "
+        f"booted_at={st['booted_at']} now={st['now']} uptime_s={st['uptime_s']}"
+    )
+
+
 def test_status_without_features_is_honest(supervisor):
     status = supervisor.local_api.status()
     assert status["signal"]["channels"] == {}
@@ -1549,8 +1585,12 @@ class _FakeBackfill:
 
     def __init__(self, **cambios) -> None:
         from takab_edge.contracts import utcnow
+        from takab_edge.reloj import mono
 
         ahora = utcnow()
+        # [T-7.60·disfraz] Las dos marcas del propio proceso son CRONÓMETROS, no
+        # fechas: el fake tiene que hablar la misma moneda que el módulo real.
+        ahora_mono = mono()
         self.snapshot = {
             "pending": 2,
             "items": [
@@ -1558,7 +1598,7 @@ class _FakeBackfill:
                 {"event_id": "evt-nuevo", "start": (ahora - timedelta(minutes=4)).isoformat()},
             ],
             "oldest_pending_at": (ahora - timedelta(days=15)).isoformat(),
-            "checked_at": (ahora - timedelta(seconds=30)).isoformat(),
+            "checked_mono": ahora_mono - 30.0,
             "phase": "idle",
             "durable": True,
             "uploaded_total": 3,
@@ -1566,7 +1606,7 @@ class _FakeBackfill:
             "failed_total": 4,
             "extract_failed_total": 2,
             "last_result": "extract_failed",
-            "last_result_at": (ahora - timedelta(minutes=2)).isoformat(),
+            "last_result_mono": ahora_mono - 120.0,
             "stale_after_s": 3600.0,
         }
         self.snapshot.update(cambios)
@@ -1631,8 +1671,8 @@ def test_una_instantanea_de_evidencia_ilegible_no_tumba_la_seccion(supervisor):
 
     backfill = _FakeBackfill(
         oldest_pending_at="no-es-una-fecha",
-        checked_at=None,
-        last_result_at="",
+        checked_mono=None,
+        last_result_mono="",
         items=[{"event_id": "evt-raro", "start": "ayer"}],
     )
     dash = LocalDashboard(supervisor.gpio, supervisor.rules, supervisor.health, backfill=backfill)

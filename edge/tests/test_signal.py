@@ -204,9 +204,13 @@ def test_live_by_channel_tracks_multiple_channels():
 
     live = ex.live_by_channel()
     assert set(live) == {"EHZ", "ENZ"}
-    feature, received_at = live["ENZ"]
+    feature, received_at, recibido_mono = live["ENZ"]
     assert feature.channel == "ENZ"
     assert received_at.tzinfo is not None  # reloj de pared UTC del Pi, no del Shake
+    # [T-7.60·disfraz] Y su CRONÓMETRO al lado: la edad con la que el panel
+    # decide «SIN SEÑAL DEL SENSOR» sale de aquí, no de restar la fecha — un
+    # ajuste de NTP declaraba muertos los tres canales con el sensor entregando.
+    assert isinstance(recibido_mono, float)
     # `.last` sigue funcionando (contrato previo intacto)
     assert ex.last is not None and ex.last.channel == "ENZ"
 

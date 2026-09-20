@@ -164,7 +164,15 @@ class BackfillManager(EdgeModule):
             # subir jamás, y se NOMBRAN: un número a secas no dice qué borrar.
             "unreadable": 0,
             "unreadable_items": (),
-            "checked_at": None,
+            # [T-7.60·disfraz] CRONÓMETRO, no fecha. Aquí decía `"checked_at": None`
+            # y se sellaba con `_clock().isoformat()`, una marca de PARED que
+            # NADIE lee como instante: su único consumidor la resta para pintar
+            # `checked_age_s`. Un salto de NTP entraba entero en esa resta y el
+            # panel decía «conteo verificado hace 13 h» sobre una verificación de
+            # hace un segundo. Y no lo cazaba el censo de T-7.60 porque la resta
+            # vive en `_age_s`, compartida por CUATRO marcas de clases distintas
+            # y declarada `heredado` por las dos que sí lo son.
+            "checked_mono": None,
             "phase": "idle",
             # Sin `cloud_spool_dir` el pendiente vive en un tempdir NUEVO por
             # arranque: la evidencia se evapora al reiniciar y el conteo diría 0
@@ -175,7 +183,9 @@ class BackfillManager(EdgeModule):
             "failed_total": 0,
             "extract_failed_total": 0,
             "last_result": None,
-            "last_result_at": None,
+            # [T-7.60·disfraz] Igual que `checked_mono`: lo sella ESTE proceso en
+            # `_record_evidence` y su único consumidor lo resta.
+            "last_result_mono": None,
             "stale_after_s": _EVIDENCE_STUCK_AFTER_S,
         }
         self._refresh_pending_state()
@@ -426,7 +436,8 @@ class BackfillManager(EdgeModule):
             "oldest_pending_at": items[0]["start"] if oldest is not None else None,
             "unreadable": len(ilegibles),
             "unreadable_items": tuple(ilegibles[:_EVIDENCE_LIST_MAX]),
-            "checked_at": self._clock().isoformat(),
+            # reloj: monotonico — lo sella y lo resta el MISMO proceso
+            "checked_mono": self._mono(),
         }
 
     def _refresh_pending_state(self) -> None:
@@ -476,7 +487,8 @@ class BackfillManager(EdgeModule):
                 **state,
                 counter: state[counter] + 1,
                 "last_result": result,
-                "last_result_at": self._clock().isoformat(),
+                # reloj: monotonico — lo sella y lo resta el MISMO proceso
+                "last_result_mono": self._mono(),
             }
 
     def _on_online(self) -> None:

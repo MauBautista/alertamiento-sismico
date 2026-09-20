@@ -28,6 +28,7 @@ from scipy.integrate import cumulative_trapezoid
 from takab_edge.config import SignalConfig
 from takab_edge.contracts import Feature1s, WaveformPacket, utcnow
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono
 from takab_edge.signal.aggregate import ShakeAggregator
 from takab_edge.signal.waveform import WaveformRing
 
@@ -173,15 +174,25 @@ class FeatureExtractor(EdgeModule):
         # [T-1.53] Última feature POR CANAL + hora de RECEPCIÓN (reloj de pared
         # del Pi): el panel local mide staleness contra esto — window_start es
         # el reloj de datos del Shake y no sirve para detectar "sin señal".
-        self._by_channel: dict[str, tuple[Feature1s, datetime]] = {}
+        # [T-7.60·disfraz] TRES cosas y no dos: el rasgo, la FECHA de llegada
+        # (que el panel publica para que un humano la lea) y el CRONÓMETRO con
+        # el que se mide su edad. Antes la edad se sacaba restando la fecha
+        # contra el `now` de pared del panel, y esa resta es la que decide entre
+        # pintar el canal y borrarlo con «SIN SEÑAL DEL SENSOR» (umbral: 5 s).
+        # Con el salto de NTP del arranque —13 h 25 min medidos el 2026-09-19—
+        # los tres canales salían muertos a la vez con el sensor entregando
+        # paquetes, y peor: con SeedLink caído de verdad, la edad que el operador
+        # lee para saber cuánto lleva ciego el gabinete venía inflada por el
+        # salto en vez de por el silencio.
+        self._by_channel: dict[str, tuple[Feature1s, datetime, float]] = {}
         self._live_lock = threading.Lock()
 
     @property
     def last(self) -> Feature1s | None:
         return self._last
 
-    def live_by_channel(self) -> dict[str, tuple[Feature1s, datetime]]:
-        """Copia del último `Feature1s` por canal con su hora de llegada.
+    def live_by_channel(self) -> dict[str, tuple[Feature1s, datetime, float]]:
+        """Copia del último `Feature1s` por canal, su hora de llegada y su cronómetro.
 
         Para el panel LAN (T-1.53): lectura barata desde los hilos HTTP sin
         tocar el camino caliente (el lock solo protege el dict, nanosegundos).
@@ -195,7 +206,7 @@ class FeatureExtractor(EdgeModule):
         self._update_context(packet)
         self._last = feature
         with self._live_lock:
-            self._by_channel[packet.channel] = (feature, utcnow())
+            self._by_channel[packet.channel] = (feature, utcnow(), mono())
         try:
             self.waveform.append(packet)
             self.aggregate.observe_feature(feature, self.config.accel_sensitivity_ms2_per_count)
