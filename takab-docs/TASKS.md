@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **441** · `[x]` **383** · `[~]` **10** · `[ ]` **48**
+**Conteo de tareas:** total **442** · `[x]` **383** · `[~]` **10** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16780,6 +16780,51 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
         Un censo si se puede; si no, una lectura y su fecha.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no.
+
+### [ ] T-7.64 · **La deriva de versiones de la flota no puede funcionar: nadie publica los releases** — `SOFTWARE`
+- **Componente:** api · deploy · **Depende de:** — · **Prioridad:** F4 · media
+- **Objetivo:** que la consola pueda decir si un gabinete corre lo último, que es para lo que
+  `T-2.69` construyó los siete estados de versión.
+- **El fallo, MEDIDO el 2026-09-20 en la nube dev:**
+
+  ```
+  SELECT count(*) FROM fw_releases;  →  0
+  ```
+
+  **El registro está vacío y siempre lo ha estado.** El estado «AL DÍA» se deriva comparando el
+  `fw_version` que declara el gabinete contra ese registro, así que con él vacío
+  `derive_version_drift` cae —correctamente— en `SIN REFERENCIA`, que es su rama 3: «se sabe qué
+  corre, no si es lo actual».
+- **Y la causa no es un olvido de operación: es que NADIE LLAMA AL ENDPOINT.** `POST /fleet/releases`
+  existe (`routers/fleet.py::publish_release`), está bien hecho —exige el dueño de la plataforma,
+  la tabla es append-only por privilegio, republicar da 409— y **`deploy/edge/deploy.sh` no lo
+  invoca ni una vez**. Barrido: no hay una sola línea del despliegue que escriba en `fw_releases`.
+- **Por qué importa, y por qué no es cosmético.** `T-2.69` construyó esos siete estados para cerrar
+  el defecto del 14-jul —quince horas con la consola en OPERATIVO sobre datos viejos— en su forma
+  de versiones: *«un `fw_version` de hace tres semanas no es la versión que corre: es la última que
+  reportó»*. Toda esa maquinaria está viva y **no puede distinguir nada**, porque le falta la mitad
+  de la comparación. Un gabinete que corre código de hace un mes y otro recién desplegado se ven
+  **idénticos** en `/fleet`.
+- **⚠️ Cómo se descubrió, que dice algo del defecto:** se le pidió a Mauricio que mirara `/fleet`
+  para confirmar un despliegue y que buscara «AL DÍA». Ese rótulo **no puede aparecer hoy para
+  ningún gabinete**. Un estado inalcanzable no da error: da una consola que parece funcionar.
+- **Criterios de aceptación:**
+  - [ ] `deploy/edge/deploy.sh` publica el `FW_VERSION` que acaba de activar, **después** del
+        canary y sólo si la release quedó activa: registrar lo que no llegó a correr es peor que no
+        registrar nada.
+  - [ ] ⚠️ La versión publicada tiene que ser **EXACTAMENTE** la que el gabinete escribe en su
+        `FW_VERSION` — el propio endpoint lo avisa: la comparación es por igualdad, y «un espacio de
+        más aquí volvería `DESCONOCIDA` a toda la flota que corra ese código». Derivarla del mismo
+        sitio, no repetirla.
+  - [ ] Que publicar NO pueda tumbar un despliegue. Si la nube no contesta, el gabinete ya está
+        corriendo el código bueno; el registro se puede rellenar después y el fallo se DECLARA.
+  - [ ] Decidir qué pasa con los `-dirty`: la rama 4 de la derivación los manda a `DESCONOCIDA` a
+        propósito, y eso está bien. Publicarlos borraría esa señal.
+  - [ ] Una prueba que ejerza el camino entero: desplegar ⇒ publicar ⇒ que `derive_version_drift`
+        diga `AL DÍA`. Hoy ninguna lo cruza de punta a punta.
+- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
+  hoy:** no — `derive_version_drift` ya está probada con releases inyectadas; lo que falta es que
+  en producción existan.
 
 ## RUTA CRÍTICA
 
