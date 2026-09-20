@@ -47,6 +47,7 @@ from takab_edge.cctv.onvif import (
 )
 from takab_edge.cctv.recorder import cmd_anillo
 from takab_edge.config import EdgeSettings, load_settings
+from takab_edge.reloj import mono as _mono
 
 log = logging.getLogger("takab_edge.cctv")
 
@@ -209,7 +210,11 @@ class _AnilloVivo:
         self._directorio = directorio
         self._proc: subprocess.Popen | None = None
         self._espera = _REINTENTO_MIN_S
-        self._proximo_intento = datetime.now(UTC)
+        # [T-7.60] Monotónico: un backoff privado del proceso no tiene ni una
+        # razón para vivir en el reloj de pared, y con él un ajuste de NTP
+        # hacia atrás congela el relanzado del anillo hasta que el reloj
+        # alcance la marca — horas de CCTV sin grabar, en silencio.
+        self._proximo_intento = _mono()
 
     def vigilar(self) -> None:
         if self._proc is not None and self._proc.poll() is None:
@@ -218,7 +223,8 @@ class _AnilloVivo:
         if self._proc is not None:
             log.warning("cctv: el anillo murió (código %s); se relanza", self._proc.returncode)
             self._proc = None
-        if datetime.now(UTC) < self._proximo_intento:
+        # reloj: monotonico — backoff interno del proceso
+        if _mono() < self._proximo_intento:
             return
         try:
             self._proc = subprocess.Popen(  # noqa: S603 — comando construido por nosotros
@@ -231,7 +237,7 @@ class _AnilloVivo:
         except OSError as exc:
             log.error("cctv: no se pudo lanzar el anillo: %s", exc)
         self._espera = min(self._espera * 2, _REINTENTO_MAX_S)
-        self._proximo_intento = datetime.now(UTC) + timedelta(seconds=self._espera)
+        self._proximo_intento = _mono() + self._espera
 
     def detener(self) -> None:
         if self._proc is None:

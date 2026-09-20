@@ -42,6 +42,11 @@ def _edad_s(marca_iso: object) -> float | None:
         marca = datetime.fromisoformat(str(marca_iso))
     except (TypeError, ValueError):
         return None
+    # reloj: heredado — [T-7.60] `marca` es una fecha ISO que puede venir de
+    # antes de un ajuste de reloj (el simulacro la persiste). La ventana del
+    # simulacro NO depende de esto: la cierra un `threading.Timer`, que es
+    # relativo y por tanto inmune. Esto sólo alimenta el rótulo del panel.
+    # reloj: heredado — la marca del simulacro se persiste
     return max(0.0, (utcnow() - marca).total_seconds())
 
 

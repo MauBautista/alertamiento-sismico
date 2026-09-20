@@ -83,6 +83,7 @@ class _ChannelRing:
             return 0
         gap = False
         if self.expected_next is not None:
+            # reloj: datos — la deriva se mide contra el eje de muestras
             drift_s = abs((packet.starttime - self.expected_next).total_seconds())
             gap = drift_s > _GAP_TOLERANCE_SAMPLES / self.sample_rate
         self.expected_next = packet.next_starttime

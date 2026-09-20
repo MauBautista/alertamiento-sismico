@@ -45,6 +45,14 @@ def _ack(
     channel_state: ChannelState | None = None,
 ) -> ActuatorAck:
     # Latencia = tiempo desde que `rules` emitió el comando hasta su ejecución (T+X.XXs).
+    #
+    # ⚠️ [T-7.60] `issued_at` es una FECHA de pared y aquí se resta contra otra:
+    # si NTP corrige el reloj entre la emisión y la ejecución, esta latencia se
+    # lleva el salto entero y el panel publica un relé que tardó trece horas.
+    # No se puede arreglar aquí sin cambiar el contrato de `ActuatorCommand`, que
+    # cruza la frontera firmada; la medida buena de la latencia crítica vive en
+    # `gpio` con `perf_counter` (el reflejo SASMEX, §4.3) y ésa sí es fiable.
+    # reloj: heredado — `issued_at` puede venir de antes de un ajuste de reloj
     latency_s = max(0.0, (utcnow() - command.issued_at).total_seconds())
     return ActuatorAck(
         channel=command.channel,

@@ -76,6 +76,7 @@ class SecurityManager(EdgeModule):
             log.warning("comando rechazado: sin firma o nonce")
             return False
         now = self._clock()
+        # reloj: ajeno — el sello del comando lo pone la NUBE (TTL y deriva)
         delta = (now - timestamp).total_seconds()  # >0 pasado, <0 futuro
         if delta > self._command_ttl_s or delta < -self._clock_skew_s:
             log.warning("comando rechazado: fuera de ventana (Δ=%.0fs)", delta)

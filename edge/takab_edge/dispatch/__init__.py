@@ -40,6 +40,7 @@ from takab_edge.contracts import (
     utcnow,
 )
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono as _mono
 
 if TYPE_CHECKING:
     from takab_edge.actuators import ActuatorManager
@@ -319,7 +320,8 @@ class CommandDispatcher(EdgeModule):
             self._ack(command_id, nonce, channel, action, False, "canal no instalado en este sitio")
             return
 
-        started = utcnow()
+        # [T-7.60] Cronómetro, no fecha: mide lo que tarda ESTA máquina.
+        started = _mono()
         # [T-2.86.a · RO-4.e] La causa sale del `origin` que viaja DENTRO de la
         # firma —nadie lo inyecta sin la clave—, así que «quórum de red» y «alguien
         # en la consola» quedan como causas distintas en la bitácora, que es la
@@ -334,7 +336,8 @@ class CommandDispatcher(EdgeModule):
             actor=f"cloud:{command_id}",
         )
         result = self._actuators.execute(command)
-        latency = (utcnow() - started).total_seconds()
+        # reloj: monotonico — duración de la ejecución, aquí
+        latency = _mono() - started
         # [T-2.32] Comando de ACTUACIÓN del quórum de red ejecutado: el panel
         # rotula la fuente («QUÓRUM RED»). `origin` viene DENTRO de la firma —
         # nadie lo inyecta sin la clave. Swap atómico del dict (lector = panel).
@@ -428,7 +431,8 @@ class CommandDispatcher(EdgeModule):
 
     def _run_self_test(self, command_id: str, nonce: str) -> None:
         """Corre el autodiagnóstico y ACKea con resultados. JAMÁS lanza (hilo propio)."""
-        started = utcnow()
+        # [T-7.60] Cronómetro, no fecha: mide lo que tarda ESTA máquina.
+        started = _mono()
         try:
             outcome = self._actuators.cabinet_self_test(actor=f"cloud:{command_id}")
         except Exception as exc:  # noqa: BLE001 — un test roto no tira el dispatcher
@@ -445,7 +449,8 @@ class CommandDispatcher(EdgeModule):
                 "disk_used_pct": snapshot.disk_used_pct,
                 "captured_at": snapshot.captured_at.isoformat(),
             }
-        latency = (utcnow() - started).total_seconds()
+        # reloj: monotonico — duración de la ejecución, aquí
+        latency = _mono() - started
         self._ack(
             command_id,
             nonce,

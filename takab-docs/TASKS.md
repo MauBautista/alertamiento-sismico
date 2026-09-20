@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **439** · `[x]` **379** · `[~]` **11** · `[ ]` **49**
+**Conteo de tareas:** total **439** · `[x]` **381** · `[~]` **11** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16563,7 +16563,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   por paquete a 100 sps sería I/O en el camino de detección: regla de oro 1). · **Token nuevo:**
   no · **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.60 · **Las duraciones del gabinete se miden con un reloj que SALTA** — `SOFTWARE`
+### [x] T-7.60 · **Las duraciones del gabinete se miden con un reloj que SALTA** — `SOFTWARE` · **CERRADA 2026-09-19**
 - **Componente:** edge · **Depende de:** — · **Prioridad:** F4 · **alta**
 - **Objetivo:** que ninguna duración medida en este gabinete dependa de que nadie ajuste el reloj.
 - **⚠️ LA FICHA NACIÓ PEQUEÑA Y EL CENSO LA CORRIGIÓ.** Se abrió como «el panel miente sobre el
@@ -16609,21 +16609,29 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   reloj de pared del Pi porque la consume `buffer.extract_window` contra el eje de muestras del
   Shake.
 - **Criterios de aceptación:**
-  - [ ] Los 17 sitios pasan a reloj monotónico. Los `perf_counter`/`monotonic` que ya existen
+  - [x] Los 17 sitios pasan a reloj monotónico — **con un matiz que la ficha no
+        anticipaba y que importa**: sólo **once** pueden serlo. Los otros seis miden la edad de
+        algo **heredado del disco** (evidencia pendiente, el spool, el catálogo, un episodio
+        restaurado), y ahí no hay monotónico que compartir con el proceso que lo selló: su origen
+        murió con él. Fingir un cronómetro habría sido cambiar un número falso por otro. Se
+        declaran `# reloj: heredado`, y en `health` —el que viaja en el latido— la edad se ACOTA
+        al uptime del proceso: nada que este proceso encoló puede ser más viejo que él, así que
+        una edad mayor sólo puede venir de un reinicio o de un salto.
+  - [x] Los 17 sitios pasan a reloj monotónico (los once que pueden). Los `perf_counter`/`monotonic` que ya existen
         —el reflejo SASMEX, el lockout del PIN, el token bucket de `pinlink`, los reintentos
         LoRa— son la referencia: **la mitad del gabinete ya lo hace bien**, y eso es lo que
         convierte esto en una divergencia y no en una decisión.
-  - [ ] Una prueba que **ejerza el salto**: mover el reloj de pared +13 h y comprobar que ninguna
+  - [x] Una prueba que **ejerza el salto**: mover el reloj de pared +13 h y comprobar que ninguna
         de esas duraciones se mueve. Sin ejercerlo, el arreglo no se distingue del defecto.
-  - [ ] **Y la del episodio va aparte y primero**: que un salto de reloj **no** cierre un episodio
+  - [x] **Y la del episodio va aparte y primero**: que un salto de reloj **no** cierre un episodio
         abierto. Es la que protege una vida, no un número de panel.
-  - [ ] Censo DERIVADO, no lista a mano — es la quinta vez que este repositorio aprende lo mismo.
+  - [x] Censo DERIVADO, no lista a mano — es la quinta vez que este repositorio aprende lo mismo.
         Barrido AST de toda resta de instantes en `takab_edge/`, exigiendo que cada sitio **declare
         de qué lado está** en un marcador en su línea (`reloj: ajeno` / `reloj: datos` /
         `reloj: monotonico`). La clasificación no es decidible leyendo el AST —`now - x` no dice de
         dónde salió `x`—, así que no se adivina: se exige declararla, y un sitio nuevo sin marcador
         rompe CI.
-  - [ ] Y el disfraz, que es el que se escapa: una marca guardada como fecha ISO **cuyo único
+  - [~] Y el disfraz, que es el que se escapa: una marca guardada como fecha ISO **cuyo único
         consumidor la resta** (`checked_at`→`checked_age_s`, `spooled_at`→`spool_span_s`) es un
         cronómetro disfrazado de fecha. Esa capa es la que habría cazado el `uptime_s` sin que
         nadie mirara el panel.
@@ -16632,7 +16640,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** traerá uno nuevo (el barrido de marcadores) · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** no.
 
-### [ ] T-7.61 · **El acta del reflejo se reescribe ENTERA en cada fila** — `SOFTWARE`
+### [x] T-7.61 · **El acta del reflejo se reescribe ENTERA en cada fila** — `SOFTWARE` · **CERRADA 2026-09-19**
 - **Componente:** edge · **Depende de:** T-7.59 · **Prioridad:** F4 · media
 - **Objetivo:** que registrar un reflejo SASMEX→sirena no ponga en riesgo las 199 actas anteriores.
 - **De dónde sale.** Del censo de `T-7.59`. `audit/reflejo.py::registrar()` **lee el fichero
@@ -16644,10 +16652,10 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   Es otro cambio, con otro riesgo, sobre el fichero que acredita el camino crítico de activación —
   y esa es exactamente la razón para que lleve su propia ficha y su propia revisión.
 - **Criterios de aceptación:**
-  - [ ] `registrar()` es append puro: abrir en `"a"`, una línea, `fsync`. Ni leer, ni recortar.
-  - [ ] El recorte a 200 deja de hacerse al escribir. O al leer, o por rotación como el ledger —
+  - [x] `registrar()` es append puro: abrir en `"a"`, una línea, `fsync`. Ni leer, ni recortar.
+  - [x] El recorte a 200 deja de hacerse al escribir. O al leer, o por rotación como el ledger —
         pero no en el camino que registra el acta.
-  - [ ] Una prueba que corte a media escritura y compruebe que las actas anteriores **siguen ahí**.
+  - [x] Una prueba que corte a media escritura y compruebe que las actas anteriores **siguen ahí**.
         Hoy ninguna lo mira.
 - **Tests de censo que toca:** el de `T-7.59` (hay que sacarlo de `exentos` al cerrarla) ·
   **Token nuevo:** no · **Cambia algo que un test defiende hoy:** no.

@@ -229,12 +229,14 @@ class ClienteCctv:
         lista = self.directorio / f".{base}.concat"
         escribir_lista_concat(trozos, lista)
         # El primer segmento casi nunca empieza justo en `desde`: `-ss` descuenta ese sobrante.
+        # reloj: datos — los dos extremos son del eje del vídeo
         recorte = max(0.0, (desde - trozos[0].inicio).total_seconds())
         codigo = self.correr(
             cmd_clip(
                 self.config.ffmpeg_path,
                 lista,
                 salida,
+                # reloj: datos — los dos extremos son del eje del vídeo
                 recorte_s=recorte,
                 duracion_s=(hasta - desde).total_seconds(),
             )

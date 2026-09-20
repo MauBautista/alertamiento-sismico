@@ -28,7 +28,7 @@ import logging
 import threading
 import urllib.request
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +36,7 @@ from takab_edge.contracts import BackfillRequest, EvidenceObject, utcnow
 from takab_edge.durable import escribir_durable
 from takab_edge.evidence import sha256_hex
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono as _mono
 
 if TYPE_CHECKING:
     from takab_edge.buffer import RingBuffer
@@ -124,6 +125,7 @@ class BackfillManager(EdgeModule):
         http_put: Callable[[str, bytes, str], bool] | None = None,
         jitter_s: Callable[[], float] | None = None,
         clock: Callable[[], datetime] | None = None,
+        mono: Callable[[], float] | None = None,
     ) -> None:
         super().__init__()
         self._settings = settings
@@ -132,6 +134,10 @@ class BackfillManager(EdgeModule):
         self._http_put = http_put or default_http_put
         self._jitter_s = jitter_s or self._default_jitter
         self._clock = clock or utcnow
+        #: [T-7.60] El segundo reloj. `_clock` FECHA lo que se publica; `_mono`
+        #: CRONOMETRA lo que espera aquí (el cooldown). Inyectable por la misma
+        #: razón que el otro: una prueba no debería parchear `time` entero.
+        self._mono = mono or _mono
         self._pending_dir = Path(pending_dir or self._default_pending_dir())
         self._pending_dir.mkdir(parents=True, exist_ok=True)
         self._in_progress = threading.Event()
@@ -195,10 +201,15 @@ class BackfillManager(EdgeModule):
         """S3 si hay upload en curso o el spool supera el umbral (y sin cooldown)."""
         if self._in_progress.is_set():
             return True  # un objeto por gateway a la vez; MQTT no compite
-        now = self._clock()
-        if self._cooldown_until is not None and now < self._cooldown_until:
+        # reloj: monotonico — [T-7.60] el cooldown es una espera de ESTA máquina.
+        # Con pared, un ajuste de NTP hacia atrás lo alarga sin que nadie lo
+        # decida, y la evidencia se queda drenando por MQTT más de la cuenta.
+        if self._cooldown_until is not None and self._mono() < self._cooldown_until:
             return False  # el último intento S3 falló: deja drenar por MQTT
-        return connector.spool_span_s(now) > self._settings.backfill_threshold_s
+        # reloj: heredado — `spool_span_s` mide la edad del registro MÁS VIEJO del
+        # spool, y ése puede venir de antes de un reinicio: no hay monotónico que
+        # compartir con el proceso que lo encoló. Se mide con pared a sabiendas.
+        return connector.spool_span_s(self._clock()) > self._settings.backfill_threshold_s
 
     def kick(self) -> None:
         """Dispara el upload del spool en su propio hilo (idempotente)."""
@@ -222,7 +233,7 @@ class BackfillManager(EdgeModule):
             ok = False
         finally:
             if not ok:
-                self._cooldown_until = self._clock() + timedelta(seconds=_FAIL_COOLDOWN_S)
+                self._cooldown_until = self._mono() + _FAIL_COOLDOWN_S
             self._in_progress.clear()
         if ok:
             log.info("backfill: spool subido por S3; MQTT vuelve a la normalidad")

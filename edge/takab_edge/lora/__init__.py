@@ -24,12 +24,12 @@ import json
 import logging
 import os
 import threading
-import time
 from typing import TYPE_CHECKING, Protocol
 
 from takab_edge.contracts import SecondaryCabinetState, utcnow
 from takab_edge.lora import frame as fr
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono as _mono
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -139,6 +139,9 @@ class LoraLink(EdgeModule):
                 "name": c.name or f"SEC-{c.id}",
                 "zone": c.zone,
                 "last_seen": None,
+                # [T-7.60] El cronómetro, al lado de la fecha: el de pared se
+                # imprime («visto a las…»), éste decide si el enlace cayó.
+                "last_seen_mono": None,
                 "battery_mv": None,
                 "rssi_dbm": None,
                 "snr_db": None,
@@ -201,12 +204,12 @@ class LoraLink(EdgeModule):
     def snapshot(self) -> dict:
         """Estado para el panel (vía ``/api/status``, sección ``lora``)."""
         timeout_s = self._cfg.heartbeat_s * self._cfg.heartbeat_timeout_factor
-        now = utcnow()
         out = []
         with self._lock:
             for entry in self._reg.values():
-                last_seen = entry["last_seen"]
-                age_s = (now - last_seen).total_seconds() if last_seen else None
+                # reloj: monotonico — [T-7.60] cuánto llevo sin oír al secundario
+                visto_mono = entry["last_seen_mono"]
+                age_s = (_mono() - visto_mono) if visto_mono is not None else None
                 pending = entry["pending"]
                 state = SecondaryCabinetState(
                     id=entry["id"],
@@ -266,6 +269,7 @@ class LoraLink(EdgeModule):
             if entry is None:
                 return
             entry["last_seen"] = utcnow()
+            entry["last_seen_mono"] = _mono()
             entry["rssi_dbm"] = rssi
             entry["snr_db"] = snr
             if frame.msg_type is not fr.ACK and frame.battery_mv:
@@ -338,12 +342,13 @@ class LoraLink(EdgeModule):
 
     def _check_timeouts(self) -> None:
         timeout_s = self._cfg.heartbeat_s * self._cfg.heartbeat_timeout_factor
-        now = utcnow()
         with self._lock:
             for entry in self._reg.values():
-                last_seen = entry["last_seen"]
-                if entry["link"] == "online" and last_seen is not None:
-                    if (now - last_seen).total_seconds() > timeout_s:
+                visto_mono = entry["last_seen_mono"]
+                if entry["link"] == "online" and visto_mono is not None:
+                    # reloj: monotonico — [T-7.60] declarar un enlace CAÍDO por un
+                    # ajuste de NTP apaga la red de cuórum sin que nadie lo decida
+                    if _mono() - visto_mono > timeout_s:
                         entry["link"] = "offline"
                         # Transición (regla 10): el jamming/corte se hace VISIBLE.
                         log.warning("lora: secundario %s ENLACE PERDIDO", entry["name"])
@@ -356,7 +361,3 @@ def _kind_name(kind: int) -> str:
         fr.TEST: "test",
         fr.SILENCE: "silence",
     }.get(kind, str(kind))
-
-
-def _mono() -> float:
-    return time.monotonic()

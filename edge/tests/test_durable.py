@@ -159,9 +159,9 @@ def _escrituras_sin_durabilidad() -> list[str]:
         # Generador de los JSON Schema: script de construcción, no corre en el
         # gabinete. Su salida se comitea y la vigila `make drift`.
         "schemas.py",
-        # Acta del reflejo: reescribe el fichero ENTERO leyendo y recortando a
-        # 200 filas. Su defecto NO es el fsync sino el read-modify-write, y se
-        # arregla pasándolo a append como el ledger. Fichado aparte.
+        # Acta del reflejo: append puro con su propio `fsync`, como el ledger
+        # (T-7.61). No pasa por `escribir_durable` porque no reescribe nada —
+        # añade una línea al final, que es más seguro todavía.
         "audit/reflejo.py",
     }
     sospechosos: list[str] = []

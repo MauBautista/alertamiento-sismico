@@ -47,6 +47,7 @@ from pathlib import Path
 
 from takab_edge.contracts import AlertSource, Tier, TierDecision, TierTransition
 from takab_edge.durable import escribir_durable
+from takab_edge.reloj import mono as _mono
 
 
 def _utcnow() -> datetime:
@@ -80,6 +81,7 @@ class EpisodeTracker:
         max_s: float = 3600.0,
         on_episode_end: Callable[[], None] | None = None,
         now: Callable[[], datetime] | None = None,
+        mono: Callable[[], float] | None = None,
     ) -> None:
         self.quiet_s = float(quiet_s)
         #: [T-7.49] Cota DURA de duración de un episodio. No es un segundo reloj
@@ -93,6 +95,12 @@ class EpisodeTracker:
         self.site_id = site_id
         self._state_path = Path(state_path) if state_path else None
         self._now = now or _utcnow
+        #: [T-7.60] El SEGUNDO reloj, y son dos porque miden cosas distintas:
+        #: `_now` fecha lo que viaja a la nube (una fecha se imprime y se compara
+        #: con fechas ajenas), `_mono` cuenta lo que transcurre aquí. Inyectable
+        #: por la misma razón que el otro: una prueba que quiera adelantar el
+        #: silencio no debería tener que parchear `time` entero.
+        self._mono = mono or _mono
         #: [T-7.49] El seguidor es la única autoridad sobre el final del episodio,
         #: así que es él quien jubila la identidad en el motor. El cable va en
         #: esta dirección —advisory → crítico— y no al revés: que el motor
@@ -102,7 +110,20 @@ class EpisodeTracker:
         self._tier: Tier = Tier.NORMAL
         self._event_id: str | None = None
         self._opened_at: datetime | None = None
-        self._quiet_since: datetime | None = None
+        # ⚠️ [T-7.60] MONOTÓNICO, y de todos los relojes del gabinete éste es
+        # el que más importa: cuenta el silencio que declara TERMINADO un
+        # episodio. Con reloj de pared, el salto de NTP del arranque —13 h 25
+        # min el 2026-09-19, y el Pi no tiene RTC— lo satisface DE GOLPE: el
+        # gabinete da la sacudida por acabada y saca al ocupante de «EVACÚE».
+        # Es la inversión exacta de lo que cerró `T-7.30`, que existe porque el
+        # arreglo ingenuo hacía justo esto antes de la onda S.
+        self._quiet_since: float | None = None
+        #: [T-7.60] El instante monotónico en que se abrió el episodio, al lado
+        #: del `_opened_at` de pared. Son dos porque sirven para cosas distintas:
+        #: aquél FECHA el episodio para la nube, éste lo CRONOMETRA aquí. `None`
+        #: cuando el episodio se restauró del disco: entonces no hay origen
+        #: monotónico compartido con el proceso que lo abrió.
+        self._abierto_mono: float | None = None
         # Mismo read-modify-write y mismos dos hilos que en el motor, y aquí
         # además se escribe a disco: sin lock se pueden emitir dos cierres o
         # dejar `episodio.json` a medias.
@@ -158,6 +179,7 @@ class EpisodeTracker:
             # [T-7.49] Y cuándo abrió, que es lo que la cota necesita y lo que
             # permite descartar un `episodio.json` rancio tras un reinicio.
             self._opened_at = now
+            self._abierto_mono = self._mono()  # [T-7.60] el cronómetro, al lado de la fecha
         self._tier = decision.tier
         self._quiet_since = None
         self._guardar()
@@ -171,9 +193,10 @@ class EpisodeTracker:
             self._quiet_since = None
             return None
         if self._quiet_since is None:
-            self._quiet_since = now
+            self._quiet_since = self._mono()
             return None
-        if (now - self._quiet_since).total_seconds() < self.quiet_s:
+        # reloj: monotonico — el silencio transcurre en ESTA máquina
+        if self._mono() - self._quiet_since < self.quiet_s:
             return None
         return self._cerrar(decision, now, event_id=self._event_id, reasons=None)
 
@@ -195,6 +218,7 @@ class EpisodeTracker:
         self._tier = Tier.NORMAL
         self._event_id = None
         self._opened_at = None
+        self._abierto_mono = None
         self._quiet_since = None
         self._guardar()
         self._jubilar_identidad()
@@ -212,7 +236,16 @@ class EpisodeTracker:
         """
         if self._event_id is None or self._opened_at is None:
             return None
-        edad = (now - self._opened_at).total_seconds()
+        # [T-7.60] Monotónica cuando el episodio se abrió en esta vida del
+        # proceso; sólo cae en la pared cuando viene del disco y no hay origen
+        # monotónico que compartir con el proceso anterior. El salto de reloj
+        # cerraba por cota un episodio de un minuto.
+        if self._abierto_mono is not None:
+            # reloj: monotonico — el episodio se abrió aquí y sigue abierto aquí
+            edad = self._mono() - self._abierto_mono
+        else:
+            # reloj: heredado — viene del disco; la pared es lo único que hay
+            edad = (now - self._opened_at).total_seconds()
         if edad <= self.max_s:
             return None
         log.warning(
@@ -304,6 +337,10 @@ class EpisodeTracker:
             self._event_id = str(d["event_id"])
             crudo = d.get("opened_at")
             self._opened_at = datetime.fromisoformat(crudo) if crudo else None
+            # [T-7.60] Y NO se inventa un origen monotónico: el del proceso que
+            # abrió este episodio murió con él. `None` hace que la cota caiga a
+            # la pared, declarado arriba, en vez de fingir un cronómetro.
+            self._abierto_mono = None
             # [T-7.49] Un episodio sin fecha es de una versión anterior a esta
             # ficha: no se sabe cuándo abrió, y lo que no se sabe se DECLARA en
             # vez de suponerse fresco.
@@ -314,15 +351,23 @@ class EpisodeTracker:
                     self._event_id,
                 )
                 self._tier, self._event_id = Tier.NORMAL, None
+            # reloj: heredado — el episodio viene del disco y su origen monotónico
+            # murió con el proceso anterior. Aquí la pared es lo único que hay, y
+            # por eso este camino DESCARTA en vez de heredar: ver el bloque de
+            # abajo. Un episodio mal fechado que se hereda archiva el próximo
+            # sismo dentro del incidente de hoy.
+            # reloj: heredado — el episodio viene del disco; por eso se DESCARTA
             elif (self._now() - self._opened_at).total_seconds() > self.max_s:
                 log.warning(
                     "el episodio %s abrió hace %.0f s (tope %.0f): se descarta. Heredarlo "
                     "archivaría el próximo sismo dentro de aquel incidente",
+                    # reloj: heredado — la misma edad, para decirlo en el registro
                     self._event_id,
                     (self._now() - self._opened_at).total_seconds(),
                     self.max_s,
                 )
                 self._tier, self._event_id, self._opened_at = Tier.NORMAL, None, None
+                self._abierto_mono = None
         except (OSError, ValueError, KeyError):
             # Corte a mitad de escritura, o fichero de otra versión. Se empieza de
             # cero: peor es no arrancar.

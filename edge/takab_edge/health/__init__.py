@@ -26,14 +26,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, TypeVar
 
-# [T-7.53] El parser de fechas del backfill, importado y NO reescrito: dos
-# lecturas de la misma fecha que divergen es el patrón de espejo que este
-# repositorio ya paga en otros sitios. Es el dueño del formato de `start`.
 from takab_edge.backfill import _stamp as _instante
 from takab_edge.config import EdgeSettings
 from takab_edge.contracts import HealthSnapshot, RelayState, UpsStatus
 from takab_edge.gpio_link import GpioLink, as_link
 from takab_edge.module import EdgeModule
+
+# [T-7.53] El parser de fechas del backfill, importado y NO reescrito: dos
+# lecturas de la misma fecha que divergen es el patrón de espejo que este
+# repositorio ya paga en otros sitios. Es el dueño del formato de `start`.
+from takab_edge.reloj import Cronometro
 from takab_edge.version import fw_version, running_version
 
 log = logging.getLogger("takab_edge.health")
@@ -304,6 +306,10 @@ class HealthMonitor(EdgeModule):
     ) -> None:
         super().__init__()
         self.settings = settings
+        #: [T-7.60] El cronómetro del proceso. Sirve de TOPE: nada que este
+        #: proceso haya encolado puede ser más viejo que él, así que una edad
+        #: mayor sólo puede venir de un reinicio o de un salto de reloj.
+        self._arranque = Cronometro()
         self._link = as_link(gpio)
         # [T-2.49] Opcional: sin módulo de audio el snapshot reporta `audio=None`,
         # que es «este gabinete no tiene voceo», no «no sé qué tono suena».
@@ -507,7 +513,25 @@ class HealthMonitor(EdgeModule):
             edad = None
             cuando = _instante(desde)
             if cuando is not None:
+                # reloj: heredado — ⚠️ [T-7.60] `oldest_pending_at` es la fecha de
+                # una evidencia que puede haber sobrevivido a un reinicio, así que
+                # no hay monotónico que compartir con el proceso que la encoló.
+                # Medido el 2026-09-19: tras el salto de NTP (13 h 25 min, el Pi no
+                # tiene RTC) esto publicaba ~48 300 s EN EL LATIDO y la nube
+                # levantaba su alarma de retención sobre un gabinete recién
+                # arrancado y limpio. No se puede arreglar con monotónico; lo que
+                # se hace es NO dejar que una edad mayor que el uptime pase por
+                # buena, porque nada de este proceso puede ser más viejo que él.
+                # reloj: heredado — la evidencia pendiente cruza reinicios
                 edad = max(0.0, (datetime.now(UTC) - cuando).total_seconds())
+                if self._arranque is not None:
+                    tope = self._arranque.transcurrido()
+                    if edad > tope and pendientes:
+                        # Más vieja que el proceso: o cruzó un reinicio, o el reloj
+                        # saltó. En los dos casos el número exacto es mentira, y lo
+                        # honesto es acotarlo al uptime y DECIRLO — un fallback no
+                        # puede ser `ok`, y una edad inventada tampoco.
+                        edad = tope
             return {
                 "evidence_pending": pendientes,
                 "evidence_oldest_age_s": edad,
