@@ -2309,6 +2309,7 @@ export type ReplayOut = {
 export type ReportOut = {
     evidence_id: string;
     expires_in: number;
+    sha256: string;
     url: string;
 };
 

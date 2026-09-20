@@ -421,11 +421,21 @@ EVIDENCE_REPLAY = text(
 )
 
 # Para la verificación: s3_key + huella declarada + incidente/tenant (RLS ya
-# acota el tenant; el router valida además el alcance del sitio).
+# acota el tenant; el router valida además el alcance del sitio Y EL KIND).
+#
+# ⚠️ [T-7.48] AQUÍ YA NO SE FILTRA POR `kind`, y el cambio tiene dueño: el
+# filtro `AND e.kind = 'photo'` hacía que verificar un dictamen devolviera 404,
+# mientras la portada del papel mandaba «compárelo contra ese registro desde la
+# consola». El verificador que hacía falta ya existía; sólo no se dejaba mirar.
+#
+# El `kind` sale ahora en la SELECT porque **es él quien decide el alcance**: una
+# foto de daños la verifica quien lee daños, un dictamen quien lee dictámenes.
+# Filtrarlo aquí volvería a mezclar dos preguntas —qué es y quién puede— en una
+# sola cláusula, que es como se coló el defecto.
 EVIDENCE_FOR_VERIFY = text(
-    "SELECT e.evidence_id, e.s3_key, e.sha256, e.tenant_id, e.incident_id, i.site_id "
+    "SELECT e.evidence_id, e.kind, e.s3_key, e.sha256, e.tenant_id, e.incident_id, i.site_id "
     "FROM evidence_objects e JOIN incidents i ON i.incident_id = e.incident_id "
-    "WHERE e.evidence_id = CAST(:evidence AS uuid) AND e.kind = 'photo'"
+    "WHERE e.evidence_id = CAST(:evidence AS uuid)"
 )
 
 # Timeline: marca "personas en riesgo" para que el orchestrator OPS notifique

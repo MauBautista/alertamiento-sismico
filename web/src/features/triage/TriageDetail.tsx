@@ -14,6 +14,7 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
+import EvidenceVerifier from "./EvidenceVerifier";
 import { utcStamp } from "../../lib/time";
 import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
@@ -35,6 +36,7 @@ import {
   isCorroborated,
   isPreliminary,
   magnitudeOf,
+  dictamenPdfOf,
   miniseedOf,
   miniseedState,
   quorumView,
@@ -169,6 +171,38 @@ function signGateTitle(canSign: boolean, signing: boolean): string | undefined {
   return undefined;
 }
 
+/**
+ * [T-7.48] Una huella de archivo, ENTERA y comparable a mano.
+ *
+ * ⚠️ TRES cosas de esto no son estética, y las tres estaban mal:
+ *
+ * 1. **Los 64 caracteres, no 16.** Antes se pintaba `sha.slice(0, 16)`, y un
+ *    hash truncado no verifica nada — es el mismo defecto que `T-5.26` ya cerró
+ *    una vez en el papel del dictamen. Quien compara un sha lo compara entero o
+ *    no lo compara.
+ * 2. **Minúsculas.** La clase `soc-meta` lleva `text-transform: uppercase`, así
+ *    que la consola enseñaba el hash en mayúsculas mientras `sha256sum` lo emite
+ *    en minúsculas. El portapapeles daba el texto bueno, pero quien lo comparaba
+ *    A LA VISTA veía dos cadenas distintas. Por eso este marcado no usa
+ *    `soc-meta` para el valor.
+ * 3. **Que quepa.** La columna de detalle mide 420 px fijos y 64 caracteres de
+ *    monoespaciada a 11 px no entran en una línea: sin `overflow-wrap` esto
+ *    empuja una barra horizontal en la pantalla donde se firma.
+ *
+ * Y el RÓTULO dice qué identifica la huella. `T-7.43` decidió que hay dos —la
+ * del contenido, que identifica una exportación y no se puede comparar entre
+ * dos, y la del archivo, que sí—: pintarlas sin decir cuál es cuál reproduce el
+ * defecto de portada que cerró `T-7.42`.
+ */
+function Huella({ rotulo, sha }: { rotulo: string; sha: string }) {
+  return (
+    <p className="triage-huella">
+      <span className="triage-huella__rotulo">{rotulo} · sha256 del archivo</span>
+      <code className="triage-huella__valor">{sha}</code>
+    </p>
+  );
+}
+
 export default function TriageDetail({
   row,
   detail,
@@ -194,6 +228,7 @@ export default function TriageDetail({
   const Icon = verdict ? VERDICT_ICON[verdict.kind] : AlertTriangle;
   const quorum = quorumView(event.data?.quorum_votes);
   const miniseed = miniseedOf(evidence.data);
+  const dictamen = dictamenPdfOf(evidence.data);
   const mag = magnitudeOf(row.event);
   const epi = epicenterKindOf(row.event);
   const evidenceUnknown = evidence.data === undefined;
@@ -353,8 +388,15 @@ export default function TriageDetail({
           // donde se firma. `stale` gana y la ausencia sale fechada.
           staleSince={evidence.staleSince}
         >
-          {miniseed?.sha256 && (
-            <p className="soc-mono soc-meta">sha256 {miniseed.sha256.slice(0, 16)}…</p>
+          {miniseed?.sha256 && <Huella rotulo="miniSEED archivado" sha={miniseed.sha256} />}
+          {dictamen?.sha256 && (
+            <>
+              <Huella rotulo="Dictamen emitido" sha={dictamen.sha256} />
+              {/* [T-7.48] El botón que la portada del papel PROMETÍA y no existía.
+                  Re-hashea el objeto de S3 y lo confronta con la huella declarada,
+                  que es lo único que convierte «este número» en «este archivo». */}
+              <EvidenceVerifier evidenceId={dictamen.evidence_id} />
+            </>
           )}
         </StateFrame>
         {/* [T-2.43] La explicación del miniSEED vive FUERA del StateFrame: con cero

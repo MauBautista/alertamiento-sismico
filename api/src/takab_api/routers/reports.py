@@ -154,7 +154,10 @@ async def generate_report(
         },
     )
     return ReportOut(
-        evidence_id=evidence_id, url=presign_get(settings, key), expires_in=PRESIGN_TTL_S
+        evidence_id=evidence_id,
+        sha256=sha256,
+        url=presign_get(settings, key),
+        expires_in=PRESIGN_TTL_S,
     )
 
 

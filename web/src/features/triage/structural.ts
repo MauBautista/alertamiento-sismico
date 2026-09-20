@@ -68,9 +68,27 @@ export function orderedDamageReports(reports: DamageReportOut[]): DamageReportVi
     );
 }
 
-export type VerifyState = "idle" | "verifying" | "verified" | "tampered" | "error";
+export type VerifyState =
+  | "idle"
+  | "verifying"
+  | "verified"
+  | "tampered"
+  /** [T-7.48] Registrada, pero el objeto no está en S3 todavía (o su key no
+   *  existe). El servidor lo distingue —devuelve `actual_sha256: null`— y la
+   *  consola lo colapsaba en «HASH ALTERADO». */
+  | "sin-objeto"
+  | "error";
 
-/** Copy honesta del estado de verificación de una evidencia. */
+/** Copy honesta del estado de verificación de una evidencia.
+ *
+ * ⚠️ [T-7.48] SON CINCO Y NO CUATRO, y el que faltaba acusaba en falso. El
+ * servidor tiene TRES desenlaces para `verified: false`: el hash no casa (el
+ * objeto se alteró), o no hay objeto que hashear (`actual_sha256: null`,
+ * registrada y aún sin subir). La consola pintaba los dos como «HASH ALTERADO»,
+ * o sea que le decía a quien firma un dictamen que su evidencia fue MANIPULADA
+ * cuando lo único que pasaba es que todavía no había llegado. Un fallback no
+ * puede ser `ok`, y tampoco puede ser una acusación.
+ */
 export function verifyLabel(state: VerifyState): string {
   switch (state) {
     case "verifying":
@@ -79,6 +97,8 @@ export function verifyLabel(state: VerifyState): string {
       return "HASH VERIFICADO";
     case "tampered":
       return "HASH ALTERADO";
+    case "sin-objeto":
+      return "SIN OBJETO QUE VERIFICAR";
     case "error":
       return "NO SE PUDO VERIFICAR";
     default:

@@ -604,19 +604,58 @@ async def register_evidence(
     return EvidenceRegisterOut(evidence_id=row.evidence_id, upload_url=upload_url)
 
 
+#: [T-7.48] Qué se puede verificar, y con qué permiso cada cosa.
+#:
+#: El alcance lo decide **el tipo de documento**, no el endpoint. Antes era uno
+#: solo —el de leer daños— porque lo único verificable era una foto; heredarlo
+#: para el dictamen habría regalado alcance por descuido, que es justo lo que la
+#: ficha pedía no hacer.
+#:
+#: ⚠️ Lo que NO está aquí importa tanto como lo que está. `miniseed` y `log` se
+#: quedan fuera **a propósito**: nadie los recibe en la mano, así que nadie
+#: necesita comprobar que el fichero que tiene es el que el sistema emitió — que
+#: es la única pregunta que este endpoint contesta. Abrirlos sería ampliar la
+#: superficie sin un consumidor que lo pida.
+_ALCANCE_DE_VERIFICACION: dict[str, tuple[str, ...]] = {
+    "photo": _DAMAGE_READ_ROLES,
+    "report_pdf": _DICTAMEN_READ_ROLES,
+}
+
+#: La guarda de la PUERTA: la unión de los alcances de arriba. Quien no esté en
+#: ninguno se queda en 403 sin llegar a tocar la base, y quien sí esté pasa a que
+#: el `kind` decida. Dos filtros y no uno, porque hacen cosas distintas: éste
+#: rechaza a quien no pinta nada aquí, y aquél impide que quien puede verificar
+#: una foto verifique de paso un dictamen.
+_require_verificable = require_roles(*sorted(set(_DAMAGE_READ_ROLES) | set(_DICTAMEN_READ_ROLES)))
+
+
 @router.post("/evidence/{evidence_id}/verify", response_model=EvidenceVerifyOut)
 async def verify_evidence(
     evidence_id: UUID,
-    claims: Claims = Depends(_require_damage_read),
+    claims: Claims = Depends(_require_verificable),
     conn: AsyncConnection = Depends(get_session),
 ) -> EvidenceVerifyOut:
     """[T-2.10 · 2.3] Re-hashea el objeto realmente subido y lo confronta con la
     huella declarada en captura. Alterar un byte del blob ⇒ ``verified=false``.
-    Lo consumen Triage (consola) y los tácticos que revisan su propia evidencia."""
+    Lo consumen Triage (consola) y los tácticos que revisan su propia evidencia.
+
+    [T-7.48] Y el dictamen pericial, que es el documento que sale del sistema en
+    la mano de un perito. El permiso ya no lo fija la firma —era el de leer
+    daños, para todo— sino `_ALCANCE_DE_VERIFICACION`, porque cada documento lo
+    verifica quien tiene derecho a leerlo.
+    """
     row = (await conn.execute(q.EVIDENCE_FOR_VERIFY, {"evidence": str(evidence_id)})).first()
     if row is None:
         raise http_error(404, "evidencia no encontrada")
-    # Mismo alcance que la lectura de daños: consola por rol, táctico por sitio.
+    # El alcance depende del KIND, y se resuelve ANTES de tocar S3.
+    #
+    # ⚠️ 404 y no 403 en los dos casos, deliberadamente: un 403 confirmaría que
+    # ese `evidence_id` existe y de qué tipo es. Misma razón por la que el filtro
+    # de sitio de abajo también devuelve 404 desde siempre.
+    permitidos = _ALCANCE_DE_VERIFICACION.get(row.kind)
+    if permitidos is None or claims.role not in permitidos:
+        raise http_error(404, "evidencia no encontrada")
+    # Y el alcance por SITIO encima: consola por rol, táctico por su sitio.
     if claims.role not in CONSOLE_ROLES:
         allowed = scope_filter(claims)
         if allowed is not None and str(row.site_id) not in allowed:

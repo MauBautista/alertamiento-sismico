@@ -32,6 +32,19 @@ const ESTACIONES_VACIAS = {
 // [T-5.15] `useNotifyChain` monta react-query por el mismo motivo que `useCctv`,
 // y esta suite no lleva provider a propósito. Su semántica se prueba en
 // `NotifyChain.test.tsx`.
+// [T-7.48] `EvidenceVerifier` consume `useVerifyEvidence` (react-query) por la
+// MISMA razón que los tres de abajo, y esta suite no monta provider a propósito.
+// Su semántica se prueba en `StructuralTriage.test.tsx`, que sí lo monta. Lo que
+// este fichero sí comprueba —y es lo que la ficha pedía— es que la huella del
+// dictamen se pinte ENTERA y en minúsculas.
+vi.mock("./EvidenceVerifier", () => ({
+  default: ({ evidenceId }: { evidenceId: string }) => (
+    <button data-testid={`verify-${evidenceId}`} type="button">
+      VERIFICAR HASH
+    </button>
+  ),
+}));
+
 vi.mock("./useNotifyChain", async () => ({
   ...(await vi.importActual<typeof import("./useNotifyChain")>("./useNotifyChain")),
   useNotifyChain: () => ({
@@ -416,5 +429,99 @@ describe("TriageDetail · ningún enlace promete lo que el rol no tiene [T-6.02]
     const firmar = screen.getByRole("button", { name: /FIRMAR DICTAMEN/ });
     expect(firmar).toBeEnabled();
     expect(firmar).not.toHaveAttribute("title");
+  });
+});
+
+// ═══════════════════ [T-7.48] la huella del archivo, entera y comparable
+//
+// ⚠️ Estas líneas del marcado NO las tocaba NINGÚN test antes de esta ficha:
+// `grep -rn sha256 web/src --include=*.test.*` no devolvía nada de este panel.
+// Por eso el truncado a 16 caracteres sobrevivió a `T-5.26` —que cerró
+// exactamente ese defecto en el papel— y por eso el hash se pintaba en
+// mayúsculas sin que nadie lo notara.
+
+describe("[T-7.48] la huella del ARCHIVO", () => {
+  const SHA_DICTAMEN = "a".repeat(63) + "9";
+  const SHA_MINISEED = "b".repeat(63) + "7";
+
+  function conEvidencia(extra: Partial<EvidenceObject>[] = []) {
+    const base: EvidenceObject[] = [
+      {
+        created_at: "2026-09-19T10:00:00Z",
+        evidence_id: "ev-miniseed",
+        kind: "miniseed",
+        s3_key: "k/ms",
+        sha256: SHA_MINISEED,
+      } as EvidenceObject,
+      {
+        created_at: "2026-09-19T11:00:00Z",
+        evidence_id: "ev-dictamen",
+        kind: "report_pdf",
+        s3_key: "k/pdf",
+        sha256: SHA_DICTAMEN,
+      } as EvidenceObject,
+      ...(extra as EvidenceObject[]),
+    ];
+    return arrange({ evidence: resource<EvidenceObject[]>({ data: base }) });
+  }
+
+  it("pinta los 64 caracteres del dictamen, no 16", () => {
+    conEvidencia();
+    // Entero: un hash truncado no verifica nada (T-5.26).
+    expect(screen.getByText(SHA_DICTAMEN)).toBeInTheDocument();
+    expect(screen.queryByText(new RegExp(`${SHA_DICTAMEN.slice(0, 16)}…`))).toBeNull();
+  });
+
+  it("y los del miniSEED también, que llevaban truncados desde siempre", () => {
+    conEvidencia();
+    expect(screen.getByText(SHA_MINISEED)).toBeInTheDocument();
+  });
+
+  it("NO lo pinta en mayúsculas: `sha256sum` emite minúsculas", () => {
+    conEvidencia();
+    const valor = screen.getByText(SHA_DICTAMEN);
+    // El texto del DOM ya es minúscula; lo que engañaba era el `text-transform`
+    // de `soc-meta`. Se fija que el elemento no lleve esa clase, que es lo único
+    // que un test de jsdom puede afirmar aquí — jsdom no calcula el estilo.
+    expect(valor.className).not.toContain("soc-meta");
+    expect(valor.textContent).toBe(valor.textContent?.toLowerCase());
+  });
+
+  it("dice QUÉ identifica cada huella, porque hay dos y no son la misma", () => {
+    conEvidencia();
+    // T-7.43: la del CONTENIDO identifica una exportación y no se compara entre
+    // dos; la del ARCHIVO sí. Pintarlas sin rótulo reproduce el defecto de
+    // portada que cerró T-7.42.
+    expect(screen.getByText(/Dictamen emitido · sha256 del archivo/i)).toBeInTheDocument();
+    expect(screen.getByText(/miniSEED archivado · sha256 del archivo/i)).toBeInTheDocument();
+  });
+
+  it("ofrece VERIFICAR el dictamen, que es lo que el papel prometía", () => {
+    conEvidencia();
+    expect(screen.getByTestId("verify-ev-dictamen")).toBeInTheDocument();
+  });
+
+  it("con VARIAS exportaciones se ofrece la MÁS RECIENTE", () => {
+    // `evidence_objects` es append-only y un incidente se exporta más de una vez
+    // (la variante ejecutiva y la técnica, o el mismo modelo dos días distintos).
+    // Quien abre Triage quiere comprobar el papel que tiene en la mano.
+    const SHA_VIEJO = "c".repeat(64);
+    conEvidencia([
+      {
+        created_at: "2026-09-18T08:00:00Z",
+        evidence_id: "ev-dictamen-viejo",
+        kind: "report_pdf",
+        s3_key: "k/pdf-viejo",
+        sha256: SHA_VIEJO,
+      } as EvidenceObject,
+    ]);
+    expect(screen.getByText(SHA_DICTAMEN)).toBeInTheDocument();
+    expect(screen.queryByText(SHA_VIEJO)).toBeNull();
+  });
+
+  it("sin dictamen exportado no inventa una huella ni un botón", () => {
+    arrange({ evidence: resource<EvidenceObject[]>({ data: [] }) });
+    expect(screen.queryByText(/sha256 del archivo/i)).toBeNull();
+    expect(screen.queryByTestId(/^verify-/)).toBeNull();
   });
 });

@@ -2757,3 +2757,47 @@
   font-size: 11px;
   letter-spacing: 0.04em;
 }
+
+/* [T-7.48] LA HUELLA DEL ARCHIVO, entera y comparable a mano.
+ *
+ * ⚠️ Esta regla existe por tres medidas, no por gusto:
+ *
+ * · `text-transform: none` EXPLÍCITO. El marcado anterior usaba `soc-meta`, que
+ *   lleva `uppercase`, así que la consola pintaba el hash en mayúsculas mientras
+ *   `sha256sum` lo emite en minúsculas. Quien comparaba a la vista veía dos
+ *   cadenas distintas. Va explícito y no por omisión: la próxima clase que se
+ *   añada al elemento no puede reintroducirlo en silencio.
+ * · `overflow-wrap: anywhere`. La columna de detalle es una pista FIJA de 420 px
+ *   (`.triage__grid`) y 64 caracteres de monoespaciada a 11 px no caben en una
+ *   línea. Un hash es una palabra sin espacios, así que sin esto no rompe: se
+ *   sale, y empuja una barra horizontal en la pantalla donde se firma un
+ *   dictamen. `anywhere` y no `break-word` porque el segundo no cuenta para el
+ *   ancho mínimo de la caja y el desborde vuelve por la puerta de al lado.
+ * · `user-select: all`. Lo que se pinta está para copiarse y pegarse en un
+ *   `sha256sum -c`. Que haga falta arrastrar el ratón por 64 caracteres dentro
+ *   de una caja de 420 px es una forma de no entregarlo.
+ */
+.triage-huella {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 0;
+  min-width: 0;
+}
+.triage-huella__rotulo {
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--tk-fg-2);
+}
+.triage-huella__valor {
+  font-family: var(--tk-font-mono);
+  font-size: var(--tk-text-xs);
+  color: var(--tk-fg-1);
+  text-transform: none;
+  overflow-wrap: anywhere;
+  user-select: all;
+  line-height: 1.45;
+}
