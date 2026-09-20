@@ -88,10 +88,13 @@ make cloud-staging-incident PHASE=reentry
 .maestro/run.sh 03-dictamen-liberacion.yaml # sin TOTP: corre solo
 ```
 
-**El `03` empieza por `reset` y eso no es ceremonia:** sin él, el dictamen de la vuelta anterior
-sigue dentro de la ventana de `reentry_declare_s` (8 h) y la app enseñaría el banner sin que esta
-corrida haya probado nada — un verde falso. Lo cerró `T-7.62`, que hizo que `reset` retrodate
-también los incidentes que `D-33` ya había cerrado.
+**El `03` empieza por `reset` y eso no es ceremonia.** Dadas las tres órdenes, el `crisis` de en
+medio ya deja al ocupante en `alert_active` (medido en `T-7.62`), así que el banner no puede venir
+de la vuelta anterior. Lo que cubre el `reset` es que **el `crisis` falle en silencio** —la guarda
+aborta, el SSO caduca a mitad—: sin él el sitio sigue en `reentry_approved` durante las 8 h de
+`reentry_declare_s`, el flujo ve el banner y sale **verde sin haber probado nada**. Empezando por
+`reset`, un `crisis` que no corre deja `idle` y el flujo falla, que es lo correcto. `T-7.62` es lo
+que hizo que ese `reset` funcione: su `WHERE` saltaba los incidentes que `D-33` ya había cerrado.
 
 **Siempre por `run.sh`, nunca `maestro test` a secas**: Maestro NO hereda el entorno del shell
 —solo `-e`— y los flujos declaraban `env: FOO: ${FOO}`, una autorreferencia que produce la

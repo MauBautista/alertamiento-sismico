@@ -16819,10 +16819,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Criterios de aceptación:**
   - [x] La cabecera del `03` dice la precondición REAL: `PHASE=reset` → `crisis` → `reentry` del
         arnés, y que el dictamen llega firmado por SQL. Con la nota de que el push no se dispara
-        por esa vía y por eso la espera es de 60 s. **Y por qué el `reset` no es ceremonia**: sin
-        él el dictamen de la vuelta anterior sigue dentro de `reentry_declare_s` (8 h) y la app
-        enseñaría el banner sin que la corrida haya probado nada — el verde falso que cerró
-        `T-7.62`.
+        por esa vía y por eso la espera es de 60 s. **Y por qué el `reset` no es ceremonia**, dicho
+        como lo midió `T-7.62` y no de memoria: el `crisis` de en medio ya deja `alert_active`, así
+        que el banner no puede venir de la vuelta anterior. Lo que cubre el `reset` es que **el
+        `crisis` falle en silencio** —guarda que aborta, SSO caducado—: sin él el sitio sigue en
+        `reentry_approved` durante 8 h y el flujo sale verde sin probar nada; con él, un `crisis`
+        que no corre deja `idle` y el flujo falla, que es lo correcto.
   - [x] Queda escrito qué flujos piden TOTP y cuáles no: **columna propia en la tabla de cobertura
         de `mobile/.maestro/README.md`**, con la regla en una frase —`sí` = ~45 min de alguien
         tecleando, `no` = déjalo corriendo— y las ocho cabeceras declarándolo cada una.
