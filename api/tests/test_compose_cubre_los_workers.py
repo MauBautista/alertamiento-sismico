@@ -52,6 +52,14 @@ NO_RESIDENTES: dict[str, tuple[str, str | None]] = {
         "el programador (EventBridge→run-task) sigue siendo un TODO en su propio docstring.",
         "Makefile",
     ),
+    "takab_api.ops.publish_release": (
+        "[T-7.64] Se invoca UNA VEZ por despliegue y desde fuera: `deploy/edge/deploy.sh` "
+        "lo alcanza por `aws ssm send-command` → `docker compose exec api`. Residente no "
+        "tendría sentido —no hay nada que vigilar— y peor: un proceso que publique solo "
+        "escribiría releases que ningún gabinete activó, y el registro es la referencia "
+        "contra la que se mide la flota ENTERA.",
+        "infra/scripts/publish_release.sh",
+    ),
     "takab_api.ops.prune_pii": (
         "Cron diario que instala Terraform en la instancia (asociación SSM `prune_pii`), "
         "no un proceso residente.",
