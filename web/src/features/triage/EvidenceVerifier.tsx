@@ -23,9 +23,7 @@ export default function EvidenceVerifier({ evidenceId }: { evidenceId: string })
       onSuccess: (res) =>
         // [T-7.48] Tres desenlaces, no dos. `actual_sha256: null` es «no hay
         // objeto que hashear», no «alguien lo alteró»: ver `verifyLabel`.
-        setState(
-          res.verified ? "verified" : res.actual_sha256 == null ? "sin-objeto" : "tampered",
-        ),
+        setState(res.verified ? "verified" : res.actual_sha256 == null ? "sin-objeto" : "tampered"),
       onError: () => setState("error"),
     });
   };
