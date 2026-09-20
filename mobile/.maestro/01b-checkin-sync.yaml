@@ -3,6 +3,9 @@
 # PRECONDICIÓN: el servidor YA concluyó la sacudida del incidente activo.
 #     make cloud-staging-incident PHASE=conclude
 #
+# NO PIDE TOTP: `login-occupant.yaml` entra por el pool de OCUPANTES, cuyo MFA
+# es opcional. Una tanda de este flujo corre sola.
+#
 # VIENE DE: `01a-crisis.yaml`. Se puede correr suelto: hace su propio login, y
 # `enrolar-sitio.yaml` no hace nada si la app ya está vinculada.
 #

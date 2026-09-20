@@ -1,5 +1,17 @@
 # E2E · Táctico: cámara forense → formulario de daños → llega a Triage.
-# Precondición: incidente ACTIVO; el táctico enrolado con dictamen_read/damage.
+#
+# PRECONDICIÓN: la sacudida CONCLUIDA, no un incidente «activo» a secas.
+#     make cloud-staging-incident PHASE=crisis
+#     make cloud-staging-incident PHASE=conclude
+#
+# ⚠️ [T-7.63] Aquí decía «incidente ACTIVO» y es impreciso de la forma que cuesta
+# una corrida: con la fase en `crisis` el brigadista **no ve las pestañas**, ve la
+# instrucción de crisis a pantalla completa, y el flujo muere en `Tap on TRIAGE`
+# por una razón que no tiene nada que ver con la cámara.
+#
+# PIDE TOTP: entra por el pool PRINCIPAL, con MFA obligatorio. Cada corrida pide
+# un código nuevo —`run.sh` cierra la sesión de Cognito antes de cada flujo
+# (`T-7.56`)— y Maestro no lo genera: hace falta una persona delante.
 appId: com.takab.ailert
 ---
 - launchApp:

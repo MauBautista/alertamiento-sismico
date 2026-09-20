@@ -1,6 +1,34 @@
-# E2E · Dictamen firmado en consola → push → certificado → reingreso liberado.
-# Precondición: un inspector firma un dictamen HABITABLE en la consola web
-# ANTES o DURANTE este flujo (el push despierta la app).
+# E2E · Dictamen firmado → reingreso liberado (occupant).
+#
+# PRECONDICIÓN: incidente con dictamen HABITABLE FIRMADO.
+#     make cloud-staging-incident PHASE=reset
+#     make cloud-staging-incident PHASE=crisis     # deja al ocupante BLOQUEADO
+#     make cloud-staging-incident PHASE=reentry    # firma el dictamen
+#
+# ⚠️ [T-7.63] NO HACE FALTA QUE NADIE FIRME EN LA CONSOLA, y aquí decía que sí.
+# `reentry.sql` inserta el dictamen **ya firmado** (`signed_by` no nulo, estado
+# `inhabit_monitor`), así que la precondición es una orden de `make`, no una
+# persona. Se planificó una tanda de diez contando con diez firmas manuales;
+# ninguna hacía falta. Un comentario falso en un documento ejecutable no rompe el
+# flujo: rompe la planificación de quien lo lee.
+#
+# ⚠️ Y EL RESET NO ES CEREMONIA: es lo que permite distinguir esta corrida de la
+# anterior. Con las tres órdenes dadas, el `crisis` de en medio ya deja al
+# ocupante en `alert_active` —medido en `T-7.62`—, así que el banner no puede
+# venir de la vuelta pasada. El peligro es que **el `crisis` falle en silencio**
+# (la guarda aborta, el SSO caduca a mitad): sin `reset` el sitio sigue en
+# `reentry_approved` de la vuelta anterior durante las 8 h de
+# `reentry_declare_s`, el flujo ve el banner y sale VERDE sin haber probado nada.
+# Empezando por `reset`, un `crisis` que no corre deja `idle` y el flujo falla,
+# que es lo que tiene que hacer. Lo que arregló `T-7.62` es que ese `reset`
+# funcionara: su `WHERE` saltaba los incidentes que `D-33` ya había cerrado.
+#
+# ⚠️ POR QUÉ LA ESPERA ES DE 60 s: sembrando por SQL **no se dispara el push**
+# —eso lo hace la consola al firmar— así que la app levanta `reentry_approved` en
+# su siguiente sondeo de `mobile-state`. El propio sembrador lo dice al correr.
+#
+# NO PIDE TOTP: entra por el pool de OCUPANTES, cuyo MFA es opcional. Una tanda
+# de este flujo no necesita a nadie delante.
 appId: com.takab.ailert
 ---
 - launchApp:

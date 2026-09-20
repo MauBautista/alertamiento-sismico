@@ -8,6 +8,10 @@
 # roster al día no hay a quién marcar y el flujo falla por una razón que no es
 # suya. No estaba escrito hasta la primera corrida real (2026-08-09).
 #
+# PIDE TOTP: entra por `login-tactico.yaml`, pool PRINCIPAL con MFA obligatorio.
+# Las tres partes son UNA sesión, así que el código se teclea una vez al principio
+# —pero sin nadie delante, la corrida del trío offline no arranca.
+#
 # CÓRRELO CON `.maestro/run-offline.sh`, que encadena las tres partes y controla
 # el radio entre ellas. Por qué está partido en tres: el login NECESITA red y la
 # parte que se mide NECESITA no tenerla. Un solo flujo no puede ser las dos

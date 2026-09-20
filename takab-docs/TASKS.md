@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **385** · `[~]` **10** · `[ ]` **47**
+**Conteo de tareas:** total **442** · `[x]` **386** · `[~]` **10** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -16785,7 +16785,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** sí — `test_seed_staging_incident.py`.
 
-### [ ] T-7.63 · **El flujo `03` dice que hace falta firmar en la consola, y no hace falta** — `SOFTWARE`
+### [x] T-7.63 · **El flujo `03` dice que hace falta firmar en la consola, y no hace falta** — `SOFTWARE` · **CERRADA 2026-09-20**
 - **Componente:** mobile · **Depende de:** — · **Prioridad:** F4 · baja
 - **Objetivo:** que la precondición escrita en un documento ejecutable sea la que el documento
   necesita de verdad.
@@ -16806,16 +16806,44 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   proyecto y la planificación lo trataban como si lo pidiera, porque los flujos tácticos sí. Que un
   flujo necesite o no a una persona delante es lo que decide si una tanda de diez son cinco minutos
   o cuarenta.
+- **⚠️ EL BARRIDO ENCONTRÓ DOS MÁS, y una de ellas cuesta una corrida entera** (2026-09-20):
+  - **`02-tactico-foto-danos.yaml` decía «incidente ACTIVO»** y lo que necesita es la sacudida
+    **CONCLUIDA**. Con la fase en `crisis` el brigadista no ve las pestañas: ve la instrucción de
+    crisis a pantalla completa, y el flujo muere en `Tap on TRIAGE` por una razón que no tiene nada
+    que ver con la cámara que pretende medir. La tabla del README ya decía `conclude`; la cabecera
+    del fichero, no — y la cabecera es la que se lee al correrlo.
+  - **`05a-offline-preparar.yaml` no decía NADA del TOTP** aunque entra por `login-tactico.yaml`.
+    Callarse es la misma clase de defecto que mentir: quien planifica el trío offline no descubre
+    que necesita a alguien delante hasta que el flujo está parado esperando seis dígitos.
+  Los otros cinco (`01a`, `01b`, `04`, `05b`, `05c`) decían la verdad.
 - **Criterios de aceptación:**
-  - [ ] La cabecera del `03` dice la precondición REAL: `PHASE=reentry` del arnés, y que el dictamen
-        llega firmado por SQL. Con la nota de que el push no se dispara por esa vía y por eso la
-        espera es de 60 s.
-  - [ ] Queda escrito qué flujos piden TOTP y cuáles no, donde lo lea quien planifica una tanda —
-        `mobile/.maestro/README.md` ya tiene la tabla de flujos y su fase.
-  - [ ] Barrer si hay más precondiciones escritas a mano en los ocho flujos que ya no sean ciertas.
-        Un censo si se puede; si no, una lectura y su fecha.
-- **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
-  hoy:** no.
+  - [x] La cabecera del `03` dice la precondición REAL: `PHASE=reset` → `crisis` → `reentry` del
+        arnés, y que el dictamen llega firmado por SQL. Con la nota de que el push no se dispara
+        por esa vía y por eso la espera es de 60 s. **Y por qué el `reset` no es ceremonia**, dicho
+        como lo midió `T-7.62` y no de memoria: el `crisis` de en medio ya deja `alert_active`, así
+        que el banner no puede venir de la vuelta anterior. Lo que cubre el `reset` es que **el
+        `crisis` falle en silencio** —guarda que aborta, SSO caducado—: sin él el sitio sigue en
+        `reentry_approved` durante 8 h y el flujo sale verde sin probar nada; con él, un `crisis`
+        que no corre deja `idle` y el flujo falla, que es lo correcto.
+  - [x] Queda escrito qué flujos piden TOTP y cuáles no: **columna propia en la tabla de cobertura
+        de `mobile/.maestro/README.md`**, con la regla en una frase —`sí` = ~45 min de alguien
+        tecleando, `no` = déjalo corriendo— y las ocho cabeceras declarándolo cada una.
+  - [x] Barrido de los ocho, **y con censo**: `mobile/tests/flujos-maestro.test.ts` deriva el
+        cierre transitivo de `runFlow:` de cada flujo de primer nivel y exige que la cabecera
+        declare el TOTP que su subflujo de login realmente pide (`login-tactico.yaml` teclea en
+        `totpCodeInput`; `login-occupant.yaml` no), que la columna del README case con esa misma
+        derivación, y que ninguna cabecera cite un `PHASE=` que `seed_staging_incident.sh` no
+        implemente. Un flujo sin login propio (`05b`, `05c`) queda exento **por derivación**, no
+        por lista, pero tiene que decir de dónde viene.
+  - **Las siete guardas nuevas se probaron rompiéndolas una a una** —invertir el TOTP del `03`,
+    callar el del `02`, citar `PHASE=concluido`, quitarle a `05b` su «VIENE DE», mentir en la
+    columna del README, quitar la columna, dejar al `03` sin fila—: las siete pusieron el job
+    `mobile` en rojo. Este repo ya pagó cuatro veces por un censo que nació ciego a su propio
+    defecto, y una de las siete **nació invertida** (`expect(mensaje).toBe(cond ? mensaje : "")`,
+    que no puede fallar nunca por la razón que dice): la cazó justo este paso.
+- **Tests de censo que toca:** `mobile/tests/flujos-maestro.test.ts` (extendido: del barrido de
+  `timeout:` pasa a barrer también lo que las cabeceras AFIRMAN) · **Token nuevo:** no · **Cambia
+  algo que un test defiende hoy:** no.
 
 ### [ ] T-7.64 · **La deriva de versiones de la flota no puede funcionar: nadie publica los releases** — `SOFTWARE`
 - **Componente:** api · deploy · **Depende de:** — · **Prioridad:** F4 · media
