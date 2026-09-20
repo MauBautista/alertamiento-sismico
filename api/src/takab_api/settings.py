@@ -594,6 +594,28 @@ class Settings(BaseSettings):
     #: edificio sin que ninguno rebase el suyo: es el mismo par de techos que ya
     #: usan los comandos, y por la misma razón (`RO-8.e`).
     report_rate_site_per_min: int = 20
+    #: [T-7.54] Descargas de evidencia por minuto y por USUARIO.
+    #:
+    #: ⚠️ ESTE TOPE NO PROTEGE DINERO, Y LA FICHA SUPONÍA QUE SÍ. Se midió el
+    #: 2026-09-20 sobre el bucket real: el objeto más grande es un miniSEED de
+    #: **204 KB** (p95 200 KB), una foto son 53 KB y un dictamen 102 KB, y el
+    #: bucket ENTERO pesa **6.8 MB**. A ~$0.09/GB de egreso, descargarlo completo
+    #: mil veces cuesta menos de un dólar. Calibrar contra el egreso de S3 sería
+    #: teatro, y peor: daría un número con aire de medido que no mide nada.
+    #:
+    #: Lo que sí acota es la EXTRACCIÓN EN BLOQUE. Un token robado con alcance de
+    #: exportación puede pedir una URL por evidencia tan rápido como la API
+    #: conteste, y cada URL vive 300 s y sirve descargas ilimitadas mientras dure
+    #: (el GET no pasa por aquí). Treinta por minuto deja trabajar a un perito
+    #: —el incidente más cargado de la nube dev tiene 22 evidencias, así que cabe
+    #: entero en una ráfaga— y convierte vaciar un tenant en una operación lenta
+    #: y ruidosa: cada intento deja su fila en `audit_log`.
+    #:
+    #: ⚠️ Y el número NO sale de tráfico observado, porque no lo hay: el
+    #: `audit_log` de la nube dev tiene **cero** filas `download_*` desde que ese
+    #: verbo existe. Sale del tamaño del incidente más grande medido, más margen.
+    #: El día que haya uso real, se re-mide y se dice contra qué.
+    evidence_download_rate_user_per_min: int = 30
     # [T-2.09] Intención firmada del móvil (RBAC §4.3): secreto HMAC de los
     # nonces de intención (FAIL-CLOSED: vacío = la ruta táctica responde 503,
     # jamás comandos sin intención verificable) + TTL corto del nonce.

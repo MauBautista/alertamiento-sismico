@@ -44,6 +44,7 @@ necesita sus propios números (egreso de S3, no render) y está fichado aparte e
 
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -78,6 +79,54 @@ async def list_evidence(
     return EvidenceList(items=[EvidenceObject(**dict(r)) for r in rows])
 
 
+# ─────────────────────────────── [T-7.54] el freno propio de la DESCARGA
+
+
+#: La ventana del conteo, en segundos. La misma que el freno de exportación: dos
+#: techos con ventanas distintas se razonan mal cuando uno de los dos salta.
+_VENTANA_S = 60.0
+
+#: Los estados de incidente que cuentan como EN CURSO. Se enumeran los abiertos
+#: y no se niega el cerrado: `incidents.state` puede ganar un valor, y el que lo
+#: añada debe decidir explícitamente si frena o no, en vez de heredar la rama
+#: permisiva por descuido.
+_EN_CURSO = frozenset({"open", "in_review"})
+
+
+async def _freno_de_descarga(
+    conn: AsyncConnection, claims: Claims, row: object, settings: Settings
+) -> None:
+    """429 si un usuario pide demasiadas URLs por minuto — salvo en emergencia.
+
+    ⚠️ QUÉ PROTEGE ESTO, Y QUÉ NO. No protege dinero, aunque la ficha lo dio por
+    supuesto. Medido el 2026-09-20 sobre el bucket real: el objeto más grande es
+    un miniSEED de 204 KB y el bucket entero pesa 6.8 MB. Lo que acota es la
+    EXTRACCIÓN EN BLOQUE con un token robado — y lo acota de forma parcial y
+    conviene decirlo: el presignado se firma en proceso y el GET que gasta el
+    egreso **no pasa por aquí**, así que esto limita cuántas URLs se emiten, no
+    cuántos bytes salen. Una URL ya emitida sirve descargas ilimitadas durante
+    sus 300 s.
+
+    ⚠️ Y LA EXCEPCIÓN ES LA PARTE IMPORTANTE. La evidencia de un incidente EN
+    CURSO no se frena nunca. Es la doctrina que `T-5.18` tuvo que aplicarse a sí
+    misma y que `T-7.45` vino a reparar: un tope de gasto que niega evidencia
+    durante una emergencia es peor que no tener tope. Quien está mirando fotos de
+    daños con el edificio evacuado no puede recibir un 429 porque miró demasiado
+    rápido.
+    """
+    if getattr(row, "incident_state", None) in _EN_CURSO:
+        return
+    since = datetime.now(tz=UTC) - timedelta(seconds=_VENTANA_S)
+    hechas = (
+        await conn.execute(
+            q.CUENTA_DESCARGAS_USUARIO,
+            {"actor": f"user:{claims.sub}", "since": since},
+        )
+    ).scalar_one()
+    if hechas >= settings.evidence_download_rate_user_per_min:
+        raise http_error(429, "rate-limit de descarga de evidencia por usuario excedido")
+
+
 @router.post("/evidence/{evidence_id}/download", response_model=PresignedDownload)
 async def download_evidence(
     evidence_id: UUID,
@@ -92,6 +141,8 @@ async def download_evidence(
     row = (await conn.execute(q.GET_EVIDENCE, {"evidence_id": evidence_id})).first()
     if row is None:
         raise http_error(404, "evidencia no encontrada")
+
+    await _freno_de_descarga(conn, claims, row, settings)
 
     # [T-7.45] DERIVADO del `kind`, no un ternario con menos ramas que casos: el
     # CHECK de `evidence_objects.kind` admite cuatro valores y el ternario tenía
