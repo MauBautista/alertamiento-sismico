@@ -11,9 +11,10 @@ tmp); el tamaño real en GB se mide con hardware (gate #3).
 
 from __future__ import annotations
 
+import json
 import logging
 import tempfile
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -25,6 +26,45 @@ log = logging.getLogger("takab_edge.buffer")
 
 #: Cada cuántos append se ejecuta la poda (evita podar en cada paquete).
 _PRUNE_EVERY = 1000
+
+#: [T-7.23 · M2] Sufijo del testigo de DESORDEN de un fichero de día.
+#:
+#: Quien lee el anillo por desplazamiento de bytes —el helicorder del panel—
+#: hace búsqueda binaria sobre las cabeceras miniSEED, y eso EXIGE que el
+#: fichero esté escrito en orden cronológico. Este `append` escribe lo que
+#: llegue: la deduplicación de SeedLink es un `deque` acotado, así que tras una
+#: reconexión larga el Shake puede re-entregar un bloque que el deque ya olvidó
+#: y aquí se appendea al final, más viejo que su vecino. A partir de ahí la
+#: búsqueda binaria puede devolver cualquier cosa y **perder dato en silencio**.
+#:
+#: **Este testigo AVISA; no es la garantía.** [T-7.23 · V1] Sólo ve el desorden
+#: que ESTE proceso presenció, y el caso que más importa es justo el otro: al
+#: arrancar, `_ultimo_escrito` siembra el listón con el ÚLTIMO REGISTRO del
+#: fichero, que en un fichero ya desordenado es el re-entregado —el más viejo—,
+#: así que todo lo que venga detrás parece «más nuevo» y no se marca nada. Antes
+#: de T-7.23 eso perdía dato en silencio; con el testigo solo, además se
+#: afirmaba que el anillo estaba ordenado. La GARANTÍA vive en el lector y es
+#: una comprobación de COBERTURA sobre dato ya decodificado
+#: (`sismografo.helicorder`: si la primera muestra servida es posterior al
+#: inicio de la ventana, se declara `truncated`). Esto se queda porque es barato
+#: —una comparación por paquete— y avisa antes, con su propia razón.
+#:
+#: **[T-7.23 · Q2] Y lo que hace el lector con el testigo ya NO es apagarse.**
+#: Degradaba la respuesta entera, y como el testigo se borra con su fichero y no
+#: al rodar el día, eso dejaba la pantalla del sismógrafo en blanco unas 30 h
+#: por un paquete duplicado. Ahora el testigo cambia CÓMO se lee —se sirve la
+#: cola acotada por el presupuesto, sin fiarse del índice— y la respuesta viaja
+#: marcada con `ring_unordered`. Servir lo que haya y declarar lo que no se
+#: sabe.
+#:
+#: Detectarlo AQUÍ barriendo el fichero costaría 25.2 µs por cabecera [MEDIDO ·
+#: equipo de desarrollo x86-64 · 2026-09-20], que sobre las ~24 500 de un
+#: fichero EHZ de 100 MB son 0.62 s aquí y del orden de 2.5 s en el Pi 4 — más
+#: caro que la lectura entera que se quiere hacer.
+#:
+#: No se toca el fichero de dato: el testigo es un fichero hermano, así que ni
+#: `extract_window` ni la poda ni el glob de canales lo ven como miniSEED.
+_DESORDEN_SUFIJO = ".desorden"
 
 
 def to_miniseed_bytes(packet: WaveformPacket) -> bytes:
@@ -62,12 +102,28 @@ class RingBuffer(EdgeModule):
         self._appended = 0
         self._newest: date | None = None  # fecha del dato más reciente (poda relativa al dato)
         self._since_prune = 0
+        # [T-7.23 · M2] Último `starttime` escrito en cada fichero de día. Se
+        # siembra del propio fichero la primera vez que este proceso lo toca:
+        # sin eso, el primer paquete tras un reinicio no tendría contra qué
+        # compararse y el desorden más probable —el que llega justo al
+        # reconectar— sería el único que no se vería.
+        self._last_start: dict[Path, datetime] = {}
+        # [T-7.23 · N2] Ficheros a los que este proceso YA les puso el testigo.
+        # El hecho que importa —«este fichero perdió la monotonía»— ocurre UNA
+        # vez; lo que llega por ráfagas son sus síntomas. Esto corre en el hilo
+        # de ingesta de SeedLink y justo durante una reconexión, que es cuando
+        # el Shake re-entrega bloques a puñados: un `log.warning` y una
+        # reescritura del testigo POR PAQUETE convertían una transición en un
+        # intervalo (regla de oro 10) y se comían la cota de log de T-7.47.
+        self._desordenados: set[Path] = set()
 
     # --- Escritura ---
     def append(self, packet: WaveformPacket) -> None:
         if not packet.samples:
             return
-        with open(self._dayfile(packet), "ab") as fh:
+        destino = self._dayfile(packet)
+        self._vigilar_el_orden(destino, packet.starttime)
+        with open(destino, "ab") as fh:
             fh.write(to_miniseed_bytes(packet))
         self._appended += 1
         pdate = packet.starttime.date()
@@ -77,6 +133,96 @@ class RingBuffer(EdgeModule):
         if self._since_prune >= _PRUNE_EVERY:
             self._since_prune = 0
             self.prune()
+
+    def _vigilar_el_orden(self, destino: Path, arranque: datetime) -> None:
+        """Marca el fichero si este paquete llega ANTES que el anterior.
+
+        El testigo no se borra al rodar el día: se borra con su fichero (en
+        `prune`). Un anillo que perdió la monotonía la perdió hasta que ese
+        fichero desaparezca — la búsqueda binaria del lector no vuelve a ser
+        fiable sólo porque el siguiente paquete llegue en orden.
+        """
+        anterior = self._last_start.get(destino)
+        if anterior is None:
+            anterior = self._ultimo_escrito(destino)
+        if anterior is not None and arranque < anterior:
+            self._marcar_desorden(destino, arranque, anterior)
+        # El puntero se queda en el MÁS NUEVO visto: si no, un bloque
+        # re-entregado dejaría el listón bajo y los paquetes buenos que vienen
+        # detrás se contarían como desorden ellos también.
+        if anterior is None or arranque > anterior:
+            self._last_start[destino] = arranque
+        else:
+            self._last_start[destino] = anterior
+
+    @staticmethod
+    def _ultimo_escrito(destino: Path) -> datetime | None:
+        """`starttime` del ÚLTIMO registro ya escrito, o None si no hay fichero.
+
+        UNA lectura de cabecera (25.2 µs medidos) por fichero y por proceso.
+        """
+        try:
+            tamano = destino.stat().st_size
+        except OSError:
+            return None
+        if tamano == 0:
+            return None
+        from obspy.io.mseed.util import get_record_information
+
+        try:
+            with open(destino, "rb") as fh:
+                reclen = int(get_record_information(fh, offset=0).get("record_length") or 4096)
+                ultimo = (tamano // reclen - 1) * reclen
+                if ultimo < 0:
+                    return None
+                info = get_record_information(fh, offset=ultimo)
+            return info["starttime"].datetime.replace(tzinfo=UTC)
+        except Exception:  # noqa: BLE001 — un anillo ilegible ya lo declara el lector
+            log.warning("no se pudo leer la última cabecera de %s", destino, exc_info=True)
+            return None
+
+    def _marcar_desorden(self, destino: Path, arranque: datetime, anterior: datetime) -> None:
+        """Escribe el testigo y avisa UNA vez por fichero, no una vez por paquete.
+
+        Lo que el testigo dice —«este fichero ya no está en orden»— no cambia
+        porque lleguen diez bloques re-entregados en vez de uno: el lector lo
+        lee en O(1) por existencia y cambia igual su forma de leer [T-7.23 ·
+        Q2]. Contarlos obligaba a releer, reescribir y volver a registrar
+        dentro del hilo de ingesta de SeedLink, en la peor ráfaga posible.
+        """
+        if destino in self._desordenados:
+            return
+        self._desordenados.add(destino)
+        marca = destino.with_name(destino.name + _DESORDEN_SUFIJO)
+        if marca.exists():
+            # El testigo sobrevivió a un reinicio: el hecho ya está registrado
+            # y ya se avisó en su día. Anotarlo otra vez sería contar el mismo
+            # suceso una vez por arranque del edge.
+            return
+        try:
+            marca.write_text(
+                json.dumps(
+                    {
+                        "desde": arranque.isoformat(),
+                        "ultimo_en_orden": anterior.isoformat(),
+                    }
+                ),
+                "utf-8",
+            )
+        except OSError:
+            log.warning("no se pudo escribir el testigo de desorden %s", marca, exc_info=True)
+        log.warning(
+            "anillo: %s perdió el orden cronológico (%s < %s); el helicorder del panel "
+            "no puede localizar por búsqueda binaria en este fichero",
+            destino.name,
+            arranque.isoformat(),
+            anterior.isoformat(),
+        )
+
+    @staticmethod
+    def hay_desorden(dayfile: Path) -> bool:
+        """¿Este fichero de día perdió el orden cronológico? Lectura O(1)."""
+        return dayfile.with_name(dayfile.name + _DESORDEN_SUFIJO).exists()
 
     def _dayfile(self, packet: WaveformPacket) -> Path:
         stamp = packet.starttime.date().strftime("%Y%m%d")
@@ -90,14 +236,29 @@ class RingBuffer(EdgeModule):
             cutoff = self._newest - timedelta(days=self.config.retention_days)
             for path, fdate, _size in self._files():
                 if fdate < cutoff:
-                    path.unlink(missing_ok=True)
+                    self._borrar(path)
         files = self._files()
         total = sum(size for _, _, size in files)
         for path, _fdate, size in files:  # más antiguos primero
             if total <= self.config.max_bytes:
                 break
-            path.unlink(missing_ok=True)
+            self._borrar(path)
             total -= size
+
+    def _borrar(self, path: Path) -> None:
+        """Un fichero de día se va con su testigo de desorden y con su puntero.
+
+        Dejar el testigo huérfano condenaría al helicorder del día SIGUIENTE si
+        alguna vez se reciclara el nombre, y dejar el puntero en memoria haría
+        que el primer paquete de un fichero recién nacido se comparase contra
+        el último de uno que ya no existe.
+        """
+        path.unlink(missing_ok=True)
+        path.with_name(path.name + _DESORDEN_SUFIJO).unlink(missing_ok=True)
+        self._last_start.pop(path, None)
+        # …y la marca en memoria: si el nombre se reciclara, el fichero nuevo
+        # tiene derecho a que se le vuelva a poner su testigo.
+        self._desordenados.discard(path)
 
     def _files(self) -> list[tuple[Path, date, int]]:
         out: list[tuple[Path, date, int]] = []

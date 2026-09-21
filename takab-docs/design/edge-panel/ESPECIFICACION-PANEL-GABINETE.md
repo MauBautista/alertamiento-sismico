@@ -936,3 +936,588 @@ crisis**.
 El sistema mide un edificio entero 100 veces por segundo, dispara relés en 6.65 milisegundos y
 sigue protegiendo aunque se caiga medio internet. Hoy eso se ve como cuatro números grises en una
 tarjeta. **Que se vea lo que realmente es.**
+
+---
+
+## §15 · Vista SISMÓGRAFO (`?view=sismografo`) — T-7.23
+
+Una segunda vista del MISMO panel, al estilo de las pantallas de estación que la gente ya
+conoce, pero propia: sin logotipo ajeno, sin una sola petición a internet y con su coste
+medido en el Pi 4 real. No rediseña nada de lo anterior. En particular **no toca la §9**: la
+jerarquía de banners, los tiers y los cuatro estados de UI son los mismos aquí que en la vista
+por defecto, y el `#actionbar` sigue presente — quien está de pie delante del gabinete durante
+una alerta tiene que poder silenciar desde donde esté mirando.
+
+### 15.1 · Cómo se entra, y qué NO cambia
+
+`http://<gabinete>:8080/?view=sismografo`. Se conmuta con la clase `.hide` sobre las mismas
+zonas de siempre (`#grid` se oculta, `#sismo` se muestra); no hay router ni segunda página.
+
+Tres cosas deliberadas:
+
+- **La vista por DEFECTO no cambia.** Sin `?view=` el panel es exactamente el de las §§1–14.
+  Esto no es cortesía: el censo de render (`edge/tests/test_panel_render_census.py`) mide la
+  vista por defecto, y moverla habría cambiado la vara con la que se mide todo lo demás.
+- **`?view=` desconocido cae a la vista por defecto y lo DECLARA** en la cabecera
+  (`?view=<lo-que-sea> NO EXISTE → VISTA GABINETE`), igual que ya hace `?mode=`. Un parámetro
+  mal escrito que no hiciera nada y no dijera nada es la peor de las dos opciones.
+- **`?view=` y `?mode=` son ortogonales.** La densidad (MURO / CONSOLA / CAMPO) sigue
+  aplicándose; esta vista es una superficie más, no un cuarto modo.
+
+### 15.2 · Qué se ve
+
+1. **Tarjeta de estación** — la identidad completa del instrumento, `red.estación.loc.canal`
+   por cada canal, la sensibilidad de velocidad y la de aceleración, y **de dónde viene esa
+   calibración**. Sin calibración provisionada la tarjeta dice `SIN CALIBRAR` y las unidades
+   se rotulan `rel.`, exactamente como en la §8.3.
+
+   **Y la SALUD DEL SENSOR: «Retraso del sensor» y «Paquetes vistos».** No es decoración: esta
+   vista esconde `#grid`, que es donde vive `#salud-grid`, así que sin esas dos filas un
+   gabinete con el sensor mudo se veía **exactamente igual** que uno vivo — el anillo de 60 s
+   sigue sirviendo su último minuto bueno y no quedaba nada en pantalla que lo delatara. Las dos
+   filas las **derivan las dos superficies de la misma función** (`filaRetrasoSensor`,
+   `filaPaquetesVistos`): dos copias acabarían con dos umbrales. Y `packets_seen: 0` se pinta en
+   ámbar, porque un gabinete sin sensor no grita, sólo deja ese cero.
+2. **Espectrograma** de los últimos 60 s de UN canal, del anillo en RAM, **con la edad de su
+   dato declarada siempre** y con estado propio cuando deja de ser de ahora (§15.3).
+3. **Helicorder** de 1 a 6 h de UN canal, del anillo miniSEED en disco, **cortado por cada
+   hueco del anillo y con los huecos declarados**, con **la edad de su última muestra** y el
+   mismo estado propio que el espectrograma cuando deja de ser de ahora (§15.4.7), y con
+   **la cobertura declarada** cuando lo servido no llega hasta el principio de la ventana
+   (§15.4.6).
+
+**Los botones de canal se DERIVAN de `status().station_nslc`.** Estaban enumerados a mano en el
+marcado (EHZ/ENZ/ENN/ENE) mientras la lista real ya viajaba en el status: un RS3D —tres canales,
+EHE/EHN/EHZ— ofrecía tres botones que no existen y escondía los suyos, y pulsar uno es pedirle
+al gabinete un canal inventado. Sin canales provisionados, la botonera lo dice (`S/D · SIN
+CANALES PROVISIONADOS`) en vez de salir vacía.
+
+**Las razones de degradación se traducen.** Llegan como DATO desde la API, en snake_case, y se
+imprimían tal cual en la pared («SIN ESPECTROGRAMA · canal_sin_muestras»). Un guardia de pie
+frente al gabinete no lee snake_case, y el censo del glosario (`test_glosario_de_estados.py`)
+tampoco las veía: extrae literales del HTML y éstas no lo eran. Ahora hay una tabla
+`RAZONES_SISMO` en el panel, con frases del vocabulario del repositorio, y una guarda que exige
+la **igualdad** entre las razones que el servidor puede emitir —derivadas del propio código, no
+enumeradas a mano— y las claves de esa tabla.
+
+### 15.3 · `GET /api/spectrogram` — el CUARTO endpoint
+
+Petición: `?channel=<CH>&nperseg=<128|256>`. Lectura abierta, sin autenticación, igual que
+`/api/status` y `/api/waveform`: es el panel del guardia.
+
+```
+degraded          bool      true = no hay espectrograma que pintar
+reason            str|null  por qué (jamás "ok"): sin_modulo_de_senal · sin_anillo ·
+                            canal_sin_muestras · muestras_insuficientes · error_de_calculo
+channel           str|null  canal SERVIDO
+requested_channel str|null  lo que pidió el cliente; distinto de `channel` = se sustituyó
+sample_rate       float|null sps de las muestras usadas
+nperseg           int       ventana FFT aplicada
+noverlap          int       solape aplicado (nperseg/2)
+window            str       "hann"
+freq_hz[]         float     eje de frecuencias — una entrada por FILA de `rows`
+t_offset_s[]      float     eje de tiempos, en segundos desde `first_sample_at` — una
+                            entrada por COLUMNA
+first_sample_at   ISO|null  instante de la primera muestra del tramo (cabecera del Shake)
+last_sample_at    ISO|null  instante de la ÚLTIMA muestra del tramo (cabecera del Shake)
+age_s             float|null `now` del Pi − `last_sample_at`. Puede ser de horas
+stale             bool      `age_s > stale_after_s`: el dibujo ya no es «de ahora»
+stale_after_s     float     umbral que aplicó el servidor (10 s)
+gap_before        bool      hubo un hueco del sensor justo antes de este tramo
+dc_counts         float|null media restada antes de transformar
+db_min            float     dB que representa el valor 0 de la matriz
+db_max            float     dB que representa el valor 255
+rows[][]          int       matriz `uint8`, [frecuencia][tiempo]
+below_scale       int       celdas por DEBAJO de db_min (saturadas a 0)
+above_scale       int       celdas por ENCIMA de db_max (saturadas a 255)
+```
+
+Cinco cosas que el diseño tiene que respetar (decía «cuatro» y la lista tiene cinco desde que
+`stale` entró en T-7.23·A2 — la misma clase de recuento tecleado que T-7.23·Q3):
+
+1. **La escala en dB es FIJA, no automática.** `db_min`/`db_max` son constantes del servidor
+   (`-20` y `+130` dB rel. counts²/Hz), y salen de los extremos del propio instrumento: un
+   ADC de 24 bits da counts hasta ~8.4·10⁶, y a 100 sps la densidad espectral de una señal a
+   fondo de escala ronda los 120 dB, mientras que 1 count² rms cae cerca de −17 dB. Una escala
+   automática por petición se vería más bonita y sería una mentira: dos columnas pintadas con
+   un minuto de diferencia dejarían de significar lo mismo, que es justo lo que un
+   espectrograma sirve para comparar. Cuando algo se sale, `below_scale`/`above_scale` lo
+   cuentan y la leyenda lo dice.
+2. **La matriz viaja ENTERA en cada respuesta, no una columna.** El anillo de 60 s es toda la
+   historia que hay (§6.3); servir la ventana completa significa que lo pintado es exactamente
+   lo que el gabinete tiene ahora, sin que el cliente acumule columnas viejas cuyo origen ya
+   nadie puede auditar. A `nperseg=128` son 65 filas × 92 columnas ≈ 24 KB de JSON.
+3. **Parámetro ilegal ⇒ default, jamás 400** (misma doctrina que `/api/waveform`).
+   `nperseg` fuera de `{128, 256}` cae a 128. Un `channel` que el anillo no tiene se sustituye
+   por uno que sí, y la sustitución se DECLARA en `requested_channel` ≠ `channel`: el rótulo
+   del panel nombra el canal servido, nunca el pedido.
+4. **`gap_before: true` ⇒ el tramo no llega hasta el borde izquierdo.** El anillo corta en el
+   último hueco (§6.4) y el espectrograma hereda ese corte; se rotula, no se rellena.
+5. **`stale` es un estado, no un matiz.** `WaveformRing` **sólo poda al appendear**: con el
+   sensor callado, el último tramo se queda en RAM tal cual y el endpoint lo servía con
+   `degraded: false` y `first_sample_at` de hace tres horas, mientras la tarjeta lo rotulaba
+   «últimos 60 s» con «AHORA» en el borde derecho. Eso es la regla de oro 7 justo del revés, en
+   la pantalla de un sismógrafo. Ahora la respuesta declara `last_sample_at`, `age_s` y `stale`,
+   y **el panel cambia de estado**: el rótulo pasa a `Espectrograma · DATO RETENIDO`, la meta
+   dice `DATO RETENIDO HACE 3.0 h` en rojo, y el borde derecho del lienzo deja de decir «AHORA»
+   para decir la HORA UTC de la última muestra. No es un color más pálido: el dibujo sigue
+   siendo cierto, lo que dejaba de serlo era el rótulo.
+
+   **El umbral del espectrograma son 10 s y no se inventa aquí**: es el mismo con el que la
+   tabla de salud ya pinta en rojo el «Retraso del sensor» (`umbralColor(v, 2, 10)`). La
+   constante se llamaba `ESPECTRO_RANCIO_S` y ahora es `RANCIO_S`, y lo comprueba
+   `test_el_umbral_de_rancio_es_el_mismo_que_el_rojo_del_retraso…`. Por debajo de ese umbral
+   cabe con holgura el retraso normal del enlace (~0.4 s medidos en el gabinete) y el rótulo no
+   parpadea.
+
+   **Lo que este umbral NO puede hacer es gobernar el helicorder, y hacerlo costó una falsa
+   alarma en el muro.** Aquí decía «es UNO para los dos lienzos» y el helicorder lo aplicaba
+   desde T-7.23·V2. Mide el retraso del anillo de RAM, que se re-pide a 1 Hz; el helicorder sale
+   del anillo de DISCO y se re-pide cada 60 s. Medido con el arnés y el sensor al día
+   (`age_s = 1.0 s`): a t=0 y t=9 s la tarjeta estaba bien y a t=11 s ya gritaba «EL SENSOR NO
+   ENTREGA MUESTRAS NUEVAS» — unos **50 de cada 60 segundos en rojo con el gabinete sano**. Los
+   cuatro campos siguen siendo los mismos y la función de dibujo también; el número es otro y
+   se deriva (§15.4.7).
+
+**Forma degradada:** sin módulo de señal, sin anillo, con el canal vacío o con menos muestras
+que una ventana FFT, la respuesta es **200** con `degraded: true`, su `reason` y `rows: []`.
+Nunca un 500 ni una excepción al kiosco.
+
+### 15.4 · `GET /api/helicorder` — el QUINTO endpoint
+
+Petición: `?channel=<CH>&hours=<1..6>`. Lectura abierta.
+
+```
+degraded          bool      true = no hay nada que pintar
+reason            str|null  sin_anillo · canal_sin_ficheros · sin_dato_en_la_ventana ·
+                            anillo_ilegible · ocupado
+channel           str|null  canal SERVIDO
+requested_channel str|null  lo que pidió el cliente
+hours             float     horas SERVIDAS, acotadas a [1, 6]
+requested_hours   float|null lo que pidió el cliente; distinto = se acotó
+window_start      ISO|null  inicio de la ventana pedida
+window_end        ISO|null  fin de la ventana (= `now` del gabinete)
+sample_rate       float|null sps del dato leído
+bucket_s          float     1.0 — un par mín/máx por segundo
+last_sample_at    ISO|null  instante de la ÚLTIMA muestra servida (cabecera del Shake)
+age_s             float|null `window_end` − `last_sample_at`. Puede ser de horas
+stale             bool      `age_s > stale_after_s`: el dibujo ya no es «de ahora»
+stale_after_s     float     umbral que aplicó el servidor. **NO es el del espectrograma**:
+                            se DERIVA de la cadencia de esta vista (§15.4.7)
+segments[]        { start ISO, buckets int, dc_counts float, minmax[] }
+gaps[]            { start ISO, end ISO, seconds float }
+bytes_read        int       cuánto se leyó del anillo en esta petición
+files[]           str       ficheros del anillo que se tocaron
+truncated         bool      el dato servido empieza DESPUÉS de `window_start`
+truncated_reason  str|null  presupuesto · anillo
+ring_unordered    bool      el anillo perdió la monotonía: esta ventana PUEDE estar
+                            incompleta. Es una advertencia, no un apagado (§15.4.6)
+```
+
+Siete cosas que el diseño tiene que respetar (decía «cinco» y la lista tiene siete desde
+T-7.23·M2 y T-7.23·V2 — ídem):
+
+1. **`minmax[]` son pares APLANADOS** `[mín0, máx0, mín1, máx1, …]`, longitud siempre par, un
+   par por segundo, en counts crudos. Es la misma forma que sirve `/api/waveform` con
+   `encoding: "minmax"` (§5.1) y por la misma razón: el submuestreo se salta el pico y dibuja
+   un sismo más chico del que fue.
+2. **Los huecos se CORTAN y se DECLARAN.** Cada tramo continuo es un `segment` con su propio
+   `start`; entre dos tramos hay una entrada en `gaps[]`. Medido en el gabinete el 2026-09-20:
+   el anillo cubría 20.93 h en **siete tramos con seis huecos**, así que una ventana de 1–6 h
+   cruza un hueco casi con seguridad. Rellenar con ceros escribiría «el suelo estuvo quieto»
+   justo donde no hubo medición, dentro de la pantalla de un sismógrafo; unir dos tramos con
+   una línea recta inventa movimiento que no ocurrió. El helicorder deja el hueco en blanco y
+   lo rotula.
+3. **El anillo NO se lee entero.** `RingBuffer.extract_window()` hace `obspy.read()` del
+   fichero del día completo: **2.9 s y 159 MB de RSS pico** medidos sobre el fichero EHZ del
+   2026-09-20 (100.2 MB a media tarde), y 8.75 s / 421 MB sobre uno de 287 MB. En un Pi 4 con
+   905.7 MiB de RAM total y ~260 MiB libres eso es inaceptable para una pantalla. Este
+   endpoint localiza el registro por **búsqueda binaria sobre las cabeceras miniSEED** (el
+   fichero está ordenado en el tiempo y los registros son de longitud fija) y lee **sólo la
+   cola** desde ese desplazamiento: 1 h en 0.17 s leyendo 5.8 MB, 6 h en 0.89 s leyendo
+   34.5 MB. `bytes_read` publica lo que costó, petición a petición.
+4. **UN canal y como mucho 6 h por petición.** El tope no es estético: es el presupuesto de
+   memoria del Pi. Por encima de `48 MiB` leídos la ventana se recorta por el principio,
+   `truncated` pasa a `true` y `truncated_reason` dice `presupuesto`. Si es el anillo el que no
+   llega tan atrás, `truncated_reason` dice `anillo` — son dos hechos distintos y el operador
+   tiene que poder distinguirlos.
+5. **Una lectura a la vez.** Un cerrojo sin espera protege el proceso: si ya hay una lectura en
+   curso, la segunda responde **200** con `degraded: true, reason: "ocupado"` en vez de apilar
+   otra lectura de disco. Tres kioscos abiertos no pueden multiplicar por tres el coste del
+   gabinete. **`ocupado` es el ÚNICO estado que el kiosco reintenta en el tick siguiente** (ver
+   §15.5): marcarlo como una respuesta más dejaba el lienzo en blanco 60 s enteros por una
+   colisión de milisegundos.
+6. **La búsqueda binaria exige orden cronológico, y ahora se COMPRUEBA.** Decía «el fichero del
+   día está escrito en orden (el anillo sólo appendea)», como si appendear implicara orden.
+   `RingBuffer.append` escribe lo que llegue y la deduplicación de SeedLink es un `deque`
+   acotado: tras una reconexión larga el Shake puede re-entregar un bloque que el deque ya
+   olvidó y el anillo lo appendea al final, más viejo que su vecino. A partir de ahí la búsqueda
+   binaria devuelve cualquier cosa y la cola que se lee **pierde dato sin decirlo** — y en la
+   pantalla de un sismógrafo, un tramo que falta se lee como «el suelo estuvo quieto».
+
+   Cuánto se pierde, simulado sobre el algoritmo exacto con 720 registros y un bloque
+   re-entregado al final **[MEDIDO · simulación del algoritmo · 2026-09-20]**: con 40 registros
+   re-entregados, 6 de las 720 posiciones de ventana pierden dato (peor caso, 6 registros); con
+   239, son 122 de 720 (peor caso, 122 registros). Con el fichero en orden, cero. Y nada de eso
+   levantaba `truncated`: el operador veía una pantalla llena y sin avisos.
+
+   **El testigo del escritor AVISA; la GARANTÍA es del lector.** La primera versión de esto
+   puso toda la detección en el escritor por una razón medida —barrer todas las cabeceras de un
+   fichero de día cuesta 25.2 µs por cabecera **[MEDIDO · equipo de desarrollo x86-64 ·
+   2026-09-20]**, o sea ~0.62 s aquí y del orden de 2.5 s en el Pi 4 sobre las ~24 500 de un EHZ
+   de 100 MB: más caro que la lectura entera que se quiere hacer— y eso dejó un agujero peor que
+   el original. El testigo **sólo ve el desorden que ESE proceso presenció**: al arrancar, el
+   puntero se siembra con el ÚLTIMO REGISTRO del fichero, que en un fichero ya desordenado es
+   justamente el re-entregado —el más viejo—, así que todo lo que venga detrás parece «más
+   nuevo» y no se marca nada. Antes se perdía dato en silencio; con el testigo solo, además se
+   afirmaba que el anillo estaba ordenado.
+
+   La comprobación que SÍ cubre el caso vive en el lector y **no cuesta nada, porque usa dato
+   que ya está decodificado**: tras recortar la cola a la ventana, el primer `segment` es la
+   primera muestra que se va a servir. Si empieza después de `window_start`, la cobertura no es
+   la que se pidió y se DECLARA (`truncated: true`, con `presupuesto` o `anillo` según la
+   causa) en vez de servir media ventana como si fuera entera. Misma doctrina que
+   `truncated_reason: "anillo"` ya tenía; lo que cambia es de dónde sale el instante que se
+   compara —antes, de la cabecera a la que saltó la búsqueda binaria, que es justo el número que
+   deja de significar nada cuando el fichero está desordenado—.
+
+   Medido sobre el escenario real (una hora continua con un bloque de hace un minuto metido en
+   el medio, la posición que la búsqueda binaria prueba primero): se sirve de 14:30 en adelante
+   para una ventana que empieza a las 14:00 — media hora que existe en el anillo y no se lee —,
+   y hasta esta ficha con `truncated: false`.
+
+   **Y el testigo NO apaga el helicorder: cambia cómo se lee.** Respondía `degraded: true,
+   reason: "anillo_desordenado"`, y el testigo no se borra al rodar el día sino con su fichero:
+   o sea la pantalla del sismógrafo **en blanco unas 30 h porque un paquete llegó dos veces**,
+   que es peor que el defecto que arreglaba — re-entregar bloques es lo que hace una reconexión
+   larga de SeedLink, por diseño. La regla que gobierna esto es **servir lo que haya y DECLARAR
+   lo que no se sabe**: el desorden pasa a `ring_unordered: true`, una advertencia sobre la
+   VENTANA que convive con el dibujo, y apagar vuelve a ser una decisión del operador.
+
+   Con el testigo puesto, el helicorder deja de localizar por índice —que es lo que el desorden
+   invalida— y lee **la cola acotada por el presupuesto**, declarando después la cobertura real
+   sobre dato decodificado (`truncated`). No es sólo que deje de apagarse: sirve MÁS. Medido
+   sobre el escenario V1 escrito por `RingBuffer` (una hora continua con un bloque de hace un
+   minuto en el medio) **[MEDIDO · equipo de desarrollo x86-64 · 2026-09-20]**: confiando en el
+   índice se sirve desde las 14:30 para una ventana que empieza a las 14:00 y sale `truncated:
+   anillo`; leyendo la cola se sirve desde las 14:00 y la ventana sale completa. El precio es
+   disco: hasta `PRESUPUESTO_BYTES` en vez de los 5.8 MB de una hora, y sólo mientras ese
+   fichero del día siga en el anillo.
+
+   El testigo se queda porque es barato —**una comparación por paquete** y una escritura sólo
+   cuando de verdad pasa— y avisa antes: `RingBuffer.append` deja un fichero hermano
+   `<dayfile>.desorden` (ni `extract_window` ni la poda ni el glob de canales lo ven como
+   miniSEED), y el helicorder lo lee en O(1). Se escribe y se registra **UNA vez por fichero**,
+   no una por paquete: esto corre en el hilo de ingesta de SeedLink y justo durante la
+   reconexión, que es cuando el Shake re-entrega bloques a puñados — una línea de log por
+   paquete es un intervalo, no una transición (regla de oro 10), y se come la cota de log de
+   T-7.47. El testigo se borra con su fichero, no al rodar el día: un anillo que perdió la
+   monotonía la perdió hasta que ese fichero desaparezca.
+
+   **Y el LECTOR anota también una sola vez, por fichero y por proceso.** El desorden dura lo
+   que dura ese fichero del día y el kiosco pregunta cada 60 s: una línea por lectura serían
+   del orden de mil ochocientas sobre un hecho que ocurrió una vez, el mismo intervalo
+   disfrazado de evento. Su registro no sobra aunque el escritor ya tenga el suyo: el del
+   escritor no ve el fichero que llegó desordenado de otro proceso o de antes del reinicio, que
+   es justo el caso en que nadie lo anotó nunca.
+
+7. **El helicorder declara la EDAD de su última muestra, y su umbral se DERIVA de su cadencia.**
+   Su borde derecho decía «AHORA» con dato de cualquier edad, y es peor aquí que en el
+   espectrograma porque este lienzo **sólo se repinta cuando llega dato nuevo** —cada 60 s por
+   diseño, o nunca si el gabinete deja de dar dato— así que el rótulo se quedaba pegado a un
+   bitmap de hace una hora. La cura es el MISMO mecanismo, no un segundo: los mismos cuatro
+   campos (`last_sample_at`, `age_s`, `stale`, `stale_after_s`) y la misma función de dibujo
+   (`rotularBordeDerecho`). El panel le suma a `age_s` lo que ha corrido su propio reloj
+   monótono desde la respuesta y ensucia el lienzo cuando el veredicto cambia, que es lo que
+   impide que un bitmap quieto siga rotulando «AHORA». Y la tarjeta pasa a `Helicorder · DATO
+   RETENIDO`, como la del espectrograma.
+
+   **El umbral, en cambio, NO puede ser el del espectrograma, y serlo costó una falsa alarma en
+   el muro.** Aquí hay DOS hechos y estaban mezclados en uno:
+
+   - **«este dibujo se calculó hace N s»** — lo declara la tarjeta (`CALCULADO HACE 37 s`) y es
+     NORMAL que llegue hasta un minuto entero: se re-pide cada 60 s. No acusa a nadie;
+   - **«el sensor dejó de entregar»** — una propiedad del DATO, que la tabla de salud ya mide a
+     1 Hz por otro camino (`seedlink_lag_s`).
+
+   Aplicarle al segundo el umbral del primero ponía la tarjeta en rojo con «EL SENSOR NO ENTREGA
+   MUESTRAS NUEVAS» unos **50 de cada 60 segundos con el sensor sano**. El umbral del helicorder
+   se deriva de las tres cosas que, con el gabinete sano, separan la última muestra del reloj
+   del kiosco:
+
+   | Sumando | Qué mide | De dónde sale |
+   |---|---|---|
+   | `RANCIO_S` | el retraso que el panel ya le tolera al enlace | los 10 s del rojo de «Retraso del sensor» |
+   | `GRANULARIDAD_ANILLO_S` | el registro que el anillo todavía no ha escrito | **26 305 registros para 86 400 s** en el fichero EHZ real de un día **[MEDIDO · fichero EHZ del anillo de `gw-dev-0001` · 2026-09-20]**, o sea 3.28 s por registro |
+   | `REFRESCO_HELI_S` | lo que el kiosco tarda en volver a preguntar | `HELI_REFRESH_MS` del panel, leído del panel por la guarda |
+
+   `RANCIO_HELI_S` es su suma y nada más: por debajo, un helicorder viejo es lo esperado; por
+   encima, ya no lo explica ninguna cadencia. Que los tres sumandos sigan siendo los del panel y
+   los del anillo lo comprueba
+   `test_el_umbral_del_helicorder_se_deriva_de_su_cadencia_y_de_la_del_anillo`, y que no grite en
+   ningún instante del ciclo de 60 s con el sensor sano —ni calle con el sensor callado— lo
+   comprueban las dos direcciones de
+   `test_con_el_sensor_sano_el_helicorder_no_grita_en_ningun_instante`.
+
+**Forma degradada:** sin módulo de anillo, sin ficheros de ese canal, con el anillo ilegible,
+con otra lectura en curso, o con la ventana pedida sin una sola muestra dentro, la respuesta es
+**200** con `degraded: true`, su `reason` y `segments: []`. Ese último caso
+(`sin_dato_en_la_ventana`) va aparte a propósito: servirlo como respuesta buena con la lista
+vacía dejaría la tarjeta diciendo «0 huecos declarados» sobre una pantalla en blanco, y el
+operador leería «todo bien» donde lo que hay es «el sensor lleva horas callado».
+
+**El anillo fuera de orden ya NO está en esa lista.** Es `ring_unordered`, que viaja **con** el
+dibujo y no en su lugar — y también en la forma degradada, porque una ventana sin dato sobre un
+anillo que perdió la monotonía y otra sobre uno sano mandan al operador a sitios distintos.
+
+### 15.5 · Cadencias — y por qué el helicorder NO va a 1 Hz
+
+La regla de la §5.1 (una sola cadencia, secuencial, sin bucles paralelos) sigue vigente y esta
+vista no la relaja:
+
+| Petición | Cadencia en esta vista | Por qué |
+|---|---|---|
+| `/api/status` | 1 Hz | Es la que sostiene banners, relés y estados. No se toca |
+| `/api/waveform` | **no se pide** | En esta vista no hay carriles de onda: el espectrograma ocupa su lugar y pedir las dos cosas sería pagar dos veces por el mismo anillo |
+| `/api/spectrogram` | 1 Hz, en el MISMO tick | 2.4 ms de cálculo medidos; a 1 Hz es ruido |
+| `/api/helicorder` | cada **60 s**, o al tocar un mando | 0.17–0.89 s de lectura de disco. A 1 Hz sería el 89 % de un núcleo del Pi dedicado a repintar algo que cambia un píxel por segundo |
+| `/api/catalog` | **no se pide** | El mapa y la comparativa viven en la vista por defecto |
+
+Como el helicorder puede tener hasta 60 s de antigüedad **por diseño**, su tarjeta declara
+SIEMPRE su edad (`CALCULADO HACE 37 s`). Es el caso de libro de la regla de oro 7: un dato
+viejo pintado como vivo es peor que «sin datos», y aquí el dato viejo es lo normal. Esa edad es
+una RESTA contra el reloj de la última respuesta buena, y la guarda que la defiende adelanta el
+reloj del arnés en vez de buscar el rótulo: un marcador tapa una resta rota (T-7.60).
+
+**Y esta cadencia es el sumando mayor del umbral de frescura del helicorder.** «Hasta 60 s de
+antigüedad por diseño» y «el sensor lleva 10 s sin entregar» no pueden convivir en la misma
+tarjeta: la segunda frase se cumple sola cada minuto. Por eso `REFRESCO_HELI_S` es un sumando
+de `RANCIO_HELI_S` (§15.4.7) y por eso este número vive en el panel y en el servidor a la vez,
+con una guarda que lo lee del panel en vez de teclearlo dos veces.
+
+**La marca de «ya lo pedí» se pone DESPUÉS de la respuesta, y no con `ocupado`.** Se ponía
+antes del `fetch`, así que un `ocupado` transitorio —otro kiosco leyendo el mismo anillo, que es
+para lo que existe ese estado— dejaba el lienzo en blanco un minuto entero sin reintentar.
+`ocupado` se reintenta en el tick siguiente; **las demás razones no**, y eso es justo lo que
+impide que una ventana sin dato ponga a leer el disco a 1 Hz. Un 404 o un 500 tampoco se
+reintentan: pedir más deprisa no arregla un gabinete que no sirve el endpoint.
+
+### 15.6 · Movimiento y recursos
+
+- **Cero animaciones nuevas.** El inventario de movimiento del panel sigue siendo dos
+  `@keyframes` (`tk-blink`, `tk-pulse`) y ninguna `transition`, y la regla global
+  `@media (prefers-reduced-motion:reduce){*{animation:none!important}}` los apaga los dos. Un
+  espectrograma que se desliza sería movimiento continuo en una pantalla de pared: aquí el
+  lienzo se **repinta** cuando llega dato nuevo, que no es lo mismo que animarse.
+- **Cero recursos externos.** Ni fuentes, ni tiles, ni paletas de fuera: los dos lienzos son
+  `<canvas>` 2D como los demás y la rampa de color se calcula en el propio script.
+- **Repintado por dato, no por fotograma.** Los dos lienzos se redibujan sólo cuando cambia el
+  dato que representan (o cuando cambia su estado de frescura). El espectrograma son ~6 000
+  celdas: pintarlas 60 veces por segundo para enseñar la misma imagen sería quemar el
+  navegador del kiosco sin ganar nada.
+- **…y también cuando cambia su TAMAÑO.** `fitCanvas()` vive dentro de los dos `draw*`, que sólo
+  corren por dato: un `resize` o un clic en MURO/CONSOLA/CAMPO —que cambia el alto del lienzo
+  por CSS— dejaba el helicorder hasta 60 s con el bitmap viejo **estirado**, o sea un sismograma
+  deformado, que es peor que uno ausente. Los dos manejadores ensucian ahora los contadores
+  (`invalidarLienzosSismo()`) y el fotograma siguiente repinta, sin volver a pedir nada.
+- **La rampa de color no es una paleta nueva.** Las cinco paradas del espectrograma y la franja
+  ámbar del hueco eran la tercera y la cuarta copia literal de la paleta, escritas fuera del
+  `:root` y fuera del objeto `C`, que son las dos únicas que el censo de color sabe leer — el
+  agujero exacto de T-2.137, donde un violeta vivía inline en el rótulo que la persona lee.
+  Ahora las tres paradas altas son `C.cyan`, `C.warn` y `C.crit`, las dos bajas se derivan de
+  `C.surface0`, y una guarda prohíbe cualquier componente de la paleta escrito a mano en el
+  bloque de esta vista.
+- **El helicorder tiene piso de escala de verdad, y es el MISMO que el de los carriles.** El
+  comentario prometía uno —«sin piso, un anillo en calma se dibujaría como un terremoto»— y
+  debajo ponía `let amp = 1`: un count, o sea ningún piso. El arreglo puso el de los carriles de
+  onda… **intercambiado entre familias de canal**, 8.33× en cada sentido, con el comentario de
+  al lado afirmando lo contrario: al geófono (velocidad, cm/s) le daba el piso de los
+  acelerómetros y a los acelerómetros (aceleración, g) el del geófono. En pantalla eso es un
+  anillo en calma dibujado como un sismo, o un sismo dibujado como una línea plana.
+
+  Ahora el piso vive en UN sitio (`pisoEscala`: 0.10 cm/s en velocidad, 0.012 g en aceleración)
+  y la familia se elige con el MISMO predicado que decide la unidad en `toPhys` (`c[1] === 'N'`)
+  — no con `c === 'EHZ'`, que además le daba el piso de aceleración a dos de los tres carriles
+  de velocidad de un RS3D. La guarda **deriva el piso que le toca al helicorder de `scaleFor` y
+  `toPhys`**, nunca de `pisoHeliCounts`, que es lo que está bajo prueba: la primera versión
+  medía ±9 y ±400 000 counts, tan lejos de cualquier piso plausible que seguía verde con los dos
+  intercambiados.
+
+### 15.7 · Coste — cómo se mide, y qué se midió
+
+**Estas cifras son de PROTOTIPO, no del endpoint.** Se midieron el 2026-09-20 sobre el
+gabinete real (`Raspberry Pi 4 Model B Rev 1.5`, 905.7 MiB de RAM) ejecutando las operaciones
+que el endpoint hace, no el endpoint servido. Las definitivas se toman tras desplegar, con los
+comandos de abajo, y se escriben aquí sustituyendo esta advertencia.
+
+Línea base del gabinete en reposo, el mismo día: ~260 MiB libres y ~476 MiB en caché; CPU 96 %
+ociosa; 50 °C; `takab-edge` entre 95 y 119 MB de RSS y `takab-gpio` 27 MB.
+
+| Operación (prototipo) | Coste medido |
+|---|---|
+| `scipy.signal.spectrogram`, 60 s a 100 sps, `nperseg=128` (65×92) | 2.4 ms |
+| `scipy.signal.spectrogram`, 60 s a 100 sps, `nperseg=256` (129×45) | 1.1 ms |
+| Importar `scipy.signal` en el proceso `takab-edge` | **0.39 s y +24.3 MB de RSS** (de 94.3 a 118.6 MB). **La cifra anterior aquí era falsa** — decía «0 MB, ya está mapeado» |
+| Cola del anillo, 1 h de EHZ (5.8 MB leídos) | 0.17 s |
+| Cola del anillo, 6 h de EHZ (34.5 MB leídos) | 0.89 s |
+| mín/máx a 1 Hz sobre esas muestras | 4–33 ms |
+| `obspy.read()` del fichero del día ENTERO — **lo que este endpoint NO hace** | 2.9 s / 159 MB RSS (fichero de 100.2 MB) · 8.75 s / 421 MB (fichero de 287 MB) |
+
+Latencias del panel antes de esta ficha, para tener con qué comparar: `/api/status` 2.5 ms
+(5.4 KB) y `/api/waveform` 7.8 ms (99 KB).
+
+**Corrección del 2026-09-20 — el import de `scipy.signal` NO es gratis.** Esta tabla afirmaba
+«0 MB» apoyándose en que `scipy` aparecía en `/proc/<pid>/maps` del proceso vivo. Lo que estaba
+mapeado era `scipy.integrate` (y `scipy.fft`), que es lo que arrastra `obspy`; `scipy.signal`
+no. Medido de nuevo cargando exactamente lo que carga el arranque del edge: `scipy.signal` **no
+está en `sys.modules`**, y el primer `from scipy import signal` cuesta **0.39 s y +24.3 MB de
+RSS** (el mismo día, con otro guion, salieron 0.41 s y +24 MB: la cifra es estable).
+
+Esa medición es **[MEDIDO · equipo de desarrollo x86-64 · Python 3.12 · 2026-09-20]**, no del
+Pi 4 — en el Pi será igual o peor, y es una de las cifras que hay que re-tomar al desplegar.
+Lo ancla `test_scipy_signal_no_esta_cargado_tras_el_arranque_y_su_import_no_es_gratis`, que lo
+comprueba en un subproceso limpio.
+
+**Qué se decide con eso, y por qué el import sigue siendo perezoso.** La primera petición a
+`/api/spectrogram` paga 0.39 s y +24.3 MB, una vez y para siempre, en el mismo proceso que corre
+SeedLink y las reglas. Se paga ahí y no en el arranque porque un gabinete que nunca abre esta
+vista —que son casi todos— no tiene por qué llevar 24 MB residentes en un Pi con ~260 MiB
+libres. Lo que ese cuarto de segundo **no puede tocar** es la ruta de disparo: SASMEX→relé vive
+en otro proceso (`takab-gpio`, regla de oro 4), así que el peor efecto de la pausa es un tick
+del panel tarde y un segundo de SeedLink esperando en el búfer del socket.
+
+**Y el presupuesto de 48 MiB del helicorder, re-derivado con esos 24 MB dentro de la cuenta**
+(se había calculado suponiéndolos cero):
+
+```
+  ~260 MiB libres en reposo                       [PROTOTIPO · Pi 4 · 2026-09-20]
+  −  24.3 MB  scipy.signal, residentes desde la primera petición de la vista
+  = ~236 MiB libres con la vista SISMÓGRAFO abierta
+  −  ~76 MB   pico de RSS de una lectura de 48 MiB (obspy pide ~1.5× lo leído)
+  = ~160 MiB libres en el peor instante
+```
+
+**El número no baja, y la razón no es la memoria: es el dato.** 6 h de EHZ midieron 34.5 MB, así
+que cualquier tope por debajo de ~35 MB convertiría `truncated_reason: "presupuesto"` en el
+desenlace NORMAL de una ventana de 6 h sobre el anillo real — el panel estaría recortando dato
+bueno y culpando al presupuesto. 48 MiB son esos 34.5 MB con 1.46× de holgura para un anillo más
+denso, y siguen dejando ~160 MiB libres en el peor instante.
+
+**Cómo se re-miden en el Pi** (sobre el gabinete ya desplegado, desde el propio Pi):
+
+```sh
+# 1 · CPU y memoria del gabinete con el panel abierto en la vista sismógrafo.
+#     Tres iteraciones: la primera de `top` trae medias desde el arranque y no
+#     sirve para nada; la tercera es la que se apunta.
+top -bn3 | grep -E '^(%Cpu|MiB Mem|MiB Swap)|takab-(edge|gpio)'
+
+# 2 · Latencia y peso de cada endpoint, ya servidos.
+for u in \
+  'http://127.0.0.1:8080/api/status' \
+  'http://127.0.0.1:8080/api/spectrogram?channel=EHZ&nperseg=128' \
+  'http://127.0.0.1:8080/api/spectrogram?channel=EHZ&nperseg=256' \
+  'http://127.0.0.1:8080/api/helicorder?channel=EHZ&hours=1' \
+  'http://127.0.0.1:8080/api/helicorder?channel=EHZ&hours=6' ; do
+  curl -s -o /dev/null -w "%{time_total}s  %{size_download}B  $u\n" "$u"
+done
+
+# 3 · El helicorder otra vez, en caliente, para separar el disco del cálculo.
+curl -s 'http://127.0.0.1:8080/api/helicorder?channel=EHZ&hours=6' \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["bytes_read"], len(d["segments"]), len(d["gaps"]))'
+```
+
+Lo que hay que mirar al leerlas: que `takab-gpio` **no se mueva** —no comparte proceso con
+esto y no puede aparecer en la cuenta—, que el RSS de `takab-edge` vuelva a su banda de
+95–119 MB después de la petición de 6 h, y que `bytes_read` siga siendo una fracción del
+fichero del día.
+
+### 15.8 · Todo número medido lleva su procedencia
+
+Las mismas cifras estaban en tres sitios —esta spec, el docstring de `sismografo.py` y los
+comentarios de `index.html`— y **sólo aquí llevaban la advertencia de que son de prototipo**.
+Una cifra sin procedencia se lee como definitiva, y la primera factura ya se pagó en esta misma
+ficha: «importar `scipy` no cuesta RSS» era una conclusión sacada de una medición que medía
+otra cosa.
+
+**Y hay una tercera clase de cifra, que no se etiqueta: se BORRA.** Un RECUENTO de algo que el
+propio repositorio puede contar —cuántas puertas de JSON hay, cuántos ítems tiene una lista de
+esta spec— no lleva procedencia que valga: se deriva o no se escribe. Los tres casos medidos en
+T-7.23·Q3 estaban aquí mismo: «15» en la §15.9 contra «21» en el docstring del censo, «cuatro
+cosas» sobre una lista de cinco en la §15.3 y «cinco» sobre una de siete en la §15.4.
+
+Dos etiquetas, y ninguna cifra MEDIDA sin una de ellas:
+
+- **`[PROTOTIPO · <equipo> · <fecha>]`** — se midió la OPERACIÓN que el endpoint hace, no el
+  endpoint servido. Son las de la tabla de arriba y se re-toman tras desplegar.
+- **`[MEDIDO · <equipo> · <fecha>]`** — se midió lo que se nombra, en el equipo que se nombra.
+
+Lo vigila `test_ninguna_cifra_medida_se_repite_sin_su_etiqueta_de_procedencia`, que **deriva la
+lista de cifras de la tabla de la §15.7** —no la teclea— y exige que cualquier repetición en
+`sismografo.py` o en `index.html` viva dentro de un comentario que lleve etiqueta.
+
+### 15.9 · El JSON que sale nunca puede romper al kiosco
+
+`json.dumps` de Python escribe `Infinity`, `-Infinity` y `NaN` tal cual, y **eso no es JSON**:
+el `JSON.parse` del kiosco lanza, la excepción sube al `catch` del tick y el panel declara caído
+un gabinete perfectamente sano — peor que el 400 que la doctrina de estos endpoints prohíbe.
+
+Entraba por la puerta más tonta: `?hours=inf` **parsea** en Python (igual que `nan` y `1e400`),
+caía fuera del `except` de `_helicorder_params` y viajaba crudo hasta `requested_hours`. Pero el
+agujero no era ése: era que **ningún flotante de la respuesta estaba mirado**.
+
+Dos verjas, cada una con su guarda, porque la de la salida tapa a la de la entrada:
+
+1. **El parámetro se arregla donde se lee**: un `hours` no finito es `None`, igual que
+   `?hours=hola`.
+2. **El cuerpo se sanea donde se escribe**: `sanear_no_finitos` recorre la respuesta entera —a
+   cualquier profundidad, listas y diccionarios incluidos— y convierte todo no-finito en `null`,
+   que es la forma que el contrato ya tiene para «este número no existe». Se aplica a **todas**
+   las respuestas JSON del panel, no sólo a la que tenía el defecto.
+
+**«La única puerta» era una afirmación, no un hecho.** `_send_json` decía serlo mientras varios
+`json.dumps` sueltos del mismo manejador —los cuerpos de error de `do_GET`, los de `do_POST` y
+los del grant de CCTV— salían al socket sin pasar por ella, y una sola guarda la ejercía
+(la del helicorder): medido, devolviendo `/api/status`, `/api/waveform`, `/api/spectrogram` y
+`/api/catalog` a un `self._send(200, json.dumps(…))` crudo, la suite del edge seguía en
+**489 passed**. Ahora todos pasan por la puerta y lo exigen dos censos que se DERIVAN del árbol
+de sintaxis de `_DashboardHandler`, no de una lista: ningún `json.dumps` dentro del manejador, y
+ningún `_send` que sirva el `application/json` por defecto sin pasar por `_send_json`. La prueba
+de comportamiento saca además la lista de endpoints de `do_GET`, así que el sexto que alguien
+añada entra solo.
+
+**CUÁNTAS eran no se escribe en ninguna prosa [T-7.23 · Q3].** Este párrafo decía «15» mientras
+el docstring del censo decía «21»: dos recuentos del mismo barrido, uno de los dos falso por
+construcción y ninguno medido por nadie. Las puertas las cuenta
+`_puertas_de_json_del_panel`, que las deriva del `ast`, y una guarda prohíbe que la cifra
+vuelva a teclearse en los docstrings de `_send_json` y de su censo. Misma familia que la de
+`scipy.signal` de la §15.7: una cifra en un comentario no la mide nadie.
+
+**Y el saneo cuesta lo que vale.** Reconstruía la respuesta ENTERA en Python, incluidas las
+listas de muestras de `/api/waveform`, donde un no-finito no cabe: son enteros decimados. Medido
+**[MEDIDO · equipo de desarrollo x86-64 · Python 3.12 · 2026-09-20]**, con el `json.dumps` que
+ya se hacía como vara:
+
+| Cuerpo | `json.dumps` | saneo + `json.dumps` | `json.dumps(allow_nan=False)` |
+|---|---|---|---|
+| `/api/waveform`, 8 000 valores | 0.61 ms | **1.82 ms** | 0.43 ms |
+| helicorder de 6 h, 43 200 valores | 2.43 ms | **9.95 ms** | 2.37 ms |
+
+`allow_nan=False` hace la comprobación dentro del codificador en C, que es el mismo recorrido
+que ya se hacía, y levanta `ValueError` sin haber escrito nada cuando encuentra uno. Así que el
+cuerpo se vuelca directo y el saneador corre **sólo cuando de verdad hay algo que sanear**
+(12.05 ms sobre el peor cuerpo, una vez y no una por petición). La verja no se relaja: lo que se
+quita es el peaje del camino limpio. Y no se enumera qué endpoints o qué campos pueden traer un
+no-finito — esa lista se quedaría atrás igual que se quedaría la del saneador. Lo mide
+`test_el_saneo_del_cuerpo_no_lo_paga_el_camino_limpio`, que cuenta CUÁNTAS VECES corre el
+saneador y no cuánto tarda: un reloj en el CI es ruido.
+
+### 15.10 · Lo que esta vista NO hace
+
+- **No añade una fuente de disparo.** Nada de lo que hay aquí toca reglas, relés ni la ruta
+  SASMEX→actuador: son tres lecturas de sólo lectura sobre memoria y disco. El proceso que
+  sostiene los pines (`takab-gpio`) es otro y no se entera.
+- **No pone magnitud, ni cuenta regresiva, ni escala de intensidad.** Las prohibiciones de la
+  §12 valen igual aquí.
+- **No sube waveform crudo a ninguna parte** (regla de oro 9): todo se queda en la LAN.
+- **No sustituye a la vista por defecto.** Es una pantalla para quien quiere mirar el
+  instrumento; la que decide si hay que evacuar sigue siendo la otra.

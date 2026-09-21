@@ -75,6 +75,15 @@ def _base() -> dict:
         # [T-5.26] Identidad correlacionable con la consola.
         "iot_thing": "gw-test-0001",
         "station_code": "AM.R4F74",
+        # [T-7.23] La identidad COMPLETA `red.estación.loc.canal`, que es lo que
+        # rotula la tarjeta de estación de la vista sismógrafo. Va aparte de
+        # `station_code` porque aquél es contrato con la nube y no se toca.
+        "station_nslc": [
+            "AM.R4F74.00.EHZ",
+            "AM.R4F74.00.ENZ",
+            "AM.R4F74.00.ENN",
+            "AM.R4F74.00.ENE",
+        ],
         "now": _NOW,
         "uptime_s": 14520.0,
         # [T-7.60] La HORA del arranque, DERIVADA de `now - uptime` en cada
@@ -553,6 +562,11 @@ def test_la_paleta_js_de_los_canvas_no_se_separa_de_la_css():
         "ok": "--tk-ok",
         "warn": "--tk-warn",
         "crit": "--tk-crit",
+        # [T-7.23] El fondo entró en `C` porque la rampa del espectrograma se
+        # DERIVA de él: era una tercera copia literal de la paleta escrita
+        # fuera del `:root` y fuera de este objeto, o sea invisible para este
+        # espejo — exactamente el agujero de T-2.137.
+        "surface0": "--tk-surface-0",
     }
     js = _js_palette()
     assert js, "no se pudo leer el objeto C del panel"

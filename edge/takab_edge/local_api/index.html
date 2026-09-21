@@ -342,6 +342,23 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
    `--tk-warn`. Sin fallback, la declaración entera se descarta y el aviso
    heredaba el color de su padre — se leía igual que una banda elegida. */
 .sin-resolver{color:var(--tk-warn)}
+/* [T-7.23] Vista SISMÓGRAFO (`?view=sismografo`, §15 de la spec). Es una
+   SUPERFICIE más, no un cuarto modo de densidad: hereda la hoja entera —los
+   tokens, las tarjetas, los banners, la botonera— y sólo declara su reja. Por
+   eso `?view=` y `?mode=` son ortogonales y MURO/CONSOLA/CAMPO siguen valiendo
+   aquí. Cero animación propia: el inventario de movimiento del panel sigue
+   siendo dos keyframes y ninguna transición. */
+#sismo{flex:1 1 auto;min-height:0;display:grid;grid-template-rows:auto minmax(180px,1fr) minmax(180px,1fr);gap:12px;padding:12px;overflow-y:auto}
+#sismo .card{display:flex;flex-direction:column;min-height:0;min-width:0}
+#sismo .cardhd{flex:0 0 auto;display:flex;align-items:center;gap:8px 14px;padding:12px 16px;border-bottom:1px solid var(--tk-border);flex-wrap:wrap}
+#sismo .lienzo{flex:1 1 auto;position:relative;min-height:160px;background:var(--tk-surface-0)}
+#sismo .lienzo canvas{position:absolute;inset:0;width:100%;height:100%}
+/* `min-width:0` en los ítems de la reja: sin él, un código NSLC largo empuja
+   la columna y la tarjeta desborda en CAMPO (trampa ya medida en T-6.11). */
+#sismo-station{display:flex;flex-wrap:wrap;gap:10px 28px;padding:12px 16px}
+#sismo-station>div{display:flex;flex-direction:column;gap:3px;min-width:0}
+body.mode-campo #sismo{grid-template-rows:auto auto auto;overflow-y:visible}
+body.mode-campo #sismo .lienzo{min-height:220px}
 </style>
 </head>
 <body>
@@ -607,6 +624,58 @@ body.mode-campo #cmp-drawer{height:clamp(140px,30vh,216px)}
   </div>
 </div>
 
+<!-- [T-7.23] Vista SISMÓGRAFO. Vive DENTRO de #main y hermana de #grid: la
+     botonera de acciones queda debajo de las dos, porque quien mira el
+     instrumento durante una alerta tiene que poder silenciar sin cambiar de
+     pantalla (§15 de la spec). Se pinta SIEMPRE y se esconde con `.hide`, como
+     el resto del panel. -->
+<div id="sismo" class="hide">
+
+  <div class="card">
+    <div class="cardhd">
+      <span class="seclabel">Estación sísmica</span>
+      <span class="meta" id="sismo-station-meta">S/D</span>
+    </div>
+    <div id="sismo-station"></div>
+  </div>
+
+  <div class="card">
+    <div class="cardhd">
+      <!-- El rótulo lo ESCRIBE `renderSpecMeta`: cuando el dato es viejo deja
+           de decir «últimos 60 s», que sería mentira. A fuego sólo está el
+           texto de arranque, para que el marcado no salga mudo. -->
+      <span class="seclabel" id="sismo-spec-title">Espectrograma · últimos 60 s</span>
+      <span class="meta" id="sismo-spec-meta">S/D</span>
+      <!-- Los chips de canal se DERIVAN de `status().station_nslc`: estaban
+           enumerados a mano (EHZ/ENZ/ENN/ENE) mientras la lista real ya viajaba
+           en el status, así que un Shake de 3 canales ofrecía un botón que no
+           existe y uno de otro modelo escondía el suyo. -->
+      <div id="sismo-ch-chips" style="margin-left:auto;display:flex;gap:4px" role="group" aria-label="Canal del sismógrafo"></div>
+    </div>
+    <div class="lienzo"><canvas id="spec-canvas" aria-hidden="true"></canvas></div>
+    <p class="sr-only" id="sismo-spec-sr" aria-live="polite"></p>
+  </div>
+
+  <div class="card">
+    <div class="cardhd">
+      <!-- [T-7.23 · V2] Igual que el del espectrograma: el rótulo lo ESCRIBE
+           `renderHeliMeta`, porque cuando el sensor lleva horas callado deja
+           de ser un helicorder «de ahora» y tiene que decirlo. A fuego sólo el
+           texto de arranque, para que el marcado no salga mudo. -->
+      <span class="seclabel" id="sismo-heli-title">Helicorder · anillo de disco</span>
+      <span class="meta" id="sismo-heli-meta">S/D</span>
+      <div style="margin-left:auto;display:flex;gap:4px" role="group" aria-label="Ventana del helicorder">
+        <button class="chip" data-sismo-h="1">1 H</button>
+        <button class="chip" data-sismo-h="3">3 H</button>
+        <button class="chip" data-sismo-h="6">6 H</button>
+      </div>
+    </div>
+    <div class="lienzo"><canvas id="heli-canvas" aria-hidden="true"></canvas></div>
+    <p class="sr-only" id="sismo-heli-sr" aria-live="polite"></p>
+  </div>
+
+</div>
+
 <div id="actionbar">
   <span style="font:600 10px/1.3 var(--f-ui);letter-spacing:0.12em;text-transform:uppercase;color:var(--tk-fg-3);max-width:104px">Acciones · exigen PIN</span>
   <div id="action-btns" style="display:flex;gap:10px;flex-wrap:wrap"></div>
@@ -671,8 +740,13 @@ const GEO = {"c":[[[-84.045,22.666],[-84.361,22.379],[-84.383,22.256],[-84.326,2
 const $ = (id) => document.getElementById(id);
 /* Los canvas no leen custom properties: la paleta va en hex. Tiene que valer lo
    MISMO que el `:root` de arriba — `test_la_paleta_js_de_los_canvas...` lo cruza. */
+/* [T-7.23] `surface0` entra en `C` para que la rampa del espectrograma NO sea
+   una tercera copia de la paleta: el censo de color sólo sabe leer el `:root` y
+   este objeto, así que un color escrito en cualquier otro sitio es invisible
+   para él (la lección de T-2.137, donde el violeta del banner vivía inline). */
 const C = { fg1:'#F0F2F5', fg2:'#B8C2CE', fg3:'#8A9CB1', cyan:'#00BFFF',
-            geo:'#7CE7FF', ok:'#00E676', warn:'#FFC107', crit:'#FF5252' };
+            geo:'#7CE7FF', ok:'#00E676', warn:'#FFC107', crit:'#FF5252',
+            surface0:'#0E2336' };
 const CH = ['EHZ','ENZ','ENN','ENE'];
 const G = 9.80665;
 const pad2 = (n) => String(n).padStart(2,'0');
@@ -747,6 +821,29 @@ const DRILL_ABORT_VISIBLE_S = 1800;
 /* ============================== estado ============================== */
 const params = new URLSearchParams(location.search);
 const DEMO = params.get('demo');
+/* [T-7.23] `?view=` elige SUPERFICIE, no densidad: es ortogonal a `?mode=`.
+   Un valor desconocido cae a la vista de siempre Y SE DECLARA en la cabecera —
+   un parámetro mal escrito que no haga nada y no diga nada es la peor de las
+   dos opciones (misma lección que `?mode=`, T-6.28). */
+const VISTAS = ['gabinete', 'sismografo'];
+const VIEW = VISTAS.includes(params.get('view') || '') ? params.get('view') : 'gabinete';
+const BAD_VIEW = (params.get('view') && !VISTAS.includes(params.get('view'))) ? params.get('view') : null;
+/* Cada cuánto se re-pide el helicorder. NO es 1 Hz y no puede serlo: una lectura
+   de 6 h del anillo midió 0.89 s de disco [PROTOTIPO · Pi 4 · 2026-09-20], así
+   que a 1 Hz sería el 89 % de un núcleo dedicado a repintar algo que cambia un
+   píxel por segundo. 60 s es la cadencia; la EDAD se rotula siempre (regla de
+   oro 7).
+   [T-7.23 · Q1] Esta cadencia es además un SUMANDO del umbral con el que el
+   gabinete decide si el helicorder está rancio (`RANCIO_HELI_S` en
+   `sismografo.py`): «hasta 60 s de antigüedad por diseño» y «el sensor lleva
+   10 s sin entregar» no pueden convivir en la misma tarjeta. La guarda
+   `test_el_umbral_del_helicorder_se_deriva_de_su_cadencia_y_de_la_del_anillo`
+   lee este número de aquí, así que cambiarlo mueve el umbral con él. */
+const HELI_REFRESH_MS = 60000;
+/* Ventana FFT por defecto del espectrograma: 65 filas × 92 columnas sobre los
+   60 s del anillo, 2.4 ms [PROTOTIPO · Pi 4 · 2026-09-20]. El servidor sólo
+   admite 128 o 256. */
+const SPEC_NPERSEG = 128;
 const DEMO_INHIBE = 'MODO DEMO · LAS ÓRDENES ESTÁN INHIBIDAS · quita ?demo= de la URL para operar';
 const S = {
   status: null,          // último /api/status recibido (crudo, §5.1)
@@ -758,6 +855,20 @@ const S = {
   mode: 'consola', userMode: false,
   /* [T-6.28] `?mode=` que no es una de las tres densidades: se declara en la cabecera. */
   badMode: null,
+  /* [T-7.23] vista sismógrafo. `*Seq` / `*Drawn` son lo que hace que los dos
+     lienzos se repinten POR DATO y no por fotograma: el espectrograma son ~6000
+     celdas y pintarlas 60 veces por segundo para enseñar la misma imagen sería
+     quemar el navegador del kiosco sin ganar nada. `heliCalcAt` es el reloj
+     local de la última respuesta buena del helicorder: de ahí sale la edad que
+     la tarjeta declara, porque ese dato llega viejo POR DISEÑO. */
+  spec: null, specSeq: 0, specDrawn: -1,
+  heli: null, heliSeq: 0, heliDrawn: -1, heliAt: 0, heliCalcAt: 0, heliDirty: false,
+  /* [T-7.23 · V2] El veredicto de frescura con el que se pintó el ÚLTIMO
+     bitmap del helicorder. Arranca en `false` y no en `null` porque
+     `renderHeliMeta` corre en las DOS vistas: con `null`, un panel sin
+     helicorder todavía ensuciaría el lienzo en cada tick para nada. */
+  heliRancioPintado: false,
+  sismoCh: 'EHZ', heliHours: 1,
   variant: 'A',
   catalog: null,
   catalogAt: 0,
@@ -1028,12 +1139,50 @@ async function tick(){
       if (!rs.ok) throw new Error('status '+rs.status);
       const st = await rs.json();
       /* mismo tick, SECUENCIAL: jamás dos fetch en paralelo contra el Pi */
-      const q = 'api/waveform?since=' + (S.cursor == null ? '' : S.cursor);
-      const rw = await fetch(q, {cache:'no-store'});
-      if (rw.ok) integrateWave(await rw.json());
-      if (!S.catalog || (performance.now() - S.catalogAt) > 600000){
-        S.catalogAt = performance.now();
-        try { const rc = await fetch('api/catalog', {cache:'no-store'}); if (rc.ok) S.catalog = await rc.json(); } catch (err) { /* el panel lo declara */ }
+      if (VIEW === 'sismografo'){
+        /* [T-7.23] En esta vista NO hay carriles de onda, así que no se pide
+           `/api/waveform`: el espectrograma sale del MISMO anillo de 60 s y
+           pedir las dos cosas sería pagar dos veces por el mismo dato. */
+        const rp = await fetch('api/spectrogram?channel=' + S.sismoCh + '&nperseg=' + SPEC_NPERSEG, {cache:'no-store'});
+        if (rp.ok){ S.spec = await rp.json(); S.specSeq += 1; }
+        if (S.heliDirty || !S.heliAt || (performance.now() - S.heliAt) > HELI_REFRESH_MS){
+          S.heliDirty = false;
+          const rh = await fetch('api/helicorder?channel=' + S.sismoCh + '&hours=' + S.heliHours, {cache:'no-store'});
+          const recibido = rh.ok ? await rh.json() : null;
+          /* [T-7.23] La marca de «ya lo pedí» se pone DESPUÉS, y sólo si la
+             respuesta vale para los próximos 60 s. Poniéndola antes, un
+             `ocupado` transitorio —otro kiosco leyendo el mismo anillo, que es
+             exactamente para lo que existe ese estado— dejaba el lienzo en
+             blanco un minuto entero sin reintentar. Las demás razones NO se
+             reintentan, y eso es lo que impide que una ventana sin dato ponga
+             a leer el disco a 1 Hz. */
+          const ocupado = !!(recibido && recibido.degraded && recibido.reason === 'ocupado');
+          /* Un 404 o un 500 tampoco se reintentan a 1 Hz: pedir más deprisa no
+             arregla un gabinete que no sirve el endpoint, y el estado de la
+             conexión ya lo lleva el tick de `/api/status`. El ÚNICO caso que
+             merece el tick siguiente es `ocupado`, que es transitorio por
+             diseño y es la respuesta más barata que da el gabinete. */
+          if (!ocupado) S.heliAt = performance.now();
+          if (recibido){
+            /* Un `ocupado` no pisa un helicorder bueno que ya está en pantalla
+               —su edad sigue corriendo y la tarjeta la declara—, pero si no hay
+               ninguno sí se enseña: una pantalla en blanco sin causa es peor. */
+            if (!ocupado || !S.heli){
+              S.heli = recibido; S.heliSeq += 1;
+              if (!ocupado) S.heliCalcAt = performance.now();
+            }
+          }
+        }
+      } else {
+        const q = 'api/waveform?since=' + (S.cursor == null ? '' : S.cursor);
+        const rw = await fetch(q, {cache:'no-store'});
+        if (rw.ok) integrateWave(await rw.json());
+        /* El catálogo alimenta el mapa y la comparativa, que viven en la vista
+           por defecto: en la del sismógrafo sería tráfico que nadie mira. */
+        if (!S.catalog || (performance.now() - S.catalogAt) > 600000){
+          S.catalogAt = performance.now();
+          try { const rc = await fetch('api/catalog', {cache:'no-store'}); if (rc.ok) S.catalog = await rc.json(); } catch (err) { /* el panel lo declara */ }
+        }
       }
       markTransitions(st);
       S.status = st; S.failures = 0; S.lastGoodAt = performance.now(); S.lastGoodClock = clockUTC();
@@ -1116,6 +1265,13 @@ function setPill(idTxt, idDot, pill, label, color, bg){
 function render(){
   const st = S.status, conn = connectionState();
   document.body.className = 'mode-' + S.mode;
+  /* [T-7.23] La conmutación de vista va ANTES del `return` por falta de status:
+     un gabinete que todavía no contesta tiene que enseñar igual la superficie
+     que se pidió, con sus zonas en S/D, y no la otra. */
+  $('grid').classList.toggle('hide', VIEW === 'sismografo');
+  $('sismo').classList.toggle('hide', VIEW !== 'sismografo');
+  document.querySelectorAll('[data-sismo-h]').forEach(b => b.classList.toggle('on', Number(b.dataset.sismoH) === S.heliHours));
+  renderSismo(st);
   $('hdr-clock').textContent = clockUTC();
   setPill('pill-live-txt','pill-live-dot',$('pill-live'), conn.label, conn.color,
     conn.kind === 'live' ? 'rgba(0,230,118,0.08)' : conn.kind === 'down' ? 'rgba(255,82,82,0.15)' : 'rgba(255,193,7,0.18)');
@@ -1141,7 +1297,8 @@ function render(){
   $('hdr-ident').textContent = (st.iot_thing || 'S/D') + ' · ' + (st.station_code || 'S/D');
   $('hdr-meta').textContent = 'CADENCIA ' + (st.refresh_ms||1000) + ' ms · config ' +
     (st.config_version == null ? 'S/D' : (st.config_version === 0 ? 'v0 · defaults' : 'v'+st.config_version)) +
-    (S.badMode ? ' · ?mode=' + S.badMode + ' NO EXISTE → DENSIDAD AUTO' : '');
+    (S.badMode ? ' · ?mode=' + S.badMode + ' NO EXISTE → DENSIDAD AUTO' : '') +
+    (BAD_VIEW ? ' · ?view=' + BAD_VIEW + ' NO EXISTE → VISTA GABINETE' : '');
   const cloud = st.cloud || {online:false, queued:null};
   setPill('pill-cloud-txt','pill-cloud-dot',$('pill-cloud'),
     cloud.online ? 'ENLACE NUBE · CONECTADO' : 'SIN ENLACE — PROTECCIÓN LOCAL ACTIVA' + (cloud.queued != null ? ' · '+cloud.queued+' EN COLA' : ''),
@@ -1604,22 +1761,49 @@ function renderLora(st){
   });
 }
 
+/* [T-7.23 · A2] Las DOS filas que delatan a un sensor mudo viven aquí, y no
+   dentro de `renderSalud`, porque las pintan dos superficies: `#salud-grid` en
+   la vista de siempre y la tarjeta de estación en la del sismógrafo. Copiarlas
+   habría dejado dos umbrales que se separan el día que alguien corrija uno.
+   Los umbrales son los que ya tenía la tabla de salud: ámbar a los 2 s de
+   retraso, rojo a los 10 — y son los MISMOS 10 s con los que el servidor marca
+   `stale` el ESPECTROGRAMA (`RANCIO_S`, T-7.23·A2). El helicorder NO comparte
+   ese número y compartirlo costó una falsa alarma: su dato sale del anillo de
+   disco y se re-pide cada 60 s, así que llega viejo por diseño. Su umbral se
+   deriva de su propia cadencia (`RANCIO_HELI_S`, T-7.23·Q1). Ninguno de los dos
+   umbrales de `stale` se teclea en este fichero: los dos llegan servidos en
+   `stale_after_s`, y lo único que vive aquí es el par de la tabla de salud. */
+function umbralColor(v, amber, red){
+  return v == null ? C.warn : (red != null && v >= red) ? C.crit : (amber != null && v >= amber) ? C.warn : C.ok;
+}
+function filaRetrasoSensor(h){
+  const v = h ? h.seedlink_lag_s : null;
+  const txt = !h || v == null ? 'S/D'
+    : (v >= 3600 ? (v/3600).toFixed(1)+' h' : v.toFixed(2)+' s');
+  return ['Retraso del sensor', txt, umbralColor(v, 2, 10)];
+}
+function filaPaquetesVistos(sl){
+  if (!sl) return ['Paquetes vistos (desde el arranque)', 'S/D · sin cliente', C.warn];
+  /* Cero paquetes NO es un número gris: es un gabinete sin sensor, que es
+     justo el caso que esta vista tiene que delatar. */
+  return ['Paquetes vistos (desde el arranque)', String(sl.packets_seen),
+          sl.packets_seen ? C.fg2 : C.warn];
+}
+
 function renderSalud(st){
   const grid = $('salud-grid'); grid.textContent = '';
   const h = st.health, sl = st.seedlink, cloud = st.cloud || {};
   $('salud-age').textContent = h ? ('DIAGNÓSTICO DE HACE ' + fmtAge(h.age_s)) : 'S/D · SIN DIAGNÓSTICO AÚN';
   $('salud-age').style.color = h && h.age_s < 180 ? C.fg3 : C.warn;
   $('salud-age').style.background = h && h.age_s < 180 ? 'rgba(240,242,245,0.06)' : 'rgba(255,193,7,0.18)';
-  const col = (v, amber, red) => v == null ? C.warn : (red != null && v >= red) ? C.crit : (amber != null && v >= amber) ? C.warn : C.ok;
+  const col = umbralColor;
   const rows = [];
+  rows.push(filaRetrasoSensor(h));
   if (h){
-    rows.push(['Retraso del sensor', h.seedlink_lag_s == null ? 'S/D' : (h.seedlink_lag_s >= 3600 ? (h.seedlink_lag_s/3600).toFixed(1)+' h' : h.seedlink_lag_s.toFixed(2)+' s'), col(h.seedlink_lag_s, 2, 10)]);
     rows.push(['Pérdida de paquetes', h.packet_loss_pct == null ? 'S/D' : h.packet_loss_pct.toFixed(1)+' %', col(h.packet_loss_pct, 1, 10)]);
-  } else {
-    rows.push(['Retraso del sensor', 'S/D', C.warn]);
   }
   if (sl){
-    rows.push(['Paquetes vistos (desde el arranque)', String(sl.packets_seen), C.fg2]);
+    rows.push(filaPaquetesVistos(sl));
     rows.push(['Reconexiones SeedLink', String(sl.reconnects), sl.reconnects > 5 ? C.warn : C.fg2]);
     rows.push(['Huecos del flujo', String(sl.gaps), sl.gaps > 0 ? C.warn : C.ok]);
     rows.push(['Duplicados', String(sl.duplicates), C.fg2]);
@@ -2275,8 +2459,21 @@ function toPhys(c, counts){
   const s = sens();
   return c[1] === 'N' ? counts*s.a/G : counts*s.v*100; /* g | cm/s */
 }
+/* [T-7.23 · N1] EL PISO DE ESCALA, EN UNIDADES FÍSICAS Y EN UN SOLO SITIO.
+   Estaba tecleado dos veces —aquí y en `pisoHeliCounts`— y estaba
+   INTERCAMBIADO entre familias de canal: el helicorder le daba al geófono el
+   piso de los acelerómetros y al revés, 8.33× en cada sentido, con su propio
+   comentario afirmando lo contrario. Un carril de velocidad con el piso de
+   aceleración pinta un anillo en calma como un sismo o un sismo como una
+   línea plana; ninguna de las dos cosas se ve venir leyendo el número suelto.
+   La familia se elige con el MISMO predicado que decide la UNIDAD en `toPhys`
+   (`c[1] === 'N'` = los EN* miden aceleración; el resto, velocidad), porque un
+   piso en g sobre un carril rotulado en cm/s no significa nada. La
+   comparación vieja (`c === 'EHZ'`) además le daba el piso de aceleración a
+   dos de los tres carriles de un RS3D (EHE/EHN), que son de velocidad. */
+function pisoEscala(c){ return c && c[1] === 'N' ? 0.012 : 0.10; } /* g | cm/s */
 function scaleFor(c, st){
-  const floor = c === 'EHZ' ? 0.10 : 0.012;
+  const floor = pisoEscala(c);
   const m = st && st.signal && st.signal.channels && st.signal.channels[c];
   const pk = Math.max(m ? (c[1] === 'N' ? m.pga_g : m.pgv_cms) : 0, peakHold[c] || 0);
   peakHold[c] = Math.max(pk, (peakHold[c] || 0) * 0.985);
@@ -2767,12 +2964,394 @@ function drawCmpChart(){
   x.fillStyle = C.fg3; x.font = "400 9px 'Geist',system-ui";
   x.fillText('BANDA ILUSTRATIVA ×3 / ÷3 · LEY v1 ILUSTRATIVA · SSN HORA LOCAL UTC-'+SSN_UTC_OFFSET_H, padL, padT+9);
 }
+/* ================= [T-7.23] vista SISMÓGRAFO (§15 de la spec) ================= */
+/* Una regla gobierna las tres zonas: lo que se pinta declara su PROCEDENCIA y su
+   EDAD. Aquí es especialmente literal, porque los DOS lienzos llegan viejos y
+   por motivos distintos: el helicorder se re-pide cada 60 s (una lectura de 6 h
+   costó 0.89 s de disco [PROTOTIPO · Pi 4 · 2026-09-20]) y el espectrograma sale
+   de un anillo que sólo poda al appendear, así que con el sensor callado sirve
+   el mismo minuto para siempre. Callar cualquiera de las dos edades sería la
+   regla de oro 7 justo del revés. */
+
+/* Las razones de degradación llegan como DATO desde la API, en snake_case, y se
+   imprimían tal cual en la pared («SIN ESPECTROGRAMA · canal_sin_muestras»).
+   Dos cosas mal: un guardia de pie frente al gabinete no lee snake_case, y el
+   censo del glosario (`test_glosario_de_estados.py`) sólo ve literales del HTML,
+   así que esas ocho frases entraban al panel sin pasar por el vocabulario. Aquí
+   están escritas, en mayúsculas y con los términos del glosario — y una guarda
+   comprueba que esta tabla cubre TODAS las razones que el servidor puede emitir,
+   derivándolas del propio `sismografo.py` en vez de enumerarlas a mano. */
+const RAZONES_SISMO = {
+  sin_modulo_de_senal: 'EL MÓDULO DE SEÑAL NO CONTESTA',
+  sin_anillo: 'ESTE ARRANQUE NO MONTÓ EL ANILLO',
+  canal_sin_muestras: 'EL ANILLO DE RAM NO TIENE ESE CANAL',
+  muestras_insuficientes: 'MENOS MUESTRAS QUE UNA VENTANA FFT',
+  error_de_calculo: 'AVERÍA AL CALCULAR EL ESPECTROGRAMA',
+  canal_sin_ficheros: 'EL ANILLO DE DISCO NO GUARDA ESE CANAL',
+  sin_dato_en_la_ventana: 'EL SENSOR CALLÓ DURANTE TODA LA VENTANA',
+  anillo_ilegible: 'EL ANILLO DE DISCO NO SE PUEDE LEER',
+  ocupado: 'OTRA LECTURA DEL ANILLO EN CURSO'
+};
+/* [T-7.23 · Q2] `anillo_desordenado` SALIÓ de esa tabla, y no por limpieza: era
+   una razón de degradación, o sea la pantalla del sismógrafo en blanco hasta que
+   el fichero del día saliera del anillo —unas 30 h— porque un paquete llegó dos
+   veces. Ahora el gabinete sigue sirviendo el dibujo y marca la ventana con
+   `ring_unordered`; esto es lo que la persona lee, y es una ADVERTENCIA sobre la
+   ventana, no un apagado. La frase es la misma que tenía como razón: lo que
+   cambió es que ya no viene en lugar del helicorder, sino encima de él. */
+const AVISO_ANILLO_SIN_ORDEN = 'EL ANILLO DE DISCO LLEGÓ FUERA DE ORDEN · ESTA VENTANA PUEDE ESTAR INCOMPLETA';
+/* Una razón que esta tabla no conozca se imprime CRUDA y se dice que lo es: es
+   feo a propósito, para que se vea desde lejos que falta una traducción, y es
+   infinitamente mejor que un rótulo genérico que esconda una razón nueva. */
+function fraseRazon(razon){
+  if (!razon) return 'SIN RAZÓN DECLARADA';
+  return RAZONES_SISMO[razon] || (razon + ' · RAZÓN SIN TRADUCIR EN EL PANEL');
+}
+
+function kvSismo(rotulo, valor, color){
+  const caja = document.createElement('div');
+  const l = document.createElement('span');
+  l.className = 'seclabel'; l.style.color = 'var(--tk-fg-3)'; l.textContent = rotulo;
+  const v = document.createElement('span');
+  v.className = 'mono'; v.style.fontSize = '12px'; v.textContent = valor;
+  if (color) v.style.color = color;
+  caja.append(l, v);
+  return caja;
+}
+/* Notación exponencial y no decimal: la sensibilidad del RS4D es 2.5e-9 m/s por
+   count, y con seis decimales se lee «0.000000». */
+function fmtSens(v){ return v == null ? 'S/D' : Number(v).toExponential(4); }
+
+/* [T-7.23 · M4] Los dos lienzos del sismógrafo se repintan POR DATO, así que
+   nada los redibuja cuando lo que cambia es su TAMAÑO. `fitCanvas()` vive dentro
+   de `drawSpectro`/`drawHeli` y sólo corre si cambió `specSeq`/`heliSeq`: un
+   `resize` o un clic en MURO/CONSOLA/CAMPO dejaba el helicorder hasta 60 s con
+   el bitmap viejo estirado por CSS — un sismograma deformado, que es peor que
+   uno ausente. Ensuciar los dos contadores fuerza el repintado en el fotograma
+   siguiente sin volver a pedir nada al gabinete. */
+function invalidarLienzosSismo(){ S.specDrawn = -1; S.heliDrawn = -1; }
+
+function renderSismo(st){
+  const caja = $('sismo-station');
+  caja.textContent = '';
+  const nslc = (st && st.station_nslc) || [];
+  const cal = (st && st.calibration) || null;
+  /* La identidad COMPLETA, que es como rotula su traza cualquier sismógrafo.
+     `station_code` (red.estación) sigue siendo el de la cabecera y el de la
+     nube; esto es lo que hace falta para saber qué canal se está mirando. */
+  caja.append(kvSismo('Canales · red.estación.loc.canal', nslc.length ? nslc.join('  ·  ') : 'S/D'));
+  caja.append(kvSismo('Sensibilidad velocidad · m/s por count', fmtSens(cal && cal.vel_sensitivity_ms_per_count)));
+  caja.append(kvSismo('Sensibilidad aceleración · m/s² por count', fmtSens(cal && cal.accel_sensitivity_ms2_per_count)));
+  /* De la procedencia de la calibración depende que los ejes estén en unidades
+     físicas o sean relativos: sin ella el panel NO afirma una unidad (T-2.85.a). */
+  caja.append(kvSismo('Calibración', (cal && cal.calibrated && cal.source) ? cal.source : 'SIN CALIBRAR · UNIDADES rel.'));
+  /* [T-7.23 · A2] LA SALUD DEL SENSOR, aquí y no sólo en `#salud-grid`. Esta
+     vista esconde `#grid`, que es donde vive esa tarjeta, así que un sismógrafo
+     con el sensor mudo se veía EXACTAMENTE igual que uno vivo: el espectrograma
+     seguía enseñando el último minuto bueno y no quedaba nada en pantalla que
+     lo delatara. Las dos filas se DERIVAN de las mismas funciones que las pinta
+     en la otra vista — dos copias acabarían con dos umbrales. */
+  [filaRetrasoSensor(st && st.health), filaPaquetesVistos(st && st.seedlink)]
+    .forEach(f => caja.append(kvSismo(f[0], f[1], f[2])));
+  $('sismo-station-meta').textContent =
+    ((st && st.station_code) || 'S/D') + ' · ' + nslc.length + ' canales provisionados';
+  renderChipsDeCanal(nslc);
+  renderSpecMeta();
+  renderHeliMeta();
+}
+
+/* Los botones de canal salen de `station_nslc` (`red.estación.loc.CANAL`), que
+   es lo que el gabinete dice tener provisionado. Enumerarlos en el marcado
+   decía qué canales DEBERÍA haber en un RS4D, no cuáles hay en ÉSTE. */
+function renderChipsDeCanal(nslc){
+  const caja = $('sismo-ch-chips');
+  caja.textContent = '';
+  const canales = nslc.map(c => String(c).split('.').pop()).filter(Boolean);
+  if (!canales.length){
+    const aviso = document.createElement('span');
+    aviso.className = 'meta'; aviso.textContent = 'S/D · SIN CANALES PROVISIONADOS';
+    caja.appendChild(aviso);
+    return;
+  }
+  canales.forEach(ch => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (ch === S.sismoCh ? ' on' : '');
+    b.dataset.sismoCh = ch;
+    b.textContent = ch;
+    b.addEventListener('click', () => { S.sismoCh = ch; S.heliDirty = true; render(); });
+    caja.appendChild(b);
+  });
+}
+
+function renderSpecMeta(){
+  const el = $('sismo-spec-meta'), sp = S.spec;
+  let txt, color = 'var(--tk-fg-3)';
+  let titulo = 'Espectrograma · últimos 60 s';
+  if (!sp){
+    txt = 'SIN ESPECTROGRAMA · el gabinete todavía no ha respondido'; color = C.warn;
+  } else if (sp.degraded){
+    txt = 'SIN ESPECTROGRAMA · ' + fraseRazon(sp.reason); color = C.warn;
+  } else {
+    /* La escala se rotula SIEMPRE y con sus dos extremos: es fija a propósito
+       (§15.3), y si no se dice, el color no significa nada medible. */
+    txt = sp.channel + ' · escala FIJA ' + sp.db_min + ' a ' + sp.db_max +
+      ' dB rel. counts²/Hz · FFT ' + sp.nperseg + ' · ' + sp.freq_hz.length + '×' + sp.t_offset_s.length;
+    /* [T-7.23 · A2] La EDAD, siempre, y el ESTADO cuando pasa del umbral que
+       declara el propio servidor (`stale_after_s`). No es un color más pálido:
+       el rótulo de la tarjeta deja de decir «últimos 60 s» y el borde derecho
+       del lienzo deja de decir «AHORA», porque las dos cosas serían falsas. */
+    const edad = sp.age_s == null ? null : Math.max(0, Math.round(sp.age_s));
+    if (sp.stale){
+      titulo = 'Espectrograma · DATO RETENIDO';
+      txt = 'DATO RETENIDO HACE ' + (edad == null ? 'S/D' : fmtAge(edad)) +
+        ' · EL SENSOR NO ENTREGA MUESTRAS NUEVAS · ' + txt;
+      color = C.crit;
+    } else {
+      txt += ' · última muestra hace ' + (edad == null ? 'S/D' : edad + ' s');
+    }
+    if (sp.requested_channel && sp.requested_channel !== sp.channel){
+      txt += ' · se pidió ' + sp.requested_channel + ' y el anillo no lo tiene';
+      if (!sp.stale) color = C.warn;
+    }
+    if (sp.gap_before){ txt += ' · tramo cortado por un hueco del sensor'; if (!sp.stale) color = C.warn; }
+    const fuera = (sp.above_scale || 0) + (sp.below_scale || 0);
+    if (fuera){ txt += ' · ' + fuera + ' celdas fuera de escala'; }
+  }
+  $('sismo-spec-title').textContent = titulo;
+  el.textContent = txt; el.style.color = color;
+  $('sismo-spec-sr').textContent = txt;
+}
+
+function renderHeliMeta(){
+  const el = $('sismo-heli-meta'), h = S.heli;
+  let txt, color = 'var(--tk-fg-3)';
+  let titulo = 'Helicorder · anillo de disco';
+  if (!h){
+    txt = 'SIN HELICORDER · el gabinete todavía no ha respondido'; color = C.warn;
+  } else if (h.degraded){
+    txt = 'SIN HELICORDER · ' + fraseRazon(h.reason); color = C.warn;
+    /* Una ventana sin dato sobre un anillo que perdió la monotonía y otra sobre
+       un anillo sano mandan al operador a sitios distintos. */
+    if (h.ring_unordered) txt += ' · ' + AVISO_ANILLO_SIN_ORDEN;
+  } else {
+    const huecos = (h.gaps || []).length;
+    const edad = S.heliCalcAt ? Math.round((performance.now() - S.heliCalcAt)/1000) : null;
+    const partes = [
+      h.channel + ' · ' + h.hours + ' h · mín/máx cada ' + h.bucket_s + ' s',
+      /* Se re-pide cada 60 s: un helicorder de hace un minuto es lo NORMAL, y
+         pintarlo sin su edad sería enseñarlo como si fuera de ahora. Ésta es la
+         edad del CÁLCULO, que no es la del DATO: son dos cosas distintas y las
+         dos se rotulan. */
+      'CALCULADO HACE ' + (edad == null ? 'S/D' : edad + ' s'),
+      huecos + ' HUECO' + (huecos === 1 ? '' : 'S') + ' DECLARADO' + (huecos === 1 ? '' : 'S'),
+      Math.round((h.bytes_read || 0)/1024) + ' KiB leídos del anillo'
+    ];
+    if (h.truncated){ partes.push('RECORTADO · ' + (h.truncated_reason || 'sin causa declarada')); }
+    /* [T-7.23 · Q2] El desorden del anillo es una ADVERTENCIA sobre la ventana y
+       viaja CON el dibujo, no en su lugar: lo que no se sabe es si la ventana
+       está entera, y eso ya lo dice `truncated` cuando se puede medir. */
+    if (h.ring_unordered){ partes.push(AVISO_ANILLO_SIN_ORDEN); }
+    txt = partes.join(' · ');
+    if (huecos || h.truncated || h.ring_unordered) color = C.warn;
+    /* [T-7.23 · V2] La EDAD DEL DATO, con el mismo ESTADO que el espectrograma
+       y con SU PROPIO umbral (`stale_after_s`, que sirve el gabinete). El lienzo
+       deja de decir «AHORA» en su borde derecho y la tarjeta lo dice con letra:
+       un helicorder lleno y sin avisos sobre un sensor que calló hace tres horas
+       es la regla de oro 7 del revés.
+       [T-7.23 · Q1] Y al revés también: con el umbral del espectrograma esto
+       gritaba unos 50 de cada 60 segundos con el sensor sano, porque este dibujo
+       llega viejo POR DISEÑO. Son dos hechos distintos y la tarjeta los dice por
+       separado: «CALCULADO HACE N s» es la edad del DIBUJO y no acusa a nadie;
+       esto es la edad del DATO. */
+    if (heliRancio(h)){
+      const dato = Math.max(0, Math.round(h.age_s + (S.heliCalcAt ? (performance.now() - S.heliCalcAt)/1000 : 0)));
+      txt = 'DATO RETENIDO HACE ' + fmtAge(dato) +
+        ' · EL SENSOR NO ENTREGA MUESTRAS NUEVAS · ' + txt;
+      titulo = 'Helicorder · DATO RETENIDO';
+      color = C.crit;
+    }
+  }
+  /* El veredicto se evalúa a 1 Hz y el lienzo se repinta POR DATO: si cambia
+     mientras el bitmap está quieto, hay que ensuciarlo o el rótulo se queda
+     mintiendo hasta la respuesta siguiente (60 s, o nunca). */
+  if (heliRancio(h) !== S.heliRancioPintado){ S.heliDrawn = -1; }
+  $('sismo-heli-title').textContent = titulo;
+  el.textContent = txt; el.style.color = color;
+  $('sismo-heli-sr').textContent = txt;
+}
+
+/* Rampa de color del espectrograma, calculada aquí: una paleta de fuera sería
+   un recurso externo, y en la LAN del gabinete no hay internet. Cinco paradas
+   interpoladas en RGB, de fondo frío a rojo crítico — y CERO hexes propios: las
+   tres altas son las del panel y las dos bajas se derivan del fondo de la
+   tarjeta. Eran una tercera copia literal de la paleta, escrita fuera del
+   `:root` y fuera de `C`, que son las dos únicas que el censo de color sabe
+   leer: un color que vive en otro sitio es invisible para él. */
+function rgbDe(hex){ return [parseInt(hex.slice(1,3),16), parseInt(hex.slice(3,5),16), parseInt(hex.slice(5,7),16)]; }
+function mezclaRgb(a, b, t){ return [0,1,2].map(i => Math.round(a[i] + (b[i]-a[i])*t)); }
+function tinte(hex, alfa){ const c = rgbDe(hex); return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + alfa + ')'; }
+const SPEC_PARADAS = (function(){
+  const fondo = rgbDe(C.surface0), cian = rgbDe(C.cyan);
+  return [fondo, mezclaRgb(fondo, cian, 0.45), cian, rgbDe(C.warn), rgbDe(C.crit)];
+})();
+function rampaEspectro(v){
+  const t = Math.max(0, Math.min(1, v/255));
+  const x = t*(SPEC_PARADAS.length-1);
+  const i = Math.min(SPEC_PARADAS.length-2, Math.floor(x)), f = x - i;
+  const a = SPEC_PARADAS[i], b = SPEC_PARADAS[i+1];
+  return 'rgb(' + Math.round(a[0]+(b[0]-a[0])*f) + ',' + Math.round(a[1]+(b[1]-a[1])*f) + ',' +
+    Math.round(a[2]+(b[2]-a[2])*f) + ')';
+}
+function sinDatoEnLienzo(c, texto){
+  c.x.fillStyle = C.fg3; c.x.font = "700 12px 'Geist',system-ui"; c.x.textAlign = 'center';
+  c.x.fillText(texto, c.w/2, c.h/2); c.x.textAlign = 'left';
+}
+const SISMO_PAD_L = 46, SISMO_PAD_B = 16;
+
+function drawSpectro(){
+  const c = fitCanvas($('spec-canvas')); if (!c) return;
+  const sp = S.spec;
+  if (!sp || sp.degraded || !sp.rows.length){ sinDatoEnLienzo(c, 'SIN ESPECTROGRAMA'); return; }
+  const x = c.x;
+  const nf = sp.rows.length, nt = sp.rows[0].length;
+  const W = Math.max(1, c.w - SISMO_PAD_L), H = Math.max(1, c.h - SISMO_PAD_B);
+  const cw = W/nt, ch = H/nf;
+  for (let i = 0; i < nf; i++){
+    const fila = sp.rows[i];
+    /* La fila 0 es la frecuencia más baja y va ABAJO: un espectrograma con el
+       eje invertido se lee al revés y nadie lo nota hasta que importa. */
+    const y = H - (i+1)*ch;
+    for (let j = 0; j < nt; j++){
+      x.fillStyle = rampaEspectro(fila[j]);
+      x.fillRect(SISMO_PAD_L + j*cw, y, Math.ceil(cw)+1, Math.ceil(ch)+1);
+    }
+  }
+  x.fillStyle = C.fg3; x.font = "400 9px 'Geist',system-ui";
+  const fmax = sp.freq_hz.length ? sp.freq_hz[sp.freq_hz.length-1] : 0;
+  [0, 0.5, 1].forEach(frac => {
+    x.fillText((fmax*frac).toFixed(0) + ' Hz', 4, H - frac*H + 8);
+  });
+  const dur = sp.t_offset_s.length ? sp.t_offset_s[sp.t_offset_s.length-1] : 0;
+  x.fillText('−' + dur.toFixed(0) + ' s', SISMO_PAD_L, c.h - 4);
+  rotularBordeDerecho(x, c, !!sp.stale, sp.last_sample_at);
+}
+
+/* [T-7.23 · V2] EL BORDE DERECHO DE LOS DOS LIENZOS, EN UNA SOLA FUNCIÓN.
+   Sólo dice «AHORA» si el dato es de ahora; cuando no lo es, dice la HORA de
+   la última muestra. Un dibujo de hace tres horas rotulado «AHORA» es
+   exactamente el dato congelado que la regla de oro 7 prohíbe, y el
+   helicorder lo hacía INCONDICIONALMENTE: `x.fillText('AHORA', …)` y punto.
+   Peor que en el espectrograma, además, porque su lienzo sólo se repinta
+   cuando llega dato nuevo (cada 60 s, o nunca si el gabinete deja de
+   contestar), así que el rótulo se quedaba puesto en el bitmap. Las dos
+   superficies comparten función y comparten los cuatro campos que el servidor
+   declara (`last_sample_at`, `age_s`, `stale`, `stale_after_s`): un segundo
+   mecanismo habría acabado con dos formas de decir lo mismo.
+   [T-7.23 · Q1] Lo que NO comparten es el UMBRAL, y aquí decía que sí. Cada
+   lienzo lo recibe en su propio `stale_after_s` porque miden cadencias
+   distintas: el del anillo de RAM se re-pide a 1 Hz y el del anillo de disco
+   cada 60 s. El mecanismo es uno; el número, dos. */
+function rotularBordeDerecho(x, c, rancio, ultimaISO){
+  if (rancio && ultimaISO){
+    x.fillStyle = C.crit;
+    x.fillText(clockUTC(new Date(ultimaISO)), c.w - 92, c.h - 4);
+  } else {
+    x.fillText('AHORA', c.w - 40, c.h - 4);
+  }
+}
+
+/* ¿Puede el helicorder decir «AHORA»? El servidor da la edad de la última
+   muestra EN EL MOMENTO DEL CÁLCULO (`age_s`) y su umbral; el panel le suma lo
+   que ha corrido su propio reloj MONÓTONO desde que llegó esa respuesta. Sin
+   ese sumando, un helicorder que se quedó congelado seguiría enseñando un
+   «AHORA» de hace una hora. No hay mezcla de relojes de pared: la edad la mide
+   el Pi contra la cabecera del Shake, y el incremento lo mide el kiosco contra
+   sí mismo. El espectrograma no lo necesita porque se re-pide cada segundo. */
+function heliRancio(h){
+  if (!h || h.degraded || h.age_s == null) return false;
+  if (h.stale_after_s == null) return !!h.stale;
+  const desde = S.heliCalcAt ? (performance.now() - S.heliCalcAt)/1000 : 0;
+  return (h.age_s + desde) > h.stale_after_s;
+}
+
+/* Piso de la escala del helicorder, EN COUNTS. El comentario de aquí prometía
+   un piso —«sin piso, un anillo en calma se dibujaría como un terremoto»— y
+   debajo ponía `let amp = 1`, que es UN count: el piso no existía y una hora
+   de calma se pintaba a pantalla completa. El piso es el MISMO de los carriles
+   de onda (`pisoEscala`: 0.012 g en los acelerómetros, 0.10 cm/s en el
+   geófono), convertido a counts deshaciendo exactamente lo que hace `toPhys`
+   — así las dos superficies llaman «plano» a lo mismo. Sin calibración
+   `sens()` cae a sus valores por defecto y la tarjeta ya rotula `SIN CALIBRAR ·
+   UNIDADES rel.`. */
+function pisoHeliCounts(canal){
+  const s = sens();
+  return canal && canal[1] === 'N' ? (pisoEscala(canal)*G)/s.a : pisoEscala(canal)/(s.v*100);
+}
+
+function drawHeli(){
+  const c = fitCanvas($('heli-canvas')); if (!c) return;
+  const h = S.heli;
+  /* Se apunta lo que se ACABA de pintar, TAMBIÉN cuando no hay nada que
+     pintar: `renderHeliMeta` compara contra esto a 1 Hz para decidir si
+     ensucia el lienzo, y un veredicto sin apuntar lo ensuciaría en cada tick. */
+  S.heliRancioPintado = heliRancio(h);
+  if (!h || h.degraded || !h.segments.length){ sinDatoEnLienzo(c, 'SIN HELICORDER'); return; }
+  const x = c.x;
+  const t0 = Date.parse(h.window_start), t1 = Date.parse(h.window_end);
+  const lapso = Math.max(1, t1 - t0);
+  const W = Math.max(1, c.w - SISMO_PAD_L), H = Math.max(1, c.h - SISMO_PAD_B);
+  const medio = H/2;
+  /* Escala simétrica sobre la continua de cada tramo, con el piso de arriba. */
+  let amp = pisoHeliCounts(h.channel);
+  h.segments.forEach(s => {
+    for (let i = 0; i < s.minmax.length; i++){
+      const d = Math.abs(s.minmax[i] - s.dc_counts); if (d > amp) amp = d;
+    }
+  });
+  /* Los huecos se pintan ANTES y como franja, no como línea: unir dos tramos
+     discontinuos inventaría movimiento que no ocurrió. El ámbar sale de `C`,
+     que es donde el censo de color sabe mirar. */
+  (h.gaps || []).forEach(g => {
+    const a = SISMO_PAD_L + ((Date.parse(g.start) - t0)/lapso)*W;
+    const b = SISMO_PAD_L + ((Date.parse(g.end) - t0)/lapso)*W;
+    x.fillStyle = tinte(C.warn, 0.14);
+    x.fillRect(a, 0, Math.max(1, b - a), H);
+  });
+  x.strokeStyle = C.geo; x.lineWidth = 1; x.beginPath();
+  h.segments.forEach(s => {
+    const inicio = Date.parse(s.start);
+    for (let b = 0; b < s.buckets; b++){
+      const t = inicio + b*h.bucket_s*1000;
+      const px = SISMO_PAD_L + ((t - t0)/lapso)*W;
+      const lo = medio - ((s.minmax[2*b] - s.dc_counts)/amp)*(medio - 2);
+      const hi = medio - ((s.minmax[2*b+1] - s.dc_counts)/amp)*(medio - 2);
+      x.moveTo(px, lo); x.lineTo(px, hi);
+    }
+  });
+  x.stroke();
+  x.fillStyle = C.fg3; x.font = "400 9px 'Geist',system-ui";
+  x.fillText('±' + Math.round(amp) + ' counts', 4, 12);
+  x.fillText('−' + h.hours + ' h', SISMO_PAD_L, c.h - 4);
+  rotularBordeDerecho(x, c, S.heliRancioPintado, h.last_sample_at);
+}
+
 function frame(){
   S.raf = 0; S.lastFrame = performance.now();
   try {
-    if (DEMO) demoFillWave();
-    drawWaves(); drawRose();
-    if (S.overlay){ drawGeoMap(); drawCmpChart(); }
+    if (VIEW === 'sismografo'){
+      /* [T-7.23] Repintado POR DATO, no por fotograma. El espectrograma son
+         ~6000 celdas: pintarlas 60 veces por segundo para enseñar exactamente
+         la misma imagen quemaría el navegador del kiosco sin ganar nada. La
+         frescura NO se pinta en el lienzo, se rotula en el DOM a 1 Hz
+         (`renderHeliMeta`), que es lo que permite que el lienzo se quede quieto
+         sin que el dato se presente como vivo. */
+      if (S.specDrawn !== S.specSeq){ S.specDrawn = S.specSeq; drawSpectro(); }
+      if (S.heliDrawn !== S.heliSeq){ S.heliDrawn = S.heliSeq; drawHeli(); }
+    } else {
+      if (DEMO) demoFillWave();
+      drawWaves(); drawRose();
+      if (S.overlay){ drawGeoMap(); drawCmpChart(); }
+    }
     /* desarme REAL del two-step a los 5 s (defecto del prototipo, corregido) */
     if (S.armed && (performance.now() - S.armedAt) > 5000){
       S.armed = null; setPinMsg('Orden cancelada · no se confirmó a tiempo', 'meta'); renderActions(S.status);
@@ -2808,7 +3387,7 @@ const DIBUJO_ROTO = 'FALLO DE DIBUJO DEL PANEL · SIN TRAZA';
 function declararDibujoRoto(err){
   S.drawError = {at: performance.now(), msg: (err && err.message) || String(err)};
   try { console.error('panel: ' + DIBUJO_ROTO, err); } catch (e){ /* sin consola */ }
-  ['wave-canvas','rose-canvas','map-canvas','cmp-canvas'].forEach(id => {
+  ['wave-canvas','rose-canvas','map-canvas','cmp-canvas','spec-canvas','heli-canvas'].forEach(id => {
     try {
       const c = fitCanvas($(id)); if (!c) return;   /* fitCanvas LIMPIA al entrar */
       c.x.fillStyle = C.crit; c.x.font = "700 13px 'Geist',system-ui"; c.x.textAlign = 'center';
@@ -2829,12 +3408,25 @@ document.querySelectorAll('[data-scope]').forEach(b => b.addEventListener('click
 document.querySelectorAll('[data-variant]').forEach(b => b.addEventListener('click', () => { S.variant = b.dataset.variant; render(); }));
 document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.mode === 'auto'){ S.userMode = false; autoMode(); } else { S.userMode = true; S.mode = b.dataset.mode; }
+  /* [T-7.23 · M4] Cambiar de densidad cambia el ALTO de los dos lienzos del
+     sismógrafo (`body.mode-campo #sismo .lienzo{min-height:220px}`), y esos dos
+     sólo se repintan cuando cambia su dato: sin esto el helicorder se quedaba
+     hasta 60 s con el bitmap viejo ESTIRADO por CSS. */
+  invalidarLienzosSismo();
   render();
 }));
 $('tab-local').addEventListener('click', () => { S.tab = 'local'; $('tab-local').classList.add('on'); $('tab-ssn').classList.remove('on'); $('pane-local').classList.remove('hide'); $('pane-ssn').classList.add('hide'); });
 $('tab-ssn').addEventListener('click', () => { S.tab = 'ssn'; $('tab-ssn').classList.add('on'); $('tab-local').classList.remove('on'); $('pane-ssn').classList.remove('hide'); $('pane-local').classList.add('hide'); });
+/* [T-7.23] Los mandos de la ventana del helicorder. Los de CANAL ya no se
+   enganchan aquí: sus botones se derivan del status y `renderSismo` les pone el
+   suyo al crearlos. Cambiar de canal o de ventana ENSUCIA el helicorder
+   (`heliDirty`) para que el siguiente tick lo re-pida sin esperar los 60 s: el
+   operador acaba de pedir otra cosa y tiene que verla. */
+document.querySelectorAll('[data-sismo-h]').forEach(b => b.addEventListener('click', () => {
+  S.heliHours = Number(b.dataset.sismoH); S.heliDirty = true; render();
+}));
 function autoMode(){ if (S.userMode) return; S.mode = window.innerWidth < 1024 ? 'campo' : 'consola'; }
-window.addEventListener('resize', () => { autoMode(); render(); });
+window.addEventListener('resize', () => { autoMode(); invalidarLienzosSismo(); render(); });
 
 /* ============================== arranque ============================== */
 /* [T-6.28] `?mode=` valida contra las TRES densidades. Antes aceptaba cualquier cadena

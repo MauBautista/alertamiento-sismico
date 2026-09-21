@@ -33,6 +33,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import math
 import threading
 import time
 import urllib.parse
@@ -48,6 +49,7 @@ from takab_edge.contracts import ActuatorChannel, utcnow
 from takab_edge.durable import escribir_durable
 from takab_edge.gpio_link import GpioLink, GpioLinkUnavailable, GpioSnapshot, as_link
 from takab_edge.health import HealthMonitor
+from takab_edge.local_api import sismografo
 from takab_edge.module import EdgeModule
 from takab_edge.reloj import Cronometro, mono
 from takab_edge.rules import RuleEngine
@@ -83,6 +85,16 @@ _FALLBACK_HTML = (
 #: Es el default a propósito: sin explicación se asume la PEOR causa (avería del
 #: proceso que toca la sirena), jamás la más benigna.
 _RELAYS_UNKNOWN = {"reason": "unknown", "installed": None, "missing": []}
+
+
+class _SinModuloDeSenal(Exception):
+    """[T-7.23] «No hay módulo de señal» ≠ «el anillo está vacío».
+
+    Son dos razones distintas y mandan al operador a sitios distintos: la
+    primera, al journal del supervisor; la segunda, a mirar el sensor. Un solo
+    `reason` para las dos habría sido un fallback disfrazado.
+    """
+
 
 #: Centinela de «este llamador no trae instantánea», distinto de `None` («no se
 #: pudo leer»). Sin él, `_relays_view(None, "gpio_unreachable")` y
@@ -202,6 +214,63 @@ class RoseZeroStore:
         return snapshot
 
 
+def sanear_no_finitos(valor):
+    """[T-7.23 · M1] Deja el cuerpo en JSON que un `JSON.parse` SIEMPRE puede leer.
+
+    `json.dumps` de Python escribe `Infinity`, `-Infinity` y `NaN` tal cual, y
+    eso **no es JSON**: el `JSON.parse` del kiosco lanza, la excepción sube al
+    `catch` del tick y el panel declara caído un gabinete perfectamente sano —
+    peor que el 400 que la doctrina de estos endpoints prohíbe. Entraba por la
+    puerta más tonta (`?hours=inf` viajaba crudo en `requested_hours`), pero el
+    agujero no era ése: era que NINGÚN flotante de la respuesta estaba mirado.
+    Aquí se miran todos, a cualquier profundidad, y un no-finito sale como
+    `null` — que es la forma que el contrato ya tiene para «este número no
+    existe».
+
+    Se aplica a la respuesta ENTERA y no sólo al campo culpable a propósito: un
+    saneador que enumere campos a mano se queda atrás en cuanto alguien añade
+    uno.
+    """
+    if isinstance(valor, float):
+        return valor if math.isfinite(valor) else None
+    if isinstance(valor, dict):
+        return {k: sanear_no_finitos(v) for k, v in valor.items()}
+    if isinstance(valor, (list, tuple)):
+        return [sanear_no_finitos(v) for v in valor]
+    return valor
+
+
+def volcar_json(payload) -> str:
+    """[T-7.23 · N3] El cuerpo JSON del panel. El saneo cuesta sólo cuando hay algo que sanear.
+
+    La verja de `sanear_no_finitos` es correcta y se queda; lo que no puede
+    quedarse es que la pague el camino caliente por una imposibilidad.
+    Reconstruía la respuesta ENTERA en Python, listas de muestras incluidas —y
+    en `/api/waveform` son enteros decimados, donde un no-finito no cabe—.
+    Medido aquí, con `json.dumps` desnudo como vara [MEDIDO · equipo de
+    desarrollo x86-64 · Python 3.12 · 2026-09-20]:
+
+    | Cuerpo | `json.dumps` | saneo + `json.dumps` | `allow_nan=False` |
+    |---|---|---|---|
+    | `/api/waveform`, 8 000 valores | 0.61 ms | **1.82 ms** | 0.43 ms |
+    | helicorder de 6 h, 43 200 valores | 2.43 ms | **9.95 ms** | 2.37 ms |
+
+    `allow_nan=False` hace la comprobación DENTRO del codificador en C, que es
+    el mismo recorrido que ya se hacía: sale gratis. Y cuando de verdad hay un
+    no-finito, `json.dumps` levanta `ValueError` sin haber escrito nada, así
+    que el saneador corre entonces y sólo entonces (12.05 ms medidos sobre el
+    peor cuerpo — una vez, no una por petición).
+
+    Lo que NO se hace: enumerar qué endpoints o qué campos pueden traer un
+    no-finito. Esa lista se quedaría atrás igual que se quedaría la del
+    saneador, y la verja seguiría siendo exacta sólo hasta el siguiente campo.
+    """
+    try:
+        return json.dumps(payload, allow_nan=False)
+    except ValueError:
+        return json.dumps(sanear_no_finitos(payload))
+
+
 def _waveform_params(query: str) -> tuple[int | None, list[str] | None, int | None]:
     """Parámetros de /api/waveform (T-2.15): ilegales ⇒ defaults, jamás 400 al kiosco."""
     params = urllib.parse.parse_qs(query)
@@ -215,6 +284,43 @@ def _waveform_params(query: str) -> tuple[int | None, list[str] | None, int | No
     raw_channels = params.get("channels", [""])[0]
     channels = [c for c in raw_channels.split(",") if c] or None
     return _int("since"), channels, _int("max_points")
+
+
+def _spectrogram_params(query: str) -> tuple[str | None, int | None]:
+    """[T-7.23] Parámetros de /api/spectrogram: ilegales ⇒ defaults, jamás 400.
+
+    Misma doctrina que `_waveform_params`, y por la misma razón: el que consume
+    esto es un kiosco sin teclado colgado en una pared. Un 400 ahí es una
+    pantalla en blanco que nadie puede depurar.
+    """
+    params = urllib.parse.parse_qs(query)
+    canal = params.get("channel", [""])[0] or None
+    try:
+        nperseg: int | None = int(params["nperseg"][0])
+    except (KeyError, IndexError, ValueError):
+        nperseg = None
+    return canal, nperseg
+
+
+def _helicorder_params(query: str) -> tuple[str | None, float | None]:
+    """[T-7.23] Parámetros de /api/helicorder: ilegales ⇒ defaults, jamás 400.
+
+    `float("inf")`, `float("nan")` y `float("1e400")` PARSEAN en Python, así que
+    caían fuera del `except` y viajaban crudos hasta `requested_hours`. Se
+    tratan como lo que son para este endpoint —un valor que no nombra ninguna
+    ventana— y salen como `None`, igual que `?hours=hola`. El saneador de
+    arriba es la segunda verja, no la primera: el parámetro se arregla donde se
+    lee.
+    """
+    params = urllib.parse.parse_qs(query)
+    canal = params.get("channel", [""])[0] or None
+    try:
+        horas: float | None = float(params["hours"][0])
+    except (KeyError, IndexError, ValueError):
+        horas = None
+    if horas is not None and not math.isfinite(horas):
+        horas = None
+    return canal, horas
 
 
 def _load_index_html() -> str:
@@ -285,6 +391,32 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_json(self, code: int, payload) -> None:
+        """[T-7.23 · M1] La única puerta por la que sale JSON del panel.
+
+        Va por la verja de no-finitos SIEMPRE y para TODAS las respuestas, no
+        sólo para el endpoint que tenía el defecto: un `Infinity` o un `NaN` en
+        cualquiera de ellas rompe el `JSON.parse` del kiosco igual, y la
+        pantalla declara caído un gabinete sano.
+
+        **[T-7.23 · C3] «Única» era una afirmación, no un hecho.** Quedaban
+        `json.dumps` sueltos en este manejador —los cuerpos de error de
+        `do_GET`, los de `do_POST` y los del grant de CCTV— que salían al
+        socket sin pasar por aquí, y ninguna guarda lo impedía. Ahora todos
+        pasan, y lo exige un censo que DERIVA la lista del propio árbol de
+        sintaxis de esta clase (`test_la_unica_puerta_de_json_lo_es_de_verdad`)
+        en vez de enumerarlos.
+
+        **[T-7.23 · Q3] Y CUÁNTOS ERAN NO SE ESCRIBE AQUÍ.** Esta prosa decía
+        un número y la del censo decía otro, así que una de las dos mentía por
+        construcción — y las dos hablaban del mismo barrido, que ya sabe
+        contar. El recuento sale de `_puertas_de_json_del_panel`, que lo
+        deriva del `ast`, y una guarda prohíbe que vuelva a teclearse en
+        cualquiera de las dos prosas. Misma lección que la de `scipy.signal`:
+        una cifra en un comentario no la mide nadie.
+        """
+        self._send(code, volcar_json(payload))
+
     def do_GET(self) -> None:
         dashboard = self.server.dashboard  # type: ignore[attr-defined]
         path, _, query = self.path.partition("?")
@@ -294,23 +426,32 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # El GET del guardia no puede reventar por un módulo caído: status()
             # ya es defensivo por sección; esto es el último cinturón.
             try:
-                self._send(200, json.dumps(dashboard.status()))
+                self._send_json(200, dashboard.status())
             except Exception:  # noqa: BLE001 — panel no-crítico, jamás traceback al socket
                 log.exception("status() del panel LAN falló")
-                self._send(500, json.dumps({"error": "status"}))
+                self._send_json(500, {"error": "status"})
         elif path == "/api/waveform":
             # T-2.15: lectura abierta como /api/status (es el panel del guardia).
             # waveform() es defensivo de punta a punta: signal roto ⇒ 200 degradado.
-            self._send(200, json.dumps(dashboard.waveform(*_waveform_params(query))))
+            self._send_json(200, dashboard.waveform(*_waveform_params(query)))
+        elif path == "/api/spectrogram":
+            # [T-7.23] Lectura abierta como /api/waveform: mismo anillo de RAM,
+            # misma LAN, mismo guardia mirando. Defensivo de punta a punta.
+            self._send_json(200, dashboard.spectrogram(*_spectrogram_params(query)))
+        elif path == "/api/helicorder":
+            # [T-7.23] Lectura ACOTADA del anillo de disco (nunca el día entero:
+            # 2.9 s y 159 MB [PROTOTIPO · Pi 4 · 2026-09-20]). El cerrojo sin
+            # espera vive en el método.
+            self._send_json(200, dashboard.helicorder(*_helicorder_params(query)))
         elif path == "/api/catalog":
             # T-2.23: instantánea SSN cacheada en memoria (leída UNA vez al construir).
-            self._send(200, json.dumps(dashboard.catalog()))
+            self._send_json(200, dashboard.catalog())
         elif path in dashboard.static_files:
             # T-2.23: whitelist EXACTA (traversal imposible por construcción).
             mime, data = dashboard.static_files[path]
             self._send(200, data, mime, cache_control="public, max-age=86400")
         else:
-            self._send(404, json.dumps({"error": "not found"}))
+            self._send_json(404, {"error": "not found"})
 
     def do_POST(self) -> None:
         dashboard = self.server.dashboard  # type: ignore[attr-defined]
@@ -333,20 +474,20 @@ class _DashboardHandler(BaseHTTPRequestHandler):
         }
         action = actions.get(self.path)
         if action is None:
-            self._send(404, json.dumps({"error": "not found"}))
+            self._send_json(404, {"error": "not found"})
             return
         # Autorización ANTES de tocar GPIO (T-1.43): silenciar la sirena de un
         # edificio no puede depender solo de estar en la misma LAN.
         code = dashboard.authorize_action(self.headers.get("X-Takab-Pin"))
         if code != 200:
-            self._send(code, json.dumps({"error": "pin"}))
+            self._send_json(code, {"error": "pin"})
             return
         try:
             action()
         except ActionUnavailable as exc:
             # [T-2.29] La orden es válida pero AHORA no puede cumplirse (p.ej.
             # calibrar sin señal): 409 honesto, jamás un OK que no hizo nada.
-            self._send(409, json.dumps({"error": str(exc)}))
+            self._send_json(409, {"error": str(exc)})
             return
         except Exception as exc:  # noqa: BLE001 — el operador merece una respuesta
             # [T-2.70.a·D2/P1] Las SEIS acciones del panel cruzan la costura y
@@ -359,57 +500,55 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             # de abajo —el dueño de los pines— no pudo cumplir. Un 500 mandaría a
             # reiniciar el kiosco; un 503 manda a mirar el gabinete.
             log.exception("acción %s del panel LAN no se pudo ejecutar", self.path)
-            self._send(
+            self._send_json(
                 503,
-                json.dumps(
-                    {
-                        "error": (
-                            "el gabinete no pudo ejecutar la acción "
-                            f"({type(exc).__name__}); revisa el estado del proceso "
-                            "que gobierna los pines"
-                        )
-                    }
-                ),
+                {
+                    "error": (
+                        "el gabinete no pudo ejecutar la acción "
+                        f"({type(exc).__name__}); revisa el estado del proceso "
+                        "que gobierna los pines"
+                    )
+                },
             )
             return
-        self._send(200, json.dumps({"ok": True}))
+        self._send_json(200, {"ok": True})
 
     def _cctv_grant(self, dashboard) -> None:
         """`POST /api/cctv/grant` — firma HMAC sobre el cuerpo, devuelve la URL."""
         try:
             largo = int(self.headers.get("Content-Length") or 0)
         except ValueError:
-            self._send(400, json.dumps({"error": "content-length"}))
+            self._send_json(400, {"error": "content-length"})
             return
         # Tope duro: esto recibe un JSON de cinco campos. Sin él, un cliente de la LAN
         # podría hacer que el gabinete reserve memoria arbitraria — y este proceso corre
         # en la misma máquina que el resto del edge.
         if largo <= 0 or largo > _CCTV_GRANT_MAX_BYTES:
-            self._send(413, json.dumps({"error": "cuerpo fuera de rango"}))
+            self._send_json(413, {"error": "cuerpo fuera de rango"})
             return
         cuerpo = self.rfile.read(largo)
         if not dashboard.verify_cctv_signature(cuerpo, self.headers.get("X-Takab-Cctv-Sig")):
-            self._send(401, json.dumps({"error": "firma"}))
+            self._send_json(401, {"error": "firma"})
             return
         try:
             payload = json.loads(cuerpo)
         except ValueError:
-            self._send(400, json.dumps({"error": "json"}))
+            self._send_json(400, {"error": "json"})
             return
         if not isinstance(payload, dict):
-            self._send(400, json.dumps({"error": "json"}))
+            self._send_json(400, {"error": "json"})
             return
         try:
             grant = dashboard.request_cctv_grant(payload)
         except ActionUnavailable as exc:
             # 409: la peticion es valida, lo que falta es enlace. El CCTV reintenta.
-            self._send(409, json.dumps({"error": str(exc)}))
+            self._send_json(409, {"error": str(exc)})
             return
         except Exception:  # noqa: BLE001
             log.exception("grant de cctv no se pudo tramitar")
-            self._send(503, json.dumps({"error": "el gabinete no pudo pedir el grant"}))
+            self._send_json(503, {"error": "el gabinete no pudo pedir el grant"})
             return
-        self._send(200, json.dumps(grant))
+        self._send_json(200, grant)
 
     def log_message(self, *args: object) -> None:  # no spamear stdout del edge
         pass
@@ -428,7 +567,7 @@ class LocalDashboard(EdgeModule):
     """Mini-consola LAN del inmueble: estado vivo + acciones con PIN (T-1.53)."""
 
     name = "local_api"
-    depends_on = ("gpio", "rules", "health", "signal", "cloud", "backfill")
+    depends_on = ("gpio", "rules", "health", "signal", "cloud", "backfill", "buffer")
 
     def __init__(
         self,
@@ -456,6 +595,13 @@ class LocalDashboard(EdgeModule):
         # el que firma cada traza el sismógrafo.
         iot_thing: str = "",
         station_code: str = "",
+        #: [T-7.23] Identidad COMPLETA `red.estación.loc.canal`, una por canal.
+        #: Va APARTE de `station_code` porque aquél es contrato con la nube y no
+        #: se toca; ésta la deriva `EdgeSettings.seedlink_nslc` en un solo sitio.
+        station_nslc: list[str] | None = None,
+        #: [T-7.23] Anillo miniSEED en disco, SOLO para el helicorder. El panel
+        #: jamás escribe en él ni usa `extract_window` (lee el día entero).
+        buffer: object | None = None,
         refresh_ms: int = 1000,
         audio: object | None = None,
         drill: object | None = None,
@@ -506,6 +652,14 @@ class LocalDashboard(EdgeModule):
         self._site_name = site_name
         self._iot_thing = iot_thing
         self._station_code = station_code
+        self._station_nslc = list(station_nslc or [])
+        self._buffer = buffer
+        # [T-7.23] Cerrojo SIN ESPERA del helicorder. Una lectura de 6 h son
+        # 0.89 s y ~34.5 MB [PROTOTIPO · Pi 4 · 2026-09-20]; tres kioscos
+        # abiertos no pueden multiplicar por tres el coste del gabinete, así que
+        # la segunda petición concurrente se va declarada como `ocupado` en vez
+        # de apilar otra lectura de disco.
+        self._heli_lock = threading.Lock()
         self._refresh_ms = refresh_ms
         self._host = host
         self._port = port
@@ -677,6 +831,92 @@ class LocalDashboard(EdgeModule):
                 "decimation": 1,
                 "channels": {},
             }
+
+    def spectrogram(
+        self,
+        channel: str | None = None,
+        nperseg: int | None = None,
+        *,
+        ahora: datetime | None = None,
+    ) -> dict:
+        """[T-7.23] Espectrograma del anillo de RAM (§15.3). SOLO LAN.
+
+        Defensivo de punta a punta, igual que `waveform()`: sin módulo de señal,
+        sin anillo o con el cálculo roto responde la forma degradada con 200 y su
+        razón escrita — el kiosco pinta «SIN ESPECTROGRAMA», jamás recibe un 500.
+        No publica, no sondea, no toca disco.
+        """
+        nperseg_servido = sismografo.acotar_nperseg(nperseg)
+        try:
+            if self._signal is None:
+                raise _SinModuloDeSenal
+            ring = getattr(self._signal, "waveform", None)
+            if ring is None:
+                raise _SinModuloDeSenal
+            return sismografo.espectrograma(ring, channel, nperseg, ahora or utcnow())
+        except _SinModuloDeSenal:
+            return sismografo._degradado_espectro(
+                "sin_modulo_de_senal", canal_pedido=channel, nperseg=nperseg_servido
+            )
+        except Exception:  # noqa: BLE001 — pantalla no-crítica
+            log.warning("panel LAN: espectrograma no disponible", exc_info=True)
+            return sismografo._degradado_espectro(
+                "error_de_calculo", canal_pedido=channel, nperseg=nperseg_servido
+            )
+
+    def helicorder(
+        self,
+        channel: str | None = None,
+        hours: float | None = None,
+        *,
+        ahora: datetime | None = None,
+    ) -> dict:
+        """[T-7.23] 1–6 h del anillo de DISCO en mín/máx a 1 Hz (§15.4). SOLO LAN.
+
+        Tres cosas pasan aquí y no en el módulo de cálculo, porque son del panel
+        y no del anillo:
+
+        - **el cerrojo sin espera**: si ya hay una lectura en curso, ésta se va
+          declarada `ocupado`. Es lo que impide que tres kioscos abiertos
+          tripliquen el coste de disco del gabinete;
+        - **la ausencia del módulo**, que es distinta de «el anillo no tiene ese
+          canal» y manda al operador a otro sitio;
+        - **el último cinturón**: cualquier excepción sale como 200 degradado.
+
+        `ahora` sólo lo pasan las pruebas: una ventana anclada en el reloj real
+        cruza la medianoche una vez al día y el fallo saldría de madrugada.
+        """
+        horas = sismografo.acotar_horas(hours)
+        if self._buffer is None:
+            return sismografo._degradado_heli(
+                "sin_anillo",
+                canal=None,
+                canal_pedido=channel,
+                horas=horas,
+                horas_pedidas=hours,
+            )
+        if not self._heli_lock.acquire(blocking=False):
+            return sismografo._degradado_heli(
+                "ocupado",
+                canal=None,
+                canal_pedido=channel,
+                horas=horas,
+                horas_pedidas=hours,
+            )
+        try:
+            raiz = Path(self._buffer.root)
+            return sismografo.helicorder(raiz, channel, hours, ahora or utcnow())
+        except Exception:  # noqa: BLE001 — pantalla no-crítica: jamás un 500
+            log.warning("panel LAN: helicorder no disponible", exc_info=True)
+            return sismografo._degradado_heli(
+                "anillo_ilegible",
+                canal=None,
+                canal_pedido=channel,
+                horas=horas,
+                horas_pedidas=hours,
+            )
+        finally:
+            self._heli_lock.release()
 
     def _gpio_snapshot(self) -> tuple[GpioSnapshot | None, str | None]:
         """[T-2.70.a·D2/P1] UNA lectura del gabinete por request, y su diagnóstico.
@@ -1278,6 +1518,12 @@ class LocalDashboard(EdgeModule):
             # el panel lo declara S/D en vez de dejar el hueco (regla de oro 7).
             "iot_thing": self._iot_thing,
             "station_code": self._station_code,
+            # [T-7.23] La identidad COMPLETA del instrumento, `red.estación.loc.
+            # canal`, una entrada por canal. `station_code` se queda como está —
+            # es contrato con la nube—; esto es lo que la vista sismógrafo rotula
+            # sobre la traza, como lo rotula cualquier estación sísmica. Lista
+            # vacía = sin provisionar, y el panel lo dice con `S/D`.
+            "station_nslc": list(self._station_nslc),
             "now": now.isoformat(),
             # reloj: monotonico — `uptime` es un `Cronometro`; ver el bloque de arriba
             "uptime_s": uptime,

@@ -242,7 +242,6 @@ function parseBody(html) {
   root.attrs.id = '__body__';
   const stack = [root];
   const byId = {};
-  const withData = [];
   const re = /<\/([a-zA-Z0-9]+)\s*>|<([a-zA-Z0-9]+)((?:[^>"]|"[^"]*")*)>|([^<]+)/g;
   let m;
   while ((m = re.exec(frag)) !== null) {
@@ -262,7 +261,6 @@ function parseBody(html) {
             .slice(5)
             .replace(/-([a-z])/g, (_, c) => c.toUpperCase());
           el.dataset[key] = a[2];
-          withData.push(el);
         }
       }
       top.appendChild(el);
@@ -273,7 +271,7 @@ function parseBody(html) {
       if (txt.trim()) top._text += txt;
     }
   }
-  return { root, byId, withData };
+  return { root, byId };
 }
 
 /* ============================ arranque ============================ */
@@ -292,15 +290,21 @@ function jsonResponse(status, payload) {
 /* [T-2.85.a] Reloj congelado. El panel estampa `hh:mm:ss UTC` en la cabecera y
    en varios rótulos: sin congelarlo, dos renders del MISMO status difieren y el
    censo de campos sin camino de render mediría el segundero, no el campo. */
+/* [T-7.23] El reloj congelado ahora AVANZA a peticion del caso (`clock:+37000`).
+   Hacia falta para medir una EDAD: con el reloj clavado, toda resta de la forma
+   `ahora - cuando_llego` da cero, y una guarda que solo busque el marcador
+   («CALCULADO HACE») pasa igual con la resta rota. Es la leccion exacta de
+   T-7.60: un marcador tapa la resta. */
+let CLOCK_OFFSET = 0;
 function frozenDate(iso) {
   const FIXED = new Date(iso).getTime();
   return class extends Date {
     constructor(...args) {
-      if (args.length === 0) super(FIXED);
+      if (args.length === 0) super(FIXED + CLOCK_OFFSET);
       else super(...args);
     }
     static now() {
-      return FIXED;
+      return FIXED + CLOCK_OFFSET;
     }
   };
 }
@@ -327,7 +331,8 @@ async function render(cfg) {
   CANVAS_TEXT.length = 0;
   CANVAS_OPS.length = 0;
   REJECTIONS.length = 0;
-  const { root: body, byId, withData } = parseBody(html);
+  CLOCK_OFFSET = 0;
+  const { root: body, byId } = parseBody(html);
 
   /* Guarda de sanidad del parser: si el esqueleto trae un id que el parser no
      registró, TODO lo demás sería un falso verde. Mejor romper aquí. */
@@ -353,7 +358,34 @@ async function render(cfg) {
   const fetches = [];
   const timeouts = [];
   const rafs = [];
+  /* [T-7.23] `cfg.helicorder` (o `cfg.spectrogram`) puede ser una LISTA: una
+     respuesta por peticion, y la ultima se repite. Sin esto no se puede probar
+     el caso que importa —un `ocupado` transitorio seguido de la buena—, que es
+     precisamente el que dejaba el lienzo en blanco 60 s. */
+  const consumidas = { spectrogram: 0, helicorder: 0 };
+  const unaDe = (clave) => {
+    const cfgv = cfg[clave];
+    if (!cfgv) return jsonResponse(404, {});
+    if (!Array.isArray(cfgv)) return jsonResponse(200, cfgv);
+    const i = Math.min(consumidas[clave], cfgv.length - 1);
+    consumidas[clave] += 1;
+    return jsonResponse(200, cfgv[i]);
+  };
 
+  /* [T-7.23] El barrido va sobre el ARBOL VIVO y no sobre la lista que dejo el
+     parser. Los chips de canal del sismografo se CREAN en tiempo de render
+     (salen de `status().station_nslc`), asi que con la lista del marcado el
+     arnes no los veia: el panel se habria comportado aqui distinto que en un
+     navegador, que es la peor clase de arnes. */
+  const conDatos = (key, raiz) => {
+    const fuera = [];
+    const anda = (el) => {
+      if (el.dataset && el.dataset[key] !== undefined) fuera.push(el);
+      el.children.forEach(anda);
+    };
+    anda(raiz);
+    return fuera;
+  };
   const document = {
     body,
     getElementById: (id) => byId[id] || null,
@@ -362,15 +394,21 @@ async function render(cfg) {
       const m = /^\[data-([a-z-]+)\]$/.exec(sel);
       if (!m) return [];
       const key = m[1].replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-      return withData.filter((el) => el.dataset[key] !== undefined);
+      return conDatos(key, body);
     },
     addEventListener: () => {},
   };
 
+  /* [T-7.23] Los listeners de `window` se GUARDAN: sin ellos no habia forma de
+     ejercitar un `resize`, y el `resize` es justo donde se veia que los dos
+     lienzos del sismografo se quedaban con el bitmap viejo estirado por CSS. */
+  const windowListeners = {};
   const windowObj = {
     innerWidth: cfg.innerWidth || 1920,
     devicePixelRatio: 1,
-    addEventListener: () => {},
+    addEventListener: (type, fn) => {
+      (windowListeners[type] = windowListeners[type] || []).push(fn);
+    },
   };
 
   /* [T-7.05] Este mini-DOM no tiene motor de estilo ni de layout: toda custom
@@ -449,6 +487,12 @@ async function render(cfg) {
         return jsonResponse(200, cfg.status);
       }
       if (path === 'api/waveform') return jsonResponse(200, cfg.waveform || { cursor: 0, reset: false, channels: {} });
+      /* [T-7.23] Los dos endpoints de la vista sismógrafo. Sin `cfg.*` se
+         responde 404 A PROPÓSITO: es lo que ve un panel cuyo gabinete todavía no
+         los sirve, y el censo de render (que no los configura) mide justo eso —
+         la vista se pinta igual y declara que no hay dato. */
+      if (path === 'api/spectrogram') return unaDe('spectrogram');
+      if (path === 'api/helicorder') return unaDe('helicorder');
       if (path === 'api/catalog') return jsonResponse(200, cfg.catalog || { available: false });
       return jsonResponse(404, {});
     },
@@ -527,7 +571,7 @@ async function render(cfg) {
   };
   const clickByData = (attr, value) => {
     const key = attr.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-    const el = withData.find((e) => e.dataset[key] === value);
+    const el = conDatos(key, body).find((e) => e.dataset[key] === value);
     if (!el) {
       errors.push('clic sobre data-' + attr + '=' + value + ' inexistente');
       return;
@@ -585,6 +629,19 @@ async function render(cfg) {
           errors.push('tick: ' + err.message);
         }
       }
+    } else if (step.startsWith('clock:+')) {
+      /* Adelanta el reloj congelado. Solo tiene efecto con `cfg.now`: sin
+         reloj congelado el panel usa el de verdad y no hay nada que adelantar. */
+      CLOCK_OFFSET += Number(step.slice('clock:+'.length));
+    } else if (step.startsWith('resize:')) {
+      windowObj.innerWidth = Number(step.slice('resize:'.length));
+      (windowListeners.resize || []).forEach((fn) => {
+        try {
+          fn();
+        } catch (err) {
+          errors.push('resize: ' + err.message);
+        }
+      });
     } else if (step === 'settle') await settle(10);
     else errors.push('paso desconocido: ' + step);
     await settle(6);
@@ -620,8 +677,28 @@ async function render(cfg) {
      posterior al `await`, así que antes de este punto todavía no están. */
   await new Promise((r) => setImmediate(r));
 
+  /* [T-7.23 · N1] SONDA DE FUNCIONES PURAS. `evals: ["expr", …]` devuelve el
+     valor de cada expresión evaluada EN EL CONTEXTO DEL PANEL, ya renderizado.
+     Existe para una guarda que no puede teclear su referencia: el piso de
+     escala del helicorder tiene que ser EL MISMO que el de los carriles de
+     onda, y los dos viven en funciones del panel (`pisoHeliCounts`, `scaleFor`,
+     `toPhys`). Re-implementarlas en el test habría dado una guarda que compara
+     la copia con la copia — que es exactamente cómo se intercambiaron los dos
+     pisos sin que nada lo viera. No sirve para afirmar sobre el DOM: para eso
+     está el árbol, que es lo que la persona ve. */
+  const evals = Array.isArray(cfg.evals)
+    ? cfg.evals.map((expr) => {
+        try {
+          return vm.runInContext('(' + expr + ')', sandbox);
+        } catch (err) {
+          return { error: String((err && err.message) || err) };
+        }
+      })
+    : undefined;
+
   return {
     tree: dump(body, 12),
+    evals,
     canvasText: CANVAS_TEXT.slice(),
     /* La geometría del canvas SOLO va de vuelta si se pide: son ~200 órdenes
        por fotograma y el censo de render hace ~120 casos en un lote. */
