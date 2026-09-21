@@ -223,15 +223,45 @@ pieza_build() {
     return
   fi
   n="$(git rev-list --count "${build}..HEAD")"
+  # shellcheck disable=SC2046  # la lista va sin comillas a propósito: son rutas
   if git diff --quiet "${build}..HEAD" -- . ':!takab-docs'; then
     registrar AMARILLO "$pieza" "nube $build, HEAD $head: $n commits por detrás, solo documentos (nada que la nube ejecute cambió)"
-  elif git diff --quiet "${build}..HEAD" -- api web shared db deploy/cloud; then
+  elif git diff --quiet "${build}..HEAD" -- $(rutas_que_llegan_a_la_nube); then
     tocados="$(git diff --name-only "${build}..HEAD" -- . ':!takab-docs' | cut -d/ -f1 | sort -u | tr '\n' ' ')"
-    registrar AMARILLO "$pieza" "nube $build, HEAD $head: $n commits por detrás; cambió ${tocados}— nada de lo que las imágenes de la nube copian (api/ web/ shared/ db/ deploy/cloud/)"
+    registrar AMARILLO "$pieza" "nube $build, HEAD $head: $n commits por detrás; cambió ${tocados}— nada de lo que llega a la nube (ver rutas_que_llegan_a_la_nube)"
   else
-    tocados="$(git diff --name-only "${build}..HEAD" -- api web shared db deploy/cloud | cut -d/ -f1-2 | sort -u | head -6 | tr '\n' ' ')"
+    tocados="$(git diff --name-only "${build}..HEAD" -- $(rutas_que_llegan_a_la_nube) | cut -d/ -f1-2 | sort -u | head -6 | tr '\n' ' ')"
     registrar ROJO "$pieza" "nube $build, HEAD $head: $n commits por detrás y cambió código que la nube ejecuta (${tocados}) → make cloud-images && make cloud-deploy (T-7.02 despliega)"
   fi
+}
+
+# Qué cambios OBLIGAN a volver a desplegar la nube. `api/ web/ shared/ db/` los copian
+# los Dockerfiles; de `deploy/cloud/` **no llega todo**, y tratarlo entero como «código
+# que la nube ejecuta» pedía un despliegue por tocar este mismo censo. Eso es lo que
+# entrena a ignorar un rojo: un censo que acusa de lo que no comprobó.
+#
+# Lo que viaja se DERIVA en vez de enumerarse —un censo a mano acaba divergiendo—:
+#   · de las propias líneas `b64 deploy/cloud/…` de deploy.sh, que es literalmente lo
+#     que el despliegue empuja a la instancia;
+#   · de lo que la imagen de la consola nombra (`Caddyfile`, y el Dockerfile mismo);
+#   · más `deploy.sh`, porque cambiar al que despliega cambia el despliegue.
+# Quedan fuera `conformidad.sh`, `banderas.sh`, `medir-latencia-ia.sh` y el README, que
+# corren desde la máquina del operador y no tocan la instancia.
+#
+# ⚠️ Con RED: si la derivación sale vacía —porque deploy.sh cambió de forma— se vuelve
+# a `deploy/cloud` entero. El error caro aquí es el de MENOS (dar por inofensivo un
+# cambio que sí viaja), no el de más.
+rutas_que_llegan_a_la_nube() {
+  local d
+  d="$(
+    sed -n 's#.*b64 \(deploy/cloud/[A-Za-z0-9._-]*\).*#\1#p' deploy/cloud/deploy.sh 2>/dev/null
+    grep -o 'deploy/cloud/[A-Za-z0-9._-]*' deploy/cloud/console.Dockerfile 2>/dev/null
+  )"
+  if [ -z "$d" ]; then
+    echo "api web shared db deploy/cloud"
+    return
+  fi
+  printf '%s\n' api web shared db deploy/cloud/deploy.sh $d | sort -u | tr '\n' ' '
 }
 
 # --- 2 · esquema ---------------------------------------------------------------------
