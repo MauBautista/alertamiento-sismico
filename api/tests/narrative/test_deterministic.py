@@ -168,6 +168,9 @@ async def test_un_proveedor_que_revienta_degrada_en_vez_de_tumbar_la_evidencia()
     out = await build_narrative(model(), Settings(), provider=Explota())
     assert out.provider == "deterministic"
     assert len(out.sections) == 6
+    # [T-7.26] Esta guarda era CIEGA: pasaba igual con `degraded_reason=None`, que es
+    # justo el defecto que tenía el código («un fallback no puede ser ok»).
+    assert "RuntimeError" in (out.degraded_reason or "")
 
 
 async def test_el_proveedor_determinista_no_necesita_red_ni_clave() -> None:

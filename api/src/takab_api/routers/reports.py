@@ -130,6 +130,14 @@ async def generate_report(
     # Procedencia de la prosa. No hay tabla nueva: la narrativa queda congelada en el
     # PDF —que ya es evidencia inmutable con sha256— y su procedencia va al log
     # append-only, que por la regla de oro 11 no se poda nunca.
+    #
+    # ⚠️ [T-7.26] Esta fila es el registro de procedencia ENTERO de la IA y hasta esta
+    # ficha no tenía ni un test: hoy la vigila
+    # `tests/narrative/test_procedencia_narrative_generated.py`, que además DERIVA el
+    # censo de claves de los campos de `Narrative` — un campo nuevo que no llegue aquí
+    # pone la suite en rojo. En el `meta` viajan también la versión del prompt y el
+    # sha256 de lo que devolvió el modelo, que son los dos que contestan «¿con qué
+    # instrucciones y qué dijo exactamente?» el día que alguien audite el documento.
     await audit_async(
         conn,
         tenant_id=incident["tenant_id"],

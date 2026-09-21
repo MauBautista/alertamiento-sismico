@@ -6,6 +6,7 @@ misma forma con o sin asistencia automatizada, y el guardrail puede exigirlas.
 
 from __future__ import annotations
 
+import hashlib
 import json
 
 from takab_api.narrative.base import NarrativeFacts
@@ -52,6 +53,13 @@ def system_prompt() -> str:
     return SYSTEM + "\n" + "\n".join(f"- {t}" for t in SECTION_TITLES)
 
 
+#: El encuadre de lo que se le manda al modelo. Es constante —y no una f-string
+#: suelta— para que entre en la versión del prompt: reencuadrar los hechos como
+#: «hipótesis» cambiaría lo que el modelo cree que está leyendo sin que nada lo
+#: registrara.
+USER_PREFIX = "Hechos del incidente:"
+
+
 def user_prompt(facts: NarrativeFacts) -> str:
     """Los hechos redactados, tal cual, como JSON.
 
@@ -61,4 +69,27 @@ def user_prompt(facts: NarrativeFacts) -> str:
     from dataclasses import asdict  # noqa: PLC0415 - local: evita coste en import
 
     payload = json.dumps(asdict(facts), ensure_ascii=False, indent=2, sort_keys=True)
-    return f"Hechos del incidente:\n\n{payload}"
+    return f"{USER_PREFIX}\n\n{payload}"
+
+
+def prompt_version() -> str:
+    """[T-7.26] Versión del prompt, **derivada del propio texto de las plantillas**.
+
+    La ficha pide registrar con qué instrucciones se redactó cada dictamen. Un número
+    de versión tecleado a mano cumple el campo y no cumple el propósito: se queda viejo
+    al primer retoque de redacción, y a partir de ahí dos documentos con la misma
+    «versión» se pidieron con prompts distintos. Derivándola del hash de las plantillas,
+    **nadie puede cambiar el prompt sin que la versión cambie** — que es la única forma
+    de que este campo signifique algo el día que haya que auditar por qué un documento
+    dice lo que dice.
+
+    Entran las TRES piezas que el modelo llega a leer como instrucción: el prompt de
+    sistema, los títulos exigidos y el encuadre de los hechos. NO entran los hechos:
+    cambian en cada incidente y la versión dejaría de identificar a la plantilla.
+
+    Sin caché a propósito: son unos microsegundos de sha256 una vez por dictamen, y una
+    versión memorizada al importar sería mentira en cuanto un test —o un parche en
+    caliente— tocara una plantilla.
+    """
+    material = "\n".join((system_prompt(), USER_PREFIX))
+    return "p" + hashlib.sha256(material.encode("utf-8")).hexdigest()[:12]

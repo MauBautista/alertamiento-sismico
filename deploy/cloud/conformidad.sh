@@ -4,8 +4,11 @@
 #
 # SOLO LEE: el /api/health de la nube, `docker compose ps` en la instancia (por SSM,
 # el mismo canal que deploy.sh, porque la instancia no tiene SSH), la cola de backfill,
-# `terraform plan`, las alarmas en ALARM, la release activa del gabinete y el APK del
-# Pixel. No despliega, no aplica, no reinicia nada; correrlo dos veces da lo mismo.
+# `terraform plan`, las alarmas en ALARM, la release activa del gabinete, el APK del
+# Pixel y —desde T-7.26— la EXISTENCIA del secreto de la capa narrativa y el permiso
+# del rol de la instancia para leerlo (`describe-secret` y la política del rol; jamás
+# `get-secret-value`). No despliega, no aplica, no reinicia nada; correrlo dos veces
+# da lo mismo.
 #
 # Una línea por pieza:   VERDE|AMARILLO|ROJO|NO MEDIDO · <pieza> · <evidencia>
 # y al final:            RESUMEN: n VERDE · n AMARILLO · n ROJO · n NO MEDIDO
@@ -54,6 +57,11 @@ AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$AQUI/../.." && pwd)"
 cd "$ROOT" || exit 2
 
+# [T-7.26] El censo de banderas se DERIVA de deploy.sh; ver la cabecera de este
+# fichero y la de banderas.sh.
+# shellcheck source=banderas.sh
+. "$AQUI/banderas.sh"
+
 for herramienta in jq aws terraform curl git; do
   command -v "$herramienta" >/dev/null 2>&1 || {
     echo "ERROR: falta '$herramienta' en el PATH; este censo no puede medir sin él." >&2
@@ -67,8 +75,70 @@ TF_DEV="${TF_DEV:-infra/terraform/envs/dev}"
 export AWS_PROFILE AWS_REGION
 
 aws_cli() { aws --profile "$AWS_PROFILE" --region "$AWS_REGION" "$@"; }
+
+# [T-7.26] aws_medido = aws_cli, pero SEPARANDO el fallo del resultado: deja la salida
+# en AWS_SALIDA, el stderr en AWS_ERROR y devuelve el rc real. Existe porque el patrón
+# `$(aws_cli ... 2>/dev/null || true)` borra la diferencia entre «lo pregunté y no hay»
+# y «no pude preguntarlo», y esa diferencia es un veredicto entero.
+AWS_SALIDA=""
+AWS_ERROR=""
+aws_medido() {
+  local f rc
+  f="$(mktemp)"
+  AWS_SALIDA="$(aws_cli "$@" 2>"$f")"
+  rc=$?
+  AWS_ERROR="$(cat "$f")"
+  rm -f "$f"
+  return "$rc"
+}
+
+# La evidencia de un NO MEDIDO, en UN solo sitio: las llamadas que pueden no contestar
+# tienen que decir todas lo mismo —qué no se pudo preguntar, con qué error, y que eso
+# NO es la acusación—, o acabarán diciendo cosas distintas y alguna volverá a sonar a
+# culpa. No receta `make cloud-apply` a propósito: un apply no arregla unas
+# credenciales caducadas ni un perfil que no puede leer IAM.
+sin_medir() { # <orden> <error> -> evidencia
+  printf 'no se pudo PREGUNTAR «aws %s»: %s · esto NO dice que el permiso falte, dice que no se midió → refresca las credenciales (aws sso logout && aws sso login) y comprueba que el perfil pueda LEER iam/ec2' \
+    "$1" "$(printf '%s' "${2:-sin detalle}" | head -c 160)"
+}
 tf_out() { terraform -chdir="$TF_DEV" output -raw "$1"; }
 tf_json() { terraform -chdir="$TF_DEV" output -json "$1"; }
+
+# Gemelo de `aws_medido` para terraform, y existe por la misma razón: `tf_out` a secas
+# devuelve el mismo fallo cuando la salida NO ESTÁ DECLARADA (que es una acusación
+# legítima: el despliegue abortaría) que cuando terraform no pudo ni arrancar —sin
+# `init`, sin estado, con el estado bloqueado o sin credenciales—, que no acusa a nadie.
+# Mezclarlos es la misma falsa alarma que este fichero acaba de cerrar para IAM, un tramo
+# antes: un censo que acusa de lo que no comprobó entrena a ignorar el rojo.
+#
+# `TF_SALIDA` trae el valor y `TF_ERROR` el stderr; el código de retorno es el de
+# terraform. Quien llama decide, y para decidir mira si terraform llegó a hablar de la
+# salida (la dice por su nombre) o se quedó antes.
+TF_SALIDA=""
+TF_ERROR=""
+tf_medido() {
+  local f rc
+  f="$(mktemp)"
+  # Pasa por `tf_out` a propósito: es la costura que el arnés de pruebas sustituye por
+  # un doble. Llamar aquí a `terraform` directamente dejaría este camino sin poder
+  # ejercerse, y lo que no se puede ejercer no está defendido.
+  TF_SALIDA="$(tf_out "$1" 2>"$f")"
+  rc=$?
+  TF_ERROR="$(cat "$f")"
+  rm -f "$f"
+  return "$rc"
+}
+
+# ¿El fallo de `tf_medido` fue «esa salida no existe» o «no pude preguntar»? Terraform
+# nombra la salida cuando la buscó y no estaba; si no llegó ahí, el mensaje habla de
+# otra cosa (init, backend, lock, credenciales).
+# ⚠️ En varias líneas y con la llave a columna cero A PROPÓSITO: el arnés recorta
+# funciones por nombre y corta en el primer `^}$`, así que una función de una sola línea
+# se lleva por delante todo lo que venga detrás hasta la siguiente llave — medido, se
+# tragó el `registrar` del doble y la escena entera dejó de medir.
+tf_falta_la_salida() {
+  printf '%s' "$TF_ERROR" | grep -qiE "output .*not found|no outputs found"
+}
 
 # --- Contabilidad ---------------------------------------------------------------
 N_VERDE=0
@@ -121,7 +191,8 @@ CONSOLA_URL="${CONSOLA_URL%/}"
 # --- Estado compartido entre piezas ------------------------------------------------
 SALUD=""            # /api/health de la nube (pieza 1 lo llena, pieza 2 lo lee)
 SSM_OK=0            # ¿se pudo leer la instancia?
-ENV_INSTANCIA=""    # nombres TAKAB_API_* presentes en /etc/takab/cloud.env de la instancia
+ENV_INSTANCIA=""    # una linea «NOMBRE clase huella» por TAKAB_API_* de /etc/takab/cloud.env
+                    # (clase: true|false|vacio|con-valor; la huella, sha256 corto: ver pieza_compose)
 TAG_INSTANCIA=""    # tag de TAKAB_CLOUD_IMAGE en /etc/takab/deploy.env de la instancia
 BACKFILL_CORRE=0    # ¿el servicio backfill corre en la instancia?
 
@@ -200,8 +271,42 @@ pieza_compose() {
     return
   fi
   # Lo mismo que haría un operador con el runbook (README §Operación), en una sola ida:
-  # el ps de compose, los NOMBRES (no valores) de cloud.env y el tag de la imagen.
-  cmd='cd /opt/takab/cloud && echo "::PS::" && docker compose --env-file /etc/takab/deploy.env ps -a --format json; echo "::ENV::"; grep -oE "^TAKAB_API_[A-Z0-9_]+=" /etc/takab/cloud.env | tr -d =; echo "::TAG::"; sed -n "s/^TAKAB_CLOUD_IMAGE=.*://p" /etc/takab/deploy.env'
+  # el ps de compose, el estado de cada TAKAB_API_* de cloud.env y el tag de la imagen.
+  #
+  # [T-7.26] De cloud.env NO vuelve ni un valor. Hasta esta ficha volvían solo los
+  # NOMBRES, y eso hacía el censo ciego a lo único que importa: una bandera puesta a
+  # `false` en la instancia salía tan verde como puesta a `true` — el defecto de
+  # T-7.06 que este censo cita como razón de existir—, y el slug del modelo vacío
+  # también. Ahora la instancia CLASIFICA cada línea y manda tres campos:
+  #
+  #     TAKAB_API_X true|false -          booleana: el valor literal, que no puede ser secreto
+  #     TAKAB_API_X vacio      -          definida y vacía
+  #     TAKAB_API_X con-valor  <12 hex>   huella sha256 del valor, nunca el valor
+  #
+  # La huella deja comparar con lo que declara el despliegue sin que el valor cruce
+  # la red ni acabe impreso en el informe. No es paranoia de manual: la salida
+  # `push_fcm_application_arn` está marcada `sensitive` en el terraform y
+  # TAKAB_API_PUSH_FCM_APPLICATION_ARN sale de ella.
+  #
+  # Todo POSIX (sin `< <(...)`, sin `${v%$'\r'}`): el documento AWS-RunShellScript no
+  # promete bash.
+  cmd="$(
+    cat <<'REMOTO'
+cd /opt/takab/cloud && echo "::PS::" && docker compose --env-file /etc/takab/deploy.env ps -a --format json
+echo "::ENV::"
+tr -d '\r' < /etc/takab/cloud.env | grep -E '^TAKAB_API_[A-Z0-9_]+=' | while IFS= read -r l; do
+  n=${l%%=*}
+  v=${l#*=}
+  case "$v" in
+  true | false) printf '%s %s -\n' "$n" "$v" ;;
+  '') printf '%s vacio -\n' "$n" ;;
+  *) printf '%s con-valor %s\n' "$n" "$(printf '%s' "$v" | sha256sum | cut -c1-12)" ;;
+  esac
+done
+echo "::TAG::"
+sed -n 's/^TAKAB_CLOUD_IMAGE=.*://p' /etc/takab/deploy.env
+REMOTO
+  )"
   params="$(mktemp)"
   jq -n --arg c "$cmd" '{commands: [$c]}' >"$params"
   cmd_id="$(aws_cli ssm send-command --instance-ids "$id" --document-name AWS-RunShellScript \
@@ -292,29 +397,292 @@ pieza_env() {
   fi
 }
 
+# huella_de <valor> — los 12 primeros hex del sha256, la MISMA cuenta que hace la
+# instancia en pieza_compose. Es como se compara un valor sin moverlo ni imprimirlo.
+huella_de() { printf '%s' "$1" | sha256sum | cut -c1-12; }
+
 # pieza_bandera <NOMBRE sin prefijo> <quién decide / ficha>
+#
+# [T-7.26] Compara VALORES, no nombres. Hasta esta ficha el veredicto salía de dos
+# preguntas —¿está el nombre en deploy.sh? ¿está el nombre en la instancia?— y por
+# eso daba VERDE con la bandera puesta a `false` y con el slug del modelo vacío: los
+# dos casos que este censo dice vigilar. El valor esperado se DERIVA del despliegue
+# (`origen_declarado`, en banderas.sh) y, cuando sale del terraform, se le pregunta
+# al terraform. Lo que nunca se imprime es el valor de la instancia: solo su clase y,
+# para compararlo, su huella (ver pieza_compose).
 pieza_bandera() {
-  local n="$1" ficha="$2" pieza="bandera TAKAB_API_$1" en_deploy en_inst
-  if grep -qE "TAKAB_API_${n}=" deploy/cloud/deploy.sh; then
-    en_deploy="exportada en deploy.sh"
-  else
-    en_deploy="NO exportada en deploy.sh"
+  local n="$1" ficha="$2" pieza="bandera TAKAB_API_$1"
+  local origen clase dato esperado fuente clase_inst huella_inst
+
+  if ! origen="$(origen_declarado deploy/cloud/deploy.sh "$n")"; then
+    registrar AMARILLO "$pieza" "NO exportada en deploy.sh → la nube corre con el default de Settings ($ficha)"
+    return
   fi
-  if [ "$SSM_OK" = 1 ]; then
-    if grep -qx "TAKAB_API_${n}" <<<"$ENV_INSTANCIA"; then
-      en_inst="definida en /etc/takab/cloud.env de la instancia"
-    else
-      en_inst="ausente en /etc/takab/cloud.env de la instancia"
+  clase="${origen%%$'\t'*}"
+  dato="${origen#*$'\t'}"
+
+  if [ "$SSM_OK" != 1 ]; then
+    registrar AMARILLO "$pieza" "exportada en deploy.sh ($clase) · instancia no medida ($ficha)"
+    return
+  fi
+  clase_inst="$(awk -v v="TAKAB_API_$n" '$1 == v { print $2; exit }' <<<"$ENV_INSTANCIA")"
+  huella_inst="$(awk -v v="TAKAB_API_$n" '$1 == v { print $3; exit }' <<<"$ENV_INSTANCIA")"
+  if [ -z "$clase_inst" ]; then
+    registrar AMARILLO "$pieza" "exportada en deploy.sh · ausente en /etc/takab/cloud.env de la instancia → pendiente de desplegar ($ficha)"
+    return
+  fi
+
+  # De dónde sale el valor que la instancia DEBERÍA tener.
+  case "$clase" in
+  literal)
+    esperado="$dato"
+    fuente="deploy.sh la fija a «$dato»"
+    ;;
+  tf)
+    # Que la salida no exista no es «no sé»: es el caso que deja el despliegue
+    # escribiendo un valor vacío (ver tf_obligatorio en deploy.sh). Se dice en ROJO.
+    if ! esperado="$(tf_out "$dato" 2>/dev/null)"; then
+      registrar ROJO "$pieza" "deploy.sh la resuelve con \$(tf $dato) y el terraform NO publica esa salida → make cloud-apply antes de desplegar"
+      return
     fi
-  else
-    en_inst="instancia no medida"
-  fi
-  case "$en_deploy|$en_inst" in
-  "exportada en deploy.sh|definida"*) registrar VERDE "$pieza" "$en_deploy · $en_inst" ;;
-  "exportada en deploy.sh|ausente"*) registrar AMARILLO "$pieza" "$en_deploy · $en_inst → pendiente de desplegar" ;;
-  "exportada en deploy.sh|"*) registrar AMARILLO "$pieza" "$en_deploy · $en_inst" ;;
-  *) registrar AMARILLO "$pieza" "$en_deploy · $en_inst → la nube corre con el default de Settings ($ficha)" ;;
+    # El valor de una salida del terraform no se imprime: `push_fcm_application_arn`
+    # está marcada `sensitive`. Se nombra la salida, que es lo accionable.
+    fuente="la salida «$dato» del terraform"
+    ;;
+  *)
+    # Una sustitución compuesta (una tubería, un python3): el valor esperado no es
+    # derivable. Decirlo en AMARILLO y no dar por bueno lo que haya — un fallback no
+    # puede ser «ok» (T-2.152).
+    registrar AMARILLO "$pieza" "deploy.sh la resuelve con una sustitución que este censo no sabe evaluar ($dato): en la instancia está $clase_inst, pero el valor esperado no es derivable ($ficha)"
+    return
+    ;;
   esac
+
+  case "$esperado" in
+  true | false)
+    if [ "$clase_inst" = "$esperado" ]; then
+      registrar VERDE "$pieza" "$fuente y la instancia la trae en $clase_inst"
+    else
+      registrar ROJO "$pieza" "$fuente y en la instancia está $clase_inst → lo que está en código NO está en el sistema ($ficha)"
+    fi
+    ;;
+  "")
+    if [ "$clase_inst" = vacio ]; then
+      registrar VERDE "$pieza" "$fuente y viene vacía; la instancia también la trae vacía (la función que depende de ella está apagada en los dos sitios)"
+    else
+      registrar ROJO "$pieza" "$fuente y viene VACÍA, pero la instancia trae $clase_inst: el despliegue y el terraform no dicen lo mismo ($ficha)"
+    fi
+    ;;
+  *)
+    if [ "$clase_inst" = vacio ]; then
+      registrar ROJO "$pieza" "$fuente y en la instancia está VACÍA → la nube corre degradada con la bandera puesta ($ficha)"
+    elif [ "$clase_inst" != con-valor ]; then
+      registrar ROJO "$pieza" "$fuente y en la instancia está $clase_inst ($ficha)"
+    elif [ "$huella_inst" = "$(huella_de "$esperado")" ]; then
+      registrar VERDE "$pieza" "$fuente y la instancia trae ESE valor (huella sha256 $huella_inst)"
+    else
+      registrar ROJO "$pieza" "$fuente y la instancia trae OTRO valor (huella ${huella_inst} ≠ $(huella_de "$esperado")) → make cloud-deploy ($ficha)"
+    fi
+    ;;
+  esac
+}
+
+# El POR QUE de cada bandera. La LISTA ya no se escribe aqui —se deriva de
+# deploy.sh, ver banderas.sh—, pero la razon de cada una no la puede inventar un
+# grep. Lo que ha cambiado es que olvidarla ya no es silencioso: si una bandera
+# derivada no tiene ficha, el informe lo dice, y antes de eso lo dice en ROJO
+# infra/scripts/tests/test_censo_banderas.sh.
+declare -A FICHA_BANDERA=(
+  [OPS_METRICS_ENABLED]="métrica de gabinetes fantasma: T-2.60.a"
+  [CONSOLE_SCOPE_ENFORCED]="alcance por rol: T-7.06 · D-18"
+  [OPENROUTER_ENABLED]="capa narrativa del dictamen: T-7.26"
+)
+
+# Banderas que NO son un booleano literal y por eso no se derivan solas: llegan
+# por $(tf ...), y su ausencia significa «vacío», no «false». Estas sí se
+# enumeran, porque no hay nada en deploy.sh que las distinga de cualquier otro
+# valor derivado del terraform.
+declare -A FICHA_NO_DERIVADA=(
+  [PUSH_FCM_APPLICATION_ARN]="push real por FCM: T-7.03"
+  # [T-7.26] Encender la capa narrativa exige LAS TRES: bandera, modelo y secreto.
+  # Con el modelo vacío o el identificador del secreto vacío, `resolve_api_key`
+  # devuelve cadena vacía y la nube redacta prosa determinista CON LA BANDERA
+  # ENCENDIDA — el sistema diciendo una cosa y haciendo otra, que es lo que este
+  # censo existe para ver. Por eso `pieza_bandera` compara el VALOR y no el nombre:
+  # con nombres, «vacío» y «puesto» tienen exactamente el mismo aspecto.
+  [OPENROUTER_MODEL]="slug del modelo: T-7.26"
+  [OPENROUTER_SECRET_ID]="identificador del secreto (no la clave): T-7.26"
+)
+
+pieza_banderas() {
+  local lista n
+  # Cero banderas no es «ninguna bandera»: es el derivador ciego (fichero movido,
+  # formato cambiado). Un fallback no puede ser «ok» (T-2.152).
+  if ! lista="$(banderas_declaradas "$AQUI/deploy.sh")"; then
+    registrar ROJO "censo de banderas" \
+      "banderas_declaradas no encontró NINGUNA en deploy/cloud/deploy.sh: el censo está ciego, no vacío"
+    return
+  fi
+  for n in $lista; do
+    pieza_bandera "$n" "${FICHA_BANDERA[$n]:-sin ficha declarada en conformidad.sh}"
+  done
+  # Ordenadas: las claves de un array asociativo salen en orden de hash y el
+  # informe tiene que ser comparable entre dos corridas.
+  for n in $(printf '%s\n' "${!FICHA_NO_DERIVADA[@]}" | sort); do
+    pieza_bandera "$n" "${FICHA_NO_DERIVADA[$n]}"
+  done
+}
+
+# --- 5.b · el secreto de la capa narrativa (T-7.26) ---------------------------------------
+# Las banderas de arriba miden lo que hay ESCRITO en la instancia. Esta pieza mide las
+# dos cosas de las que depende que la capa narrativa funcione y que ninguna otra mira:
+# que el secreto EXISTA en Secrets Manager y que el rol de la instancia lo tenga
+# concedido. El secreto lo crea una persona fuera del terraform (regla de oro 6: la
+# clave no puede entrar en el estado), así que `terraform plan` sale limpio con o sin
+# él — y sin esta pieza el censo podía devolver «todo VERDE» con la ficha entera
+# inerte: GetSecretValue responde AccessDenied, `resolve_api_key` degrada y el
+# dictamen sale determinista con la bandera encendida.
+#
+# Lo que NO hace, a propósito: `get-secret-value`. La existencia y el permiso se ven
+# con `describe-secret` y con la política; leer la clave para comprobar que se puede
+# leer sería traerla a esta máquina para nada.
+pieza_secreto_ia() {
+  local pieza="secreto de la capa narrativa" bandera id arn err inst perfil rol pol doc
+  local politicas otorga concedidos r casa=0
+  bandera="$(origen_declarado deploy/cloud/deploy.sh OPENROUTER_ENABLED 2>/dev/null | cut -f2)"
+  if [ "$bandera" != true ]; then
+    registrar VERDE "$pieza" "deploy.sh exporta TAKAB_API_OPENROUTER_ENABLED=${bandera:-<ausente>}: la capa narrativa va apagada y no hay secreto que exigir"
+    return
+  fi
+  if [ "$AWS_OK" != 1 ]; then registrar "NO MEDIDO" "$pieza" "$AWS_MOTIVO"; return; fi
+
+  # Los TRES desenlaces, como las cinco llamadas de abajo: la salida no está (ROJO, y el
+  # despliegue abortaría), terraform no pudo contestar (NO MEDIDO, y no acusa a nadie), o
+  # está y sigue la pieza.
+  if ! tf_medido openrouter_secret_id; then
+    if tf_falta_la_salida; then
+      registrar ROJO "$pieza" "el terraform no publica openrouter_secret_id → make cloud-apply (README §4); sin esa salida deploy.sh aborta"
+    else
+      registrar "NO MEDIDO" "$pieza" "no se pudo PREGUNTAR «terraform output openrouter_secret_id»: $(printf '%s' "${TF_ERROR:-sin detalle}" | head -c 160) · esto NO dice que falte la salida, dice que no se midió → ¿está inicializado ${TF_DEV:-el entorno de terraform} y hay credenciales?"
+    fi
+    return
+  fi
+  id="$TF_SALIDA"
+  if [ -z "$id" ]; then
+    registrar ROJO "$pieza" "el terraform publica openrouter_secret_id VACÍO → make cloud-apply (README §4); sin esa salida deploy.sh aborta"
+    return
+  fi
+  # UNA sola llamada: preguntarlo dos veces (una para el valor, otra para el error)
+  # puede dar dos respuestas distintas y entonces el veredicto no es de ningún momento.
+  arn=""
+  err=""
+  if aws_medido secretsmanager describe-secret --secret-id "$id" --query ARN --output text; then
+    arn="$AWS_SALIDA"
+  else
+    err="$AWS_ERROR"
+  fi
+  if [ -z "$arn" ] || [ "$arn" = None ]; then
+    case "$err" in
+    *ResourceNotFoundException*)
+      registrar ROJO "$pieza" "el secreto «$id» NO existe en Secrets Manager (README §4.1) → la nube redactaría prosa determinista con la bandera encendida"
+      ;;
+    *)
+      registrar "NO MEDIDO" "$pieza" "$(sin_medir "secretsmanager describe-secret --secret-id $id" "$err") — y sin saber si el secreto existe, tampoco se mira el permiso"
+      ;;
+    esac
+    return
+  fi
+
+  # El rol se DERIVA de la instancia, no se teclea: un literal «takab-dev-db» aquí
+  # divergiría el día que el módulo lo renombre y esta pieza mediría un rol que no es.
+  if ! inst="$(tf_out db_instance_id 2>/dev/null)" || [ -z "$inst" ]; then
+    registrar "NO MEDIDO" "$pieza" "el secreto $id existe, pero terraform output db_instance_id no contestó: no sé qué rol mirar"
+    return
+  fi
+  perfil=""
+  if aws_medido ec2 describe-instances --instance-ids "$inst" \
+    --query 'Reservations[0].Instances[0].IamInstanceProfile.Arn' --output text; then
+    perfil="$AWS_SALIDA"
+  else
+    registrar "NO MEDIDO" "$pieza" "el secreto $id existe ($arn), pero $(sin_medir "ec2 describe-instances --instance-ids $inst" "$AWS_ERROR")"
+    return
+  fi
+  rol=""
+  if [ -n "$perfil" ] && [ "$perfil" != None ]; then
+    if aws_medido iam get-instance-profile --instance-profile-name "${perfil##*/}" \
+      --query 'InstanceProfile.Roles[0].RoleName' --output text; then
+      rol="$AWS_SALIDA"
+    else
+      registrar "NO MEDIDO" "$pieza" "el secreto $id existe ($arn), pero $(sin_medir "iam get-instance-profile --instance-profile-name ${perfil##*/}" "$AWS_ERROR")"
+      return
+    fi
+  fi
+  if [ -z "$rol" ] || [ "$rol" = None ]; then
+    registrar "NO MEDIDO" "$pieza" "el secreto $id existe ($arn), pero la instancia $inst no declara rol que mirar (perfil=${perfil:-<vacío>}): no se midió el permiso"
+    return
+  fi
+
+  # Aquí estaba el defecto de este repaso, y lo había metido el arreglo anterior: el
+  # bucle iba sobre `$(aws_cli iam list-role-policies ... 2>/dev/null || true)`, que se
+  # traga el error y sigue. Con las credenciales caducadas, sin permiso de lectura de
+  # IAM o en la región equivocada, la lista sale VACÍA —indistinguible de un rol sin
+  # el permiso— y el censo acusaba en ROJO de lo que no había mirado, recetando encima
+  # un `make cloud-apply` que no arregla unas credenciales. Un censo que acusa de lo
+  # que no comprobó enseña al operador a ignorar el rojo. NO MEDIDO ≠ ROJO.
+  if ! aws_medido iam list-role-policies --role-name "$rol" --query 'PolicyNames[]' --output text; then
+    registrar "NO MEDIDO" "$pieza" "el secreto $id existe ($arn), pero $(sin_medir "iam list-role-policies --role-name $rol" "$AWS_ERROR")"
+    return
+  fi
+  politicas="$(tr '\t\n' '  ' <<<"$AWS_SALIDA")"
+  if [ "${politicas// /}" = None ]; then politicas=""; fi
+  if [ -z "${politicas// /}" ]; then
+    registrar ROJO "$pieza" "el secreto $id existe ($arn) y el rol $rol NO tiene NINGUNA política inline: nadie le concede secretsmanager:GetSecretValue → make cloud-apply (README §4.2)"
+    return
+  fi
+
+  concedidos=""
+  for pol in $politicas; do
+    if ! aws_medido iam get-role-policy --role-name "$rol" --policy-name "$pol" \
+      --query PolicyDocument --output json || [ -z "$AWS_SALIDA" ]; then
+      registrar "NO MEDIDO" "$pieza" "el rol $rol declara la política inline «$pol» y $(sin_medir "iam get-role-policy --role-name $rol --policy-name $pol" "$AWS_ERROR")"
+      return
+    fi
+    doc="$AWS_SALIDA"
+    # Saltarse una política ilegible tampoco vale: la que no se pudo leer es
+    # justamente la que podía traer el permiso.
+    if ! otorga="$(jq -r '
+      [ .Statement[]?
+        | select((.Effect // "") == "Allow")
+        | select(((if (.Action | type) == "array" then .Action else [.Action] end)
+                  | any(. == "*" or . == "secretsmanager:*" or . == "secretsmanager:GetSecretValue")))
+        | (if (.Resource | type) == "array" then .Resource[] else .Resource end)
+      ] | .[]' <<<"$doc" 2>&1)"; then
+      registrar "NO MEDIDO" "$pieza" "la política inline «$pol» del rol $rol no se pudo interpretar (jq: $(head -c 160 <<<"$otorga")): no sé si concede el permiso"
+      return
+    fi
+    concedidos="$concedidos $(tr '\n' ' ' <<<"$otorga")"
+  done
+  if [ -z "${concedidos// /}" ]; then
+    registrar ROJO "$pieza" "el secreto $id existe ($arn), pero NINGUNA de las políticas inline del rol $rol (${politicas// /, }) concede secretsmanager:GetSecretValue → make cloud-apply (README §4.2)"
+    return
+  fi
+  # El ARN real trae los seis caracteres aleatorios que añade Secrets Manager; el
+  # permiso los cubre con un comodín. Se casa como glob —`*` y `?` de IAM son los del
+  # shell— y sin comillas a propósito: entrecomillarlo lo volvería comparación literal
+  # y el `-*` no casaría nunca.
+  for r in $concedidos; do
+    # shellcheck disable=SC2254
+    case "$arn" in $r)
+      casa=1
+      break
+      ;;
+    esac
+  done
+  if [ "$casa" = 1 ]; then
+    registrar VERDE "$pieza" "el secreto $id existe ($arn) y la política inline del rol $rol le concede GetSecretValue"
+  else
+    registrar ROJO "$pieza" "el secreto $id existe ($arn) pero el rol $rol NO lo alcanza: concede $(tr -s " " <<<"$concedidos") → make cloud-apply (README §4.2)"
+  fi
 }
 
 # --- 6 · cola de backfill ----------------------------------------------------------------
@@ -538,9 +906,8 @@ pieza_esquema
 pieza_compose
 pieza_test
 pieza_env
-pieza_bandera PUSH_FCM_APPLICATION_ARN "push real por FCM: T-7.03"
-pieza_bandera OPENROUTER_ENABLED "decisión de la demo"
-pieza_bandera CONSOLE_SCOPE_ENFORCED "alcance por rol: T-7.06"
+pieza_banderas
+pieza_secreto_ia
 pieza_cola
 pieza_terraform
 pieza_alarmas

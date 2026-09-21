@@ -40,9 +40,17 @@ async def _sql(sql: str, **p):
 
 @pytest.fixture(autouse=True)
 async def _limpio():
+    """Solo `ai_spend`: es la única tabla de aquí que el teardown común no trunca.
+
+    ⚠️ Había también un `DELETE FROM audit_log WHERE verb LIKE 'ai_quota%'` y
+    `audit_log` es **append-only por trigger**. Aquí no explotaba por un accidente de
+    orden —este fixture es autouse, se monta antes que `base_data` y por tanto se
+    finaliza DESPUÉS del `TRUNCATE` de `db_engine`, así que siempre casaba cero filas—,
+    o sea que su supervivencia dependía de una propiedad que nadie había escrito.
+    `audit_log` lo limpia `db_engine` (`tests/api/conftest.py`), que usa `TRUNCATE`.
+    """
     yield
     await _sql("DELETE FROM ai_spend")
-    await _sql("DELETE FROM audit_log WHERE verb LIKE 'ai_quota%'")
 
 
 async def _conn():
@@ -61,14 +69,28 @@ async def test_sin_gasto_previo_la_llamada_SALE(base_data):
     assert est.exhausted is False and est.spent_usd == 0.0
 
 
-async def test_cap_CERO_significa_sin_tope_no_tope_cero(base_data):
-    """La lectura conservadora del ajuste ausente. Cortar del todo es apagar la perilla."""
+async def test_cap_CERO_significa_tope_CERO_no_sin_tope(base_data):
+    """⚠️ [T-7.26] Esta prueba defendía lo CONTRARIO y por eso se reescribe entera.
+
+    Decía «cero = sin tope», que era la lectura conservadora del ajuste ausente. Lo que
+    no se vio al escribirla es a dónde lleva el error de dedo: quien pone el tope a cero
+    creyendo que apaga el gasto lo dejaba **ilimitado**. De los dos modos de
+    equivocarse, uno deja el sistema SIN IA —el dictamen sale igual, con prosa
+    determinista y declarándolo— y el otro deja la tarjeta abierta.
+
+    El modo ilimitado no desaparece: se pide con `quota.SIN_TOPE`, que es negativo
+    justamente porque nadie lo teclea sin querer.
+    """
     async with get_engine().begin() as conn:
+        cortado = await quota.leer_estado(conn, au.DB_TENANT_PRIV, cap_usd=0.0, now=AHORA)
+        assert cortado.exhausted is True, "con el tope en cero la llamada NO sale"
+        assert cortado.spent_usd == 0.0, "no hizo falta gastar nada para estar cortado"
+
         await quota.acumular(
-            conn, au.DB_TENANT_PRIV, cost_usd=999.0, cap_usd=0.0, warn_at=0.8, now=AHORA
+            conn, au.DB_TENANT_PRIV, cost_usd=999.0, cap_usd=quota.SIN_TOPE, warn_at=0.8, now=AHORA
         )
-        est = await quota.leer_estado(conn, au.DB_TENANT_PRIV, cap_usd=0.0, now=AHORA)
-    assert est.exhausted is False
+        libre = await quota.leer_estado(conn, au.DB_TENANT_PRIV, cap_usd=quota.SIN_TOPE, now=AHORA)
+    assert libre.exhausted is False, "sin tope sigue existiendo, pero hay que pedirlo"
 
 
 async def test_alcanzado_el_tope_la_llamada_NO_sale(base_data):

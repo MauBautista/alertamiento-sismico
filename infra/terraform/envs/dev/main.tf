@@ -9,6 +9,21 @@ locals {
   # sin re-aplicar IAM. El * final tambien cubre el sufijo aleatorio que
   # Secrets Manager anade al ARN.
   gateway_hmac_prefix = "takab/dev/gateway-hmac"
+
+  # [T-7.26] Secreto con la clave de OpenRouter. Lo CREA MAURICIO a mano y a
+  # proposito: una `aws_secretsmanager_secret_version` aqui obligaria a meter la
+  # clave en el estado de terraform, que es git-adyacente (regla de oro 6). Lo que
+  # terraform si tiene que hacer —y hasta hoy no hacia— es CONCEDER la lectura: sin
+  # el statement de abajo, el despliegue "enciende" la capa narrativa y la nube
+  # sigue escribiendo prosa determinista, porque GetSecretValue responde
+  # AccessDenied y `resolve_api_key` degrada.
+  #
+  # UNA sola definicion del nombre, dos usos: el ARN del permiso y la salida
+  # `openrouter_secret_id` que `deploy.sh` exporta como
+  # TAKAB_API_OPENROUTER_SECRET_ID. Con dos literales, el dia que el nombre cambie
+  # el despliegue apunta a un secreto que el rol no puede leer y el sintoma es
+  # prosa determinista sin explicacion.
+  openrouter_secret_id = "takab/dev/openrouter"
 }
 
 module "network" {
@@ -100,6 +115,12 @@ module "database" {
   # DEDICADO (no "*"), ver la nota de locals.gateway_hmac_prefix.
   worker_secret_arns = [
     "arn:aws:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:${local.gateway_hmac_prefix}/*",
+    # [T-7.26] La clave de OpenRouter, para la capa narrativa del dictamen. El
+    # `-*` final NO es cosmetico: Secrets Manager anade seis caracteres aleatorios
+    # al ARN del secreto, asi que un Resource sin comodin no casa con el secreto
+    # real y el permiso queda escrito pero inoperante. Es un ARN concreto y no un
+    # prefijo: aqui hay UN secreto, no una clase de ellos como en gateway-hmac.
+    "arn:aws:secretsmanager:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:secret:${local.openrouter_secret_id}-*",
   ]
 
   # [T-1.62] Envio de correo del worker notify (SES). El ARN se CONSTRUYE aqui en

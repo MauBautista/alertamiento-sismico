@@ -32,6 +32,35 @@ guarda_de_rama "cloud"
 
 tf() { terraform -chdir="$TF_DEV" output -raw "$1"; }
 
+# [T-7.26] La salida del terraform que el despliegue NO puede inventarse: si falta o
+# viene vacia, se aborta AQUI y en voz alta.
+#
+# Por que hace falta una funcion y no basta el `set -e` de arriba. Dentro del heredoc
+# de CLOUD_ENV, un `$(tf loquesea)` que falla NO aborta nada: deja el hueco VACIO, el
+# `cat` sigue devolviendo 0 y `set -e` no se entera. Medido el 2026-09-21 con el
+# terraform sin aplicar: el despliegue escribia
+# `TAKAB_API_OPENROUTER_SECRET_ID=` (vacio), salia con rc=0 y la nube quedaba
+# «encendida» apuntando a ningun secreto — redactando prosa determinista con la
+# bandera en true, que es justo el «el sistema dice una cosa y hace otra» que este
+# repositorio persigue. Y es peor que el `manifest unknown` de T-2.124: aquello
+# tambien fallaba al final, pero fallaba SEGURO y en voz alta (rc=125, el contenedor
+# no arranco y no se toco nada). Esto salia cero.
+#
+# Por eso se resuelve ANTES del heredoc, a una variable: aqui `V=$(tf_obligatorio …)`
+# si es un comando simple y `set -e` si lo ve. Dentro del heredoc volveria a ser
+# invisible, asi que no se usa alli.
+tf_obligatorio() {
+  local salida="${1:?tf_obligatorio exige el nombre de la salida}" pista="${2:-}" v
+  if ! v="$(tf "$salida")" || [ -z "$v" ]; then
+    echo "ERROR: terraform no publica la salida '$salida' (o viene vacia)." >&2
+    echo "       El despliegue NO puede continuar: escribiria el valor vacio en" >&2
+    echo "       /etc/takab/cloud.env y la nube arrancaria mal configurada en silencio." >&2
+    if [ -n "$pista" ]; then echo "       Falta: $pista" >&2; fi
+    exit 1
+  fi
+  printf '%s' "$v"
+}
+
 ACCOUNT="$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query Account --output text)"
 REGISTRY="${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 INSTANCE_ID="$(tf db_instance_id)"
@@ -43,6 +72,12 @@ if [ -z "$PUBLIC_HOST" ]; then
   echo "       y -var 'web_allowed_cidrs=[\"TU.IP.PU.BL/32\"]' antes de desplegar." >&2
   exit 1
 fi
+
+# [T-7.26] El IDENTIFICADOR del secreto de OpenRouter se resuelve AQUI, fuera del
+# heredoc, por lo que explica la cabecera de tf_obligatorio: dentro, la salida que
+# falta se convierte en una linea vacia y en un despliegue que sale 0. Sin
+# `make cloud-apply` no hay salida que leer, y ese es el caso que tiene que abortar.
+OPENROUTER_SECRET_ID="$(tf_obligatorio openrouter_secret_id "aplicar el terraform (make cloud-apply); ver deploy/cloud/README.md §4")"
 
 # Configuración NO secreta. Los secretos jamás pasan por aquí.
 CLOUD_ENV=$(
@@ -137,6 +172,61 @@ TAKAB_API_DLQ_URL_BACKFILL=$(terraform -chdir="$TF_DEV" output -json dlq_urls | 
 TAKAB_API_COMMAND_HMAC_SECRET_PREFIX=$(tf command_hmac_secret_prefix)
 TAKAB_API_EVIDENCE_BUCKET=$(tf evidence_bucket)
 TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
+# [T-7.26] La capa narrativa del dictamen REDACTA de verdad en la nube. El codigo
+# la trae APAGADA (openrouter_enabled = False en settings.py) y asi se desplego
+# desde T-2.42, porque el gate #9 situa la IA en Fase 3 y en modo sombra.
+# Encenderla exige LAS TRES lineas de abajo: con cualquiera vacia, resolve_api_key
+# (narrative/openrouter.py) devuelve cadena vacia y el dictamen sale con la prosa
+# DETERMINISTA. Ese suelo es el correcto —regla de oro 1: la IA asesora, jamas
+# veta ni dispara— pero era silencioso, y por eso T-7.26 obliga al papel a
+# declarar NARRATIVA DEGRADADA cuando ocurra.
+#
+# El slug del modelo se declara AQUI y no en settings.py a proposito: un
+# identificador de modelo cableado en el codigo caduca en silencio; el despliegue
+# es el sitio donde se cambia a sabiendas.
+#
+# _SECRET_ID es el IDENTIFICADOR del secreto, jamas la clave.
+# TAKAB_API_OPENROUTER_API_KEY esta en PROHIBIDOS_EN_PRODUCCION (settings.py) y no
+# puede viajar en cloud.env: el proceso resuelve el valor en runtime con el rol de
+# la instancia, igual que hace con la clave HMAC de comandos. Y el nombre se
+# DERIVA del terraform, no se teclea, porque el MISMO local de
+# infra/terraform/envs/dev/main.tf construye el ARN que el rol tiene permiso de
+# leer; dos literales separados divergirian y el sintoma seria un AccessDenied que
+# degrada a prosa determinista sin decir por que.
+#
+# SIN COMILLAS INVERTIDAS, como sus vecinos y por lo mismo: el heredoc que abre
+# CLOUD_ENV va sin comillas —tiene que expandir las salidas de terraform— asi que
+# un backtick aqui no es tipografia, es sustitucion de ordenes, y el despliegue
+# ejecutaria en la maquina lo que hubiera dentro. Lo cazan
+# test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar (api) y, ya
+# sobre el fichero RENDERIZADO, infra/scripts/tests/test_censo_banderas.sh.
+TAKAB_API_OPENROUTER_ENABLED=true
+TAKAB_API_OPENROUTER_MODEL=anthropic/claude-sonnet-5
+TAKAB_API_OPENROUTER_SECRET_ID=${OPENROUTER_SECRET_ID}
+# [T-5.18 - T-7.26] Tope de gasto de la IA, POR TENANT y al mes, en dolares. El
+# codigo trae 5 (deliberadamente conservador: el defecto de una cuota no puede ser
+# "la que no molesta"); dev sube a 10 porque aqui se ensaya la demo y un corte a
+# mitad de un simulacro cuesta mas que los cinco dolares.
+#
+# CERO ES TOPE CERO: con 0 la llamada no sale y el dictamen se redacta determinista
+# declarandolo en el papel. Lo decide hay_tope, que devuelve cierto para cualquier
+# tope mayor o igual que cero (api/src/takab_api/narrative/quota.py, decision 4 de
+# su cabecera). Hasta el 2026-09-21 este comentario documentaba la semantica
+# INVERTIDA a la que quota.py implementa, y era el peor sitio posible para
+# equivocarse: es el texto que lee quien esta editando justamente esta linea.
+#
+# El modo ilimitado existe, pero hay que pedirlo a conciencia con un tope NEGATIVO
+# (-1, SIN_TOPE en quota.py); ningun dedo lo teclea por accidente. Para cortar del
+# todo, mejor apagar la bandera de arriba: ademas se ve en el censo de conformidad.
+#
+# SIN COMILLAS INVERTIDAS, como sus vecinos y por lo mismo: esto vive dentro del
+# heredoc sin comillas y un backtick aqui no es tipografia, es sustitucion de
+# ordenes. El 2026-09-21, escribir el predicado de quota.py entre comillas
+# invertidas convirtio este mismo comentario en una orden con redireccion. Lo caza
+# infra/scripts/tests/test_censo_banderas.sh, que renderiza el bloque y compara los
+# comentarios antes y despues: medido, dice «orden no encontrada: hay_tope» y
+# ensena la linea mutilada.
+TAKAB_API_AI_MONTHLY_CAP_USD=10
 # T-1.61: sin email_from el provider de email es SIMULADO (no envía). Remitente =
 # identidad SES verificada; el link del correo al inspector apunta a la consola
 # publicada.
