@@ -262,6 +262,36 @@ rutas_que_llegan_a_la_nube() {
     return
   fi
   printf '%s\n' api web shared db deploy/cloud/deploy.sh $d | sort -u | tr '\n' ' '
+  # Y las EXCLUSIONES, que también se derivan. Un directorio `tests/` bajo una de
+  # las raíces sólo queda fuera si NINGÚN Dockerfile lo copia — no por llamarse
+  # `tests`. La diferencia es real y se mide:
+  #
+  #   · `api/Dockerfile` copia `api/src`, `api/migrations`, `api/pyproject.toml` y
+  #     `api/alembic.ini`. **`api/tests` NO entra en la imagen**, así que tocarlo
+  #     no cambia lo que la nube ejecuta y no puede pedir un despliegue.
+  #   · `console.Dockerfile` hace `COPY web web` — los tests del web SÍ viajan, y
+  #     además el build los typechequea, o sea que un cambio ahí puede romper la
+  #     imagen. Excluirlos con un `**/tests` a lo bruto sería el error caro: el de
+  #     MENOS, dar por inofensivo un cambio que sí viaja.
+  local raiz copiados cand c copiado
+  copiados="$(grep -hoE '^COPY[[:space:]]+[^[:space:]]+' api/Dockerfile deploy/cloud/console.Dockerfile 2>/dev/null |
+    awk '{print $2}')"
+  for raiz in api web shared; do
+    cand="$raiz/tests"
+    [ -d "$cand" ] || continue
+    # ⚠️ Por ANCESTRO, no por prefijo de cadena. `COPY web web` copia `web/tests`
+    # aunque no lo nombre, y una comparación ingenua (`grep "^web/tests"`) no lo ve
+    # y lo excluiría. Hoy `web/tests` no existe, así que la versión ingenua acertaba
+    # POR CASUALIDAD — y el día que alguien meta ahí los Playwright, el censo daría
+    # por inofensivo un cambio que sí viaja en la imagen. Ése es el error caro.
+    copiado=0
+    while IFS= read -r c; do
+      [ -n "$c" ] || continue
+      c="${c%/}"
+      case "$cand/" in "$c"/*) copiado=1; break ;; esac
+    done <<<"$copiados"
+    [ "$copiado" -eq 1 ] || printf ':!%s ' "$cand"
+  done
 }
 
 # --- 2 · esquema ---------------------------------------------------------------------
