@@ -62,26 +62,31 @@ def _provider(handler, **over) -> OpenRouterProvider:
 
 
 def test_por_defecto_el_proveedor_elegido_es_el_determinista() -> None:
-    provider, slug = select_provider(Settings())
-    assert isinstance(provider, DeterministicProvider)
-    assert slug == ""
+    elegido = select_provider(Settings())
+    assert isinstance(elegido.provider, DeterministicProvider)
+    assert elegido.model == ""
 
 
 def test_sin_slug_de_modelo_no_se_enciende_aunque_el_flag_este_puesto() -> None:
     """No hay default de modelo a propósito: un slug hardcodeado caduca en silencio."""
-    provider, _ = select_provider(_settings(openrouter_model=""))
-    assert isinstance(provider, DeterministicProvider)
+    elegido = select_provider(_settings(openrouter_model=""))
+    assert isinstance(elegido.provider, DeterministicProvider)
 
 
 def test_sin_clave_resoluble_no_se_enciende() -> None:
-    provider, _ = select_provider(_settings(openrouter_api_key=""))
-    assert isinstance(provider, DeterministicProvider)
+    """[T-7.26] Sigue sin encenderse — y ahora ADEMÁS lo declara: encender la perilla y
+    no tener clave no es «apagado», es «encendido y no pude». Ver
+    `test_degradacion_declarada.py`."""
+    elegido = select_provider(_settings(openrouter_api_key=""))
+    assert isinstance(elegido.provider, DeterministicProvider)
+    assert elegido.degraded_reason
 
 
 def test_estar_apagado_NO_es_una_degradacion() -> None:
     """El PDF solo debe declarar "narrativa degradada" cuando algo falló de verdad."""
-    provider, _ = select_provider(Settings())
-    assert isinstance(provider, DeterministicProvider)
+    elegido = select_provider(Settings())
+    assert isinstance(elegido.provider, DeterministicProvider)
+    assert elegido.degraded_reason is None
 
 
 async def test_apagado_no_abre_ningun_socket(monkeypatch) -> None:
@@ -103,7 +108,7 @@ def test_la_clave_sale_del_secreto_cuando_no_esta_inline() -> None:
             return {"SecretString": json.dumps({"api_key": "sk-del-secreto"})}
 
     s = _settings(openrouter_api_key="", openrouter_secret_id="takab/dev/openrouter")
-    assert resolve_api_key(s, client=SM()) == "sk-del-secreto"
+    assert resolve_api_key(s, client=SM()).api_key == "sk-del-secreto"
 
 
 def test_un_secreto_irresoluble_degrada_a_clave_vacia() -> None:
@@ -112,7 +117,10 @@ def test_un_secreto_irresoluble_degrada_a_clave_vacia() -> None:
             raise RuntimeError("sin permisos")
 
     s = _settings(openrouter_api_key="", openrouter_secret_id="takab/dev/openrouter")
-    assert resolve_api_key(s, client=SM()) == ""
+    clave = resolve_api_key(s, client=SM())
+    assert clave.api_key == ""
+    # [T-7.26] …y ya no se degrada EN SILENCIO: vuelve con el nombre de lo que falló.
+    assert clave.error == "RuntimeError"
 
 
 # ---- guardrail ---------------------------------------------------------------

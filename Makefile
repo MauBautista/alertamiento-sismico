@@ -217,6 +217,7 @@ test: test-db
 	cd $(TF_STORAGE) && terraform init -backend=false -input=false >/dev/null && terraform test
 	cd $(TF_IDENTITY) && terraform init -backend=false -input=false >/dev/null && terraform test
 	bash infra/scripts/tests/test_merge_env.sh
+	bash infra/scripts/tests/test_censo_banderas.sh
 	bash infra/scripts/tests/test_ci_parity.sh
 	bash infra/scripts/tests/test_secret_scan.sh
 	# [T-5.22] El recolector del acta del reflejo. Un procedimiento que se ejecuta

@@ -237,3 +237,64 @@ describe("[T-2.126] el contrato de evidencia sigue sin poder llevar el JSON", ()
     expect(capaz).toEqual([]);
   });
 });
+
+// ===========================================================================
+// [T-7.27 · D-32] EL AVISO DE IA **NO** ENTRA EN EL SELLO
+// ===========================================================================
+//
+// `D-32` manda avisar de que la foto puede analizarse con IA. La tentación es
+// hornearlo, porque T-2.118 horneó el aviso de «METADATOS RETENIDOS» y el
+// razonamiento suena igual. No lo es, y las tres razones son las mismas que
+// dejaron el incidente fuera del pixel en T-2.135:
+//
+//  1. **Es un aviso A LA PERSONA, no una afirmación sobre la evidencia.** El
+//     de retenidos califica la FIABILIDAD del propio sello: separado de la
+//     imagen, la imagen miente por omisión. El de IA no dice nada del valor
+//     probatorio de la foto; dice a dónde puede ir. Un exhibit no se autodefine
+//     por su ruta de distribución.
+//  2. **Sería PERMANENTE y podría ser FALSO.** La capa narrativa está apagada
+//     por defecto y se enciende **por despliegue** —esta línea decía «y por
+//     cliente» y hoy es falso: medido el 2026-09-21 en
+//     `narrative/__init__.py::select_provider`, el interruptor es del despliegue
+//     entero (`RESIDENCIA-DE-DATOS-TAKAB.md §3.1`)—. Hornear «puede
+//     analizarse con IA» en un sitio que jamás la encienda deja para siempre,
+//     dentro del SHA-256, una afirmación que nunca fue cierta — y quien lea el
+//     expediente en cinco años no tiene forma de saberlo.
+//  3. **Cambiaría lo que el sello significa.** La spec §2.3 enumera lo que va
+//     en el pixel; tocarla cambia los bytes y, por tanto, la huella de toda la
+//     evidencia futura. T-2.135 ya fijó ese criterio con un test.
+//
+// Y tampoco va al manifiesto: un campo `avisado: true` que fuera SIEMPRE true
+// no prueba nada. El consentimiento es contractual y está en pendientes
+// (`PENDIENTES-MAURICIO §4.7`); fabricar aquí su apariencia sería justo lo que
+// `T-2.126` denuncia — una pieza que *parece* que está.
+//
+// ⚠️ **LO QUE ESTE BLOQUE NO MIDE, Y HAY QUE DECIRLO EN SU NOMBRE.** Aquí se
+// miden DOS FUNCIONES PURAS: la lista de líneas y el manifiesto. Lo que view-shot
+// hornea en el JPEG no es esta lista: es el SUBÁRBOL de `composeRef`, y la
+// pantalla no está obligada a pasar por `watermarkLines()` para pintar algo
+// dentro de él. El bloque se llamaba «no se hornea» y con `<AvisoIA/>` movido
+// dentro de `composeRef` seguía verde (medido el 2026-09-21, 725/725 en
+// `mobile`): prometía en el nombre más de lo que afirmaba. El árbol que de
+// verdad se cuece lo mide `tests/app/camera-states.test.tsx`, bloque «lo que se
+// HORNEA en el JPEG». Los dos hacen falta; ninguno sustituye al otro.
+describe("[T-7.27] el aviso de IA no entra en `watermarkLines()` ni en el manifiesto", () => {
+  // `\bIA\b` con la frontera DELANTE, y no `IA\b`: sin ella la guarda casa con
+  // «EVIDENC-IA» de la primera línea del sello y habría nacido en rojo por un
+  // motivo que no es el suyo.
+  const PALABRAS = /\bIA\b|inteligencia artificial|INMUEBLE|FUERA DE MÉXICO/i;
+
+  it("CRITERIO · el pixel no lo nombra", () => {
+    expect(watermarkLines(BASE).join("\n")).not.toMatch(PALABRAS);
+    expect(watermarkLines({ ...BASE, snapshotStaleSinceMs: SNAPSHOT_VIEJO }).join("\n")).not.toMatch(
+      PALABRAS,
+    );
+  });
+
+  it("CRITERIO · el manifiesto tampoco, y no inventa un campo de consentimiento", () => {
+    const md = forensicMetadata(BASE);
+    expect(JSON.stringify(md)).not.toMatch(PALABRAS);
+    const inventados = Object.keys(md).filter((k) => /avis|consent|ia_|_ia$|openrouter/i.test(k));
+    expect(inventados).toEqual([]);
+  });
+});

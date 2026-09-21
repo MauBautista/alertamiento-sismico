@@ -400,6 +400,13 @@ jobs:
       # el único aviso sería un gabinete real quedándose sin sensor.
       - name: Test de fusión del edge.env (provisión no destructiva)
         run: bash infra/scripts/tests/test_merge_env.sh
+      # [T-7.26] El censo de banderas del informe de conformidad y el camino de la
+      # bandera de OpenRouter: que la lista se DERIVE de deploy.sh (enumerada a
+      # mano ya se había quedado corta), que el heredoc renderizado no ejecute lo
+      # que cree comentar y que el rol de la instancia tenga permiso de leer el
+      # secreto. Sin dependencias: bash + python3 del runner, cero AWS.
+      - name: Test del censo de banderas y del permiso del secreto (T-7.26)
+        run: bash infra/scripts/tests/test_censo_banderas.sh
       # Paridad local↔CI (T-2.62): cada paso de calidad de ESTE fichero tiene que
       # poder correrse con `make`. Corre aquí y no sólo en `make test` porque `make
       # test` no lo ejecuta nadie en CI: si el gate viviera sólo en local, un PR

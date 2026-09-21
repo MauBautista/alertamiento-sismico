@@ -165,6 +165,7 @@ consecuencia.
 | **Derechos ARCO por anonimización**: se anonimiza al titular **sin perder una sola fila**, y el hecho sobrevive — un check-in anonimizado sigue contando para el incidente | `RO-11.c`, `RO-11.d` |
 | **La retención no puede podar la evidencia**: una regla que intente borrar filas de una tabla protegida se rechaza **antes** de borrar nada, y ni saltándose esa guarda lo permite la base | `RO-11.a`, `RO-11.b` |
 | Respaldo continuo con **RPO declarado de 900 s, derivado de la configuración de la alarma** y no tecleado, más un ensayo de restauración que **mide su propio tiempo de recuperación** | `T-2.72`, `T-2.73` — límite en §6.3 |
+| ⚠️ **«Aislado entre clientes» no quiere decir «no sale de TAKAB».** Los datos viven en AWS (Ohio) y, **si se contrata la redacción asistida por IA**, los datos del evento y las fotografías del inmueble salen además hacia un proveedor que no es AWS. Se declara aquí para que no haya que deducirlo | §6.3 y §6.4 de este documento; `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` |
 
 ---
 
@@ -282,6 +283,7 @@ en `runbooks/RUNBOOK-auditoria-cierre.md §10`).
 | **Tono SASMEX en la app y en el voceo** | **No se usa el tono oficial.** Usarlo sin licencia no es un detalle estético: es el sonido que la población ya asocia a evacuar | Licencia con CIRES (`T-2.97`) |
 | **Voceo hablado en el gabinete** | El motor existe y hay un tono de sirena sintetizado; **los dos mensajes reales no están grabados** y el hardware de audio no está montado ni probado presencialmente | `T-2.95` |
 | **Alcance por sitio dentro de un mismo cliente** | **No impuesto en producción.** El aislamiento **entre clientes** sí lo impone la base de datos (§3.4). Lo que hoy no se impone es que un operador de un cliente vea **solo sus sitios**: la perilla está apagada (`api/src/takab_api/settings.py · console_scope_enforced`). **Es la única brecha multi-tenant viva** | `T-2.89`, con secuencia obligada: revisar quién quedaría fuera, asignar alcance, y **entonces** encender |
+| **Redacción del informe asistida por IA** | **Construida y apagada por contrato, no por falta de código.** `D-32` decidió que la capa narrativa reciba los datos del evento **y hasta seis fotografías en todo el informe** —el tope es del documento, no de cada reporte de daños—: salen de la nube hacia OpenRouter (Estados Unidos) y el proveedor del modelo. La app **ya avisa** al brigadista antes de capturar. Lo que falta es la **cláusula de transferencia** en contrato y aviso de privacidad; el interruptor de hoy es del despliegue entero, no por cliente | `T-7.26`, `T-7.27`; la cláusula, en `PENDIENTES-MAURICIO.md §4.7`. Detalle legal en `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` |
 | **Gestión de usuarios desde la consola** | Corre **simulada** en producción: grita en cada escritura, no finge, pero **no crea usuarios reales** | `T-2.87` |
 | **Ventanas de mantenimiento** | El núcleo está completo y el silencio de alarmas **está apagado por defecto a propósito** (con él apagado la ventana declara `0/N SILENCIADAS`, que es honesto). Falta la pantalla para **abrirlas** desde la consola | `T-2.71` |
 | **Actualización remota de flota** | Bloqueada por el gate de §6.2 | `T-2.70`, `T-2.70.a` |
@@ -298,6 +300,13 @@ leérselo al cliente en voz alta, está en [`RESIDENCIA-DE-DATOS-TAKAB.md`](RESI
 
 > **La ubicación de la nube no afecta a la protección durante un sismo:** la alerta y la
 > actuación ocurren dentro del edificio, sin pasar por internet.
+
+**Y un destino que no es AWS.** Si se contrata la redacción del informe asistida por IA (§6.3),
+los datos del evento **y las fotografías del inmueble** salen además hacia un proveedor en
+Estados Unidos que no es AWS. **No está encendida mientras no exista la cláusula de transferencia
+en el contrato y en el aviso de privacidad**, y para clientes del sector público el listón es más
+alto que una cláusula: arts. 60 y 62 de la LGPDPPSO. El análisis completo está en
+`RESIDENCIA-DE-DATOS-TAKAB.md §6.3`, adenda de `D-32`.
 
 **Sobre el marco normativo — y esto es un límite, no un trámite:**
 
@@ -445,12 +454,21 @@ mismo que gobierna esta entrega:
 
 ## 11 · Documentos que forman parte de esta entrega
 
+> **Cómo leer los `§` de esta tabla.** Todos son **de ESTE documento**, no del documento de la
+> fila, y hasta el 2026-09-21 eso había que adivinarlo: la fila de residencia decía «(§6.4)»
+> hablando de otro fichero, y tres documentos citan el **`§6.3`** de ese fichero para lo mismo
+> —de dónde salió la sospecha de que uno de los cuatro estaba mal—. No lo estaba. El criterio,
+> escrito para que no vuelva a pasar, vive en `RESIDENCIA-DE-DATOS-TAKAB.md`, sección «Cómo se
+> cita este documento»: **un `§n` pelado es siempre de quien lo escribe; para citar a otro se
+> nombra el fichero.** Aquí se hace explícito porque es la única tabla del proyecto donde cada
+> fila habla de un documento distinto del que la contiene.
+
 | Documento | Qué contiene |
 |---|---|
-| [`MANUAL-OPERACION-TAKAB.md`](MANUAL-OPERACION-TAKAB.md) | Manual del operador del inmueble: estados, botones, qué hacer cuando cae la nube, y **8 huecos declarados** (§7) |
-| [`MATRIZ-REQUISITO-TEST.md`](MATRIZ-REQUISITO-TEST.md) | Trazabilidad requisito → prueba, **generada**, con los **18 huecos** (§8) y los **10 gates** (§6.2) |
-| [`RESIDENCIA-DE-DATOS-TAKAB.md`](RESIDENCIA-DE-DATOS-TAKAB.md) | Dónde viven los datos y por qué; la respuesta al cliente que pregunta (§6.4) |
-| [`BLUEPRINT-TECNICO-TAKAB.md`](BLUEPRINT-TECNICO-TAKAB.md) | Arquitectura canónica; **§14** contiene los invariantes de §4 |
+| [`MANUAL-OPERACION-TAKAB.md`](MANUAL-OPERACION-TAKAB.md) | Manual del operador del inmueble: estados, botones, qué hacer cuando cae la nube, y **8 huecos declarados** (§7 de este documento) |
+| [`MATRIZ-REQUISITO-TEST.md`](MATRIZ-REQUISITO-TEST.md) | Trazabilidad requisito → prueba, **generada**, con los **18 huecos** (§8 de este documento) y los **10 gates** (§6.2 de este documento) |
+| [`RESIDENCIA-DE-DATOS-TAKAB.md`](RESIDENCIA-DE-DATOS-TAKAB.md) | Dónde viven los datos y por qué; la respuesta al cliente que pregunta. Resumido en el §6.4 **de este documento**; el detalle legal de la transferencia a terceros —incluida la de fotografías a un proveedor de IA— está en `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` |
+| [`BLUEPRINT-TECNICO-TAKAB.md`](BLUEPRINT-TECNICO-TAKAB.md) | Arquitectura canónica; su **§14** contiene los invariantes del §4 de este documento |
 | [`RBAC-TAKAB.md`](RBAC-TAKAB.md) | Los 10 roles y qué puede hacer cada uno |
 | [`RUNBOOK-ALTA-DE-ESTACION.md`](RUNBOOK-ALTA-DE-ESTACION.md) | Procedimiento de alta de una estación |
 | `runbooks/RUNBOOK-SPOF-02-ruta-hardware-sirena.md` | Diseño y verificación de la sirena con el gabinete muerto (`G-02`) |

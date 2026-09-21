@@ -58,6 +58,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
+import { avisoIALineas } from "@/features/forensic/avisoIA";
 import { captureForensicPhoto } from "@/features/forensic/capture";
 import { watermarkLines, type ForensicMeta } from "@/features/forensic/watermark";
 import { useDamageDraft } from "@/features/damage/draft.store";
@@ -77,6 +78,38 @@ const SIN_INCIDENTE = "Sin incidente activo en su sitio: no se levanta evidencia
 /** No se pudo preguntar. Accionable y sin fingir: dice qué NO ha pasado. */
 const SIN_ESTADO =
   "No se pudo consultar el incidente de su sitio, así que una foto sellada ahora no podría atribuirse a ninguno. No se ha perdido ninguna foto: reintente, o vuelva en cuanto la app recupere el estado del sitio.";
+
+/**
+ * [T-7.27 · D-32] El aviso de destino, EN LOS DOS MOMENTOS en que se decide.
+ *
+ * Va en el visor porque encuadrar ya es una decisión —en un pasillo evacuado
+ * entran caras, matrículas y papeles que nadie eligió mandar— y va otra vez en
+ * la revisión porque «USAR ESTA FOTO» es el toque que la encola: es ahí donde
+ * la imagen deja de ser sólo de este teléfono. El del visor no cubre el
+ * segundo: para entonces la persona ya disparó.
+ *
+ * Es fijo y no descartable a propósito. Tampoco entra en el sello: la razón
+ * larga —las tres de T-2.135— está en `features/forensic/watermark.test.ts`.
+ *
+ * La tinta es la MISMA pareja que ya lleva la marca de agua sobre la imagen
+ * (`veil.ink` sobre `veil.base`): estrenar un par de colores para un aviso que
+ * se lee encima del visor sería estrenar un contraste que nadie ha medido. El
+ * borde en `warn` acompaña, no informa — quien no distinga el color lee
+ * exactamente lo mismo.
+ */
+function AvisoIA() {
+  const [titulo, ...resto] = avisoIALineas();
+  return (
+    <View pointerEvents="none" style={styles.avisoIa} testID="aviso-ia">
+      <Text style={styles.avisoIaTitulo}>{titulo}</Text>
+      {resto.map((linea) => (
+        <Text key={linea} style={styles.avisoIaTexto}>
+          {linea}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
 export default function Camera() {
   const router = useRouter();
@@ -237,6 +270,7 @@ export default function Camera() {
                 visor. La marca de agua no se duplica aquí para que no haya duda
                 de cuál es la que se hornea — la del `composeRef`. */}
             <View style={styles.controls}>
+              <AvisoIA />
               {capturaError ? <Text style={styles.error}>{capturaError}</Text> : null}
               <Pressable
                 accessibilityRole="button"
@@ -264,8 +298,15 @@ export default function Camera() {
 
         {incidentId !== null && photoUri !== null ? (
           <View style={styles.fill}>
-            {/* View COMPUESTO que view-shot captura: la marca queda en el bitmap. */}
-            <View collapsable={false} ref={composeRef} style={styles.fill}>
+            {/* View COMPUESTO que view-shot captura: la marca queda en el bitmap.
+                El `testID` NO es decorativo: es el asidero por el que
+                `camera-states.test.tsx` mide QUÉ HAY DENTRO de este árbol —lo
+                único que acaba horneado en el JPEG y en el SHA-256—, y la propia
+                guarda comprueba antes que el `ref` que se le pasa a
+                `captureForensicPhoto` es el de este View y no otro. Moverlo de
+                sitio sin mover el `testID` pone la guarda en rojo, que es lo que
+                se quiere: sin ancla, medir el árbol equivocado no se nota. */}
+            <View collapsable={false} ref={composeRef} style={styles.fill} testID="compose">
               <CameraView style={styles.fill} />
               <View pointerEvents="none" style={styles.watermark} testID="watermark">
                 {watermarkLines(meta).map((line) => (
@@ -276,6 +317,7 @@ export default function Camera() {
               </View>
             </View>
             <View style={styles.controls}>
+              <AvisoIA />
               {capturaError ? <Text style={styles.error}>{capturaError}</Text> : null}
               <Pressable
                 accessibilityRole="button"
@@ -342,6 +384,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[3],
   },
   shutterText: { color: palette.bg, fontWeight: "800", letterSpacing: 1 },
+  avisoIa: {
+    alignSelf: "stretch",
+    backgroundColor: emergency.veil.base,
+    borderLeftColor: palette.warn,
+    borderLeftWidth: 3,
+    borderRadius: radius.sm,
+    padding: space[2],
+    gap: 2,
+  },
+  avisoIaTitulo: {
+    color: emergency.veil.ink,
+    fontSize: fontSize.xs,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  avisoIaTexto: { color: emergency.veil.ink, fontSize: fontSize.xs },
   cancel: { color: palette.fg2, fontSize: fontSize.sm },
   error: { color: palette.crit, fontSize: fontSize.sm },
   btn: {

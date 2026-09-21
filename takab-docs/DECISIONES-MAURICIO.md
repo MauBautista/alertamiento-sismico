@@ -1599,6 +1599,19 @@ admite imágenes y, si no, la capa cae al determinista y lo dice; la cámara for
 avisa de que la foto puede analizarse con IA; `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` gana la adenda;
 y la **cláusula de consentimiento contractual** queda en pendientes hasta que exista.
 
+> ⚠️ **Al ejecutarla (`T-7.27`, 2026-09-21) el tope quedó MÁS ESTRECHO que el párrafo de arriba,
+> y se deja escrito aquí sin tocarlo.** Lo construido son **seis por INFORME**, no seis por
+> reporte: el contador de `api/src/takab_api/narrative/redact.py::imagenes_de` acumula a través de
+> todos los reportes de daño y devuelve en cuanto llega a seis, así que se reparten por orden de
+> llegada y un reporte tardío puede aportar **cero**. El «seis por reporte» de esta decisión es el
+> del PDF (`documentos/fotos.py::MAX_FOTOS_POR_REPORTE`), de donde se tomó el número prestado.
+> **A cada informe viajan menos fotos de las que esta decisión autorizaba, así que no hay nada
+> que revocar** —
+> pero lo que se le dice al cliente tiene que ser lo construido, y durante un día fue lo otro:
+> el guion que se lee en voz alta decía «hasta seis por reporte». Corregido en
+> `RESIDENCIA-DE-DATOS-TAKAB.md` (§2, §3.1 y la adenda del §6.3),
+> `PENDIENTES-MAURICIO.md §4.7` y `ENTREGA-Y-ACEPTACION-TAKAB.md`.
+
 ### Por qué
 
 - Lo que la IA aporta al informe es la lectura de lo que **no está en las cifras**: una grieta,
@@ -1606,9 +1619,9 @@ y la **cláusula de consentimiento contractual** queda en pendientes hasta que e
 - El coste es marginal (seis imágenes son unos miles de tokens) y el riesgo está acotado por
   contrato: la prosa **jamás toca el veredicto**, la clasificación ni el tier
   (`tests/narrative/test_contract.py`), y se rotula como redactada con asistencia.
-- La transferencia a un tercero **está permitida con condiciones** por la ley mexicana (§6.3 del
-  documento de residencia); la condición que falta es contractual, no técnica, y por eso está en
-  pendientes y no bloquea el prototipo.
+- La transferencia a un tercero **está permitida con condiciones** por la ley mexicana
+  (`RESIDENCIA-DE-DATOS-TAKAB.md §6.3`); la condición que falta es contractual, no técnica, y por
+  eso está en pendientes y no bloquea el prototipo.
 
 ### Cómo se revocaría
 

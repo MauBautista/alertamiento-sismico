@@ -1,0 +1,15 @@
+{
+  "data": [
+    {
+      "id": "anthropic/claude-sonnet-5",
+      "name": "Anthropic: Claude Sonnet 5",
+      "context_length": 200000,
+      "architecture": {
+        "modality": "text->text",
+        "input_modalities": ["text"],
+        "output_modalities": ["text"],
+        "tokenizer": "Claude"
+      }
+    }
+  ]
+}

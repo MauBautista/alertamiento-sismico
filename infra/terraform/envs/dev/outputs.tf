@@ -103,6 +103,14 @@ output "command_hmac_secret_prefix" {
   value = local.gateway_hmac_prefix
 }
 
+# [T-7.26] El IDENTIFICADOR del secreto de OpenRouter, jamas la clave: la resuelve
+# el proceso en runtime con el rol de la instancia. Sale del MISMO local que
+# construye el ARN del permiso, para que el nombre que exporta deploy.sh y el
+# nombre que el rol puede leer no puedan divergir.
+output "openrouter_secret_id" {
+  value = local.openrouter_secret_id
+}
+
 output "dlq_urls" {
   value = module.messaging.dlq_urls
 }

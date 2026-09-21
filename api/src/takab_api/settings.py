@@ -732,8 +732,15 @@ class Settings(BaseSettings):
     #: 5 USD es deliberadamente conservador: con el modelo y el techo de tokens
     #: de hoy son cientos de dictámenes al mes, y quien necesite más lo sube a
     #: sabiendas. El defecto de una cuota no puede ser «la que no molesta».
-    #: `0` = SIN TOPE, y es la lectura del ajuste ausente, no «tope cero»: quien
-    #: quiera cortar del todo apaga `openrouter_enabled`, que ya existía.
+    #:
+    #: ⚠️ [T-7.26] **`0` es tope CERO: la IA no sale a la red.** Hasta esta ficha
+    #: significaba SIN TOPE —la lectura del ajuste ausente—, y eso convertía el
+    #: error de dedo más probable de todos en el peor resultado posible: quien
+    #: pone el tope a cero creyendo que apaga el gasto lo dejaba ilimitado.
+    #: Equivocarse tiene que dejar el sistema SIN IA (el dictamen sale igual, con
+    #: prosa determinista declarada), nunca con la tarjeta abierta. Para pedir
+    #: gasto ilimitado se escribe un NEGATIVO (`narrative.quota.SIN_TOPE`), que
+    #: nadie teclea sin querer.
     ai_monthly_cap_usd: float = 5.0
     #: Fracción del tope a la que se deja UNA fila de aviso en la bitácora.
     #: `0` o `1` desactivan el aviso sin tocar el corte.

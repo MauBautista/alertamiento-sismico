@@ -64,6 +64,61 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
    `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
    La etapa node de la consola corre nativa (`$BUILDPLATFORM`): `dist/` no tiene
    arquitectura, solo las capas de Caddy son arm64.
+4. **[T-7.26] El secreto de OpenRouter y su permiso, antes de desplegar.** Desde
+   T-7.26 el despliegue exporta `TAKAB_API_OPENROUTER_ENABLED=true`, así que la capa
+   narrativa del dictamen sale a la red de pago. La clave **no viaja en `cloud.env`**
+   — está en `PROHIBIDOS_EN_PRODUCCION` —: el proceso la resuelve en runtime con el
+   rol de la instancia, igual que la clave HMAC de comandos.
+
+   **4.1 y 4.2 son independientes entre sí**, y conviene decirlo porque este mismo
+   párrafo afirmó lo contrario hasta el 2026-09-21. Medido: el permiso es un ARN
+   construido por interpolación de un `local`, no hay ningún
+   `data "aws_secretsmanager_secret"` en el terraform, así que el `apply` sale igual
+   de limpio antes que después de crear el secreto. **El orden que sí importa es que
+   las dos van antes de `make cloud-deploy`** — y ese ya no depende de la memoria de
+   nadie: sin el `apply`, `deploy.sh` aborta al resolver `openrouter_secret_id`
+   (`tf_obligatorio`, en vez de escribir el identificador vacío y salir 0 como hacía
+   hasta esta ficha); sin el secreto, `make cloud-conformidad` lo dice en ROJO en la
+   pieza «secreto de la capa narrativa».
+
+   ```bash
+   # 4.1 · crear el secreto (una vez; el valor jamás entra en git ni en el estado
+   #       de terraform, por eso lo crea una persona y no el IaC)
+   aws secretsmanager create-secret --profile takab-dev --region us-east-2 \
+     --name takab/dev/openrouter \
+     --description 'Clave de OpenRouter para la capa narrativa del dictamen (T-7.26)' \
+     --secret-string '{"api_key":"sk-or-v1-..."}'
+
+   # 4.2 · conceder la LECTURA a la instancia. Sin este apply el despliegue
+   #       "enciende" la IA y la nube sigue escribiendo prosa determinista:
+   #       GetSecretValue responde AccessDenied y resolve_api_key degrada.
+   make cloud-apply   # NO `terraform apply` a pelo: el target trae las dos guardas
+                      # de T-2.171 (rama y local.auto.tfvars)
+
+   # 4.3 · comprobarlo con la misma herramienta que lo vigila a diario: la pieza
+   #       «secreto de la capa narrativa» mide que el secreto EXISTA y que el rol
+   #       de la instancia lo alcance (deriva el rol de la instancia; no teclea
+   #       ningún nombre). VERDE es la respuesta buena.
+   make cloud-conformidad
+   ```
+
+   La pieza tiene **tres** respuestas y no dos: VERDE (lo midió y está), ROJO (lo midió
+   y NO está, con la orden que lo arregla) y **NO MEDIDO** (no pudo preguntarlo —SSO
+   caducado, un perfil sin permiso para leer IAM, la región equivocada— y entonces lo
+   dice en vez de acusar). Un NO MEDIDO tampoco es un aprobado: cuenta como fallo del
+   censo salvo `--permitir-no-medido`, que lo saca del código de salida pero no lo
+   pinta de verde. Hasta el 2026-09-21 ese tercer caso salía como ROJO y con la receta
+   del segundo (`make cloud-apply`, que no arregla unas credenciales caducadas): un
+   censo que acusa de lo que no comprobó enseña al operador a ignorar el rojo.
+
+   El nombre `takab/dev/openrouter` del paso 4.1 tiene que ser el de
+   `local.openrouter_secret_id` (`infra/terraform/envs/dev/main.tf`): es el que
+   construye el ARN del permiso y el que `deploy.sh` exporta. Y el campo del JSON es
+   `api_key` y no otro: es el que lee `resolve_api_key`
+   (`api/src/takab_api/narrative/openrouter.py`). Un secreto con otro nombre, o con
+   otro nombre de campo, resuelve a cadena vacía y degrada. Las dos coincidencias las
+   vigila `infra/scripts/tests/test_censo_banderas.sh`, que las compara contra sus
+   fuentes en vez de fiarse de que este párrafo siga siendo verdad.
 
 ## Secuencia
 

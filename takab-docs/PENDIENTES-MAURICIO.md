@@ -1036,11 +1036,93 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
 
 ### 4.7 · [`T-7.27`](TASKS.md) · Consentimiento para que las fotos del brigadista lleguen a la IA (`D-32`)
 
-`D-32` decidió que la IA vea las fotos del reporte de daños. La transferencia a un tercero fuera
-del país está permitida **con condiciones** (`RESIDENCIA-DE-DATOS-TAKAB.md §6.3`), y la que falta
-es contractual: una cláusula en el contrato con el cliente y el aviso en la cámara forense del
-móvil. El software pone el aviso; la cláusula la redacta quien redacte el contrato. Hasta
-entonces, el prototipo lo enseña con el tenant de demostración.
+> **Reescrito el 2026-09-21.** La versión anterior decía que faltaban «una cláusula y el aviso en
+> la cámara». **El aviso ya está puesto** (abajo), y la cláusula resultó no ser una: son **tres
+> cosas distintas, con tres destinatarios distintos**, y una de ellas puede **vetar la función
+> entera** para un cliente público. Escribirlo como una sola línea la dejaba pareciendo un
+> trámite de diez minutos.
+
+`D-32` decidió que la capa narrativa reciba los datos del evento **y hasta seis fotografías en
+todo el informe**: salen hacia **OpenRouter** (Estados Unidos) y, a través suyo, hacia el
+proveedor del modelo. (El tope es **por informe**, no por reporte de daños: el contador de
+`narrative/redact.py::imagenes_de` acumula a través de todos los reportes, así que se reparten
+por orden de llegada y un reporte tardío puede aportar **cero**. `D-32` se escribió «seis por
+reporte» y se construyó más estrecho; lo que se le dice al cliente es lo construido.) La transferencia a un tercero fuera del país está permitida **con
+condiciones** (`RESIDENCIA-DE-DATOS-TAKAB.md §6.3`, adenda de `D-32`), y las condiciones son las
+que faltan.
+
+**Lo que el software YA entrega** (no hace falta ventana tuya): la cámara forense avisa antes de
+disparar **y otra vez antes de encolar** de que la foto puede salir del inmueble hacia un
+proveedor de IA fuera de México, **qué se le quita antes de salir** —la franja de la marca de
+agua, con la hora, el GPS si se autorizó y el identificador de operador, se TAPA: sale la imagen
+del daño y no el sello— y de que **la IA no decide nada**
+(`mobile/src/features/forensic/avisoIA.ts`). Queda **por acreditar en el Pixel real**, como todo
+lo del móvil.
+
+**📋 QUÉ TIENE QUE EXISTIR — tres piezas, no una.**
+
+1. **La cláusula en el contrato con el cliente.** La redacta quien redacte el contrato. El
+   art. 35, 2.º párrafo de la LFPDPPP pide que el aviso de privacidad *«contenga una cláusula en
+   la que se indique si la persona titular acepta o no la transferencia»*, y que el receptor
+   *«asuma las mismas obligaciones»*. Ojo al alcance: no es «datos», son **fotografías del
+   interior de un inmueble**, que pueden traer caras, matrículas y documentos que nadie encuadró
+   a propósito.
+2. **El aviso de privacidad de la plataforma no declara ESTA transferencia — y hay que pedirlo
+   partiendo de lo que el aviso dice de verdad.** Este punto se reescribió el 2026-09-21 porque
+   afirmaba dos cosas que el propio fichero que dice haber leído desmiente, y un encargo legal
+   que arranca de una lectura falsa llega mal planteado. Leído
+   `api/src/takab_api/privacy/texts/aviso_es_mx.json`, el aviso **ya no está tan corto como decía
+   `INFORME-V1-COMERCIAL.md · H-15`**: tiene un párrafo *«QUIÉN MÁS LOS TRATA (ENCARGADOS)»* con
+   las categorías —infraestructura, SMS, WhatsApp, correo, las notificaciones de Apple y Google,
+   y el sistema propio del cliente— y otro, *«SUS DATOS SE TRATAN FUERA DE MÉXICO»*, que **sí**
+   declara la transferencia a Estados Unidos. Y además:
+
+   - **Las fotografías YA están declaradas como dato tratado, así que NO hace falta una categoría
+     nueva.** El párrafo *«QUÉ DATOS SE TRATAN»* dice *«los reportes de daño que envíe y las
+     fotografías que adjunte»* (aviso de privacidad · párrafo «QUÉ DATOS SE TRATAN»). Aquí se
+     afirmaba que el aviso *«no menciona ninguna imagen»*: es falso. Salía de buscar la palabra
+     «imagen» —que en ese fichero aparece **cero** veces— en un texto que las llama
+     **fotografías**.
+   - **La finalidad que se citaba no era la finalidad, y la cita no era literal.** Se
+     entrecomillaba *«entregarle el aviso de emergencia y operar la plataforma»* como la finalidad
+     declarada. No lo es: es la oración de propósito del párrafo de **encargados**, y el texto
+     real dice *«Para entregarle el aviso de emergencia y para operar la plataforma»* (aviso de
+     privacidad · párrafo «QUIÉN MÁS LOS TRATA (ENCARGADOS)»). Las finalidades están en otro
+     párrafo y son **cuatro**: *«Para avisarle de un sismo, para saber quién está dentro del
+     inmueble y en qué estado durante una emergencia, para coordinar el rescate de quien pide
+     ayuda, y para dejar constancia de lo ocurrido»* (aviso de privacidad · párrafo «PARA QUÉ»).
+     **La cuarta es exactamente donde encaja un informe posterior al sismo.** Si aun así hace
+     falta una finalidad nueva es cuestión abierta: se le pregunta al abogado **como pregunta**,
+     no se le encarga como hecho. En este repositorio las comillas angulares marcan cita literal,
+     y una cita falsa dentro de un encargo legal es peor que una paráfrasis.
+
+   **Lo que de verdad falta, y es de fondo:** **(a)** a todos los proveedores los llama
+   **ENCARGADOS**, que es justo la palabra que al proveedor de IA no se le puede aplicar de
+   oficio; **(b)** el párrafo de la transferencia fuera de México la atribuye a la infraestructura
+   y a la mensajería, no a un tercero que **lee** la fotografía del interior de un inmueble —eso
+   no cabe en «proveedores de mensajería»—; **(c)** no existe la cláusula del art. 35, 2.º párrafo
+   por la que la persona titular acepta o no esa transferencia. El mecanismo, ése sí, ya existe y
+   el propio aviso lo promete: cambiar el texto **vuelve a pedir consentimiento** (`T-2.79`).
+3. **Para el sector público esto NO se arregla con una cláusula, y puede no tener arreglo.**
+   Los arts. 60 y 62 de la LGPDPPSO exigen instrumento jurídico y **compromiso vinculante del
+   receptor extranjero**. A AWS se le firma un DPA; a OpenRouter se le paga con una clave y se
+   aceptan sus términos de adhesión. **Si la respuesta del abogado es que eso no basta, la
+   función queda vetada en hospitales públicos, universidades públicas y dependencias** — y eso
+   hay que saberlo decir en la venta, no descubrirlo en la licitación. Es la pregunta (c) del
+   punto 8 de `RESIDENCIA-DE-DATOS-TAKAB.md §6.7`.
+
+> ⚠️ **El dato que decide si esto se puede enseñar hoy, medido el 2026-09-21** en
+> `api/src/takab_api/narrative/__init__.py::select_provider`: **el interruptor es del despliegue
+> entero, no por cliente.** No se puede tener la redacción asistida encendida para un cliente con
+> cláusula firmada y apagada para su vecino sin ella. Mientras siga así, **un solo cliente sin
+> cláusula la apaga para todos los de ese despliegue** — y por eso el prototipo la enseña con el
+> tenant de demostración y no en una cuenta de cliente. Si `T-7.27` añade el interruptor por
+> cliente, esta advertencia se corrige.
+
+**Y un hueco que no es legal sino de lectura:** nadie ha leído los términos de OpenRouter contra
+el art. 52 del Reglamento —retención de prompts, subencargados, supresión al concluir el
+servicio— ni ha verificado en qué país procesa el proveedor del modelo. Va en el mismo paquete
+para el abogado. La clave y el tope son otro punto, el **§2.13**.
 
 ### 4.8 · ~~[`T-7.21`](TASKS.md) · Datos del membrete: razón social, domicilio y firmante~~ — ✅ **APORTADOS el 2026-09-19**
 
