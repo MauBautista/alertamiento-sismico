@@ -43,6 +43,80 @@
         "title": "ActiveDrillOut",
         "type": "object"
       },
+      "AnilloFeature": {
+        "properties": {
+          "geometry": {
+            "$ref": "#/components/schemas/PoligonoGeometry"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/AnilloProps"
+          },
+          "type": {
+            "const": "Feature",
+            "default": "Feature",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "geometry",
+          "properties"
+        ],
+        "title": "AnilloFeature",
+        "type": "object"
+      },
+      "AnilloProps": {
+        "description": "Capa 2 (MODELADO): un nivel de PGA constante y su radio en kilómetros.",
+        "properties": {
+          "pga_g": {
+            "title": "Pga G",
+            "type": "number"
+          },
+          "procedencia": {
+            "const": "modeled",
+            "default": "modeled",
+            "title": "Procedencia",
+            "type": "string"
+          },
+          "radio_km": {
+            "title": "Radio Km",
+            "type": "number"
+          },
+          "umbral": {
+            "title": "Umbral",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pga_g",
+          "radio_km",
+          "umbral"
+        ],
+        "title": "AnilloProps",
+        "type": "object"
+      },
+      "AnillosOut": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/AnilloFeature"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "type": {
+            "const": "FeatureCollection",
+            "default": "FeatureCollection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "features"
+        ],
+        "title": "AnillosOut",
+        "type": "object"
+      },
       "ArriboOut": {
         "description": "Lo que le toca a una estación. Segundos **desde el origen** del sismo.",
         "properties": {
@@ -3568,6 +3642,68 @@
         "title": "EpicenterRelocateOut",
         "type": "object"
       },
+      "EpicentroOut": {
+        "description": "De dónde salió el sismo, con de dónde salió el dato.\n\n`fuente` es quién lo localizó (`seismic_events.source`) y `procedencia` es el\nestado del glosario (`shared/glossary/procedencia.json`). Son cosas distintas\ny las dos hacen falta: el centroide de nuestro propio cuórum es un epicentro\nNUESTRO, y presentarlo sin decirlo lo confundiría con la solución de una\nagencia.",
+        "properties": {
+          "catalog_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Key"
+          },
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "fuente": {
+            "title": "Fuente",
+            "type": "string"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "magnitud": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Magnitud"
+          },
+          "procedencia": {
+            "title": "Procedencia",
+            "type": "string"
+          }
+        },
+        "required": [
+          "lat",
+          "lon",
+          "fuente",
+          "procedencia"
+        ],
+        "title": "EpicentroOut",
+        "type": "object"
+      },
       "EquipmentProfile": {
         "additionalProperties": false,
         "description": "[T-2.31] Actuadores INSTALADOS físicamente en el sitio del gabinete.\n\nNo toda estación tiene gas/ascensores/puertas. Contrato: 5 bools, default\ntodo-true (la flota existente no cambia de conducta), claves desconocidas\nrechazadas — un typo en 'gas_valve' no puede volverse \"instalado\" silencioso.\nViaja al edge FUSIONADO en el doc firmado del config sync (una sola firma\ncubre config + equipamiento).",
@@ -3972,6 +4108,17 @@
               }
             ],
             "title": "Peak Pga G"
+          },
+          "peak_pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Peak Pgv Cms"
           },
           "peak_ts": {
             "anyOf": [
@@ -7810,6 +7957,42 @@
         "title": "MultiChannelFeatures",
         "type": "object"
       },
+      "NivelFueraOut": {
+        "description": "Un nivel de la capa 2 que **no se dibujó**, y por qué.\n\nExiste para que un umbral suprimido se DIGA: un anillo que falta sin\nexplicación se lee como «ese umbral no existía», y aquí los umbrales son los\nque este sistema usa para decidir. `motivo` es el vocabulario cerrado de\n`shakemap.calculo.MOTIVOS_FUERA`, que trae también la frase para imprimirlo.",
+        "properties": {
+          "motivo": {
+            "title": "Motivo",
+            "type": "string"
+          },
+          "pga_g": {
+            "title": "Pga G",
+            "type": "number"
+          },
+          "radio_max_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radio Max Km"
+          },
+          "umbral": {
+            "title": "Umbral",
+            "type": "string"
+          }
+        },
+        "required": [
+          "umbral",
+          "pga_g",
+          "motivo",
+          "radio_max_km"
+        ],
+        "title": "NivelFueraOut",
+        "type": "object"
+      },
       "NoticeIn": {
         "additionalProperties": false,
         "description": "Publicar el aviso del TENANT. No hay endpoint de edición y no lo habrá.",
@@ -8615,6 +8798,35 @@
         "title": "PhoneErasureOut",
         "type": "object"
       },
+      "PoligonoGeometry": {
+        "description": "Polígono GeoJSON: un anillo exterior cerrado, en grados.\n\n⚠️ **En grados, no en píxeles.** La guarda que T-7.24 sustituye nació de dos\ncapas de MapLibre con `circle-radius` en unidades de pantalla rotuladas\n«INTENSIDAD MMI»: el mismo anillo afirmaba ~22 km a zoom 8.5 y ~1 km a zoom\n13. Un anillo que afirma «aquí el modelo predice 0.02 g» tiene que seguir\nafirmándolo a cualquier zoom, y para eso su geometría es geográfica.",
+        "properties": {
+          "coordinates": {
+            "items": {
+              "items": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            "title": "Coordinates",
+            "type": "array"
+          },
+          "type": {
+            "const": "Polygon",
+            "default": "Polygon",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinates"
+        ],
+        "title": "PoligonoGeometry",
+        "type": "object"
+      },
       "PresignedDownload": {
         "description": "URL GET presignada de vida corta para descargar un objeto de evidencia.",
         "properties": {
@@ -8709,6 +8921,200 @@
           "display_name"
         ],
         "title": "ProfilePutIn",
+        "type": "object"
+      },
+      "PuntoFeature": {
+        "properties": {
+          "geometry": {
+            "$ref": "#/components/schemas/PuntoGeometry"
+          },
+          "properties": {
+            "$ref": "#/components/schemas/PuntoProps"
+          },
+          "type": {
+            "const": "Feature",
+            "default": "Feature",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "geometry",
+          "properties"
+        ],
+        "title": "PuntoFeature",
+        "type": "object"
+      },
+      "PuntoGeometry": {
+        "description": "Punto GeoJSON. ⚠️ `coordinates` es `[lon, lat]`, en ese orden.",
+        "properties": {
+          "coordinates": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Coordinates",
+            "type": "array"
+          },
+          "type": {
+            "const": "Point",
+            "default": "Point",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "coordinates"
+        ],
+        "title": "PuntoGeometry",
+        "type": "object"
+      },
+      "PuntoProps": {
+        "description": "Capa 1 (OBSERVADO) + capa 3 (RESIDUO) de un inmueble.\n\n⚠️ Ninguno de los campos anulables de abajo lleva ``= None``, y no es\ndescuido: un defecto en el esquema sale del generador de OpenAPI como campo\nOPCIONAL, y entonces quien consume tiene que distinguir «la clave no vino»\nde «la clave vino en null» — dos preguntas donde el cable sólo responde\nuna. Aquí la clave viaja SIEMPRE; lo que puede faltar es el VALOR, y eso es\n``null`` con su razón escrita. El constructor de `shakemap/lectura.py` las\npasa todas, una a una, y `web/src/sdkTypeParity.test.ts` cazó el espejo a\nmano que había divergido justo por esto.",
+        "properties": {
+          "dist_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dist Km"
+          },
+          "hypo_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hypo Km"
+          },
+          "medido_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medido En"
+          },
+          "pga_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga G"
+          },
+          "pga_g_modelada": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga G Modelada"
+          },
+          "pgv_cms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pgv Cms"
+          },
+          "procedencia": {
+            "const": "measured",
+            "default": "measured",
+            "title": "Procedencia",
+            "type": "string"
+          },
+          "residuo_log10": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Residuo Log10"
+          },
+          "site_code": {
+            "title": "Site Code",
+            "type": "string"
+          },
+          "site_id": {
+            "title": "Site Id",
+            "type": "string"
+          },
+          "site_name": {
+            "title": "Site Name",
+            "type": "string"
+          },
+          "voto_contado": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voto Contado"
+          }
+        },
+        "required": [
+          "site_id",
+          "site_code",
+          "site_name",
+          "pga_g",
+          "pgv_cms",
+          "dist_km",
+          "hypo_km",
+          "pga_g_modelada",
+          "residuo_log10",
+          "medido_en",
+          "voto_contado"
+        ],
+        "title": "PuntoProps",
+        "type": "object"
+      },
+      "PuntosOut": {
+        "properties": {
+          "features": {
+            "items": {
+              "$ref": "#/components/schemas/PuntoFeature"
+            },
+            "title": "Features",
+            "type": "array"
+          },
+          "type": {
+            "const": "FeatureCollection",
+            "default": "FeatureCollection",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "features"
+        ],
+        "title": "PuntosOut",
         "type": "object"
       },
       "PushTokenIn": {
@@ -10618,6 +11024,89 @@
           "model"
         ],
         "title": "SensorUpdate",
+        "type": "object"
+      },
+      "ShakemapOut": {
+        "description": "El mapa entero de un incidente.",
+        "properties": {
+          "calculado_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculado En"
+          },
+          "cobertura_km": {
+            "title": "Cobertura Km",
+            "type": "number"
+          },
+          "epicentro": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EpicentroOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "fuera_de_alcance": {
+            "items": {
+              "$ref": "#/components/schemas/NivelFueraOut"
+            },
+            "title": "Fuera De Alcance",
+            "type": "array"
+          },
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "ley": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ley"
+          },
+          "modelado": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnillosOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "observado": {
+            "$ref": "#/components/schemas/PuntosOut"
+          }
+        },
+        "required": [
+          "incident_id",
+          "estado",
+          "calculado_en",
+          "ley",
+          "cobertura_km",
+          "epicentro",
+          "observado",
+          "modelado",
+          "fuera_de_alcance"
+        ],
+        "title": "ShakemapOut",
         "type": "object"
       },
       "SiteAssetCreateIn": {
@@ -15328,6 +15817,47 @@
           }
         },
         "summary": "Incident Roster"
+      }
+    },
+    "/incidents/{incident_id}/shakemap": {
+      "get": {
+        "description": "Las tres capas del mapa de la sacudida, o `pendiente` si aún no se calculó.",
+        "operationId": "incident_shakemap_incidents__incident_id__shakemap_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShakemapOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Shakemap"
       }
     },
     "/incidents/{incident_id}/tactical-ack": {

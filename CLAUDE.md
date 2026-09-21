@@ -212,12 +212,12 @@ violen las reglas de oro.
 - No usar `localStorage`/`sessionStorage` en componentes que se rendericen como artifacts de prueba.
 - No avanzar a la siguiente tarea si la actual no cumple su Definition of Done.
 - No incluir coautoría de IA ni footers de generación automática en commits/PRs (ver §0.2).
-- No implementar el microservicio "mini-ShakeMap" **en este ciclo** — es la única viñeta
-  **diferida** de `blueprint §14` (`[DIFERIDO · mini-ShakeMap]`); se retoma en `T-3.09`
-  derogando esa viñeta por su nombre, y solo esa.
 - No hacer streaming continuo de forma de onda cruda. Esto **no es un diferido: es la regla
-  de oro 9** (`[INVARIANTE · streaming crudo continuo]` en `blueprint §14`). Iba pegado al
-  punto anterior en una sola línea, y así se derogaban juntos.
+  de oro 9** (`[INVARIANTE · streaming crudo continuo]` en `blueprint §14`). Hasta el
+  2026-09-20 compartía línea con la prohibición del mini-ShakeMap —así se derogaban juntos—;
+  se partieron en dos viñetas y `T-7.24` borró la del mapa, **que era la diferida**. Ésta no
+  se deroga: el mini-ShakeMap se construyó **de features**, no de forma de onda en vivo, que
+  es precisamente por qué no la rozó.
 
 ## graphify
 

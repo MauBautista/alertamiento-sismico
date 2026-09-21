@@ -32,6 +32,7 @@ import ast
 import io
 import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -41,6 +42,7 @@ from takab_api.dictamen import layout
 from takab_api.dictamen import pdf as pdf_mod
 from takab_api.dictamen.duracion import Duracion
 from takab_api.dictamen.espectrograma import Espectrograma
+from takab_api.dictamen.model import AnilloFila, SacudidaFila, ShakemapBlock
 from takab_api.dictamen.pdf import render
 from tests.dictamen.test_pdf import model
 
@@ -100,6 +102,24 @@ _RE_TRAZO = re.compile(rb"([\d.\-]+)\s+([\d.\-]+)\s+(?:l|m)\b")
 _RE_IMAGEN = re.compile(
     rb"([\d.\-]+)\s+0\s+0\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+cm\s*/(\w+)\s+Do"
 )
+#: `x1 y1 x2 y2 x3 y3 c` — un arco de Bézier. ⚠️ [T-7.24] **Un CÍRCULO sale así, no
+#: como `re`**: fpdf2 emite `circle`/`ellipse` como un `m` y cuatro `c`. El barrido
+#: sólo miraba rectángulos, trazos e imágenes —y los trazos se descartan—, así que
+#: **ningún círculo del documento existía para esta guarda**: ni las estaciones del
+#: mapa de la red ni los anillos del modelo, que además tienen radio variable.
+#:
+#: Medido el 2026-09-21 cegando esta expresión (`NO_CASA_NUNCA_` delante): de las 22
+#: pruebas de este módulo **sólo cae una**, `test_el_barrido_de_geometria_VE_los_
+#: CIRCULOS` —la de no-vacuidad, que planta un círculo a propósito— y las otras 21
+#: siguen VERDES. Ésa es la medida de lo que este operador añade: sin él, ninguna de
+#: las guardas del filete y del pie tenía un solo círculo que medir.
+#:
+#: Los tres puntos del operador bastan para el borde: en el círculo que emite fpdf2
+#: los puntos de control de cada arco caen sobre la caja envolvente, así que su
+#: máximo ES el extremo del círculo, sin aproximar la curva.
+_RE_CURVA = re.compile(
+    rb"([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s+c\b"
+)
 
 
 @dataclass(frozen=True)
@@ -155,6 +175,11 @@ def cajas_dibujadas(pagina, alto_mm: float = layout.PAGE_H) -> list[Caja]:
         w, _h, x, y = (float(v) for v in m.groups()[:4])
         nombre = m.group(5).decode()
         cajas.append(Caja(f"imagen {nombre}", (x + w) * _PT_A_MM, (alto_pts - y) * _PT_A_MM))
+    for m in _RE_CURVA.finditer(datos):
+        puntos = [float(v) for v in m.groups()]
+        xs, ys = puntos[0::2], puntos[1::2]
+        # El FONDO es la `y` MÍNIMA del operador: el flujo cuenta desde abajo.
+        cajas.append(Caja("curva", max(xs) * _PT_A_MM, (alto_pts - min(ys)) * _PT_A_MM))
     return cajas
 
 
@@ -218,6 +243,80 @@ def test_el_barrido_de_geometria_VE_las_imagenes() -> None:
             f"pág. {i}: el barrido no ve NI el logotipo del membrete; el operador "
             "`cm … Do` dejó de casar y la guarda del pie no mide nada"
         )
+
+
+def test_el_barrido_de_geometria_VE_los_CIRCULOS() -> None:
+    """[T-7.24] Guarda de no-vacuidad del operador de curva, y la que sostiene al resto.
+
+    ⚠️ Un círculo **no sale como `re`**: fpdf2 lo emite como un `m` y cuatro `c`. El
+    barrido sólo miraba rectángulos, trazos e imágenes —y los trazos se descartan—,
+    así que ningún círculo del documento existía para esta guarda: el mapa de la red
+    dibuja uno por estación desde `T-7.22` y el de la sacudida añade los anillos del
+    modelo, con radio variable.
+
+    Se mide sobre una caja conocida: un círculo de 20 mm de radio en (100, 100) tiene
+    que salir con el borde derecho en 120 mm y el fondo en 120 mm. Sin esto, cambiar
+    el operador dejaría el barrido aprobando círculos por no verlos.
+    """
+    pdf = layout.TakabPDF("TKB-GEOM-CIRC", "círculo de referencia")
+    pdf.add_page()
+    pdf.circle(100.0, 100.0, 20.0, style="D")
+    pagina = PdfReader(io.BytesIO(bytes(pdf.output()))).pages[0]
+
+    curvas = [c for c in cajas_dibujadas(pagina) if c.clase == "curva"]
+    assert curvas, (
+        "el barrido no ve NI un círculo plantado: el operador `c` dejó de casar y las "
+        "guardas del filete y del pie están ciegas a toda figura circular"
+    )
+    assert max(c.x_derecha for c in curvas) == pytest.approx(120.0, abs=0.05)
+    assert max(c.y_inferior for c in curvas) == pytest.approx(120.0, abs=0.05)
+
+
+def test_ninguna_figura_dibuja_un_circulo_por_su_ESQUINA() -> None:
+    """[T-7.24 · 3ª vuelta] Las dos convenciones convivían en el mismo fichero.
+
+    En fpdf2 2.8.7 `circle(x, y, r)` hace `ellipse(x - r, y - r, 2r, 2r)`: `x, y`
+    es el **centro**. (Su documentación dice «upper-left bounding box» y su propio
+    código la desmiente — el cambio fue en la 2.8.1, y la prueba de arriba lo mide:
+    `circle(100, 100, 20)` deja el borde derecho en 120 mm.)
+
+    `_sketch_section` y `_mapa_de_la_red` escribían `circle(x=x - 1.3, y=y - 1.3,
+    radius=1.3)`, que es la compensación de la convención de ESQUINA: con la
+    semántica real dibujaban cada estación **1.3 mm arriba y a la izquierda** de su
+    punto proyectado, mientras la figura nueva del mapa de la sacudida —a 370
+    líneas en el mismo fichero— usaba el centro. Un croquis que pinta el inmueble
+    desplazado sobre su propia barra de escala mide mal por construcción.
+
+    No se mide la posición dibujada sino la FORMA de la llamada, porque es lo que
+    distingue las dos convenciones: una resta del radio en la coordenada es la
+    firma de la compensación, y es lo que no puede volver.
+    """
+    fuente = Path(pdf_mod.__file__)
+    arbol = ast.parse(fuente.read_text(encoding="utf-8"), filename=str(fuente))
+    llamadas = [
+        nodo
+        for nodo in ast.walk(arbol)
+        if isinstance(nodo, ast.Call)
+        and isinstance(nodo.func, ast.Attribute)
+        and nodo.func.attr == "circle"
+    ]
+    assert len(llamadas) >= 3, (
+        f"el barrido sólo encontró {len(llamadas)} llamadas a `circle`: estaría "
+        "aprobando por no saber mirar"
+    )
+
+    compensadas = [
+        f"línea {nodo.lineno}"
+        for nodo in llamadas
+        for arg in list(nodo.args[:2]) + [k.value for k in nodo.keywords if k.arg in {"x", "y"}]
+        if isinstance(arg, ast.BinOp) and isinstance(arg.op, ast.Sub)
+    ]
+    assert not compensadas, (
+        "estas llamadas a `circle` restan el radio de la coordenada, que es la "
+        f"convención de ESQUINA: {sorted(set(compensadas))}. En fpdf2 2.8.7 `x, y` es "
+        "el CENTRO —lo resta la propia librería—, así que la figura sale desplazada "
+        "justo ese radio"
+    )
 
 
 def test_NINGUNA_caja_pisa_el_PIE() -> None:
@@ -286,11 +385,11 @@ def test_la_guarda_del_PIE_caza_una_figura_que_lo_invade() -> None:
     )
 
 
-# ─────────────────────── [T-7.44] las CINCO figuras, y el censo de topes
+# ────────────────── [T-7.44 · ampliado en T-7.24] las figuras, y el censo de topes
 
 
 def _modelo_con_todas_las_figuras():
-    """El dictamen con las CINCO figuras a la vez. No existía ninguno.
+    """El dictamen con TODAS las figuras a la vez. No existía ninguno.
 
     ⚠️ Local a propósito, **sin tocar el `model()` compartido**: `test_avisos_impresos`
     fija `NO_SPECTRUM` sobre `model(evidence=[])` y `ONDA_NO_LEIDA` sobre
@@ -300,9 +399,36 @@ def _modelo_con_todas_las_figuras():
     Hasta ahora `test_NINGUNA_caja_pisa_el_PIE` renderizaba `model()`, que sólo
     dibuja la traza y el croquis: **tres de las cinco figuras jamás habían pasado
     por el barrido del pie**.
+
+    [T-7.24] Y le faltaba el mapa de la sacudida, que es la figura con círculos de
+    radio variable: sin bloque, la §8 se rinde en `pendiente` y el barrido medía un
+    documento sin ella.
     """
     n = 256
     return model(
+        shakemap=ShakemapBlock(
+            estado="completo",
+            ley="ATTEN-LAW v1",
+            calculado_en=datetime(2026, 8, 3, 10, 5, 0, tzinfo=UTC),
+            cobertura_km=25.0,
+            epicentro_lat=16.80,
+            epicentro_lon=-99.50,
+            epicentro_magnitud=7.1,
+            epicentro_fuente="SSN",
+            epicentro_procedencia="confirmado",
+            puntos=[
+                SacudidaFila(
+                    "CHL-A", "Planta Cholula", 19.06, -98.30, 0.081, 3.2, 187.0, 0.041, 0.31, True
+                ),
+                SacudidaFila(
+                    "CDMX-1", "Torre CDMX", 19.43, -99.13, 0.012, 0.6, 112.0, 0.068, -0.75
+                ),
+            ],
+            anillos=[
+                AnilloFila(pga_g=0.070, radio_km=40.0, umbral="pga_watch_g"),
+                AnilloFila(pga_g=0.020, radio_km=100.0, umbral="correlacion_min_pga_g"),
+            ],
+        ),
         raw_waveform={c: [(i % 32) - 16 for i in range(n)] for c in ("EHZ", "ENN", "ENE")},
         raw_sample_rate=100.0,
         spectrum=([i * 0.5 for i in range(48)], [float(abs(24 - i)) for i in range(48)]),
@@ -325,11 +451,13 @@ def _modelo_con_todas_las_figuras():
     )
 
 
-def test_NINGUNA_caja_pisa_el_PIE_con_LAS_CINCO_FIGURAS() -> None:
+def test_NINGUNA_caja_pisa_el_PIE_con_TODAS_LAS_FIGURAS() -> None:
     """El criterio 2 de `T-7.44`, sobre el documento que de verdad las trae todas.
 
-    La ficha decía «las cuatro figuras». Son **cinco**: los topes eran cuatro,
-    pero el croquis —78 mm, la caja más alta del documento— no tenía ninguno.
+    La ficha decía «las cuatro figuras». Eran **cinco** —los topes eran cuatro,
+    pero el croquis, 78 mm y la caja más alta del documento, no tenía ninguno— y
+    desde `T-7.24` son **siete**: los dos croquis geográficos entraron al censo y
+    el barrido aprendió a leer círculos.
     """
     tope_mm = layout.PAGE_H - layout.PIE_MM
     datos = render(_modelo_con_todas_las_figuras())
@@ -352,7 +480,7 @@ def test_NINGUNA_caja_pisa_el_PIE_con_LAS_CINCO_FIGURAS() -> None:
         "las figuras y esta guarda estaría aprobando sobre el vacío"
     )
     assert not invasores, (
-        f"hay dibujo por debajo del filete del pie ({tope_mm:.1f} mm) con las cinco figuras "
+        f"hay dibujo por debajo del filete del pie ({tope_mm:.1f} mm) con todas las figuras "
         "en el documento: " + " · ".join(invasores)
     )
 
@@ -433,18 +561,45 @@ def test_el_censo_de_topes_VE_uno_plantado() -> None:
     )
 
 
-def _las_cinco_figuras():
+def _las_figuras_del_dictamen():
     """Cada figura del dictamen con lo mínimo para dibujarse, por su nombre.
 
     Se llaman las funciones privadas a propósito: el objetivo es medir **cada
     figura por separado** entrando donde nadie la deja entrar en un documento
     normal, y eso un render completo no lo puede provocar.
+
+    ⚠️ [T-7.24] **Eran cinco, y los dos croquis geográficos nunca estuvieron
+    dentro.** El comentario de `pdf.py` ya declaraba la deuda; lo que la hizo
+    urgente es que esta ficha añade una SEXTA figura a la clase no cubierta —el
+    mapa de la sacudida— que además es la única que dibuja rótulos POR ENCIMA de
+    su marco (`cy - radio_mm - 3.4`) y círculos de radio variable.
+
+    ⚠️ **Y lo que esta suite mide del mapa es el PIE, no su marco.** Medido el
+    2026-09-21 quitando los cuatro puntos de encuadre de `_puntos_del_mapa`: el
+    anillo de 100 km pasa de 11.574 mm a 15.730 mm de radio (la escala sube de
+    0.11574 a 0.157296 mm/km) y se sale de su recuadro de 62 mm — y **este módulo
+    entero sigue en verde**, porque el desbordamiento cabe holgadamente dentro de
+    la página. Quien lo caza es
+    `tests/dictamen/test_mapa_de_la_sacudida.py::test_NADA_de_la_figura_se_sale_de_SU_RECUADRO`,
+    que mide contra el marco de la figura. Las dos guardas hacen falta y ninguna
+    sustituye a la otra. (Una versión anterior de este docstring afirmaba «1034.2
+    mm»: es imposible con esta proyección, que escala con
+    `min(inner_w, inner_h)/span`, y era la cifra de otro informe copiada sin
+    medir.)
+
+    El mapa de la sacudida entra con su croquis YA proyectado, que es como lo
+    recibe en el documento: proyectarlo aquí de otra manera mediría otra figura.
     """
     m = _modelo_con_todas_las_figuras()
     esp = m.spectrogram
     freqs, amps = m.spectrum
+    dibujo = pdf_mod.sketch.project(
+        pdf_mod._puntos_del_mapa(m.shakemap), layout.CONTENT_W, pdf_mod._MAPA_SACUDIDA_H
+    )
     return {
         "_sketch_section": lambda pdf: pdf_mod._sketch_section(pdf, m),
+        "_mapa_de_la_red": lambda pdf: pdf_mod._mapa_de_la_red(pdf, m),
+        "_mapa_de_la_sacudida": lambda pdf: pdf_mod._mapa_de_la_sacudida(pdf, m.shakemap, dibujo),
         "_trace": lambda pdf: pdf_mod._trace(
             pdf, "EHZ", [float(i % 7) for i in range(64)], [False] * 64, unit="g"
         ),
@@ -454,11 +609,62 @@ def _las_cinco_figuras():
     }
 
 
-@pytest.mark.parametrize("nombre", sorted(_las_cinco_figuras()))
+def test_el_censo_de_figuras_las_tiene_TODAS() -> None:
+    """Derivado del propio `pdf.py`: una figura nueva no puede nacer fuera del censo.
+
+    La lista de arriba se enumera a mano —hay que saber con qué argumentos entra
+    cada una— y un censo a mano acaba divergiendo de lo que enumera. Esto lo cruza
+    contra las funciones que de verdad dibujan: las que llaman a `rect`, `circle`,
+    `line`, `polyline` o `image` en `dictamen/pdf.py`.
+    """
+    fuente = Path(pdf_mod.__file__).read_text(encoding="utf-8")
+    arbol = ast.parse(fuente)
+    dibujan = {
+        nodo.name
+        for nodo in ast.walk(arbol)
+        if isinstance(nodo, ast.FunctionDef)
+        and any(
+            isinstance(hijo, ast.Call)
+            and isinstance(hijo.func, ast.Attribute)
+            and hijo.func.attr in {"rect", "circle", "polyline", "image"}
+            for hijo in ast.walk(nodo)
+        )
+    }
+    # Los que dibujan pero NO entran por su cuenta, cada uno con su razón.
+    exentos = {
+        # No es una figura: son los anillos DENTRO de `_mapa_de_la_sacudida`, que
+        # entra con ellos. Medirlo solo exigiría inventarle un centro que en el
+        # documento sale del croquis proyectado.
+        "_anillos_del_modelo",
+        # Las fotografías del brigadista tienen guarda propia y más específica:
+        # `tests/dictamen/test_fotos_en_el_papel.py::
+        # test_NINGUNA_fotografia_pisa_el_PIE_ni_se_sale_del_filete`, que además
+        # necesita JPEG de verdad.
+        "_fotos_del_reporte",
+    }
+    fuera = sorted(dibujan - set(_las_figuras_del_dictamen()) - exentos)
+    assert not fuera, (
+        f"estas funciones de `dictamen/pdf.py` DIBUJAN y no están en el censo de figuras: "
+        f"{fuera}. Si es una figura, métela con los argumentos con que entra en el "
+        "documento; si no lo es, exímela por su nombre diciendo por qué"
+    )
+    # ⚠️ Y al revés: una exención de algo que ya no dibuja es una lista a mano que
+    # se quedó atrás. La primera versión de esta prueba traía tres exenciones
+    # MUERTAS (`_barra_de_color`, `_verdict_band`, `_danos_section`) escritas de
+    # memoria, y ninguna se refería a una función que dibujara.
+    muertas = sorted(exentos - dibujan)
+    assert not muertas, (
+        f"estas exenciones ya no se refieren a nada que dibuje: {muertas}. Bórralas: "
+        "una lista de excepciones que nadie cruza contra su fuente acaba cubriendo "
+        "un nombre que dejó de existir"
+    )
+
+
+@pytest.mark.parametrize("nombre", sorted(_las_figuras_del_dictamen()))
 def test_cada_figura_respeta_el_PIE_ENTRE_DONDE_ENTRE(nombre: str) -> None:
     """⚠️ La prueba que de verdad puede ponerse roja, y la razón de que exista.
 
-    `test_NINGUNA_caja_pisa_el_PIE_con_LAS_CINCO_FIGURAS` mide el documento tal y
+    `test_NINGUNA_caja_pisa_el_PIE_con_TODAS_LAS_FIGURAS` mide el documento tal y
     como sale hoy, y hoy **ninguna figura desborda**: el croquis tiene unos 43 mm
     de holgura. Medido — quitarle su `reserva()` al croquis deja esa prueba en
     VERDE. O sea que el trabajo de esta ficha no estaría protegido por nada.
@@ -468,7 +674,7 @@ def test_cada_figura_respeta_el_PIE_ENTRE_DONDE_ENTRE(nombre: str) -> None:
     no sabe saltar, aparece por debajo del filete y esto se pone rojo.
     """
     tope_mm = layout.PAGE_H - layout.PIE_MM
-    figura = _las_cinco_figuras()[nombre]
+    figura = _las_figuras_del_dictamen()[nombre]
 
     peores: list[str] = []
     dibujo_visto = False

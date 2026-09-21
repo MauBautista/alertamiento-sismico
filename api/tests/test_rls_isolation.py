@@ -17,6 +17,7 @@ from conftest import (
     SITE_B,
     TENANT_A,
     TENANT_B,
+    reset,
     use,
 )
 
@@ -188,3 +189,64 @@ def test_site_ground_refs_no_deja_escribir_a_nombre_de_otro_tenant(
             "VALUES (%s,%s,%s,1)",
             (SITE_B, SENSOR_B, TENANT_B),
         )
+
+
+# ---------------------------------------------------------------------------
+# [T-7.24] `incident_shakemap`: el mapa de la sacudida es de UN cliente
+# ---------------------------------------------------------------------------
+
+
+def _siembra_mapas(conn: psycopg.Connection) -> str:
+    """Un snapshot en el tenant A y otro en el B. Como superusuario: la política
+    de la tabla es de SELECT y no hay ninguna de escritura (escribe el worker,
+    que tiene BYPASSRLS), así que sembrar con `takab_app` sería imposible."""
+    reset(conn)
+    inc_b = "b3b3b3b3-0000-0000-0000-000000000002"
+    conn.execute(
+        "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, opened_at,"
+        " severity, trigger) VALUES (%s, gen_random_uuid(), %s, %s, now(),"
+        " 'warning','sasmex')",
+        (inc_b, TENANT_B, SITE_B),
+    )
+    for inc, tenant in ((INC_A, TENANT_A), (inc_b, TENANT_B)):
+        conn.execute(
+            "INSERT INTO incident_shakemap (incident_id, tenant_id, estado, cobertura_km)"
+            " VALUES (%s,%s,'sin_datos',5.0)",
+            (inc, tenant),
+        )
+    return inc_b
+
+
+def test_incident_shakemap_aisla_por_la_columna(seeded: psycopg.Connection) -> None:
+    """El cruce 0/1 que exige la regla de oro 5, sobre la tabla de `T-7.24`.
+
+    Que `ism_read` diga `USING (tenant_id = app_tenant_id() OR
+    app_is_takab_internal())` y no `USING (true)` **lo tiene que probar este
+    fichero**, que es donde el repositorio decidió por escrito que se cruzan
+    tenants de verdad (`test_censo_multitenancy.py`). Sin esto, abrir la política
+    a `USING (true)` dejaba las 57 pruebas del mapa en verde: el 404 cross-tenant
+    del endpoint lo produce la RLS de `incidents` por el LEFT JOIN del lector, no
+    la de esta tabla.
+    """
+    _siembra_mapas(seeded)
+
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    filas = seeded.execute("SELECT tenant_id FROM incident_shakemap").fetchall()
+    assert filas, "el tenant A debe ver SU mapa (si no, el test es vacío)"
+    assert {str(f[0]) for f in filas} == {TENANT_A}
+
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    ajenos = seeded.execute(
+        "SELECT count(*) FROM incident_shakemap WHERE tenant_id = %s", (TENANT_A,)
+    ).fetchone()
+    assert ajenos[0] == 0, "el tenant B no puede ver el mapa de la sacudida del tenant A"
+
+
+def test_incident_shakemap_aisla_TAMBIEN_al_dueno_de_la_tabla(
+    seeded: psycopg.Connection,
+) -> None:
+    """`FORCE ROW LEVEL SECURITY`: sin él, el dueño se saltaría su propia política."""
+    _siembra_mapas(seeded)
+    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="soc_operator")
+    filas = seeded.execute("SELECT tenant_id FROM incident_shakemap").fetchall()
+    assert {str(f[0]) for f in filas} == {TENANT_A}, "FORCE RLS debe aislar al owner"

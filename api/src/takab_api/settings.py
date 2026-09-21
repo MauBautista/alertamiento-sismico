@@ -469,6 +469,65 @@ class Settings(BaseSettings):
     # siguiente, que llega en segundos, y el corte queda en el log.
     catalog_usgs_presupuesto_s: float = 10.0
 
+    # --- Mini-ShakeMap por evento (T-7.24 · D-08) ---
+    #
+    # ⚠️ EL RADIO DE REPRESENTATIVIDAD DE UN INMUEBLE INSTRUMENTADO, y de dónde
+    # sale. Fuera de él se declara `SIN COBERTURA` (§A.3): no se extrapola color,
+    # que es la misma doctrina que `T-3.08` con la deriva de entrepiso —sin dos
+    # sensores, no hay número—.
+    #
+    # 5 km, y el número tiene DOS anclas medidas, no una intuición:
+    #
+    # 1 · **Lo que la red permite afirmar.** Medido el 2026-09-20 sobre
+    #     `db/seeds/sim_fleet.sql` (20 inmuebles, la flota densa de la
+    #     demostración) con `geo.haversine_km`: la distancia al vecino más
+    #     cercano tiene mediana **3.08 km** (mín 2.38, máx 6.77). Con 5 km los
+    #     discos de inmuebles vecinos se tocan y el cúmulo se lee como una zona
+    #     cubierta; con 10 km se solaparían tanto que dos edificios en barrios
+    #     geotécnicamente distintos se pintarían como uno. Y en la red REAL de
+    #     tres ciudades (`db/seeds/demo_red.sql`: Puebla, CDMX, Toluca) el vecino
+    #     más cercano está a **57.3 km** y el par más lejano a **148.6 km**: ahí
+    #     ningún radio razonable une nada y entre ciudades el mapa dice `SIN
+    #     COBERTURA`, que es exactamente la verdad.
+    # 2 · **Lo que la física permite afirmar.** ATTEN-LAW v1 hace PGA ∝ 1/R_hipo,
+    #     así que a 5 km de un punto que está a 50 km del hipocentro el propio
+    #     modelo ya predice un 10 % de diferencia. Más allá, extender el valor
+    #     medido afirmaría algo que ni la ley sostiene — y la variabilidad de
+    #     sitio (la zonificación geotécnica del valle de México cambia la
+    #     amplificación por factores de 5–10 en pocos kilómetros) es mucho mayor
+    #     aún, o sea que este radio ya es generoso.
+    #
+    # Es configurable a propósito: una red urbana densa y una red estatal no
+    # tienen el mismo alcance, y el número se guarda EN CADA SNAPSHOT para que un
+    # mapa ya impreso no cambie de significado si mañana alguien lo sube.
+    shakemap_cobertura_km: float = 5.0
+    # Cada cuánto se REHACE un mapa que todavía no está `completo`. No se rehace
+    # el `completo`: una vez hay epicentro, magnitud y medidas, el mapa ya no
+    # puede mejorar y recalcularlo sería gastar el bucle en confirmar lo mismo.
+    # Un `solo_observado` o un `sin_datos` sí: puede llegarle el epicentro del
+    # catálogo (T-7.25) o el spool de un gabinete que estaba sin red. Es el mismo
+    # patrón que `catalog_usgs_refresco_preliminar_s` — «puede cambiar» es una
+    # afirmación con caducidad—, y el que impide que la pasada se convierta en un
+    # bucle que recalcula los mismos incidentes cada cinco segundos.
+    shakemap_refresco_s: float = 60.0
+    # Presupuesto de RELOJ DE PARED de la pasada, por la misma razón que
+    # `catalog_usgs_presupuesto_s`: el bucle del worker es serial y lo que esta
+    # pasada tarda es lo que se retrasa la vuelta siguiente —correlación,
+    # actuación comandada por el quórum, dictamen y fases—. Aquí no hay un
+    # tercero, pero sí una consulta de features por inmueble y por incidente, que
+    # es lo que puede crecer sin avisar.
+    #
+    # MEDIDO el 2026-09-20 contra `takab_test_a`, con la pasada real y el rol del
+    # worker (`/dev/shm/t/medir.py`, 3 inmuebles por incidente): 1 incidente
+    # 0.065 s —incluye abrir la conexión del puente async—, 5 incidentes 0.108 s,
+    # y **20 incidentes —el tope entero de la pasada— 0.254 s** (13 ms por mapa).
+    # O sea que 5 s son unas VEINTE VECES el peor caso medido: el presupuesto no
+    # recorta la operación normal, sólo dice basta cuando algo se sale de escala
+    # (una red mucho mayor, una base lenta) en vez de dejar el bucle parado sin
+    # explicación. Lo que no cabe se calcula en la vuelta siguiente y el corte se
+    # DICE (`PasadaDeShakemap.corte`).
+    shakemap_presupuesto_s: float = 5.0
+
     # --- Reproducción histórica (T-7.14 · D-33) ---
     # Velocidad de la onda S del PLAN de arribos. NO es `correlation_v_s_km_s`
     # (3.6) y no se debe unificar con ella: allí la velocidad acota cuán tarde

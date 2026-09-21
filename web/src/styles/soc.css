@@ -1505,6 +1505,44 @@ body {
   min-width: 190px;
 }
 
+/* [T-7.24] MAPA DE LA SACUDIDA. La leyenda declara las dos CODIFICACIONES antes
+   que ninguna cifra, y las declara con la misma forma que usa el mapa: disco
+   relleno = MEDIDO en ese edificio, anillo de trazo discontinuo = MODELO. Es el
+   invariante `D-08 · §A.3` —jamás la misma codificación visual para lo medido y
+   lo estimado— dicho en la leyenda, no sólo en el `paint` de MapLibre.
+
+   El COLOR no distingue las dos: es la banda de PGA, y es la misma escala en los
+   dos lados a propósito. Con dos escalas distintas, comparar lo que midió un
+   edificio con lo que el modelo predice ahí sería imposible, que es justo para
+   lo que está este mapa. Los `--tk-pga-*` los consume además MapLibre POR TS
+   (`shakemap.ts`), porque un `paint` no resuelve `var()`. */
+.soc-map__legend--pga {
+  min-width: 190px;
+}
+.soc-map__sw--medido {
+  border-radius: 50%;
+  background: var(--tk-fg-1);
+}
+.soc-map__sw--modelo {
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px dashed var(--tk-fg-1);
+}
+/* El HALO DE COBERTURA: un aro, no un cuadro relleno. La capa
+   `shakemap-cobertura` pinta un BORDE (`circle-stroke-*` sobre un relleno
+   transparente) y la muestra tiene que repetir esa forma — una muestra rellena
+   prometería que el mapa tiñe el área de fuera, y el área de fuera es el resto
+   del mundo. Aquí el color SÍ se escribe con `var()`: esto es una hoja y `var()`
+   resuelve. Quien no puede es MapLibre, que lee la misma tinta por TS
+   (`PGA_SIN_COBERTURA`) porque un `paint` no resuelve variables CSS. */
+.soc-map__sw--cobertura {
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--tk-pga-sin-cobertura);
+}
+
 /* Capas conmutables (T-2.50). */
 .soc-map__layer-row {
   display: flex;

@@ -37,6 +37,7 @@ from takab_api.dictamen.model import (
     STATUS_LABELS,
     TS_FMT,
     ActionRow,
+    AnilloFila,
     CctvBlock,
     CctvObjectRow,
     ChannelRow,
@@ -45,7 +46,10 @@ from takab_api.dictamen.model import (
     EstacionFila,
     EvidenceRow,
     FotoFila,
+    NivelFueraFila,
     ReportModel,
+    SacudidaFila,
+    ShakemapBlock,
     VoteRow,
     fuentes_line,
 )
@@ -59,6 +63,7 @@ from takab_api.queries import forensics as qf
 from takab_api.schemas import cctv as esq_cctv
 from takab_api.schemas.forensics import CatalogCorrelation, ForensicsOut
 from takab_api.settings import Settings
+from takab_api.shakemap.lectura import leer as leer_shakemap
 
 log = logging.getLogger(__name__)
 
@@ -189,6 +194,106 @@ async def _cctv_block(conn: AsyncConnection, incident_id: str) -> CctvBlock:
         veredicto_reingreso=e.veredicto_reingreso,
         reingreso_antes_del_dictamen=e.reingreso_antes_del_dictamen,
         discrepancia=datos.discrepancia.lectura if datos.discrepancia else None,
+    )
+
+
+async def leer_bloque_de_shakemap(conn: AsyncConnection, incident_id: str, s, site_code: str):  # noqa: ANN001, ANN201
+    """Lee el snapshot y lo traduce. **Best-effort a propósito**, como el CCTV.
+
+    ⚠️ La lectura del mapa era la ÚNICA del builder que iba desnuda, con la
+    doctrina contraria escrita a cinco líneas de aquí (`_cctv_block`: «un fallo
+    leyendo el CCTV no puede impedir que se genere el dictamen: el vídeo es un
+    anexo y el dictamen es lo que autoriza reocupar un edificio»). El miniSEED
+    hace lo mismo desde siempre.
+
+    Medido el 2026-09-21 con `ALTER TABLE incident_shakemap RENAME TO …` dentro de
+    una transacción con rollback: `build_model` moría con
+    `UndefinedTable: relation "incident_shakemap" does not exist` y el inmueble se
+    quedaba **sin dictamen**. La ventana de despliegue es estrecha —`deploy.sh`
+    corre `alembic upgrade head` antes de tocar la API— pero no es la única puerta:
+    un `puntos` jsonb que no valide contra `PuntoProps` (`site_name` es
+    obligatorio) explota igual y ese orden no lo cubre.
+
+    El fallo se DECLARA (`ShakemapBlock.fallo_de_lectura`) en vez de degradarse a
+    `pendiente`: «no ha corrido el cálculo» y «no pude leerlo» son dos hechos
+    distintos sobre el mismo incidente, y el papel no puede imprimir el primero
+    cuando lo que pasó es el segundo (regla de oro 7).
+    """
+    try:
+        mapa = await leer_shakemap(conn, incident_id, s)
+    except Exception:  # noqa: BLE001 — el anexo no puede costar el dictamen
+        return ShakemapBlock(fallo_de_lectura="la lectura del snapshot falló")
+    return bloque_de_shakemap(mapa, site_code)
+
+
+def bloque_de_shakemap(mapa, site_code: str):  # noqa: ANN001, ANN201 - ShakemapOut|None
+    """[T-7.24] Traduce el mapa ya leído a las filas que el papel imprime.
+
+    **Sólo traduce.** El cálculo vive en `takab_api.shakemap.calculo` y la lectura
+    en `…shakemap.lectura`, que es la misma que sirve al endpoint: si el PDF
+    consultara por su cuenta, el papel y la pantalla dibujarían cada uno su mapa
+    del mismo sismo, y el que discrepa lleva una firma debajo.
+
+    Es una función y no unas líneas dentro de `build_model` porque lo que puede
+    tener una mentira es justo esto: el GeoJSON viene `[lon, lat]` —el revés de
+    como se dice— y un `None` convertido en cero afirmaría que un inmueble no se
+    movió cuando lo que pasó es que no publicó.
+
+    `mapa is None` (el incidente no existe para quien pide) cae en `pendiente`
+    como la ausencia de snapshot: el papel no puede afirmar que no sacudió cuando
+    lo que le pasa es que no lo sabe.
+    """
+    if mapa is None:
+        return ShakemapBlock()
+    epi = mapa.epicentro
+    return ShakemapBlock(
+        estado=mapa.estado,
+        ley=mapa.ley,
+        calculado_en=mapa.calculado_en,
+        cobertura_km=mapa.cobertura_km,
+        epicentro_lat=epi.lat if epi else None,
+        epicentro_lon=epi.lon if epi else None,
+        epicentro_magnitud=epi.magnitud if epi else None,
+        epicentro_fuente=epi.fuente if epi else None,
+        epicentro_procedencia=epi.procedencia if epi else None,
+        puntos=[
+            SacudidaFila(
+                site_code=f.properties.site_code,
+                site_name=f.properties.site_name,
+                # ⚠️ GeoJSON es `[lon, lat]`. El croquis proyecta `(lat, lon)`, y
+                # cambiarlos de orden no rompe nada visible: sale igual de bonito
+                # con los inmuebles en otro continente.
+                lat=f.geometry.coordinates[1],
+                lon=f.geometry.coordinates[0],
+                pga_g=f.properties.pga_g,
+                pgv_cms=f.properties.pgv_cms,
+                dist_km=f.properties.dist_km,
+                pga_g_modelada=f.properties.pga_g_modelada,
+                residuo_log10=f.properties.residuo_log10,
+                propio=f.properties.site_code == site_code,
+            )
+            for f in mapa.observado.features
+        ],
+        # `modelado is None` significa que NO se modeló, y una lista vacía es lo
+        # que sale de ahí: la sección lo distingue por `anillos` vacío y lo dice.
+        anillos=[
+            AnilloFila(
+                pga_g=f.properties.pga_g,
+                radio_km=f.properties.radio_km,
+                umbral=f.properties.umbral,
+            )
+            for f in (mapa.modelado.features if mapa.modelado else [])
+        ],
+        # ⚠️ [T-7.24 · 3ª vuelta] Esto NO se tira. Sin los niveles suprimidos la
+        # sección no puede decir por qué no hay anillos, y decía una razón falsa
+        # —«falta la capa modelada del snapshot»— sobre un snapshot que traía el
+        # modelo dentro, por punto. El motivo viene del vocabulario cerrado del
+        # cálculo, así que aquí tampoco se escribe ninguna frase: se copia el
+        # código y lo traduce quien imprime.
+        fuera_de_alcance=[
+            NivelFueraFila(umbral=n.umbral, pga_g=n.pga_g, motivo=n.motivo)
+            for n in mapa.fuera_de_alcance
+        ],
     )
 
 
@@ -390,6 +495,11 @@ async def build_model(
         # arriba: si el papel y la pantalla lo leyeran cada uno a su manera acabarían
         # discrepando, y aquí el que discrepa lleva una firma debajo.
         cctv=await _cctv_block(conn, incident_id),
+        # [T-7.24] El mapa de la sacudida. Se LEE ya calculado, con la misma
+        # función que sirve al endpoint (`shakemap/lectura.py`), por la misma
+        # razón que las dos líneas de arriba: dos lecturas del mismo snapshot
+        # acabarían discrepando en el detalle que más se mira.
+        shakemap=await leer_bloque_de_shakemap(conn, incident_id, s, inc["site_code"]),
     )
 
 

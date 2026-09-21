@@ -19,9 +19,14 @@
 //    epicentro→estación y los frentes P/S. Los radios son FÍSICOS (km) y se
 //    convierten a píxeles con la escala del zoom: el dibujo NO cambia de
 //    significado con la rueda del ratón. Ver `wavefront.ts`.
-//  · NO hay intensidad sísmica interpolada: ni isosistas, ni bandas MMI, ni radio
-//    de "hasta dónde se sintió". Eso es el mini-ShakeMap del BLUEPRINT §14 (fase
-//    futura). Ver el comentario en la carga de capas.
+//  · [T-7.24] El MAPA DE LA SACUDIDA del incidente (`shakemap`) pinta lo MEDIDO
+//    por cada inmueble y lo MODELADO por la ley de atenuación, y nunca con la
+//    misma codificación: disco relleno con su valor vs anillo geográfico de
+//    trazo discontinuo, con la procedencia dentro de cada rasgo.
+//  · Sigue sin haber intensidad sísmica INTERPOLADA: ni isosistas, ni bandas
+//    MMI, ni una superficie continua entre estaciones. Lo que hay son puntos
+//    medidos, un modelo rotulado como modelo y el residuo entre los dos. Ver el
+//    comentario en la carga de capas.
 //  · NO hay cuenta regresiva T-MINUS ni magnitud preliminar (`CLAUDE.md §8`).
 
 import maplibregl from "maplibre-gl";
@@ -31,6 +36,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CatalogEarthquakeOut, MapEpicenter, MapSiteState } from "@takab/sdk";
 
 import { observeMapResize } from "../../lib/maplibre";
+import { utcStamp } from "../../lib/time";
 import { useReducedMotion } from "../../lib/useReducedMotion";
 import {
   LINK_GLYPH,
@@ -58,6 +64,17 @@ import {
   WAVE_MAX_AGE_S,
 } from "./wavefront";
 import { haversineKm } from "../fleet/geo";
+import {
+  PGA_SIN_COBERTURA,
+  coberturaFeatureCollection,
+  colorDeBanda,
+  modeladoFeatureCollection,
+  nivelesDe,
+  observadoFeatureCollection,
+  sinProcedencia,
+  vistaSacudida,
+  type ShakemapOut,
+} from "./shakemap";
 
 /** Lo que `GeoJSONSource.setData` acepta. El namespace global `GeoJSON` no está
  * en el `types` del tsconfig: se deriva del propio tipo de MapLibre. */
@@ -349,6 +366,8 @@ export interface LayerToggles {
   catalog: boolean;
   link: boolean;
   waves: boolean;
+  /** [T-7.24] El mini-ShakeMap del incidente: lo medido y lo modelado. */
+  shakemap: boolean;
 }
 
 export const DEFAULT_LAYERS: LayerToggles = {
@@ -357,6 +376,10 @@ export const DEFAULT_LAYERS: LayerToggles = {
   catalog: false,
   link: true,
   waves: true,
+  // ON, pero sólo se ve cuando una superficie ALIMENTA el mapa de sacudida: sin
+  // la prop no hay ni botón ni leyenda (igual que el catálogo histórico sin su
+  // prop). Un interruptor que no conmuta nada es ruido en un wall operativo.
+  shakemap: true,
 };
 
 const LAYERS_OF: Record<keyof LayerToggles, string[]> = {
@@ -365,6 +388,13 @@ const LAYERS_OF: Record<keyof LayerToggles, string[]> = {
   catalog: ["catalog-mark", "catalog-label"],
   link: ["site-link"],
   waves: ["wave-link", "wave-p", "wave-s", "wave-static-ring", "wave-static-label"],
+  shakemap: [
+    "shakemap-cobertura",
+    "shakemap-anillo",
+    "shakemap-anillo-nivel",
+    "shakemap-punto",
+    "shakemap-punto-valor",
+  ],
 };
 
 const LAYER_LABEL: Record<keyof LayerToggles, string> = {
@@ -373,6 +403,7 @@ const LAYER_LABEL: Record<keyof LayerToggles, string> = {
   catalog: "CATÁLOGO",
   link: "ENLACE",
   waves: "ONDAS",
+  shakemap: "SACUDIDA",
 };
 
 export interface MapPanelProps {
@@ -388,6 +419,26 @@ export interface MapPanelProps {
   onSelectCatalog?: (refId: string | null) => void;
   /** [T-2.50] Estaciones dentro del viewport actual (moveend + getBounds). */
   onViewportChange?: (visibleSiteIds: string[]) => void;
+  /**
+   * [T-7.24] El mini-ShakeMap YA CALCULADO del incidente
+   * (`GET /incidents/{id}/shakemap`). **Sin la prop, la capa no existe** —mismo
+   * trato que el catálogo histórico—: este panel es el wall EN VIVO y el mapa de
+   * la sacudida es por evento, así que quien lo tenga lo pasa y quien no, ni
+   * estrena un interruptor ni una leyenda que no puede llenar.
+   *
+   * El panel NO lo pide ni lo calcula: lo pinta. Si lo calculara, dos operadores
+   * verían mapas distintos del mismo sismo según cuándo apretaran F5.
+   */
+  shakemap?: ShakemapOut;
+  /** `true` = la consulta del mapa de sacudida falló. Se declara, no se calla. */
+  shakemapError?: boolean;
+  /**
+   * `true` = la consulta está EN VUELO y todavía no hay snapshot.
+   *
+   * Es un estado propio y no un vacío (regla de oro 7): sin él, el hueco entre
+   * la petición y la respuesta se ve idéntico a un incidente que no tiene mapa.
+   */
+  shakemapLoading?: boolean;
 }
 
 export default function MapPanel({
@@ -399,6 +450,9 @@ export default function MapPanel({
   selectedCatalogId = null,
   onSelectCatalog,
   onViewportChange,
+  shakemap,
+  shakemapError = false,
+  shakemapLoading = false,
 }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -415,6 +469,11 @@ export default function MapPanel({
   epicentersRef.current = epicenters;
   const onSelectRef = useRef(onSelectSite);
   onSelectRef.current = onSelectSite;
+  // [T-7.24] Lo que la capa de cobertura tiene DERECHO a pintar ahora mismo.
+  // Vive en un ref porque el `zoomend` —que rehace los radios FÍSICOS— se
+  // registra una sola vez dentro del `style.load` y no vería el snapshot de un
+  // render posterior.
+  const coberturaRef = useRef<ShakemapOut | undefined>(undefined);
   // [T-2.28] capa de catálogo histórico: OFF por default (el wall es operativo).
   const [layers, setLayers] = useState<LayerToggles>(DEFAULT_LAYERS);
   const layersRef = useRef(layers);
@@ -493,18 +552,22 @@ export default function MapPanel({
         data: epicentersToFeatureCollection(epicentersRef.current),
       });
 
-      // NO hay bandas MMI. Aquí vivían dos anillos ("mmi-severa" 55px y
-      // "mmi-alta" 100px) rotulados INTENSIDAD MMI que no estaban conectados a
-      // ningún dato: eran constantes. Y como `circle-radius` de MapLibre es en
-      // PÍXELES DE PANTALLA, el mismo anillo afirmaba ~22 km de radio en zoom
-      // 8.5 y ~1 km en zoom 13 — la banda cambiaba de significado físico con
-      // cada rueda del ratón. Dibujar una isosista honesta exige una intensidad
-      // real, y hoy no existe: `seismic_events.magnitude` es NULL (el WR-1 solo
-      // entrega un booleano) y el PGA de un sensor sin calibrar es RELATIVO, no
-      // físico (db/schema.sql §sensors). Mostrar un radio inventado como si
-      // fuera el área donde se sintió el sismo es exactamente lo que prohíbe la
-      // regla de oro 7. El mapa de intensidades es el mini-ShakeMap del
-      // BLUEPRINT §14 — fase futura.
+      // NO hay bandas MMI, y lo que sigue explica qué se puede dibujar en su
+      // lugar. Aquí vivían dos anillos ("mmi-severa" 55px y "mmi-alta" 100px)
+      // rotulados INTENSIDAD MMI que no estaban conectados a ningún dato: eran
+      // constantes. Y como `circle-radius` de MapLibre es en PÍXELES DE
+      // PANTALLA, el mismo anillo afirmaba ~22 km de radio en zoom 8.5 y ~1 km
+      // en zoom 13 — la banda cambiaba de significado físico con cada rueda del
+      // ratón.
+      //
+      // [T-7.24] El mini-ShakeMap ya existe (más abajo) y NO deroga nada de
+      // esto: no interpola una superficie, no dibuja isosistas y no reporta
+      // intensidad macrosísmica —`dictamen/model.py::NO_MMI` lo tiene impreso en
+      // documentos FIRMADOS—. Son puntos MEDIDOS, anillos de un MODELO rotulados
+      // como tales y el residuo entre ambos, y sus anillos son polígonos en
+      // grados. Lo que sigue prohibido es lo que mató a aquellas dos capas:
+      // inventar un radio y presentarlo como el área donde se sintió el sismo
+      // (regla de oro 7).
       //
       // [T-2.47] Los frentes P/S de abajo son otra cosa y por eso SÍ se dibujan:
       // no afirman intensidad ninguna, son la posición geométrica de un frente a
@@ -751,6 +814,126 @@ export default function MapPanel({
         },
       });
 
+      // --- [T-7.24] EL MAPA DE LA SACUDIDA ----------------------------------
+      //
+      // Dos fuentes y no una, y ésa es la mitad del contrato: un rasgo MEDIDO no
+      // puede acabar dibujado por la capa del MODELO ni al revés. La otra mitad
+      // es que la procedencia viaja dentro de cada rasgo (`shakemap.ts`).
+      //
+      // ⚠️ Los anillos son POLÍGONOS EN GRADOS —los materializa el lector de la
+      // nube (`shakemap/lectura.py::circulo`)— y se dibujan con una capa `line`,
+      // JAMÁS con `circle-radius`. Aquí vivían dos capas de bandas MMI con radio
+      // en píxeles de pantalla: el mismo anillo afirmaba ~22 km a zoom 8.5 y ~1
+      // km a zoom 13. Un anillo que dice «aquí el modelo predice 0.02 g» tiene
+      // que seguir diciéndolo a cualquier zoom.
+      map.addSource("shakemap-modelado", {
+        type: "geojson",
+        data: modeladoFeatureCollection(undefined) as unknown as SourceData,
+      });
+      map.addSource("shakemap-observado", {
+        type: "geojson",
+        data: observadoFeatureCollection(undefined) as unknown as SourceData,
+      });
+      map.addSource("shakemap-cobertura", {
+        type: "geojson",
+        data: coberturaFeatureCollection(undefined, DEFAULT_ZOOM) as unknown as SourceData,
+      });
+      // HASTA DÓNDE HABLA LO MEDIDO. Va la primera, o sea DEBAJO de todo lo
+      // demás: es el suelo de la lectura, no un dato encima de los datos.
+      //
+      // Esta capa existe porque la leyenda declaraba una tinta de `SIN
+      // COBERTURA` que ninguna capa usaba — una clave de color prometiendo una
+      // distinción que el mapa no hacía en ninguna parte, que es el mismo
+      // defecto de la leyenda MMI que esta tarea vino a cerrar.
+      //
+      // ⚠️ Radio FÍSICO: `radius_px` lo calcula `coberturaFeatureCollection`
+      // con el zoom y se rehace en `zoomend`. Un número constante aquí sería
+      // otra vez `DIF-shakemap.a`.
+      map.addLayer({
+        id: "shakemap-cobertura",
+        type: "circle",
+        source: "shakemap-cobertura",
+        layout: { visibility: "none" },
+        paint: {
+          "circle-radius": ["get", "radius_px"],
+          "circle-color": "rgba(0,0,0,0)",
+          "circle-stroke-color": PGA_SIN_COBERTURA,
+          "circle-stroke-width": 1,
+          "circle-stroke-opacity": 0.6,
+        },
+      });
+      map.addLayer({
+        id: "shakemap-anillo",
+        type: "line",
+        source: "shakemap-modelado",
+        layout: { visibility: "none" },
+        paint: {
+          // El color es la BANDA DE PGA; lo que separa modelo de medida es la
+          // FORMA (trazo discontinuo vs disco relleno), nunca el color: con dos
+          // escalas distintas no se podrían comparar, que es para lo que está.
+          "line-color": ["get", "color"],
+          "line-width": 1.4,
+          "line-dasharray": [3, 3],
+          "line-opacity": 0.85,
+        },
+      });
+      map.addLayer({
+        id: "shakemap-anillo-nivel",
+        type: "symbol",
+        source: "shakemap-modelado",
+        layout: {
+          visibility: "none",
+          // Rotulado SOBRE la línea: un `symbol` normal pondría los tres
+          // rótulos en el centroide —el epicentro— apilados uno encima de otro.
+          "symbol-placement": "line",
+          "symbol-spacing": 400,
+          "text-field": ["get", "label"],
+          "text-font": TEXT_FONT,
+          "text-size": 10,
+        },
+        paint: {
+          "text-color": ["get", "color"],
+          "text-halo-color": "#0d2034",
+          "text-halo-width": 1.6,
+        },
+      });
+      map.addLayer({
+        id: "shakemap-punto",
+        type: "circle",
+        source: "shakemap-observado",
+        layout: { visibility: "none" },
+        paint: {
+          // CONSTANTE, y es deliberado: un marcador no afirma extensión, afirma
+          // un valor EN ESE PUNTO. Atar este radio al PGA lo convertiría en una
+          // burbuja que se lee como área de influencia — el pecado de las MMI.
+          "circle-radius": 9,
+          // Sin medida el disco va HUECO: un relleno diría que hay un valor.
+          "circle-color": ["case", ["get", "medido"], ["get", "color"], "rgba(0,0,0,0)"],
+          "circle-opacity": 0.85,
+          "circle-stroke-color": ["get", "color"],
+          "circle-stroke-width": 1.6,
+        },
+      });
+      map.addLayer({
+        id: "shakemap-punto-valor",
+        type: "symbol",
+        source: "shakemap-observado",
+        layout: {
+          visibility: "none",
+          "text-field": ["get", "label"],
+          "text-font": TEXT_FONT,
+          "text-size": 10,
+          "text-offset": [0, -1.7],
+          "text-anchor": "bottom",
+          "text-allow-overlap": true,
+        },
+        paint: {
+          "text-color": "#F0F2F5",
+          "text-halo-color": "#0d2034",
+          "text-halo-width": 1.6,
+        },
+      });
+
       // EPICENTRO: dónde se ORIGINÓ el sismo. Va por encima de los edificios y
       // con otra forma (cruz + rótulo) para que jamás se confunda con uno.
       map.addLayer({
@@ -854,12 +1037,18 @@ export default function MapPanel({
       // Los anillos animados se recalculan solos en cada tick; los QUIETOS del
       // modo accesible no tienen tick, así que se rehacen aquí.
       map.on("zoomend", () => {
+        const zoom = map.getZoom?.() ?? DEFAULT_ZOOM;
         const source = map.getSource("wave-static") as maplibregl.GeoJSONSource | undefined;
         source?.setData(
           staticRingsFeatureCollection(
             animatableEpicenters(epicentersRef.current, Date.now()),
-            map.getZoom?.() ?? DEFAULT_ZOOM,
+            zoom,
           ) as unknown as SourceData,
+        );
+        // [T-7.24] El halo de cobertura mide 25 km DE TERRENO: sin rehacer los
+        // píxeles, a zoom 13 afirmaría un par de manzanas.
+        (map.getSource("shakemap-cobertura") as maplibregl.GeoJSONSource | undefined)?.setData(
+          coberturaFeatureCollection(coberturaRef.current, zoom) as unknown as SourceData,
         );
       });
       emitViewport(map);
@@ -1021,6 +1210,31 @@ export default function MapPanel({
     }
   }, [sites, live, newest, reducedMotion, styleReady]);
 
+  // [T-7.24] Datos del mapa de la sacudida. Lo que se pinta lo decide
+  // `vistaSacudida` a partir del DATO —no del rótulo del estado—, así que un
+  // snapshot que se declare `completo` sin anillos no dibuja un modelo fantasma.
+  const sacudida = useMemo(
+    () => vistaSacudida(shakemap, shakemapError, shakemapLoading),
+    [shakemap, shakemapError, shakemapLoading],
+  );
+  coberturaRef.current = sacudida.pintaObservado ? shakemap : undefined;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map === null || !loadedRef.current) return;
+    (map.getSource("shakemap-observado") as maplibregl.GeoJSONSource | undefined)?.setData(
+      observadoFeatureCollection(sacudida.pintaObservado ? shakemap : undefined) as SourceData,
+    );
+    (map.getSource("shakemap-modelado") as maplibregl.GeoJSONSource | undefined)?.setData(
+      modeladoFeatureCollection(sacudida.pintaModelado ? shakemap : undefined) as SourceData,
+    );
+    (map.getSource("shakemap-cobertura") as maplibregl.GeoJSONSource | undefined)?.setData(
+      coberturaFeatureCollection(
+        coberturaRef.current,
+        map.getZoom?.() ?? DEFAULT_ZOOM,
+      ) as SourceData,
+    );
+  }, [shakemap, sacudida, styleReady]);
+
   // Visibilidad de capas (T-2.50) + estado de las ondas (T-2.47), en un solo sitio.
   useEffect(() => {
     const map = mapRef.current;
@@ -1061,6 +1275,24 @@ export default function MapPanel({
   // El sismo con el que está armada la comparativa, si lo tenemos en el
   // catálogo cargado: `null` = no armado.
   const armado = catalog.find((q) => q.ref_id === selectedCatalogId) ?? null;
+  // [T-7.24] La superficie que ALIMENTA el mapa de sacudida es la que lo enseña.
+  // Sin `shakemap` no hay ni botón de capa ni leyenda: un wall en vivo no estrena
+  // un interruptor que no conmuta nada ni una caja que sólo puede decir «vacío».
+  const muestraSacudida = shakemap !== undefined || shakemapError || shakemapLoading;
+  const niveles = nivelesDe(sacudida.pintaModelado ? shakemap : undefined);
+  // [T-7.24] La fila de `SIN COBERTURA` cuelga de que HAYA halo, no de que haya
+  // puntos: el halo sólo lo dibujan los inmuebles que MIDIERON, así que un
+  // snapshot con puntos mudos prometía un límite que ninguna capa dibuja — la
+  // clave de color huérfana que esta ficha vino a cerrar. Se cuenta con la MISMA
+  // función que alimenta la capa para que no puedan divergir; el zoom no cambia
+  // CUÁNTOS halos hay, sólo su radio en píxeles.
+  const hayCobertura =
+    coberturaFeatureCollection(coberturaRef.current, DEFAULT_ZOOM).features.length > 0;
+  const descartados = sinProcedencia(shakemap);
+  const calculadoEn =
+    shakemap?.calculado_en != null && !Number.isNaN(Date.parse(shakemap.calculado_en))
+      ? utcStamp(Date.parse(shakemap.calculado_en))
+      : null;
   const toggle = (key: keyof LayerToggles) => () => {
     const apagando = layersRef.current[key];
     // El ref se ADELANTA al render: dos pulsaciones en el mismo lote (un doble
@@ -1114,18 +1346,22 @@ export default function MapPanel({
         <div className="soc-map__legend soc-map__legend--layers" data-testid="map-layers">
           <div className="soc-map__legend-title">CAPAS</div>
           <div className="soc-map__layer-row">
-            {(Object.keys(LAYER_LABEL) as (keyof LayerToggles)[]).map((key) => (
-              <button
-                key={key}
-                type="button"
-                className={`soc-map__layer-btn${layers[key] ? " soc-map__layer-btn--on" : ""}`}
-                data-testid={`layer-${key}`}
-                aria-pressed={layers[key]}
-                onClick={toggle(key)}
-              >
-                {LAYER_LABEL[key]}
-              </button>
-            ))}
+            {(Object.keys(LAYER_LABEL) as (keyof LayerToggles)[])
+              // La clave existe SIEMPRE en las cuatro tablas —una capa a medias
+              // es peor que ninguna—; lo que es condicional es el MANDO.
+              .filter((key) => key !== "shakemap" || muestraSacudida)
+              .map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`soc-map__layer-btn${layers[key] ? " soc-map__layer-btn--on" : ""}`}
+                  data-testid={`layer-${key}`}
+                  aria-pressed={layers[key]}
+                  onClick={toggle(key)}
+                >
+                  {LAYER_LABEL[key]}
+                </button>
+              ))}
           </div>
           {layers.waves && !waveActive && (
             <div className="soc-map__legend-note" data-testid="waves-idle">
@@ -1243,6 +1479,88 @@ export default function MapPanel({
             </div>
           )}
         </div>
+
+        {/* [T-7.24] LA TERCERA COSA QUE PINTA ESTE MAPA: la sacudida del evento.
+            Va la última de la columna a propósito —CAPAS tiene que seguir siendo
+            la primera (T-7.05 · C-1)— y sólo existe si alguien alimenta la prop.
+
+            La leyenda declara las DOS codificaciones antes que ninguna cifra,
+            porque es lo que hace legible el resto: disco relleno = MEDIDO en ese
+            edificio; anillo discontinuo = MODELO. Y `SIN COBERTURA` es una fila
+            propia, con su radio: fuera de él no se extrapola color, y una
+            ausencia sin nombre se lee como «ahí no pasó nada». */}
+        {muestraSacudida && layers.shakemap && (
+          <div className="soc-map__legend soc-map__legend--pga" data-testid="map-legend-pga">
+            <div className="soc-map__legend-title">MAPA DE LA SACUDIDA</div>
+            {/* Cada fila de codificación cuelga de la capa QUE SE ESTÁ
+                PINTANDO: una leyenda que explica un anillo que no está en
+                pantalla promete un modelo que no se hizo. La ausencia la nombra
+                la nota de abajo, que para eso está. */}
+            {sacudida.pintaObservado && (
+              <div className="soc-map__legend-row">
+                <span className="soc-map__sw soc-map__sw--medido" />
+                MEDIDO EN EL EDIFICIO · DISCO CON SU VALOR
+              </div>
+            )}
+            {sacudida.pintaModelado && (
+              <div className="soc-map__legend-row">
+                <span className="soc-map__sw soc-map__sw--modelo" />
+                MODELO{shakemap?.ley != null ? ` ${shakemap.ley}` : ""} · ANILLO DISCONTINUO ·
+                ESTIMACIÓN
+              </div>
+            )}
+            {/* Las bandas son las del `rule_set` que regía el incidente y llegan
+                EN los propios anillos: aquí no hay ninguna escala escrita a
+                mano, y por eso el rótulo cita el umbral por su nombre. */}
+            {niveles.map((nivel) => (
+              <div className="soc-map__legend-row" key={nivel.umbral}>
+                <span className="soc-map__sw" style={{ background: colorDeBanda(nivel.umbral) }} />
+                {nivel.pga_g.toFixed(3)} g · {nivel.umbral}
+              </div>
+            ))}
+            {/* `SIN COBERTURA` cuelga de que HAYA HALOS DIBUJADOS, porque es
+                justo lo que explica. Colgaba de `shakemap !== undefined`, así
+                que un incidente sin snapshot calculado imprimía «SIN COBERTURA
+                · A MÁS DE 25 km…» junto a «ESTE INCIDENTE AÚN NO TIENE
+                SNAPSHOT»: una clave de color de un mapa que no existía. Luego
+                colgó de `pintaObservado` —«hay puntos»—, y un snapshot con
+                puntos MUDOS volvía a prometer un límite sin un solo halo: el
+                halo lo dibujan sólo los que MIDIERON. */}
+            {hayCobertura && shakemap !== undefined && (
+              <div className="soc-map__legend-row">
+                {/* La muestra es un ARO y no un cuadro relleno, porque la capa
+                    pinta un borde: una muestra rellena prometería que el mapa
+                    tiñe el área de fuera, y el área de fuera es el resto del
+                    mundo. El color lo pone la hoja con `var()` —aquí sí
+                    resuelve— para no tener la misma tinta escrita dos veces. */}
+                <span className="soc-map__sw soc-map__sw--cobertura" />
+                SIN COBERTURA · A MÁS DE {shakemap.cobertura_km} km DE UN INMUEBLE INSTRUMENTADO
+              </div>
+            )}
+            {sacudida.nota !== null && (
+              <div className="soc-map__legend-note" data-testid={sacudida.notaTestId ?? undefined}>
+                {sacudida.nota}
+              </div>
+            )}
+            {/* Descartar en silencio sería cambiar un dato sospechoso por una
+                pantalla tranquila: si algo llega sin procedencia, se dice. */}
+            {descartados > 0 && (
+              <div className="soc-map__legend-note" data-testid="shakemap-sin-procedencia">
+                {descartados} RASGO(S) SIN PROCEDENCIA · NO SE PINTAN
+              </div>
+            )}
+            {/* El mapa NO es en vivo: se calcula por evento. La hora del cálculo
+                es lo que dice con qué información se hizo (regla de oro 7).
+                Cuelga de que el snapshot sea LEGIBLE: fechar un mapa que la
+                nota de arriba acaba de declarar ilegible lo vuelve a presentar
+                como un mapa válido y reciente. */}
+            {sacudida.legible && calculadoEn !== null && (
+              <div className="soc-map__legend-note" data-testid="shakemap-calculado">
+                CALCULADO {calculadoEn} UTC
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="soc-map__attribution">

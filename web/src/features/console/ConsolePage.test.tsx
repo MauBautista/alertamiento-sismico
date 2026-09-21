@@ -11,6 +11,8 @@ import { expectFourStates, type UiState } from "../../test-utils/states";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { LiveIncident, LiveIncidentsData } from "./useLiveIncidents";
 import type { MapStateData } from "./useMapState";
+import type { ShakemapOut } from "./shakemap";
+import type { ShakemapData } from "./useShakemap";
 import type { SiteFeaturesData } from "./useSiteFeatures";
 
 const mocks = vi.hoisted(() => ({
@@ -23,6 +25,7 @@ const mocks = vi.hoisted(() => ({
   useSiteFeatures: vi.fn(),
   useIncidentActions: vi.fn(),
   useSiteSoh: vi.fn(() => null),
+  useShakemap: vi.fn(),
   MapPanel: vi.fn(({ onSelectSite }: { onSelectSite: (id: string) => void }) => (
     <div data-testid="map-mock">
       <button onClick={() => onSelectSite("s-1")}>pick-site</button>
@@ -46,6 +49,7 @@ vi.mock("./useMapState", () => ({ useMapState: mocks.useMapState }));
 vi.mock("./useSiteFeatures", () => ({ useSiteFeatures: mocks.useSiteFeatures }));
 vi.mock("./useIncidentActions", () => ({ useIncidentActions: mocks.useIncidentActions }));
 vi.mock("./useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
+vi.mock("./useShakemap", () => ({ useShakemap: mocks.useShakemap }));
 // T-1.60: el banner del drill usa react-query + SDK — stub inerte aquí.
 // [T-2.48] El stub declara el contrato COMPLETO a propósito: con `readError`
 // ausente (`undefined`) el banner leería "no sé si hay simulacro" y el estado
@@ -151,6 +155,25 @@ function actionsData(over: Partial<IncidentActionsData> = {}): IncidentActionsDa
   return { actions: [], loading: false, error: null, refetch: vi.fn(), ...over };
 }
 
+/** [T-7.24] El mapa de la sacudida del incidente enfocado. Inerte por defecto. */
+function shakemapData(over: Partial<ShakemapData> = {}): ShakemapData {
+  return { data: null, loading: false, error: false, updatedAt: 0, refetch: vi.fn(), ...over };
+}
+
+const SHAKEMAP: ShakemapOut = {
+  incident_id: "i-1",
+  estado: "completo",
+  calculado_en: "2026-09-14T10:41:30Z",
+  ley: "ATTEN-LAW v1",
+  cobertura_km: 25,
+  epicentro: null,
+  // El contrato los declara SIEMPRE presentes (vacíos incluidos): un fixture que
+  // omita uno dejaría de parecerse a lo que la nube manda de verdad.
+  fuera_de_alcance: [],
+  observado: { type: "FeatureCollection", features: [] },
+  modelado: null,
+};
+
 function page(): ReactElement {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   // MemoryRouter: ConsolePage usa useNavigate (T-1.51, flujo de dictamen).
@@ -222,6 +245,46 @@ describe("ConsolePage", () => {
     mocks.useMapState.mockReturnValue(mapData());
     mocks.useSiteFeatures.mockReturnValue(featuresData());
     mocks.useIncidentActions.mockReturnValue(actionsData());
+    mocks.useShakemap.mockReturnValue(shakemapData());
+  });
+
+  // [T-7.24] EL CAMINO COMPLETO DEL MAPA DE LA SACUDIDA. `mapPanelAlimentado`
+  // vigila que la prop se ESCRIBA; esto vigila que lo que se escribe sea el
+  // snapshot del incidente enfocado y no un hueco.
+  describe("[T-7.24] el mapa de la sacudida llega al panel", () => {
+    function propsDelMapa(): Record<string, unknown> {
+      const llamadas = mocks.MapPanel.mock.calls;
+      expect(llamadas.length, "MapPanel no se montó").toBeGreaterThan(0);
+      return llamadas[llamadas.length - 1][0] as Record<string, unknown>;
+    }
+
+    it("se consulta el mapa DEL INCIDENTE enfocado y se le pasa al panel", () => {
+      mocks.useShakemap.mockReturnValue(shakemapData({ data: SHAKEMAP }));
+      render(page());
+      expect(mocks.useShakemap).toHaveBeenCalledWith("i-1");
+      expect(propsDelMapa()["shakemap"]).toBe(SHAKEMAP);
+      expect(propsDelMapa()["shakemapError"]).toBe(false);
+    });
+
+    it("el error y la espera de la consulta LLEGAN al panel; no se quedan en el hook", () => {
+      // Sin esto el panel no puede declarar ninguno de los dos y los dos se ven
+      // como «este incidente no tiene mapa» (regla de oro 7).
+      mocks.useShakemap.mockReturnValue(shakemapData({ error: true }));
+      const { unmount } = render(page());
+      expect(propsDelMapa()["shakemapError"]).toBe(true);
+      expect(propsDelMapa()["shakemap"]).toBeUndefined();
+      unmount();
+
+      mocks.useShakemap.mockReturnValue(shakemapData({ loading: true }));
+      render(page());
+      expect(propsDelMapa()["shakemapLoading"]).toBe(true);
+    });
+
+    it("sin incidente enfocado no se consulta ningún mapa", () => {
+      mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [] }));
+      render(page());
+      expect(mocks.useShakemap).toHaveBeenCalledWith(null);
+    });
   });
 
   it("monta el wall: mapa, banner crítico e incidentes con identidad real", () => {

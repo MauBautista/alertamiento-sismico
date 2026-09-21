@@ -580,3 +580,73 @@ describe("design tokens · contratos semánticos (web ≡ móvil)", () => {
     });
   });
 });
+
+/* =====================================================================
+   [T-7.24] LA ESCALA DE PGA — nombre propio, y consumida por TS
+   ===================================================================== */
+
+describe("[T-7.24] la escala de PGA del mapa de la sacudida", () => {
+  const PGA = [
+    "--tk-pga-watch",
+    "--tk-pga-trip",
+    "--tk-pga-sin-banda",
+    "--tk-pga-sin-cobertura",
+  ] as const;
+
+  it("los cuatro tokens existen y son colores sólidos", () => {
+    // Sólidos porque van a un `paint` de MapLibre: un `rgba(...)` compuesto a
+    // mano sobre un mapa de teselas no compone contra lo que el operador ve.
+    for (const nombre of PGA) {
+      expect(cssVariables[nombre], `falta ${nombre}`).toMatch(/^#[0-9A-Fa-f]{6}$/);
+    }
+  });
+
+  it("las bandas valen HOY lo mismo que la escala de ESTADO, y es deliberado", () => {
+    // Mismo valor, distinto nombre — el argumento que separó `--tk-brand` de
+    // `--tk-cyan` en T-6.15. Lo que el mapa codifica es PGA en g y no la
+    // severidad de un incidente, así que repintar una escala no puede repintar
+    // la otra. Y valen lo mismo porque los umbrales SON los mismos: el color de
+    // un anillo modelado tiene que poder compararse a ojo con el punto del
+    // edificio que midió, y dos escalas harían imposible esa comparación.
+    expect(cssVariables["--tk-pga-watch"]).toBe(cssVariables["--tk-status-warning"]);
+    expect(cssVariables["--tk-pga-trip"]).toBe(cssVariables["--tk-status-critical"]);
+  });
+
+  it("SIN BANDA y SIN COBERTURA no comparten tinta: son dos hechos distintos", () => {
+    // «Este edificio no publicó nada» y «aquí no hay ningún edificio
+    // instrumentado cerca» son cosas distintas, y colapsarlas en un gris es
+    // exactamente lo que este repositorio lleva una fase descolapsando.
+    expect(cssVariables["--tk-pga-sin-banda"]).not.toBe(cssVariables["--tk-pga-sin-cobertura"]);
+  });
+
+  it("NADIE los cita con `var()`: MapLibre no resuelve variables CSS en un `paint`", () => {
+    // Una `var(--tk-pga-trip)` dentro de un `paint` no es un color: es una
+    // cadena que el motor rechaza, y la capa se queda sin pintar en silencio.
+    // Por eso se leen del paquete por TS (patrón de `SevTag.tsx`).
+    const dir = path.resolve(process.cwd(), "src");
+    const fuentes: string[] = [];
+    const recorrer = (d: string): void => {
+      for (const e of readdirSync(d, { withFileTypes: true })) {
+        const full = path.join(d, e.name);
+        if (e.isDirectory()) recorrer(full);
+        // Los `.test.` quedan fuera: citan el patrón para vigilarlo, igual que
+        // este mismo fichero. Contarlos sería contar la red como la falla.
+        else if (/\.tsx?$/.test(e.name) && !e.name.includes(".test.")) fuentes.push(full);
+      }
+    };
+    recorrer(dir);
+    /** Los comentarios EXPLICAN el defecto citándolo; contarlos lo daría por
+     * cometido. Es la misma trampa que enmascara `cssContract.test.ts` en las
+     * hojas, y la tercera vez que este repositorio la pisa. El `//` se retira
+     * sólo si no va tras `:`, para no decapitar una línea por un `https://`. */
+    const sinComentarios = (src: string): string =>
+      src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/.*$/gm, "$1");
+    const ofensores = fuentes.filter((f) =>
+      /var\(--tk-pga-/.test(sinComentarios(readFileSync(f, "utf8"))),
+    );
+    expect(
+      ofensores.map((f) => path.relative(dir, f)),
+      "un token de PGA citado con `var()` desde TS no llega a MapLibre: la capa se queda sin color",
+    ).toEqual([]);
+  });
+});

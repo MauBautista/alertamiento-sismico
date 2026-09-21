@@ -1127,6 +1127,111 @@ _RO = (
                     ),
                 ),
             ),
+            # [T-7.24] Las dos que heredan lo que afirmaba `DIF-shakemap.a` —«la
+            # consola no promete una escala de intensidad que no existe»— cuando
+            # el mapa estaba diferido y no había nada que pintar. Con el mapa
+            # construido esa frase se queda corta: lo que hay que impedir ya no es
+            # prometer una escala, sino **presentar un modelo como si fuera una
+            # medición**. Dicho en positivo, y en las dos superficies que lo
+            # pintan, porque el papel y la pantalla pueden mentir por separado.
+            # ⚠️ [T-7.24 · 2ª vuelta] Las tres citas de la primera versión NO sostenían
+            # esta frase. Medido el 2026-09-21 con mutación dirigida: pintar la capa
+            # modelada como disco negro relleno, intercambiar las celdas MEDIDO/MODELO
+            # y desligar el radio de la escala del croquis dejaban la suite del papel
+            # en VERDE las tres veces. Una fila `CUBIERTO` cuyas pruebas no pueden
+            # ponerse rojas por el defecto que la fila nombra es peor que un hueco: el
+            # hueco se ve.
+            Afirmacion(
+                "RO-7.f",
+                "El dictamen no presenta lo modelado como medido: la medida y el modelo no "
+                "comparten codificación visual, cada celda de la tabla sale bajo su columna, "
+                "el radio dibujado se mide con la barra de escala del propio croquis, la "
+                "ausencia de medida no se pinta como una medida, y los estados del mapa se "
+                "declaran por separado.",
+                (
+                    Evidencia(
+                        "api/tests/dictamen/test_mapa_de_la_sacudida.py",
+                        "test_lo_MEDIDO_y_lo_MODELADO_no_comparten_CODIFICACION",
+                        "El invariante de `D-08 · §A.3` medido sobre el PDF: relleno para lo "
+                        "que midió un sensor, trazo discontinuo para lo que predice la ley, y "
+                        "las dos codificaciones DISTINTAS entre sí.",
+                    ),
+                    Evidencia(
+                        "api/tests/dictamen/test_mapa_de_la_sacudida.py",
+                        "test_cada_celda_de_la_tabla_sale_BAJO_SU_COLUMNA",
+                        "Cabecera y fila casadas por POSICIÓN: intercambiar `MEDIDO (g)` y "
+                        "`MODELO (g)` imprimiría la predicción bajo el rótulo de la medición, "
+                        "que es literalmente lo que esta regla prohíbe.",
+                    ),
+                    Evidencia(
+                        "api/tests/dictamen/test_mapa_de_la_sacudida.py",
+                        "test_el_radio_dibujado_se_mide_con_la_BARRA_DE_ESCALA_del_propio_croquis",
+                        "El radio de cada anillo, medido con la barra que el mismo papel "
+                        "imprime al lado, da los kilómetros que dice su rótulo. Es la lección "
+                        "exacta que mató a `mmi-severa`: un radio en unidades de pantalla no "
+                        "significa kilómetros.",
+                    ),
+                    Evidencia(
+                        "api/tests/dictamen/test_mapa_de_la_sacudida.py",
+                        "test_un_inmueble_que_NO_publico_no_se_pinta_como_una_MEDICION",
+                        "Regla de oro 7 en la tinta: el inmueble que no publicó lleva símbolo "
+                        "propio y nombrado en la leyenda, en vez del disco lleno con que la "
+                        "figura afirmaba lo que la tabla negaba.",
+                    ),
+                    Evidencia(
+                        "api/tests/dictamen/test_mapa_de_la_sacudida.py",
+                        "test_la_leyenda_nombra_SOLO_los_simbolos_que_la_figura_dibuja",
+                        "La leyenda va DENTRO de la sección y nombra sólo lo dibujado: ni "
+                        "anillos ni cruz sobre una figura degradada, ni leyenda ninguna donde "
+                        "no hay figura.",
+                    ),
+                    Evidencia(
+                        "api/tests/dictamen/test_mapa_de_la_sacudida.py",
+                        "test_cada_estado_del_mapa_dice_LO_SUYO_y_no_lo_del_vecino",
+                        "«No calculado todavía», «se calculó y nadie midió» y «se midió y no "
+                        "hay con qué compararlo» son tres hechos distintos, y ninguno de los "
+                        "tres avisos se cuela donde significa lo contrario.",
+                    ),
+                ),
+            ),
+            Afirmacion(
+                "RO-7.g",
+                "La consola tampoco: medido y modelado se pintan distinto, y ninguna capa "
+                "con significado físico usa unidades de pantalla.",
+                (
+                    Evidencia(
+                        "web/src/features/console/MapPanel.test.tsx",
+                        "cada valor viaja con su PROCEDENCIA, y medido y modelado NO se mezclan",
+                        "La procedencia va EN EL DATO, no en la capa que lo lleva: quien mezcle "
+                        "features no puede perderla por el camino.",
+                    ),
+                    Evidencia(
+                        "web/src/features/console/MapPanel.test.tsx",
+                        "NINGUNA capa con significado físico se dibuja en unidades de PANTALLA",
+                        "**La sustituta directa de `DIF-shakemap.a`.** Aquella guarda nació de "
+                        "dos capas con `circle-radius` de 55 y 100 PÍXELES rotuladas «INTENSIDAD "
+                        "MMI»: el mismo anillo afirmaba ~22 km a zoom 8.5 y ~1 km a zoom 13.",
+                    ),
+                    Evidencia(
+                        "web/src/features/console/MapPanel.test.tsx",
+                        "sin epicentro ni magnitud la capa modelada NO se dibuja, y se DECLARA",
+                        "Degradado es degradado: dibujarlo igual sería peor que callarlo, porque "
+                        "el operador creería al dibujo.",
+                    ),
+                    # ⚠️ El título lleva «Y CON SU CAPA» desde que la pieza de la consola
+                    # amplió esa prueba el 2026-09-21. El ancla de una cita es el NOMBRE
+                    # del test, así que un renombrado en `web/` pone en rojo ocho pruebas
+                    # de `api` — que es el mecanismo, y es a propósito: una cita rota es
+                    # una fila de la matriz que promete una prueba que no existe.
+                    Evidencia(
+                        "web/src/features/console/MapPanel.test.tsx",
+                        "`SIN COBERTURA` es un estado PROPIO de la leyenda, con su radio "
+                        "Y CON SU CAPA",
+                        "No un color pálido —que se lee como una medición con menos confianza—: "
+                        "un estado con nombre y con el número que lo hace verificable.",
+                    ),
+                ),
+            ),
         ),
     ),
     Requisito(
@@ -1542,7 +1647,15 @@ _RO = (
 )
 
 
-# --- Invariantes y diferido (`BLUEPRINT §14`) ------------------------------
+# --- Invariantes (`BLUEPRINT §14`) -----------------------------------------
+#
+# [T-7.24] Decía "Invariantes y diferido" y ya no hay diferido: el 2026-09-20 se derogó
+# `[DIFERIDO · mini-ShakeMap]`, la única viñeta aplazada que la §14 tuvo, y con ella salió de
+# este registro `DIF-mini-ShakeMap`. Tenía que salir: `test_el_censo_de_invariantes_es_el_que_
+# declara_el_blueprint` compara por IGUALDAD contra el documento, así que una fila de un
+# requisito que el blueprint ya no declara es un huérfano, no una constancia.
+#
+# Su afirmación NO se perdió: ver `RO-7.f` y `RO-7.g`, donde está dicha en positivo.
 
 _INV = (
     Requisito(
@@ -1651,29 +1764,6 @@ _INV = (
                     "—el código que decide el tier y, con el opt-in de `RO-1.g`, dispara— no "
                     "tiene lista blanca equivalente. Es un hueco de alcance, no de "
                     "intención: el mecanismo ya está escrito y le falta el segundo objetivo."
-                ),
-            ),
-        ),
-    ),
-    Requisito(
-        "DIF-mini-ShakeMap",
-        nota=(
-            "Único DIFERIDO de `§14`: no es una prohibición permanente sino trabajo aplazado "
-            "a `T-3.09`. Se lista para que el documento de entrega pueda decir qué NO hace el "
-            "sistema."
-        ),
-        afirmaciones=(
-            Afirmacion(
-                "DIF-shakemap.a",
-                "La consola no promete una escala de intensidad que no existe.",
-                (
-                    Evidencia(
-                        "web/src/features/console/MapPanel.test.tsx",
-                        "NO pinta bandas de intensidad: ni capas MMI ni una leyenda que "
-                        "prometa una escala inexistente",
-                        "Ninguna capa de MapLibre empieza por `mmi` ni hay leyenda "
-                        "«INTENSIDAD MMI».",
-                    ),
                 ),
             ),
         ),
@@ -2027,15 +2117,23 @@ def _bloque(req: Requisito, filas: list[AfirmacionResuelta]) -> list[str]:
     return out
 
 
+def _titulo_del_grupo_14() -> str:
+    """El encabezado del bloque de `BLUEPRINT §14`, derivado de lo que el bloque trae."""
+    if any(r.rid.startswith("DIF-") for r in REGISTRO):
+        return "## Invariantes y diferido (`BLUEPRINT §14`)"
+    return "## Invariantes (`BLUEPRINT §14`)"
+
+
 def render() -> str:
     resuelto = resolver()
     lineas = list(_cabecera(resuelto))
     grupos = (
         ("## Reglas de oro (`CLAUDE.md §2`)", lambda r: r.rid.startswith("RO-")),
-        (
-            "## Invariantes y diferido (`BLUEPRINT §14`)",
-            lambda r: r.rid.startswith(("INV-", "DIF-")),
-        ),
+        # ⚠️ [T-7.24] El encabezado se DERIVA de si queda algún `DIF-`. Decía
+        # «Invariantes y diferido» a mano, y `T-7.24` derogó la única viñeta diferida
+        # que la §14 tuvo: el documento habría anunciado al cliente un apartado de
+        # trabajo aplazado que ya no contiene ni una fila.
+        (_titulo_del_grupo_14(), lambda r: r.rid.startswith(("INV-", "DIF-"))),
         ("## Gates físicos y de despliegue (`RUNBOOK-auditoria-cierre §10`)", es_gate),
     )
     for encabezado, filtro in grupos:
@@ -2056,8 +2154,14 @@ def render() -> str:
         "- **La semántica la decide un humano.** El generador comprueba que el test exista, "
         "que no se salte y que un job bloqueante lo corra; que además *demuestre* lo que la "
         "fila dice, no lo comprueba nadie automáticamente.",
-        "- **La descomposición en afirmaciones es un juicio editorial.** Las once reglas, los "
-        "seis invariantes y los diez gates se derivan de su fuente; partirlos en `a`/`b`/`c` "
+        # ⚠️ [T-7.24] Los tres números se DERIVAN. Decían «once reglas, seis invariantes
+        # y diez gates» a mano, dentro del documento cuyo argumento entero es que un
+        # censo se deriva: al derogar `[DIFERIDO · mini-ShakeMap]` los invariantes
+        # pasaron a cinco y esta línea siguió publicando seis. Un censo tecleado acaba
+        # divergiendo de su fuente, y éste divergió dentro del generador de censos.
+        "- **La descomposición en afirmaciones es un juicio editorial.** Las "
+        f"{len(reglas_de_oro())} reglas de oro, los {len(invariantes())} invariantes y los "
+        f"{len(gates_fisicos())} gates se derivan de su fuente; partirlos en `a`/`b`/`c` "
         "no. Una afirmación que nadie escribió no aparece como hueco.",
         "- **`CUBIERTO` no dice «bien cubierto».** Dice que hay al menos una prueba viva. Un "
         "requisito con una prueba superficial sale igual de verde que uno con quince.",
@@ -2086,10 +2190,53 @@ def test_el_censo_de_reglas_de_oro_es_el_que_declara_claude_md() -> None:
     )
 
 
+def test_el_documento_no_TECLEA_el_tamano_de_sus_propios_censos() -> None:
+    """Un censo escrito a mano DENTRO del documento que existe para derivar censos.
+
+    ⚠️ Medido el 2026-09-21: la sección «Qué NO garantiza esta matriz» publicaba «los
+    seis invariantes» mientras `invariantes()` devolvía cinco, porque `T-7.24` derogó
+    `[DIFERIDO · mini-ShakeMap]` y la frase se quedó atrás. El drift gate no lo ve: compara
+    el `.md` con `render()`, así que un número tecleado dentro de `render()` sale idéntico
+    en los dos lados y el documento publica una cifra falsa con todo en verde.
+
+    Se comprueba contra las MISMAS funciones que derivan las filas, que es lo único que
+    hace imposible la divergencia.
+    """
+    texto = render()
+    for cuantos, como in (
+        (len(reglas_de_oro()), f"Las {len(reglas_de_oro())} reglas de oro"),
+        (len(invariantes()), f"los {len(invariantes())} invariantes"),
+        (len(gates_fisicos()), f"los {len(gates_fisicos())} gates"),
+    ):
+        assert como in texto, (
+            f"el documento no cita su censo derivado ({cuantos}) con la frase «{como}»: "
+            "o el número está tecleado, o la frase cambió y la cifra se quedó atrás"
+        )
+
+
+def test_el_encabezado_del_bloque_14_no_anuncia_un_DIFERIDO_que_ya_no_hay() -> None:
+    """«Invariantes y diferido» sobre un bloque con cero diferidos promete un apartado.
+
+    El documento va al cliente en la entrega y lo que ese encabezado le anuncia es que el
+    sistema tiene trabajo declarado como aplazado. Desde que `T-7.24` derogó la única
+    viñeta diferida de la §14, no lo tiene. Las dos mitades se comprueban: que el título
+    diga «y diferido» **si y sólo si** queda alguna fila `DIF-`.
+    """
+    hay_diferidos = any(r.rid.startswith("DIF-") for r in REGISTRO)
+    assert ("Invariantes y diferido" in render()) is hay_diferidos, (
+        "el encabezado del bloque de `BLUEPRINT §14` y su contenido no dicen lo mismo: "
+        f"filas `DIF-` = {hay_diferidos}"
+    )
+
+
 def test_el_censo_de_invariantes_es_el_que_declara_el_blueprint() -> None:
+    # [T-7.24] Eran SEIS —cinco `[INVARIANTE · …]` y `[DIFERIDO · mini-ShakeMap]`— hasta el
+    # 2026-09-20, cuando esa única diferida se derogó y salió de la lista. Las cinco que
+    # quedan son las prohibiciones, y de ésas ninguna se deroga: bajar este número otra vez
+    # significaría haber tocado una de ellas.
     declarados = set(invariantes())
-    assert len(declarados) == 6, (
-        f"`BLUEPRINT §14` ya no declara 6 viñetas clasificadas sino {len(declarados)}: "
+    assert len(declarados) == 5, (
+        f"`BLUEPRINT §14` ya no declara 5 viñetas clasificadas sino {len(declarados)}: "
         f"{declarados}."
     )
     en_matriz = {r.rid for r in REGISTRO if r.rid.startswith(("INV-", "DIF-"))}

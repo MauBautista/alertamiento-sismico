@@ -139,6 +139,7 @@ consecuencia.
 | Una **firma inválida ni ejecuta ni acusa**; un comando **repetido** se rechaza; un comando **viejo** se rechaza aunque su firma sea válida | `RO-8.a`, `RO-8.f`, `RO-8.i` |
 | Un comando **sin acuse nunca se reporta como ejecutado**: vence y se marca vencido, y un acuse tardío no lo resucita | `RO-8.h` |
 | Hay **límite de tasa por usuario y sitio** sobre la superficie de comandos | `RO-8.d` — y el límite por sitio, sin prueba: §8, `RO-8.e` |
+| **Mapa de la sacudida por evento** (el «mini-ShakeMap» que el §5 daba por diferido hasta el 2026-09-20): la sacudida **medida** en cada inmueble instrumentado, la que el modelo de atenuación **predice** a esa distancia, y el **residuo** entre ambas. Medido y modelado se pintan distinto y cada valor viaja con su procedencia; fuera del alcance de los sensores se dice `SIN COBERTURA` en vez de extrapolar; y sin epicentro ni magnitud citados el mapa **existe degradado y lo declara**. No hay intensidad macrosísmica (MMI) ni isosistas: ver §5 | `D-08`, `design/BLOQUE-IV-ARQUITECTURA.md` parte A; `T-7.24` |
 
 ### 3.3 Consola SOC, app móvil y avisos
 
@@ -213,7 +214,7 @@ atrás, **hay que corregirlos antes de la puesta en servicio**.
 
 | El sistema no… | Estado |
 |---|---|
-| **Mapa de intensidad areal («mini-ShakeMap»)** | **Diferido** — es la única viñeta de `BLUEPRINT §14` que una tarea futura puede derogar (`T-3.09`). Hoy la consola **no pinta bandas de intensidad ni una leyenda que prometa una escala inexistente**, y hay una prueba que lo impide (`DIF-shakemap.a`). |
+| **Superficie de intensidad interpolada entre inmuebles, o isosistas** | **No se hace, y es deliberado.** Desde el 2026-09-20 sí hay mapa de la sacudida por evento (ver §3.2), pero con **puntos medidos**, un **modelo** y su **residuo**, jamás una superficie continua entre edificios: con unidades de estaciones, interpolar y llamarlo medición es prometer más de lo que el dato sostiene (`design/BLOQUE-IV-ARQUITECTURA.md §A.3`). |
 | **Intensidad MMI, aceleración espectral (Sa) o deriva de entrepiso** | No construidos (`T-3.06`…`T-3.08`). La deriva de entrepiso, además, **exige dos sensores por edificio**: con uno solo el número sería una invención. |
 | **Verificación por cámaras (CCTV/ONVIF) y conteo de aforo** | No construido (`Fase 3.2`). Aparece en el material de producto como visión; **no está en esta entrega**. |
 | **Feed en vivo de CIRES/SSN como fuente de eventos** | No contratado ni integrado (`T-3.13`, gate #8 abierto). El catálogo del SSN que muestra el panel es **contexto posterior**, no la alerta. |

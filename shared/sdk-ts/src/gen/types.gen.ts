@@ -15,6 +15,27 @@ export type ActiveDrillOut = {
     drill: DrillOut | null;
 };
 
+export type AnilloFeature = {
+    geometry: PoligonoGeometry;
+    properties: AnilloProps;
+    type?: 'Feature';
+};
+
+/**
+ * Capa 2 (MODELADO): un nivel de PGA constante y su radio en kilómetros.
+ */
+export type AnilloProps = {
+    pga_g: number;
+    procedencia?: 'modeled';
+    radio_km: number;
+    umbral: string;
+};
+
+export type AnillosOut = {
+    features: Array<AnilloFeature>;
+    type?: 'FeatureCollection';
+};
+
 /**
  * Lo que le toca a una estación. Segundos **desde el origen** del sismo.
  */
@@ -855,6 +876,25 @@ export type EpicenterRelocateOut = {
 };
 
 /**
+ * De dónde salió el sismo, con de dónde salió el dato.
+ *
+ * `fuente` es quién lo localizó (`seismic_events.source`) y `procedencia` es el
+ * estado del glosario (`shared/glossary/procedencia.json`). Son cosas distintas
+ * y las dos hacen falta: el centroide de nuestro propio cuórum es un epicentro
+ * NUESTRO, y presentarlo sin decirlo lo confundiría con la solución de una
+ * agencia.
+ */
+export type EpicentroOut = {
+    catalog_key?: string | null;
+    depth_km?: number | null;
+    fuente: string;
+    lat: number;
+    lon: number;
+    magnitud?: number | null;
+    procedencia: string;
+};
+
+/**
  * [T-2.31] Actuadores INSTALADOS físicamente en el sitio del gabinete.
  *
  * No toda estación tiene gas/ascensores/puertas. Contrato: 5 bools, default
@@ -1002,6 +1042,7 @@ export type EstacionOut = {
     lat?: number | null;
     lon?: number | null;
     peak_pga_g?: number | null;
+    peak_pgv_cms?: number | null;
     peak_ts?: string | null;
     sensor_code?: string | null;
     site_code: string;
@@ -1937,6 +1978,21 @@ export type MultiChannelFeatures = {
 };
 
 /**
+ * Un nivel de la capa 2 que **no se dibujó**, y por qué.
+ *
+ * Existe para que un umbral suprimido se DIGA: un anillo que falta sin
+ * explicación se lee como «ese umbral no existía», y aquí los umbrales son los
+ * que este sistema usa para decidir. `motivo` es el vocabulario cerrado de
+ * `shakemap.calculo.MOTIVOS_FUERA`, que trae también la frase para imprimirlo.
+ */
+export type NivelFueraOut = {
+    motivo: string;
+    pga_g: number;
+    radio_max_km: number | null;
+    umbral: string;
+};
+
+/**
  * Publicar el aviso del TENANT. No hay endpoint de edición y no lo habrá.
  */
 export type NoticeIn = {
@@ -2147,6 +2203,20 @@ export type PhoneErasureOut = {
 };
 
 /**
+ * Polígono GeoJSON: un anillo exterior cerrado, en grados.
+ *
+ * ⚠️ **En grados, no en píxeles.** La guarda que T-7.24 sustituye nació de dos
+ * capas de MapLibre con `circle-radius` en unidades de pantalla rotuladas
+ * «INTENSIDAD MMI»: el mismo anillo afirmaba ~22 km a zoom 8.5 y ~1 km a zoom
+ * 13. Un anillo que afirma «aquí el modelo predice 0.02 g» tiene que seguir
+ * afirmándolo a cualquier zoom, y para eso su geometría es geográfica.
+ */
+export type PoligonoGeometry = {
+    coordinates: Array<Array<Array<number>>>;
+    type?: 'Polygon';
+};
+
+/**
  * URL GET presignada de vida corta para descargar un objeto de evidencia.
  */
 export type PresignedDownload = {
@@ -2178,6 +2248,52 @@ export type ProfileOut = {
 export type ProfilePutIn = {
     display_name: string;
     phone?: string | null;
+};
+
+export type PuntoFeature = {
+    geometry: PuntoGeometry;
+    properties: PuntoProps;
+    type?: 'Feature';
+};
+
+/**
+ * Punto GeoJSON. ⚠️ `coordinates` es `[lon, lat]`, en ese orden.
+ */
+export type PuntoGeometry = {
+    coordinates: Array<number>;
+    type?: 'Point';
+};
+
+/**
+ * Capa 1 (OBSERVADO) + capa 3 (RESIDUO) de un inmueble.
+ *
+ * ⚠️ Ninguno de los campos anulables de abajo lleva ``= None``, y no es
+ * descuido: un defecto en el esquema sale del generador de OpenAPI como campo
+ * OPCIONAL, y entonces quien consume tiene que distinguir «la clave no vino»
+ * de «la clave vino en null» — dos preguntas donde el cable sólo responde
+ * una. Aquí la clave viaja SIEMPRE; lo que puede faltar es el VALOR, y eso es
+ * ``null`` con su razón escrita. El constructor de `shakemap/lectura.py` las
+ * pasa todas, una a una, y `web/src/sdkTypeParity.test.ts` cazó el espejo a
+ * mano que había divergido justo por esto.
+ */
+export type PuntoProps = {
+    dist_km: number | null;
+    hypo_km: number | null;
+    medido_en: string | null;
+    pga_g: number | null;
+    pga_g_modelada: number | null;
+    pgv_cms: number | null;
+    procedencia?: 'measured';
+    residuo_log10: number | null;
+    site_code: string;
+    site_id: string;
+    site_name: string;
+    voto_contado: boolean | null;
+};
+
+export type PuntosOut = {
+    features: Array<PuntoFeature>;
+    type?: 'FeatureCollection';
 };
 
 /**
@@ -2606,6 +2722,21 @@ export type SensorUpdate = {
     site_id: string;
     status?: 'active' | 'retired';
     zone_id?: string | null;
+};
+
+/**
+ * El mapa entero de un incidente.
+ */
+export type ShakemapOut = {
+    calculado_en: string | null;
+    cobertura_km: number;
+    epicentro: EpicentroOut | null;
+    estado: string;
+    fuera_de_alcance: Array<NivelFueraOut>;
+    incident_id: string;
+    ley: string | null;
+    modelado: AnillosOut | null;
+    observado: PuntosOut;
 };
 
 export type SiteAssetCreateIn = {
@@ -4704,6 +4835,33 @@ export type IncidentRosterIncidentsIncidentIdRosterGetResponses = {
 };
 
 export type IncidentRosterIncidentsIncidentIdRosterGetResponse = IncidentRosterIncidentsIncidentIdRosterGetResponses[keyof IncidentRosterIncidentsIncidentIdRosterGetResponses];
+
+export type IncidentShakemapIncidentsIncidentIdShakemapGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/shakemap';
+};
+
+export type IncidentShakemapIncidentsIncidentIdShakemapGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentShakemapIncidentsIncidentIdShakemapGetError = IncidentShakemapIncidentsIncidentIdShakemapGetErrors[keyof IncidentShakemapIncidentsIncidentIdShakemapGetErrors];
+
+export type IncidentShakemapIncidentsIncidentIdShakemapGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ShakemapOut;
+};
+
+export type IncidentShakemapIncidentsIncidentIdShakemapGetResponse = IncidentShakemapIncidentsIncidentIdShakemapGetResponses[keyof IncidentShakemapIncidentsIncidentIdShakemapGetResponses];
 
 export type TacticalAckIncidentsIncidentIdTacticalAckPostData = {
     body?: never;

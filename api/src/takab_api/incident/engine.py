@@ -48,6 +48,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger("takab_api.incident")
 
 _RECONNECT_BACKOFF_S = 1.0
+# Espera tras un error INESPERADO de una pasada (no de la DB). Constante con
+# nombre por lo mismo que la de arriba: es lo que una guarda tiene que poder
+# acelerar para medir varias vueltas del bucle sin dormir un segundo en cada una.
+_ERROR_BACKOFF_S = 1.0
 # Ventana ±s alrededor de opened_at donde se busca el pico de PGA en features.
 _PGA_WINDOW_S = 5.0
 # Clave del advisory lock (bigint) que serializa la correlación entre instancias
@@ -188,7 +192,12 @@ class IncidentEngine:
         minutos, más largo que el presupuesto de ``with_retry``) NO mata al worker
         —la conexión se (re)establece DENTRO del bucle, así que un fallo al
         reconectar simplemente reintenta en la siguiente vuelta—. La ingesta y la
-        actuación local del edge corren en procesos aparte y nunca dependen de esto."""
+        actuación local del edge corren en procesos aparte y nunca dependen de esto.
+
+        Y NINGUNA pasada puede matarlo: un fallo inesperado de cualquiera de ellas
+        se recoge, se tira la conexión de trabajo y se sigue dando vueltas. Lo mide
+        `tests/incident/test_engine.py`, que exige vueltas SOSTENIDAS después del
+        corte —estar vivo en el instante de reanudar no prueba nada—."""
         listen_conn: psycopg.Connection | None = None
         work_conn: psycopg.Connection | None = None
         try:
@@ -205,6 +214,7 @@ class IncidentEngine:
                     self._quorum_actuation_pass(work_conn)
                     self._dictamen_pass(work_conn)
                     self._lifecycle_pass(work_conn)
+                    self._shakemap_pass(work_conn)
                     self._consulta_catalogo_pass(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("engine: DB no disponible; reconecta")
@@ -218,10 +228,18 @@ class IncidentEngine:
                     if work_conn is not None:
                         try:
                             work_conn.rollback()
-                        except psycopg.Error:
+                        except Exception:
+                            # `Exception`, no `psycopg.Error`: la RECUPERACIÓN no
+                            # puede ser lo que mate al bucle. Lo que entra aquí es
+                            # un fallo INESPERADO de una pasada —cualquier cosa,
+                            # no sólo de la DB—, así que el rollback puede reventar
+                            # con cualquier cosa; si escapa, el worker se muere en
+                            # silencio y ya nadie correla, dictamina ni cierra
+                            # incidentes (#6). Se tira la conexión y se sigue.
+                            logger.exception("engine: rollback fallido; tira la conexión")
                             self._safe_close(work_conn)
                             work_conn = None
-                    self._stop.wait(1.0)
+                    self._stop.wait(_ERROR_BACKOFF_S)
         finally:
             self._safe_close(listen_conn)
             self._safe_close(work_conn)
@@ -294,6 +312,32 @@ class IncidentEngine:
         from takab_api.incident.lifecycle import run_lifecycle_pass
 
         run_lifecycle_pass(work_conn, self._settings)
+
+    def _shakemap_pass(self, work_conn: psycopg.Connection) -> None:
+        """[T-7.24 · D-08] El mini-ShakeMap del evento: tres capas que no se
+        mezclan —lo observado, lo modelado y el residuo por punto—, calculado una
+        vez y leído muchas. DESPUÉS de la pasada de fases, que es quien mete al
+        incidente en revisión: esa huella es la que mira para saber que ya hay
+        algo que mapear.
+
+        Y ANTES de la consulta al catálogo, aunque el epicentro que aquélla trae
+        sea justo lo que le falta a la capa modelada. El orden lo manda un
+        invariante ya probado: la única pasada que habla con un tercero va la
+        última, porque su lentitud no puede retrasar a nadie. El epicentro que
+        llegue entra en el mapa en la vuelta siguiente, por el mecanismo normal
+        de refresco — un mapa que no está `completo` se rehace.
+
+        Transacción propia, como el resto: un fallo aquí no puede revertir una
+        correlación, un dictamen ni un cierre ya escritos. Import perezoso, por lo
+        mismo que el dictamen.
+
+        **No es un microservicio** (blueprint §14 derogado por esta ficha): un
+        servicio más sería un despliegue más, una alarma más y una superficie más
+        que puede caerse, y lo que se calcula aquí no es continuo.
+        """
+        from takab_api.shakemap.servicio import run_shakemap_pass
+
+        run_shakemap_pass(work_conn, self._settings)
 
     def _consulta_catalogo_pass(self, work_conn: psycopg.Connection) -> None:
         """[T-7.25] Le pregunta a USGS por los incidentes que YA entraron en
@@ -472,8 +516,11 @@ class IncidentEngine:
 
     @staticmethod
     def _safe_close(conn: psycopg.Connection | None) -> None:
+        """Cierra sin poder fallar. `Exception`, no `psycopg.Error`: se llama desde
+        el `finally` del bucle y desde su recuperación, y un cierre que levanta
+        allí mata al worker — un `_safe_close` que puede reventar es una mentira."""
         if conn is not None:
             try:
                 conn.close()
-            except psycopg.Error:
-                pass
+            except Exception:
+                logger.debug("engine: cierre de conexión fallido; se ignora", exc_info=True)

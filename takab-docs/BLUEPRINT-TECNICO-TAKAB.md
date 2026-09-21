@@ -639,15 +639,43 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
 
 ## 14. Fuera de alcance / diferido explícito
 
-**No implementar en el ciclo actual** (aparecen en el deck de producto como visión, no como spec).
+**No implementar** (aparecen en el deck de producto como visión, no como spec).
 
-> **Esta sección NO es homogénea, y confundirlo es peligroso.** Cinco de las seis viñetas son
-> **prohibiciones permanentes** —`TASKS.md`, sección "INVARIANTES": *"una tarea futura que
-> proponga cualquiera de estas cosas se rechaza sin discusión"*—; **una sola está diferida**.
+> ⚠️ Decía «no implementar **en el ciclo actual**», y el 2026-09-20 dejó de ser cierto en el
+> sentido que importa: «en el ciclo actual» describía a la única viñeta diferida, y esa se
+> derogó. Lo que queda son prohibiciones sin fecha de caducidad; leerlas como aplazadas es
+> exactamente el error que esta sección existe para impedir. El título de la sección conserva
+> la palabra «diferido» porque es el ancla literal de dos censos —`test_docs_consistency` y
+> `test_matriz_trazabilidad` la buscan tal cual—, y moverlo es una ficha aparte, no un efecto
+> colateral de ésta.
+
+> **Esta sección NO es homogénea, y confundirlo es peligroso.** Las cinco viñetas que quedan
+> son **prohibiciones permanentes** —`TASKS.md`, sección "INVARIANTES": *"una tarea futura que
+> proponga cualquiera de estas cosas se rechaza sin discusión"*—: **ninguna está diferida**.
 > Por eso cada viñeta lleva su clase y su clave: **una tarea futura deroga una viñeta por su
 > clave, jamás "la §14"**. Derogar la sección entera tumbaría de un plumazo la regla de oro 1
 > (IA fuera de la ruta de disparo) y la 9 (sin streaming crudo continuo). Lo ancla
 > `api/tests/test_docs_consistency.py::test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes`.
+>
+> ### Derogaciones consumadas
+>
+> **2026-09-20 · `T-7.24` derogó `[DIFERIDO · mini-ShakeMap]`**, que era la **única** viñeta
+> diferida que esta sección tuvo — por eso el recuento de arriba pasó de «seis, una diferida» a
+> cinco. Se retira de la lista porque la lista dice qué NO se hace, y el mapa de la sacudida por
+> evento ya está construido: se calcula en el worker de incidentes que ya existía (no hay
+> microservicio nuevo), se sirve por `GET /incidents/{id}/shakemap` y se imprime en el dictamen
+> pericial. La razón de fondo es `D-08` y el diseño que encargó,
+> [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md) parte A: tres capas que
+> no se mezclan —medido, modelado y residuo—, cada valor con su procedencia y `SIN COBERTURA`
+> como estado propio.
+>
+> **Lo que esa derogación NO tocó, y no se deroga con ella:** las cinco `[INVARIANTE · …]` de
+> abajo. Dos de ellas son reglas de oro —la 9 (streaming crudo continuo) y la 1 (IA en la ruta
+> de disparo)— y el mapa se construye **de features**, no de forma de onda en vivo, que es
+> precisamente por qué no las roza. La vecindad de las viñetas es cómo se derogan juntas por
+> accidente: el registro de esta derogación lo lleva `CLAVES_YA_DEROGADAS` en
+> `api/tests/test_docs_consistency.py`, y la guarda sigue poniéndose roja ante una orden que
+> diga «derogar la §14» sin nombrar clave.
 
 - **T-MINUS countdown** — WR-1 es boolean; no hay dato de ETA. `[INVARIANTE · T-MINUS]`
 - **Magnitud preliminar** en UI — WR-1 no provee magnitud. `[INVARIANTE · magnitud preliminar]`
@@ -655,9 +683,6 @@ Agregar job `edge` al pipeline de CI (lint + unit + integración con simuladores
   `[INVARIANTE · streaming crudo continuo]`
 - **IA en la ruta determinista de seguridad** (P4) — regla de oro 1.
   `[INVARIANTE · IA en la ruta de disparo]`
-- **Microservicio "mini-ShakeMap"** (scipy/pykrige, PostGIS, MapLibre) — fase futura; **es la
-  única viñeta que una tarea puede derogar**, y la tarea que lo haría es `T-3.09`.
-  `[DIFERIDO · mini-ShakeMap]`
 - **Modificar el Shake OS** — el RS4D es solo sensor (P3). `[INVARIANTE · Shake OS]`
 
 ---

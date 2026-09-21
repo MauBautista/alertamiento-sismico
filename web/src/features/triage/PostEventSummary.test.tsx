@@ -4,6 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { ForensicsOut } from "@takab/sdk";
 
 import PostEventSummary, { catalogView, leadTimeView } from "./PostEventSummary";
+import {
+  ESTADOS_PROCEDENCIA,
+  pintaCifra,
+  rotuloProcedencia,
+  significadoProcedencia,
+} from "./procedencia";
 
 function forensics(over: Partial<ForensicsOut> = {}): ForensicsOut {
   return {
@@ -88,8 +94,12 @@ describe("catalogView · correlación con el catálogo de referencia (T-5.11)", 
         } as ForensicsOut["catalog_correlation"],
       }),
     );
-    expect(view.value).toBe("SIN CORRELACIÓN");
-    expect(view.note).toMatch(/criterio de identidad/);
+    // [T-7.25 · consola] El rótulo sale del glosario compartido y no de una
+    // cadena escrita aquí: el panel del gabinete, la consola y la app tienen que
+    // llamar a esto por el mismo nombre. Y el texto AFIRMA sobre el sismo —se
+    // consultó y nada del catálogo es éste—, que es lo que este estado significa.
+    expect(view.value).toBe(rotuloProcedencia("sin_correlacion"));
+    expect(view.note).toMatch(/NINGÚN evento suyo corresponde/i);
     // El ±120 s era TODO el criterio, y citarlo lo presentaba como suficiente.
     expect(view.note).not.toMatch(/120 s/);
   });
@@ -113,7 +123,7 @@ describe("catalogView · correlación con el catálogo de referencia (T-5.11)", 
         } as ForensicsOut["catalog_correlation"],
       }),
     );
-    expect(view.value).toBe("SIN CORRELACIÓN");
+    expect(view.value).toBe(rotuloProcedencia("sin_correlacion"));
     expect(view.note).toMatch(/ninguno es éste/);
     expect(view.note).toMatch(/SSN-CHILE/);
     expect(view.note).toMatch(/fuera del radio/);
@@ -192,6 +202,123 @@ describe("catalogView · correlación con el catálogo de referencia (T-5.11)", 
     expect(view.note).toMatch(/sin epicentro propio que contrastar/);
     // Y no inventa una distancia epicentro↔epicentro que no existe.
     expect(view.value).not.toMatch(/km [NSEO]/);
+  });
+});
+
+/**
+ * [T-7.25 · consola] SIN ACIERTO HAY CINCO HECHOS, Y LA PANTALLA LOS SEPARABA EN CERO.
+ *
+ * Éste es el mismo defecto que `dictamen/builder.py::_linea_sin_acierto` cerró en
+ * el PAPEL, vivo en la pantalla que mira el operador: `catalogView` no miraba
+ * `catalog_correlation.estado` y devolvía SIEMPRE «SIN CORRELACIÓN · Ningún
+ * sismo del catálogo de referencia satisface el criterio de identidad».
+ *
+ *     (a) no se preguntó              → se pintaba como (c)
+ *     (b) se preguntó, no contestaron → se pintaba como (c)
+ *     (c) contestaron, ninguno casa   → correcto, y era el ÚNICO correcto
+ *     (d) correlacionó · preliminar   → se pintaba como (c)
+ *     (e) correlacionó · confirmado   → se pintaba como (c)
+ *
+ * (c) es una afirmación SOBRE EL SISMO: exonera al catálogo de referencia. Y (a)
+ * es el caso NORMAL —la consulta automática se despliega apagada—, así que el
+ * operador leía en cada incidente la conclusión más comprometida de las cinco,
+ * sacada de una consulta que nadie hizo.
+ *
+ * Las ramas se DERIVAN del glosario compartido (`shared/glossary/procedencia.json`)
+ * y no de una lista escrita aquí: un sexto estado no puede heredar la afirmación
+ * más cara del bloque, y el censo de abajo lo caza en la primera corrida.
+ */
+describe("[T-7.25] catalogView separa los CINCO hechos, derivándolos del glosario", () => {
+  const criterio = { v_s_km_s: 3.6, margen_s: 30, radio_km: 1200, pga_minima_g: 0.001 };
+  const corr = (over: Record<string, unknown> = {}) =>
+    forensics({
+      catalog_correlation: {
+        estado: "sin_dato_externo",
+        criterio,
+        descartes: [],
+        ...over,
+      } as ForensicsOut["catalog_correlation"],
+    });
+
+  it("(a) nadie preguntó: NO se afirma nada sobre el catálogo", () => {
+    // El caso normal hoy, y el más caro de confundir.
+    const view = catalogView(corr({ estado: "sin_dato_externo" }));
+    expect(view.value).toBe(rotuloProcedencia("sin_dato_externo"));
+    expect(view.value).not.toBe(rotuloProcedencia("sin_correlacion"));
+    expect(view.note).toContain(significadoProcedencia("sin_dato_externo"));
+  });
+
+  it("(b) se preguntó y no han contestado: se dice a quién y cuándo", () => {
+    // Un «en vuelo» sin hora es otra forma de no decir nada: con ella se sabe si
+    // la pregunta es de hace un minuto o lleva seis horas sin respuesta.
+    const view = catalogView(
+      corr({ estado: "consultando", fuente: "USGS", consultado_en: "2026-08-03T10:05:00Z" }),
+    );
+    expect(view.value).toBe(rotuloProcedencia("consultando"));
+    expect(view.note).toMatch(/USGS/);
+    expect(view.note).toMatch(/2026-08-03 10:05/);
+  });
+
+  it("(d)/(e) correlacionó pero el criterio de identidad no lo reconoce: DISPUTA", () => {
+    // Los dos estados que PINTAN CIFRA sin que haya acierto son la cuarta vuelta
+    // de esta familia: el papel los llama CORRELACIÓN EN DISPUTA y la pantalla
+    // tiene que decir lo mismo. Exonerar al catálogo aquí sería elegir el
+    // desenlace más tranquilizador de los cinco.
+    for (const estado of ESTADOS_PROCEDENCIA.filter((e) => pintaCifra(e))) {
+      const view = catalogView(
+        corr({ estado, fuente: "SSN", consultado_en: "2026-08-03T10:07:00Z" }),
+      );
+      expect(view.value, estado).toMatch(/DISPUTA/);
+      expect(view.note, estado).toContain(rotuloProcedencia(estado));
+      expect(view.value, estado).not.toBe(rotuloProcedencia("sin_correlacion"));
+    }
+  });
+
+  it("un estado que esta consola no sabe traducir DECLARA su ignorancia, no exonera", () => {
+    const view = catalogView(corr({ estado: "reconsultando" }));
+    expect(view.value).toMatch(/NO INTERPRETABLE/);
+    expect(view.note).toMatch(/reconsultando/);
+    expect(view.value).not.toBe(rotuloProcedencia("sin_correlacion"));
+  });
+
+  it("sin correlación PUBLICADA tampoco se afirma nada del catálogo", () => {
+    // `catalog_correlation` ausente no es «se preguntó y nada casa»: es que este
+    // incidente no trae la consulta. El builder del dictamen la trata aparte por
+    // la misma razón.
+    const view = catalogView(forensics({ catalog_correlation: null }));
+    expect(view.value).toMatch(/SIN CONSULTA REGISTRADA/);
+    expect(view.value).not.toBe(rotuloProcedencia("sin_correlacion"));
+  });
+
+  it("CENSO · ningún estado del glosario hereda la afirmación de otro", () => {
+    // La guarda que no enumera: recorre los estados que declara el glosario y
+    // exige que cada uno produzca su propio rótulo. El día que alguien añada un
+    // sexto, esto se pone rojo en vez de dejarlo caer en el `else` acogedor.
+    const vistos = new Map<string, string>();
+    for (const estado of ESTADOS_PROCEDENCIA) {
+      const { value } = catalogView(corr({ estado }));
+      expect(value, `el estado ${estado} no dice nada propio`).toBeTruthy();
+      const gemelo = vistos.get(value);
+      // `preliminar` y `confirmado` COMPARTEN la frase de disputa a propósito —
+      // el papel hace lo mismo— y se separan por el rótulo del glosario, que va
+      // en la nota. Cualquier otra coincidencia es un estado heredando otro.
+      if (gemelo !== undefined) {
+        expect(
+          pintaCifra(estado) && pintaCifra(gemelo),
+          `«${estado}» se pinta igual que «${gemelo}»: ${value}`,
+        ).toBe(true);
+        expect(catalogView(corr({ estado })).note).toContain(rotuloProcedencia(estado));
+      }
+      vistos.set(value, estado);
+    }
+    expect(vistos.size).toBeGreaterThanOrEqual(ESTADOS_PROCEDENCIA.length - 1);
+  });
+
+  it("y el panel lo enseña: el estado viaja hasta la baldosa que se mira", () => {
+    arrange(corr({ estado: "consultando", fuente: "USGS", consultado_en: "2026-08-03T10:05:00Z" }));
+    const panel = screen.getByTestId("post-event-summary");
+    expect(panel).toHaveTextContent(rotuloProcedencia("consultando"));
+    expect(panel).not.toHaveTextContent(rotuloProcedencia("sin_correlacion"));
   });
 });
 

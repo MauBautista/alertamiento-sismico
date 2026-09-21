@@ -48,10 +48,14 @@ from takab_api.dictamen.model import (
     ESTADO_DE_CONSULTA_NO_INTERPRETABLE,
     SIN_CONSULTA_A_FUENTE_EXTERNA,
     ActionRow,
+    AnilloFila,
     CctvBlock,
     DanoFila,
     EvidenceRow,
+    NivelFueraFila,
     ReportModel,
+    SacudidaFila,
+    ShakemapBlock,
     fuentes_line,
 )
 from takab_api.dictamen.pdf import render
@@ -120,6 +124,40 @@ def _dano(**over) -> DanoFila:
         "fotos_omitidas": 0,
     }
     return DanoFila(**{**base, **over})
+
+
+def _sacudida(**over) -> ShakemapBlock:
+    """[T-7.24] El mapa de la sacudida COMPLETO, al que cada escenario le quita algo.
+
+    Local, como `_dano`, y por la misma razón: el `model()` compartido no trae
+    mapa —su estado por defecto es `pendiente`— y ponérselo dejaría sin escenario
+    al aviso que declara justamente eso.
+
+    Los dos inmuebles llevan residuo de signo OPUESTO a propósito: es lo que
+    obliga a que la tabla se dibuje con datos de verdad y no con un caso trivial.
+    """
+    base = {
+        "estado": "completo",
+        "ley": "ATTEN-LAW v1",
+        "calculado_en": _OPENED,
+        "cobertura_km": 25.0,
+        "epicentro_lat": 16.80,
+        "epicentro_lon": -99.50,
+        "epicentro_magnitud": 7.1,
+        "epicentro_fuente": "SSN",
+        "epicentro_procedencia": "confirmado",
+        "puntos": [
+            SacudidaFila(
+                "CHL-A", "Planta Cholula", 19.06, -98.30, 0.081, 3.2, 187.0, 0.041, 0.31, True
+            ),
+            SacudidaFila("CDMX-1", "Torre CDMX", 19.43, -99.13, 0.012, 0.6, 112.0, 0.068, -0.75),
+        ],
+        "anillos": [
+            AnilloFila(pga_g=0.070, radio_km=40.0, umbral="pga_watch_g"),
+            AnilloFila(pga_g=0.020, radio_km=100.0, umbral="correlacion_min_pga_g"),
+        ],
+    }
+    return ShakemapBlock(**{**base, **over})
 
 
 #: Para cada aviso: cómo se fabrica el documento que DEBE llevarlo, y en qué
@@ -291,6 +329,129 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         lambda: model(fuentes_externas=fuentes_line(True)),
         frozenset({"technical"}),
     ),
+    # [T-7.24] Los del mapa de la sacudida. Sólo en el pericial: el ejecutivo
+    # son cuatro preguntas, no una figura.
+    #
+    # La leyenda de procedencia y el `SIN COBERTURA` salen SIEMPRE que hay figura:
+    # son el invariante de presentación de `D-08 · §A.3` escrito en el papel, y sin
+    # ellos un anillo y un disco en la misma caja se leen como dos medidas de lo
+    # mismo.
+    "SHAKEMAP_LEYENDA": (lambda: model(shakemap=_sacudida()), frozenset({"technical"})),
+    "SHAKEMAP_SIN_COBERTURA": (
+        lambda: model(shakemap=_sacudida()),
+        frozenset({"technical"}),
+    ),
+    # [T-7.24 · 2ª vuelta] Las CUATRO piezas de la leyenda, cada una por su lado.
+    # La leyenda era una frase cerrada que se imprimía pasara lo que pasara y
+    # describía anillos y cruz sobre figuras que no los dibujan; ahora cada símbolo
+    # es una pieza y `pdf._leyenda_del_mapa` elige las que la figura trae. Que
+    # existan por separado en el censo no es contabilidad: es lo que obliga a
+    # declarar QUÉ documento dibuja cada símbolo.
+    "LEYENDA_DISCO": (lambda: model(shakemap=_sacudida()), frozenset({"technical"})),
+    "LEYENDA_ANILLO": (lambda: model(shakemap=_sacudida()), frozenset({"technical"})),
+    "LEYENDA_CRUZ": (lambda: model(shakemap=_sacudida()), frozenset({"technical"})),
+    # El único que NO sale del escenario completo: hace falta un inmueble con
+    # coordenadas y SIN `pga_g`, que es el que se pintaba como disco lleno —o sea,
+    # como una medición— mientras la tabla decía «SIN DATO» de él.
+    "LEYENDA_SIN_DATO": (
+        lambda: model(
+            shakemap=_sacudida(
+                puntos=[
+                    SacudidaFila(
+                        "CHL-A",
+                        "Planta Cholula",
+                        19.06,
+                        -98.30,
+                        0.081,
+                        3.2,
+                        187.0,
+                        0.041,
+                        0.31,
+                        True,
+                    ),
+                    SacudidaFila(
+                        "MUDO-1", "Torre Muda", 19.43, -99.13, None, None, 112.0, 0.068, None
+                    ),
+                ]
+            )
+        ),
+        frozenset({"technical"}),
+    ),
+    # [T-7.24 · 2ª vuelta] La frase que la §5 AÑADE sólo cuando el mapa de verdad
+    # trae modelo y residuo. Vivía dentro de `NO_MMI` y se imprimía siempre, o sea
+    # también en el caso normal —el mapa se calcula por evento— donde tres
+    # secciones más abajo el mismo documento dice «NO CALCULADO TODAVÍA».
+    "MODELO_Y_RESIDUO": (lambda: model(shakemap=_sacudida()), frozenset({"technical"})),
+    # [T-7.24 · 2ª vuelta] Y el quinto estado, que no es un estado del cálculo sino
+    # de ESTE documento: el snapshot no se pudo leer. Lo escribe el builder, que
+    # ahora lee best-effort como el CCTV y la onda cruda.
+    "SHAKEMAP_NO_LEIDO": (
+        lambda: model(shakemap=ShakemapBlock(fallo_de_lectura="la lectura del snapshot falló")),
+        frozenset({"technical"}),
+    ),
+    # Y los cuatro estados, que significan cosas distintas y se leerían igual con
+    # un hueco. `pendiente` es el del `model()` pelado: un modelo construido a mano
+    # no tiene mapa calculado, y eso es exactamente lo que el papel debe decir.
+    "SHAKEMAP_PENDIENTE": (model, frozenset({"technical"})),
+    "SHAKEMAP_SIN_DATOS": (
+        lambda: model(shakemap=ShakemapBlock(estado="sin_datos", calculado_en=_OPENED)),
+        frozenset({"technical"}),
+    ),
+    # ⚠️ [T-7.24 · 3ª vuelta] Los puntos pierden TAMBIÉN `pga_g_modelada` y el
+    # residuo. Un `solo_observado` que los conservara sería un snapshot que dice
+    # «no modelé» trayendo el modelo dentro — y desde esta vuelta ya no imprime
+    # este aviso, sino `SHAKEMAP_SIN_ANILLOS`, porque un documento que imprime la
+    # columna MODELO sí modela aunque no dibuje anillos.
+    "SHAKEMAP_DEGRADADO": (
+        lambda: model(
+            shakemap=_sacudida(
+                estado="solo_observado",
+                ley=None,
+                epicentro_lat=None,
+                epicentro_lon=None,
+                epicentro_magnitud=None,
+                anillos=[],
+                puntos=[
+                    SacudidaFila(
+                        "CHL-A", "Planta Cholula", 19.06, -98.30, 0.081, 3.2, None, None, None, True
+                    )
+                ],
+            )
+        ),
+        frozenset({"technical"}),
+    ),
+    # [T-7.24 · 3ª vuelta] Y el caso que NO es degradado aunque lo pareciera: el
+    # modelo corrió, va por inmueble en la tabla, y aun así no hay un solo anillo
+    # porque todos sus niveles quedaron bajo la superficie. Con el foco a 48 km es
+    # lo que devuelve el cálculo para un M5.0 (`tests/shakemap/test_calculo.py`), y
+    # con la frase del degradado el papel negaba —ocho líneas antes— el residuo que
+    # él mismo imprime.
+    "SHAKEMAP_SIN_ANILLOS": (
+        lambda: model(
+            shakemap=_sacudida(
+                anillos=[],
+                fuera_de_alcance=[
+                    NivelFueraFila(umbral="pga_watch_g", pga_g=0.040, motivo="bajo_la_superficie")
+                ],
+            )
+        ),
+        frozenset({"technical"}),
+    ),
+    "SHAKEMAP_SIN_GEOMETRIA": (
+        lambda: model(
+            shakemap=_sacudida(
+                epicentro_lat=None,
+                epicentro_lon=None,
+                anillos=[],
+                puntos=[
+                    SacudidaFila(
+                        "CHL-A", "Planta Cholula", None, None, 0.081, 3.2, 187.0, 0.041, 0.31, True
+                    )
+                ],
+            )
+        ),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -409,9 +570,22 @@ def test_el_espia_NO_esta_ciego() -> None:
     # correlacionó y el criterio de identidad de aquí que no reconoce el acierto
     # (`CORRELACION_EN_DISPUTA`, `preliminar` y `confirmado`), y el suelo de esa
     # línea para un estado que el papel no sepa traducir.
-    assert len(ESCENARIOS) == 34, "cambió el número de avisos declarados"
+    # 34 → 40 en `T-7.24`: los seis del mapa de la sacudida — la leyenda de
+    # procedencia, el `SIN COBERTURA`, y los cuatro estados del mapa (no
+    # calculado todavía, calculado y sin medidas, medido y sin con qué
+    # compararlo, y medido sin coordenadas con las que situarlo).
+    # 40 → 46 en la 2ª vuelta de `T-7.24`: la leyenda se partió en sus cuatro
+    # símbolos —disco, círculo vacío, anillo y cruz— porque describía símbolos que
+    # la figura no dibuja; la frase del modelo y el residuo salió de `NO_MMI`,
+    # donde se imprimía aunque el mapa estuviera sin calcular; y el snapshot que
+    # no se puede LEER dejó de disfrazarse de `pendiente`.
+    # 46 → 47 en la 3ª vuelta de `T-7.24`: un mapa puede modelar cada inmueble y
+    # no dibujar un solo anillo —todos los niveles bajo la superficie— y eso NO es
+    # el caso degradado: aquel aviso dice «ni se calcula el residuo» sobre un
+    # documento que imprime el residuo ocho líneas más abajo.
+    assert len(ESCENARIOS) == 47, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 33, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 46, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

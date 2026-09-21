@@ -73,7 +73,14 @@ INSERT INTO _purgar (t) VALUES
   -- así que sin esta línea quedarían filas apuntando a incidentes borrados. El
   -- catálogo que la consulta escribió (`reference_earthquakes`) SÍ se conserva:
   -- es dato científico citable, no historial de estas pruebas.
-  ('catalog_consultations');
+  ('catalog_consultations'),
+  -- [T-7.24] El mini-ShakeMap es una FOTO de un incidente de estas pruebas, y se
+  -- va con él. Su `ON DELETE CASCADE` no lo salvaría: esta transacción corre con
+  -- `session_replication_role = replica`, que apaga también los triggers de FK,
+  -- así que sin esta línea quedarían mapas apuntando a incidentes borrados. Y no
+  -- se pierde nada recalculable: el mapa se deriva de features y del catálogo,
+  -- que se purgan y se conservan por su cuenta.
+  ('incident_shakemap');
 
 CREATE TEMP TABLE _conservar (t text PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO _conservar (t) VALUES
@@ -132,6 +139,7 @@ SELECT 'ANTES · ' || t AS q, n FROM (
 
 -- --- 2) La purga, hijo→padre por legibilidad (las FKs están desactivadas) ------
 DELETE FROM catalog_consultations;   -- [T-7.25] antes que `incidents`
+DELETE FROM incident_shakemap;       -- [T-7.24] ídem: el CASCADE no corre en replica-mode
 DELETE FROM notification_jobs;
 DELETE FROM notify_template_quarantine;
 DELETE FROM ops_alert_notices;
@@ -197,6 +205,8 @@ SELECT 'huerfanos_' || t AS chequeo, n FROM (
   SELECT 'evidencia', count(*) FROM evidence_objects e
     LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
   SELECT 'consultas', count(*) FROM catalog_consultations cc
+    LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
+  SELECT 'mapas', count(*) FROM incident_shakemap ism
     LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
   SELECT 'drill_sites', count(*) FROM drill_sites ds
     LEFT JOIN drills dr USING (drill_id) WHERE dr.drill_id IS NULL            UNION ALL

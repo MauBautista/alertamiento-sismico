@@ -1526,3 +1526,59 @@ describe("un botón apagado tiene que PARECER apagado", () => {
     );
   });
 });
+
+describe("[T-7.24] las muestras del mapa de la sacudida REPITEN la forma del mapa", () => {
+  // `D-08 · §A.3`: jamás la misma codificación visual para lo medido y lo
+  // estimado. El mapa lo cumple en el `paint` de MapLibre —disco relleno vs
+  // anillo `line-dasharray`—, y la LEYENDA tiene que decir lo mismo o deja de
+  // explicar el mapa que tiene delante.
+  //
+  // Ninguna guarda cubría estas clases: cambiar `dashed` por `solid` en la
+  // muestra del MODELO —la leyenda dejando de reflejar el trazo discontinuo del
+  // mapa— dejaba 146 pruebas en verde. Un `vitest` de componente no lo puede
+  // ver: jsdom no pinta bordes.
+  const MEDIDO = rulesFor(ALL_BASE, ".soc-map__sw--medido");
+  const MODELO = rulesFor(ALL_BASE, ".soc-map__sw--modelo");
+  const COBERTURA = rulesFor(ALL_BASE, ".soc-map__sw--cobertura");
+
+  it("las tres muestras tienen regla (sin esto, lo de abajo compara vacíos)", () => {
+    expect(MEDIDO, ".soc-map__sw--medido no tiene regla").not.toBe("");
+    expect(MODELO, ".soc-map__sw--modelo no tiene regla").not.toBe("");
+    expect(COBERTURA, ".soc-map__sw--cobertura no tiene regla").not.toBe("");
+  });
+
+  it("MEDIDO va RELLENO: el relleno es lo que afirma que hay un valor", () => {
+    const fondo = declValue(MEDIDO, "background");
+    expect(fondo, "una muestra de lo medido sin relleno no distingue nada").not.toBeNull();
+    expect(fondo).not.toBe("transparent");
+  });
+
+  it("MODELO va HUECO y DISCONTINUO, como el anillo que describe", () => {
+    expect(declValue(MODELO, "background")).toBe("transparent");
+    expect(
+      declValue(MODELO, "border"),
+      "el anillo del mapa es `line-dasharray`; la muestra tiene que serlo también",
+    ).toMatch(/\bdashed\b/);
+  });
+
+  it("COBERTURA va HUECO y CONTINUO: es un límite, no una estimación", () => {
+    // La capa `shakemap-cobertura` pinta `circle-stroke-*` sobre un relleno
+    // transparente. Una muestra rellena prometería que el mapa tiñe el área de
+    // fuera, y el área de fuera es el resto del mundo.
+    expect(declValue(COBERTURA, "background")).toBe("transparent");
+    const borde = declValue(COBERTURA, "border");
+    expect(borde).toMatch(/\bsolid\b/);
+    expect(borde, "un límite discontinuo se leería como otra estimación").not.toMatch(/\bdashed\b/);
+  });
+
+  it("y las tres se distinguen entre sí SIN mirar el color", () => {
+    // Quien no distingue el rojo del ámbar tiene que poder separar «lo midió un
+    // edificio», «lo estima un modelo» y «hasta aquí llega lo medido».
+    const forma = (bloque: string): string =>
+      `${declValue(bloque, "background") ?? "—"}/${declValue(bloque, "border") ?? "—"}`.replace(
+        /#[0-9A-Fa-f]{3,8}|var\([^)]*\)/g,
+        "TINTA",
+      );
+    expect(new Set([forma(MEDIDO), forma(MODELO), forma(COBERTURA)]).size).toBe(3);
+  });
+});

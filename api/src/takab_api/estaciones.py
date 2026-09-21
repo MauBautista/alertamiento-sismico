@@ -67,8 +67,18 @@ SELECT s.site_id, s.code AS site_code, s.name AS site_name,
 #: Pico del sitio en la ventana y el PRIMER segundo por encima del umbral. Los
 #: dos en una sola pasada: dos consultas sobre la misma ventana se desincronizan
 #: en cuanto alguien toca una.
+#:
+#: ⚠️ `peak_pgv_cms` se añadió el 2026-09-21 A ESTA MISMA consulta, y no en otra:
+#: el mapa de la sacudida (`T-7.24`) prometía PGV por inmueble —el PDF del
+#: dictamen le imprime una columna— y lo publicaba siempre vacío porque aquí no
+#: se leía. Es el mismo escaneo y la misma ventana; abrir una consulta aparte
+#: para un solo campo habría dado un segundo camino a los mismos números.
+#: Los dos picos son máximos INDEPENDIENTES sobre la ventana —como en
+#: `forensics.build_forensics`—: no tienen por qué caer en el mismo segundo ni en
+#: el mismo canal, y forzarlo a la vez sería inventar una correlación.
 _MEDIDO = text("""
 SELECT max(wf.pga_g)::float8 AS peak_pga_g,
+       max(wf.pgv_cms)::float8 AS peak_pgv_cms,
        (array_agg(wf.ts ORDER BY wf.pga_g DESC NULLS LAST))[1] AS peak_ts,
        min(wf.ts) FILTER (WHERE wf.pga_g >= :umbral) AS primer_ts
   FROM waveform_features_1s_secure wf
@@ -227,6 +237,7 @@ async def _una_estacion(
             else None
         ),
         peak_pga_g=None if medido is None else medido.peak_pga_g,
+        peak_pgv_cms=None if medido is None else medido.peak_pgv_cms,
         peak_ts=None if medido is None else medido.peak_ts,
         umbral_pga_g=piso,
         umbral_origen=umbral.origen,
