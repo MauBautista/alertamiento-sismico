@@ -348,6 +348,21 @@ class EdgeSettings(BaseSettings):
     def seedlink_station_code(self) -> str:
         return self.seedlink_station or self.station
 
+    @property
+    def seedlink_nslc(self) -> list[str]:
+        """[T-7.23] Identidad COMPLETA `red.estación.loc.canal`, una por canal.
+
+        `station_code` (`red.estación`) es contrato con la nube y no se toca; el
+        panel necesita además la localización y el canal para poder rotular la
+        traza como la rotula cualquier sismógrafo. Se DERIVA aquí y en ningún
+        otro sitio: la misma cadena compuesta en dos lugares acaba divergiendo
+        el día que alguien cambie `seedlink_location`.
+        """
+        return [
+            f"{self.seedlink_network}.{self.seedlink_station_code}.{self.seedlink_location}.{canal}"
+            for canal in self.seedlink_channels
+        ]
+
     # --- Cloud (AWS IoT Core) ---
     mqtt_endpoint: str = ""
     mqtt_port: int = 8883

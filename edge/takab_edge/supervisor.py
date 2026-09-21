@@ -426,6 +426,16 @@ class EdgeSupervisor:
             # `station`: dos formas de escribirlo aquí acabarían divergiendo.
             iot_thing=s.thing_name,
             station_code=f"{s.seedlink_network}.{s.seedlink_station_code}",
+            # [T-7.23] Y la identidad COMPLETA, `red.estación.loc.canal`, que es
+            # como rotula la traza cualquier sismógrafo. Se DERIVA en los ajustes
+            # (`seedlink_nslc`) y no aquí: componerla dos veces es cómo se acaba
+            # con dos identidades para la misma estación.
+            station_nslc=s.seedlink_nslc,
+            # [T-7.23] El anillo de disco, para el helicorder de la vista
+            # sismógrafo. Sólo se LEE, y por un camino acotado propio: el del
+            # anillo (`extract_window`) lee el fichero del día entero — 2.9 s y
+            # 159 MB de RSS medidos en el Pi 4 — y eso no cabe en una pantalla.
+            buffer=self.buffer,
             refresh_ms=s.local_api_refresh_ms,
             audio=self.audio,
             drill=self.drill,

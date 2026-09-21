@@ -205,6 +205,7 @@ class IncidentEngine:
                     self._quorum_actuation_pass(work_conn)
                     self._dictamen_pass(work_conn)
                     self._lifecycle_pass(work_conn)
+                    self._consulta_catalogo_pass(work_conn)
                 except psycopg.OperationalError:
                     logger.exception("engine: DB no disponible; reconecta")
                     self._safe_close(work_conn)
@@ -293,6 +294,24 @@ class IncidentEngine:
         from takab_api.incident.lifecycle import run_lifecycle_pass
 
         run_lifecycle_pass(work_conn, self._settings)
+
+    def _consulta_catalogo_pass(self, work_conn: psycopg.Connection) -> None:
+        """[T-7.25] Le pregunta a USGS por los incidentes que YA entraron en
+        revisión. DESPUÉS de la pasada de fases, que es quien los mete ahí, y con
+        transacción propia — aquí se commitea varias veces a propósito (el
+        intento antes de salir a la red, el desenlace después), así que no puede
+        compartir transacción con nada anterior.
+
+        **Es la única pasada que habla con un tercero**, y por eso es la última:
+        si USGS tarda seis segundos, lo que se retrasa es la siguiente vuelta del
+        bucle, nunca un dictamen, un cierre ni una correlación ya escritos. Con
+        `catalog_usgs_enabled=False` —el defecto— no abre un socket.
+
+        Import perezoso, como el resto: sin la bandera puesta el proceso no carga
+        ni el cliente HTTP."""
+        from takab_api.catalogo.consulta import run_consulta_catalogo_pass
+
+        run_consulta_catalogo_pass(work_conn, self._settings)
 
     # ----------------------------------------------------------- correlación
 

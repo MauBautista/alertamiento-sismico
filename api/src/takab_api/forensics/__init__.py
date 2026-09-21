@@ -190,6 +190,39 @@ def _lead_time(opened_trigger: str, opened, peak_ts, band: str) -> tuple[float |
     return delta, None
 
 
+def _fila_consultada(consulta: dict | None) -> dict | None:
+    """[T-7.25] La fila de catálogo que el worker dio por buena, o ``None``.
+
+    Viene en el mismo `SELECT` que la consulta (`LEFT JOIN` por `catalog_key`) y
+    se le devuelve a `procedencia.de_consulta` con los nombres que ésta espera.
+    El llamador le pasaba siempre `None`, y entonces su cuarta rama —«contestó y
+    casó»— degradaba a `sin_dato_externo`: la superficie decía «nadie preguntó»
+    de un incidente cuya consulta había correlacionado.
+    """
+    if not consulta or consulta.get("catalog_key") is None or consulta.get("ref_source") is None:
+        return None
+    return {
+        "source": consulta["ref_source"],
+        "consulted_at": consulta["ref_consulted_at"],
+        "review_status": consulta["ref_review_status"],
+        "provider_event_id": consulta["ref_provider_event_id"],
+    }
+
+
+def _viste_procedencia(correlation: CatalogCorrelation, p: pr.Procedencia) -> None:
+    """Los TRES campos de la procedencia viajan juntos, o el estado va desnudo.
+
+    [T-7.25] `de_consulta` ya calculaba `fuente` y `consultado_en` y el llamador
+    los tiraba: `consultando` llegaba a la consola sin la hora de la pregunta y
+    no había forma de distinguir uno de hace seis horas de uno de hace dos
+    segundos (regla de oro 7). Se asignan en un solo sitio para que no puedan
+    volver a separarse.
+    """
+    correlation.estado = p.estado
+    correlation.fuente = p.fuente
+    correlation.consultado_en = p.consultado_en
+
+
 async def _catalog(
     conn: AsyncConnection, inc: dict, site: SiteGeo | None, s: Settings
 ) -> tuple[CatalogMatch | None, CatalogDelta | None, CatalogCorrelation]:
@@ -237,10 +270,20 @@ async def _catalog(
     )
 
     correlation = CatalogCorrelation(
-        # Consultamos el catálogo y no encontramos nada compatible: eso es un
-        # HECHO sobre el evento (probablemente local y pequeño), no una ausencia
-        # de datos. `sin_dato_externo` sería mentir sobre no haber preguntado.
-        estado=pr.SIN_CORRELACION,
+        # ⚠️ El suelo es `sin_dato_externo` —«nadie preguntó»— y NO
+        # `sin_correlacion`. Aquí ponía lo segundo, razonando que «consultamos el
+        # catálogo y no encontramos nada compatible es un HECHO sobre el
+        # evento»; pero el catálogo de esta tabla es lo que alguien sembró, y
+        # mirarlo no es preguntarle a nadie. Con la consulta externa encendida y
+        # sin fila de intento, eso imprimía en un papel firmado «ningún sismo
+        # publicado satisface el criterio de identidad con este incidente»
+        # cuando lo cierto era que ese incidente no se había consultado todavía.
+        # Los tres hechos son distintos y el sistema tiene que distinguirlos:
+        # (a) no se preguntó · (b) se preguntó y no contestaron · (c) contestaron
+        # y ninguno casa. Las dos ramas de abajo lo sobrescriben SIEMPRE; esto es
+        # lo que se afirmaría si alguna dejara de hacerlo, y de las tres
+        # afirmaciones posibles ésta es la única que no puede mentir.
+        estado=pr.SIN_DATO_EXTERNO,
         criterio=CatalogCriterion(
             v_s_km_s=criterio.v_s_km_s,
             margen_s=criterio.margen_s,
@@ -261,6 +304,21 @@ async def _catalog(
         ],
     )
     if resultado.acierto is None:
+        # [T-7.25] Sin nada que mostrar, quien decide el estado es el INTENTO de
+        # consulta a la fuente viva, no la tabla: afirmar `sin_correlacion`
+        # mientras una pregunta sigue en vuelo —o mientras un timeout la dejó sin
+        # contestar— es dar por concluido lo que no ha concluido.
+        #
+        # ⚠️ Y se deriva TAMBIÉN cuando no hay fila, que es la otra mitad y la
+        # que se quedó sin arreglar en la primera vuelta: esto era
+        # `if consulta is not None`, así que sin intento el estado se quedaba en
+        # el `sin_correlacion` del constructor — «nadie preguntó» impreso como
+        # «se preguntó y no hay». `de_consulta(None, None)` devuelve
+        # `sin_dato_externo`, que es el caso (a), y era una rama que la suite
+        # acreditaba y la producción no ejecutaba nunca.
+        consulta = await q.catalog_consultation(conn, str(inc["incident_id"]))
+        c = dict(consulta._mapping) if consulta is not None else None
+        _viste_procedencia(correlation, pr.de_consulta(c, _fila_consultada(c)))
         return None, None, correlation
 
     fila = next(f for f in filas if f["catalog_key"] == resultado.acierto.catalog_key)
@@ -273,7 +331,7 @@ async def _catalog(
     # [T-5.10] La cifra externa solo se pinta con procedencia. Casar no la
     # concede: una fila sin hora de consulta ni estado de revisión es un dato que
     # existe y no es citable, y degrada a `sin_dato_externo`.
-    correlation.estado = pr.de_fila(fila).estado
+    _viste_procedencia(correlation, pr.de_fila(fila))
 
     km = bearing = None
     tiene_epicentro_propio = inc["epi_lat"] is not None and inc["epi_lon"] is not None

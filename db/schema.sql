@@ -2053,15 +2053,82 @@ CREATE TABLE reference_earthquakes (
   provider_event_id text                            -- id del evento EN la fuente
 );
 CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
+-- [T-7.25] La IDENTIDAD de una fila de catálogo es `(source, provider_event_id)`,
+-- no `catalog_key`. `catalog_key` es una clave que nos inventamos nosotros
+-- ('USGS-2017-09-19-PUE' en el seed) y el worker de consulta no puede
+-- reproducirla: si la identidad fuera ésa, reconsultar el evento `us2000ar20`
+-- —que ya está sembrado— insertaría un segundo Puebla-Morelos 2017 y el catálogo
+-- tendría dos verdades sobre el mismo sismo. Va PARCIAL porque las filas sin
+-- identificador de proveedor están fuera POR DECISIÓN, no por el hecho de que en
+-- SQL dos NULL no colisionen.
+CREATE UNIQUE INDEX uq_ref_eq_provider_event
+  ON reference_earthquakes (source, provider_event_id)
+  WHERE provider_event_id IS NOT NULL;
 GRANT SELECT ON reference_earthquakes TO takab_app;
 -- [T-7.14] El worker de reproducción lee de aquí la magnitud y el epicentro
 -- que viste el incidente.
-GRANT SELECT ON reference_earthquakes TO takab_ingest;
+-- [T-7.25] Y el worker de consulta al catálogo lo ESCRIBE: es el único escritor
+-- de esta tabla junto con el seed. Hasta la 0068 aquí ponía sólo SELECT y el
+-- worker escribía igualmente en una base nueva, por el `GRANT … ON ALL TABLES`
+-- con que termina la 0001 — un privilegio que no estaba concedido en ninguna
+-- parte, sólo heredado del orden de la migración inicial.
+GRANT SELECT, INSERT, UPDATE ON reference_earthquakes TO takab_ingest;
+-- ⚠️ Escrito aquí para que el esquema DIGA la intención, y REPETIDO en la 0068
+-- por la misma razón que en `catalog_consultations`: la 0001 aplica este fichero
+-- y DESPUÉS concede `ALL TABLES` a `takab_app`, así que un revoke que viva sólo
+-- aquí lo deshace la propia migración inicial. Sin él, la API salía con INSERT,
+-- UPDATE y DELETE sobre el catálogo en cuanto esta ficha lo volvió escribible.
+REVOKE INSERT, UPDATE, DELETE ON reference_earthquakes FROM takab_app;
 
 ALTER TABLE reference_earthquakes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reference_earthquakes FORCE  ROW LEVEL SECURITY;
 CREATE POLICY ref_eq_read ON reference_earthquakes FOR SELECT
   USING (app_role() IS NOT NULL);
+
+-- [T-7.25] EL INTENTO de preguntarle a una fuente externa por un incidente.
+--
+-- Existe porque `consultando` —«se le preguntó a la fuente y todavía no
+-- contestó», shared/glossary/procedencia.json— era INALCANZABLE: el estado se
+-- derivaba de una fila de `reference_earthquakes`, y mientras la pregunta está
+-- en vuelo esa fila no existe. Un timeout, un 5xx o un worker que muere a mitad
+-- se leían igual que «nadie preguntó nunca» (`sin_dato_externo`), que es
+-- exactamente la confusión que el glosario existe para impedir.
+--
+-- La fila se escribe y se COMMITEA **antes** de la llamada HTTP. Ése es todo el
+-- mecanismo: el hecho «pregunté» tiene que sobrevivir a que el worker no vuelva.
+--
+-- Escritura: NADIE vía API (sólo SELECT y sin política de escritura) — el worker
+-- `takab_ingest` (BYPASSRLS) es el único escritor, que es el criterio de la
+-- ficha convertido en privilegio.
+CREATE TABLE catalog_consultations (
+  incident_id     uuid NOT NULL REFERENCES incidents(incident_id) ON DELETE CASCADE,
+  provider        text NOT NULL CHECK (provider IN ('USGS')),
+  tenant_id       uuid NOT NULL REFERENCES tenants(tenant_id),
+  asked_at        timestamptz NOT NULL,      -- la PRIMERA vez; no se reescribe jamás
+  last_attempt_at timestamptz NOT NULL,      -- el reloj del reintento
+  attempts        int NOT NULL DEFAULT 1 CHECK (attempts > 0),
+  answered_at     timestamptz,               -- NULL = NO CONTESTÓ ⇒ `consultando`
+  outcome         text CHECK (outcome IS NULL OR outcome IN
+                              ('correlacionado','sin_correlacion','sin_respuesta')),
+  catalog_key     text,                      -- clave NUESTRA, no la del proveedor
+  detail          text NOT NULL DEFAULT '',  -- la razón, para quien lea a las 3 a.m.
+  PRIMARY KEY (incident_id, provider)
+);
+CREATE INDEX idx_catalog_consult_pendientes
+  ON catalog_consultations (last_attempt_at)
+  WHERE answered_at IS NULL;
+GRANT SELECT ON catalog_consultations TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON catalog_consultations TO takab_ingest;
+-- ⚠️ Escrito aquí para que el esquema DIGA la intención, y REPETIDO en la 0068
+-- porque aquí solo no basta: la 0001 aplica este fichero y DESPUÉS concede
+-- `ALL TABLES` a `takab_app`, así que un revoke que viva únicamente en este
+-- punto lo deshace la propia migración inicial. Medido el 2026-09-20.
+REVOKE INSERT, UPDATE, DELETE ON catalog_consultations FROM takab_app;
+
+ALTER TABLE catalog_consultations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_consultations FORCE  ROW LEVEL SECURITY;
+CREATE POLICY cc_read ON catalog_consultations FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
 
 -- Reubicación de epicentro: función SECURITY DEFINER
 -- `relocate_incident_epicenter(incident_id, lon, lat)` (dueña takab_ingest,

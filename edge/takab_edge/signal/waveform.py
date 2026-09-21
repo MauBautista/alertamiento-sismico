@@ -30,7 +30,7 @@ import math
 import threading
 from collections import deque
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 
@@ -188,6 +188,55 @@ class WaveformRing:
             pruned_gc = ring.append(packet, self._gc)
             if pruned_gc > self._floor:
                 self._floor = pruned_gc
+
+    def canales(self) -> list[str]:
+        """Canales que el anillo ha visto, ordenados. Lista vacía = nada aún."""
+        with self._lock:
+            return sorted(self._channels)
+
+    def tramo_crudo(self, channel: str) -> dict | None:
+        """[T-7.23] Muestras CRUDAS del último tramo continuo de un canal.
+
+        `serve()` no sirve para el espectrograma: decima min/máx al servir, y una
+        envolvente de pares no tiene transformada — la FFT de `[min, máx, min,
+        máx, …]` es la de una onda cuadrada que inventó el decimador, no la del
+        suelo. Así que el espectrograma pide las muestras tal como están.
+
+        Se devuelve el MISMO tramo que serviría `serve()` (corte honesto en el
+        último hueco, §6.4 de la spec del panel): dos ventanas distintas del
+        mismo canal en la misma pantalla se leerían como dos mediciones.
+
+        ``None`` si el canal no existe o no tiene ningún paquete vivo.
+
+        [T-7.23 · A2] Devuelve también `last_sample_at`, el instante de la
+        ÚLTIMA muestra del tramo. Sin él, quien consume esto no puede saber si
+        está mirando los últimos 60 s o los últimos 60 s de hace tres horas:
+        este anillo sólo poda al appendear, así que con el sensor callado el
+        tramo se queda intacto y con el mismo aspecto que uno vivo.
+        """
+        with self._lock:
+            ring = self._channels.get(channel)
+            if ring is None:
+                return None
+            found = ring.segment_since(None)
+            if found is None:
+                return None
+            segment, gap_before = found
+            # La copia se hace DENTRO del lock, igual que en `serve`: el hilo de
+            # SeedLink escribe sobre ese mismo array circular.
+            muestras = ring.extract(segment)
+        # reloj: datos — el instante se DERIVA del eje de muestras del propio
+        # sensor (cabecera del último paquete + sus npts), nunca del reloj del
+        # Pi: es la marca que después se compara contra él para medir la edad.
+        ultimo = segment[-1]
+        fin = ultimo.starttime + timedelta(seconds=(ultimo.npts - 1) / ring.sample_rate)
+        return {
+            "samples": muestras,
+            "sample_rate": ring.sample_rate,
+            "first_sample_at": segment[0].starttime,
+            "last_sample_at": fin,
+            "gap_before": gap_before,
+        }
 
     def serve(
         self,

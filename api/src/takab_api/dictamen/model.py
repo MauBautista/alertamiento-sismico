@@ -252,7 +252,18 @@ NO_MMI = (
 )
 
 #: [T-5.11] Lo que se imprime cuando NINGÚN sismo del catálogo es éste y no había
-#: siquiera candidatos en la ventana. Decía «SIN COINCIDENCIA EN CATÁLOGO», que
+#: siquiera candidatos en la ventana.
+#:
+#: ⚠️ [T-7.25] Y **sólo** en ese caso: es una afirmación sobre el sismo que
+#: exonera al catálogo de referencia, así que sólo puede firmarse cuando la
+#: fuente CONTESTÓ **y nada suyo es éste**. Los otros CUATRO desenlaces sin
+#: acierto tienen frase propia: :data:`SIN_CONSULTA_A_FUENTE_EXTERNA` (no se
+#: preguntó), :data:`CONSULTA_EXTERNA_EN_VUELO` (no contestaron) y
+#: :data:`CORRELACION_EN_DISPUTA` (contestaron, correlacionaron, y el criterio de
+#: identidad de este documento no lo reconoce — `preliminar` y `confirmado`).
+#: Los cinco salían por aquí.
+#:
+#: Decía «SIN COINCIDENCIA EN CATÁLOGO», que
 #: sonaba a fallo de búsqueda; lo que afirma es un HECHO sobre el evento —el
 #: catálogo no tiene un sismo compatible, probablemente porque fue local y
 #: pequeño—, y es el mismo vocabulario que el estado `sin_correlacion` del
@@ -261,6 +272,126 @@ SIN_CORRELACION_EN_CATALOGO = (
     "SIN CORRELACIÓN EN EL CATÁLOGO DE REFERENCIA: ningún sismo publicado "
     "satisface el criterio de identidad con este incidente."
 )
+
+
+#: [T-7.25] Lo que el papel imprime mientras la pregunta a la fuente externa
+#: SIGUE EN VUELO —o cuando un timeout la dejó sin contestar—, en vez de
+#: :data:`SIN_CORRELACION_EN_CATALOGO`.
+#:
+#: Es EL defecto que la ficha existe para eliminar, sobreviviendo en la
+#: superficie más cara del producto: con la consulta sin respuesta el dictamen
+#: firmaba «ningún sismo publicado satisface el criterio de identidad con este
+#: incidente», que es una afirmación sobre el sismo. Lo cierto era que **nadie
+#: había contestado todavía**. Las dos frases se parecen y no dicen lo mismo: la
+#: primera exonera al catálogo, la segunda deja la pregunta abierta — y ésta va
+#: debajo de una firma que no se puede retirar.
+CONSULTA_EXTERNA_EN_VUELO = (
+    "CONSULTA EN CURSO A LA FUENTE EXTERNA: todavía no hay respuesta, así que este "
+    "documento NO afirma que no exista un sismo publicado compatible con este incidente."
+)
+
+#: [T-7.25] Lo que el papel imprime cuando a este incidente **no se le preguntó
+#: a nadie**, en vez de :data:`SIN_CORRELACION_EN_CATALOGO`.
+#:
+#: Es la otra mitad del mismo defecto, y la que sobrevivió a la primera vuelta de
+#: la ficha. Los tres hechos son distintos y el documento tiene que separarlos:
+#:
+#: * **no se preguntó** — esta frase;
+#: * **se preguntó y no contestaron** — :data:`CONSULTA_EXTERNA_EN_VUELO`;
+#: * **contestaron y ninguno casa** — :data:`SIN_CORRELACION_EN_CATALOGO`;
+#: * **correlacionó, preliminar** — :data:`CORRELACION_EN_DISPUTA`;
+#: * **correlacionó, confirmado** — :data:`CORRELACION_EN_DISPUTA`, con el rótulo
+#:   del glosario que los separa: una solución que la fuente puede cambiar no
+#:   pesa lo mismo que una que ya revisó.
+#:
+#: Son CINCO, no tres, y son exactamente los cinco estados de
+#: `shared/glossary/procedencia.json`: la guarda los DERIVA de ahí
+#: (`tests/dictamen/test_catalog_line.py`) en vez de enumerarlos, porque
+#: enumerados ya divergieron una vez — los dos últimos nacieron sin línea.
+#:
+#: Imprimir el tercero cuando lo cierto es el primero es afirmar bajo firma algo
+#: que nadie comprobó: exonera al catálogo de referencia sin haberlo interrogado.
+#: Y es el caso NORMAL hoy, porque la consulta automática se despliega apagada.
+SIN_CONSULTA_A_FUENTE_EXTERNA = (
+    "NO SE CONSULTÓ NINGUNA FUENTE EXTERNA para este incidente: este documento no "
+    "afirma ni niega que exista un sismo publicado compatible con él."
+)
+
+#: [T-7.25] Lo que el papel imprime cuando **la consulta correlacionó y el
+#: criterio de identidad de este documento no**, en vez de
+#: :data:`SIN_CORRELACION_EN_CATALOGO`.
+#:
+#: Es el CUARTO y el QUINTO hecho de la lista de arriba —`preliminar` y
+#: `confirmado` sin acierto—, y era la misma mentira que los otros dos con otro
+#: disfraz: `catalog_consultations.outcome = 'correlacionado'` escrito en la
+#: base, la fila del catálogo citable, y el papel imprimiendo «ningún sismo
+#: publicado satisface el criterio de identidad con este incidente». Medido: sin
+#: descartes la línea salía `None` —y el PDF rellena el hueco con esa frase— y
+#: con descartes salía literalmente «SIN CORRELACIÓN · … ninguno es éste», que es
+#: la misma afirmación escrita a mano.
+#:
+#: Los dos procedimientos son distintos a propósito y pueden discrepar sin que
+#: ninguno esté roto: el worker le pregunta a la fuente viva por una ventana y un
+#: radio, y el ensamblado forense vuelve a decidir la IDENTIDAD contra lo que hay
+#: en la tabla (`forensics/correlacion.py`). Una poda, un refresco que corrigió
+#: la hora de origen en la fuente o dos lecturas separadas en el tiempo bastan
+#: para separarlos. Lo que no puede pasar es que el papel **elija** el desenlace
+#: más tranquilizador de los dos y lo firme: la discrepancia se declara, y quien
+#: lea el dictamen sabe que hay dos respuestas y cuál dio cada procedimiento.
+CORRELACION_EN_DISPUTA = (
+    "CORRELACIÓN EN DISPUTA: la consulta a la fuente externa SÍ correlacionó este "
+    "incidente con un sismo publicado, y el criterio de identidad de este documento "
+    "no lo reconoce entre los candidatos de su ventana. Este documento NO afirma que "
+    "no exista un sismo publicado compatible, y tampoco cita una cifra cuya identidad "
+    "no puede sostener."
+)
+
+#: [T-7.25] El suelo de la línea de correlación: un estado de procedencia que
+#: este documento no sabe traducir.
+#:
+#: No es defensa contra lo imposible: aquí caía ANTES todo lo que no fuera
+#: `sin_dato_externo` ni `consultando` —incluidos los dos estados que sí pintan
+#: cifra—, y lo que caía se imprimía como «SIN CORRELACIÓN». Un sexto estado
+#: añadido al glosario compartido heredaría ese destino en silencio. Con esta
+#: frase, lo que el papel no sabe traducir se DECLARA sin exonerar a nadie, y la
+#: guarda derivada de `pr.estados()` lo caza en la primera corrida.
+ESTADO_DE_CONSULTA_NO_INTERPRETABLE = (
+    "ESTADO DE CONSULTA NO INTERPRETABLE: este documento no sabe traducir el estado de "
+    "procedencia registrado para este incidente, así que no afirma ni niega que exista "
+    "un sismo publicado compatible con él."
+)
+
+#: [T-7.25] Lo que el papel dice cuando el modelo no trae la línea de fuentes.
+#: No es un «ok» de relleno: declara que no consta, que es lo único cierto.
+FUENTES_EXTERNAS_SIN_CONSTANCIA = "No consta en este documento qué fuentes externas se consultaron."
+
+#: [T-7.25] Por qué el SSN no aparece nunca aquí, dicho en el papel y no sólo en
+#: el código. Un lector que vea «USGS» y no vea «SSN» supondrá que el SSN falló,
+#: y la razón es otra: su ingesta automática está DECIDIDA (`D-06`) y lo que
+#: sigue abierto es la ATRIBUCIÓN de sus cifras. Imprimir aquí una magnitud del
+#: SSN sin poder citarla como la fuente exige sería exactamente la cifra sin
+#: procedencia que este documento no admite (`T-5.10`).
+SSN_NO_SE_CONSULTA = (
+    "El SSN no se consulta: la atribución de sus cifras está sin cerrar y este "
+    "documento no imprime una cifra ajena que no pueda citar."
+)
+
+
+def fuentes_line(consulta_usgs_encendida: bool) -> str:
+    """Qué fuentes externas puede consultar este despliegue, y cuál no y por qué.
+
+    Se DERIVA de la configuración y no se escribe a fuego: con la consulta
+    apagada —que es como se despliega hoy— decir «consultadas: USGS» sería
+    afirmar una llamada que nadie hizo. El desenlace por incidente lo dice la
+    línea de CORRELACIÓN CON CATÁLOGO, que es otra cosa: aquí se declara a quién
+    se PUEDE preguntar.
+    """
+    quien = (
+        "USGS (FDSN)"
+        if consulta_usgs_encendida
+        else "NINGUNA — la consulta automática a USGS está apagada en este despliegue"
+    )
+    return f"{quien}. {SSN_NO_SE_CONSULTA}"
 
 
 def num(value: object, digits: int = 3, unit: str = "") -> str:
@@ -526,6 +657,10 @@ class ReportModel:
     #: imprimía «EN CURSO» de un incidente cerrado, que es el papel
     #: desmintiendo al dato — la clase de defecto de `T-7.38`/`T-7.42`/`T-7.43`.
     cierre_sin_hora: bool = False
+    #: [T-7.25] A qué fuentes externas puede preguntar este despliegue, y por
+    #: qué el SSN no está entre ellas. Con default para no romper los modelos
+    #: que aún no lo traen; el papel declara entonces que no consta.
+    fuentes_externas: str = FUENTES_EXTERNAS_SIN_CONSTANCIA
     epicenter_relocated: bool = False
 
     channels: list[ChannelRow] = field(default_factory=list)

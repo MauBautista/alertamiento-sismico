@@ -33,6 +33,7 @@ que el arnés confirme por sí mismo que montó el escenario):
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -159,7 +160,41 @@ def _lote(tmp_path: Path, casos: list[dict]) -> dict[str, dict]:
     return {c["id"]: c for c in salida["cases"]}
 
 
-def _firma(caso: dict) -> str:
+def _oculto(nodo: dict) -> bool:
+    return "hide" in (nodo.get("cls") or "").split()
+
+
+def _podar(nodo: dict, contenedores: frozenset[str]) -> dict:
+    """Corta lo que la VISTA activa esconde, dejando el contenedor y su clase.
+
+    `.hide` es `display:none !important`: lo que hay dentro no está en la
+    pantalla. El censo lo estaba contando igual, y por eso la escena
+    `sismografo` era decorativa — `renderSismo` corre en las DOS vistas y
+    escribe en `#sismo`, así que la vista por defecto se apuntaba el camino de
+    render de una tarjeta que nadie puede ver. Es la misma clase de mentira que
+    este censo existe para cazar: «parece que está pintado y no lo está».
+
+    Se poda SÓLO lo que conmuta la vista (ver `_contenedores_de_vista`), no
+    todo lo que lleve `.hide`: un banner apagado o el overlay cerrado son
+    estados del panel dentro de UNA vista, y esa es otra pregunta.
+
+    **[T-7.23 · Q4] Y esto tiene guarda propia desde ahora.** No la tenía, y es
+    el mecanismo del que dependen la escena `sismografo` y `VISTA_DE_ESCENA`
+    —las dos con su docstring diciendo que sin él eran decorativas—. Medido:
+    con la escena y la tabla intactas y un `if False:` aquí, el censo volvía a
+    pasar entero. La guarda es
+    `test_la_poda_de_la_vista_es_lo_que_hace_cierta_la_escena_sismografo`.
+    """
+    recorte = {k: v for k, v in nodo.items() if k != "kids"}
+    if nodo.get("id") in contenedores and _oculto(nodo):
+        recorte["txt"] = ""
+        recorte["kids"] = []
+        return recorte
+    recorte["kids"] = [_podar(k, contenedores) for k in nodo.get("kids", ())]
+    return recorte
+
+
+def _firma(caso: dict, contenedores: frozenset[str] = frozenset()) -> str:
     """Lo que el panel MUESTRA: árbol, texto de los canvas y errores de render.
 
     Los errores cuentan como parte de la firma a propósito: si mutar un campo
@@ -168,10 +203,34 @@ def _firma(caso: dict) -> str:
     """
     assert not caso.get("fatal"), caso.get("fatal")
     return json.dumps(
-        {"tree": caso["tree"], "canvas": caso["canvasText"], "errors": caso["errors"]},
+        {
+            "tree": _podar(caso["tree"], contenedores),
+            "canvas": caso["canvasText"],
+            "errors": caso["errors"],
+        },
         sort_keys=True,
         ensure_ascii=False,
     )
+
+
+def _contenedores_de_vista() -> frozenset[str]:
+    """Los contenedores que CONMUTA `?view=`, leídos DEL PANEL y no tecleados.
+
+    Sale de la única línea que lo decide, `$('<id>').classList.toggle('hide',
+    VIEW …)`. Se lee del panel a propósito y **no** de `VISTA_DE_ESCENA`: la
+    primera versión de esto derivaba el conjunto comparando los renders de las
+    vistas que esa tabla declara, y entonces vaciar la tabla también vaciaba la
+    poda — el censo volvía a contar lo escondido y seguía en verde. Una guarda
+    cuyo sujeto se deriva de lo que se quiere vigilar no vigila nada.
+    """
+    ids = re.findall(
+        r"\$\('([\w-]+)'\)\.classList\.toggle\('hide', VIEW", _INDEX.read_text("utf-8")
+    )
+    assert len(ids) >= 2, (
+        "el panel ya no conmuta ninguna zona con `?view=`: o cambió el mecanismo "
+        f"o este barrido dejó de encontrarlo (halló {ids})"
+    )
+    return frozenset(ids)
 
 
 # --------------------------------------------------- contrato con status()
@@ -578,6 +637,27 @@ def _escena_sin_calibrar() -> dict:
     return st
 
 
+def _escena_sismografo() -> dict:
+    """[T-7.23] El MISMO status nominal, pero renderizado en `?view=sismografo`.
+
+    No trae campos nuevos a propósito: lo que aporta es la otra SUPERFICIE. El
+    lote del censo renderiza la vista por defecto, así que sin esta escena todo
+    lo que la vista sismógrafo pinte —y todo lo que pueda hacerla reventar con
+    un dato raro— quedaría fuera del censo sin que nadie lo notara.
+
+    **Eso era una promesa y no un hecho hasta T-7.23.** `renderSismo` corre en
+    las DOS vistas —lo que conmuta `?view=` es una clase `.hide`, no el
+    render—, así que la vista por defecto se apuntaba el camino de render de
+    una tarjeta dentro de un `display:none !important`. Medido entonces: con
+    `VISTA_DE_ESCENA = {}` la suite seguía en `5 passed`, o sea que esta escena
+    no cubría ni una ruta más que `nominal`. Desde que la firma poda lo que la
+    vista esconde (`_podar`), quitar esta escena o su fila en `VISTA_DE_ESCENA`
+    deja mudas `station_nslc` y `calibration.vel_sensitivity_ms_per_count` y el
+    censo se pone rojo.
+    """
+    return _base()
+
+
 #: Las escenas del censo. La primera que contiene una ruta es su "casa"; el
 #: resto se usan para re-probar las que salieron mudas.
 ESCENAS: dict[str, Any] = {
@@ -593,8 +673,22 @@ ESCENAS: dict[str, Any] = {
     "reles_parciales": _escena_reles_parciales,
     "lora_caido": _escena_lora_caido,
     "sin_calibrar": _escena_sin_calibrar,
+    "sismografo": _escena_sismografo,
     "frio": _cold,
 }
+
+#: [T-7.23] `?…` con el que se renderiza cada escena. Vacío = la vista por
+#: defecto, que es lo que mide casi todo el censo. Va como tabla aparte y no
+#: dentro de la escena porque una escena ES un `status()`: meterle una clave que
+#: `status()` no sirve la separaría del fixture que la ata al gabinete real.
+#:
+#: **Esta tabla era INERTE hasta T-7.23.** Medido: con `VISTA_DE_ESCENA = {}` la
+#: suite del censo seguía en `5 passed`. La escena `sismografo` se renderizaba
+#: en la vista por defecto, o sea contra la misma superficie que `nominal`, y no
+#: cubría ni un campo más. Ahora la firma del censo PODA lo que la vista
+#: esconde (`_podar`), así que vaciar esta tabla deja mudas las tres rutas que
+#: sólo pinta la tarjeta de estación del sismógrafo y el censo se pone rojo.
+VISTA_DE_ESCENA: dict[str, str] = {"sismografo": "?view=sismografo"}
 
 
 def _existe(obj: Any, ruta: str) -> bool:
@@ -762,15 +856,91 @@ SIN_CAMINO_DE_RENDER: dict[str, str] = {
 #: hay nada que escalar ni que re-centrar, así que mutarlos no mueve un pixel.
 #: Se declaran aparte a propósito — meterlos en `SIN_CAMINO_DE_RENDER` diría una
 #: falsedad sobre el panel.
+#:
+#: [T-7.23] `calibration.vel_sensitivity_ms_per_count` salió de aquí: la tarjeta
+#: de estación de la vista sismógrafo la ROTULA como número, no sólo la usa para
+#: escalar, así que ya no depende del búfer. Su hermana de aceleración nunca
+#: estuvo en la lista — llevaba camino de render desde antes.
 SOLO_SOBRE_MUESTRAS: dict[str, str] = {
-    "calibration.vel_sensitivity_ms_per_count": (
-        "Escala el trazo de EHZ (velocidad) en `sens().v`/`toPhys`, sobre las "
-        "muestras crudas del búfer."
-    ),
     "rose_zero.channels.ENE": ("Punto 0 del eje E-O: se resta a las muestras crudas."),
     "rose_zero.channels.ENN": ("Punto 0 del eje N-S: se resta a las muestras crudas."),
     "rose_zero.channels.ENZ": ("Punto 0 del eje Z: se resta a las muestras crudas."),
 }
+
+
+#: [T-7.23 · Q4] La ruta con la que se mide la poda. Es una de las que el
+#: docstring de `_escena_sismografo` dice que quedan mudas sin ella: la pinta
+#: SÓLO la tarjeta de estación de la vista sismógrafo, y `renderSismo` corre en
+#: las DOS vistas, así que en la vista por defecto se escribe dentro de un
+#: `display:none !important`. Es justo el caso que la poda existe para no
+#: contar.
+_RUTA_SOLO_DEL_SISMOGRAFO = "station_nslc"
+
+
+def test_la_poda_de_la_vista_es_lo_que_hace_cierta_la_escena_sismografo(tmp_path):
+    """[T-7.23 · Q4] `_podar` no tenía guarda, y es lo que sostiene el censo.
+
+    Medido: con la escena `sismografo` y su fila en `VISTA_DE_ESCENA` intactas
+    y un `if False:` dentro de `_podar`, el censo volvía a pasar entero. O sea
+    que el mecanismo del que dependen la escena y la tabla —las dos con su
+    docstring explicando que sin él eran decorativas— no lo vigilaba nadie. Es
+    la cuarta vez en esta ficha que un censo nace ciego a su propio
+    instrumento.
+
+    Se mide sobre UNA ruta y en las DOS vistas, en un solo proceso node:
+
+      · en la vista por defecto la mutación SÍ mueve el árbol crudo —eso es
+        `renderSismo` corriendo dentro de lo escondido, que es el hecho que
+        hace falta la poda—, y NO mueve la firma podada;
+      · en `?view=sismografo`, donde la tarjeta se ve de verdad, la mutación
+        mueve la firma podada.
+
+    Las tres afirmaciones juntas: sin la primera esto no estaría midiendo nada
+    (una ruta que no se pinta en ningún sitio pasaría igual), sin la segunda no
+    habría poda, y sin la tercera la poda podría estar cortando de más.
+    """
+    contenedores = _contenedores_de_vista()
+    base = _base()
+    assert _existe(base, _RUTA_SOLO_DEL_SISMOGRAFO), (
+        f"{_RUTA_SOLO_DEL_SISMOGRAFO} ya no está en `status()`: esta guarda mira al aire"
+    )
+    mutado = json.loads(json.dumps(base))
+    _poner(mutado, _RUTA_SOLO_DEL_SISMOGRAFO, [f"{_ZZQ}.{_ZZQ}.99.{_ZZQ}"])
+    assert _traer(mutado, _RUTA_SOLO_DEL_SISMOGRAFO) != _traer(base, _RUTA_SOLO_DEL_SISMOGRAFO), (
+        "la mutación no se aplicó"
+    )
+
+    vista = VISTA_DE_ESCENA["sismografo"]
+    salida = _lote(
+        tmp_path,
+        [
+            {"id": "@defecto", "status": base, "search": ""},
+            {"id": "defecto|mutado", "status": mutado, "search": ""},
+            {"id": "@sismografo", "status": base, "search": vista},
+            {"id": "sismografo|mutado", "status": mutado, "search": vista},
+        ],
+    )
+
+    # 1) En la vista por defecto la tarjeta SE RENDERIZA (y queda escondida).
+    assert _firma(salida["defecto|mutado"]) != _firma(salida["@defecto"]), (
+        f"mutar {_RUTA_SOLO_DEL_SISMOGRAFO} ya no mueve el árbol crudo de la vista por "
+        "defecto: o dejó de pintarse, o el panel dejó de renderizar la vista "
+        "escondida — y entonces esta guarda no mide la poda"
+    )
+    # 2) …y la poda no la cuenta, porque `display:none !important` no es pantalla.
+    assert _firma(salida["defecto|mutado"], contenedores) == _firma(
+        salida["@defecto"], contenedores
+    ), (
+        "la poda no está cortando lo que la vista esconde: el censo se apunta como "
+        "camino de render una tarjeta que nadie puede ver"
+    )
+    # 3) Y en la vista donde SÍ se ve, la mutación cuenta.
+    assert _firma(salida["sismografo|mutado"], contenedores) != _firma(
+        salida["@sismografo"], contenedores
+    ), (
+        "la poda se está comiendo la vista que SÍ está en pantalla: con esto el censo "
+        "declararía mudas rutas que se pintan"
+    )
 
 
 def test_todo_campo_de_status_tiene_camino_de_render(tmp_path):
@@ -781,6 +951,9 @@ def test_todo_campo_de_status_tiene_camino_de_render(tmp_path):
     destaparon.
     """
     escenas = {nombre: hacer() for nombre, hacer in ESCENAS.items()}
+    # [T-7.23] Lo que la vista activa esconde NO cuenta como camino de render:
+    # `display:none !important` es no estar en la pantalla. Se deriva del panel.
+    contenedores = _contenedores_de_vista()
     rutas: dict[str, str] = {}  # ruta → escena "casa" (la primera que la trae)
     for nombre, st in escenas.items():
         for ruta in _hojas(st):
@@ -797,7 +970,10 @@ def test_todo_campo_de_status_tiene_camino_de_render(tmp_path):
 
     def probar(pares: list[tuple[str, str]]) -> dict[tuple[str, str], bool]:
         """`(escena, ruta) → ¿cambió el DOM al mutar?`, en un solo proceso node."""
-        casos = [{"id": f"@{n}", "status": escenas[n]} for n in sorted({p[0] for p in pares})]
+        casos = [
+            {"id": f"@{n}", "status": escenas[n], "search": VISTA_DE_ESCENA.get(n, "")}
+            for n in sorted({p[0] for p in pares})
+        ]
         ids: dict[tuple[str, str], list[str]] = {}
         for escena, ruta in pares:
             for i, despues in enumerate(_mutaciones(_traer(escenas[escena], ruta))):
@@ -813,12 +989,24 @@ def test_todo_campo_de_status_tiene_camino_de_render(tmp_path):
                 )
                 caso_id = f"{escena}|{ruta}|{i}"
                 ids.setdefault((escena, ruta), []).append(caso_id)
-                casos.append({"id": caso_id, "status": mutado})
+                casos.append(
+                    {
+                        "id": caso_id,
+                        "status": mutado,
+                        # La mutación se renderiza en la MISMA vista que su
+                        # referencia `@escena`: comparar dos superficies
+                        # distintas daría «cambió» para todas las rutas.
+                        "search": VISTA_DE_ESCENA.get(escena, ""),
+                    }
+                )
         for par in pares:
             assert ids.get(par), f"no se pudo mutar {par[1]} en {par[0]}"
         salida = _lote(tmp_path, casos)
         return {
-            par: any(_firma(salida[i]) != _firma(salida[f"@{par[0]}"]) for i in ids[par])
+            par: any(
+                _firma(salida[i], contenedores) != _firma(salida[f"@{par[0]}"], contenedores)
+                for i in ids[par]
+            )
             for par in pares
         }
 

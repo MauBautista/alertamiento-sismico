@@ -139,6 +139,15 @@ class CatalogCorrelation(BaseModel):
     criterio: CatalogCriterion
     #: Los que estaban en la ventana y no casaron, con su motivo.
     descartes: list[CatalogDiscard] = []
+    #: [T-7.25] A quién se le preguntó y CUÁNDO. Sin estos dos campos el estado
+    #: llegaba a la superficie desnudo: un `consultando` de hace seis horas se
+    #: pintaba igual que uno de hace dos segundos, que es exactamente el dato
+    #: viejo presentado como fresco que prohíbe la regla de oro 7. Con ellos, la
+    #: consola puede decir la edad y el papel puede citar la hora.
+    #: ``consultado_en`` es la hora de la PREGUNTA mientras no hay respuesta, y
+    #: la de la RESPUESTA en cuanto la hay — que es lo que cada estado cita.
+    fuente: str | None = None
+    consultado_en: datetime | None = None
 
 
 class QuorumPeer(BaseModel):

@@ -102,9 +102,11 @@ export type CapturaOut = {
  * [T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado.
  */
 export type CatalogCorrelation = {
+    consultado_en?: string | null;
     criterio: CatalogCriterion;
     descartes?: Array<CatalogDiscard>;
     estado: string;
+    fuente?: string | null;
     verificacion?: string | null;
 };
 
