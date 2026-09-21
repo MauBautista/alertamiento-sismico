@@ -369,3 +369,120 @@ def test_un_argumento_desconocido_no_hace_nada_y_lo_dice(panel, adb_falso) -> No
     r = correr("--despliega-todo", url, adb_falso)
     assert r.returncode == 2
     assert "uso:" in r.stderr
+
+
+# ------------------------------------------------------- ensayo general (--full)
+#
+# [T-7.28] `--full` es un CRONÓMETRO y un director de escena: recorre los actos,
+# mide cuánto dura cada uno y le pregunta a la máquina si pasó lo que el acto
+# promete. Lo que se prueba aquí es su CONDUCTA, no su texto — salvo en dos
+# sitios donde el texto ES la función: la declaración del reloj y el aviso de que
+# una corrida sin pausas no es un ensayo. Los dos existen para que una tabla no
+# se pueda pegar en el Registro afirmando algo que no ocurrió.
+
+
+def _full(panel_url: str, adb: Path, **extra: str) -> subprocess.CompletedProcess:
+    """`--full` sin esperar a nadie. Sin esta costura no se puede probar."""
+    return correr("--full", panel_url, adb, TAKAB_DEMO_SIN_PAUSA="1", **extra)
+
+
+def test_el_ensayo_recorre_los_cuatro_actos_y_saca_la_tabla_del_registro(
+    sitio_demo, panel, adb_falso
+) -> None:
+    url, _ = panel
+    r = _full(url, adb_falso)
+    # Los cinco encabezados de acto, en orden y todos: un ensayo que se queda a
+    # medias sin decirlo es peor que uno que falla.
+    for acto in (
+        "0 · Preflight",
+        "1 · El SOC",
+        "2 · Movimiento aislado",
+        "3 · El pulso",
+        "4 · Después",
+    ):
+        assert acto in r.stdout, f"falta el acto «{acto}»\n{r.stdout}"
+    assert "REGISTRO · pega esto" in r.stdout
+    assert "| Acto | Duración | Veredicto |" in r.stdout
+
+
+def test_si_el_preflight_esta_en_rojo_el_ensayo_ABORTA_y_NO_manda_pulsar_el_radio(
+    sitio_demo, panel, adb_falso
+) -> None:
+    """La que de verdad protege la demostración.
+
+    Con el modo prueba del WR-1 armado, el pulso no publica a la nube. Si el
+    ensayo siguiera adelante, le diría a quien conduce «pulsa el WR-1 AHORA» y el
+    acto 3 fallaría **delante del cliente** sin un error a la vista, que es
+    exactamente el fallo que este fichero entero existe para cazar.
+    """
+    url, mano = panel
+    # `cuerpo`, no `estado`: es el nombre que lee `_Mano.do_GET`. Con el nombre
+    # equivocado el panel se queda SANO y esta prueba pasa a verde sin probar nada.
+    mano.cuerpo["test_mode"] = {"active": True, "remaining_s": 420.0}
+    r = _full(url, adb_falso)
+    assert r.returncode != 0
+    assert "ENSAYO ABORTADO en el preflight" in r.stdout
+    assert "pulsa el WR-1" not in r.stdout, "mandó tocar el radio con el preflight en rojo"
+    # Y aun abortando deja el Registro: dónde murió el ensayo es la evidencia.
+    assert "REGISTRO · pega esto" in r.stdout
+    assert "0 · Preflight" in r.stdout
+
+
+def test_la_tabla_DECLARA_de_que_reloj_son_los_tiempos(sitio_demo, panel, adb_falso) -> None:
+    """El Registro ya guarda latencias MEDIDAS POR EL SISTEMA —el acta del reflejo,
+    4,96 ms sobre 100 de presupuesto—. Estas duraciones son de otro reloj y de otra
+    cosa: cuánto tardó una persona en representar el acto. Juntarlas sin decir cuál
+    es cuál convierte el tiempo que se tardó en pulsar un botón en una cifra de
+    rendimiento del producto.
+    """
+    url, _ = panel
+    r = _full(url, adb_falso)
+    assert "De qué reloj son estas duraciones" in r.stdout
+    assert "No son latencias del" in r.stdout
+
+
+def test_una_corrida_SIN_PAUSAS_se_delata_en_su_propia_tabla(sitio_demo, panel, adb_falso) -> None:
+    """Sin esto, la salida de una prueba del guion es indistinguible de la de un
+    ensayo de verdad, y lo primero que se hace con esa tabla es pegarla en el
+    Registro — que es el documento donde se afirma que el ensayo ocurrió.
+    """
+    url, _ = panel
+    r = _full(url, adb_falso)
+    assert "SIN PAUSAS" in r.stdout
+    assert "no hubo una persona" in r.stdout
+    assert "NO la pegues en el Registro" in r.stdout
+
+
+def test_el_cierre_manda_clasificar_reproduccion_y_desaconseja_prueba(
+    sitio_demo, panel, adb_falso
+) -> None:
+    """`reproduccion` se creó en `T-7.14` (`D-33`) porque una corrida de
+    demostración no cabía en las otras cuatro sin mentir. Las dos cierran el
+    incidente y ninguna cuenta en la tasa de falsos positivos, así que elegir mal
+    no se ve en ningún número — sólo en lo que el historial dice que pasó.
+    """
+    url, _ = panel
+    r = _full(url, adb_falso)
+    assert "'reproduccion', NO 'prueba'" in r.stdout
+
+
+def test_sin_incidente_el_acto_2_NO_se_da_por_bueno(sitio_demo, panel, adb_falso) -> None:
+    """El acto 2 promete dos cosas: que el sistema VIO el movimiento y que NO
+    accionó nada. Sin incidente la primera no ocurrió, y un acto que se declarara
+    bueno por no haber accionado nada estaría aprobando un gabinete mudo.
+    """
+    url, _ = panel
+    r = _full(url, adb_falso)
+    assert "no abrió incidente 'local_threshold'" in r.stdout
+
+
+def test_el_ensayo_sigue_SIN_accionar_nada(sitio_demo, panel, adb_falso) -> None:
+    """El invariante de este fichero. `--full` conduce y mide; lo físico lo hace
+    la persona. Se comprueba por la BASE —que es donde se vería— y no por el
+    texto: ninguna actuación pudo quedar registrada para este sitio.
+    """
+    url, _ = panel
+    _full(url, adb_falso)
+    with sitio_demo.cursor() as cur:
+        cur.execute("SELECT count(*) FROM actuation_records WHERE site_id = %s", (SITIO_D,))
+        assert cur.fetchone()[0] == 0

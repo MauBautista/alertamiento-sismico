@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **391** · `[~]` **11** · `[ ]` **40**
+**Conteo de tareas:** total **442** · `[x]` **391** · `[~]` **12** · `[ ]` **39**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15274,20 +15274,66 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 >
 > api 4166 · mobile 728 · 23 mutaciones dirigidas, 23 rojas.
 
-### [ ] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO`
+### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · faltan las DOS CORRIDAS, que exigen persona y gabinete**
 - **Componente:** todas · **Depende de:** T-7.20, T-7.22 · **Prioridad:** F7 · alta
 - **Objetivo:** que la presentación se haya ejecutado dos veces entera antes de tener un
   cliente delante, con tiempos, capturas y un plan para cada cosa que puede fallar.
 - **Criterios de aceptación:**
-  - [ ] `guion.sh --full` dos veces con tiempos por acto en el Registro; cada corrida se
+  - [~] `guion.sh --full` dos veces con tiempos por acto en el Registro; cada corrida se
     clasifica `reproduccion` y queda como historial honesto.
-  - [ ] Plan B escrito: sin internet (el edge protege y el panel cuenta la historia), sin push
+    ⚠️ **`--full` NO EXISTÍA.** La ficha nombraba un modo que nunca se construyó: el guion tenía
+    `--preflight`, `--check` y `--reporte` sueltos, y nada que los recorriera en orden ni que
+    cronometrara. Ya existe, y es **un cronómetro y un director de escena, no un actuador**: el
+    invariante «solo lee» de `deploy/demo/guion.sh` sigue intacto —lo físico lo hace la persona y
+    el guion dice cuándo, mide, y después le pregunta a la máquina si pasó lo que el acto promete—.
+    Al final saca la tabla del § Registro lista para pegar.
+    **Lo que falta son las dos corridas**, y no las puede dar el software: exigen el WR-1, el
+    gabinete, el Pixel y una persona.
+    Tres decisiones del modo que conviene no deshacer:
+      1. **Aborta en el preflight.** Con un ✗ no sigue, y sobre todo **no dice «pulsa el WR-1»**:
+         el modo prueba armado convierte el pulso en un ensayo que no publica a la nube, y el acto
+         3 fallaría delante del cliente sin un error a la vista. Probado por mutación.
+      2. **Declara de qué reloj son los tiempos.** Son de la máquina que corre el guion y miden la
+         REPRESENTACIÓN, no el sistema. El § Registro ya guarda latencias medidas por el sistema
+         —el acta del reflejo, 4,96 ms sobre 100 de presupuesto—, y juntarlas sin decir cuál es
+         cuál convertiría el tiempo que tardó una persona en pulsar un botón en una cifra de
+         rendimiento del producto.
+      3. **Un acto omitido no tiene duración, nunca cero**, y una corrida `TAKAB_DEMO_SIN_PAUSA=1`
+         **se delata en el pie de su propia tabla**: sin eso, la salida de una prueba del guion es
+         indistinguible de la de un ensayo, y lo primero que se hace con esa tabla es pegarla en el
+         documento donde se afirma que el ensayo ocurrió.
+  - [x] Plan B escrito: sin internet (el edge protege y el panel cuenta la historia), sin push
     (app en primer plano), sin IA (determinista declarado), sin tiles (`FALLBACK_STYLE`).
-  - [ ] Lista «lo que NO debe decirse» actualizada; paquete de capturas y vídeo;
+    Los cuatro en `RUNBOOK-demo-cliente.md § Plan B`, **con cifras verificadas** y con la frase con
+    la que se cuenta cada uno: el sondeo en primer plano es de 5 s en crisis / 15 s la brigada /
+    30 s el panel; sin IA el papel imprime `NARRATIVA DEGRADADA · <razón>` y la razón distingue «no
+    respondió» de «no aceptó la clave».
+    ⚠️ Y una trampa medida en `MapPanel.tsx` que cambia el consejo: **`FALLBACK_STYLE` sólo entra
+    si el estilo inicial NUNCA cargó.** Un tile que falle a media sesión no borra el mapa ya
+    dibujado —eso es deliberado— pero tampoco engancha el respaldo. Por eso el Plan B manda abrir
+    la consola antes de que entre el cliente y **recargar** si el mapa sale vacío.
+  - [~] Lista «lo que NO debe decirse» actualizada; paquete de capturas y vídeo;
     `INFORME-CONFORMIDAD-DEMO.md` re-corrido sin rojos; veredicto de flujos con Mauricio
     delante.
+    **Lista: hecha**, y vive ahora en `RUNBOOK-demo-cliente.md`, no en el informe comercial: aquél
+    **congela a propósito** lo que encontró el 2026-09-02 y por eso no se edita. Hacía falta
+    separarlas porque entre aquella fecha y hoy se cerraron F1…F6 enteras y **cinco de sus trece
+    filas razonan sobre cosas que ya no son verdad** (`T-5.01`, `T-6.04`, `T-7.02`, `T-7.24` y
+    `T-7.25`, las cinco verificadas cerradas). Una lista de advertencias que envejece hace el daño
+    al revés: deja pidiendo perdón por lo que ya funciona, delante del cliente.
+    **Y trae cuatro filas NUEVAS que F5 y F6 obligaron**, la más importante de las cuales es que
+    señalar los anillos del mini-ShakeMap y decir «así se sacudió su colonia» es falso: son
+    MODELADOS, y `D-08` separa las tres capas justamente para que no se confundan.
+    **Informe de conformidad: re-corrido** (ver abajo). **Capturas, vídeo y veredicto de flujos:
+    faltan**, y son de la sesión con Mauricio delante.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test
-  defiende hoy:** no.
+  defiende hoy:** **sí** — la línea original decía «no». `--full` llega con siete pruebas de
+  conducta en `api/tests/test_guion_demo.py`, y **la primera versión de una de ellas pasaba en
+  verde sin probar nada**: deformaba el panel de mentira escribiendo `mano.estado` cuando el
+  atributo que el servidor lee es `mano.cuerpo`, así que el panel se quedaba sano y la prueba del
+  aborto aprobaba un guion que nunca abortó. Las tres guardas nuevas se verificaron **por
+  mutación**: quitar el aborto, quitar la declaración del reloj y callar el aviso de «sin pausas»
+  ponen roja a la suya y sólo a la suya.
 
 ### [x] T-7.29 · **El táctico puede salir de la toma de crisis** — `SOFTWARE` · **CERRADA 2026-09-12 · medida con el WR-1 real**
 - **Componente:** mobile · **Depende de:** T-7.09 · **Prioridad:** F1 · alta

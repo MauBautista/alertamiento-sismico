@@ -2,7 +2,10 @@
 
 > **Ficha:** [`T-7.07`](../TASKS.md) · **Plan:** [`PLAN-PROTOTIPO-FUNCIONAL §4 · F1`](../PLAN-PROTOTIPO-FUNCIONAL.md)
 > **Dueño:** Mauricio · **Necesita:** el WR-1, el gabinete, el Pixel y una persona en la consola
-> **Guion ejecutable:** `deploy/demo/guion.sh`
+> **Guion ejecutable:** `deploy/demo/guion.sh` — y desde `T-7.28`, el ensayo completo
+> cronometrado con **`bash deploy/demo/guion.sh --full`**, que recorre los actos en orden,
+> mide cada uno, le pregunta a la máquina si pasó lo que promete y saca la tabla del
+> § Registro lista para pegar. **Sigue sin accionar nada:** lo físico lo hace la persona.
 
 ---
 
@@ -17,7 +20,16 @@ en voz alta antes de empezar, porque una vez empezado ya no se pueden deshacer:
    simulacro en el asunto**: quien lo reciba va a creer que hubo un sismo. Por eso el preflight se
    niega a arrancar si algún destinatario no es nuestro.
 3. **Lo que se enseña queda registrado como un incidente.** Al final hay que clasificarlo como
-   `prueba` y cerrarlo, o quedará contando en las métricas del sitio como un sismo que no pasó.
+   **`reproduccion`** y cerrarlo, o quedará contando en las métricas del sitio como un sismo que
+   no pasó.
+
+   > ⚠️ **`reproduccion`, no `prueba`** — y hasta `T-7.28` este runbook decía `prueba` en dos
+   > sitios. Las dos cierran el incidente y ninguna entra en la tasa de falsos positivos, así que
+   > equivocarse **no se ve en ningún número**: se ve en lo que el historial dice que pasó.
+   > `prueba` es mantenimiento o puesta en marcha; `reproduccion` es exactamente esto, una
+   > demostración. El valor se creó en `T-7.14` (`D-33`) **porque una corrida de demostración no
+   > cabía en las otras cuatro sin mentir**, y usar `prueba` tira esa distinción justo el día que
+   > alguien audite el historial del sitio delante de un cliente.
 
 Esto no es nuevo y no hay que re-descubrirlo: el **Bloque B** de
 [`RUNBOOK-gate-hw-movil-y-voceo.md`](RUNBOOK-gate-hw-movil-y-voceo.md) ya lo dejó escrito con su
@@ -28,6 +40,47 @@ runbook obliga a avisar antes; este hereda la obligación.
 **Y el dato que ordena todo lo demás:** de los cuatro actos, el único que **no se puede repetir en
 frío** es el 3. Si el pulso sale mal —enclavado vivo, modo prueba armado, gabinete sin nube— hay
 que resetear el gabinete y volver a empezar el acto, con el cliente delante. De ahí el preflight.
+
+---
+
+## Lo que NO debe decirse — **la lista viva**
+
+> [`T-7.28`] El origen es la auditoría [`INFORME-V1-COMERCIAL §3`](../INFORME-V1-COMERCIAL.md),
+> que **congela a propósito lo que encontró el 2026-09-02** y por eso no se edita. Ésta es su
+> versión operativa: se lee antes de cada demostración y **sí se actualiza**, porque entre aquella
+> fecha y hoy se cerraron las fases F1 a F6 enteras y **cinco de sus trece filas razonan sobre
+> cosas que ya no son verdad**. Una lista de advertencias que envejece hace el daño al revés: te
+> deja pidiendo perdón por lo que ya funciona, delante del cliente.
+
+### Lo que la auditoría prohibía y **ya se puede decir** (verificado el 2026-09-21)
+
+| Antes se prohibía porque… | Qué cambió | Qué se puede decir hoy |
+|---|---|---|
+| en el panel del gabinete los botones de demo **mandaban órdenes reales** | `T-5.01` **cerrada** el 2026-09-02 | se puede enseñar el panel sin el miedo de entonces. **Aun así no toques botones delante del cliente**: el acto 2 vende justamente que nada se movió solo. |
+| los sitios simulados eran **visualmente idénticos** a los reales | `T-6.04` **cerrada** el 2026-09-10: `SiteLabel` es la única forma de pintar un nombre de sitio y la marca DEMO llega a todo | se puede enseñar el mapa poblado. La marca la pone el componente, no la memoria de quien enseña. |
+| la sección de espectro **salía vacía siempre** porque el worker que archiva la onda no estaba desplegado | `T-7.02` **cerrada** el 2026-09-12 (el worker corre en la nube) y `T-7.38/39` construyeron el espectrograma | el dictamen técnico trae el espectro cuando hay registro archivado. **Sigue sin llamarse «el espectrograma del sismo» a la ligera:** es del registro de ESTE edificio. |
+| la magnitud y el epicentro **no se contrastaban** con ninguna fuente | `T-7.25` **cerrada** el 2026-09-21: consulta a USGS con procedencia y hora | se puede decir que el sistema consulta la fuente oficial tras el evento **y que registra qué preguntó y cuándo**. Lo que el sistema afirma sigue siendo lo que midió en el edificio. |
+| no había mapa de sacudida | `T-7.24` **cerrada** el 2026-09-21 (mini-ShakeMap, `D-08`) | se puede enseñar el mapa por evento. **Y con él llega una prohibición nueva: la de abajo.** |
+
+### Las filas NUEVAS que F5 y F6 trajeron
+
+| ❌ No decir | Por qué | ✅ Decir en su lugar |
+|---|---|---|
+| *«Así se sacudió su colonia / esta zona.»* (señalando los anillos del mini-ShakeMap) | Los anillos son **MODELADOS**, no medidos: salen de la ley de atenuación, no de sensores en esas manzanas. `D-08` separa a propósito tres capas que no se mezclan —OBSERVADO (puntos), MODELADO (anillos) y RESIDUO— y `SIN COBERTURA` es un estado, no un hueco. | *«Los puntos son lo que midieron sensores reales. Los anillos son un modelo de cómo se atenúa la sacudida con la distancia, y donde no hay sensores el mapa dice `SIN COBERTURA` en vez de rellenar. Cuantos más edificios, más puntos y menos modelo.»* |
+| *«Las fotos del brigadista se quedan aquí.»* | **Falso desde `T-7.26/27`, y hoy la capa está ENCENDIDA en la nube**: si el despliegue tiene la redacción asistida puesta, la imagen del daño sale **fuera de México** hacia OpenRouter y el proveedor del modelo. | *«La fotografía del daño se envía a un proveedor de inteligencia artificial fuera de México para que describa el daño en el informe. Va **sin el sello**: la franja con la hora, la ubicación y el identificador del operador se tapa antes de salir, y el nombre y el teléfono no viajan. La app se lo dice al brigadista en la pantalla donde dispara.»* |
+| *«La IA está apagada.»* | Lo estaba el 2026-09-02. **Hoy está encendida en la nube de desarrollo** (`T-7.26`, desplegada el 2026-09-21). La frase pasó de prudente a falsa. | *«La IA está encendida y redacta la prosa del informe. No decide nada: el objeto que produce **no tiene campo donde poner un veredicto**, y hay una prueba que se pone roja si alguien se lo añade. Cuando no puede redactar, el papel lo dice.»* |
+| *«El informe siempre trae la prosa redactada.»* | La capa es **fail-open a propósito**: cualquier fallo degrada a determinista y lo declara. Prometer la prosa convierte una degradación honesta en un fallo a la vista del cliente. | *«Si la redacción asistida no contesta, el informe sale igual con el texto determinista y dice por qué. La evidencia nunca se queda sin emitir por un problema de la IA.»* |
+
+### Lo que la auditoría prohibía y **sigue prohibido** (no se ha movido)
+
+Las ocho filas restantes de [`INFORME-V1-COMERCIAL §3`](../INFORME-V1-COMERCIAL.md) siguen vivas
+tal cual. Las dos que más cerca están de colarse en esta demostración:
+
+- *«Si el gabinete se apaga, la sirena suena igual por hardware.»* — **`G-04` sigue abierto desde
+  el hito de la Fase 1.** La ruta eléctrica está diseñada y decidida; no está construida.
+- *«El sistema cierra la válvula de gas, retorna los ascensores y libera las puertas.»* — en la
+  unidad de referencia están cableados **sirena y estrobo**. Lo demás se acredita canal por canal
+  en la puesta en marcha de cada inmueble.
 
 ---
 
@@ -254,16 +307,82 @@ mobile/.maestro/run.sh 03-dictamen-liberacion.yaml
 curl -X POST http://<ip-del-gabinete>:8080/api/reset          # suelta el enclavado
 ```
 
-Y en la consola: **clasificar el incidente como `prueba`**. Eso es lo que lo cierra, y es la vía
-correcta: deja `closed_at`, escribe la acción y audita el verbo. Sin esto queda contando como un
-sismo real en las métricas del sitio, que es exactamente la clase de dato sucio que el sistema
-promete no tener.
+Y en la consola: **clasificar el incidente como `reproduccion`** (ver el aviso de la cabecera:
+`prueba` también cierra, pero dice otra cosa). Eso es lo que lo cierra, y es la vía correcta: deja
+`closed_at`, escribe la acción y audita el verbo. Sin esto queda contando como un sismo real en
+las métricas del sitio, que es exactamente la clase de dato sucio que el sistema promete no tener.
 
 ⚠️ **Aquí había un `seed_staging_incident.sh reset` y se quitó** (`T-7.52`). Ese arnés es de los
 E2E móviles, no de la demostración, y cerraba **todos** los incidentes abiertos del sitio sin hora
 de cierre — el defecto de `T-7.51`, cuyo síntoma era un dictamen pericial diciendo «EN CURSO» de un
 incidente cerrado. Desde `T-7.52` abortaría de todas formas: el arnés no escribe sobre un sitio con
 gabinete.
+
+---
+
+## Plan B · qué hacer cuando algo se cae **en medio**
+
+> [`T-7.28`] Cuatro caídas, las cuatro medidas en este repositorio, con lo que sigue funcionando
+> y la frase con la que se cuenta. **La regla que las gobierna a todas:** decirlo tú antes de que
+> lo pregunten. Una demostración en la que se cae algo y el que la conduce lo nombra es una
+> demostración de un sistema honesto; la misma caída descubierta por el cliente es otra cosa.
+
+### B1 · Se cae internet
+
+**Lo que sigue funcionando, y es lo que hay que enseñar:** todo lo que importa. Es la regla de oro
+2 y no es una promesa, es la arquitectura: `SASMEX → relé` es 100 % local y **no pasa por la nube
+ni por internet**, así que el acto 3 —la sirena— sale igual. El gabinete sigue detectando,
+sigue accionando y sigue guardando.
+
+**Lo que se cae:** la consola no ve nada nuevo, no hay aviso al teléfono y no hay PDF.
+
+**Qué hacer:** llevar la demostración **al panel del gabinete**, que cuenta la historia entera sin
+nube. El propio panel declara la caída (`cloud.online`, y `cloud.queued` con lo que lleva esperando
+en la cola), o sea que el argumento se enseña **con la pantalla delante** en vez de contarse.
+
+> «Acabamos de perder internet. Miren lo que NO se detuvo: el radio entró, el relé cerró y la
+> sirena sonó, sin salir del edificio. Lo que está en pausa es la coordinación — el gabinete tiene
+> N mensajes en cola y los va a entregar cuando vuelva la línea, sin duplicar ninguno, porque cada
+> uno lleva su identificador.»
+
+### B2 · No llega el aviso al teléfono
+
+**Lo que sigue funcionando:** la app **en primer plano sondea sola**, y no es un apaño: en crisis
+pregunta cada **5 s** (`CRISIS_POLL_MS`), la lista de brigada cada **15 s** y el panel cada **30 s**.
+Con el teléfono desbloqueado y la app abierta, el acto 3 se ve igual.
+
+**Qué hacer:** abrir la app **antes** del pulso y dejarla en pantalla. Y decir qué se perdió: lo
+que no ocurrió es la entrega con la pantalla apagada, que es la mitad buena del acto.
+
+> «Este teléfono ya tenía la app abierta. Lo que acaban de ver es el estado llegando por consulta.
+> Lo que hoy no les puedo enseñar es el aviso entrando con la pantalla bloqueada — está construido
+> y medido (2,3 s desde el pulso, el 12 de septiembre), pero hoy este aparato no lo recibió.»
+
+### B3 · No hay IA
+
+**Lo que sigue funcionando: el documento entero.** La capa narrativa **no decide nada** —no
+clasifica, no firma, no cambia una alerta— así que sin ella el dictamen sale completo, con su
+veredicto y todos sus números, sólo que con la prosa determinista.
+
+**Y no hay que explicarlo: el papel lo dice.** Imprime `NARRATIVA DEGRADADA · <razón>`, y la razón
+distingue «el proveedor no respondió» de «no aceptó la clave», que mandan a mirar sitios distintos.
+
+> «La redacción asistida no contestó, y el informe lo dice en su pie. Fíjense en lo que no cambió:
+> el veredicto, la clasificación y las cifras son los mismos. La IA aquí redacta; no decide. Hay
+> una prueba en el repositorio que se pone roja el día que alguien intente cambiar eso.»
+
+### B4 · El mapa sale vacío (no cargan los tiles)
+
+**Lo que sigue funcionando:** la consola cae a un **estilo local** (`FALLBACK_STYLE`) y el mapa se
+dibuja sin depender de la red: los sitios, los anillos y el muro siguen ahí.
+
+**⚠️ La trampa, medida en el código:** el respaldo **sólo entra si el estilo inicial NUNCA cargó**.
+Un tile que falle a media sesión no borra el mapa ya dibujado —eso es deliberado—, pero tampoco
+dispara el respaldo. O sea que si abres la consola con red y la pierdes después, el mapa se queda
+como está; si la abres sin red, cae al respaldo solo.
+
+**Qué hacer:** **abrir la consola antes de que entre el cliente.** Si el mapa aparece vacío,
+**recargar** — es lo que engancha el respaldo. Nunca quedarse mirando a ver si vuelve.
 
 ---
 
