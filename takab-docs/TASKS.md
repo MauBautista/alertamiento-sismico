@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **389** · `[~]` **10** · `[ ]` **43**
+**Conteo de tareas:** total **442** · `[x]` **390** · `[~]` **10** · `[ ]` **42**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -13491,6 +13491,15 @@ fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 > `T-7.49`, con `vida_del_sismo.spec.ts` corrido en un navegador de verdad el 2026-09-16 y las
 > líneas de `api` y `edge` de su «Goal» re-corridas en verde el 2026-09-20 (53 y 24 pruebas).
 >
+> `F5` **CERRADA el 2026-09-21** con sus tres fichas (`T-7.23`, `T-7.24`, `T-7.25`) y su
+> «Goal» corrido: `edge` 1746 pruebas con el **gate #3 ejercido 5/5 contra el Shake real**,
+> `api` 3962, `web` 2564, `make drift` en verde y la matriz regenerada. Lo que la fase deja
+> MEDIDO en el gabinete real, no prometido: el panel sismógrafo sirve el espectrograma en
+> 8.4 ms y el helicorder de 6 h en 1.03 s leyendo 24.1 MB del anillo, con el RSS del proceso
+> estabilizado en 219 MB —tres lecturas de 6 h seguidas no lo mueven— y 526 MiB disponibles.
+> ⚠️ Y lo que NO deja cerrado, porque es decisión de una persona: el dueño de los pines corre
+> código anterior y alinearlo exige una ventana de mantenimiento con el edificio avisado.
+>
 > `F4` **CERRADA el 2026-09-20** con sus **24 fichas en `[x]`** y las dos líneas ejecutables de su
 > «Goal» en verde: 414 pruebas de papel y el membrete regenerado sin deriva. Los dos `[~]` que
 > quedan dentro de fichas ya cerradas están declarados por su causa y no son deuda oculta: el mapa
@@ -15009,22 +15018,58 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > **Lo que este arreglo deja abierto, fichado en `T-7.54`:** la descarga se queda **sin freno propio**.
 > Hasta hoy sólo estaba frenada por robar el presupuesto de otro, que no es un diseño sino un efecto.
 
-### [ ] T-7.23 · **Panel SISMÓGRAFO en el gabinete: trazas, espectrograma y helicorder** — `SOFTWARE`
+### [x] T-7.23 · **Panel SISMÓGRAFO en el gabinete: trazas, espectrograma y helicorder** — `SOFTWARE` · **CERRADA 2026-09-21 · MEDIDA EN EL GABINETE REAL**
 - **Componente:** edge · docs · **Depende de:** — · **Prioridad:** F5 · media
 - **Objetivo:** una vista del panel al estilo de StationView, propia, sin logo ajeno y sin
   pedir nada a internet, con su coste medido en el Pi 4.
 - **Criterios de aceptación:**
-  - [ ] **Primero la spec:** sección nueva en `design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md`
-    (vista `?view=sismografo`; no rediseña §9).
-  - [ ] `/api/spectrogram` (`scipy.signal.spectrogram` sobre el anillo de 60 s, matriz `uint8`
-    acotada, cadencia 1 Hz) y `/api/helicorder` (1–6 h del anillo miniSEED, min/máx a 1 Hz);
-    tarjeta de estación (red.estación.loc.canal, sensibilidad, fuente de calibración).
-  - [ ] `reduced-motion` respetado; cero recursos externos; coste medido con `top -bn3` y
-    `curl -w time_total` en el Pi real y escrito en la spec.
-  - [ ] `edge/tests/test_local_api_sismografo.py` y `test_panel_render_census` verdes; nada
-    de esto toca la ruta de disparo.
+  - [x] **Primero la spec:** `§15` nueva en `design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md`
+    (vista `?view=sismografo`; no rediseña la §9, y el `#actionbar` sigue presente porque quien
+    está de pie durante una alerta tiene que poder silenciar desde donde esté mirando).
+  - [x] `/api/spectrogram` (`scipy.signal.spectrogram` sobre el anillo de 60 s, matriz `uint8`
+    acotada contra una escala en dB FIJA, cadencia 1 Hz) y `/api/helicorder` (1–6 h del anillo
+    miniSEED, min/máx a 1 Hz); tarjeta de estación con la identidad completa en un campo NUEVO
+    (`station_nslc`), sin tocar `station_code`, que es contrato con la nube.
+  - [x] `reduced-motion` respetado (cero animaciones nuevas: el lienzo se REPINTA, que no es
+    animarse); cero recursos externos; **coste medido con `top -bn3` y `curl -w time_total` en
+    el Pi real y escrito en la `§15.7`**, sobre la release `20260921T100641Z-fead5e8`.
+  - [x] `edge/tests/test_local_api_sismografo.py` (131 pruebas) y `test_panel_render_census`
+    verdes; nada de esto toca la ruta de disparo — el dueño de los pines es otro proceso.
 - **Tests de censo que toca:** `test_panel_render_census` · **Token nuevo:** no · **Cambia
   algo que un test defiende hoy:** no.
+
+> **Cómo se cerró — cuatro vueltas de escéptico, y una medición mía que era falsa.**
+>
+> **La decisión que da forma al módulo:** el helicorder NO usa `RingBuffer.extract_window`,
+> que lee el fichero del día entero — 2.9 s y 159 MB de RSS pico sobre el EHZ de 100.2 MB, y
+> 8.75 s / 421 MB sobre uno de 287 MB, en una máquina de 905.7 MiB. Localiza por búsqueda
+> binaria sobre las cabeceras miniSEED y lee sólo la cola.
+>
+> ⚠️ **«Importar `scipy.signal` cuesta 0 MB» era falso, y lo escribí yo.** Comprobé `scipy` en
+> `/proc/<pid>/maps` del proceso vivo y di por bueno que ya estaba cargado; lo que estaba
+> cargado era `scipy.integrate`, que es lo que arrastra `obspy`. El import real cuesta 0.39 s
+> y +24.3 MB en x86-64 — **y 4.116 s en el Pi**, medido ya sobre el endpoint servido. El
+> presupuesto de 48 MiB del helicorder se había calculado sobre ese cero.
+>
+> **Tres defectos que los arreglos PARIERON, y que el escéptico cazó en la vuelta siguiente:**
+> el umbral de rancio compartido entre los dos lienzos ponía la tarjeta en rojo **50 de cada 60
+> segundos con el sensor sano** (el helicorder se re-pide cada 60 s por diseño; su umbral se
+> DERIVA ahora de su cadencia y de la granularidad del anillo: 10 + 86400/26305 + 60 = 73.28 s);
+> el testigo de desorden **apagaba el helicorder ~30 h** por un solo bloque re-entregado, que es
+> lo que hace una reconexión larga de SeedLink; y al arreglar eso, `truncated: presupuesto`
+> pasó a rotularse sobre ventanas **servidas enteras**, porque el presupuesto mordía el fichero
+> y no la ventana.
+>
+> **Doce guardas nacieron ciegas** y se rehicieron una a una: entre ellas, la de la edad del
+> helicorder sólo buscaba la cadena «CALCULADO HACE» —un marcador tapando la resta, la lección
+> exacta de `T-7.60`— y la del eje de frecuencias no veía que estuviera invertido, que es el
+> defecto que su propio comentario avisaba de que nadie notaría hasta que importara.
+>
+> **Lo que el despliegue dejó a medias, y es decisión de Mauricio:** `takab-gpio` —el dueño de
+> los pines— carga `config/settings.py`, que esta ficha tocó, así que corre código anterior. El
+> gabinete protege ahora mismo y el código nuevo ya está en disco; alinearlo exige
+> `--ventana-de-mantenimiento`, que cicla `GAS_VALVE` y `DOOR_RETAINER` y abre una ventana sin
+> sirena. No se revierte: revertir también es reiniciar y deja el gabinete más atrás.
 
 ### [x] T-7.24 · **Mini-ShakeMap por evento** — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-21**
 - **Componente:** api · web · docs · **Depende de:** T-3.09, T-7.14 · **Prioridad:** F5 · media

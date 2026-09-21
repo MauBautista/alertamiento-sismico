@@ -1345,13 +1345,42 @@ reintentan: pedir más deprisa no arregla un gabinete que no sirve el endpoint.
 
 ### 15.7 · Coste — cómo se mide, y qué se midió
 
-**Estas cifras son de PROTOTIPO, no del endpoint.** Se midieron el 2026-09-20 sobre el
-gabinete real (`Raspberry Pi 4 Model B Rev 1.5`, 905.7 MiB de RAM) ejecutando las operaciones
-que el endpoint hace, no el endpoint servido. Las definitivas se toman tras desplegar, con los
-comandos de abajo, y se escriben aquí sustituyendo esta advertencia.
+**MEDIDO SOBRE EL ENDPOINT SERVIDO, no sobre un prototipo** — `Raspberry Pi 4 Model B
+Rev 1.5`, 905.7 MiB de RAM, release `20260921T100641Z-fead5e8`, el 2026-09-21 con los comandos
+de más abajo corridos desde el propio gabinete.
 
-Línea base del gabinete en reposo, el mismo día: ~260 MiB libres y ~476 MiB en caché; CPU 96 %
-ociosa; 50 °C; `takab-edge` entre 95 y 119 MB de RSS y `takab-gpio` 27 MB.
+| Petición al panel YA DESPLEGADO | 1ª llamada | en caliente | tamaño |
+|---|---|---|---|
+| `/api/status` | 3.8 ms | — | 5.5 KB |
+| `/api/spectrogram?channel=EHZ&nperseg=128` | **4.116 s** | 8.4 ms | 25 KB |
+| `/api/spectrogram?channel=EHZ&nperseg=256` | 5.8 ms | — | 25 KB |
+| `/api/helicorder?channel=EHZ&hours=1` | 221 ms | 188 ms | 51 KB |
+| `/api/helicorder?channel=EHZ&hours=6` | 1.028 s | 1.087 s | 303 KB |
+
+⚠️ **Esos 4.116 s de la primera llamada son el import perezoso de `scipy.signal`, y en el Pi
+cuesta DIEZ VECES lo medido en el equipo de desarrollo** (0.39 s en x86-64). La §15.3 ya
+advertía «falta medirlo en el Pi, donde será igual o peor»: es peor, y por un orden de
+magnitud. Se paga UNA vez por arranque del proceso y sólo si alguien abre esta vista; la vista
+por defecto del panel, el latido a la nube y la ruta de disparo no lo pagan nunca — el dueño de
+los pines es otro proceso (`takab-gpio`, 14 MB de RSS, que no se entera de nada de esto).
+
+**Memoria, y la pregunta que importa: ¿crece?** No. Tras ejercer las dos vistas el RSS de
+`takab-edge` pasa de la banda de reposo (95–119 MB) a **219 MB**, y ahí se queda: tres lecturas
+seguidas de 6 h más cinco espectrogramas lo dejan **exactamente en 219 MB**. Es una marca de
+agua que se paga una vez —el import y los búferes que el asignador no devuelve al sistema—, no
+una fuga. El sistema queda con 124 MiB libres y **526 MiB disponibles**, y `takab-gpio` intacto.
+
+**Lo que costó leer del anillo**, en la misma corrida: una ventana de 6 h leyó **24.1 MB** del
+fichero del día y sirvió **dos tramos con dos huecos declarados**, sin recorte (`truncated:
+false`) y con el dato a **2.9 s** de antigüedad. El anillo tenía 20.93 h en siete tramos el día
+anterior: los huecos no son una hipótesis del diseño, salen en cada lectura.
+
+Línea base del gabinete en reposo, el día anterior: ~260 MiB libres y ~476 MiB en caché; CPU
+96 % ociosa; 50 °C; `takab-edge` entre 95 y 119 MB de RSS y `takab-gpio` 27 MB. Y con el panel
+nuevo sirviendo: CPU **94–99 % ociosa** en las tres pasadas de `top -bn3`.
+
+Las cifras de PROTOTIPO que llevaron a este diseño se conservan abajo, porque son las que
+explican POR QUÉ el helicorder no usa `extract_window`:
 
 | Operación (prototipo) | Coste medido |
 |---|---|
