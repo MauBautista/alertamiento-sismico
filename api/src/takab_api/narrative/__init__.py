@@ -68,6 +68,9 @@ from takab_api.narrative.base import (
     MOTIVO_RESPALDO_CAIDO,
     MOTIVO_SIN_CLAVE,
     MOTIVO_SIN_HECHOS,
+    MOTIVO_SIN_VISION,
+    MOTIVO_VISION_ILEGIBLE,
+    ROTULO_ASISTENCIA,
     SUFIJO_DETERMINISTA,
     Narrative,
     NarrativeFacts,
@@ -78,7 +81,7 @@ from takab_api.narrative.base import (
 from takab_api.narrative.deterministic import NAME as DETERMINISTA
 from takab_api.narrative.deterministic import DeterministicProvider
 from takab_api.narrative.quota import MOTIVO_AGOTADA, acumular, leer_estado
-from takab_api.narrative.redact import facts_from
+from takab_api.narrative.redact import facts_from, imagenes_de
 from takab_api.settings import Settings
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -98,6 +101,7 @@ __all__ = [
     "build_narrative",
     "TRAMOS",
     "facts_from",
+    "imagenes_de",
     "select_provider",
 ]
 
@@ -118,6 +122,7 @@ TITULO_LIMITACIONES = "Limitaciones y datos ausentes"
 TRAMOS: tuple[str, ...] = (
     "elegir proveedor",
     "redactar los hechos",
+    "comprobar la visión",
     "leer la cuota",
     "llamar al proveedor",
     "cobrar",
@@ -188,7 +193,6 @@ async def build_narrative(
     settings: Settings | None = None,
     *,
     provider: NarrativeProvider | None = None,
-    damage_counts: dict[str, int] | None = None,
     conn: AsyncConnection | None = None,
     tenant_id: str | None = None,
     actor: str | None = None,
@@ -239,9 +243,13 @@ async def build_narrative(
             )
 
     # ── tramo «redactar los hechos» ──────────────────────────────────────────
+    # [T-7.27] Las fotografías se preparan AQUÍ y se pasan a los hechos, no cada uno
+    # por su lado: el número que el prompt declara sale de la misma tupla que se
+    # adjunta, y así no puede decir «seis fotografías» con cinco dentro.
     try:
+        imagenes = imagenes_de(model) if _sale_a_la_red(elegido.provider) else ()
         req = NarrativeRequest(
-            facts=facts_from(model, damage_counts=damage_counts), model=elegido.model
+            facts=facts_from(model, imagenes=imagenes), model=elegido.model, images=imagenes
         )
     except Exception as exc:  # noqa: BLE001 - sin hechos no hay prosa, pero sí dictamen
         log.exception("narrative: no se pudieron redactar los hechos del incidente")
@@ -251,6 +259,36 @@ async def build_narrative(
     # que falta es decir por qué no fue el otro.
     if elegido.degraded_reason:
         return await _degradar(req, elegido.degraded_reason)
+
+    # ── tramo «comprobar la visión» ──────────────────────────────────────────
+    # [T-7.27·D-32] El modelo tiene que DECLARAR que admite imágenes; si no, se cae al
+    # determinista y se dice. Se pregunta por el nombre del método y no por el tipo del
+    # proveedor: un doble de test o un proveedor futuro sin catálogo que consultar no
+    # tiene por qué implementar esto, y forzarlo a hacerlo sería pedirle que mienta.
+    #
+    # ⚠️ Se comprueba SIEMPRE, también en un incidente sin una sola fotografía, y es una
+    # lectura deliberada de `D-32` («el modelo tiene que declarar que admite imágenes y,
+    # si no, la capa cae al determinista y lo dice»). La alternativa —redactar sin
+    # imágenes cuando el incidente no las tiene— haría que el MISMO modelo configurado
+    # redactara unos dictámenes y otros no según lo que hubiera fotografiado la brigada:
+    # dos documentos del mismo edificio, redactados por caminos distintos, y la razón
+    # enterrada en si aquel día alguien sacó el teléfono. Un modelo sin visión está mal
+    # configurado, y eso se arregla cambiando el slug, no tolerándolo en silencio.
+    comprobar = getattr(elegido.provider, "admite_imagenes", None)
+    if comprobar is not None:
+        try:
+            vision = await comprobar()
+        except Exception as exc:  # noqa: BLE001
+            log.exception("narrative: no se pudo comprobar si el modelo admite imágenes")
+            return await _degradar(
+                req, motivo_con_causa(MOTIVO_VISION_ILEGIBLE, type(exc).__name__)
+            )
+        if not vision.admite:
+            # ⚠️ Nunca un `or ""`: un corte sin motivo deja el PDF cortando y callando.
+            # `consultar_vision` siempre trae motivo cuando niega; si algún día dejara
+            # de traerlo, la frase conservadora sigue siendo verdad.
+            log.warning("narrative: %s", vision.motivo)
+            return await _degradar(req, vision.motivo or MOTIVO_SIN_VISION + SUFIJO_DETERMINISTA)
 
     cobrable = conn is not None and tenant_id is not None and _sale_a_la_red(elegido.provider)
     if cobrable:
@@ -408,7 +446,22 @@ def _hubo_redaccion_cobrable(narrativa: Narrative) -> bool:
 
 
 def apply_narrative(model: ReportModel, narrative: Narrative) -> None:
-    """Cuelga la prosa del modelo. El veredicto del modelo NO se toca."""
-    model.narrative = list(narrative.sections)
+    """Cuelga la prosa del modelo. El veredicto del modelo NO se toca.
+
+    [T-7.27] Y la rotula si la escribió un modelo. El §16 ya llevaba el aviso de
+    asistencia automatizada, pero **al final**, después de seis párrafos: quien hojea el
+    documento leía la prosa entera antes de saber quién la había escrito. El rótulo va
+    en el título de cada sección, que es lo primero que se ve de ella.
+
+    El control que importa es el negativo, y es el mismo que el del aviso del §16:
+    rotular el texto determinista afirmaría una asistencia que no hubo.
+    """
+    model.narrative = [
+        (_rotulada(t, narrative.provider), cuerpo) for t, cuerpo in narrative.sections
+    ]
     model.narrative_provider = narrative.provider
     model.narrative_degraded = narrative.degraded_reason
+
+
+def _rotulada(titulo: str, provider: str) -> str:
+    return titulo if provider == DETERMINISTA else f"{titulo} · {ROTULO_ASISTENCIA}"

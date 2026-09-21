@@ -212,6 +212,35 @@ def test_un_canal_saturado_se_declara_como_ausencia_de_medicion() -> None:
     assert any("satura" in g.lower() and "ENZ" in g for g in gaps)
 
 
+def _campos_alcanzables(raiz) -> dict[str, tuple[str, ...]]:
+    """Todos los campos que salen de la nube por esta raíz, **bajando a los anidados**.
+
+    ⚠️ [T-7.27·A] El censo contaba `dataclasses.fields(NarrativeFacts)` y punto, y
+    `T-7.27` metió el 80 % del dato nuevo en dataclasses ANIDADOS. Medido: añadiendo un
+    `report_id` a `DanoRedactado` —un UUID de reporte, correlacionable entre documentos,
+    del tipo que esta lista veta— el número seguía en 38 y las 201 pruebas en verde. Un
+    censo que no baja donde está el dato no cuenta el dato.
+    """
+    import dataclasses  # noqa: PLC0415
+    import typing  # noqa: PLC0415
+
+    vistos: dict[str, tuple[str, ...]] = {}
+
+    def bajar(tipo) -> None:
+        if tipo.__name__ in vistos:
+            return
+        vistos[tipo.__name__] = tuple(f.name for f in dataclasses.fields(tipo))
+        pistas = typing.get_type_hints(tipo)
+        for f in dataclasses.fields(tipo):
+            anotacion = pistas[f.name]
+            for arg in (anotacion, *typing.get_args(anotacion)):
+                if dataclasses.is_dataclass(arg):
+                    bajar(arg)
+
+    bajar(raiz)
+    return vistos
+
+
 def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
     """Guarda de no-vacuidad, y de cambio a la vista.
 
@@ -224,11 +253,10 @@ def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
     Y de paso impide que los tests de arriba se vuelvan vacuos: si `facts_from`
     devolviera un objeto vacío, todos los `not in` pasarían en verde.
     """
-    from dataclasses import fields
-
     from takab_api.narrative.base import NarrativeFacts
 
-    campos = {f.name for f in fields(NarrativeFacts)}
+    campos = _campos_alcanzables(NarrativeFacts)
+    total = sum(len(c) for c in campos.values())
 
     # [T-7.36] 29 → 30: `opened_trigger`. Es un hecho AGREGADO del incidente —con
     # qué disparo se abrió, uno de cuatro valores de un enum— exactamente del mismo
@@ -238,14 +266,59 @@ def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
     # validar y esta allowlist existe para que no salga de la nube.
     # [T-7.38·L] 31 → 32: `has_archived_miniseed`. Booleano derivado de la lista de
     # custodia: dice si CONSTA el objeto, que es otra pregunta que si se decodificó.
-    assert len(campos) == 32, (
+    # [T-7.27] 32 → 38, y es el cambio más grande que ha tenido esta lista: `stations`,
+    # `timeline`, `damage_reports`, `reproduccion`, `photos_attached` y
+    # `photos_available`. Son los cuatro bloques de `D-32` más las dos cuentas de
+    # fotografías. Lo que NO entra por ninguno de ellos —y es la mitad del trabajo— son
+    # los nombres y códigos de las estaciones vecinas, el identificador del actor de
+    # cada acción, el nombre de la zona y las notas de los reportes de daño; lo fija
+    # `test_lo_que_ve_la_ia.py` campo a campo.
+    # [T-7.27·A] 38 → 57 SIN QUE SALGA UN CAMPO NUEVO: el censo pasa a contar también
+    # los campos de los dataclasses ANIDADOS (9 de `EstacionRedactada`, 4 de
+    # `HitoRedactado`, 6 de `DanoRedactado`), que es donde `T-7.27` metió el dato nuevo
+    # y donde el número anterior era ciego.
+    #
+    # ⚠️ Los BYTES de las fotografías no están aquí a propósito: viajan por su propio
+    # canal (`NarrativeRequest.images`, allowlist en `redact.imagenes_de`) y no por los
+    # hechos. Meterlos aquí volvería ilegible este payload —que es justo lo que los
+    # tests de arriba inspeccionan— y pondría megabytes en cada `asdict`. Ese canal
+    # tiene su propio censo, aquí abajo.
+    assert total == 57, (
         "cambió lo que viaja al proveedor de prosa. Si el campo nuevo es un dato "
         "del inmueble o de una persona, NO puede salir; si es un hecho agregado, "
-        f"actualiza el número y di por qué. Campos: {sorted(campos)}"
+        f"actualiza el número y di por qué. Campos: {campos}"
     )
+    assert set(campos) == {
+        "NarrativeFacts",
+        "EstacionRedactada",
+        "HitoRedactado",
+        "DanoRedactado",
+    }, f"apareció un bloque anidado nuevo en los hechos: {sorted(campos)}"
     # El payload real no está vacío: los `not in` de arriba buscan sobre algo.
     payload = _payload(_con_folio_real())
     assert len(payload) > 400, f"el payload serializado quedó en {len(payload)} bytes"
+
+
+def test_el_CANAL_DE_LAS_IMAGENES_tambien_declara_lo_que_lleva() -> None:
+    """`NarrativeRequest` es por donde viajan las fotografías y **no tenía censo de
+    ningún tipo**. Los hechos los vigilaba el número de arriba; el canal de los bytes,
+    nadie — y es el que `D-32` puso como condición."""
+    from takab_api.narrative.base import NarrativeRequest
+
+    campos = _campos_alcanzables(NarrativeRequest)
+    assert campos["NarrativeRequest"] == ("facts", "model", "images")
+    # `jpeg` (los bytes TAPADOS), las dos huellas —la de lo impreso y la de lo enviado—,
+    # el tamaño y el orden del reporte del que salió. Ni `evidence_id`, ni `s3_key`, ni
+    # el `sha256_declarado` que subió el teléfono.
+    assert campos["ImagenAdjunta"] == (
+        "jpeg",
+        "sha256",
+        "sha256_enviado",
+        "ancho",
+        "alto",
+        "reporte",
+    ), f"cambió lo que acompaña a cada fotografía: {campos['ImagenAdjunta']}"
+    assert sum(len(c) for c in campos.values()) == 66
 
 
 # ---- [T-7.38·E] el hecho de la razón viaja; el texto JAMÁS -------------------

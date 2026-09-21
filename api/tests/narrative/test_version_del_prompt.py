@@ -23,12 +23,13 @@ import json
 from pathlib import Path
 
 import httpx
+import pytest
 
-from takab_api.narrative import build_narrative
+from takab_api.narrative import build_narrative, prompts
 from takab_api.narrative.base import NarrativeRequest
 from takab_api.narrative.deterministic import sections_for
 from takab_api.narrative.openrouter import OpenRouterProvider
-from takab_api.narrative.prompts import SECTION_TITLES, prompt_version
+from takab_api.narrative.prompts import piezas_del_prompt, prompt_version
 from takab_api.narrative.redact import facts_from
 from takab_api.settings import Settings
 from tests.dictamen.test_pdf import model
@@ -58,27 +59,36 @@ def test_la_version_es_estable_mientras_el_prompt_no_cambie() -> None:
     assert prompt_version(), "una versión vacía no identifica nada"
 
 
-def test_cambiar_el_PROMPT_DE_SISTEMA_cambia_la_version(monkeypatch) -> None:
+@pytest.mark.parametrize("pieza", [n for n, _ in piezas_del_prompt()])
+def test_cambiar_CUALQUIER_pieza_del_prompt_mueve_la_version(monkeypatch, pieza: str) -> None:
+    """⚠️ [T-7.27·A] **Este censo se DERIVA; antes se enumeraba a mano y divergió.**
+
+    Había un test por pieza —el prompt de sistema, los títulos, el encabezado del
+    usuario— y `T-7.27` añadió `INSTRUCCION_FOTOS` en otro fichero y **se saltó
+    `ROTULO_FOTO`**: medido, se podía sacar el rótulo del material y las 201 pruebas
+    seguían verdes, aunque el docstring de `prompt_version` promete que entra y aunque
+    cambiar ese texto dejaría dictámenes registrados con una versión que no es la que se
+    usó — el defecto exacto que este campo existe para impedir.
+
+    Hoy la lista sale de `prompts.piezas_del_prompt()`, que es la MISMA función de la que
+    sale el material que se hashea: una plantilla nueva entra en las dos a la vez o en
+    ninguna. Un censo enumerado a mano acaba divergiendo; es la cuarta vez.
+    """
     antes = prompt_version()
-    monkeypatch.setattr("takab_api.narrative.prompts.SYSTEM", "Redactas otra cosa.")
-    assert prompt_version() != antes
+    valor = getattr(prompts, pieza)
+    otro = ("otra cosa", *valor) if isinstance(valor, tuple) else f"{valor} · otra cosa"
+    monkeypatch.setattr(f"takab_api.narrative.prompts.{pieza}", otro)
+    assert prompt_version() != antes, f"cambiar {pieza} no movió la versión del prompt"
 
 
-def test_cambiar_los_TITULOS_cambia_la_version(monkeypatch) -> None:
-    """Los títulos son parte de la instrucción: el guardrail los exige uno a uno."""
-    antes = prompt_version()
-    monkeypatch.setattr(
-        "takab_api.narrative.prompts.SECTION_TITLES", (*SECTION_TITLES, "Conclusión")
-    )
-    assert prompt_version() != antes
-
-
-def test_cambiar_el_ENCABEZADO_DEL_USUARIO_cambia_la_version(monkeypatch) -> None:
-    """La tercera pieza. Sin ella se podría reencuadrar lo que se le manda al modelo
-    —«Hechos del incidente» → «Hipótesis del incidente»— sin que la versión se moviera."""
-    antes = prompt_version()
-    monkeypatch.setattr("takab_api.narrative.prompts.USER_PREFIX", "Hipótesis del incidente:")
-    assert prompt_version() != antes
+def test_el_censo_de_piezas_NO_esta_vacio_ni_se_encoge_en_silencio() -> None:
+    """El control de no-vacuidad del parametrizado de arriba: con la lista vacía, cero
+    tests correrían y el fichero seguiría en verde."""
+    nombres = {n for n, _ in piezas_del_prompt()}
+    assert {"SYSTEM", "SECTION_TITLES", "USER_PREFIX", "INSTRUCCION_FOTOS", "ROTULO_FOTO"} <= (
+        nombres
+    ), f"el censo de plantillas perdió piezas: {sorted(nombres)}"
+    assert all(texto for _, texto in piezas_del_prompt()), "una plantilla vacía no instruye nada"
 
 
 def test_la_version_NO_esta_tecleada_en_el_modulo() -> None:

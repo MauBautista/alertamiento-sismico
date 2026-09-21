@@ -1,0 +1,25 @@
+{
+  "id": "gen-1757952000-takab",
+  "provider": "Anthropic",
+  "model": "anthropic/claude-sonnet-5",
+  "object": "chat.completion",
+  "created": 1757952000,
+  "choices": [
+    {
+      "finish_reason": "stop",
+      "native_finish_reason": "end_turn",
+      "message": {
+        "role": "assistant",
+        "content": "{\"sections\": {\"Resumen ejecutivo\": \"El incidente se abrió por SASMEX y el dictamen vigente es «HABITAR · MONITOREO». El pico medido en el inmueble fue de 0.081 g y 3.2 cm/s. Hay un reporte de la brigada con personas en riesgo declaradas.\", \"Qué pasó\": \"El aviso llegó por SASMEX y el inmueble registró la sacudida poco después. El catálogo del SSN asocia el evento a un sismo M 7.1. La estación 2 de la red midió 0.012 g, por debajo de su umbral de referencia de 0.07 g.\", \"Qué se midió\": \"En el inmueble se midieron 0.081 g de aceleración pico y 3.2 cm/s de velocidad pico, contra un umbral de actuación de 0.10 g. Ningún canal quedó saturado.\", \"Por qué este veredicto\": \"El motor de reglas deterministas evaluó la evidencia instrumental frente a los umbrales configurados y emitió el dictamen que este documento afirma. Esta sección lo explica; no lo revisa.\", \"Qué hacer ahora\": \"Se puede ocupar el inmueble manteniendo vigilancia de daños visibles. En la fotografía del reporte de la brigada se aprecia una grieta en un elemento vertical, de modo que conviene documentarla antes de mover nada y reportar cualquier cambio.\", \"Limitaciones y datos ausentes\": \"No hay forma de onda cruda archivada para este incidente, así que no se pudo calcular el contenido espectral. La prosa de esta sección se redactó con asistencia automatizada y no sustituye al dictamen.\"}}",
+        "refusal": null,
+        "reasoning": null
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4871,
+    "completion_tokens": 412,
+    "total_tokens": 5283,
+    "cost": 0.0179
+  }
+}

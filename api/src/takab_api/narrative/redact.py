@@ -21,6 +21,29 @@ un folio que no existe, y el que lo teclee no encontrará nada. (2) Lo que viaja
 dato personal: es un identificador de documento, estable y correlacionable entre
 dictámenes del mismo incidente, que es justo para lo que se diseñó.
 
+**[T-7.27] Lo que esta lista deja pasar desde `D-32`**, y lo que sigue sin pasar por
+esas mismas vías —que es donde una ampliación de allowlist se estropea—:
+
+* **la tabla por estación**, sin nombre, sin código y sin el del sensor: cada estación
+  de la red es OTRO edificio con gente dentro, y lo que la prosa necesita para citar
+  una fila es su ORDEN en la tabla que el documento imprime;
+* **la cronología** con su marca de tiempo relativa y la CLASE del actor (`user`,
+  `edge`, `system`), nunca el `sub` de Cognito de una persona ni el número de serie de
+  un gabinete;
+* **los reportes de daño** por ROL y por categoría (`D-32`: «el brigadista aparece por
+  rol, nunca por nombre»), jamás sus notas —prosa libre de hasta 2000 caracteres que
+  alguien teclea en un teléfono— ni el nombre de la zona, que lo escribe el cliente;
+* **las fotografías**, por su propio canal (``imagenes_de``), siempre RE-ENCODADAS y
+  —desde `T-7.27·A`— **con la banda de la marca de agua forense TAPADA**.
+
+⚠️ **Esa última no es una precaución de más, y este módulo la había dado por hecha.** La
+allowlist de arriba retiene el `sub` de Cognito y las coordenadas del inmueble… del
+JSON. La cámara forense del móvil los DIBUJA EN EL PÍXEL de cada fotografía de
+evidencia (`GPS 19.43260, -99.13320` y `OP 9f1e4a2c`), y re-encodar quita el EXIF pero
+no quita lo que está pintado encima. El sistema se contradecía a sí mismo: los dos
+identificadores que esta lista existe para retener viajaban igual, renderizados, a un
+tercero y fuera del país. La razón entera, con su medición, en `narrative/marca.py`.
+
 Lo que NO sale por ninguna vía es el ``incident_id`` **completo**, ni el ``event_id``
 (ver ``_BASIS_EVIDENCE_KEYS``): con 8 hex se puede correlacionar dos documentos, no
 reconstruir el identificador ni cruzarlo con otra tabla. La diferencia entre las dos
@@ -30,8 +53,13 @@ mirar.
 
 from __future__ import annotations
 
+import hashlib
+import io
+import logging
 from collections import Counter
 from typing import TYPE_CHECKING
+
+from PIL import Image
 
 from takab_api.dictamen.bitacora import ROTULOS
 from takab_api.dictamen.model import (
@@ -46,11 +74,43 @@ from takab_api.dictamen.model import (
     STATUS_ACTIONS,
     lead_time_text,
 )
+from takab_api.documentos import fotos as fotos_mod
 from takab_api.felt import ORIGEN_INMUEBLE
-from takab_api.narrative.base import NarrativeFacts
+from takab_api.narrative.base import (
+    DanoRedactado,
+    EstacionRedactada,
+    HitoRedactado,
+    ImagenAdjunta,
+    NarrativeFacts,
+)
+from takab_api.narrative.marca import tapar_banda_forense
 
 if TYPE_CHECKING:  # pragma: no cover - solo para el tipo; evita ciclo de imports
     from takab_api.dictamen.model import ReportModel
+
+log = logging.getLogger("takab_api.narrative")
+
+#: [T-7.27] Fotografías que ve la IA, como MÁXIMO, en todo el documento.
+#:
+#: El seis es de `D-32` y es el mismo que `documentos/fotos.py` tomó prestado para el
+#: papel: compartirlo es lo que hace que la MISMA fotografía tenga una sola huella
+#: derivada en los dos sitios. Lo que cambia respecto del papel es el ámbito: allí son
+#: seis POR REPORTE y aquí seis por DOCUMENTO, porque lo que hay al otro lado es el
+#: tope de una petición HTTP y con N reportes «seis por reporte» no acota nada.
+MAX_FOTOS_IA = fotos_mod.MAX_FOTOS_POR_REPORTE
+
+#: Y un tope en NÚMERO de fotos no es un tope de tamaño — es la lección que el PDF ya
+#: pagó (`MAX_BYTES_FOTOS_DOCUMENTO`). Se deriva del techo por foto para que subir la
+#: calidad de las derivadas mueva esta cota sola en vez de dejarla vieja y callada.
+PRESUPUESTO_FOTOS_BYTES = MAX_FOTOS_IA * fotos_mod.MAX_BYTES_SALIDA
+
+#: Clases de actor de `incident_actions`. El identificador va DESPUÉS del primer `:`
+#: (`user:<sub>`, `edge:<serie>`, `system:<qué>`) y es lo único que no puede salir.
+_CLASES_DE_ACTOR = frozenset({"user", "edge", "system"})
+#: Lo que se dice de un actor con otra forma. No se arriesga a partirlo: si mañana
+#: alguien escribe el actor de otra manera, esto declara que no se supo clasificar en
+#: vez de mandar fuera la mitad de una cadena desconocida.
+CLASE_DESCONOCIDA = "otro"
 
 #: Claves del ``basis`` que pueden salir. `event_id` NO está: es un identificador
 #: correlacionable, y la prosa no lo necesita para explicar un umbral.
@@ -195,8 +255,204 @@ def _razon_de_persona(m: ReportModel) -> bool:
     return isinstance(nota, str) and bool(nota.strip())
 
 
-def facts_from(m: ReportModel, *, damage_counts: dict[str, int] | None = None) -> NarrativeFacts:
-    """Hechos redactados del dictamen. Solo lo enumerado aquí sale de la nube."""
+def _clase_de_actor(actor: str | None) -> str:
+    """`user:9f1e-…` → `user`. La persona y el aparato se quedan aquí.
+
+    El actor de `incident_actions` es `user:<sub de Cognito>`, `edge:<serie del
+    gabinete>` o `system:<qué>`. Lo que la prosa necesita para contar la historia es si
+    lo hizo una persona, el gabinete o el sistema; lo de después del `:` identifica a
+    una persona concreta o a un aparato concreto, que es lo que esta lista existe para
+    retener.
+    """
+    cabeza = (actor or "").split(":", 1)[0].strip().lower()
+    return cabeza if cabeza in _CLASES_DE_ACTOR else CLASE_DESCONOCIDA
+
+
+def _estaciones(m: ReportModel) -> tuple[EstacionRedactada, ...]:
+    """La tabla de la §7, con sus cifras y sin la identidad de los vecinos."""
+    return tuple(
+        EstacionRedactada(
+            orden=i,
+            propia=e.site_code == m.site_code,
+            dist_km=e.dist_km,
+            t_teorico_s=e.t_teorico_s,
+            t_medido_s=e.t_medido_s,
+            peak_pga_g=e.peak_pga_g,
+            umbral_pga_g=e.umbral_pga_g,
+            umbral_origen=e.umbral_origen,
+            tier=e.tier,
+        )
+        for i, e in enumerate(m.estaciones, start=1)
+    )
+
+
+def _cronologia(m: ReportModel) -> tuple[HitoRedactado, ...]:
+    """La bitácora con su reloj puesto a cero en la apertura del incidente."""
+    return tuple(
+        HitoRedactado(
+            t_desde_apertura_s=round((a.ts - m.opened_at).total_seconds(), 1),
+            kind=a.kind,
+            rotulo=ROTULOS.get(a.kind),
+            actor=_clase_de_actor(a.actor),
+        )
+        for a in m.actions
+    )
+
+
+def _fotos_de(d) -> int:  # noqa: ANN001 - `DanoFila`, sin importarlo en runtime
+    """Cuántas fotografías tiene ESE reporte, contando las que el papel no imprimió.
+
+    `fotos_omitidas` son las que quedaron fuera del tope del documento: existen en el
+    expediente y el incidente las tiene. Callarlas aquí haría que el prompt declarara
+    menos fotografías de las que hay, que es la mentira que esta cuenta evita.
+    """
+    return len(d.fotos) + max(0, d.fotos_omitidas)
+
+
+def _danos(m: ReportModel, imagenes: tuple[ImagenAdjunta, ...]) -> tuple[DanoRedactado, ...]:
+    """Los reportes del brigadista: rol, categorías y cuántas fotos de cada uno viajan."""
+    por_reporte = Counter(i.reporte for i in imagenes)
+    return tuple(
+        DanoRedactado(
+            orden=i,
+            rol=d.rol,
+            personas_en_riesgo=bool(d.personas_en_riesgo),
+            categorias=tuple(
+                (str(c.get("key")), str(c.get("severity")))
+                for c in (d.categorias or [])
+                if isinstance(c, dict)
+            ),
+            fotos_adjuntas=por_reporte.get(i, 0),
+            fotos_no_adjuntas=max(0, _fotos_de(d) - por_reporte.get(i, 0)),
+        )
+        for i, d in enumerate(m.danos, start=1)
+    )
+
+
+def _conteo_de_danos(m: ReportModel) -> tuple[tuple[str, int], ...]:
+    """Cuántos reportes de cada categoría. El `key` es de un catálogo cerrado
+    (`schemas/mobile.DAMAGE_CATEGORY_KEYS`); la `note` de la categoría, no."""
+    claves = Counter(
+        str(c.get("key"))
+        for d in m.danos
+        for c in (d.categorias or [])
+        if isinstance(c, dict) and c.get("key")
+    )
+    return tuple(sorted(claves.items()))
+
+
+#: Claves de metadatos que una derivada de `preparar` puede traer, y **solo esas**.
+#: Allowlist y no denylist, por la misma razón que el resto de este módulo: mañana
+#: aparece un bloque nuevo y con una lista negra saldría solo.
+#:
+#: MEDIDO sobre la salida de `documentos/fotos.preparar` con Pillow 12.3.0: son las
+#: cuatro claves del segmento JFIF y nada más. Lo que esto deja fuera a propósito es
+#: **XMP** y **IPTC**, que es donde Android escribe el GPS y el autor: `getexif()` no
+#: los ve, así que la comprobación anterior —«no lleva EXIF»— daba por buena una
+#: imagen con las coordenadas dentro por otra puerta.
+_METADATOS_DE_UNA_DERIVADA = frozenset({"jfif", "jfif_version", "jfif_unit", "jfif_density"})
+
+
+def _es_derivada(jpeg: bytes | None) -> bool:
+    """¿Estos bytes son una derivada de ``documentos/fotos.preparar``?
+
+    **Por qué se verifica en vez de confiar.** Hoy el único que rellena `FotoFila.jpeg`
+    es el builder, y siempre con la derivada. Mañana, un camino nuevo que ponga ahí lo
+    que bajó de S3 mandaría a un tercero **la marca del teléfono y la cadena de
+    ubicación del EXIF** — medido en `T-7.22`, cuando ese mismo blob acababa dentro del
+    PDF (`tests/documentos/test_fotos.py`). Aquel día el destinatario era un documento
+    de la propia organización; aquí es un proveedor en otro país.
+
+    Se comprueban TRES propiedades, y cada una tiene su prueba **discriminada**: es
+    JPEG, no pasa del lado máximo y no trae ningún bloque de metadatos fuera de los
+    cuatro del JFIF. Solo se lee la CABECERA — no se decodifica la imagen, así que una
+    bomba de descompresión no llega a expandirse aquí.
+
+    ⚠️ [T-7.27·A] **Eran cuatro y ahora son tres, y la que se fue es la del EXIF.** Lo
+    medido: las dos primeras se solapaban sobre el único fixture que las ejercía —1600×1200
+    con EXIF— y se podían borrar de una en una sin que nada se pusiera rojo; y al añadir la
+    allowlist de metadatos, `not dict(im.getexif())` quedó SUBSUMIDA, porque en un JPEG el
+    EXIF es el bloque `info["exif"]` y ya lo rechaza la lista. Medido también: quitando
+    aquella línea, las 273 pruebas seguían verdes. Una comprobación que ninguna prueba
+    puede matar no es una comprobación, así que se deja UNA con su prueba en vez de dos
+    donde una sobra. Lo que sostiene la equivalencia —que un JPEG con EXIF siempre trae
+    `info["exif"]`— es una propiedad de Pillow, y por eso tiene test propio: el día que
+    deje de ser cierta, se pone rojo.
+    """
+    if not jpeg:
+        return False
+    try:
+        with Image.open(io.BytesIO(jpeg)) as im:
+            if im.format != "JPEG" or max(im.size) > fotos_mod.LADO_MAX:
+                return False
+            return not (set(im.info) - _METADATOS_DE_UNA_DERIVADA)
+    except Exception:  # noqa: BLE001 - lo que no se puede verificar, no sale
+        return False
+
+
+def imagenes_de(m: ReportModel) -> tuple[ImagenAdjunta, ...]:
+    """Las fotografías que viajan al proveedor. Allowlist también aquí (`D-32`).
+
+    Cuatro cotas, y ninguna es decorativa: **seis** fotos (`MAX_FOTOS_IA`), el
+    **presupuesto de bytes** (`PRESUPUESTO_FOTOS_BYTES`), la **verificación** de que
+    cada blob es una derivada y —desde `T-7.27·A`— el **tapado de la banda de la marca
+    de agua forense** (`narrative/marca.py`), que lleva DIBUJADOS en el píxel las
+    coordenadas del inmueble y el identificador del operador. Lo que no pasa las cuatro
+    no sale, y el hueco se declara en los hechos (`DanoRedactado.fotos_no_adjuntas`) en
+    vez de desaparecer.
+
+    El presupuesto se cobra sobre **lo que viaja**, no sobre la derivada del papel: son
+    bytes distintos desde que hay tapado, y cobrar los otros dejaba el peso real de la
+    petición sin cota.
+    """
+    salida: list[ImagenAdjunta] = []
+    gastado = 0
+    for orden, d in enumerate(m.danos, start=1):
+        for f in d.fotos:
+            if len(salida) >= MAX_FOTOS_IA:
+                return tuple(salida)
+            if not _es_derivada(f.jpeg):
+                if f.jpeg:
+                    log.warning(
+                        "narrative: una foto del reporte %s no es una derivada y NO se manda", orden
+                    )
+                continue
+            tapada = tapar_banda_forense(f.jpeg)
+            if not tapada.ok:
+                log.warning(
+                    "narrative: una foto del reporte %s NO se manda: %s", orden, tapada.motivo
+                )
+                continue
+            assert tapada.jpeg is not None  # noqa: S101 - lo garantiza `ok`
+            if gastado + len(tapada.jpeg) > PRESUPUESTO_FOTOS_BYTES:
+                continue
+            gastado += len(tapada.jpeg)
+            salida.append(
+                ImagenAdjunta(
+                    jpeg=tapada.jpeg,
+                    sha256=f.sha256_impreso,
+                    sha256_enviado=hashlib.sha256(tapada.jpeg).hexdigest(),
+                    ancho=f.ancho,
+                    alto=f.alto,
+                    reporte=orden,
+                )
+            )
+    return tuple(salida)
+
+
+def facts_from(m: ReportModel, *, imagenes: tuple[ImagenAdjunta, ...] = ()) -> NarrativeFacts:
+    """Hechos redactados del dictamen. Solo lo enumerado aquí sale de la nube.
+
+    ⚠️ [T-7.27] `damage_counts` **era un parámetro muerto**: el canal existía y el
+    único llamador de producción (`routers/reports.py`) no lo pasaba, así que el conteo
+    viajaba vacío en todos los dictámenes reales mientras el dato estaba en el modelo,
+    a un `Counter` de distancia. Se deriva, y el parámetro se va: un canal que solo un
+    test puede rellenar es un campo que en producción no existe.
+
+    `imagenes` entra —en vez de calcularse aquí— para que el número que los hechos
+    declaran y la tupla que se adjunta SEAN LO MISMO: si cada uno lo calculara por su
+    lado, el prompt podría decir «seis fotografías» con cinco dentro.
+    """
     counts = tuple(sorted(Counter(a.kind for a in m.actions).items()))
     return NarrativeFacts(
         folio=m.folio,
@@ -222,10 +478,16 @@ def facts_from(m: ReportModel, *, damage_counts: dict[str, int] | None = None) -
         lead_time=lead_time_text(m.lead_time_s, m.lead_time_reason),
         station_count=m.station_count,
         catalog_line=m.catalog_line,
+        stations=_estaciones(m),
+        reproduccion=bool(m.reproduccion),
         channel_count=len(m.channels),
         clipped_channels=tuple(c.channel for c in m.channels if c.clipped),
         action_counts=counts,
-        damage_counts=tuple(sorted((damage_counts or {}).items())),
+        damage_counts=_conteo_de_danos(m),
+        timeline=_cronologia(m),
+        damage_reports=_danos(m, imagenes),
+        photos_attached=len(imagenes),
+        photos_available=sum(_fotos_de(d) for d in m.danos),
         dictamen_count=len(m.dictamens),
         has_epicenter=m.epicenter_lat is not None and m.epicenter_lon is not None,
         has_raw_waveform=bool(m.raw_waveform),

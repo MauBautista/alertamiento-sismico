@@ -59,6 +59,29 @@ MOTIVO_CUOTA_ILEGIBLE = "no se pudo leer la cuota de redacción asistida"
 MOTIVO_CLAVE_ILEGIBLE = "redacción asistida encendida pero la clave no se pudo leer"
 MOTIVO_SIN_CLAVE = "redacción asistida encendida sin clave configurada" + SUFIJO_DETERMINISTA
 
+#: ────────────────────────────── [T-7.27] los motivos de la VISIÓN del modelo
+#:
+#: `D-32` puso como condición que **el modelo declare que admite imágenes** antes de
+#: mandarle una fotografía del brigadista. Son dos hechos distintos y llevan dos frases
+#: distintas, por la misma razón que «no respondió» y «respondió que no» dejaron de ser
+#: una sola en T-7.26: mandan a mirar a sitios opuestos.
+#:
+#: El primero es del MODELO: está en el catálogo y no admite imágenes, o el slug ya no
+#: está en el catálogo. Se arregla cambiando el slug, y hasta entonces no hay nada que
+#: esperar. Van por `motivo_con_causa`, así que no llevan el sufijo escrito.
+MOTIVO_SIN_VISION = "el modelo de redacción no admite imágenes"
+#: El segundo es del MOMENTO: el catálogo no se pudo leer (red, 5xx, respuesta ilegible).
+#: Mañana puede funcionar, y por eso ni se recuerda ni se confunde con el anterior.
+MOTIVO_VISION_ILEGIBLE = "no se pudo comprobar si el modelo admite imágenes"
+
+#: [T-7.27] Lo que rotula cada sección redactada con asistencia, en el propio título.
+#:
+#: El §16 ya llevaba `NARRATIVE_AI_NOTE`, que es la frase larga y va al FINAL, después
+#: de seis párrafos. No compiten: ésta es la etiqueta y aquélla la explicación, y un
+#: test exige que salgan las dos o ninguna. Lo que no puede pasar —y pasaba— es que
+#: quien hojea el documento lea la prosa entera antes de saber quién la escribió.
+ROTULO_ASISTENCIA = "REDACTADO CON ASISTENCIA DE IA · NO ES EL VEREDICTO"
+
 #: ──────────────────────── [T-7.26·2ª vuelta] los motivos del proveedor REMOTO
 #:
 #: Vivían sueltos dentro de `openrouter.py`, escritos a mano y sin el sufijo, de modo
@@ -83,6 +106,17 @@ MOTIVO_RESPUESTA_ILEGIBLE = "la respuesta del proveedor no se pudo interpretar" 
 #: Prefijo: la razón concreta la compone `motivo_guardrail`, porque la escribe el
 #: propio guardrail y enumerar aquí sus cinco frases sería un censo a mano.
 MOTIVO_GUARDRAIL = "guardrail"
+
+#: [T-7.27·A] La petición no cabe en el tope declarado y **no se emite**.
+#:
+#: `TOPE_PETICION_BYTES` existía desde T-7.27 y **nadie la comprobaba**: era una cota
+#: declarada en una constante y medida en un test, sin una sola lectura en producción.
+#: El techo de las fotografías sí está garantizado por construcción; el del TEXTO no lo
+#: está por ninguna parte —`incident_actions` es append-only y exenta de poda, y la red
+#: no tiene cota—, así que el incidente más cargado, que es el único en el que la cota
+#: podía importar, era justo el que salía sin mirarla. Se degrada y se dice, en vez de
+#: mandar un cuerpo que el proveedor va a rechazar con un estado que no explica nada.
+MOTIVO_PETICION_ENORME = "la petición de redacción de este incidente rebasa su tope"
 
 
 def motivo_con_causa(motivo: str, causa: str) -> str:
@@ -112,6 +146,129 @@ def motivo_guardrail(razon: str) -> str:
     que se inventó, que es exactamente lo que hay que poder leer después.
     """
     return f"{MOTIVO_GUARDRAIL}: {razon}{SUFIJO_DETERMINISTA}"
+
+
+@dataclass(frozen=True, slots=True)
+class EstacionRedactada:
+    """[T-7.27] Una estación de la red, sin decir QUIÉN es.
+
+    Cada estación de la red es otro edificio con gente dentro: su nombre, su código y
+    el de su sensor son exactamente lo que esta allowlist mantiene fuera para el
+    inmueble propio. Lo que la prosa necesita para poder hablar de una fila es poder
+    NOMBRARLA, y para eso basta su orden en la tabla que el documento imprime.
+    """
+
+    #: 1-based, el mismo orden de la §7 del informe: «la estación 2» es la misma en el
+    #: papel y en la prosa.
+    orden: int
+    #: ¿Es el inmueble del incidente? El código del sitio propio ya viaja dentro del
+    #: folio, así que esto no añade nada nuevo y evita que la prosa confunda el pico
+    #: del edificio con el de un vecino.
+    propia: bool
+    dist_km: float | None
+    t_teorico_s: float | None
+    t_medido_s: float | None
+    peak_pga_g: float | None
+    #: El umbral contra el que se decidió, CON su procedencia: sin ella un `0.07 g`
+    #: parece del inmueble aunque sea el de referencia (`T-7.35`).
+    umbral_pga_g: float | None
+    umbral_origen: str | None
+    tier: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class HitoRedactado:
+    """[T-7.27] Una fila de la cronología, con su hora y sin su autor.
+
+    Hasta esta ficha la bitácora viajaba **agregada a conteos por tipo**: la prosa sabía
+    que hubo dos acuses y no podía decir en qué orden pasó nada.
+    """
+
+    #: Segundos desde la apertura del incidente. No la hora absoluta: `opened_at` ya
+    #: viaja y con el desplazamiento la prosa puede contar la secuencia sin hacer
+    #: aritmética —que es justo donde un modelo se inventa un número.
+    t_desde_apertura_s: float
+    kind: str
+    #: Lo que ese verbo dice en castellano (`dictamen/bitacora.ROTULOS`), o ``None``
+    #: cuando el registro no sabe rotularlo. Inventar un rótulo sería peor que
+    #: declarar que no lo hay: `incident_actions` es append-only y trae verbos viejos.
+    rotulo: str | None
+    #: La CLASE del actor (`user`, `edge`, `system`…), jamás el identificador: el de
+    #: una persona es su `sub` de Cognito y el del gabinete, su número de serie.
+    actor: str
+
+
+@dataclass(frozen=True, slots=True)
+class DanoRedactado:
+    """[T-7.27] Un reporte de daños del brigadista, por ROL y por categoría.
+
+    `D-32` literal: «el brigadista aparece por **rol**, nunca por nombre». Lo que no
+    entra, y es la mitad del trabajo: la NOTA del reporte y la de cada categoría son
+    prosa libre que una persona teclea en el teléfono —hasta 2000 caracteres, sin
+    validar— y pueden llevar el nombre de un ocupante o el número de un departamento.
+    Tampoco el nombre de la zona, que lo escribe el cliente en su propio catálogo.
+    """
+
+    orden: int
+    rol: str | None
+    personas_en_riesgo: bool
+    #: `(clave, severidad)` del catálogo cerrado de la app (`schemas/mobile.py`), que
+    #: son enumeraciones nuestras y no texto de nadie.
+    categorias: tuple[tuple[str, str], ...]
+    fotos_adjuntas: int
+    #: Cuántas fotografías de ESTE reporte no viajan (ilegibles, sin blob, fuera del
+    #: tope o del presupuesto). Se declara por la misma razón que el papel declara las
+    #: que no imprime: seis de once sin decirlo es recortar la evidencia en silencio.
+    fotos_no_adjuntas: int
+
+
+@dataclass(frozen=True, slots=True)
+class ImagenAdjunta:
+    """[T-7.27] Una fotografía lista para viajar como contenido multimodal.
+
+    **No es un campo de `NarrativeFacts` a propósito.** Los hechos son texto que se
+    serializa entero como prompt de usuario y que los tests inspeccionan buscando
+    cadenas; meter aquí un blob los volvería ilegibles y pondría megabytes en cada
+    `asdict`. Las imágenes viajan por su propio canal, con su propia allowlist
+    (`redact.imagenes_de`), y los hechos declaran CUÁNTAS son.
+    """
+
+    #: Los bytes que VIAJAN: la derivada de `documentos/fotos.preparar` **con la banda
+    #: de la marca de agua forense tapada** (`narrative/marca.py`). Nunca el blob crudo
+    #: de S3 —ver `redact.imagenes_de` para la medición que lo prohíbe— y nunca la
+    #: derivada sin tapar, que lleva dibujados en el píxel las coordenadas del inmueble
+    #: y el identificador del operador.
+    jpeg: bytes
+    #: `sha256` de lo impreso — el mismo número que el papel publica para esa foto.
+    #:
+    #: ⚠️ [T-7.27·A] **Ya no es la huella de lo que viaja**, y eso es una consecuencia
+    #: declarada del tapado: pintar encima cambia los píxeles. Se conserva porque es lo
+    #: único que ata la fotografía que vio el modelo con la que imprime el documento;
+    #: la que se puede verificar contra el tercero es `sha256_enviado`.
+    sha256: str | None
+    #: `sha256` de los bytes que SALIERON de la nube. Es el que va a la procedencia.
+    sha256_enviado: str
+    ancho: int | None
+    alto: int | None
+    #: Orden del reporte de daños del que salió, para que la prosa pueda decir de qué
+    #: reporte es la fotografía que está describiendo.
+    reporte: int
+
+
+@dataclass(frozen=True, slots=True)
+class HuellaEnviada:
+    """[T-7.27·A] Qué fotografía salió, con las DOS huellas que hacen falta.
+
+    Con una sola no se contesta la pregunta. `enviado` es el sha256 de los bytes que
+    cruzaron la frontera: es el único número que alguien puede recalcular sobre lo que
+    tenga el tercero. `impreso` es el de la derivada del papel: es el único que ata esa
+    transferencia a una fotografía concreta del expediente. Desde que la banda de la
+    marca de agua se tapa (`narrative/marca.py`) **los dos números son distintos**, y
+    registrar solo uno dejaba la mitad de la trazabilidad fuera.
+    """
+
+    enviado: str
+    impreso: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,12 +313,34 @@ class NarrativeFacts:
     lead_time: str = ""
     station_count: int = 0
     catalog_line: str | None = None
+    #: [T-7.27] La tabla por estación, la misma que imprime la §7 del informe. Hasta
+    #: esta ficha viajaba SOLO `station_count`: un entero con el que la prosa no podía
+    #: decir una sola cosa de una estación concreta sin inventársela.
+    stations: tuple[EstacionRedactada, ...] = ()
+    #: [T-7.27] ¿El evento enlazado es la reproducción de un sismo HISTÓRICO? El papel
+    #: lo declara en su §7 (`REPRODUCCION_NOTE`) y la prosa no lo sabía: podía redactar
+    #: como sismo de hoy lo que el mismo documento rotula como ensayo tres páginas
+    #: antes.
+    reproduccion: bool = False
 
     channel_count: int = 0
     clipped_channels: tuple[str, ...] = ()
     action_counts: tuple[tuple[str, int], ...] = ()
     #: Reportes de daño, SOLO como conteo por categoría. Nunca el texto del ocupante.
+    #: [T-7.27] Y ya no llega vacío siempre: se DERIVA del modelo. El canal existía
+    #: —`facts_from(..., damage_counts=…)`— y el único llamador de producción no lo
+    #: pasaba nunca, así que el campo era un hueco con nombre de dato.
     damage_counts: tuple[tuple[str, int], ...] = ()
+    #: [T-7.27] La cronología con marca de tiempo y clase de actor.
+    timeline: tuple[HitoRedactado, ...] = ()
+    #: [T-7.27] Los reportes de daño, por rol y por categoría.
+    damage_reports: tuple[DanoRedactado, ...] = ()
+    #: [T-7.27] Cuántas fotografías se ADJUNTAN a esta petición y cuántas tiene el
+    #: incidente. Las dos, y no solo la primera: si el modelo ve seis y el incidente
+    #: tiene once, tiene que saber que está mirando una parte —es la misma honestidad
+    #: que `DanoFila.fotos_omitidas` le exige al papel.
+    photos_attached: int = 0
+    photos_available: int = 0
     dictamen_count: int = 0
     has_epicenter: bool = False
     has_raw_waveform: bool = False
@@ -180,6 +359,9 @@ class NarrativeRequest:
     facts: NarrativeFacts
     #: Slug del modelo. Vacío ⇒ ningún proveedor remoto puede correr (ver settings).
     model: str = ""
+    #: [T-7.27] Las fotografías del brigadista, ya derivadas. Vacío ⇒ el mensaje de
+    #: usuario sigue siendo texto plano, exactamente como antes de esta ficha.
+    images: tuple[ImagenAdjunta, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +387,17 @@ class Narrative:
     #: se queda viejo al primer retoque de redacción y entonces el campo no significa
     #: nada. ``None`` = no se mandó ningún prompt (nadie consultó a un modelo).
     prompt_version: str | None = None
+    #: [T-7.27] Las huellas de las fotografías que SALIERON de la nube en esta
+    #: petición. Es la única forma de contestar «¿qué fotografías se mandaron a un
+    #: tercero?», que es la pregunta que deja abierta el consentimiento contractual
+    #: pendiente de `D-32`. Van las huellas y no los bytes: esto acaba en `audit_log`,
+    #: que por la regla de oro 11 no se poda nunca.
+    #:
+    #: ⚠️ [T-7.27·A] Vacío cuando la petición **no llegó a salir**. Antes se rellenaba
+    #: en la rama de fallo sin mirar de qué fallo se trataba, y un `ConnectError` —el
+    #: socket no se abre siquiera— dejaba escrito en un registro que no se poda que unas
+    #: fotografías habían viajado a otro país. Ver `openrouter._salieron_las_fotos`.
+    photos_sent: tuple[HuellaEnviada, ...] = ()
     #: [T-7.26] sha256 de lo que devolvió el modelo, ANTES de parsear, de aplicar el
     #: guardrail y de recortar. ``None`` = no volvió nada. Cuando la respuesta se
     #: DESCARTA es cuando más falta hace: es el único rastro de qué se propuso.
@@ -226,6 +419,9 @@ class Narrative:
             "cost_usd": self.cost_usd,
             "prompt_version": self.prompt_version,
             "output_sha256": self.output_sha256,
+            # Las DOS huellas por fotografía: la que se puede verificar contra el
+            # tercero y la que la ata al documento. Ver `HuellaEnviada`.
+            "photos_sent": [{"enviado": h.enviado, "impreso": h.impreso} for h in self.photos_sent],
             # Los TÍTULOS, no la prosa: el texto ya queda congelado en el PDF —que es
             # evidencia con sha256— y duplicarlo en una tabla que no se poda jamás
             # sería guardar el documento dos veces.

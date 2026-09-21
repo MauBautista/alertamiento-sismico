@@ -44,9 +44,14 @@ que se recorta deja de ser la foto.
 ## El lado que le importa a otra ficha
 
 `1024 px` es el mismo lado al que `D-32` manda redimensionar las fotos que ve la
-IA (`T-7.27`). Se comparte a propósito: si el PDF derivara su propia copia con
-otros parámetros, la misma fotografía tendría DOS huellas derivadas y la «huella
-de lo impreso» del papel no casaría con lo que vio el modelo.
+IA (`T-7.27`). Se comparte a propósito: la capa narrativa PARTE de esta misma
+derivada en vez de bajarse otra copia de S3 con otros parámetros.
+
+⚠️ [T-7.27·A] Lo que ya no es cierto —y aquí estaba escrito— es que la huella de lo
+impreso sea la de lo que ve el modelo. La fotografía que sale hacia el proveedor
+lleva tapada la banda de la marca de agua forense (`narrative/marca.py`), que es
+píxel y no metadato, así que sus bytes son otros. La trazabilidad no se pierde: la
+procedencia anota las DOS huellas, la de lo enviado y la de lo impreso.
 """
 
 from __future__ import annotations

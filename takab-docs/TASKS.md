@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **390** · `[~]` **10** · `[ ]` **42**
+**Conteo de tareas:** total **442** · `[x]` **391** · `[~]` **11** · `[ ]` **40**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15181,40 +15181,98 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > de la AUSENCIA que `D-06` pide para cualquier ingesta de catálogo — la tabla ya da el dato
 > (`answered_at IS NULL` con su índice parcial) y nadie la mira todavía.
 
-### [ ] T-7.26 · **OpenRouter encendido en la nube** — `SOFTWARE` + `GATE-AWS`
+### [~] T-7.26 · **OpenRouter encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **software HECHO 2026-09-21 · falta MEDIR la latencia en la nube**
 - **Componente:** api · deploy · **Depende de:** T-7.22 · **Prioridad:** F6 · media
 - **Objetivo:** que la capa narrativa que ya existe redacte de verdad, con su coste contado,
   su tope y su procedencia registrada, y que su ausencia se declare.
 - **Criterios de aceptación:**
-  - [ ] Secreto `takab/dev/openrouter` en Secrets Manager (Mauricio); `deploy.sh` exporta
-    `TAKAB_API_OPENROUTER_ENABLED=true`, `_MODEL=anthropic/claude-sonnet-5`, `_SECRET_ID`;
-    `ai_monthly_cap_usd` en 10 para dev.
-  - [ ] Latencia real del modelo **medida** antes de decidir: `openrouter_timeout_s` sube o la
-    generación sale de la petición con sondeo; el respaldo determinista sigue declarándose.
-  - [ ] Registro de procedencia que `T-3.01` pide: modelo, versión del prompt y hash de la
-    salida en `audit_log` (`narrative_generated`); coste desde `usage` a `ai_spend`.
-  - [ ] Control negativo: con la clave revocada el reporte dice «NARRATIVA DEGRADADA».
-- **Tests de censo que toca:** `tests/narrative` · **Token nuevo:** no · **Cambia algo que un
-  test defiende hoy:** no.
+  - [x] Secreto `takab/dev/openrouter` en Secrets Manager (creado por Mauricio el 2026-09-21,
+    nunca leído todavía); `deploy.sh` exporta las tres variables y el tope.
+    ⚠️ **Y algo que la ficha no contemplaba: el rol de la instancia NO tenía permiso para leer
+    ese secreto.** La política sólo cubría los de la base. Sin esa línea de terraform, el
+    despliegue «enciende» la IA y la nube sigue escribiendo prosa determinista — y hasta esta
+    ficha lo habría hecho **en silencio**, porque `resolve_api_key` se tragaba el `AccessDenied`
+    entero. Ahora el permiso existe, acotado a ese ARN, y el fallo se declara.
+  - [ ] **Latencia real del modelo MEDIDA antes de decidir.** Es lo único que queda y no es
+    software: `openrouter_timeout_s` sigue en 8.0 s porque **ese número no se inventa**. Exige
+    la clave viva, `terraform apply` (el permiso de arriba) y la nube desplegada, en ese orden.
+    Hasta medirlo no se decide si sube o si la generación sale de la petición con sondeo.
+  - [x] Registro de procedencia que `T-3.01` pide: modelo, **versión del prompt** y **hash de la
+    salida** en `audit_log` (`narrative_generated`); coste desde `usage` a `ai_spend`. La versión
+    del prompt se DERIVA del sha256 de las plantillas: nadie puede cambiar lo que se le pide al
+    modelo sin que la versión cambie, que es lo único que hace auditable ese campo.
+    ⚠️ `narrative_generated` era el registro de procedencia entero de la IA **sin una sola
+    prueba** en todo el repositorio.
+  - [x] Control negativo: con la clave revocada el reporte dice «NARRATIVA DEGRADADA» — por el
+    camino que la ficha nombra (un 401 del proveedor, que abre socket) y también por el que iba
+    a pasar de verdad el primer día (el secreto ilegible). Y el papel distingue los dos: decir
+    «el proveedor no respondió» cuando respondió con un 401 manda a quien depure a mirar la red
+    en vez del secreto.
+- **Tests de censo que toca:** `tests/narrative`, censo de banderas del informe de conformidad
+  (nuevo) · **Token nuevo:** no · **Cambia algo que un test defiende hoy:** **sí** — la línea
+  original decía «no». Había un test que defendía un defecto POR SU NOMBRE
+  (`test_cap_CERO_significa_sin_tope_no_tope_cero`), y se reescribió dejando dicho por qué se
+  equivocaba: `cap = 0` significaba SIN TOPE, así que un error de dedo en el despliegue dejaba
+  el gasto ILIMITADO. Hoy cero es cero y equivocarse deja el sistema sin IA.
 
-### [ ] T-7.27 · **La IA ve el evento completo, con las fotos del brigadista** — `SOFTWARE`
+### [x] T-7.27 · **La IA ve el evento completo, con las fotos del brigadista** — `SOFTWARE` · **CERRADA 2026-09-21**
 - **Componente:** api · mobile · docs · **Depende de:** T-7.26 · **Prioridad:** F6 · media
 - **Objetivo:** ejecutar `D-32`: la IA recibe la tabla por estación, la reproducción, la
   cronología, las categorías de daño y las fotos, y devuelve prosa rotulada que jamás toca el
   veredicto.
 - **Criterios de aceptación:**
-  - [ ] Prompts v2 en el mismo consumidor; fotos como contenido multimodal (máximo seis,
-    redimensionadas a 1024 px, leídas de S3); al arrancar se comprueba que el modelo admite
-    imágenes (`/api/v1/models`, `input_modalities`) y si no, fail-open al determinista.
-  - [ ] `redact.py` amplía la redacción; el brigadista aparece por rol; el guardrail de cifras
+  - [x] Prompts v2 en el mismo consumidor; fotos como contenido multimodal (máximo seis,
+    redimensionadas a 1024 px, leídas de S3). **La comprobación de visión NO se hace al
+    arrancar, y la desviación es del integrador:** se hace perezosa en la primera petición, con
+    caché que sólo recuerda respuestas definitivas. Una llamada de red a un tercero en el
+    arranque haría que **levantar la API dependiera de que OpenRouter conteste**, y eso es
+    justo el acoplamiento que la regla de oro 2 existe para impedir en el otro sentido. El
+    fail-open al determinista es el que pide la ficha.
+  - [x] `redact.py` amplía la redacción; el brigadista aparece por rol; el guardrail de cifras
     cubre las de estación; secciones rotuladas «REDACTADO CON ASISTENCIA DE IA · NO ES EL
     VEREDICTO».
-  - [ ] Contrato intacto: la prosa nunca cita magnitud sin procedencia ni afirma «detectó» sin
-    fila; `tests/narrative` con respuestas grabadas que incluyen imagen.
-  - [ ] Adenda en `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` y aviso en la cámara forense del móvil;
-    el consentimiento contractual queda en pendientes (§4.7).
-- **Tests de censo que toca:** contrato de narrativa, `test_docs_consistency` · **Token
-  nuevo:** no · **Cambia algo que un test defiende hoy:** no.
+  - [x] Contrato intacto: la prosa nunca cita magnitud sin procedencia ni afirma «detectó» sin
+    fila; `tests/narrative` con respuestas grabadas que incluyen imagen. El censo de la lista
+    blanca pasa de 32 a 38 campos. ⚠️ Ese censo **no estaba** en la lista de «tests de censo que
+    toca» de esta ficha y sí lo tocaba.
+  - [x] Adenda en `RESIDENCIA-DE-DATOS-TAKAB.md` y aviso en la cámara forense del móvil; el
+    consentimiento contractual queda en pendientes (§4.7).
+- **Tests de censo que toca:** contrato de narrativa, `test_docs_consistency`, censo de la lista
+  blanca (32 → 38), censo de estados de pantalla del móvil · **Token nuevo:** no · **Cambia algo
+  que un test defiende hoy:** **sí** — la línea original decía «no» y era falsa.
+
+> **Cómo se cerró — y la fuga de privacidad que sólo vio el escéptico.**
+>
+> ⚠️ **La fotografía que iba a salir hacia el tercero llevaba DIBUJADOS EN EL PÍXEL las
+> coordenadas del inmueble a cinco decimales y el identificador del operador**, que son
+> exactamente los dos datos que la lista blanca de texto retiene a propósito. Los pinta la marca
+> de agua forense del móvil; re-encodar quita el EXIF y no quita lo que está pintado encima.
+>
+> **Y la única prueba que decía vigilarlo no podía verlo:** hacía `json.dumps(cuerpo)` y buscaba
+> las cadenas, con la imagen viajando en base64 — donde nunca podrían aparecer. Verde perfecto
+> midiendo nada, con 201 pruebas alrededor. Lo encontró un agente cuyo único encargo era no
+> creerse el verde, decodificando el base64 y mirando los píxeles.
+>
+> **Cómo se cierra:** la banda se TAPA antes de salir (`narrative/marca.py`) y el tapado **se
+> mide sobre los píxeles**: la guarda compone una captura sin marca y la misma con marca, las
+> resta y exige que todos los píxeles que cambiaron caigan dentro del tapado, sobre cinco
+> geometrías de captura. La geometría **se lee del móvil** —no se teclea— y hay autoprueba del
+> extractor con cinco mudanzas de la marca: las cinco ponen rojo. **Lo que no se puede tapar de
+> forma verificable NO SE MANDA**, y el hueco se declara.
+>
+> **La fuga tenía camino de vuelta, y tampoco estaba visto:** la IA podía transcribir esas
+> coordenadas y ese identificador a la prosa, y de ahí a un dictamen firmado. El guardrail de
+> vuelta los rechaza ahora.
+>
+> **Consecuencia declarada, no escondida:** la huella de lo que se imprime deja de ser la de lo
+> que viaja, así que se registran las dos.
+>
+> Y el arreglo dejó **tres sitios afirmando que el sello viaja** —incluido el aviso que el
+> brigadista lee en la pantalla donde consiente—, más una guarda que fijaba la frase ya falsa.
+> Corregidos los tres: decirle a una persona que sus datos salen cuando ya no salen es mentirle
+> igual. La guarda rehecha muerde por los DOS lados.
+>
+> api 4166 · mobile 728 · 23 mutaciones dirigidas, 23 rojas.
 
 ### [ ] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO`
 - **Componente:** todas · **Depende de:** T-7.20, T-7.22 · **Prioridad:** F7 · alta

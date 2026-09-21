@@ -37,6 +37,7 @@ from takab_api.narrative.prompts import prompt_version
 from takab_api.narrative.redact import facts_from
 from takab_api.settings import Settings
 from tests.dictamen.test_pdf import model
+from tests.narrative.grabado import enrutar
 from tests.narrative.test_redact import BASIS
 
 #: El modelo tiene `verdict_basis` porque el guardrail compara las cifras de la prosa
@@ -116,7 +117,7 @@ async def test_el_coste_del_usage_LLEGA_a_ai_spend_por_el_camino_real() -> None:
             conn=conn,
             tenant_id=au.DB_TENANT_PRIV,
             actor="user:u-1",
-            transport=httpx.MockTransport(_redacta),
+            transport=httpx.MockTransport(enrutar(_redacta)),
         )
 
     assert out.provider == "openrouter", "el camino real no llegó al proveedor remoto"
@@ -147,7 +148,7 @@ async def test_una_llamada_que_el_PROVEEDOR_degrado_no_deja_factura() -> None:
             conn=conn,
             tenant_id=au.DB_TENANT_PRIV,
             actor="user:u-1",
-            transport=httpx.MockTransport(_cae),
+            transport=httpx.MockTransport(enrutar(_cae)),
         )
 
     # La factura PRIMERO: es el daño, y el nombre del proveedor solo es el mecanismo.

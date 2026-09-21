@@ -43,6 +43,7 @@ from takab_api.narrative.base import (
     MOTIVO_PROVEEDOR,
     MOTIVO_RESPALDO_CAIDO,
     MOTIVO_SIN_HECHOS,
+    MOTIVO_VISION_ILEGIBLE,
     SUFIJO_DETERMINISTA,
 )
 from takab_api.settings import Settings
@@ -104,6 +105,28 @@ async def _sabotea_hechos(monkeypatch: pytest.MonkeyPatch) -> Narrative:  # noqa
     # Un dato raro del incidente de verdad, no un parche: `redact.facts_from` recorre
     # `m.channels` y con `None` revienta con `TypeError`.
     return await build_narrative(model(channels=None), Settings())
+
+
+class _Ciego:
+    """[T-7.27] Proveedor remoto cuya comprobación de visión revienta.
+
+    No es un parche sobre `consultar_vision`: lo que se sabotea es el contrato que
+    `build_narrative` usa —preguntarle al proveedor si puede ver—, que es por donde un
+    `httpx` con el DNS caído o un catálogo que devuelve algo inesperado se propagaría.
+    """
+
+    name = "ciego"
+
+    async def admite_imagenes(self):  # noqa: ANN202
+        raise RuntimeError("sabotaje del tramo")
+
+    async def generate(self, req):  # noqa: ANN001, ANN202, ARG002
+        raise AssertionError("no se puede redactar sin haber comprobado la visión")
+
+
+@_alta("comprobar la visión", MOTIVO_VISION_ILEGIBLE)
+async def _sabotea_vision(monkeypatch: pytest.MonkeyPatch) -> Narrative:  # noqa: ARG001
+    return await build_narrative(model(), Settings(), provider=_Ciego())
 
 
 @_alta("leer la cuota", MOTIVO_CUOTA_ILEGIBLE)

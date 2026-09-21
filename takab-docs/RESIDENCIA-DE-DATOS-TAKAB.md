@@ -9,6 +9,101 @@
 
 ---
 
+## Cómo se cita este documento — **léelo antes de renumerar nada**
+
+Este documento lo citan **por número de sección** desde otros ficheros, y ninguna de esas citas
+da error si se rompe: apunta a un texto que ya no dice lo que el citador creía.
+
+**Este censo NO se enumera a mano.** La primera versión de esta sección —cuyo único propósito era
+la higiene de las citas— nació desactualizada respecto de **su propio diff**: declaraba que
+`ENTREGA-Y-ACEPTACION-TAKAB.md` citaba «(su propio `§6.4`)» cuando en ese mismo cambio pasaba a
+citar `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` **cuatro veces en tres secciones**, una de ellas la
+propia fila del `§11` que el censo describía. Es la cuarta vez en este repositorio que un censo
+enumerado a mano nace ciego a su propio defecto, y la lección ya estaba escrita en
+`TRASPASO-SESION`. Así que la tabla se **deriva** y hay una guarda que la compara con el barrido:
+
+```bash
+python3 takab-docs/tools/guardas-de-citas.py     # 0 = cuadra; 1 = lista lo que falta o sobra
+```
+
+Barrido del **2026-09-21** (repositorio completo, no sólo `takab-docs/`; se excluye este fichero,
+porque un `§n` suyo es una autorreferencia):
+
+| Quién cita | Qué cita | Veces |
+|---|---|---|
+| [`ENTREGA-Y-ACEPTACION-TAKAB.md`](ENTREGA-Y-ACEPTACION-TAKAB.md) | `§6.3` | 4 |
+| [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md) · `D-32` | `§6.3` | 2 |
+| [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) · `§4.7` | `§6.3` | 1 |
+| [`PENDIENTES-MAURICIO.md`](PENDIENTES-MAURICIO.md) · `§4.7` | `§6.7` | 1 |
+| [`TASKS.md`](TASKS.md) · ficha `T-7.27` | `§6.3` | 1 |
+| `mobile/src/features/forensic/avisoIA.ts` | `§3.1` | 1 |
+| `mobile/src/features/forensic/watermark.test.ts` | `§3.1` | 1 |
+
+> ⚠️ **Lo que esta guarda mide y lo que no.** Mide **quién cita qué número, y cuántas veces**,
+> con la forma canónica de la regla 2 (`` `RESIDENCIA-DE-DATOS-TAKAB.md §n` ``). **No** mide que
+> el `§n` citado exista ni que diga lo que el citador cree — eso sigue siendo lectura humana. Y
+> **no corre en CI todavía**: engancharla al gate toca `api/tests/test_docs_consistency.py`, que
+> queda fuera del alcance del cambio que la trajo. Mientras tanto se corre a mano, y esta línea
+> está aquí para que nadie la dé por automática.
+>
+> Una consecuencia de la regla 2 que la guarda **sí** impone de rebote: un `§6.3` pelado escrito
+> desde otro fichero es invisible para el barrido. `D-32` tenía uno —«(§6.3 del documento de
+> residencia)»— y por eso el censo contaba una cita donde había dos. Se pasó a la forma canónica.
+
+De ahí salen dos reglas. La segunda se aprendió estrenándola, el 2026-09-21.
+
+1. **Los números de sección de este documento no se renumeran.** Material nuevo entra **dentro**
+   de la subsección que le toca —como la adenda de `D-32`, que vive dentro del `§6.3` **sin
+   número propio**— o **al final** de la lista, tomando el siguiente número libre. Meter un
+   `§6.4` nuevo entre los actuales 6.3 y 6.4 habría corrido cinco subsecciones y dejado cuatro
+   citas apuntando a otra cosa, en silencio.
+2. **Un `§n` pelado significa SIEMPRE «de este documento».** Para citar a otro se nombra el
+   fichero: `` `RESIDENCIA-DE-DATOS-TAKAB.md §6.3` ``. Esta regla resolvió la discrepancia que
+   *parecía* haber en la primera versión de la tabla de arriba, cuando aún se enumeraba a mano:
+   tres filas decían `§6.3` y una cuarta decía «§6.4». **No había tal discrepancia.** El `§11` de `ENTREGA-Y-ACEPTACION-TAKAB.md` citaba, como todas
+   las demás filas de esa tabla —`§7` para el manual, `§8` y `§6.2` para la matriz—, **su propio
+   `§6.4`**, que se titula *«Dónde viven los datos, y el marco legal»*. Lo que fallaba no era el
+   número: era que la fila hablaba de OTRO documento y el número pelado se leía como suyo. Se
+   arregló **allí**, haciendo explícito el «de este documento», y **no se tocó ningún número
+   aquí**.
+
+### Propuesta abierta · que este documento entre en `DOCS_DE_GOBIERNO`
+
+**Hoy casi nada vigila este fichero, y la parte que no se vigila es justo la suya.** No está en
+la tupla `DOCS_DE_GOBIERNO` de `api/tests/test_docs_consistency.py:43`, que gatea dos pruebas:
+la que caza gates ya ratificados todavía etiquetados como supuestos, y la que caza **una
+declaración normativa absorbida por el `>` de arriba** (continuación laxa de CommonMark).
+
+Medido el 2026-09-21, sembrando los dos defectos a propósito en este fichero y corriendo la
+suite entera:
+
+| Defecto sembrado | ¿Lo caza la suite hoy? |
+|---|---|
+| Un marcador de supuesto de un gate **ya ratificado** (el del proceso GPIO) | **Sí**, pero por la prueba **repo-wide**, que barre todos los ficheros de texto — no por la tupla |
+| `**Recomendación de residencia:** migrar ya.` pegada bajo un `>` | **No.** Invisible: esa prueba se parametriza sólo sobre `DOCS_DE_GOBIERNO` + la spec del panel |
+
+> ⚠️ **La fila de arriba no puede citar el marcador tal cual, y eso es parte del hallazgo.**
+> Escribirlo entre comillas invertidas **no lo desactiva**: la prueba repo-wide busca la grafía
+> en el texto plano, no en el código fuente de un bloque. Al redactar esta tabla con el literal
+> dentro, la suite pasó de 76 verdes a un rojo — en un documento que, ironía incluida, todavía
+> no forma parte del censo que lo cazó.
+
+El hueco es ése, y no es teórico **aquí**: este documento está hecho de blockquotes —el guion
+que se le lee al cliente en voz alta (§2), el «cabo suelto» del §6.4, los avisos—, así que una
+línea normativa tragada por un `>` no queda escondida en un margen: queda dentro de lo que
+alguien recita en una llamada.
+
+**Y el coste de cerrarlo es cero, medido antes de proponerlo:** las dos funciones del censo
+(`_supuestos` y `_tragadas_por_un_blockquote`), aplicadas a este fichero tal como está —ya con la
+adenda de `D-32` dentro—, dan **0 fallos**. Añadirlo a la tupla no pone nada en rojo hoy; sólo
+pone una guarda donde no la hay.
+
+> El cambio es de una línea en `api/`, que es **otro ámbito**: se deja propuesto y medido, no
+> hecho. Quien lo aplique, que corra antes `pytest tests/test_docs_consistency.py` y compruebe
+> que sigue en 76 verdes.
+
+---
+
 ## 1. Recomendación
 
 > ## **NO MIGRAR a `mx-central-1` hoy. Seguir en `us-east-2`.**
@@ -57,6 +152,27 @@ que fija las condiciones exactas de revisión. Hasta entonces, la respuesta al c
 > conversación distinta y la tenemos con gusto — tenemos identificado exactamente qué haría
 > falta y cuánto tardaría.»
 
+**Y un párrafo más, que sólo se lee si ese cliente va a tener encendida la redacción asistida
+por IA** (`D-32`). No está dentro del guion de arriba a propósito: leérselo a quien no la vaya a
+tener es alarmarle por algo que en su edificio no ocurre, y callárselo a quien sí la vaya a tener
+es exactamente lo que este documento existe para impedir.
+
+> «Una cosa más, y quiero que la sepa antes de firmar. El informe posterior al sismo puede
+> redactarse con ayuda de inteligencia artificial. Cuando esa función está encendida, dos cosas
+> salen de nuestra nube hacia un proveedor en Estados Unidos: los datos del evento —cifras,
+> horas, categorías de daño, **sin nombres ni teléfonos**— y **las fotografías que su brigada
+> toma del edificio**: **hasta seis en todo el informe**, no seis por cada reporte de daños. Son
+> las seis primeras que llegan; si su brigada manda más, las demás se quedan en nuestra nube.
+>
+> Eso es una transferencia a un tercero, y por eso se la digo yo antes de que la descubra usted.
+> La ley mexicana la permite cumpliendo condiciones, y una de ellas es contractual: tiene que
+> estar en el contrato y en el aviso de privacidad. **Mientras esa cláusula no esté firmada, la
+> función se queda apagada**, y el informe se redacta igual sin ella.
+>
+> Y el límite, que no cambia nunca: la inteligencia artificial **no decide nada**. No clasifica
+> el daño, no firma el dictamen, y no dispara ni detiene ninguna alerta. Escribe la parte
+> narrativa del informe, rotulada como tal.»
+
 **Si el cliente insiste en residencia en México**, la respuesta honesta es: es técnicamente
 posible mover *casi todo* (base de datos, S3, consola, colas, identidad) a `mx-central-1`,
 pero **la ingesta de los gabinetes seguiría entrando por IoT Core en EE. UU.** mientras AWS no
@@ -89,6 +205,27 @@ declarados:
 > objetivo. En el Terraform de hoy **no hay ningún recurso ECS/Fargate**: la API corre sobre
 > `aws_instance` (EC2). Para esta decisión da igual —Fargate **sí está** en México (ver 3.2)—
 > pero conviene no arrastrar el supuesto.
+
+**Y desde el 2026-09-21, un proveedor que NO es AWS y NO está en ningún `.tf`.** El inventario
+de arriba se derivaba de `infra/terraform/`, y durante un año eso bastó: todo lo que tocaba un
+dato del cliente se declaraba en Terraform. `D-32` rompió esa equivalencia.
+
+| Proveedor | Dónde se declara | Qué sale de TAKAB |
+|---|---|---|
+| **OpenRouter** (Estados Unidos) y, a través suyo, **el proveedor del modelo** que resuelva el slug | `api/src/takab_api/narrative/openrouter.py`; se enciende con `TAKAB_API_OPENROUTER_ENABLED` y la clave se resuelve en runtime desde Secrets Manager | Datos estructurados del evento **sin nombres, teléfonos ni correos** (cifras por estación, catálogo y epicentro con su procedencia, cronología, categorías de daño; las personas aparecen por rol) y **hasta seis fotografías en TODO el informe** —el tope es del documento, no de cada reporte de daños; se reparten por orden de llegada y un reporte tardío puede aportar cero (`narrative/redact.py::imagenes_de`)—, redimensionadas a 1024 px y leídas de S3 |
+
+**Estado del interruptor, medido el 2026-09-21** (`narrative/__init__.py::select_provider`): el
+código trae `openrouter_enabled = False`; el despliegue de `dev` exporta
+`TAKAB_API_OPENROUTER_ENABLED=true` (`deploy/cloud/deploy.sh`), y sin clave resoluble la capa
+**degrada al redactor determinista y lo declara en el papel**. El interruptor es **del despliegue
+entero, no por cliente**: hoy no se puede tener la función encendida para un cliente con cláusula
+firmada y apagada para su vecino sin ella. Si `T-7.27` añade el interruptor por cliente, esta
+línea se corrige.
+
+> ⚠️ **Un inventario derivado de `infra/terraform/` ya no es el inventario completo.** Quien
+> rehaga el §3.1 con el script de §8.3 obtendrá los servicios AWS y **nada más**: el proveedor de
+> IA no aparece porque no es un recurso de AWS. La tabla de arriba se mantiene a mano, y ese es
+> precisamente su punto débil declarado.
 
 ### 3.2 Qué hay y qué no en `mx-central-1`
 
@@ -427,6 +564,111 @@ Cuando **sí** hay transferencia a un tercero, la ley la permite:
 **No se encontró** en la ley: lista de países adecuados, autorización previa, registro de
 transferencias, ni cláusulas contractuales tipo obligatorias.
 
+#### Adenda del 2026-09-21 (`D-32`) · cuando el tercero es un proveedor de IA
+
+*Va **dentro** de esta subsección y **sin número propio**. La razón está arriba, en «Cómo se cita
+este documento»: `D-32`, `T-7.27` y `PENDIENTES-MAURICIO.md §4.7` citan **`§6.3`**, y un número
+nuevo intercalado habría corrido cinco subsecciones sin que nadie viera un error.*
+
+Todo lo anterior de este `§6.3` se escribió para **AWS**, y su conclusión cuelga de una sola
+palabra: que AWS es *persona encargada* y no *tercero*, y queda por tanto fuera del Capítulo V.
+`D-32` metió en el sistema un proveedor al que **esa palabra no se le puede aplicar de oficio**:
+la capa narrativa manda a **OpenRouter** (Estados Unidos) y, a través suyo, al proveedor del
+modelo, los datos del evento **y hasta seis fotografías del inmueble en todo el informe**. El
+ámbito del tope importa y estuvo mal escrito en este documento hasta el 2026-09-21: son seis
+**por informe**, no seis por cada reporte de daños. El contador de `narrative/redact.py::imagenes_de`
+acumula a través de todos los reportes y devuelve en cuanto llega a seis, así que se reparten por
+orden de llegada y un reporte tardío puede aportar **cero**. El «seis por reporte» sí existe, pero
+es el del PDF (`documentos/fotos.py::MAX_FOTOS_POR_REPORTE`), de donde este tomó el número.
+
+**Las cuatro diferencias con AWS que importan, y ninguna es de opinión:**
+
+1. **El subencargado se elige por petición.** OpenRouter es, literalmente, un enrutador: quien
+   ejecuta la inferencia depende del slug del modelo y de su enrutamiento interno. El art. 52 del
+   Reglamento —el mismo que el §6.4 cita como permisivo— exige al proveedor *«transparentar las
+   subcontrataciones que involucren la información sobre la que se presta el servicio»*. Con AWS
+   esa lista es pública y estable; aquí no se ha comprobado que exista.
+2. **No hay contrato negociado: hay adhesión.** A AWS se le firma un DPA. A OpenRouter se le
+   paga con una clave y se aceptan sus términos estándar. El mismo art. 52 cierra: *«el
+   responsable no podrá adherirse a servicios que no garanticen la debida protección de los datos
+   personales»*. **Adherirse es exactamente el verbo de lo que hoy se hace.**
+3. **Lo que viaja es contenido del inmueble, no infraestructura.** En S3 la fotografía está
+   guardada bajo llave de TAKAB; aquí se **entrega a un tercero para que la lea**. Lo que sale es
+   **la imagen del daño, sin el sello**: la marca de agua forense va horneada en el píxel
+   (`mobile/src/features/forensic/`) y por eso se **TAPA antes de salir**
+   (`api/src/takab_api/narrative/marca.py`), de modo que la hora, la ubicación, el PGA del
+   gabinete y **el identificador del operador** no acompañan a la fotografía fuera del país.
+
+   > ⚠️ **Esto se escribió primero al revés, y conviene que quede.** Hasta el 2026-09-21 este
+   > párrafo decía que la marca viajaba dentro del JPEG, y era verdad: el tapado no existía. Lo
+   > destapó una revisión adversarial de `T-7.27` decodificando el base64 del cuerpo real y
+   > mirando los píxeles — la única comprobación que había buscaba las cadenas en el JSON, donde
+   > una imagen en base64 no puede aparecer nunca. Es decir: la fotografía salía con **los dos
+   > identificadores que la lista blanca de texto retiene a propósito**, y la prueba que decía
+   > vigilarlo no podía verlo. Hoy el tapado se mide sobre los píxeles y contra la geometría que
+   > declara el propio móvil; lo que no se puede tapar de forma verificable **no se manda**.
+
+   «Sin PII» describe los datos estructurados (`narrative/redact.py`) y **ahora también la
+   imagen**, pero por motivos distintos y con guardas distintas: confundir las dos cosas sigue
+   siendo la clase de suposición cómoda que este documento persigue.
+4. **Para el sector público el listón no es el de este `§6.3`, sino el del `§6.5`.** Los arts. 60
+   y 62 de la LGPDPPSO exigen instrumento jurídico y **compromiso vinculante del receptor
+   extranjero**. Unos términos de servicio de adhesión no lo son. En la práctica: **en un hospital
+   público, una universidad pública o una dependencia, la función va apagada** hasta que exista
+   ese instrumento — y hoy el interruptor es del despliegue entero, no por cliente (§3.1).
+
+**Lo que NO cambia, y conviene decirlo en la misma página para que nadie lo deduzca al revés:**
+la prosa **jamás toca el veredicto**, la clasificación ni el tier (regla de oro 1, anclada en
+`api/tests/narrative/test_contract.py`); las secciones redactadas van rotuladas; y si el modelo
+no admite imágenes, la capa cae al redactor determinista y lo declara. **La IA asesora; no veta
+ni dispara nada.**
+
+**Qué falta, y es contractual, no técnico.** El art. 35, 2.º párrafo pide que el aviso de
+privacidad lleve *«una cláusula en la que se indique si la persona titular acepta o no la
+transferencia»*. Esa cláusula **no existe todavía** y está fichada en
+[`PENDIENTES-MAURICIO.md §4.7`](PENDIENTES-MAURICIO.md). Lo que el software sí entrega ya es la
+otra mitad: **la cámara forense del móvil avisa, antes de disparar y antes de encolar, de que la
+foto puede salir del inmueble hacia un proveedor de IA fuera de México, y de que la IA no decide
+nada** (`mobile/src/features/forensic/avisoIA.ts`).
+
+> ⚠️ **Dos huecos declarados, los dos abiertos.** (a) **No se han leído los términos de
+> OpenRouter contra el art. 52** —retención de prompts, subencargados, supresión al concluir—,
+> ni se ha verificado en qué país procesa el proveedor del modelo. (b) **El aviso de privacidad
+> de la plataforma no declara ESTA transferencia.** Leído el 2026-09-21 en
+> `api/src/takab_api/privacy/texts/aviso_es_mx.json`, ya dice más de lo que este recuadro le
+> atribuía —el `H-15` del `INFORME-V1-COMERCIAL.md` se quedó corto, y la versión anterior de
+> este mismo recuadro se quedó corta al revés—, y conviene partir de lo que dice de verdad:
+>
+> · **Las fotografías YA están declaradas como dato tratado.** El párrafo *«QUÉ DATOS SE TRATAN»*
+>   dice *«los reportes de daño que envíe y las fotografías que adjunte»* (aviso de privacidad ·
+>   párrafo «QUÉ DATOS SE TRATAN»). Aquí se afirmaba que el aviso *«no menciona ninguna imagen»*:
+>   era falso, y salía de buscar la palabra «imagen» —que en ese fichero aparece **cero** veces—
+>   en un texto que las llama **fotografías**. **No hace falta una categoría de dato nueva.**
+> · **La finalidad que se citaba no era la finalidad.** Se entrecomillaba *«entregarle el aviso
+>   de emergencia y operar la plataforma»* como la finalidad declarada del aviso. No lo es: es la
+>   oración de propósito del párrafo de **encargados**, y ni siquiera literal —el texto dice
+>   *«Para entregarle el aviso de emergencia y para operar la plataforma»* (aviso de privacidad ·
+>   párrafo «QUIÉN MÁS LOS TRATA (ENCARGADOS)»). Las finalidades están en otro párrafo y son
+>   **cuatro**: *«Para avisarle de un sismo, para saber quién está dentro del inmueble y en qué
+>   estado durante una emergencia, para coordinar el rescate de quien pide ayuda, y para dejar
+>   constancia de lo ocurrido»* (aviso de privacidad · párrafo «PARA QUÉ»). **La cuarta es
+>   exactamente donde encaja un informe posterior al sismo**, así que si hace falta una finalidad
+>   nueva es cuestión abierta, no cosa juzgada — y se le pregunta al abogado como pregunta.
+> · **Lo que SÍ falta, y no es de forma.** A todos los proveedores los llama **encargados**, que
+>   es la palabra que al proveedor de IA no se le puede aplicar de oficio; el párrafo *«SUS DATOS
+>   SE TRATAN FUERA DE MÉXICO»* atribuye la salida a la infraestructura y a la mensajería, no a un
+>   tercero que **lee** la fotografía; y no existe la cláusula del art. 35, 2.º párrafo por la que
+>   la persona titular acepta o no esa transferencia.
+>
+> Va al §6.7, punto 8, replanteado: **cláusula de transferencia sí; categoría de dato nueva no;
+> finalidad nueva, pregunta.**
+
+> **Y una consecuencia sobre la recomendación del §1, para que no se venda de más:** migrar a
+> `mx-central-1` **no** devolvería estas fotografías a México. Saldrían igual, porque el destino
+> no es una región de AWS. La residencia que se puede prometer el día que IoT Core llegue a
+> México es la de los datos **en reposo** — no la de lo que se entrega a un tercero para que lo
+> lea.
+
 ### 6.4 Cómputo en la nube — permitido, con lista de diligencia
 
 El **Reglamento de la LFPDPPP (DOF 21-12-2011), art. 52** regula expresamente el *"Tratamiento
@@ -539,6 +781,20 @@ Ciberseguridad de la APF (DOF 17-12-2025)** no menciona "territorio nacional".
    sujeto a reglas locales adicionales.
 7. **Alcance de la reforma DOF 14-11-2025** (se confirmó que existe y que tocó el art. 4; no se
    auditó el decreto completo) y **criterios emitidos por la Secretaría** desde marzo de 2025.
+8. **El proveedor de IA como encargado o como tercero, y qué hace falta para usarlo**
+   (`D-32`, adenda del §6.3). Cuatro preguntas concretas, en orden de urgencia: (a) redacción de la
+   **cláusula de transferencia** que permita mandarle **fotografías del inmueble** —no sólo
+   cifras—, y si cabe apoyarse en el art. 36 fr. VII; (b) si sus **términos de adhesión** bastan
+   frente al art. 52 del Reglamento, o hace falta un acuerdo específico; (c) **para el sector
+   público, si algo satisface los arts. 60 y 62 de la LGPDPPSO sin un instrumento firmado por el
+   receptor extranjero** — si la respuesta es no, la función queda vetada ahí y hay que poder
+   decirlo en la venta; (d) **si la finalidad ya declarada basta**: el aviso enumera cuatro y la
+   cuarta es *«para dejar constancia de lo ocurrido»* (aviso de privacidad · párrafo «PARA QUÉ»),
+   que es donde encaja un informe posterior al sismo. Va como pregunta, no como encargo, porque
+   hasta el 2026-09-21 aquí se daba por sentado que hacía falta finalidad nueva **y** categoría
+   nueva, y la categoría **no** hace falta: las fotografías ya están declaradas como dato tratado
+   (adenda del §6.3). **Es lo único que hoy separa a esta función de estar encendida**, y por
+   eso está fichada en `PENDIENTES-MAURICIO.md §4.7` y no en el backlog de software.
 
 ### 6.8 Cómo se verificaron estas citas
 

@@ -25,7 +25,14 @@
 //      hay incidente», el embuste que T-2.111 cazó en `lista.tsx` y que esta
 //      pantalla cometía con la frase «Sin incidente activo».
 import type { MobileStateOut } from "@takab/sdk";
-import { act, fireEvent, render, type RenderResult } from "@testing-library/react-native";
+import {
+  act,
+  fireEvent,
+  render,
+  within,
+  type RenderResult,
+} from "@testing-library/react-native";
+import type { TestInstance } from "test-renderer";
 
 import { expectFourStates } from "@/test-utils/expectFourStates";
 import { watermarkLines } from "@/features/forensic/watermark";
@@ -411,5 +418,174 @@ describe("2.3 · cámara forense · [T-7.58] «USAR ESTA FOTO» no puede no hace
     expect(registro.uri).toBe("file:///x.jpg");
     expect(huella).toBe("h");
     expect(mockBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ===========================================================================
+// [T-7.27 · D-32] LA FOTO PUEDE SALIR DEL INMUEBLE HACIA UN TERCERO
+// ===========================================================================
+//
+// Hasta esta ficha el único aviso de esta pantalla era «METADATOS RETENIDOS»,
+// que habla de la EDAD del dato con el que se sella — no de a dónde va la
+// imagen. `D-32` decidió que la capa narrativa reciba las fotos del reporte de
+// daños: salen del edificio hacia OpenRouter (Estados Unidos) y el proveedor
+// del modelo. Quien fotografía un daño tiene que poder decidir sabiéndolo.
+//
+// POR QUÉ EN LOS DOS MOMENTOS, y no solo en uno:
+//   · EN EL VISOR, porque encuadrar ya es una decisión: en un pasillo
+//     evacuado entran caras, matrículas y papeles que nadie eligió mandar.
+//   · EN LA REVISIÓN, porque «USAR ESTA FOTO» es el toque que la encola — es
+//     el instante en que la imagen deja de ser sólo de este teléfono.
+// El aviso del visor no cubre el segundo: entre uno y otro la persona ya ha
+// disparado, y el repertorio de T-2.104 dice que lo que se lee primero manda.
+describe("[T-7.27] el aviso de que la foto puede salir del inmueble", () => {
+  async function conIncidente(): Promise<RenderResult> {
+    mockSnapshot = instantanea({ data: estado() });
+    const v = await render(<Camera />);
+    await asentar();
+    return v;
+  }
+
+  it("está sobre el VISOR, antes de disparar", async () => {
+    const v = await conIncidente();
+
+    expect(v.getByTestId("aviso-ia")).toHaveTextContent(/PUEDE SALIR DEL INMUEBLE/);
+    expect(v.getByTestId("shutter")).toBeTruthy();
+  });
+
+  it("sigue estando en la REVISIÓN, que es el toque que la manda", async () => {
+    const v = await conIncidente();
+    await capturar(v);
+
+    expect(v.getByTestId("use-photo")).toBeTruthy();
+    expect(v.getByTestId("aviso-ia")).toHaveTextContent(/PUEDE SALIR DEL INMUEBLE/);
+    expect(v.getByTestId("aviso-ia")).toHaveTextContent(/FUERA DE MÉXICO/);
+    expect(v.getByTestId("aviso-ia")).toHaveTextContent(/NO DECIDE/);
+  });
+
+  it("convive con el de metadatos retenidos: ninguno tapa al otro", async () => {
+    // Son avisos de especies distintas —uno sobre la FIABILIDAD del sello,
+    // otro sobre su DESTINO— y los dos son ciertos a la vez. Sustituir uno por
+    // el otro dejaría a la persona informada a medias justo en el caso peor:
+    // sin red, con el dato viejo y a punto de levantar la única prueba que va
+    // a existir de ese daño.
+    mockSnapshot = instantanea({
+      data: estado(),
+      staleSinceMs: AHORA - 18 * 60_000,
+      dataUpdatedAt: AHORA - 18 * 60_000,
+    });
+
+    const v = await render(<Camera />);
+    await asentar();
+
+    expect(v.getByTestId("state-stale")).toHaveTextContent(/DATOS RETENIDOS/);
+    expect(v.getByTestId("aviso-ia")).toHaveTextContent(/PUEDE SALIR DEL INMUEBLE/);
+  });
+
+  it("NO se pinta cuando no hay nada que fotografiar", async () => {
+    // Sin incidente no hay cámara, y un aviso sobre una transferencia que no
+    // puede ocurrir es ruido que gasta la atención del aviso que sí importa.
+    mockSnapshot = instantanea({
+      data: { ...estado(), incident: null } as unknown as MobileStateOut,
+    });
+
+    const v = await render(<Camera />);
+    await asentar();
+
+    expect(v.queryByTestId("aviso-ia")).toBeNull();
+  });
+});
+
+// ===========================================================================
+// [T-7.27 · D-32] LO QUE SE HORNEA EN EL JPEG ES EL SUBÁRBOL DE `composeRef`
+// ===========================================================================
+//
+// Este bloque existe porque el que había estaba escrito A LA ALTURA EQUIVOCADA.
+// `watermark.test.ts` comprueba que el aviso de IA no aparece en
+// `watermarkLines()` ni en `forensicMetadata()`, y las dos son FUNCIONES PURAS:
+// nadie obliga a la pantalla a pasar por ellas para pintar algo dentro del árbol
+// que view-shot captura. Medido el 2026-09-21: moviendo `<AvisoIA/>` dentro del
+// `<View ref={composeRef}>` la suite entera de `mobile` quedaba en verde —725 de
+// 725— con el aviso cocido en el bitmap, dentro del SHA-256 de la evidencia y
+// de viaje hacia el tercero. Una guarda ausente con nombre de guarda.
+//
+// Y ahora pesa el doble: `T-7.26`/`T-7.27` acaban de abrir el camino por el que
+// ese mismo JPEG sale del inmueble hacia OpenRouter. Lo que se hornee aquí no se
+// puede quitar después —ni recortando, ni re-codificando— y viaja.
+//
+// LO QUE MIDE, en este orden y sin saltarse el primero:
+//   1. EL ANCLA. Que el `ref` que recibe `captureForensicPhoto` es el del View
+//      que lleva `testID="compose"`. Sin esto, los dos criterios de abajo
+//      podrían estar midiendo un View cualquiera de la pantalla y nadie se
+//      enteraría — que es exactamente el defecto que este bloque repara.
+//   2. Que el aviso de IA no está DENTRO de ese árbol.
+//   3. Que dentro no hay MÁS texto que el sello. Es el criterio general: la
+//      spec §2.3 enumera lo que va en el pixel, y cualquier rótulo nuevo que se
+//      cuele ahí cambia los bytes y, con ellos, la huella de toda la evidencia
+//      futura (T-2.135). Un criterio que sólo nombrara al aviso de IA dejaría
+//      pasar al siguiente aviso que a alguien le parezca buena idea hornear.
+//
+// ⚠️ LO QUE **NO** MIDE: aquí no corre `view-shot` ni sale un JPEG. Lo que se
+// mide es el ÁRBOL que se le entrega, que es de lo que el JPEG se compone; que
+// la captura nativa cueza ese árbol y no otro es cosa del teléfono, y eso sigue
+// exigiendo el Pixel — está en `pendiente` con el coste de pantalla del aviso.
+describe("[T-7.27] lo que se HORNEA en el JPEG: el subárbol de `composeRef`", () => {
+  /** Texto de un subárbol, en orden, tal como quedaría cocido en el bitmap. */
+  function textoDe(nodo: TestInstance): string {
+    return within(nodo)
+      .queryAllByText(/.+/)
+      .map((t) => String(t.props.children))
+      .join("\u241E");
+  }
+
+  /** Deja la pantalla en REVISIÓN y devuelve la vista y el `ref` que se selló. */
+  async function revisarYConfirmar(): Promise<{
+    v: RenderResult;
+    ref: { current: { props: Record<string, unknown> } | null };
+  }> {
+    mockSnapshot = instantanea({ data: estado() });
+    const v = await render(<Camera />);
+    await asentar();
+    await capturar(v);
+    await act(async () => {
+      fireEvent.press(v.getByTestId("use-photo"));
+    });
+    await asentar();
+    expect(mockCapturar).toHaveBeenCalledTimes(1);
+    const [ref] = mockCapturar.mock.calls[0] as unknown as [
+      { current: { props: Record<string, unknown> } | null },
+    ];
+    return { v, ref };
+  }
+
+  it("ANCLA · el `testID` que se mide es el del View cuyo `ref` se sella", async () => {
+    // Si esto falla, los dos criterios de abajo NO significan nada: estarían
+    // midiendo otro View. Por eso va primero y por eso falla por su cuenta.
+    const { ref } = await revisarYConfirmar();
+
+    expect(ref.current).not.toBeNull();
+    expect(ref.current?.props.testID).toBe("compose");
+  });
+
+  it("CRITERIO · el aviso de IA queda FUERA del árbol que se hornea", async () => {
+    const { v } = await revisarYConfirmar();
+
+    const cocido = v.getByTestId("compose");
+    expect(within(cocido).queryByTestId("aviso-ia")).toBeNull();
+    expect(textoDe(cocido)).not.toMatch(/PUEDE SALIR DEL INMUEBLE|FUERA DE MÉXICO|NO DECIDE/);
+    // Y no se pone verde por desaparición: el aviso SIGUE en la pantalla, fuera.
+    expect(v.getByTestId("aviso-ia")).toHaveTextContent(/PUEDE SALIR DEL INMUEBLE/);
+  });
+
+  it("CRITERIO · dentro de `composeRef` no hay más texto que el sello", async () => {
+    const { v } = await revisarYConfirmar();
+
+    const cocido = v.getByTestId("compose");
+    const sello = within(cocido).getByTestId("watermark");
+    // Igualdad, no inclusión: cualquier rótulo nuevo horneado rompe esto aunque
+    // no diga ni «IA» ni «INMUEBLE». Y el control de que no mide el vacío: el
+    // sello trae texto de verdad.
+    expect(textoDe(sello)).toMatch(/EVIDENCIA FORENSE/);
+    expect(textoDe(cocido)).toBe(textoDe(sello));
   });
 });

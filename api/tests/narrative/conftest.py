@@ -14,6 +14,8 @@ el del módulo.
 
 from __future__ import annotations
 
+import pytest
+
 from tests.api.conftest import (  # noqa: F401 - fixtures, se usan por nombre
     _auth_env,
     base_data,
@@ -22,3 +24,19 @@ from tests.api.conftest import (  # noqa: F401 - fixtures, se usan por nombre
     make_dictamen,
     make_incident,
 )
+
+
+@pytest.fixture(autouse=True)
+def _sin_vision_recordada():
+    """[T-7.27] El catálogo de modelos se recuerda POR PROCESO, y eso es correcto en
+    producción y veneno entre tests: el primero que lo consulta decide lo que ven los
+    demás, y «cuántas veces se pregunta» pasa a depender del orden de ejecución.
+
+    Se vacía antes y después: antes, para que cada test parta de un proceso limpio;
+    después, para no dejarle un catálogo puesto a las otras carpetas de la suite.
+    """
+    from takab_api.narrative.openrouter import olvidar_vision
+
+    olvidar_vision()
+    yield
+    olvidar_vision()

@@ -100,6 +100,21 @@ async def generate_report(
     # [T-2.42] Prosa que RODEA al veredicto. `build_narrative` nunca lanza: si el
     # proveedor falla, degrada al determinista y el PDF lo declara. El veredicto que
     # el documento afirma ya está en `model` y esta llamada no lo toca.
+    #
+    # [T-7.27·D-32] Las fotografías del brigadista que ve la IA salen de ESTE `model`,
+    # que ya las trae leídas de S3 por el builder de arriba (`fetch_object`) y **ya
+    # derivadas** por `documentos/fotos.preparar` —redimensionadas a 1024 px y sin el
+    # EXIF del teléfono—. No se vuelven a leer de S3 aquí.
+    #
+    # ⚠️ [T-7.27·A] Lo que SÍ pasa, y este comentario decía lo contrario, es que la
+    # fotografía se re-encoda una vez más antes de salir: la cámara forense hornea la
+    # marca de agua EN EL PÍXEL —con las coordenadas del inmueble y el identificador del
+    # operador— y esa banda se TAPA antes de mandarla (`narrative/marca.py`). Pintar
+    # encima cambia los bytes, así que la fotografía que ve el modelo deja de tener la
+    # huella que el papel publica. No se esconde: la procedencia de abajo anota las DOS
+    # —la de lo enviado, que es la verificable contra el tercero, y la de lo impreso, que
+    # es la que ata la transferencia a una fotografía del expediente— y lo que no se
+    # puede tapar no se manda (`DanoRedactado.fotos_no_adjuntas` lo declara).
     narrative = await build_narrative(
         model,
         settings,
