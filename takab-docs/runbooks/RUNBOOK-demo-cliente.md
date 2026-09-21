@@ -2,6 +2,10 @@
 
 > **Ficha:** [`T-7.07`](../TASKS.md) · **Plan:** [`PLAN-PROTOTIPO-FUNCIONAL §4 · F1`](../PLAN-PROTOTIPO-FUNCIONAL.md)
 > **Dueño:** Mauricio · **Necesita:** el WR-1, el gabinete, el Pixel y una persona en la consola
+> **Compañera:** [`GUIA-DEMOSTRACION-POR-ROLES.md`](GUIA-DEMOSTRACION-POR-ROLES.md) — el mismo
+> ensayo mirado **por rol y por pantalla** en vez de por acto: qué abrir, quién eres en cada
+> momento, qué tocas y qué NO puedes tocar. Úsala el día de la demostración; este documento
+> es el que dice qué tiene que pasar y cómo se acredita.
 > **Guion ejecutable:** `deploy/demo/guion.sh` — y desde `T-7.28`, el ensayo completo
 > cronometrado con **`bash deploy/demo/guion.sh --full`**, que recorre los actos en orden,
 > mide cada uno, le pregunta a la máquina si pasó lo que promete y saca la tabla del
