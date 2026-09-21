@@ -23,7 +23,8 @@ cloud-e2e-site-down: ## Lo retira. Aborta si le hubieran puesto un gabinete
         billing cloud-users cloud-mobile-users cloud-staging-incident cloud-publish-release \
         demo-fase1 demo-db \
         objetos \
-        cloud-images cloud-deploy cloud-conformidad cloud-apply cloud-allow-my-ip restore-drill \
+        cloud-images cloud-deploy cloud-conformidad cloud-medir-latencia-ia cloud-apply \
+        cloud-allow-my-ip restore-drill \
         landing-preview landing-e2e landing-audit landing-deploy
 
 API_DIR := api
@@ -358,6 +359,20 @@ cloud-deploy:
 cloud-conformidad:
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) TF_DEV=$(TF_DEV) \
 		bash deploy/cloud/conformidad.sh --informe takab-docs/INFORME-CONFORMIDAD-DEMO.md $(CONFORMIDAD_FLAGS)
+
+# [T-7.26] La latencia real de la capa narrativa, medida contra el proveedor de
+# verdad desde la instancia de verdad. SOLO LEE: no escribe en la base, no sube
+# nada a S3, no toca la configuracion de la instancia. Si GASTA: son llamadas
+# reales al modelo y se cobran.
+#
+# Existe porque `openrouter_timeout_s` vale 8.0 y ese numero no se inventa, y
+# porque NO SE PUEDE MEDIR A TRAVES DEL GUARDIA QUE SE ESTA VALIDANDO: con el
+# tope puesto, toda llamada mas lenta que 8 s deja de ser una latencia y pasa a
+# ser una degradacion, o sea que se borra justo la cola que se quiere ver. El
+# script mide con un tope alto propio que vive solo en el proceso de medicion.
+cloud-medir-latencia-ia:
+	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) TF_DEV=$(TF_DEV) \
+		bash deploy/cloud/medir-latencia-ia.sh $(MEDICION_FLAGS)
 
 # [T-2.171] `terraform apply` con las mismas guardas que un despliegue, porque es
 # un despliegue: cambia infraestructura viva. Es el que menos se deja guardar

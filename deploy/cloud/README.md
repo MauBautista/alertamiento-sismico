@@ -185,6 +185,40 @@ curl -sI  https://<host>/ | head -1         # 200, con certificado válido
 Y en el navegador: entrar por Cognito, ver el mapa con los sitios, abrir `/fleet` y crear
 una estación.
 
+### 5. Medir la latencia de la capa narrativa (T-7.26)
+
+`openrouter_timeout_s` vale **8.0 s** y ese número no se inventa: se mide contra el
+proveedor real, con el modelo que el despliegue tiene puesto y desde la instancia, que
+es la que paga la red. Hay una medición tras cada cambio de modelo.
+
+```bash
+make cloud-medir-latencia-ia                                   # 5 rondas × 2 brazos
+make cloud-medir-latencia-ia MEDICION_FLAGS="--rondas 10 --crudo"
+```
+
+**Sólo lee**: no escribe en la base, no sube nada a S3, no genera PDF, no toca la
+configuración de la instancia ni reinicia nada. **Sí gasta**: son llamadas reales al
+modelo y se cobran (con los valores por defecto, 10 generaciones y 10 lecturas de
+catálogo). No imprime la clave —se resuelve con el rol de la instancia y no sale del
+proceso— ni la prosa que devuelve el modelo.
+
+Tres cosas que el script hace a propósito y conviene no deshacer:
+
+1. **Mide con un tope ALTO propio** (`--tope-medicion`, 90 s), que vive sólo dentro del
+   proceso de medición. No se puede medir a través del guardia que se está validando:
+   con el tope de producción puesto, toda llamada más lenta que 8 s deja de ser una
+   latencia y pasa a ser una degradación con `latency_ms = None`, o sea que se borra
+   exactamente la cola que se quiere ver. La conclusión sería «nunca pasa de 8 s»:
+   cierta por construcción y falsa en el mundo.
+2. **Cuenta el catálogo aparte.** `build_narrative` pregunta SIEMPRE si el modelo admite
+   imágenes (`D-32`), también en un incidente sin fotos, y eso es un `GET /models` que
+   se recuerda por proceso: la primera exportación después de cada despliegue lo paga
+   entero, **bajo el mismo tope**. Son dos viajes, no uno.
+3. **Una llamada que no volvió no entra en la muestra.** De un plantón se sabe que tardó
+   más que el tope de medición, no cuánto; promediarlo convertiría nuestro propio techo
+   en «la latencia medida». Si hay alguno, el script se niega a proponer un tope y dice
+   qué hacer antes de volver a preguntar.
+
 ## Cerrar el acceso público
 
 ```bash

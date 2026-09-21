@@ -496,6 +496,31 @@ por tenant que ya aplica la API (`ai_monthly_cap_usd`, 10 USD en dev). Modelo re
 `anthropic/claude-sonnet-5` (admite imágenes, que `D-32` necesita); `anthropic/claude-haiku-4.5`
 si el coste manda. Un informe completo cuesta del orden de centavos.
 
+**✅ Hecho el 2026-09-21:** el secreto está creado, el rol de la instancia tiene permiso para
+leerlo (hacía falta una línea de terraform que nadie había puesto: sin ella el despliegue
+«encendía» la IA y la nube seguía escribiendo prosa determinista **en silencio**) y la nube
+está desplegada con la capa encendida.
+
+**Queda UN paso, y son tres minutos de terminal:**
+
+```bash
+make cloud-medir-latencia-ia
+```
+
+Mide cuánto tarda de verdad el modelo, desde la instancia y contra el proveedor real, y
+dice en su veredicto si el tope de 8 s aguanta o si la generación tiene que salir de la
+petición HTTP. Sólo lee; gasta unos centavos en llamadas reales. **Tiene que correrlo
+Mauricio** porque entrar a la instancia por SSM es una acción que el clasificador de la
+sesión asistida deniega, no porque el software no sepa hacerlo.
+
+Qué hacer con lo que salga:
+- «EL TOPE AGUANTA con holgura» → no se toca nada y `T-7.26` se cierra.
+- «poco margen» o «SE QUEDA CORTO» → hay que elegir entre subir `openrouter_timeout_s`
+  (deja la petición de exportación colgada ese tiempo) o sacar la generación de la petición
+  y servirla con sondeo. Esa decisión es de producto y se ficha como `D-nn`.
+- «NO SE PUEDE FIJAR UN TOPE» → primero mirar la razón que imprime: si dice que no aceptó
+  la clave o que respondió con error, el problema no es la latencia.
+
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
 > `G-04` (relés reales, latencia <100 ms acreditada) sigue abierto **desde el hito de la Fase 1**.

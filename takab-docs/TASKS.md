@@ -15197,6 +15197,30 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     software: `openrouter_timeout_s` sigue en 8.0 s porque **ese número no se inventa**. Exige
     la clave viva, `terraform apply` (el permiso de arriba) y la nube desplegada, en ese orden.
     Hasta medirlo no se decide si sube o si la generación sale de la petición con sondeo.
+    El instrumento ya existe y es repetible: **`make cloud-medir-latencia-ia`**
+    (`deploy/cloud/medir-latencia-ia.sh`). Sólo lee —no toca base, ni S3, ni la
+    configuración de la instancia— y no imprime ni la clave ni la prosa. Escribirlo
+    destapó tres cosas que la ficha daba por sencillas:
+      1. **No se puede medir a través del guardia que se está validando.** Con el tope en
+         8 s, una llamada más lenta no devuelve latencia: devuelve una degradación y
+         `latency_ms` se queda en `None`. Medir con la configuración puesta borraría justo
+         la cola que se busca, y la conclusión —«nunca pasa de 8 s»— sería cierta por
+         construcción. El script mide con un tope alto propio que no sale de su proceso.
+      2. **Son DOS viajes bajo el MISMO tope, no uno.** `build_narrative` consulta el
+         catálogo (`GET /models`) en TODA exportación para que el modelo declare que
+         admite imágenes (`D-32`), también sin fotografías; se recuerda por proceso, así
+         que la primera exportación tras cada despliegue lo paga entero. Un tope fijado
+         sólo con la generación deja fuera ese viaje.
+      3. **El peor caso lo creó `T-7.27`, y no es el de texto:** seis fotografías al tope
+         son ~1.2 MB de cuerpo (medido: 1128 KiB contra un `TOPE_PETICION_BYTES` de 1264).
+         Medir sólo el caso sin fotos y fijar el tope con él dejaría la redacción asistida
+         cayéndose precisamente en los incidentes con daño, que son los únicos donde
+         alguien va a leer la prosa.
+    ⚠️ Y una trampa del propio medidor, cazada ejerciéndolo: una llamada que **no volvió**
+    no es una latencia. La primera versión la metía en la muestra, el máximo pasaba a ser
+    el tope de medición y el veredicto llegaba a recomendar «sube el tope por encima de
+    90012 ms» — el techo que habíamos puesto nosotros, disfrazado de medición. Hoy las
+    censuradas se cuentan aparte y con una sola el script **se niega a proponer un tope**.
   - [x] Registro de procedencia que `T-3.01` pide: modelo, **versión del prompt** y **hash de la
     salida** en `audit_log` (`narrative_generated`); coste desde `usage` a `ai_spend`. La versión
     del prompt se DERIVA del sha256 de las plantillas: nadie puede cambiar lo que se le pide al
