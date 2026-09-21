@@ -3,13 +3,17 @@
 #
 # NO es `demo/run.py` (aquél es el arnés de la Fase 1: levanta MinIO y una base
 # local y ejercita edge→nube sin tocar hardware). Esto mira el sistema REAL —el
-# gabinete de Puebla, la nube desplegada y el Pixel— y contesta dos preguntas
+# gabinete de Puebla, la nube desplegada y el Pixel— y contesta las preguntas
 # que, contestadas tarde, cuestan la demostración entera:
 #
 #   --preflight  ¿se puede tocar el radio ya, o hay algo puesto que hará que el
 #                pulso no produzca ni incidente ni aviso, sin error a la vista?
 #   --check      tras el pulso: ¿pasó lo que el guion promete, y en el plazo?
 #   --reporte    acto 4: ¿el PDF existe y lleva de verdad una imagen dentro?
+#   --full       [T-7.28] el ensayo general: los cuatro actos en orden,
+#                cronometrados, cada uno con su comprobación, y al final la
+#                tabla del Registro lista para pegar. Sigue sin accionar nada:
+#                lo físico lo hace la persona y el guion mide y pregunta.
 #
 # **Por qué existe.** Cada una de las cosas que comprueba ya se ha caído sola al
 # menos una vez, y todas fallan EN SILENCIO: el modo prueba del WR-1 armado
@@ -34,6 +38,9 @@
 #   TAKAB_DEMO_DESDE       desde cuándo cuenta un incidente (def. ahora)
 #   TAKAB_DEMO_INCIDENTE   incidente para `--reporte` (def. el último del sitio)
 #   TAKAB_DEMO_BUCKET      bucket de evidencia (def. el de este entorno en AWS)
+#   TAKAB_DEMO_SIN_PAUSA   1 = --full no espera a nadie (prueba del guion, NO
+#                          un ensayo: la tabla que salga lo dice en su pie)
+#   TAKAB_DEMO_ENSAYO_ID   nombre de la corrida (def. la hora UTC)
 #
 # La red por defecto es `192.168.1.0/24` a propósito: es la red donde el equipo
 # se va a INSTALAR. Desde la de desarrollo hay que decirle dónde mirar con
@@ -395,6 +402,287 @@ reporte() {
   rm -f "$tmp"
 }
 
+# ------------------------------------------------------- ensayo general (--full)
+#
+# [T-7.28] El ensayo general: los cuatro actos EN ORDEN, cronometrados, y cada uno
+# con la comprobación de máquina que ya existía suelta.
+#
+# ---------------------------------------------------------------------------
+# QUÉ ES Y QUÉ NO ES
+# ---------------------------------------------------------------------------
+# Es un CRONÓMETRO y un DIRECTOR DE ESCENA. **No acciona nada** — el invariante de
+# este fichero («solo lee») sigue intacto y es el que permite correrlo delante de
+# un cliente sin miedo. Lo físico lo hace la persona: golpear la losa, pulsar el
+# WR-1, sacar la foto, firmar el dictamen. El guion dice cuándo, espera, mide, y
+# después pregunta a la máquina si pasó lo que el acto promete.
+#
+# ---------------------------------------------------------------------------
+# DE QUÉ RELOJ SON ESTOS TIEMPOS — y por qué importa decirlo
+# ---------------------------------------------------------------------------
+# reloj: PROPIO — de la máquina donde corre este script. Son tiempos de ENSAYO
+# (cuánto se tardó en representar cada acto), **no latencias del sistema**. La
+# diferencia no es sutil: el Registro ya guarda latencias medidas por el sistema
+# con su propio reloj —el acta del reflejo, 4,96 ms sobre un presupuesto de 100—,
+# y presentar «acto 3: 2 min 14 s» junto a aquéllas, sin decir cuál es cuál,
+# convertiría el tiempo que tardó una persona en pulsar un botón en una cifra de
+# rendimiento del producto. Por eso la tabla que sale de aquí rotula su columna
+# «duración del acto» y el pie declara el reloj.
+#
+# ---------------------------------------------------------------------------
+# LO QUE NO PUEDE HACER, A PROPÓSITO
+# ---------------------------------------------------------------------------
+# **No puede inventarse un tiempo.** Un acto que se salta se registra `omitido`
+# y SIN duración — nunca con cero. Un cero se lee como «tardó nada» y es la
+# mentira más fácil de colar en una tabla de tiempos.
+#
+# Costura: `TAKAB_DEMO_SIN_PAUSA=1` no espera a nadie (es lo que deja probar el
+# ensayo entero sin gabinete). Con ella los actos duran lo que tarda la máquina,
+# y el pie de la tabla lo DICE, para que una corrida de prueba no se pueda pegar
+# en el Registro como si hubiera habido una persona delante.
+
+#: Una fila por acto: nombre TAB inicio TAB fin TAB veredicto TAB detalle.
+#: Se guardan MARCAS y la duración se DERIVA al imprimir (T-7.60): un acumulador
+#: de duraciones no deja comprobar después que el orden de los actos fue el que
+#: dice la tabla.
+MARCAS=()
+ACTO_T0=0
+ACTO_NOMBRE=""
+ACTO_V0=0
+ACTO_R0=0
+
+#: Reloj del ensayo. Único sitio donde se lee la hora, para que no haya dos.
+ahora_epoch() { date +%s; }
+
+pausa() {
+  if [ "${TAKAB_DEMO_SIN_PAUSA:-0}" = "1" ]; then
+    printf '  \033[36m→\033[0m %s \033[2m(sin pausa)\033[0m\n' "$1"
+    return 0
+  fi
+  printf '  \033[36m→\033[0m %s\n' "$1"
+  printf '     cuando esté hecho, pulsa ENTER (o «s» + ENTER para SALTAR el acto): '
+  local r
+  IFS= read -r r </dev/tty || r=""
+  case "$r" in s | S | saltar) return 1 ;; esac
+  return 0
+}
+
+abre_acto() {
+  ACTO_NOMBRE="$1"
+  ACTO_T0="$(ahora_epoch)"
+  ACTO_V0="$VERDES"
+  ACTO_R0="$ROJOS"
+  echo
+  printf '\033[1m── %s ──\033[0m\n' "$1"
+}
+
+#: `$1` = veredicto forzado, o vacío para DERIVARLO de los rojos que cayeron
+#: dentro del acto. Derivarlo es lo que impide que un acto se declare bueno
+#: mientras su propia comprobación pinta un ✗ tres líneas más arriba.
+cierra_acto() {
+  local forzado="${1:-}" detalle="${2:-}" fin veredicto
+  fin="$(ahora_epoch)"
+  if [ -n "$forzado" ]; then
+    veredicto="$forzado"
+  elif [ "$ROJOS" -gt "$ACTO_R0" ]; then
+    veredicto="rojo"
+  else
+    veredicto="ok"
+  fi
+  MARCAS+=("$ACTO_NOMBRE	$ACTO_T0	$fin	$veredicto	$detalle")
+}
+
+omite_acto() {
+  MARCAS+=("$ACTO_NOMBRE	$ACTO_T0	-	omitido	$1")
+  printf '  \033[33m•\033[0m acto OMITIDO: %s\n' "$1"
+  AVISOS=$((AVISOS + 1))
+}
+
+#: mm:ss de una duración. Se le pasa la resta ya hecha por quien tiene las dos
+#: marcas: aquí no se vuelve a leer el reloj.
+mmss() {
+  local s="$1"
+  printf '%d:%02d' $((s / 60)) $((s % 60))
+}
+
+# --- acto 1 · el SOC en reposo -------------------------------------------------
+
+c_acto1_reposo() {
+  leer_panel || return 1
+  local tier activos paquetes huecos
+  tier="$(campo .last_tier)"
+  activos="$(jq -r '[.relays[]? | select(.activated == true) | .channel] | join(", ")' <<<"$ESTADO")"
+  paquetes="$(campo .seedlink.packets_seen)"
+  huecos="$(campo .seedlink.gaps)"
+
+  [ "$tier" = "normal" ] &&
+    verde "nivel en reposo: normal" ||
+    rojo "el gabinete NO está en reposo (last_tier=${tier:-?}): el acto 1 enseña un sistema tranquilo"
+  [ -z "$activos" ] &&
+    verde "relés en reposo" ||
+    rojo "relés accionados ($activos): el acto 1 no puede abrir con la sirena puesta"
+  c_nube_desde_el_gabinete
+  if [ -n "$paquetes" ]; then
+    if [ "${huecos:-0}" -eq 0 ] 2>/dev/null; then
+      verde "SeedLink: $paquetes paquetes, 0 huecos"
+    else
+      aviso "SeedLink: $paquetes paquetes con $huecos huecos — dilo tú antes de que lo pregunten"
+    fi
+  else
+    aviso "el panel no declara seedlink: no hay cifra de continuidad que enseñar"
+  fi
+  ACTO1_DETALLE="nivel $tier · relés en reposo · ${paquetes:-?} paquetes/${huecos:-?} huecos"
+}
+
+# --- acto 2 · movimiento aislado, SIN señal del WR-1 ---------------------------
+
+#: El acto 2 promete DOS cosas y la segunda es la que vende: que el edificio se
+#: movió, que el sistema lo vio **y que no accionó nada**. La segunda se mide
+#: contra `actuation_records`, no contra el panel: el panel dice si un relé está
+#: accionado AHORA, y un relé que se moviera y volviera pasaría por delante de él
+#: sin dejar rastro. La bitácora es append-only y no se puede desdecir.
+c_acto2_movimiento() {
+  local desde="$1" iid n
+  abrir_base || return 1
+  iid="$(consulta "SELECT incident_id FROM incidents WHERE site_id='$SITIO' AND opened_trigger='local_threshold' AND opened_at >= to_timestamp($desde) ORDER BY opened_at DESC LIMIT 1")"
+  if [ -z "$iid" ]; then
+    rojo "el golpe no abrió incidente 'local_threshold' en la nube: o no llegó al umbral, o el gabinete no publica"
+    ACTO2_DETALLE="sin incidente"
+    return 1
+  fi
+  verde "incidente local_threshold $iid abierto por el movimiento"
+  n="$(consulta "SELECT count(*) FROM actuation_records WHERE site_id='$SITIO' AND occurred_at >= to_timestamp($desde)")"
+  if [ "${n:-0}" = "0" ]; then
+    verde "NINGÚN relé se movió (bitácora de actuación vacía desde el inicio del acto)"
+  else
+    rojo "se registraron $n actuaciones: el acto 2 promete que una estación sola NO acciona (T-2.32)"
+  fi
+  ACTO2_DETALLE="incidente ${iid:0:8} · $n actuaciones"
+}
+
+# --- la tabla del Registro -----------------------------------------------------
+
+registro_markdown() {
+  local marcado n=0
+  echo
+  echo "════════════════════════════════════════════════════════════════════════"
+  echo "REGISTRO · pega esto en takab-docs/runbooks/RUNBOOK-demo-cliente.md § Registro"
+  echo "════════════════════════════════════════════════════════════════════════"
+  echo
+  echo "**Ensayo del $(date -u +%Y-%m-%dT%H:%M:%SZ) · corrida \`$ENSAYO_ID\`.**"
+  echo
+  echo "| Acto | Duración | Veredicto | Qué midió la máquina |"
+  echo "|---|---|---|---|"
+  for marcado in "${MARCAS[@]}"; do
+    local nombre t0 t1 ver det dur
+    IFS='	' read -r nombre t0 t1 ver det <<<"$marcado"
+    if [ "$t1" = "-" ]; then
+      dur="—"
+    else
+      dur="$(mmss $((t1 - t0)))"
+    fi
+    case "$ver" in
+    ok) ver="✓" ;;
+    rojo) ver="✗" ;;
+    omitido) ver="omitido" ;;
+    esac
+    printf '| %s | %s | %s | %s |\n' "$nombre" "$dur" "$ver" "${det:-—}"
+    n=$((n + 1))
+  done
+  echo
+  echo "> **De qué reloj son estas duraciones.** De la máquina que corrió"
+  echo "> \`guion.sh --full\`, y son tiempos de REPRESENTACIÓN: cuánto se tardó en"
+  echo "> ejecutar cada acto delante de quien miraba. **No son latencias del"
+  echo "> sistema** — ésas las mide el propio sistema y viven en las filas de arriba"
+  echo "> de esta misma sección (el acta del reflejo, la entrega del aviso)."
+  if [ "${TAKAB_DEMO_SIN_PAUSA:-0}" = "1" ]; then
+    echo ">"
+    echo "> ⚠️ **Corrida SIN PAUSAS (\`TAKAB_DEMO_SIN_PAUSA=1\`): no hubo una persona"
+    echo "> representando los actos.** Las duraciones son lo que tardó la máquina en"
+    echo "> preguntar, no un ensayo. NO la pegues en el Registro como si lo fuera."
+  fi
+  echo
+  echo "Clasificación pendiente: **\`reproduccion\`** (ver el cierre de este guion)."
+}
+
+full() {
+  ENSAYO_ID="${TAKAB_DEMO_ENSAYO_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+  echo "ENSAYO GENERAL · corrida $ENSAYO_ID · sitio $SITIO"
+  echo "  Este guion NO acciona nada. Lo físico lo haces tú; él mide y comprueba."
+  [ "${TAKAB_DEMO_SIN_PAUSA:-0}" = "1" ] &&
+    echo "  ⚠️ SIN PAUSAS: no espera a nadie. Esto NO es un ensayo, es una prueba del guion."
+
+  # ── acto 0 ──────────────────────────────────────────────────────────────
+  abre_acto "0 · Preflight"
+  preflight
+  if [ "$ROJOS" -gt "$ACTO_R0" ]; then
+    cierra_acto rojo "$((ROJOS - ACTO_R0)) ✗ en el preflight"
+    echo
+    echo "ENSAYO ABORTADO en el preflight. NO toques el radio: cada ✗ hace que el"
+    echo "guion falle SIN dar error a la vista, que es justo lo que no se puede"
+    echo "permitir con un cliente delante."
+    registro_markdown
+    return 1
+  fi
+  cierra_acto ok "$((VERDES - ACTO_V0)) ✓"
+
+  # ── acto 1 ──────────────────────────────────────────────────────────────
+  ACTO1_DETALLE=""
+  abre_acto "1 · El SOC operando normal"
+  if pausa "enseña la consola y el panel del gabinete en reposo"; then
+    c_acto1_reposo
+    cierra_acto "" "$ACTO1_DETALLE"
+  else
+    omite_acto "lo saltó quien conducía"
+  fi
+
+  # ── acto 2 ──────────────────────────────────────────────────────────────
+  ACTO2_DETALLE=""
+  abre_acto "2 · Movimiento aislado, SIN señal del WR-1"
+  local t_acto2
+  t_acto2="$(ahora_epoch)"
+  if pausa "golpea la losa junto al sensor hasta que el panel escale de nivel"; then
+    c_acto2_movimiento "$t_acto2"
+    cierra_acto "" "$ACTO2_DETALLE"
+  else
+    omite_acto "lo saltó quien conducía"
+  fi
+
+  # ── acto 3 ──────────────────────────────────────────────────────────────
+  abre_acto "3 · El pulso del WR-1"
+  DESDE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if pausa "pulsa el WR-1 AHORA (el check empieza a contar desde este instante)"; then
+    check
+    cierra_acto "" "$(( VERDES - ACTO_V0 )) ✓ · $(( ROJOS - ACTO_R0 )) ✗"
+  else
+    omite_acto "lo saltó quien conducía"
+  fi
+
+  # ── acto 4 ──────────────────────────────────────────────────────────────
+  abre_acto "4 · Después de la sacudida"
+  if pausa "reporte de daños en el Pixel, dictamen firmado en la consola, y genera el PDF"; then
+    reporte
+    cierra_acto "" "$(( VERDES - ACTO_V0 )) ✓ · $(( ROJOS - ACTO_R0 )) ✗"
+  else
+    omite_acto "lo saltó quien conducía"
+  fi
+
+  # ── limpieza ────────────────────────────────────────────────────────────
+  echo
+  printf '\033[1m── Limpieza · parte del guion, no del después ──\033[0m\n'
+  echo "  1) suelta el enclavado:  curl -X POST $PANEL/api/reset"
+  echo "  2) en la consola, clasifica el incidente como 'reproduccion'."
+  echo
+  echo "     ⚠️ 'reproduccion', NO 'prueba'. Las dos cierran el incidente y ninguna"
+  echo "     cuenta en la tasa de falsos positivos, así que la diferencia no se ve"
+  echo "     en ningún número — se ve en lo que el registro DICE que pasó. 'prueba'"
+  echo "     es mantenimiento o puesta en marcha; 'reproduccion' es exactamente esto:"
+  echo "     una demostración. El valor se creó en T-7.14 (D-33) porque una corrida"
+  echo "     de demostración no cabía en las otras cuatro sin mentir, y usar 'prueba'"
+  echo "     desperdicia esa distinción el día que alguien audite el historial."
+
+  registro_markdown
+}
+
 # ----------------------------------------------------------------------- main
 
 #: El cierre dice qué hacer, y eso depende de en qué acto estamos: «no toques el
@@ -408,6 +696,7 @@ resumen() {
   --preflight) echo "NO toques el radio todavía: cada ✗ hace que el guion falle SIN dar error a la vista." ;;
   --check) echo "El pulso no produjo lo que el guion promete. Mira el panel y el registro del worker notify." ;;
   --reporte) echo "El reporte no está entregable todavía: genéralo desde la consola y vuelve a correr esto." ;;
+  --full) echo "El ensayo tiene actos en ✗. La tabla de arriba dice CUÁL: repite ESE acto, no el ensayo entero." ;;
   esac
   return 1
 }
@@ -417,12 +706,13 @@ case "$ACCION" in
 --preflight) preflight ;;
 --check) check ;;
 --reporte) reporte ;;
+--full) full ;;
 -h | --help)
   sed -n '2,40p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
   ;;
 *)
-  echo "uso: $(basename "$0") [--preflight|--check|--reporte]" >&2
+  echo "uso: $(basename "$0") [--preflight|--check|--reporte|--full]" >&2
   exit 2
   ;;
 esac

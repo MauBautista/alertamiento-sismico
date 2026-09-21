@@ -110,3 +110,14 @@ THIRD_PARTY_NOTICES.txt
 # `shared/brand/`, que es la fuente canónica; esto queda fuera de git para no
 # meter un archivo comprimido en la historia para siempre.
 /img/
+
+# BOM de armado físico del gabinete (2026-09-21). Se quedan FUERA de git por
+# decisión de Mauricio (2026-09-21). No es un descuido y por eso está escrito:
+# sin esta línea los dos ficheros vuelven a aparecer como no rastreados en cada
+# `git status`, y el gate de árbol limpio de `deploy/cloud/deploy.sh` —«lo que se
+# despliega tiene que ser EXACTAMENTE lo que el CI vio»— aborta el despliegue de
+# la nube. Ya costó uno el 2026-09-21.
+#
+# La aritmética que los respalda vive en `cotizacion/`, ignorada arriba (línea 96),
+# así que los dos lados del BOM quedan fuera por el mismo criterio.
+takab-docs/BOM-GABINETE-*.md
