@@ -777,6 +777,8 @@ def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
     # epicentro propio, y en la ruta del receptor —la normal— no lo hay. Es la
     # línea la que declara si hubo contraste de verdad o no fue verificable.
     pdf.field("CORRELACIÓN CON CATÁLOGO", m.catalog_line or SIN_CORRELACION_EN_CATALOGO)
+    # [T-7.25] A quién se le puede preguntar, y por qué el SSN no está.
+    pdf.field("CONSULTA A FUENTES EXTERNAS", m.fuentes_externas)
 
 
 def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:

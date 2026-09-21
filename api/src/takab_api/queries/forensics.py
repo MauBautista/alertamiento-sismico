@@ -99,6 +99,33 @@ _CATALOG_CANDIDATES = text(
     """
 )
 
+# [T-7.25] El INTENTO de consultar a la fuente externa por ESTE incidente. Es lo
+# único que distingue «pregunté y no me contestó» de «nadie preguntó», y sin ello
+# `consultando` era un estado del glosario que no se podía alcanzar. Una fila por
+# proveedor; hoy sólo hay uno (USGS), y el `ORDER BY` deja dicho cuál gana el día
+# que haya dos: el que se preguntó más tarde.
+# ⚠️ Y trae la FILA DEL CATÁLOGO que el worker dio por buena, con el `LEFT JOIN`
+# por `catalog_key`. Sin ella, `procedencia.de_consulta(consulta, fila=None)`
+# entraba en su cuarta rama —«contestó y casó»— con un `None` en la mano y
+# devolvía `sin_dato_externo`: la superficie rotulaba «SIN DATO EXTERNO» sobre un
+# incidente con `outcome='correlacionado'` escrito en la base. Los cuatro campos
+# son exactamente los que `de_fila` mira para decidir si la cifra es citable.
+_CATALOG_CONSULTATION = text(
+    """
+    SELECT c.provider, c.asked_at, c.last_attempt_at, c.answered_at, c.outcome,
+           c.catalog_key, c.detail,
+           r.source            AS ref_source,
+           r.consulted_at      AS ref_consulted_at,
+           r.review_status     AS ref_review_status,
+           r.provider_event_id AS ref_provider_event_id
+    FROM catalog_consultations c
+    LEFT JOIN reference_earthquakes r ON r.catalog_key = c.catalog_key
+    WHERE c.incident_id = CAST(:incident_id AS uuid)
+    ORDER BY c.asked_at DESC
+    LIMIT 1
+    """
+)
+
 _SITE_GEO = text(
     """
     SELECT code, name, criticality, building_type, address,
@@ -236,3 +263,8 @@ async def thresholds_in_force(
     return (
         await conn.execute(_THRESHOLDS_IN_FORCE, {"site": site_id, "tenant": tenant_id, "at": at})
     ).first()
+
+
+async def catalog_consultation(conn: AsyncConnection, incident_id: str) -> Row | None:
+    """El intento de consulta a la fuente externa, o ``None`` si nadie preguntó."""
+    return (await conn.execute(_CATALOG_CONSULTATION, {"incident_id": incident_id})).first()

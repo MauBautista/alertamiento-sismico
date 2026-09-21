@@ -376,6 +376,99 @@ class Settings(BaseSettings):
     # el edificio puede no haber sentido casi nada.
     correlation_min_pga_g: float = 0.001
 
+    # --- Consulta a la fuente externa tras el evento (T-7.25) ---
+    # APAGADA por defecto y así se despliega, igual que la capa narrativa: con
+    # esto en False el worker no abre un socket y no escribe una sola fila, así
+    # que todo evento sigue en `sin_dato_externo` — que es lo que hoy es cierto.
+    # Encenderla es una decisión de configuración, no un despliegue de código.
+    #
+    # Sólo USGS. El SSN NO se consulta y la razón no es técnica: su ingesta
+    # automática está decidida (`D-06`) pero la atribución de la cifra está sin
+    # cerrar, y publicar una magnitud ajena en un dictamen firmado sin poder
+    # citarla como la fuente exige es precisamente lo que `T-5.10` existe para
+    # impedir. El día que se cierre, esto crece con un segundo proveedor; hasta
+    # entonces el papel lo DICE, que es mejor que un silencio.
+    catalog_usgs_enabled: bool = False
+    catalog_usgs_url: str = "https://earthquake.usgs.gov/fdsnws/event/1/query"
+    # Corto a propósito: esta consulta corre DENTRO del ciclo del worker de
+    # incidentes, el mismo que mueve fases y dispara dictámenes. Que un tercero
+    # lento alargue ese ciclo es peor que quedarse sin la cifra: la cifra vuelve
+    # en el siguiente reintento, el ciclo no. Sin reintentos dentro de la
+    # llamada; el reintento es la pasada siguiente, y queda ESCRITO en la base.
+    catalog_usgs_timeout_s: float = 6.0
+    # Tope de la respuesta, DERIVADO de dos respuestas crudas archivadas y del
+    # tope de eventos que se piden. Las dos están en
+    # `api/tests/catalogo/fixtures/` tal como las devolvió el servicio —con su
+    # URL dentro, en `metadata.url`— y las dos llevan la forma exacta de ESTA
+    # consulta (círculo de 1 200 km, ventana de ±363 s): la del evento
+    # automático de Valdez pesa 1097 B con 1 evento y la hora siguiente al M8.2
+    # de Tehuantepec pesa 10900 B con 14 (779 B cada uno).
+    #
+    # La cota se toma del PEOR de los dos, 1097 B por evento, y no del promedio:
+    # el sobre `metadata` va una vez por respuesta, así que cuantos menos
+    # eventos trae, más caro sale cada uno — y una cota se calcula con el caso
+    # caro. Con `catalog_usgs_limite = 200` la respuesta más pesada que esta
+    # consulta puede pedir son 214 KB, y 512 KB deja 2.4× de holgura sin dejar
+    # de acotar lo que una respuesta desbocada le cuesta a la memoria del
+    # worker. Todas estas cifras salen de los ficheros
+    # (`test_el_tope_de_bytes_se_deriva_del_peor_caso_MEDIDO`) y además se
+    # comparan con ESTE comentario, palabra por palabra
+    # (`test_el_COMENTARIO_de_la_cota_dice_las_mismas_cifras_que_esta_medicion`),
+    # los dos en `tests/catalogo/test_fdsn.py`.
+    #
+    # ⚠️ Aquí ponía «~780 B por evento ⇒ ~156 KB», que es el promedio del fichero
+    # de Tehuantepec, mientras el test que el propio comentario citaba hacía
+    # `max(pesos)`: 1097 B y 214 KB. Dos aritméticas distintas sobre la misma
+    # medición, y sin nadie que las cruzara — una cifra que el test que la
+    # respalda no reproduce no es una medición, es una impresión. De ahí sale la
+    # segunda prueba, que lee este párrafo.
+    #
+    # ⚠️ Y antes de aquello, la cifra era «~6 KB medido sobre una ventana global de diez
+    # minutos, once eventos») era falsa por los dos lados: esos once eventos
+    # salen de una consulta GLOBAL de VEINTICUATRO HORAS con `minmagnitude=5.0`
+    # que este worker no hace nunca —el suyo va acotado por radio, y la misma
+    # ventana alrededor de la Ciudad de México devuelve UN evento—, y los ~6 KB
+    # eran el peso de NUESTRO fichero destilado, no el de una respuesta de la
+    # fuente. Una cifra que no se puede re-derivar del árbol no es una medición.
+    catalog_usgs_max_bytes: int = 512 * 1024
+    # Tope de eventos que se le piden a la fuente. Es una cota de la consulta, no
+    # del criterio: quien decide cuál es el nuestro sigue siendo
+    # `forensics/correlacion.py`.
+    catalog_usgs_limite: int = 200
+    # Cuánto se espera antes de volver a preguntar por un incidente cuya consulta
+    # no obtuvo respuesta. Quince minutos: bastante para que un corte de red o un
+    # mantenimiento de USGS se resuelvan solos, y poco frente a las seis horas que
+    # un incidente pasa en revisión (`incident_review_ttl_s`), que es la ventana
+    # dentro de la cual la respuesta todavía le sirve a alguien.
+    catalog_usgs_reintento_s: float = 900.0
+    # Cada cuánto se vuelve a preguntar por un incidente cuya correlación quedó
+    # `preliminar`. «PUEDE CAMBIAR» es una afirmación con caducidad: la fuente
+    # revisa su propia solución en horas, y sin este reloj un dictamen firmado
+    # dentro de esa ventana congelaba el preliminar para siempre —el predicado
+    # de candidatos excluía toda consulta con `answered_at` puesto—. Una hora es
+    # el orden en que USGS revisa, y dentro de las seis de `incident_review_ttl_s`
+    # da hasta seis oportunidades de alcanzar la revisión. Un `confirmado` NO se
+    # re-pregunta: la fuente ya declaró que ésa es la solución que sostiene.
+    catalog_usgs_refresco_preliminar_s: float = 3600.0
+    # Presupuesto de RELOJ DE PARED de la pasada entera, y la razón del número.
+    #
+    # Esta pasada corre DENTRO del bucle del worker de incidentes, que es serial:
+    # en la misma vuelta viven la correlación, la actuación comandada por el
+    # quórum, el dictamen y las fases. Lo que la pasada tarda es lo que se
+    # retrasa la vuelta siguiente. Con veinte llamadas en serie y 6 s de timeout
+    # el peor caso eran DOS MINUTOS de bloqueo, y el bloqueo es real: con esta
+    # comprobación quitada, ocho candidatos contra un tercero de 0.25 s miden
+    # 2.10 s de bucle parado (`test_la_pasada_NO_bloquea_el_bucle_mas_alla_de_su_presupuesto`).
+    #
+    # Así que el tope no se promete en un comentario: se comprueba antes de CADA
+    # pregunta y con el timeout incluido (sólo se sale a la red si
+    # `transcurrido + timeout` sigue cabiendo), de modo que el peor caso de la
+    # pasada es este número y no `max_por_pasada × timeout`. 10 s = un timeout
+    # completo más el hueco para que quepa una segunda pregunta cuando la
+    # primera fue rápida. Lo que no cabe no se pierde: se pregunta en la vuelta
+    # siguiente, que llega en segundos, y el corte queda en el log.
+    catalog_usgs_presupuesto_s: float = 10.0
+
     # --- Reproducción histórica (T-7.14 · D-33) ---
     # Velocidad de la onda S del PLAN de arribos. NO es `correlation_v_s_km_s`
     # (3.6) y no se debe unificar con ella: allí la velocidad acota cuán tarde

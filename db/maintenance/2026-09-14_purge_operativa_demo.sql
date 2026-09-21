@@ -19,6 +19,8 @@
 --   * Usuarios, sus llaves y sus alcances.
 --   * `gateway_catalog_state` y `reference_earthquakes`: el catálogo con la
 --     procedencia que `T-7.12` acaba de consultar a la fuente.
+--     [T-7.25] Lo que SÍ se purga es `catalog_consultations`: la consulta es
+--     historial de un incidente que se va, no catálogo.
 --
 -- CÓMO: transacción única COMO SUPERUSUARIO con `session_replication_role =
 -- replica`, que es lo único que apaga los triggers append-only COPIADOS a cada
@@ -64,7 +66,14 @@ INSERT INTO _purgar (t) VALUES
   -- vídeo de las pruebas (los objetos de S3 se retiran aparte, con su CSV)
   ('cctv_clips'), ('cctv_stills'), ('cctv_occupancy'), ('cctv_evacuation_metrics'),
   -- ruido de operación de las pruebas
-  ('ops_alert_notices'), ('notify_template_quarantine');
+  ('ops_alert_notices'), ('notify_template_quarantine'),
+  -- [T-7.25] La consulta a la fuente externa cuelga de un incidente que SÍ se
+  -- purga. Su `ON DELETE CASCADE` no la salvaría: esta transacción corre con
+  -- `session_replication_role = replica`, que apaga también los triggers de FK,
+  -- así que sin esta línea quedarían filas apuntando a incidentes borrados. El
+  -- catálogo que la consulta escribió (`reference_earthquakes`) SÍ se conserva:
+  -- es dato científico citable, no historial de estas pruebas.
+  ('catalog_consultations');
 
 CREATE TEMP TABLE _conservar (t text PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO _conservar (t) VALUES
@@ -122,6 +131,7 @@ SELECT 'ANTES · ' || t AS q, n FROM (
 ) x ORDER BY 1;
 
 -- --- 2) La purga, hijo→padre por legibilidad (las FKs están desactivadas) ------
+DELETE FROM catalog_consultations;   -- [T-7.25] antes que `incidents`
 DELETE FROM notification_jobs;
 DELETE FROM notify_template_quarantine;
 DELETE FROM ops_alert_notices;
@@ -185,6 +195,8 @@ SELECT 'huerfanos_' || t AS chequeo, n FROM (
   SELECT 'dictamens', count(*) FROM dictamens d
     LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
   SELECT 'evidencia', count(*) FROM evidence_objects e
+    LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
+  SELECT 'consultas', count(*) FROM catalog_consultations cc
     LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
   SELECT 'drill_sites', count(*) FROM drill_sites ds
     LEFT JOIN drills dr USING (drill_id) WHERE dr.drill_id IS NULL            UNION ALL

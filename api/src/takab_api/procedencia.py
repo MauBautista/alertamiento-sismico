@@ -46,6 +46,28 @@ PRELIMINAR = "preliminar"
 CONFIRMADO = "confirmado"
 SIN_CORRELACION = "sin_correlacion"
 
+#: [T-7.25] Los DESENLACES que el worker de consulta puede registrar en
+#: ``catalog_consultations.outcome``. No son estados de procedencia: son lo que
+#: le pasó al INTENTO, y de ellos —más la fila que casó— se deriva el estado.
+#: Viven aquí y no en `catalogo/consulta.py` porque son el otro extremo de la
+#: misma máquina: dos listas serían dos verdades sobre el mismo hecho.
+#:
+#: ``DESENLACE_SIN_CORRELACION`` es literalmente la misma palabra que el estado
+#: ``SIN_CORRELACION``, y a propósito: es el mismo hecho contado desde los dos
+#: lados —«la consulta terminó sin casar» y «este evento no tiene correlación en
+#: el catálogo»—. Dos palabras habrían obligado a traducir entre ellas.
+DESENLACE_CORRELACIONADO = "correlacionado"
+DESENLACE_SIN_CORRELACION = SIN_CORRELACION
+DESENLACE_SIN_RESPUESTA = "sin_respuesta"
+
+#: Espejo del CHECK de `catalog_consultations.outcome`. Lo compara con el DDL
+#: `api/tests/catalogo/test_procedencia_de_consulta.py`.
+DESENLACES = (
+    DESENLACE_CORRELACIONADO,
+    DESENLACE_SIN_CORRELACION,
+    DESENLACE_SIN_RESPUESTA,
+)
+
 
 @lru_cache(maxsize=1)
 def glosario() -> dict:
@@ -119,3 +141,53 @@ def de_fila(fila: dict | None) -> Procedencia:
         consultado_en=consultado,
         id_en_la_fuente=fila.get("provider_event_id"),
     )
+
+
+def de_consulta(consulta: dict | None, fila: dict | None) -> Procedencia:
+    """[T-7.25] El estado, derivado del INTENTO de consulta y de la fila que casó.
+
+    Hasta esta ficha ``CONSULTANDO`` era **inalcanzable**: :func:`de_fila` deriva
+    el estado de una fila de ``reference_earthquakes``, y mientras la pregunta
+    está en vuelo esa fila no existe. Así que «pregunté y no me contestó» —un
+    timeout, un 5xx, un worker que murió a mitad— se leía igual que «nadie
+    preguntó nunca», que es exactamente la confusión que el glosario nombra.
+
+    ``consulta`` es una fila de ``catalog_consultations`` y ``fila`` es la de
+    ``reference_earthquakes`` que la correlación dio por buena (o ``None``).
+
+    Las cuatro ramas, y por qué están en este orden:
+
+    1. **Sin intento** ⇒ se cae a :func:`de_fila`, y sin fila eso es
+       ``SIN_DATO_EXTERNO``: **nadie preguntó**. Es la conducta de antes de esta
+       ficha y con la consulta apagada —el defecto— es la de todos los
+       incidentes. No es lo mismo que ``SIN_CORRELACION``, que afirma algo sobre
+       el catálogo, y el llamador de `forensics` las confundía: entraba aquí
+       sólo cuando HABÍA fila, así que un incidente sin consultar se publicaba
+       como «se preguntó y ninguno es éste».
+    2. **Sin ``answered_at``** ⇒ ``CONSULTANDO``. Es el ÚNICO bit que separa
+       «no contestó» de un desenlace, y va antes que mirar ``outcome`` porque un
+       intento en vuelo no tiene desenlace que mirar.
+    3. **Contestó y nada suyo es éste** ⇒ ``SIN_CORRELACION``, con la hora de la
+       respuesta: es un hecho sobre el evento, no una ausencia de datos.
+    4. **Contestó y casó** ⇒ manda la FILA. Casar no concede procedencia: si la
+       fila no trae fuente y hora de consulta, :func:`de_fila` la degrada al
+       silencio igual que siempre (regla de `T-5.10`).
+
+    ⚠️ **La cuarta rama depende de que el llamador traiga la fila.** El único
+    llamador de producción le pasaba siempre ``fila=None``, así que un incidente
+    con ``outcome='correlacionado'`` escrito en la base salía a la superficie
+    como ``sin_dato_externo`` —«nadie preguntó»— que es lo contrario de lo que
+    había pasado. Hoy la fila viaja en el mismo `SELECT` que la consulta
+    (`queries/forensics.py::_CATALOG_CONSULTATION`).
+    """
+    if not consulta:
+        return de_fila(fila)
+    fuente = consulta.get("provider")
+    fuente = str(fuente) if fuente else None
+    if consulta.get("answered_at") is None:
+        return Procedencia(CONSULTANDO, fuente=fuente, consultado_en=consulta.get("asked_at"))
+    if consulta.get("outcome") == DESENLACE_SIN_CORRELACION:
+        return Procedencia(
+            SIN_CORRELACION, fuente=fuente, consultado_en=consulta.get("answered_at")
+        )
+    return de_fila(fila)

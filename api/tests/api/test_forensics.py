@@ -300,7 +300,14 @@ async def test_UN_SISMO_LEJANO_EN_LA_VENTANA_TEMPORAL_ya_no_casa(
     # Y esto es lo que no se sabía decir: «hay un evento en el catálogo pero no
     # es el nuestro». Sin ello el descarte es indistinguible de un catálogo vacío.
     corr = body["catalog_correlation"]
-    assert corr["estado"] == "sin_correlacion"
+    # [T-7.25] El descarte se DICE —es lo que esta prueba vino a fijar— y el
+    # ESTADO es `sin_dato_externo`, no `sin_correlacion`. Mirar el catálogo que
+    # alguien sembró en nuestra base no es preguntarle a una fuente: aquí no hay
+    # fila en `catalog_consultations`, así que nadie preguntó. `sin_correlacion`
+    # afirma que se consultó y ninguno es éste, y de ahí salía la línea firmada
+    # «ningún sismo publicado satisface el criterio de identidad» de un
+    # incidente que jamás se consultó.
+    assert corr["estado"] == "sin_dato_externo"
     assert [d["catalog_key"] for d in corr["descartes"]] == ["SSN-CHILE"]
     assert corr["descartes"][0]["motivo"] == "fuera_de_radio"
     assert corr["descartes"][0]["km_al_sitio"] > corr["criterio"]["radio_km"]
@@ -412,7 +419,10 @@ async def test_un_sismo_lejano_en_el_tiempo_no_casa(client, app, make_incident, 
     assert body["catalog_delta"] is None
     # Más allá de la cota de la consulta ni siquiera llega a evaluarse, y eso
     # también es correcto: nada que a 600 s pueda ser un sismo de 295 km.
-    assert body["catalog_correlation"]["estado"] == "sin_correlacion"
+    # [T-7.25] Y sin fila de consulta el estado es `sin_dato_externo`: nadie le
+    # preguntó a ninguna fuente externa por este incidente. Ver la nota en
+    # `test_UN_SISMO_LEJANO_EN_LA_VENTANA_TEMPORAL_ya_no_casa`.
+    assert body["catalog_correlation"]["estado"] == "sin_dato_externo"
 
 
 # ---- aislamiento (regla de oro 5) --------------------------------------------

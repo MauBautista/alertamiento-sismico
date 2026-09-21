@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -29,8 +29,13 @@ from takab_api.dictamen.model import (
     CCTV_PURGADO,
     CCTV_PURGADO_SIN_ANALISIS,
     CCTV_SIN_CLIP,
+    CONSULTA_EXTERNA_EN_VUELO,
+    CORRELACION_EN_DISPUTA,
+    ESTADO_DE_CONSULTA_NO_INTERPRETABLE,
     NO_CCTV,
+    SIN_CONSULTA_A_FUENTE_EXTERNA,
     STATUS_LABELS,
+    TS_FMT,
     ActionRow,
     CctvBlock,
     CctvObjectRow,
@@ -42,6 +47,7 @@ from takab_api.dictamen.model import (
     FotoFila,
     ReportModel,
     VoteRow,
+    fuentes_line,
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
 from takab_api.documentos import fotos as fotos_mod
@@ -51,7 +57,7 @@ from takab_api.forensics import build_forensics, umbral_de_comparacion
 from takab_api.queries import compliance as qc
 from takab_api.queries import forensics as qf
 from takab_api.schemas import cctv as esq_cctv
-from takab_api.schemas.forensics import ForensicsOut
+from takab_api.schemas.forensics import CatalogCorrelation, ForensicsOut
 from takab_api.settings import Settings
 
 log = logging.getLogger(__name__)
@@ -328,6 +334,7 @@ async def build_model(
         lead_time_reason=forensics.lead_time_reason,
         station_count=forensics.station_count,
         catalog_line=_catalog_line(forensics),
+        fuentes_externas=fuentes_line(s.catalog_usgs_enabled),
         generated_at=generated_at,
         channels=[
             ChannelRow(
@@ -386,6 +393,123 @@ async def build_model(
     )
 
 
+def _motivos(corr: CatalogCorrelation) -> str:
+    """Los tres primeros descartes con su motivo. El papel tiene un ancho."""
+    return " · ".join(f"{d.catalog_key}: {d.detalle}" for d in corr.descartes[:3])
+
+
+def _hora_de_la_fuente(cuando: datetime | None) -> str:
+    """`` el <ts> UTC``, o nada. Degrada, jamás inventa una fecha.
+
+    ``astimezone(UTC)`` explícito: :data:`TS_FMT` estampa el literal «UTC» al
+    final, así que un instante en otro huso saldría rotulado con el huso
+    equivocado. Está aquí y no dentro de cada rama porque lo formatean dos —la
+    pregunta en vuelo y la discrepancia—, y la copia es donde una de las dos se
+    habría quedado sin el `astimezone`.
+    """
+    return "" if cuando is None else f" el {cuando.astimezone(UTC):{TS_FMT}}"
+
+
+def _linea_sin_acierto(corr: CatalogCorrelation | None) -> str | None:
+    """[T-7.25] Sin acierto hay CINCO hechos distintos, y el papel los separa.
+
+    Esta función existe porque se imprimían todos igual, y el que se imprimía
+    era el más comprometido de todos::
+
+        (a) no se preguntó                →  SIN_CONSULTA_A_FUENTE_EXTERNA
+        (b) se preguntó, no contestaron   →  CONSULTA_EXTERNA_EN_VUELO
+        (c) contestaron, ninguno casa     →  SIN CORRELACIÓN (o el aviso del PDF)
+        (d) correlacionó · preliminar     →  CORRELACION_EN_DISPUTA
+        (e) correlacionó · confirmado     →  CORRELACION_EN_DISPUTA
+
+    (d) y (e) comparten frase y se separan por el rótulo del glosario: una
+    solución que la propia fuente declara PRELIMINAR puede cambiar mañana, y
+    discrepar de ella no es lo mismo que discrepar de una que ya revisó.
+
+    (c) es una afirmación **sobre el sismo**: exonera al catálogo de referencia.
+    Firmarla en (a) o en (b) es dar por concluido lo que nadie concluyó, y va
+    debajo de una firma que después no se retira. (a) es además el caso NORMAL:
+    la consulta automática se despliega apagada.
+
+    **(d) y (e) son la cuarta vuelta de la misma familia.** Nacieron sin rama:
+    cuando la consulta CORRELACIONÓ pero el ensamblado forense no encuentra el
+    acierto entre sus candidatos, el estado derivado es `preliminar` o
+    `confirmado` y aquí no había nada que los recogiera. Medido antes del
+    arreglo, con el mismo escenario: sin descartes la línea salía ``None`` —y el
+    PDF rellena el hueco con :data:`SIN_CORRELACION_EN_CATALOGO`— y con un
+    descarte salía «SIN CORRELACIÓN · 1 evento(s) … ninguno es éste». Las dos
+    cosas son el papel exonerando al catálogo de un incidente que **sí**
+    correlacionó. Que los dos procedimientos discrepen no es un fallo de ninguno
+    —preguntan cosas distintas, y el criterio de identidad de `T-5.11` es más
+    estricto que la ventana de la consulta—; lo que no puede pasar es que el
+    documento elija el desenlace más tranquilizador y lo firme.
+
+    El orden de las ramas es el del glosario y no es libre: (d)/(e) van ANTES de
+    la de (c), que hasta aquí era el `else` de todo y por eso se tragaba lo que
+    nadie había traducido. Lo que hoy no encaja en ninguna sale por
+    :data:`ESTADO_DE_CONSULTA_NO_INTERPRETABLE`, que declara la ignorancia en vez
+    de exonerar: un sexto estado en el glosario compartido ya no hereda la
+    afirmación más cara del bloque, y la guarda derivada de `pr.estados()` lo
+    caza en la primera corrida.
+
+    ``None`` sólo en (c) sin candidatos, que es cuando el aviso por defecto del
+    PDF —:data:`SIN_CORRELACION_EN_CATALOGO`— dice exactamente lo que pasó.
+    """
+    if corr is None:
+        return None
+
+    # Los descartes son del catálogo YA CARGADO en la base, y eso no cierra la
+    # pregunta a la fuente viva: en (a), (b), (d) y (e) se dicen porque son
+    # información, pero encabezados por el hecho que manda.
+    cargado = (
+        ""
+        if not corr.descartes
+        else (
+            f" En el catálogo ya cargado había {len(corr.descartes)} evento(s) en la "
+            f"ventana y ninguno es éste — {_motivos(corr)}."
+        )
+    )
+
+    if corr.estado == pr.SIN_DATO_EXTERNO:
+        return f"{SIN_CONSULTA_A_FUENTE_EXTERNA}{cargado}"
+
+    if corr.estado == pr.CONSULTANDO:
+        # Quién y cuándo, porque un «en curso» sin fecha es otra forma de no
+        # decir nada: con la hora, quien lea el dictamen sabe si la pregunta es
+        # de hace un minuto o lleva seis horas sin respuesta.
+        quien = (
+            f" Se preguntó a {corr.fuente or 'la fuente externa'}"
+            f"{_hora_de_la_fuente(corr.consultado_en)}."
+        )
+        return f"{CONSULTA_EXTERNA_EN_VUELO}{quien}{cargado}"
+
+    if corr.estado in (pr.PRELIMINAR, pr.CONFIRMADO):
+        # El rótulo del glosario va SIEMPRE, y no sólo porque separe estas dos
+        # líneas: una solución que la propia fuente declara PRELIMINAR puede
+        # cambiar, y una discrepancia contra una preliminar no pesa lo mismo que
+        # contra una que la fuente ya revisó. Sale del glosario compartido para
+        # que el papel diga la misma palabra que la consola.
+        quien = (
+            f" Contestó {corr.fuente or 'la fuente externa'}"
+            f"{_hora_de_la_fuente(corr.consultado_en)} y su solución es "
+            f"{pr.rotulo(corr.estado, 'consola')}."
+        )
+        return f"{CORRELACION_EN_DISPUTA}{quien}{cargado}"
+
+    if corr.estado == pr.SIN_CORRELACION:
+        if corr.descartes:
+            return (
+                f"SIN CORRELACIÓN · {len(corr.descartes)} evento(s) del catálogo en la "
+                f"ventana y ninguno es éste — {_motivos(corr)}"
+            )
+        return None
+
+    # Un estado que este documento no sabe traducir. No se calla y no exonera.
+    return (
+        f"{ESTADO_DE_CONSULTA_NO_INTERPRETABLE} El estado registrado es {corr.estado!r}.{cargado}"
+    )
+
+
 def _catalog_line(f: ForensicsOut) -> str | None:
     """La correlación con el catálogo, tal como se imprime en un papel FIRMADO.
 
@@ -404,16 +528,17 @@ def _catalog_line(f: ForensicsOut) -> str | None:
     `T-5.10`). Casar no la concede: una fila sin hora de consulta ni estado de
     revisión es un dato que existe y no es citable, y el dictamen es justamente
     el sitio donde una cifra ajena sin procedencia se lee como propia.
+
+    [T-7.25] Y sin acierto no hay UN caso sino CINCO, que no se pueden imprimir
+    igual: los separa :func:`_linea_sin_acierto`. Los dos últimos —la consulta
+    correlacionó y este criterio de identidad no reconoce el acierto— son los que
+    esta condición manda aquí con `catalog` en `None` y un estado que SÍ pinta
+    cifra: por eso la rama de abajo no puede ser el único sitio donde
+    `preliminar` y `confirmado` se traducen.
     """
     corr = f.catalog_correlation
     if not f.catalog or not f.catalog_delta:
-        if corr and corr.descartes:
-            motivos = " · ".join(f"{d.catalog_key}: {d.detalle}" for d in corr.descartes[:3])
-            return (
-                f"SIN CORRELACIÓN · {len(corr.descartes)} evento(s) del catálogo en la "
-                f"ventana y ninguno es éste — {motivos}"
-            )
-        return None
+        return _linea_sin_acierto(corr)
 
     d = f.catalog_delta
     partes = [f"{f.catalog.source} {f.catalog.catalog_key}"]

@@ -349,6 +349,18 @@
       "CatalogCorrelation": {
         "description": "[T-5.11] Cómo se decidió la correlación con el catálogo, y con qué resultado.",
         "properties": {
+          "consultado_en": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Consultado En"
+          },
           "criterio": {
             "$ref": "#/components/schemas/CatalogCriterion"
           },
@@ -363,6 +375,17 @@
           "estado": {
             "title": "Estado",
             "type": "string"
+          },
+          "fuente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fuente"
           },
           "verificacion": {
             "anyOf": [

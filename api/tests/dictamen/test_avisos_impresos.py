@@ -43,11 +43,16 @@ from takab_api.dictamen.model import (
     CCTV_PENDIENTE,
     CCTV_PURGADO_SIN_ANALISIS,
     CCTV_SIN_CLIP,
+    CONSULTA_EXTERNA_EN_VUELO,
+    CORRELACION_EN_DISPUTA,
+    ESTADO_DE_CONSULTA_NO_INTERPRETABLE,
+    SIN_CONSULTA_A_FUENTE_EXTERNA,
     ActionRow,
     CctvBlock,
     DanoFila,
     EvidenceRow,
     ReportModel,
+    fuentes_line,
 )
 from takab_api.dictamen.pdf import render
 from takab_api.documentos.membrete import MembretePDF
@@ -245,6 +250,47 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         lambda: model(danos=[_dano(fotos_omitidas=3)]),
         frozenset({"technical"}),
     ),
+    # [T-7.25] Y lo que el papel dice mientras la pregunta sigue en vuelo. Va
+    # por `catalog_line` porque es la MISMA línea que imprimiría «SIN
+    # CORRELACIÓN»: las dos ocupan el campo CORRELACIÓN CON CATÁLOGO, y de eso
+    # se trata — que en ese hueco no salga la afirmación equivocada.
+    "CONSULTA_EXTERNA_EN_VUELO": (
+        lambda: model(catalog_line=CONSULTA_EXTERNA_EN_VUELO),
+        frozenset({"technical"}),
+    ),
+    # [T-7.25] Y la otra mitad, que es el caso NORMAL: a este incidente no se le
+    # preguntó a nadie. Ocupa el mismo campo que las otras dos y dice un hecho
+    # distinto — «no se preguntó» no es «se preguntó y ninguno es éste».
+    "SIN_CONSULTA_A_FUENTE_EXTERNA": (
+        lambda: model(catalog_line=SIN_CONSULTA_A_FUENTE_EXTERNA),
+        frozenset({"technical"}),
+    ),
+    # [T-7.25 · 4ª vuelta] Y el cuarto y quinto hecho: la consulta correlacionó y
+    # el criterio de identidad de este documento no reconoce el acierto. Mismo
+    # campo que los otros tres, que es donde estaba el defecto — ahí salía «SIN
+    # CORRELACIÓN» de un incidente que sí correlacionó.
+    "CORRELACION_EN_DISPUTA": (
+        lambda: model(catalog_line=CORRELACION_EN_DISPUTA),
+        frozenset({"technical"}),
+    ),
+    # [T-7.25 · 4ª vuelta] El suelo de esa misma línea: un estado de procedencia
+    # que el papel no sabe traducir. Declara la ignorancia en vez de exonerar al
+    # catálogo, que es lo que hacía la caída al final antes de esta vuelta.
+    "ESTADO_DE_CONSULTA_NO_INTERPRETABLE": (
+        lambda: model(catalog_line=ESTADO_DE_CONSULTA_NO_INTERPRETABLE),
+        frozenset({"technical"}),
+    ),
+    # [T-7.25] A qué fuentes externas puede preguntar este despliegue. Las dos
+    # caras se comprueban porque significan cosas opuestas y el papel las imprime
+    # en el mismo sitio: «no consta» es el modelo construido a mano (el builder
+    # siempre la rellena), y la otra es la línea derivada de la configuración.
+    "FUENTES_EXTERNAS_SIN_CONSTANCIA": (model, frozenset({"technical"})),
+    # Y la razón por la que el SSN nunca aparece: sin decirla, un lector supondrá
+    # que el SSN falló, y lo que pasa es que su atribución está sin cerrar.
+    "SSN_NO_SE_CONSULTA": (
+        lambda: model(fuentes_externas=fuentes_line(True)),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -351,9 +397,21 @@ def test_el_espia_NO_esta_ciego() -> None:
     # 13 → 15 en `T-7.38·F`: los dos estados de la poda del vídeo.
     # 19 → 28 en `T-7.22`: leyenda de reproducción, ausencia del mapa de red,
     # bitácora vacía, verbos sin rótulo y los cinco del reporte de daños.
-    assert len(ESCENARIOS) == 28, "cambió el número de avisos declarados"
+    # 28 → 30 en `T-7.25`: las dos caras de la línea de fuentes externas (la que
+    # declara que no consta y la que dice por qué el SSN no se consulta).
+    # 30 → 31 al revisar `T-7.25`: lo que el papel dice mientras la pregunta a
+    # la fuente sigue en vuelo, en vez de firmar que ningún sismo publicado es
+    # éste — que es lo que imprimía con la consulta sin contestar.
+    # 31 → 32 en la tercera vuelta de `T-7.25`: y lo que dice cuando NO SE
+    # PREGUNTÓ, que es el caso normal (la consulta se despliega apagada) y que
+    # imprimía esa misma afirmación sobre el catálogo.
+    # 32 → 34 en la cuarta: los hechos eran CINCO y no tres. La consulta que
+    # correlacionó y el criterio de identidad de aquí que no reconoce el acierto
+    # (`CORRELACION_EN_DISPUTA`, `preliminar` y `confirmado`), y el suelo de esa
+    # línea para un estado que el papel no sepa traducir.
+    assert len(ESCENARIOS) == 34, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 27, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 33, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (
