@@ -53,15 +53,20 @@ dar un error a la vista**, que es justo lo que no se puede permitir delante de u
 | **Pixel por USB, app instalada y token vivo** | el teléfono no recibe nada aunque todo lo demás esté perfecto |
 | **sin incidentes abiertos** en el sitio | el acto 4 trabajaría sobre el incidente viejo |
 
-> **Desde la red de desarrollo.** El guion busca el gabinete en `192.168.1.0/24`, que es la red
-> donde se va a **instalar**. En casa hay que decirle dónde mirar, y la dirección del Pi **cambia
-> por DHCP**:
+> **La red.** El guion busca el gabinete en `192.168.1.0/24`, que es la red donde se va a
+> **instalar** — y donde los dos dispositivos están desde el 2026-09-21: el cerebro en
+> `192.168.1.142` (`raspberry-cerebro.local`) y el Shake en `192.168.1.141` (`rs.local`).
+> **No hace falta decirle dónde mirar**: se le pregunta por NOMBRE y ahí se acaba el problema.
+>
+> Desde otra red —o si la resolución por mDNS falla— hay que darle la dirección a mano, y la del
+> Pi **cambia por DHCP**:
 >
 > ```bash
-> TAKAB_DEMO_PANEL_URL=http://192.168.3.140:8080 bash deploy/demo/guion.sh --preflight
+> TAKAB_DEMO_PANEL_URL=http://<ip-del-pi>:8080 bash deploy/demo/guion.sh --preflight
 > ```
 >
-> Para encontrarlo sin adivinar: `ip neigh` lista los vecinos; contesta en el `8080`.
+> Para encontrarlo sin adivinar: `getent hosts raspberry-cerebro.local`, y si eso no resuelve,
+> `ip neigh` lista los vecinos; contesta en el `8080`.
 
 ---
 

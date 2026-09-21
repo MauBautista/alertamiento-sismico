@@ -41,11 +41,17 @@ from takab_edge.contracts import WaveformPacket, utcnow
 from takab_edge.seedlink import ObsPySeedLinkTransport, SeedLinkClient
 
 # ⚠️ Por NOMBRE, no por IP. El default era `192.168.1.107` y el Shake vive en
-# `rs.local` (`192.168.1.85` hoy): el gate #3 llevaba saltándose **en silencio**
-# —«Shake no alcanzable», que es exactamente lo que dice un gabinete apagado— y
-# el 2026-09-17, con el sensor delante y respondiendo, la suite seguía
-# declarando 5/5 SALTADOS. Las dos placas se anuncian por mDNS y el Pi resuelve
-# `rs.local` por NSS; la IP ya se ha mudado tres veces en tres días.
+# `rs.local` (`192.168.1.141` el 2026-09-21): el gate #3 llevaba saltándose **en
+# silencio** —«Shake no alcanzable», que es exactamente lo que dice un gabinete
+# apagado— y el 2026-09-17, con el sensor delante y respondiendo, la suite
+# seguía declarando 5/5 SALTADOS. Las dos placas se anuncian por mDNS y se
+# resuelven por NSS (`mdns4_minimal`); la IP ya se ha mudado CUATRO veces en dos
+# semanas (`.1.85` → `.3.92` → `.3.139` → `.1.141`), que es justamente por qué
+# esto no lleva una IP escrita.
+#
+# ⚠️ Y cuando la resolución falla —medido el 2026-09-20 desde un portátil sin
+# `avahi`—, el gate se salta IGUAL de silencioso. Para ejercerlo sin depender de
+# mDNS: `TAKAB_SHAKE_HOST=<ip> uv run pytest …`.
 SHAKE_HOST = os.environ.get("TAKAB_SHAKE_HOST", "rs.local")
 SHAKE_PORT = int(os.environ.get("TAKAB_SHAKE_PORT", "18000"))
 SHAKE_STATION = os.environ.get("TAKAB_SHAKE_STATION", "R4F74")

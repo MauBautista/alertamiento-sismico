@@ -41,8 +41,9 @@
 set -uo pipefail
 
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
-# El gabinete coge dirección por DHCP y se ha mudado tres veces en tres días
-# (.3.91 → .3.140 → .1.86), rompiendo cada vez lo que apuntaba a la de antes.
+# El gabinete coge dirección por DHCP y se ha mudado CUATRO veces en dos semanas
+# (.3.91 → .3.140 → .1.86 → .1.142), rompiendo cada vez lo que apuntaba a la de
+# antes — la última, el 2026-09-21, al volver a la red de instalación.
 # Se le pregunta POR NOMBRE: el Pi se anuncia por mDNS y eso sobrevive al cambio.
 PANEL="${TAKAB_DEMO_PANEL_URL:-http://raspberry-cerebro.local:8080}"
 SITIO="${TAKAB_DEMO_SITE:-d1000000-0000-0000-0000-000000000000}"
