@@ -299,6 +299,22 @@ git diff --exit-code takab-docs/MATRIZ-REQUISITO-TEST.md        # tras regenerar
 # y a mano: coste del sismógrafo escrito en la spec del panel (medido en el Pi real); captura del SISMÓGRAFO en el Pi y del mapa de intensidad en consola con un incidente de reproducción
 ```
 
+> **CORREGIDO el 2026-09-21 · `tests/forensics/test_usgs.py`, esa ruta y ninguna otra.** Las
+> pruebas de la consulta a USGS viven en `api/tests/catalogo/`, no en `tests/forensics/`: la
+> consulta **no es forense**, es el cliente del catálogo —pregunta a una fuente y escribe lo
+> que contestó—, mientras que el criterio de IDENTIDAD sí se reutiliza de
+> `forensics/correlacion.py` sin duplicar una línea. Un Goal que nombra una ruta que la
+> implementación no creó no puede devolver 0, y arreglarlo escribiendo el fichero donde el
+> plan lo puso habría sido mover el código para que encajara con una frase. Mismo
+> procedimiento que la derogación de la línea de `F3` el 2026-09-16: se nombra la línea, se
+> dice por qué, y el resto del bloque queda intacto.
+>
+> **Y lo que no se puede correr sin una persona delante:** las dos últimas líneas del bloque
+> —la captura del SISMÓGRAFO en el Pi y la del mapa de intensidad en la consola con un
+> incidente de reproducción— siguen siendo lo que dicen ser: a mano. El coste del panel SÍ se
+> midió en el gabinete real y está escrito en la `§15.7` de su especificación.
+
+
 **Subagentes.** A = `T-7.23` (edge) en paralelo con B = `T-7.25` (api); `T-7.24` solo, porque toca
 documentos de gobierno, web y la matriz a la vez. **Aporta Mauricio.** Nada (USGS es público);
 acceso al Pi para medir.

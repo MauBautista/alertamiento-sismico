@@ -14,19 +14,26 @@ distintas (ver `takab-docs/design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md §
   carga el arranque del edge, `scipy.signal` no está en `sys.modules` y el
   primer `from scipy import signal` cuesta **0.39 s y lleva el RSS de 94.3 a
   118.6 MB (+24.3 MB)** [MEDIDO · equipo de desarrollo x86-64 · Python 3.12 ·
-  2026-09-20; el mismo día el escéptico midió 0.41 s y +24 MB]. Falta medirlo en
-  el Pi, donde será igual o peor. Lo comprueba
+  2026-09-20; el mismo día el escéptico midió 0.41 s y +24 MB]. Lo comprueba
   `test_scipy_signal_no_esta_cargado_tras_el_arranque_y_su_import_no_es_gratis`.
 
-  **Y aun así el import se queda PEREZOSO, a sabiendas.** La primera petición a
-  `/api/spectrogram` paga esos 0.39 s y esos +24 MB, una vez y para siempre, en
-  el mismo proceso que corre SeedLink y las reglas. Se paga ahí y no en el
-  arranque porque un gabinete que nunca abre esta vista —que son casi todos—
-  no tiene por qué llevar 24 MB residentes en un Pi con ~260 MiB libres. Lo que
-  ese cuarto de segundo NO puede tocar es la ruta de disparo: SASMEX→relé vive
-  en OTRO proceso (`takab-gpio`, regla de oro 4), así que el peor efecto de la
-  pausa es un tick del panel tarde y un segundo de SeedLink en el búfer del
-  socket.
+  ⚠️ **Y EN EL PI CUESTA DIEZ VECES ESO.** Medido sobre el endpoint ya servido
+  [MEDIDO · Raspberry Pi 4 · release `20260921T100641Z-fead5e8` · 2026-09-21]:
+  la PRIMERA petición a `/api/spectrogram` tarda **4.116 s**; la siguiente,
+  8.4 ms. El docstring decía «será igual o peor»: es peor, y por un orden de
+  magnitud. Quien escriba aquí un número de x86 y lo dé por bueno para el
+  gabinete se equivocará en el factor que importa.
+
+  **Y aun así el import se queda PEREZOSO, a sabiendas.** Esos 4 s los paga UNA
+  vez por arranque quien abre esta vista, en el mismo proceso que corre SeedLink
+  y las reglas. Se paga ahí y no en el arranque porque un gabinete que nunca la
+  abre —que son casi todos— no tiene por qué llevar esos MB residentes en un Pi
+  con ~260 MiB libres. Lo que esos segundos NO pueden tocar es la ruta de
+  disparo: SASMEX→relé vive en OTRO proceso (`takab-gpio`, regla de oro 4), así
+  que el peor efecto de la pausa es un tick del panel tarde y un segundo de
+  SeedLink en el búfer del socket. Medido en la misma corrida: el RSS del
+  proceso sube a 219 MB y **ahí se queda** —tres lecturas de 6 h y cinco
+  espectrogramas seguidos no lo mueven—, con 526 MiB disponibles en el sistema.
 
 - **Helicorder** — sale del anillo de disco (miniSEED por día y canal). Aquí está
   la trampa que da forma a todo este módulo: `RingBuffer.extract_window()` hace
@@ -313,8 +320,9 @@ def espectrograma(
     pruebas. Sin él no hay forma de escribir una guarda del estado `stale` que
     no dependa de esperar diez segundos de reloj de pared.
     """
-    # Import PEREZOSO, a sabiendas: 0.39 s y +24.3 MB la primera vez [MEDIDO ·
-    # equipo de desarrollo x86-64 · 2026-09-20]. Ver el docstring del módulo:
+    # Import PEREZOSO, a sabiendas: 0.39 s y +24.3 MB la primera vez en x86-64,
+    # y **4.116 s en el Pi 4** [MEDIDO sobre el endpoint servido · 2026-09-21].
+    # Ver el docstring del módulo:
     # quien no abre esta vista no paga los 24 MB, y la ruta de disparo vive en
     # otro proceso, así que la pausa no puede tocar un relé.
     from scipy import signal as _senal
