@@ -11,8 +11,9 @@ La promesa de comparación no se puede cumplir, y **no es culpa del reloj**:
 
 **1 · Exportar cambia el contenido del incidente.** `routers/reports.py` inserta
 una fila `kind='report_pdf'` (`queries/reports.py`) que la exportación siguiente
-relee —`builder.py::_EVIDENCE` no filtra por `kind`— y **imprime en §11**. Medido
-con el reloj congelado y el mundo idéntico: `77e75b30c0038ce6` → `76973b9c08d3d56a`.
+relee —`builder.py::_EVIDENCE` no filtra por `kind`— y **imprime en §12** (era la
+§11 hasta que `T-7.24` insertó el mapa de la sacudida). Medido con el reloj
+congelado y el mundo idéntico: `77e75b30c0038ce6` → `76973b9c08d3d56a`.
 Es un bucle autorreferente. Sacar `generated_at` del payload convertiría una frase
 falsa en otra frase falsa más pequeña, que es exactamente lo que `T-7.38·I`
 prohíbe.
@@ -135,7 +136,7 @@ def test_EXPORTAR_cambia_el_contenido_del_incidente() -> None:
     """El bucle autorreferente, medido. Es la razón principal de la decisión.
 
     La exportación inserta su propia fila `report_pdf`; la siguiente la lee —el
-    builder no filtra por `kind`— y la imprime en §11. Así que dos exportaciones
+    builder no filtra por `kind`— y la imprime en §12. Así que dos exportaciones
     del mismo incidente difieren aunque el mundo no se haya movido y aunque el
     reloj estuviera congelado.
     """

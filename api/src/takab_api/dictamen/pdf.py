@@ -17,6 +17,7 @@ determinista y versionado; este módulo solo lo pinta.
 from __future__ import annotations
 
 import io
+import math
 
 from fpdf.enums import MethodReturnValue, XPos, YPos
 
@@ -45,6 +46,11 @@ from takab_api.dictamen.model import (
     EPICENTRO_REUBICADO_EN_LA_RED,
     FELT_LABELS,
     FOTOS_OMITIDAS,
+    LEYENDA_ANILLO,
+    LEYENDA_CRUZ,
+    LEYENDA_DISCO,
+    LEYENDA_SIN_DATO,
+    MODELO_Y_RESIDUO,
     NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
     NO_GEOMETRY,
@@ -54,6 +60,14 @@ from takab_api.dictamen.model import (
     PERSONAS_EN_RIESGO,
     REPRODUCCION_NOTE,
     ROL_NO_RESUELTO,
+    SHAKEMAP_DEGRADADO,
+    SHAKEMAP_LEYENDA,
+    SHAKEMAP_NO_LEIDO,
+    SHAKEMAP_PENDIENTE,
+    SHAKEMAP_SIN_ANILLOS,
+    SHAKEMAP_SIN_COBERTURA,
+    SHAKEMAP_SIN_DATOS,
+    SHAKEMAP_SIN_GEOMETRIA,
     SIN_CATEGORIAS,
     SIN_CORRELACION_EN_CATALOGO,
     SIN_CRONOLOGIA,
@@ -72,11 +86,26 @@ from takab_api.dictamen.model import (
     umbral_line,
 )
 from takab_api.felt import ORIGEN_INMUEBLE, ORIGEN_REFERENCIA, umbral_desde_dict
+from takab_api.geo import EARTH_RADIUS_KM
+from takab_api.shakemap import calculo as shk
 
-#: [T-7.44] Los altos de las CINCO figuras, en un solo sitio. Los saltos de
-#: página se derivan de aquí con `reserva()`, no de números absolutos calibrados
-#: contra el alto de A4 — que es lo que había y lo que la migración a Carta dejó
-#: ciego: la hoja se acortó 17,6 mm y ninguno de los cuatro topes se movió.
+#: [T-7.44] Los altos de las figuras del análisis instrumental, en un solo sitio.
+#: Los saltos de página se derivan de aquí con `reserva()`, no de números
+#: absolutos calibrados contra el alto de A4 — que es lo que había y lo que la
+#: migración a Carta dejó ciego: la hoja se acortó 17,6 mm y ninguno de los cuatro
+#: topes se movió.
+#:
+#: ⚠️ [T-7.24] **No están todos aquí.** Los dos croquis geográficos —`_MAPA_RED_H`
+#: (§7) y `_MAPA_SACUDIDA_H` (§8)— viven junto a su sección, porque su alto se
+#: razona contra la tabla que va debajo y no contra las demás figuras.
+#:
+#: Lo que era deuda y **ya no lo es**: el censo que hace entrar a cada figura en
+#: cada milímetro del tramo bajo de la página enumeraba CINCO a mano y los dos
+#: croquis nunca estuvieron dentro. Desde la 2ª vuelta de esta ficha están los
+#: siete (`tests/documentos/test_geometria.py::_las_figuras_del_dictamen`), el
+#: barrido sabe leer círculos —un círculo sale como curvas Bézier y hasta entonces
+#: no existía para la guarda— y `test_el_censo_de_figuras_las_tiene_TODAS` deriva
+#: del propio `pdf.py` quién dibuja, para que la lista no vuelva a quedarse atrás.
 _TRACE_H = 18.0
 _SKETCH_H = 78.0
 _ESPECTRO_H = 26.0
@@ -137,6 +166,7 @@ def _render_technical(m: ReportModel) -> bytes:
     _intensity_section(pdf, m)
     _quorum_section(pdf, m)
     _estaciones_section(pdf, m)
+    _shakemap_section(pdf, m)
     _post_event_section(pdf, m)
     _sensors_section(pdf, m)
     _chain_section(pdf, m)
@@ -186,7 +216,7 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
         "—el SHA-256 de un archivo no cabe dentro de sí mismo—. Es la misma que va al "
         "pie de todas las páginas. Dos exportaciones del mismo incidente NO comparten "
         "huella, y es correcto: exportar añade este documento a la cadena de custodia "
-        "que imprime la §11. También la mueven una sección que no se pudo leer —el "
+        "que imprime la §12. También la mueven una sección que no se pudo leer —el "
         "papel declara cuál y por qué— y una redacción rehecha por el asesor "
         "automático. Una huella distinta NO prueba que el dato haya cambiado. Del "
         "ARCHIVO se registra su propio SHA-256 como evidencia inmutable del incidente; "
@@ -262,7 +292,8 @@ def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
             pdf.set_line_width(0.2)
         else:
             pdf.set_fill_color(110, 120, 132)
-            pdf.circle(x=x - 1.2, y=y - 1.2, radius=1.2, style="F")
+            # ⚠️ El CENTRO, no la esquina: ver la nota de `MARCA_ESTACION_MM`.
+            pdf.circle(x, y, MARCA_ESTACION_MM, style="F")
         pdf.set_xy(x + 2.5, y - 2)
         pdf.set_font(pdf.body_font, "", 6)
         pdf.cell(28, 3, pdf.text_of(p.label))
@@ -587,7 +618,12 @@ def _intensity_section(pdf: TakabPDF, m: ReportModel) -> None:
     # palabra sin escala — y durante meses el rótulo atribuyó al inmueble un
     # umbral que no era el suyo.
     pdf.field("UMBRAL DE COMPARACIÓN", umbral_line(umbral_desde_dict(m.felt_thresholds)))
-    pdf.callout(NO_MMI)
+    # ⚠️ La segunda frase se AÑADE, y sólo cuando el mapa de la sacudida de verdad
+    # va a imprimir un modelo y un residuo. Iba dentro de `NO_MMI` y se imprimía
+    # siempre: un documento cuyo mapa está `pendiente` —el caso NORMAL, porque se
+    # calcula por evento— prometía aquí modelo y residuo y tres secciones más
+    # abajo decía «NO CALCULADO TODAVÍA». Se deriva del bloque, no de la intención.
+    pdf.callout(f"{NO_MMI} {MODELO_Y_RESIDUO}" if _reporta_modelo_y_residuo(m.shakemap) else NO_MMI)
 
 
 def _quorum_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -693,7 +729,8 @@ def _mapa_de_la_red(pdf: TakabPDF, m: ReportModel) -> None:
             # Anillo, no disco: una estación que midió es un testigo, y el disco
             # relleno ya significa «el inmueble de este dictamen».
             pdf.set_draw_color(110, 120, 132)
-            pdf.circle(x=x - 1.3, y=y - 1.3, radius=1.3)
+            # ⚠️ El CENTRO, no la esquina: ver la nota de `MARCA_ESTACION_MM`.
+            pdf.circle(x, y, MARCA_ESTACION_MM)
             pdf.set_draw_color(*RULE)
         pdf.set_xy(x + 2.5, y - 2)
         pdf.set_font(pdf.body_font, "", 6)
@@ -769,8 +806,570 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
             row.cell(pdf.text_of(e.tier or "S/D"))
 
 
+#: [T-7.24] Título de la sección del mapa de la sacudida, en un solo sitio.
+#:
+#: Es constante porque la prueba lo usa para trocear el render por sección, y
+#: `Capturado.seccion()` busca por TÍTULO y no por número —los números renumeran
+#: en cuanto se inserta una sección, y una prueba que se rompa al renumerar no
+#: está comprobando lo que dice comprobar—.
+MAPA_SACUDIDA = "MAPA DE LA SACUDIDA"
+
+#: Alto del mapa de la sacudida, en mm. El mismo que el mapa de la red (62 mm) y
+#: por la misma razón: debajo va su tabla, y las dos tienen que caber juntas para
+#: poder leerse de una vez. Un mapa en una página y su tabla en la siguiente
+#: obliga a pasar hojas para saber qué punto es qué fila — y aquí, además, la
+#: tabla es la que trae el residuo, que es el producto de la figura.
+_MAPA_SACUDIDA_H = 62.0
+
+#: Radio, en mm, del marcador de un inmueble en los croquis. Se nombra porque la
+#: guarda de los anillos separa por él lo que es marcador de lo que es anillo del
+#: modelo, y un número mágico compartido entre el render y su prueba se
+#: desincroniza sin avisar.
+#:
+#: ⚠️ **Y porque las tres figuras geográficas centraban el marcador de dos maneras
+#: distintas.** `_sketch_section` y `_mapa_de_la_red` escribían
+#: `circle(x=x - 1.3, y=y - 1.3, radius=1.3)` —la convención de ESQUINA—, y en
+#: fpdf2 2.8.7 `circle(x, y, r)` hace `ellipse(x - r, y - r, 2r, 2r)`: `x, y` es el
+#: CENTRO, así que esas dos figuras dibujaban cada estación 1.3 mm arriba y a la
+#: izquierda de su punto proyectado. (La documentación de fpdf2 dice «upper-left
+#: bounding box» y su propio código la desmiente; el cambio fue en su 2.8.1.) Lo
+#: que prueba la semántica es
+#: `tests/documentos/test_geometria.py::test_el_barrido_de_geometria_VE_los_CIRCULOS`,
+#: que planta `circle(100, 100, 20)` y encuentra el borde en 120 mm; que ninguna
+#: llamada vuelva a compensar el radio a mano lo vigila
+#: `test_ninguna_figura_dibuja_un_circulo_por_su_ESQUINA`.
+MARCA_ESTACION_MM = 1.3
+
+#: Radio del marcador del inmueble de ESTE dictamen: es el sujeto del documento,
+#: no un testigo, y se distingue por tamaño. **No por dejar de ser un disco
+#: lleno**: el relleno significa «esto es una medición» y eso vale para los dos.
+MARCA_PROPIA_MM = MARCA_ESTACION_MM * 1.6
+
+#: Grados de latitud por kilómetro, para ENCUADRAR (nunca para medir).
+#:
+#: ⚠️ La distinción importa: lo que se mide sale de `haversine_km` y de la barra de
+#: escala del propio croquis. Esto sólo decide qué trozo de mundo entra en el
+#: recuadro, y por eso una aproximación esférica basta y se dice que lo es.
+_KM_POR_GRADO = math.pi * EARTH_RADIUS_KM / 180.0
+
+#: Margen del encuadre sobre el anillo más grande. Sin él, el círculo exterior
+#: queda tangente al marco y la línea se confunde con el borde del recuadro.
+_MARGEN_ENCUADRE = 1.05
+
+#: [T-7.24 · 2ª vuelta] Las columnas de la tabla de la sacudida, EN ORDEN.
+#:
+#: Se nombran aquí y no dentro del bucle porque la prueba que casa cada celda con
+#: su columna necesita la misma lista: las dos celdas centrales —MEDIDO (g) y
+#: MODELO (g)— se podían intercambiar sin que nada se pusiera rojo, y el papel
+#: habría impreso la predicción del modelo bajo el rótulo «MEDIDO». Es
+#: literalmente «el dictamen presenta lo modelado como medido», la frase que
+#: `RO-7.f` dice impedir. Medido el 2026-09-21 con las dos líneas intercambiadas:
+#: 373 passed.
+COLUMNAS_DE_LA_SACUDIDA = (
+    "INMUEBLE",
+    "DIST (km)",
+    "MEDIDO (g)",
+    "MODELO (g)",
+    "MEDIDO (cm/s)",
+    "RESIDUO log10",
+)
+
+#: Rótulo del estado del mapa en la ficha de cabecera de la sección.
+_ESTADO_MAPA = {
+    shk.ESTADO_COMPLETO: "COMPLETO · medido y modelado",
+    shk.ESTADO_SOLO_OBSERVADO: "DEGRADADO · sólo medido",
+    shk.ESTADO_SIN_DATOS: "SIN MEDIDAS EN LA VENTANA",
+    shk.ESTADO_PENDIENTE: "NO CALCULADO TODAVÍA",
+}
+
+
+def _residuo_celda(residuo: float | None) -> str:
+    """El residuo CON SU SIGNO, o la ausencia declarada.
+
+    El signo es todo lo que dice: positivo = ese inmueble sacudió MÁS de lo que la
+    ley predice a su distancia. Sin él, `0.30` y `-0.30` se imprimen casi igual y
+    afirman lo contrario. `+` explícito por eso.
+    """
+    if residuo is None:
+        return ABSENT
+    return f"{residuo:+.2f}"
+
+
+def _epicentro_del_mapa(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """De dónde salió el epicentro con que se modeló, y con qué estado.
+
+    `fuente` es quién lo localizó y `procedencia` es el estado del glosario
+    compartido: son cosas distintas y las dos hacen falta. El centroide de nuestro
+    propio cuórum es un epicentro NUESTRO, y presentarlo sin decirlo lo
+    confundiría con la solución de una agencia — el mismo defecto que
+    `EPICENTRO_REUBICADO` cazó en la §1.
+    """
+    if b.epicentro_lat is None or b.epicentro_lon is None:
+        return "NO CITADO · sin él no hay capa modelada"
+    magnitud = "M " + num(b.epicentro_magnitud, 1) if b.epicentro_magnitud is not None else ABSENT
+    fuente = b.epicentro_fuente or "fuente no declarada"
+    procedencia = b.epicentro_procedencia or "procedencia no declarada"
+    return f"{b.epicentro_lat:.2f}, {b.epicentro_lon:.2f} · {magnitud} · {fuente} · {procedencia}"
+
+
+def _reporta_modelo_y_residuo(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
+    """¿Va a imprimir de verdad este documento una predicción del modelo y su residuo?
+
+    **Derivado de lo que la sección va a poder imprimir**, no de una intención
+    escrita a mano: es lo que impide que la §5 prometa lo que la §8 no calcula.
+    Las tres puertas son las mismas por las que la sección se rinde —la lectura
+    falló, el cálculo no ha corrido, o corrió y no hay medidas—; la que de verdad
+    decide es la última, y exige LAS DOS COSAS que la frase promete.
+
+    ⚠️ Exigía sólo la columna modelada, y la frase promete «lo que predice … y el
+    residuo entre las dos». No es lo mismo: `calculo._punto` le da `pga_g_modelada`
+    a un inmueble MUDO con distancia —el modelo no necesita que nadie midiera— y
+    le deja el residuo en `None`, porque un residuo exige la medida. Un documento
+    cuyo modelo llegara sólo por inmuebles mudos prometía en la §5 un residuo con
+    la columna RESIDUO entera en SIN DATO. Prometer de menos no es una falsedad;
+    prometer un número que no está, sí.
+    """
+    if b.fallo_de_lectura is not None or b.estado == shk.ESTADO_PENDIENTE:
+        return False
+    if b.estado == shk.ESTADO_SIN_DATOS or not b.puntos:
+        return False
+    return _hay_modelo_por_punto(b) and any(p.residuo_log10 is not None for p in b.puntos)
+
+
+def _hay_modelo_por_punto(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
+    """¿Imprime la tabla la predicción del modelo para algún inmueble?
+
+    Es la capa 3, y vive POR PUNTO: los anillos son la capa 2 y pueden faltar sin
+    que falte el modelo. Confundir las dos es lo que hacía que el papel negara el
+    residuo que imprimía en la fila de al lado.
+    """
+    return any(p.pga_g_modelada is not None for p in b.puntos)
+
+
+def _estado_derivado(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """El estado que ESTE documento imprime, en el vocabulario del cálculo.
+
+    Se deriva en el vocabulario —y no directamente en el rótulo— para que se
+    pueda comparar con `b.estado` sin traducir: comparar rótulos obligaba a que
+    cada matiz nuevo del rótulo pareciera una discrepancia con el snapshot.
+    """
+    if b.estado == shk.ESTADO_PENDIENTE:
+        return shk.ESTADO_PENDIENTE
+    if b.estado == shk.ESTADO_SIN_DATOS or not b.puntos:
+        return shk.ESTADO_SIN_DATOS
+    # ⚠️ El modelo son las DOS capas, y basta una para que el papel lo imprima.
+    # Con `not b.anillos` a secas, el caso REAL del M5.0 con el foco a 48 km
+    # —todos los niveles bajo la superficie, y la tabla con su MODELO y su
+    # RESIDUO— se rotulaba «DEGRADADO · sólo medido».
+    if b.anillos or _hay_modelo_por_punto(b):
+        return shk.ESTADO_COMPLETO
+    return shk.ESTADO_SOLO_OBSERVADO
+
+
+def _estado_del_mapa(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """El rótulo dice lo que ESTE documento imprime, no cómo se llama el snapshot.
+
+    ⚠️ Se derivaba de `b.estado` a secas, y un snapshot incoherente imprimía
+    «COMPLETO · medido y modelado» y seis líneas después «MAPA DEGRADADO: … no se
+    dibuja la capa modelada». Medido el 2026-09-21 con `estado='completo'`,
+    `anillos=[]` y sin epicentro. El criterio ya existía en la sección —un
+    `completo` con cero medidas se imprime como SIN MEDIDAS, con su prueba— y
+    estaba aplicado a la mitad de los casos.
+
+    ⚠️ Y la primera versión de esa derivación miraba sólo `b.anillos`, así que
+    **denunciaba como incoherente un snapshot coherente**: el M5.0 con el foco a
+    48 km deja los dos niveles bajo la superficie y aun así modela cada inmueble.
+    La coletilla acusa al dato de origen; acusarlo en falso es peor que no
+    acusarlo, porque enseña a ignorar la coletilla.
+
+    Lo que dice el snapshot **no se tira**: si discrepa del documento, se imprime
+    al lado. Un dictamen es evidencia y esa discrepancia es un hecho auditable.
+    """
+    if b.fallo_de_lectura is not None:
+        return "NO DISPONIBLE · la lectura del snapshot falló"
+    derivado = _estado_derivado(b)
+    rotulo = _ESTADO_MAPA[derivado]
+    if derivado == b.estado:
+        return rotulo
+    return f"{rotulo} · el snapshot se declara «{b.estado}»"
+
+
+def _falta_para_modelar(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """Qué falta EXACTAMENTE para dibujar la capa modelada, nombrado uno a uno.
+
+    ⚠️ La frase del aviso decía siempre «sin epicentro y magnitud citados», y el
+    caso que el criterio de la ficha nombra —«degradado y declarado cuando no hay
+    magnitud»— imprime el epicentro dos líneas más arriba. Medido el 2026-09-21
+    sobre la fixture que monta ese caso, `tests/dictamen/test_mapa_de_la_sacudida
+    .py::_degradado_sin_magnitud(sin_epicentro=False)` —`epicentro_lat=16.80`,
+    `epicentro_lon=-99.50`, `epicentro_magnitud=None`—: el papel imprimía
+    «EPICENTRO DEL MODELO · 16.80, -99.50 · SIN DATO · SSN · confirmado» y justo
+    debajo «sin epicentro y magnitud citados». Se nombra la fixture y no sólo los
+    tres parámetros porque la PROCEDENCIA no está entre ellos y sale de ella: esta
+    cita decía «preliminar», que con esos parámetros no sale.
+
+    ⚠️ **Y aquí NO hay una rama para `b.fuera_de_alcance`.** La hubo, con un
+    comentario que decía que «no es teórica», y era teórica. Medido el 2026-09-21
+    de dos maneras: (1) quitándola y volviéndola a poner,
+    `tests/dictamen/test_mapa_de_la_sacudida.py` da `30 passed` **en los dos
+    casos** — ningún test distingue el papel con la rama del papel sin ella;
+    (2) con un espía en esta función sobre
+    `tests/dictamen` + `tests/documentos` + `tests/shakemap` enteros (573 pruebas),
+    el censo de ramas ejercidas salió `sin epicentro NI magnitud → 8`,
+    `sin magnitud → 1` y las otras tres —`sin epicentro` sola, `fuera_de_alcance`
+    y el cierre— a **cero**.
+
+    Y no es una casualidad del muestreo: `fuera_de_alcance` sólo se puebla si
+    `modelable` (`shakemap/calculo.py::calcula` — hubo medida, hay epicentro y hay
+    magnitud), y con eso `_punto` modela todo inmueble que traiga `dist_km` — que
+    por la ruta real los trae todos, porque esa distancia sólo falta cuando no hay
+    epicentro (`estaciones.py`: `dist` sale del mismo `sismo` del que sale
+    `epicentro_lat`). Así que `_hay_modelo_por_punto` es cierto y quien habla es
+    `SHAKEMAP_SIN_ANILLOS` dos ramas antes de llegar aquí. Lo fija
+    `tests/shakemap/test_calculo.py::
+    test_declarar_NIVELES_SUPRIMIDOS_implica_haber_MODELADO_cada_inmueble`: el día
+    que ese invariante se rompa, esa guarda se pone roja y esta rama vuelve — con
+    su caso construido a propósito, no supuesto.
+
+    Las dos ramas que quedan sin ejercer (`sin epicentro` sola y el cierre) se
+    conservan porque totalizan la función sobre un `ShakemapBlock` cualquiera y no
+    afirman nada que el dato pueda desmentir; la que se fue afirmaba cobertura.
+    """
+    sin_epicentro = b.epicentro_lat is None or b.epicentro_lon is None
+    sin_magnitud = b.epicentro_magnitud is None
+    if sin_epicentro and sin_magnitud:
+        return "el epicentro y la magnitud citados."
+    if sin_epicentro:
+        return "el epicentro citado; la magnitud sola no sitúa la capa."
+    if sin_magnitud:
+        return "la magnitud citada; el epicentro solo no da un nivel de PGA."
+    return "la capa modelada del snapshot, pese a estar citados el epicentro y la magnitud."
+
+
+def _niveles_suprimidos(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """Los niveles que el modelo consideró y no pudo dibujar, cada uno con su razón.
+
+    La frase de cada motivo sale de `calculo.MOTIVOS_FUERA` —el mismo diccionario
+    que la consola— y no se escribe aquí: dos redacciones del mismo motivo
+    acabarían discrepando sobre el mismo mapa.
+
+    Con la lista vacía **no se inventa una razón**. Un snapshot puede no
+    declararlos (los anteriores a `T-7.24`, o un modelo sin un solo nivel), y eso
+    es exactamente lo que se dice.
+    """
+    if not b.fuera_de_alcance:
+        return "el snapshot no declara cuáles."
+    return (
+        "; ".join(
+            f"{n.umbral} ({num(n.pga_g, 3, 'g')}) — {shk.MOTIVOS_FUERA.get(n.motivo, n.motivo)}"
+            for n in b.fuera_de_alcance
+        )
+        + "."
+    )
+
+
+def _puntos_del_mapa(b):  # noqa: ANN001, ANN202 - model.ShakemapBlock
+    """Lo que hay que proyectar: los inmuebles, el epicentro y el ENCUADRE.
+
+    Los puntos `bounds` no se dibujan: existen para que `project` meta en el
+    recuadro el anillo más grande del modelo. Sin ellos el encuadre lo marcarían
+    los inmuebles —que están juntos— y un anillo de 100 km se saldría de la caja y
+    se pintaría encima del resto de la página, porque `rect`/`circle` no recortan.
+
+    Se declaran aquí, y no ensanchando el recuadro, porque lo que hay que
+    conservar es que **una sola escala** valga para los puntos, los anillos y la
+    barra: dos encuadres distintos serían dos escalas que acabarían discrepando.
+
+    ⚠️ **El sufijo `_mudo` viaja hasta el dibujo a propósito.** Un inmueble sin
+    `pga_g` no midió, y hasta la 2ª vuelta de `T-7.24` se pintaba como DISCO
+    LLENO, que la leyenda define como «SACUDIDA MEDIDA en ese inmueble», mientras
+    la tabla de debajo decía «SIN DATO» de ese mismo inmueble. La figura afirmaba
+    lo que la tabla negaba. `sketch.Projected` sólo lleva `kind`, así que la
+    ausencia viaja en el `kind` — que es el campo que el dibujo mira.
+    """
+    puntos = [
+        sketch.Point(
+            p.lat,
+            p.lon,
+            p.site_code,
+            ("site" if p.propio else "station") + ("" if p.pga_g is not None else "_mudo"),
+        )
+        for p in b.puntos
+        if p.lat is not None and p.lon is not None
+    ]
+    if b.epicentro_lat is None or b.epicentro_lon is None:
+        return puntos
+    puntos.append(sketch.Point(b.epicentro_lat, b.epicentro_lon, "EPICENTRO", "epicenter"))
+    if not b.anillos:
+        return puntos
+    radio = max(a.radio_km for a in b.anillos) * _MARGEN_ENCUADRE
+    dlat = radio / _KM_POR_GRADO
+    kx = math.cos(math.radians(b.epicentro_lat))
+    dlon = dlat / kx if kx else dlat
+    puntos += [
+        sketch.Point(b.epicentro_lat + dlat, b.epicentro_lon, "", "bounds"),
+        sketch.Point(b.epicentro_lat - dlat, b.epicentro_lon, "", "bounds"),
+        sketch.Point(b.epicentro_lat, b.epicentro_lon + dlon, "", "bounds"),
+        sketch.Point(b.epicentro_lat, b.epicentro_lon - dlon, "", "bounds"),
+    ]
+    return puntos
+
+
+def _leyenda_del_mapa(b, dibujo) -> str:  # noqa: ANN001 - model.ShakemapBlock, sketch.Sketch
+    """La leyenda nombra SÓLO los símbolos que esta figura dibuja.
+
+    ⚠️ Era una frase cerrada que se imprimía pasara lo que pasara. Medido el
+    2026-09-21: un documento DEGRADADO —sin capa modelada y sin epicentro—
+    prometía «ANILLO DISCONTINUO …» y «La cruz es el epicentro» sobre una figura
+    sin un solo anillo y sin cruz; y en el caso SIN COORDENADAS la leyenda se
+    imprimía igual, porque iba ANTES de la figura y la figura se rendía por
+    dentro. Una leyenda que nombra símbolos ausentes enseña a leer una figura que
+    no está, y es peor que no tener leyenda: la que sobra no se distingue de la
+    que falta.
+
+    Se decide sobre `dibujo.points`, que es lo PROYECTADO, no sobre el bloque: un
+    punto sin coordenadas no llega a la figura y por tanto no tiene símbolo que
+    explicar.
+    """
+    clases = {p.kind for p in dibujo.points}
+    piezas = [SHAKEMAP_LEYENDA]
+    if clases & {"site", "station"}:
+        piezas.append(LEYENDA_DISCO)
+    if clases & {"site_mudo", "station_mudo"}:
+        piezas.append(LEYENDA_SIN_DATO)
+    if "epicenter" in clases and b.anillos:
+        piezas.append(LEYENDA_ANILLO)
+    if "epicenter" in clases:
+        piezas.append(LEYENDA_CRUZ)
+    return " ".join(piezas)
+
+
+def _mapa_de_la_sacudida(pdf: TakabPDF, b, dibujo) -> None:  # noqa: ANN001 - ShakemapBlock
+    """La figura: discos MEDIDOS sobre anillos MODELADOS, con una sola escala.
+
+    [T-7.24] Vectorial y sin una sola petición externa, por la misma razón que el
+    mapa de la red: un documento de evidencia que dependa de que un servidor de
+    tiles siga en pie dentro de cinco años no es evidencia. Y con la MISMA
+    proyección (`sketch.project`), así que las tres figuras geográficas del
+    documento miden igual.
+
+    **Lo medido y lo modelado no comparten codificación** (`D-08 · §A.3`): disco
+    lleno para lo que un sensor registró, anillo de trazo discontinuo para lo que
+    la ley predice, y círculo VACÍO para el inmueble que no publicó — que no es
+    ninguna de las dos cosas. La procedencia viaja en el dato y también en la
+    tinta.
+
+    ⚠️ **El radio de los anillos sale de la escala del croquis**, no de una
+    constante de página. Es la lección que costó la guarda que esta ficha
+    sustituye: dos capas de MapLibre con `circle-radius` en píxeles afirmaban
+    ~22 km a zoom 8.5 y ~1 km a zoom 13, o sea que la misma figura cambiaba de
+    significado físico con cada rueda del ratón.
+
+    `dibujo` llega YA proyectado y no se recalcula aquí: quien llama necesita
+    saber si hay figura **antes** de imprimir la leyenda, y dos proyecciones del
+    mismo bloque son dos escalas que acabarían discrepando.
+    """
+    # ⚠️ `rect`/`circle`/`line` NO disparan el salto de página de fpdf2
+    # (`set_auto_page_break` sólo mira texto): sin esto la figura se pinta encima
+    # del filete del pie.
+    pdf.reserva(_MAPA_SACUDIDA_H + 6)
+    top = pdf.get_y()
+    pdf.set_draw_color(*RULE)
+    pdf.rect(MARGIN, top, CONTENT_W, _MAPA_SACUDIDA_H)
+
+    epicentro = next((p for p in dibujo.points if p.kind == "epicenter"), None)
+    if epicentro is not None:
+        _anillos_del_modelo(pdf, b, dibujo, MARGIN + epicentro.x, top + epicentro.y)
+
+    for p in dibujo.points:
+        if p.kind == "bounds":
+            continue
+        x, y = MARGIN + p.x, top + p.y
+        if p.kind == "epicenter":
+            pdf.set_draw_color(196, 48, 43)
+            pdf.set_line_width(0.5)
+            pdf.line(x - 2.4, y, x + 2.4, y)
+            pdf.line(x, y - 2.4, x, y + 2.4)
+            pdf.set_line_width(0.2)
+            pdf.set_draw_color(*RULE)
+        elif p.kind.endswith("_mudo"):
+            # Círculo VACÍO: ese inmueble NO publicó. Rellenarlo lo convertiría en
+            # una medición —es lo que hacía— y un cero por un silencio afirma que
+            # no se movió (regla de oro 7). Trazo CONTINUO, para que tampoco se
+            # confunda con el anillo discontinuo del modelo.
+            pdf.set_draw_color(*INK)
+            radio = MARCA_PROPIA_MM if p.kind == "site_mudo" else MARCA_ESTACION_MM
+            pdf.circle(x, y, radio, style="D")
+            pdf.set_draw_color(*RULE)
+        else:
+            # Disco LLENO = medición, siempre: el inmueble del dictamen se
+            # distingue por el tamaño, no por dejar de ser una medida.
+            pdf.set_fill_color(*INK)
+            radio = MARCA_PROPIA_MM if p.kind == "site" else MARCA_ESTACION_MM
+            pdf.circle(x, y, radio, style="F")
+        pdf.set_xy(x + 2.5, y - 2)
+        pdf.set_font(pdf.body_font, "", 6)
+        pdf.cell(28, 3, pdf.text_of(p.label))
+
+    _relleno_por_defecto(pdf)
+    pdf.set_draw_color(*INK)
+    bar_y = top + _MAPA_SACUDIDA_H - 6
+    pdf.line(MARGIN + 5, bar_y, MARGIN + 5 + dibujo.scale_bar_mm, bar_y)
+    pdf.set_xy(MARGIN + 5, bar_y + 0.5)
+    pdf.set_font(pdf.body_font, "", 6)
+    pdf.cell(30, 3, pdf.text_of(f"{dibujo.scale_bar_km:g} km"))
+    pdf.set_xy(MARGIN + CONTENT_W - 12, top + 3)
+    pdf.set_font(pdf.body_font, "B", 7)
+    pdf.cell(8, 4, pdf.text_of("N ↑"))
+    pdf.set_y(top + _MAPA_SACUDIDA_H + 2)
+
+
+def _anillos_del_modelo(pdf: TakabPDF, b, dibujo, cx: float, cy: float) -> None:  # noqa: ANN001
+    """Los niveles de PGA del modelo, en trazo discontinuo y con su valor.
+
+    Discontinuo a propósito y no «más claro»: un color pálido se lee como una
+    medición con menos confianza, y esto no es una medición de nada — es lo que
+    la ley predice a esa distancia. La forma dice lo que el color no puede
+    (misma doctrina que `T-6.09` con la banda de sacudida).
+    """
+    pdf.set_draw_color(*MUTED)
+    pdf.set_dash_pattern(dash=1.2, gap=1.2)
+    for anillo in sorted(b.anillos, key=lambda a: a.radio_km):
+        radio_mm = anillo.radio_km * dibujo.mm_por_km
+        pdf.circle(cx, cy, radio_mm, style="D")
+        pdf.set_xy(cx - 12, cy - radio_mm - 3.4)
+        pdf.set_font(pdf.body_font, "", 6)
+        pdf.cell(24, 3, pdf.text_of(f"{num(anillo.pga_g, 3, 'g')} · {anillo.radio_km:g} km"))
+    pdf.set_dash_pattern()
+    pdf.set_draw_color(*RULE)
+
+
+def _shakemap_section(pdf: TakabPDF, m: ReportModel) -> None:
+    """[T-7.24] Cuánto sacudió en cada inmueble, y cuánto tocaba a esa distancia.
+
+    Es la sección que ejecuta `T-3.09` en el papel. Lo que la justifica no es la
+    figura: es el **residuo**. Un punto que sacude el triple de lo que la ley
+    predice para su distancia es lo único que el modelo no sabía —puede ser suelo
+    blando, puede ser el edificio— y es lo que un ingeniero necesita ver.
+
+    El snapshot se lee UNA vez, en el builder, con la misma función que sirve al
+    endpoint (`takab_api.shakemap.lectura.leer`). Aquí no se calcula nada: si esta
+    sección recalculara, el papel y la consola dibujarían cada uno su mapa del
+    mismo sismo y el que discrepa lleva una firma debajo.
+
+    ⚠️ **La proyección se hace ANTES de la leyenda.** Lo que hay que saber para
+    imprimir una leyenda honesta es qué símbolos va a haber, y eso sólo lo sabe el
+    croquis proyectado. Con la leyenda delante y la figura rindiéndose por dentro,
+    el papel describía un dibujo que no existía.
+    """
+    pdf.section("8", MAPA_SACUDIDA)
+    b = m.shakemap
+    pdf.field("ESTADO DEL MAPA", _estado_del_mapa(b))
+    if b.fallo_de_lectura is not None:
+        # El anexo no puede costar el dictamen (misma doctrina que `_cctv_block` y
+        # que la onda cruda). Se declara el fallo y el documento sigue.
+        pdf.callout(SHAKEMAP_NO_LEIDO)
+        return
+    if b.estado == shk.ESTADO_PENDIENTE:
+        # No es un fallo: el mapa se calcula POR EVENTO, no en vivo. Callarlo
+        # dejaría un hueco que se lee como «no sacudió en ninguna parte».
+        pdf.callout(SHAKEMAP_PENDIENTE)
+        return
+
+    pdf.field("CALCULADO", f"{b.calculado_en:{TS_FMT}}" if b.calculado_en else ABSENT)
+    # Con qué ley, para que un dictamen regenerado dentro de un año no presente el
+    # modelo de hoy como si fuera el que se usó entonces.
+    pdf.field("LEY DEL MODELO", b.ley or "NO SE MODELÓ")
+    pdf.field("RADIO DE COBERTURA", num(b.cobertura_km, 0, "km"))
+    pdf.field("EPICENTRO DEL MODELO", _epicentro_del_mapa(b))
+
+    if b.estado == shk.ESTADO_SIN_DATOS or not b.puntos:
+        # El `or not b.puntos` no es redundante: un snapshot que se declarase
+        # `completo` con cero medidas es incoherente, y sin esto la sección
+        # dibujaría una tabla con sólo cabecera — un rótulo que promete un dato
+        # que no hay, que es peor que no tener la sección. Se dice lo único
+        # verificable: no hay medidas que imprimir.
+        pdf.callout(SHAKEMAP_SIN_DATOS)
+        return
+    if not b.anillos and _hay_modelo_por_punto(b):
+        # ⚠️ NO es el caso degradado, y por eso no lleva su frase. El modelo
+        # corrió y la tabla de debajo imprime su predicción y el residuo; lo que
+        # no hay es un nivel dibujable. Es el caso REAL del M5.0 con el foco a
+        # 48 km, y con la frase del degradado el documento negaba —ocho líneas
+        # antes— el residuo +1.35 que él mismo imprime.
+        pdf.callout(f"{SHAKEMAP_SIN_ANILLOS} {_niveles_suprimidos(b)}")
+    elif not b.anillos:
+        # Sin con qué comparar no hay capa modelada, y el mapa DICE qué falta —en
+        # vez de recitar siempre la misma pareja— para no desmentir al campo del
+        # epicentro que acaba de imprimirse dos líneas más arriba.
+        pdf.callout(f"{SHAKEMAP_DEGRADADO} {_falta_para_modelar(b)}")
+
+    dibujo = sketch.project(_puntos_del_mapa(b), CONTENT_W, _MAPA_SACUDIDA_H)
+    if dibujo is None or dibujo.mm_por_km <= 0:
+        # Declarar la ausencia, no dejar el hueco: un marco vacío se lee como «no
+        # hay inmuebles», que es lo contrario de lo que dice la tabla de debajo. Y
+        # sin figura no se imprime leyenda de figura: describiría un dibujo que no
+        # está.
+        pdf.callout(SHAKEMAP_SIN_GEOMETRIA)
+    else:
+        # La leyenda va ANTES de la figura: condiciona todo lo que se lee debajo.
+        # Un anillo y un disco en la misma caja, sin esta frase, se leen como dos
+        # medidas de lo mismo.
+        pdf.callout(_leyenda_del_mapa(b, dibujo))
+        pdf.callout(SHAKEMAP_SIN_COBERTURA)
+        _mapa_de_la_sacudida(pdf, b, dibujo)
+
+    if b.anillos:
+        # ⚠️ Los niveles van TAMBIÉN como texto, y no sólo rotulados sobre su
+        # anillo. El rótulo de un anillo se coloca en `cy - radio_mm - 3.4` y el
+        # de un inmueble en su punto proyectado: ninguno mira al otro, y el papel
+        # no tiene motor de etiquetado que resuelva colisiones.
+        #
+        # Medido el 2026-09-21 sobre las CAJAS DE TEXTO del propio render (espía
+        # de `cell`, sin rasterizar). El escenario ya no se cuenta de memoria: lo
+        # monta y lo vuelve a medir `tests/dictamen/test_mapa_de_la_sacudida.py::
+        # test_el_rotulo_del_ANILLO_y_la_etiqueta_de_un_INMUEBLE_se_pisan` —los dos
+        # inmuebles de siempre y un tercero a 100 km al NORTE del epicentro, o sea
+        # justo encima del anillo de ese nivel—: el rótulo «0.020 g · 100 km» ocupa
+        # una caja de 24 × 3 mm que empieza en x = 94.64, y la etiqueta «NORTE-1»
+        # otra de 28 × 3 mm en x = 109.14 y 1.40 mm más abajo; se pisan en
+        # 9.50 × 1.60 mm. La `y` ABSOLUTA no se cita porque depende de dónde caiga
+        # la §8 en la página —la versión anterior de este comentario daba una
+        # (86.87 / 88.27) que este árbol no reproduce—. Un rótulo tapado es un dato
+        # perdido, así que el dato vive además donde nada lo pisa.
+        pdf.para(
+            "NIVELES DEL MODELO · "
+            + " · ".join(
+                f"{num(a.pga_g, 3, 'g')} a {a.radio_km:g} km"
+                for a in sorted(b.anillos, key=lambda a: a.radio_km)
+            ),
+            size=7.5,
+            muted=True,
+        )
+
+    pdf.set_font(pdf.body_font, "", 7)
+    with pdf.table(col_widths=(46, 22, 24, 24, 24, 26), text_align="LEFT") as table:
+        head = table.row()
+        for h in COLUMNAS_DE_LA_SACUDIDA:
+            head.cell(pdf.text_of(h))
+        for p in b.puntos:
+            row = table.row()
+            etiqueta = f"{p.site_name} ({p.site_code})"
+            # ⚠️ El ORDEN de estas celdas ES el significado de la tabla: la
+            # cabecera dice cuál es MEDIDO y cuál MODELO, y una celda en la
+            # columna de al lado imprime la predicción bajo el rótulo de la
+            # medición. Lo vigila `test_cada_celda_sale_BAJO_SU_COLUMNA`, que casa
+            # cabecera y fila por posición.
+            row.cell(pdf.text_of(etiqueta + (" ·" if p.propio else "")))
+            row.cell(pdf.text_of(num(p.dist_km, 0)))
+            row.cell(pdf.text_of(num(p.pga_g, 4)))
+            row.cell(pdf.text_of(num(p.pga_g_modelada, 4)))
+            row.cell(pdf.text_of(num(p.pgv_cms, 2)))
+            row.cell(pdf.text_of(_residuo_celda(p.residuo_log10)))
+
+
 def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("8", "DESEMPEÑO DE LA RED")
+    pdf.section("9", "DESEMPEÑO DE LA RED")
     pdf.field("TIEMPO DE AVISO GANADO", lead_time_text(m.lead_time_s, m.lead_time_reason))
     pdf.field("ESTACIONES QUE CONTRIBUYERON", str(m.station_count))
     # [T-5.11] El rótulo dice CORRELACIÓN y no «contraste»: contrastar exige un
@@ -782,7 +1381,7 @@ def _post_event_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("9", "INSTRUMENTACIÓN")
+    pdf.section("10", "INSTRUMENTACIÓN")
     if not m.sensors:
         pdf.callout("SIN SENSORES ACTIVOS REGISTRADOS PARA ESTE INMUEBLE.")
         return
@@ -796,7 +1395,7 @@ def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("10", "CADENA DE DICTÁMENES")
+    pdf.section("11", "CADENA DE DICTÁMENES")
     if not m.dictamens:
         pdf.callout("SIN DICTAMEN REGISTRADO PARA ESTE INCIDENTE.")
         return
@@ -821,7 +1420,15 @@ def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
-    """[T-7.22] Solo los OBJETOS de evidencia. La bitácora se fue a la §12.
+    """[T-7.22] Solo los OBJETOS de evidencia.
+
+    La bitácora se fue a la §13 (CRONOLOGÍA DEL INCIDENTE).
+
+    ⚠️ Decía «§12», que es ESTA sección: la renumeración de `T-7.24` —el mapa de
+    la sacudida entró como §8 y corrió a todas las de abajo— movió la bitácora de
+    la §12 a la §13 y esta referencia se quedó apuntándose a sí misma. La cita
+    lleva ahora el TÍTULO entre paréntesis, que es lo que la hace comprobable:
+    `test_toda_CITA_a_una_seccion_del_dictamen_casa_con_su_numero_real`.
 
     Imprimía además, en monoespaciada y sin rótulo, las filas de
     `incident_actions` con su `kind` CRUDO: el papel decía `gas_closed` donde la
@@ -832,7 +1439,7 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
     documento de evidencia obliga al lector a contarlas dos veces o a decidir
     cuál de las dos apariciones creer.
     """
-    pdf.section("11", "CADENA DE CUSTODIA")
+    pdf.section("12", "CADENA DE CUSTODIA")
     if m.evidence:
         pdf.set_font(pdf.body_font, "", 7.5)
         for e in m.evidence:
@@ -878,7 +1485,7 @@ def _cronologia_section(pdf: TakabPDF, m: ReportModel) -> None:
     que puede traer verbos de hace dos años, y un dato crudo declarado como tal es
     honesto donde uno crudo a secas no lo es.
     """
-    pdf.section("12", "CRONOLOGÍA DEL INCIDENTE")
+    pdf.section("13", "CRONOLOGÍA DEL INCIDENTE")
     if not m.actions:
         pdf.callout(SIN_CRONOLOGIA)
         return
@@ -930,7 +1537,7 @@ def _danos_section(pdf: TakabPDF, m: ReportModel) -> None:
     original convertiría «verifique el sha256» en falso, que es el defecto que
     `T-5.26` ya cazó una vez con el hash truncado.
     """
-    pdf.section("13", "DAÑOS REPORTADOS EN CAMPO")
+    pdf.section("14", "DAÑOS REPORTADOS EN CAMPO")
     if not m.danos:
         pdf.callout(SIN_DANOS)
         return
@@ -1042,7 +1649,7 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
     inmueble no tiene CCTV o si el generador se lo saltó, que es exactamente la ambigüedad
     que `NO_CCTV` está escrito para cerrar.
     """
-    pdf.section("14", "EVACUACIÓN OBSERVADA (CCTV)")
+    pdf.section("15", "EVACUACIÓN OBSERVADA (CCTV)")
     bloque = m.cctv
 
     if bloque.t90_s is None:
@@ -1086,7 +1693,7 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
     """Prosa opcional (T-2.42). Rodea al veredicto; nunca lo produce."""
     if not m.narrative:
         return
-    pdf.section("15", "ANÁLISIS")
+    pdf.section("16", "ANÁLISIS")
     for title, body in m.narrative:
         pdf.set_font(pdf.body_font, "B", 8)
         pdf.cell(0, 5, pdf.text_of(title.upper()), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
@@ -1107,7 +1714,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
     apartado no lo respalda TAKAB. El título nombra al autor de las afirmaciones para
     que no haga falta llegar a la nota para saber de quién son.
     """
-    pdf.section("16", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
+    pdf.section("17", "MARCO NORMATIVO DECLARADO POR EL CLIENTE")
     block = compliance_block(m.compliance)
     for label, value in block.rows:
         pdf.field(label, value)
@@ -1118,7 +1725,7 @@ def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _closing(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("17", "FIRMA Y DESLINDE")
+    pdf.section("18", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
         pdf.field("FIRMÓ", head.signed_by)

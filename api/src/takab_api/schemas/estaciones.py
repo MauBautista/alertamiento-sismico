@@ -44,6 +44,10 @@ class EstacionOut(BaseModel):
     t_arribo_medido_s: float | None = None
 
     peak_pga_g: float | None = None
+    #: Pico de PGV de la ventana, en cm/s. Máximo INDEPENDIENTE del de PGA (un
+    #: canal puede saturar en aceleración y no en velocidad), como en
+    #: `forensics.build_forensics`. `None` = el gabinete no publicó nada: no es 0.
+    peak_pgv_cms: float | None = None
     peak_ts: datetime | None = None
 
     #: El umbral contra el que se decidió «sobre umbral», con su procedencia:

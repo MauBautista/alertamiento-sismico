@@ -19,13 +19,42 @@ export type EstadoProcedencia =
   | "confirmado"
   | "sin_correlacion";
 
-type FilaGlosario = { consola: string; pinta_cifra: boolean };
+type FilaGlosario = { consola: string; pinta_cifra: boolean; significa: string };
 
 const ESTADOS = glosario.estados as Record<string, FilaGlosario>;
+
+/**
+ * Los estados que DECLARA el glosario, en el orden en que los declara.
+ *
+ * Existe para que las pantallas se deriven de él en vez de enumerarlo: una lista
+ * escrita a mano en la consola es una segunda verdad sobre el mismo hecho, y
+ * cuando el glosario estrene un sexto estado la lista de aquí seguiría en cinco
+ * — con el estado nuevo cayendo silenciosamente en el `else` de turno. Es el
+ * mismo censo que `api/src/takab_api/procedencia.py::estados()`.
+ */
+export const ESTADOS_PROCEDENCIA: string[] = Object.keys(ESTADOS);
+
+/** ¿El glosario compartido declara este estado? Sin esto, un estado nuevo se
+ * traduce con el rótulo de otro y nadie se entera. */
+export function esEstadoConocido(estado: string): boolean {
+  return Object.prototype.hasOwnProperty.call(ESTADOS, estado);
+}
 
 /** El texto de ese estado en la consola. Fuente única: el glosario compartido. */
 export function rotuloProcedencia(estado: string): string {
   return ESTADOS[estado]?.consola ?? ESTADOS.sin_dato_externo.consola;
+}
+
+/**
+ * QUÉ SIGNIFICA ese estado, con las palabras del glosario.
+ *
+ * Es lo que permite que una pantalla explique los cinco hechos sin escribirlos
+ * cinco veces: el texto vive donde vive el vocabulario, y las tres superficies
+ * cuentan lo mismo. `null` en un estado que el glosario no declara — declarar la
+ * ignorancia es oficio de quien pinta, y ese texto no puede salir de aquí.
+ */
+export function significadoProcedencia(estado: string): string | null {
+  return ESTADOS[estado]?.significa ?? null;
 }
 
 /**

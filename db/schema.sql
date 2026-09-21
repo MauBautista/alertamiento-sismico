@@ -2130,6 +2130,59 @@ ALTER TABLE catalog_consultations FORCE  ROW LEVEL SECURITY;
 CREATE POLICY cc_read ON catalog_consultations FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
 
+-- [T-7.24] El mini-ShakeMap de UN incidente: se calcula una vez y se lee muchas.
+--
+-- El mapa de la sacudida NO es en vivo (design/BLOQUE-IV-ARQUITECTURA.md §A.4):
+-- se calcula por evento, en el worker de incidentes que ya existe, cuando hay con
+-- qué calcularlo. Recalcularlo en cada petición haría que dos operadores vieran
+-- mapas distintos del mismo sismo si entre sus dos peticiones llega el epicentro
+-- del catálogo, y que la consola y el PDF del dictamen dibujaran cada uno el suyo.
+--
+-- Tres capas que no se mezclan y cada valor con su procedencia:
+--   · `puntos`  — capa 1 (OBSERVADO, `measured`) + capa 3 (RESIDUO por punto),
+--                 con el voto de cuórum del inmueble (`voto_contado`).
+--   · `anillos` — el CENSO de los niveles de la capa 2 (MODELADO, `modeled`)
+--                 como NÚMEROS, no como un dibujo: `radio_km` no nulo = anillo
+--                 dibujable; `motivo` no nulo = nivel que NO se dibuja y se
+--                 DECLARA (`bajo_la_superficie` / `no_invertible` /
+--                 `fuera_del_alcance`, con el `radio_max_km` vigente). Un
+--                 anillo ausente sin explicación se lee como «ese umbral no
+--                 existía», y los umbrales son los de la banda del inmueble.
+-- Cero interpolación, cero isosistas y **cero escala de intensidad**: lo que se
+-- codifica es PGA en g. `dictamen/model.py::NO_MMI` ya está impreso en documentos
+-- FIRMADOS diciendo que TAKAB no reporta intensidad macrosísmica.
+--
+-- ⚠️ `anillos.radio_km` va en KILÓMETROS. La guarda que T-7.24 sustituye nació de
+-- dos capas de MapLibre con `circle-radius` en PÍXELES: el mismo anillo afirmaba
+-- ~22 km a zoom 8.5 y ~1 km a zoom 13.
+--
+-- Escritura: NADIE vía API (sólo SELECT y sin política de escritura) — el worker
+-- `takab_ingest` (BYPASSRLS) es el único escritor. Recalcular es idempotente:
+-- la clave natural es el incidente y es la PRIMARY KEY.
+CREATE TABLE incident_shakemap (
+  incident_id  uuid PRIMARY KEY REFERENCES incidents(incident_id) ON DELETE CASCADE,
+  tenant_id    uuid NOT NULL REFERENCES tenants(tenant_id),
+  calculado_en timestamptz NOT NULL DEFAULT now(),   -- se REFRESCA al recalcular: es el dato
+  estado       text NOT NULL CHECK (estado IN ('completo','solo_observado','sin_datos')),
+  ley          text,                                 -- NULL = NO se modeló (no "otra ley")
+  epicentro    jsonb,                                -- {lat,lon,depth_km,magnitud,fuente,procedencia,catalog_key}
+  cobertura_km numeric NOT NULL CHECK (cobertura_km > 0),  -- el radio VIGENTE al calcular
+  puntos       jsonb NOT NULL DEFAULT '[]'::jsonb,   -- capa 1 + capa 3, por inmueble
+  anillos      jsonb NOT NULL DEFAULT '[]'::jsonb    -- censo capa 2: [{umbral, pga_g, radio_km, motivo, radio_max_km}]
+);
+GRANT SELECT ON incident_shakemap TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON incident_shakemap TO takab_ingest;
+-- ⚠️ Escrito aquí para que el esquema DIGA la intención, y REPETIDO en la 0069
+-- porque aquí solo no basta: la 0001 aplica este fichero y DESPUÉS concede
+-- `ALL TABLES` a `takab_app`, así que un revoke que viva únicamente en este
+-- punto lo deshace la propia migración inicial. Medido el 2026-09-20 en la 0068.
+REVOKE INSERT, UPDATE, DELETE ON incident_shakemap FROM takab_app;
+
+ALTER TABLE incident_shakemap ENABLE ROW LEVEL SECURITY;
+ALTER TABLE incident_shakemap FORCE  ROW LEVEL SECURITY;
+CREATE POLICY ism_read ON incident_shakemap FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+
 -- Reubicación de epicentro: función SECURITY DEFINER
 -- `relocate_incident_epicenter(incident_id, lon, lat)` (dueña takab_ingest,
 -- migración 0011 — mismo precedente que gov_ack_incident: seismic_events es

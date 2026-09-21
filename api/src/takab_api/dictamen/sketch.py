@@ -47,6 +47,30 @@ class Sketch:
     scale_bar_mm: float
     scale_bar_km: float
 
+    @property
+    def mm_por_km(self) -> float:
+        """[T-7.24] Milímetros de página por kilómetro real. `0.0` si no hay escala.
+
+        Existe porque el mapa de la sacudida dibuja **anillos con radio físico**, y
+        el radio de un anillo tiene que salir de la MISMA escala con la que se
+        proyectaron los puntos. Derivarlo de la barra —en vez de recalcularlo— es
+        lo que garantiza que el anillo mida, sobre el papel, lo que la barra de al
+        lado dice que mide: si algún día las dos escalas divergieran, divergirían
+        juntas y el lector podría seguir midiendo con la regla.
+
+        ⚠️ **Y por eso no puede ser una constante de página.** La guarda que esta
+        ficha sustituye nació de dos capas de MapLibre con `circle-radius` de 55 y
+        100 PÍXELES: el mismo anillo afirmaba ~22 km a un zoom y ~1 km a otro. Un
+        radio en unidades de pantalla no significa kilómetros.
+
+        El `0.0` es real y hay que tratarlo: con todos los puntos coincidentes el
+        span es cero y no hay escala que aplicar. Quien dibuje declara la ausencia
+        en vez de pintar anillos de radio cero, que se leerían como puntos.
+        """
+        if self.scale_bar_km <= 0:
+            return 0.0
+        return self.scale_bar_mm / self.scale_bar_km
+
 
 # Valores "redondos" para la barra de escala: nadie mide con una barra de 37 km.
 _NICE_KM = (1, 2, 5, 10, 20, 50, 100, 200, 500, 1000)

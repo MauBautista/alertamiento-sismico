@@ -1371,7 +1371,22 @@ def _viñetas_del_14() -> list[tuple[str, str | None, str | None]]:
 
 
 def test_cada_vineta_del_blueprint_14_declara_si_es_prohibicion_o_diferido() -> None:
-    """Sin clasificar, "§14" se lee como un bloque homogéneo de cosas aplazadas. No lo es."""
+    """Sin clasificar, "§14" se lee como un bloque homogéneo de cosas aplazadas. No lo es.
+
+    ⚠️ **Este test tenía una segunda mitad y se retiró el 2026-09-20, en el commit de la
+    derogación** (`T-7.24`). Exigía `clases == {"INVARIANTE", "DIFERIDO"}`, o sea que la §14
+    MEZCLARA las dos clases, y su propio mensaje decía qué hacer cuando dejara de haber
+    mezcla: «si de verdad ya no queda ninguna de las dos clases, este test sobra». Al derogar
+    `[DIFERIDO · mini-ShakeMap]` —la única diferida que tuvo la sección— el conjunto quedó en
+    `{"INVARIANTE"}` y la afirmación pasó a fijar la conducta vieja. Un test así, dejado
+    atrás, se convierte en la prueba de que la nueva está mal (misma lección que `T-2.148`).
+
+    **Lo que NO se retira, y es la mitad que importa:** que toda viñeta lleve su clase y su
+    clave. Esa es la que impide derogarlas juntas, y sigue valiendo con cinco invariantes
+    exactamente igual que con cinco y una diferida — de hecho vale MÁS, porque hoy la única
+    clase viva es la que se rechaza sin discusión y cualquier viñeta sin marcar se leería
+    como aplazada.
+    """
     viñetas = _viñetas_del_14()
     sin_clase = [ln.strip()[:96] for ln, clase, _ in viñetas if clase is None]
     assert not sin_clase, (
@@ -1380,12 +1395,112 @@ def test_cada_vineta_del_blueprint_14_declara_si_es_prohibicion_o_diferido() -> 
         + "\n  Marca cada una `[INVARIANTE · <clave>]` (prohibición: se rechaza sin discusión) "
         "o\n  `[DIFERIDO · <clave>]` (aplazada: se puede retomar derogándola por su nombre)."
     )
-    clases = {clase for _, clase, _ in viñetas}
-    assert clases == {"INVARIANTE", "DIFERIDO"}, (
-        f"`BLUEPRINT §14` clasificó todo como {clases}. Si de verdad ya no queda ninguna de "
-        "las dos\n  clases, este test sobra; mientras haya mezcla, la distinción es lo que "
-        "impide derogarlas juntas."
+
+
+#: Viñetas de `BLUEPRINT §14` que **ya se derogaron**, con la ficha y la fecha que lo hicieron.
+#:
+#: No es una lista de excusas: es lo que separa «manda derogar la sección entera» de «registra
+#: una derogación que ya ocurrió». Sin esto, el día en que se deroga la última viñeta diferida
+#: la lista de derogables queda vacía, `any(...)` es falso siempre y la guarda denuncia el
+#: propio commit que la ejecutó —y todo texto que después lo cuente—. Una clave sale de
+#: `_viñetas_del_14()` mientras la viñeta vive; cuando muere, su nombre tiene que seguir siendo
+#: citable, porque es EXACTAMENTE el nombre que la orden estaba obligada a decir.
+#:
+#: Añadir una entrada aquí es declarar una derogación consumada, y ⚠️ **eso ya no es prosa**:
+#: `test_ninguna_clave_YA_DEROGADA_sigue_VIVA_en_el_blueprint` cruza esta lista contra las
+#: viñetas que la §14 declara hoy. Medido el 2026-09-21: metiendo a mano `T-MINUS` —un
+#: INVARIANTE vivo— una orden que mandara derogarlo **nombrándolo y diciendo que los demás
+#: invariantes no se tocan** pasaba en silencio, porque la clave entra en la lista de citables
+#: sin que nadie comprobara que la viñeta estuviera muerta (la orden literal y las dos salidas
+#: están en el docstring del test). Una lista a mano que nada cruza contra su fuente acaba
+#: divergiendo de ella, y ésta protege las reglas de oro 1 y 9.
+CLAVES_YA_DEROGADAS: dict[str, str] = {
+    "mini-ShakeMap": "T-7.24 · 2026-09-20 · única viñeta DIFERIDA que tuvo la §14",
+}
+
+
+def _claves_derogadas_que_siguen_vivas(claves: dict[str, str]) -> list[str]:
+    """Las claves «ya derogadas» que la §14 **sigue declarando**. Debe salir vacía.
+
+    Recibe el diccionario en vez de leerlo para poder MEDIRLA con una lista falsa: el
+    repositorio está escrito bien, así que la guarda pasaría en verde aunque hubiera nacido
+    ciega — que es exactamente cómo nació.
+    """
+    vivas = {clave for _, _, clave in _viñetas_del_14() if clave}
+    return sorted(clave for clave in claves if clave in vivas)
+
+
+def test_ninguna_clave_YA_DEROGADA_sigue_VIVA_en_el_blueprint() -> None:
+    """Una clave viva en la lista de derogadas **desarma la guarda de las prohibiciones**.
+
+    `CLAVES_YA_DEROGADAS` entra en la lista de claves citables de
+    `_ordenes_de_derogacion_peligrosas`. Medido el 2026-09-21 con `T-MINUS` metido a mano y
+    ESTA orden, que es la que enseña el silencio entero:
+
+        - [ ] Derogar `BLUEPRINT §14` —la viñeta `T-MINUS`— para pintar la cuenta atrás.
+              Las demás `[INVARIANTE · …]` no se tocan.
+
+        árbol intacto : ['T-0.00 · «…» toca la derogación de `BLUEPRINT §14` sin nombrar
+                         ninguna viñeta derogable ([\'mini-ShakeMap\'])']
+        con T-MINUS   : []
+
+    ⚠️ **La coletilla de los invariantes hace falta para ver el silencio**, y una versión
+    anterior de este docstring la recortó al citar la orden: sin ella la guarda sigue roja,
+    pero por la OTRA rama —«sin decir que 5 de sus viñetas son INVARIANTES»—, así que la
+    cita quedaba desmentida por su propia medición. La regla que impedía el silencio vivía
+    sólo en prosa, y un docstring no se ejecuta; una cifra escrita de memoria, tampoco.
+    """
+    zombis = _claves_derogadas_que_siguen_vivas(CLAVES_YA_DEROGADAS)
+    assert not zombis, (
+        "estas claves se declaran DEROGADAS y `BLUEPRINT §14` las sigue declarando: "
+        f"{zombis}. Mientras la viñeta viva, su clave no puede estar en "
+        "`CLAVES_YA_DEROGADAS` — ahí es donde deja de protegerla la guarda de las "
+        "prohibiciones. Si la viñeta se derogó de verdad, bórrala de la §14 en el mismo "
+        "commit; si no, quítala de esta lista."
     )
+
+
+def test_el_cruce_de_claves_derogadas_VE_una_viva_plantada() -> None:
+    """No-vacuidad: hoy encuentra cero, y mañana podría encontrar cero por estar roto.
+
+    `T-MINUS` es la clave del invariante que prohíbe pintar la cuenta atrás con un WR-1 que
+    sólo da un booleano. Si esta prueba deja de encontrarla, el cruce está mirando otra cosa.
+    """
+    vistos = _claves_derogadas_que_siguen_vivas({"T-MINUS": "ficha inventada para medir"})
+    assert vistos == ["T-MINUS"], (
+        "el cruce no ve una clave INVARIANTE viva metida a mano en la lista de derogadas: "
+        f"vio {vistos}. Estaría aprobando por no saber mirar, no por no haber nada"
+    )
+
+
+def _ordenes_de_derogacion_peligrosas(bloques: dict[str, str]) -> list[str]:
+    """Las órdenes de `{id: cuerpo}` que se llevarían por delante una prohibición.
+
+    Vive fuera del test —y recibe los bloques en vez de leerlos— para poder MEDIRLA con
+    fichas de mentira: `TASKS.md` está escrito bien, así que la guarda pasaría en verde
+    aunque se hubiera quedado ciega al aflojarla. Ver `ORDENES_DE_PRUEBA`.
+    """
+    derogables = [k for _, c, k in _viñetas_del_14() if c == "DIFERIDO"]
+    derogables += list(CLAVES_YA_DEROGADAS)
+    invariantes = [k for _, c, k in _viñetas_del_14() if c == "INVARIANTE"]
+    fallos: list[str] = []
+    for tid, cuerpo in bloques.items():
+        for trozo in re.split(r"\n\s*\n|\n(?=\s*- \[)", cuerpo):
+            plano = _plano(trozo)
+            if not (_DEROGA_RE.search(plano) and "§14" in plano):
+                continue
+            if not any(k.lower() in plano.lower() for k in derogables):
+                fallos.append(
+                    f"{tid} · «{plano.strip()[:80]}…» toca la derogación de `BLUEPRINT §14` "
+                    f"sin nombrar ninguna viñeta derogable ({derogables})"
+                )
+            elif "INVARIANTE" not in cuerpo:
+                fallos.append(
+                    f"{tid} manda derogar dentro de `BLUEPRINT §14` sin decir que "
+                    f"{len(invariantes)} de sus viñetas son INVARIANTES ({invariantes}) y no "
+                    "se tocan"
+                )
+    return fallos
 
 
 def test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes() -> None:
@@ -1395,26 +1510,13 @@ def test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes() -> N
     original intacta, porque **el título de `T-3.09` ya dice "Mini-ShakeMap"**. Un test que se
     conforma con el título acredita el criterio equivocado. Se busca por trozo —cada criterio
     `- [ ]` y cada párrafo por separado— para que la clave tenga que estar donde se ordena.
+
+    [T-7.24] La lista de claves citables ya no son sólo las viñetas DIFERIDAS vivas: son ésas
+    más las ya derogadas (`CLAVES_YA_DEROGADAS`). Lo que esta guarda existe para impedir es
+    una orden que diga «derogar la §14» sin decir CUÁL —eso sigue rojo, y se mide con fichas
+    falsas—, no que un texto cuente que una viñeta concreta se derogó y cuándo.
     """
-    diferidos = [k for _, c, k in _viñetas_del_14() if c == "DIFERIDO"]
-    invariantes = [k for _, c, k in _viñetas_del_14() if c == "INVARIANTE"]
-    fallos: list[str] = []
-    for tid, (_, cuerpo) in _bloques().items():
-        for trozo in re.split(r"\n\s*\n|\n(?=\s*- \[)", cuerpo):
-            plano = _plano(trozo)
-            if not (_DEROGA_RE.search(plano) and "§14" in plano):
-                continue
-            if not any(k.lower() in plano.lower() for k in diferidos):
-                fallos.append(
-                    f"{tid} · «{plano.strip()[:80]}…» manda derogar `BLUEPRINT §14` sin nombrar "
-                    f"ninguna viñeta diferida ({diferidos})"
-                )
-            elif "INVARIANTE" not in cuerpo:
-                fallos.append(
-                    f"{tid} manda derogar dentro de `BLUEPRINT §14` sin decir que "
-                    f"{len(invariantes)} de sus viñetas son INVARIANTES ({invariantes}) y no "
-                    "se tocan"
-                )
+    fallos = _ordenes_de_derogacion_peligrosas({t: c for t, (_, c) in _bloques().items()})
     assert not fallos, (
         "Órdenes de derogación que se llevarían por delante prohibiciones de seguridad:\n  "
         + "\n  ".join(fallos)
@@ -1422,6 +1524,84 @@ def test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes() -> N
         "INVARIANTES\n  (`TASKS.md`, sección INVARIANTES: 'se rechaza sin discusión'). "
         "Deroga la viñeta, no la sección."
     )
+
+
+#: Los dos motivos por los que `_ordenes_de_derogacion_peligrosas` puede denunciar algo.
+#: Se nombran para que cada ficha falsa pueda decir cuál espera: son dos ramas distintas y
+#: una puede taparle a la otra que se ha quedado ciega.
+_RAMA_SIN_CLAVE = "sin nombrar ninguna viñeta derogable"
+_RAMA_SIN_INVARIANTES = "son INVARIANTES"
+
+#: Fichas de mentira con las que se comprueba que la guarda de arriba SIGUE mordiendo.
+#:
+#: Existen porque `T-7.24` derogó la única viñeta diferida que tuvo la §14, y la guarda
+#: dependía de que quedara alguna: con la lista vacía, `any(...)` es falso siempre y **todo**
+#: trozo que dijera «derogar … §14» salía rojo, incluido el que sólo REGISTRA la derogación
+#: ya hecha. Aflojarla para que dejara pasar el registro es justo cómo se afloja de más: lo
+#: que había que conservar es que una orden SIN clave siga en rojo, y eso no se ve mirando
+#: `TASKS.md`, que está escrito bien. Se ve con una ficha falsa.
+#:
+#: ⚠️ **Cada ficha dice POR QUÉ RAMA tiene que morder**, no sólo que muerda. La primera
+#: versión sólo comparaba `bool(fallos)`, y con eso la mitad declarada de la guarda —«una
+#: orden SIN clave sigue en rojo»— no se medía: desactivando ENTERA esa rama
+#: (`if not any(...)` → `if False and not any(...)`) las cuatro fichas seguían dando el
+#: veredicto esperado, porque en las tres peligrosas decidía siempre la OTRA rama, la que
+#: exige mencionar los INVARIANTES. Medido el 2026-09-21 con esa misma mutación y esta
+#: versión puesta: `3 failed, 4 passed, 69 deselected` —caen las tres fichas que dicen
+#: esperar esa rama, y la quinta se queda además SIN fallo ninguno (`bool([])`)—. Una guarda
+#: que no distingue qué la puso roja acredita la rama equivocada.
+ORDENES_DE_PRUEBA: tuple[tuple[str, str, str | None], ...] = (
+    (
+        "la orden desnuda, que es lo que la guarda existe para impedir",
+        "- [ ] Derogar `BLUEPRINT §14` y `CLAUDE.md §8` para poder construir el mapa.",
+        _RAMA_SIN_CLAVE,
+    ),
+    (
+        "nombrar una clave que no es de la §14 no cuenta como nombrar una viñeta",
+        "- [ ] Derogar `BLUEPRINT §14` —la viñeta del `mini-ShakeMop`— y seguir.",
+        _RAMA_SIN_CLAVE,
+    ),
+    (
+        "el registro de la derogación YA HECHA, que no ordena nada nuevo",
+        "- [x] Derogada la viñeta `[DIFERIDO · mini-ShakeMap]` de `BLUEPRINT §14` —esa y "
+        "ninguna otra—; las cinco `[INVARIANTE · …]` no se tocan.",
+        None,
+    ),
+    (
+        "nombrar la clave no exime de decir que el resto son prohibiciones",
+        "- [ ] Derogar la viñeta `mini-ShakeMap` de `BLUEPRINT §14` y empezar el mapa.",
+        _RAMA_SIN_INVARIANTES,
+    ),
+    (
+        # La única forma de AISLAR la rama de la clave: con la coletilla puesta, la otra
+        # rama no puede morder, así que si ésta se afloja la ficha se queda en silencio.
+        "la orden sin clave que YA dice que los invariantes no se tocan",
+        "- [ ] Derogar `BLUEPRINT §14` para poder construir el mapa; las demás "
+        "`[INVARIANTE · …]` no se tocan.",
+        _RAMA_SIN_CLAVE,
+    ),
+)
+
+
+@pytest.mark.parametrize("motivo,texto,rama", ORDENES_DE_PRUEBA, ids=lambda v: str(v)[:34])
+def test_la_guarda_de_derogacion_SIGUE_mordiendo_una_orden_sin_clave(
+    motivo: str, texto: str, rama: str | None
+) -> None:
+    """Mutación dirigida sobre la guarda, no sobre el documento.
+
+    `TASKS.md` está escrito bien, así que la guarda pasaría en verde aunque se hubiera
+    quedado ciega. Lo que se mide aquí es lo contrario: que con una ficha que ordena
+    derogar la sección entera la guarda siga poniéndose roja, **por la rama que le toca**,
+    y que el registro histórico de la derogación ya hecha —que nombra su clave— NO se
+    denuncie.
+    """
+    fallos = _ordenes_de_derogacion_peligrosas({"T-0.00": texto})
+    assert bool(fallos) is (rama is not None), f"{motivo}: fallos={fallos}"
+    if rama is not None:
+        assert any(rama in f for f in fallos), (
+            f"{motivo}: la guarda se puso roja por la rama equivocada — esperaba «{rama}» "
+            f"y dijo {fallos}"
+        )
 
 
 # ---------------------------------------------------------------------------

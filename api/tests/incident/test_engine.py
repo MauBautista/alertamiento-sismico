@@ -15,8 +15,10 @@ purgan por ``source='local_quorum'``).
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
+import re
 import threading
 import uuid
 from collections.abc import Iterator
@@ -530,20 +532,104 @@ def test_concurrent_correlation_serializes_no_duplicate(scenario: _Scenario) -> 
 # ---------------------------------- el worker sobrevive un corte de DB prolongado (#6)
 
 
+# Vueltas que el bucle tiene que dar DESPUÉS de reanudar para que la supervivencia
+# esté medida. Con 1 el test sería el de antes: el hilo puede morir en esa misma
+# vuelta, después de los asserts. Con 3 hay al menos dos vueltas completas —la
+# muerte del hilo ocurre AL FINAL de una vuelta, así que sobrevivir a dos exige
+# que el bucle haya vuelto a entrar por arriba.
+_VUELTAS_SOSTENIDAS = 3
+
+
+class _PasadaEscapada(BaseException):
+    """Una pasada tocó la conexión falsa, o sea que la neutralización la perdió.
+
+    Deriva de `BaseException` **a propósito**, y es la única forma de que el
+    escape se vea: el bucle de `run` envuelve cada vuelta en `except Exception`
+    —y el rollback de la recuperación en otro—, así que un `AttributeError` de
+    la conexión falsa lo absorben los dos y la corrida sigue en verde. Lo que
+    `except Exception` no atrapa sale del hilo, mata al bucle y hace fallar el
+    `assert sostenido.wait(...)` de abajo con su mensaje.
+    """
+
+
+# Las dos llamadas del bucle que el test gobierna por su cuenta (una da la
+# conexión falsa, la otra cuenta las vueltas): todo lo DEMÁS que el bucle llame
+# con la conexión de trabajo se silencia solo.
+_YA_GOBERNADAS = ("_ensure_work", "run_correlation")
+
+
+def _neutraliza_las_pasadas(monkeypatch: pytest.MonkeyPatch, eng: IncidentEngine) -> list[str]:
+    """Silencia las pasadas del bucle DERIVÁNDOLAS del cuerpo de ``run``.
+
+    Enumerarlas a mano es lo que dejó ciega a la guarda de abajo: se escribieron
+    tres ``monkeypatch`` con su comentario de ficha, llegaron ``_shakemap_pass``
+    (T-7.24) y ``_consulta_catalogo_pass`` (T-7.25), nadie añadió las suyas, y la
+    primera sin parchear reventaba contra la conexión falsa y mataba al hilo — con
+    el test en verde. Se lee el propio bucle en vez de fiarlo a un sufijo: una
+    pasada nueva queda cubierta el día que se escribe, se llame como se llame.
+    """
+    fuente = inspect.getsource(IncidentEngine.run)
+    llamadas = list(dict.fromkeys(re.findall(r"self\.(\w+)\(work_conn\)", fuente)))
+    faltan = [n for n in _YA_GOBERNADAS if n not in llamadas]
+    assert not faltan, (
+        f"el bucle ya no llama a {faltan} con `work_conn`: este helper quedó "
+        "desalineado de `run` y silenciaría lo que el test necesita vivo"
+    )
+    pasadas = [n for n in llamadas if n not in _YA_GOBERNADAS]
+    assert pasadas, "no se detectó ninguna pasada en el cuerpo de `run`"
+    for nombre in pasadas:
+        monkeypatch.setattr(eng, nombre, lambda wc: None)
+    return pasadas
+
+
 def test_run_survives_prolonged_db_outage(monkeypatch: pytest.MonkeyPatch) -> None:
     """Un corte de DB más largo que el presupuesto de ``with_retry`` no mata al
-    worker: la (re)conexión ocurre DENTRO del bucle y reintenta indefinidamente (#6)."""
+    worker: la (re)conexión ocurre DENTRO del bucle y reintenta indefinidamente (#6).
+
+    Lo que mide es SUPERVIVENCIA SOSTENIDA: que el bucle siga dando vueltas
+    después de reanudar. La versión anterior comprobaba ``t.is_alive()`` en la
+    MISMA vuelta que reanudaba —los tres asserts caían antes de que la vuelta
+    terminara—, así que acreditaba supervivencia por carrera, no por invariante:
+    durante T-7.24 estuvo en verde mientras el hilo del bucle moría en cada
+    corrida. Una guarda de supervivencia que no ve morir al proceso acredita lo
+    contrario de lo que promete.
+    """
     monkeypatch.setattr(engine_mod, "_RECONNECT_BACKOFF_S", 0.01)
+    monkeypatch.setattr(engine_mod, "_ERROR_BACKOFF_S", 0.01)
     eng = IncidentEngine(lambda: None, Settings(), poll_s=0.01, lookback_s=300.0)  # type: ignore[arg-type]
 
     connects = {"n": 0}
-    resumed = threading.Event()
+    vueltas = {"n": 0}
+    reanudo = threading.Event()
+    sostenido = threading.Event()
 
     class _Dummy:
+        # Deliberadamente MÍNIMO: con las pasadas neutralizadas nadie le pide nada
+        # más que `closed`/`close()`. Cualquier otro atributo es una pasada que se
+        # escapó de la neutralización, y entonces tiene que REVENTAR A LA VISTA.
+        #
+        # ⚠️ Y por eso el escape sale por `__getattr__` con un `BaseException`, y
+        # no por la ausencia del atributo. Medido el 2026-09-21 con el `_Dummy`
+        # anterior —sin `execute` ni `rollback`— y la neutralización sustituida por
+        # la enumeración a mano de cuatro pasadas: `1 passed in 1.88s`, cero
+        # warnings. La ironía era que el propio arreglo de `run` tapaba el síntoma:
+        # el `except Exception` del ciclo se traga el `AttributeError` de la pasada,
+        # el `except Exception` del rollback se traga el segundo, y el bucle sigue
+        # dando vueltas, así que el test acreditaba supervivencia mientras el
+        # trabajo de dos pasadas no se hacía. Con `-o log_cli=true` se veía lo que
+        # ocultaba —«engine: error inesperado en el ciclo» + «rollback fallido»,
+        # tres vueltas idénticas— y aun así `1 passed`.
         closed = False
 
         def close(self) -> None:
             pass
+
+        def __getattr__(self, nombre: str) -> object:
+            raise _PasadaEscapada(
+                f"una pasada del bucle le pidió `{nombre}` a la conexión falsa: se "
+                "escapó de `_neutraliza_las_pasadas` y estaría corriendo de verdad "
+                "contra una conexión que no existe"
+            )
 
     def flaky_connect() -> _Dummy:
         connects["n"] += 1
@@ -551,20 +637,103 @@ def test_run_survives_prolonged_db_outage(monkeypatch: pytest.MonkeyPatch) -> No
             raise psycopg.OperationalError("db down")
         return _Dummy()
 
+    def _correlacion(conn: object) -> list[str]:
+        vueltas["n"] += 1
+        reanudo.set()
+        if vueltas["n"] >= _VUELTAS_SOSTENIDAS:
+            sostenido.set()
+        return []
+
     monkeypatch.setattr(eng, "_connect_listen", flaky_connect)
     monkeypatch.setattr(eng, "_drain_notifies", lambda lc: None)
     monkeypatch.setattr(eng, "_ensure_work", lambda wc: _Dummy())
-    monkeypatch.setattr(eng, "run_correlation", lambda conn: resumed.set() or [])
-    monkeypatch.setattr(eng, "_dictamen_pass", lambda wc: None)  # T-1.20, fuera de alcance aquí
-    monkeypatch.setattr(eng, "_lifecycle_pass", lambda wc: None)  # T-7.13, ídem
-    monkeypatch.setattr(eng, "_replay_pass", lambda wc: None)  # T-7.14, ídem
+    monkeypatch.setattr(eng, "run_correlation", _correlacion)
+    _neutraliza_las_pasadas(monkeypatch, eng)  # derivadas, no enumeradas
 
     t = threading.Thread(target=eng.run)
     t.start()
     try:
-        assert resumed.wait(5.0)  # reanudó la correlación tras los cortes
+        assert reanudo.wait(5.0)  # reanudó la correlación tras los cortes
         assert connects["n"] >= 4  # reconectó (no salió por el except)
+        assert sostenido.wait(5.0), (
+            f"el bucle dejó de dar vueltas tras reanudar: {vueltas['n']} de "
+            f"{_VUELTAS_SOSTENIDAS}; hilo vivo={t.is_alive()}"
+        )
         assert t.is_alive()
+    finally:
+        eng.stop()
+        t.join(timeout=5.0)
+    assert not t.is_alive()
+
+
+def test_run_no_muere_si_la_recuperacion_de_una_pasada_tambien_falla(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Una pasada revienta Y la recuperación revienta con ella ⇒ el bucle SIGUE.
+
+    Es la otra mitad del #6, y la que no estaba medida. El manejador de errores
+    inesperados del bucle hace ``work_conn.rollback()``; si eso levanta algo que
+    no es ``psycopg.Error`` —y puede, porque lo que entra ahí es un fallo
+    INESPERADO de cualquier pasada, no un fallo de la DB—, la excepción escapa
+    del manejador, sale por el ``finally`` y el worker muere en silencio: ya
+    nadie correla, dictamina ni cierra incidentes, y ninguna alarma lo dice.
+
+    Aquí las pasadas NO se silencian a propósito: la primera que toque la
+    conexión falsa revienta, que es justo el escenario. Y el ``close`` también
+    levanta, porque ``_safe_close`` se llama desde esa misma recuperación.
+    """
+    monkeypatch.setattr(engine_mod, "_RECONNECT_BACKOFF_S", 0.01)
+    monkeypatch.setattr(engine_mod, "_ERROR_BACKOFF_S", 0.01)
+    eng = IncidentEngine(lambda: None, Settings(), poll_s=0.01, lookback_s=300.0)  # type: ignore[arg-type]
+
+    vueltas = {"n": 0}
+    # Sin esto el test pasaría trivialmente el día que ninguna pasada tocara la
+    # conexión: se exige que la recuperación se haya EJECUTADO de verdad.
+    recuperacion = {"rollback": 0, "close": 0}
+    sostenido = threading.Event()
+
+    class _ConexionHostil:
+        """Conexión que falla en todo, incluso al recogerse los platos rotos."""
+
+        closed = False
+
+        def execute(self, *a: object, **k: object) -> None:
+            raise RuntimeError("la pasada revienta")
+
+        def rollback(self) -> None:
+            recuperacion["rollback"] += 1
+            raise RuntimeError("y el rollback de la recuperación también")
+
+        def close(self) -> None:
+            recuperacion["close"] += 1
+            raise RuntimeError("y el cierre también")
+
+    def _correlacion(conn: object) -> list[str]:
+        vueltas["n"] += 1
+        if vueltas["n"] >= _VUELTAS_SOSTENIDAS:
+            sostenido.set()
+        return []
+
+    monkeypatch.setattr(eng, "_connect_listen", lambda: _ConexionHostil())
+    monkeypatch.setattr(eng, "_drain_notifies", lambda lc: None)
+    monkeypatch.setattr(eng, "_ensure_work", lambda wc: _ConexionHostil())
+    monkeypatch.setattr(eng, "run_correlation", _correlacion)
+
+    t = threading.Thread(target=eng.run)
+    t.start()
+    try:
+        assert sostenido.wait(5.0), (
+            f"el bucle murió con la pasada: {vueltas['n']} de {_VUELTAS_SOSTENIDAS} "
+            f"vueltas; hilo vivo={t.is_alive()}"
+        )
+        assert t.is_alive()
+        assert recuperacion["rollback"] > 0, (
+            "ninguna pasada reventó: el escenario no se ejerció y la guarda no mide nada"
+        )
+        assert recuperacion["close"] > 0, (
+            "el rollback falló pero nadie tiró la conexión: se queda una conexión "
+            "en estado desconocido dando vueltas"
+        )
     finally:
         eng.stop()
         t.join(timeout=5.0)

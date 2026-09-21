@@ -38,6 +38,7 @@ import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
 import { useQuorumCommands } from "./useQuorumCommands";
 import { useMapState } from "./useMapState";
+import { useShakemap } from "./useShakemap";
 import { useSiteFeatures } from "./useSiteFeatures";
 import { useSiteRelays } from "./useSiteRelays";
 import { useSiteSoh } from "./useSiteSoh";
@@ -99,6 +100,11 @@ function ConsoleWall() {
   const reproduccion = useReproduccion(focusIncident?.incident_id ?? null);
   // [T-2.32] Burst de actuación del quórum de red para el incidente enfocado.
   const quorumCommanded = useQuorumCommands(focusSiteId, focusIncident?.event_id ?? null);
+  // [T-7.24] El mapa de la sacudida del incidente en foco. Es lo que ALIMENTA
+  // la capa: sin esta línea `MapPanel` estrena las props y nadie se las pasa, o
+  // sea que ningún operador ve el mapa por muchos tests que pasen alrededor.
+  // Sin incidente enfocado no se consulta nada y la capa ni se estrena.
+  const shakemap = useShakemap(focusIncident?.incident_id ?? null);
 
   // Pop-up automático por anomalía sostenida (criterio #4).
   const openDetail = useCallback((siteId: string) => {
@@ -276,6 +282,9 @@ function ConsoleWall() {
               selectedCatalogId={catalogSel}
               onSelectCatalog={setCatalogSel}
               onViewportChange={setViewportIds}
+              shakemap={shakemap.data ?? undefined}
+              shakemapError={shakemap.error}
+              shakemapLoading={shakemap.loading}
             />
             {/* [T-2.55] Pila ÚNICA de sobrepuestos de la página, anclada
                 arriba-derecha. Nada más se ancla a esa esquina, así que dos

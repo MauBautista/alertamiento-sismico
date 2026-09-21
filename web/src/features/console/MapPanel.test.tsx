@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { cssVariables } from "@takab/design-tokens";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MapSiteState } from "@takab/sdk";
@@ -55,6 +56,7 @@ import MapPanel, {
   staticRingsFeatureCollection,
   trippedFeatures,
 } from "./MapPanel";
+import type { ShakemapOut } from "./shakemap";
 import {
   LINK_DEGRADADO,
   LINK_OPERATIVO,
@@ -408,26 +410,601 @@ describe("MapPanel", () => {
     expect(screen.getByTestId("map-no-epicenter")).toHaveTextContent("SIN EPICENTRO LOCALIZADO");
   });
 
-  // Aquí vivían "mmi-severa" (55px) y "mmi-alta" (100px), rotuladas INTENSIDAD
-  // MMI y conectadas a NADA. Como `circle-radius` de MapLibre es en PÍXELES DE
-  // PANTALLA, el mismo anillo afirmaba ~22 km de radio en zoom 8.5 y ~1 km en
-  // zoom 13: la banda cambiaba de significado físico con cada zoom. Sin
-  // magnitud (NULL) ni PGA calibrado no hay isosista honesta que dibujar, así
-  // que no se dibuja ninguna (regla de oro 7). El mapa de intensidades es el
-  // mini-ShakeMap del BLUEPRINT §14 — fase futura.
-  it("NO pinta bandas de intensidad: ni capas MMI ni una leyenda que prometa una escala inexistente", () => {
-    render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
-    act(() => {
-      mocks.handlers.get("style.load")?.();
+  // [T-7.24] LA GUARDA `DIF-shakemap.a` VIVÍA AQUÍ, y decía en NEGATIVO lo que
+  // esta consola no podía prometer: «no pinta bandas de intensidad». Nació de un
+  // defecto medido — dos capas `circle` (`mmi-severa` 55 px, `mmi-alta` 100 px)
+  // rotuladas INTENSIDAD MMI y conectadas a NADA, con el radio en PÍXELES DE
+  // PANTALLA: el mismo anillo afirmaba ~22 km de radio a zoom 8.5 y ~1 km a zoom
+  // 13, o sea que cambiaba de significado físico con cada rueda del ratón.
+  //
+  // Hoy el mini-ShakeMap existe (`GET /incidents/{id}/shakemap`) y la guarda se
+  // SUSTITUYE por la que afirma en POSITIVO lo que lo hace honesto. Las dos
+  // negaciones que mataron a aquellas capas se conservan dentro —ni `mmi*` ni
+  // «INTENSIDAD MMI», y ninguna capa con significado físico en unidades de
+  // pantalla—, porque lo que las mató no ha cambiado: sigue sin haber escala de
+  // intensidad, y `dictamen/model.py::NO_MMI` está impreso en documentos ya
+  // FIRMADOS diciendo que TAKAB no reporta intensidad macrosísmica ni isosistas.
+  describe("[T-7.24] el mapa de la sacudida dice de dónde sale CADA valor", () => {
+    /** Snapshot completo: tres anillos modelados y un inmueble que midió. */
+    const SHAKEMAP: ShakemapOut = {
+      incident_id: "i-1",
+      estado: "completo",
+      // Siempre presente aunque esté vacío: el contrato lo declara así para que
+      // la consola no tenga que distinguir «no vino» de «vino sin nada».
+      fuera_de_alcance: [],
+      calculado_en: "2026-09-14T10:41:30Z",
+      ley: "ATTEN-LAW v1",
+      cobertura_km: 25,
+      epicentro: {
+        lat: 17.8,
+        lon: -99.0,
+        depth_km: 20,
+        magnitud: 7.1,
+        fuente: "SSN",
+        procedencia: "confirmado",
+        catalog_key: "SSN-2026-001",
+      },
+      observado: {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            geometry: { type: "Point", coordinates: [-98.2404, 19.3139] },
+            properties: {
+              site_id: "crit",
+              site_code: "site-cholula-a",
+              site_name: "Cholula A",
+              procedencia: "measured",
+              pga_g: 0.083,
+              pgv_cms: 2.1,
+              dist_km: 120,
+              hypo_km: 129,
+              pga_g_modelada: 0.041,
+              residuo_log10: 0.306,
+              medido_en: "2026-09-14T10:00:35Z",
+              voto_contado: true,
+            },
+          },
+        ],
+      },
+      modelado: {
+        type: "FeatureCollection",
+        features: [0.02, 0.08].map((pga, i) => ({
+          type: "Feature" as const,
+          geometry: {
+            type: "Polygon" as const,
+            coordinates: [
+              [
+                [-99.1, 17.9],
+                [-98.9, 17.9],
+                [-98.9, 17.7],
+                [-99.1, 17.7],
+                [-99.1, 17.9],
+              ],
+            ],
+          },
+          properties: {
+            procedencia: "modeled" as const,
+            pga_g: pga,
+            radio_km: [130, 66][i],
+            umbral: ["pga_watch_g", "pga_trip_g"][i],
+          },
+        })),
+      },
+    };
+
+    /**
+     * Tope de un radio CONSTANTE en píxeles para que siga leyéndose como un
+     * marcador y no como un área. No es un número a ojo: los marcadores de este
+     * mapa miden 9 y 14-15 px, y las dos bandas MMI que costaron la guarda
+     * `DIF-shakemap.a` medían 55 y 100.
+     */
+    const MARCADOR_MAX_PX = 20;
+
+    /** Las especificaciones de capa tal como se le pasaron a MapLibre. */
+    function capas(): Array<Record<string, unknown>> {
+      return mocks.map.addLayer.mock.calls.map((call) => call[0] as Record<string, unknown>);
+    }
+    function capa(id: string): Record<string, unknown> {
+      const encontrada = capas().find((l) => l["id"] === id);
+      expect(encontrada, `la capa ${id} no se agregó al mapa`).toBeDefined();
+      return encontrada!;
+    }
+    /** Lo último que se le dio a esa fuente (las capas nacen vacías). */
+    function datos(id: string): { features: Array<{ properties: Record<string, unknown> }> } {
+      const source = mocks.sources.get(id);
+      expect(source, `la fuente ${id} no existe`).toBeDefined();
+      const llamadas = source!.setData.mock.calls;
+      expect(llamadas.length, `nadie alimentó la fuente ${id}`).toBeGreaterThan(0);
+      return llamadas[llamadas.length - 1][0] as {
+        features: Array<{ properties: Record<string, unknown> }>;
+      };
+    }
+    function montar(props: Partial<Parameters<typeof MapPanel>[0]> = {}) {
+      const salida = render(
+        <MapPanel
+          sites={[CRITICAL]}
+          epicenters={[]}
+          onSelectSite={vi.fn()}
+          shakemap={SHAKEMAP}
+          {...props}
+        />,
+      );
+      act(() => {
+        mocks.handlers.get("style.load")?.();
+      });
+      return salida;
+    }
+
+    it("cada valor viaja con su PROCEDENCIA, y medido y modelado NO se mezclan", () => {
+      montar();
+      for (const f of datos("shakemap-observado").features) {
+        expect(f.properties["procedencia"]).toBe("measured");
+      }
+      for (const f of datos("shakemap-modelado").features) {
+        expect(f.properties["procedencia"]).toBe("modeled");
+      }
+      // Y el valor va pegado a su procedencia en el MISMO rasgo: quien los junte
+      // en una lista no puede perderla por el camino (`D-08` · `§A.3`).
+      expect(datos("shakemap-observado").features[0].properties).toMatchObject({
+        procedencia: "measured",
+        pga_g: 0.083,
+        label: "0.083 g · ×2.0",
+      });
     });
 
-    const layerIds: string[] = mocks.map.addLayer.mock.calls.map(
-      (call) => (call[0] as { id: string }).id,
-    );
-    expect(layerIds.some((id) => id.startsWith("mmi"))).toBe(false);
-    expect(screen.queryByText(/INTENSIDAD MMI/i)).not.toBeInTheDocument();
-    // La leyenda dice lo que el color ES: lo que midió el edificio.
-    expect(screen.getByText(/SACUDIDA MEDIDA EN EL EDIFICIO/i)).toBeInTheDocument();
+    it("lo MEDIDO y lo MODELADO no comparten codificación: disco relleno vs anillo discontinuo", () => {
+      montar();
+      const punto = capa("shakemap-punto");
+      const anillo = capa("shakemap-anillo");
+      expect(punto["type"]).toBe("circle");
+      expect(anillo["type"]).toBe("line");
+      expect((anillo["paint"] as Record<string, unknown>)["line-dasharray"]).toBeDefined();
+      // Dos fuentes distintas: ni un rasgo puede acabar dibujado por la capa de
+      // la otra procedencia.
+      expect(punto["source"]).not.toBe(anillo["source"]);
+    });
+
+    it("NINGUNA capa con significado físico se dibuja en unidades de PANTALLA", () => {
+      // ⚠️ ÉSTE es el pecado que mató a `mmi-severa` y `mmi-alta`. El anillo
+      // afirma «aquí el modelo predice 0.02 g» y tiene que seguir afirmándolo a
+      // cualquier zoom: su geometría es un POLÍGONO EN GRADOS que materializa el
+      // lector (`shakemap/lectura.py::circulo`), no un radio en píxeles.
+      //
+      // ⚠️⚠️ Y ES UN BARRIDO, no una consulta. La guarda que sustituyó a
+      // `DIF-shakemap.a` miraba UNA capa por su id (`capa("shakemap-anillo")`),
+      // así que el pecado se podía re-cometer con cualquier otro nombre: un
+      // escéptico colgó `shakemap-banda-alta` —`circle-radius: 100` PÍXELES
+      // sobre la fuente del MODELO— y las 2 523 pruebas de web siguieron verdes.
+      // La guarda vieja sí barría el conjunto (`id.startsWith("mmi")`) y la
+      // sustitución lo estrechó.
+      //
+      // ⚠️⚠️⚠️ Y la corrección se quedó CORTA: barría por FUENTE, pero sólo las
+      // que empiezan por `shakemap-`. Medido: la MISMA capa pecadora
+      // (`circle-radius: 100`) colgada de una fuente llamada `pga-banda` pasaba
+      // entera, con las 57 pruebas de este bloque en verde. Un censo acotado por
+      // el nombre de la fuente es un censo que bendice al que se cambia el
+      // nombre — la tercera vez que esta ficha lo aprende. Aquí se barre EL
+      // CONJUNTO, y luego se juzga cada fuente del mapa de la sacudida por lo
+      // que afirma.
+      montar();
+
+      // BARRIDO 1 · TODAS las capas, sin lista blanca que mantener. El
+      // invariante no necesita saber qué afirma cada capa: un radio en PÍXELES
+      // no puede afirmar extensión. O el radio viaja en el rasgo (`radius_px`,
+      // rehecho en `zoomend`, que es como se dibujan km de verdad), o es un
+      // número de MARCADOR y un marcador no pasa de `MARCADOR_MAX_PX`.
+      const fisico = (radio: unknown): boolean =>
+        JSON.stringify(radio ?? null).includes("radius_px");
+      /** Los números que hay dentro de una expresión de MapLibre, a cualquier nivel. */
+      const pixeles = (v: unknown): number[] =>
+        typeof v === "number" ? [v] : Array.isArray(v) ? v.flatMap(pixeles) : [];
+      expect(capas().length, "no se colgó ninguna capa del mapa").toBeGreaterThan(0);
+      for (const espec of capas()) {
+        const radio = ((espec["paint"] ?? {}) as Record<string, unknown>)["circle-radius"];
+        if (radio === undefined || fisico(radio)) continue;
+        for (const px of pixeles(radio)) {
+          expect(
+            px,
+            `${String(espec["id"])} (fuente «${String(espec["source"])}»): ${px} px ya no se lee como marcador, se lee como área`,
+          ).toBeLessThanOrEqual(MARCADOR_MAX_PX);
+        }
+      }
+
+      // BARRIDO 2 · y las capas del mapa de la sacudida, además, por lo que
+      // afirma la fuente de la que cuelgan, con default-deny para una fuente
+      // nueva que este censo no sepa juzgar.
+      const delMapa = capas().filter((l) => String(l["source"] ?? "").startsWith("shakemap-"));
+      expect(delMapa.length, "el mapa de la sacudida no colgó ninguna capa").toBeGreaterThan(0);
+      for (const especificacion of delMapa) {
+        const id = String(especificacion["id"]);
+        const fuente = String(especificacion["source"]);
+        const paint = (especificacion["paint"] ?? {}) as Record<string, unknown>;
+        const enPantalla = Object.keys(paint).filter((k) => k.startsWith("circle-"));
+        if (fuente === "shakemap-modelado") {
+          // El MODELO afirma EXTENSIÓN. Sus rasgos son polígonos en grados, así
+          // que cualquier propiedad `circle-*` aquí es, por construcción, una
+          // extensión dibujada en píxeles de pantalla.
+          expect(enPantalla, `${id} dibuja el MODELO en unidades de pantalla`).toEqual([]);
+        } else if (fuente === "shakemap-observado") {
+          const radio = paint["circle-radius"];
+          if (radio !== undefined) {
+            // Un marcador NO afirma extensión: afirma un valor EN ESE PUNTO, y
+            // por eso su radio es constante. Atarlo al dato lo convertiría en
+            // una burbuja que se lee como área de influencia.
+            expect(typeof radio, `${id}: el radio del marcador depende del dato`).toBe("number");
+            // Y tiene que seguir leyéndose como un marcador. Los de este mapa
+            // miden 9-15 px; el pecado de `DIF-shakemap.a` medía 55 y 100.
+            expect(
+              radio as number,
+              `${id}: ${String(radio)} px ya no se lee como marcador, se lee como área`,
+            ).toBeLessThanOrEqual(MARCADOR_MAX_PX);
+          }
+        } else if (fuente === "shakemap-cobertura") {
+          // El halo mide 25 km DE TERRENO: su radio se recalcula con el zoom y
+          // viaja en el rasgo, nunca como número en el `paint`.
+          expect(paint["circle-radius"], `${id}: la cobertura mide km, no píxeles`).toEqual([
+            "get",
+            "radius_px",
+          ]);
+        } else {
+          // DEFAULT-DENY. Una capa colgada de una fuente que este censo no sabe
+          // juzgar se declara aquí, con lo que afirma y en qué unidades. Un
+          // censo que se calla ante lo que no conoce es el que dejó pasar
+          // `shakemap-banda-alta`.
+          expect.fail(`la capa ${id} cuelga de «${fuente}»: este censo no sabe qué afirma`);
+        }
+      }
+      for (const f of datos("shakemap-modelado").features as unknown as Array<{
+        geometry: { type: string; coordinates: number[][][] };
+      }>) {
+        expect(f.geometry.type).toBe("Polygon");
+        for (const [lon, lat] of f.geometry.coordinates[0]) {
+          expect(Math.abs(lon)).toBeLessThanOrEqual(180);
+          expect(Math.abs(lat)).toBeLessThanOrEqual(90);
+        }
+      }
+      // Y el halo de cobertura llega con su radio ya en píxeles del zoom actual,
+      // derivado de los km que declara el snapshot.
+      const halo = datos("shakemap-cobertura").features[0].properties;
+      expect(halo["cobertura_km"]).toBe(25);
+      expect(halo["radius_px"]).toBeGreaterThan(0);
+    });
+
+    it("`SIN COBERTURA` es un estado PROPIO de la leyenda, con su radio Y CON SU CAPA", () => {
+      montar();
+      const leyenda = screen.getByTestId("map-legend-pga");
+      expect(leyenda).toHaveTextContent(/SIN COBERTURA/);
+      // Con su cifra: sin el radio, «sin cobertura» no se puede ni discutir.
+      expect(leyenda).toHaveTextContent(/25 km/);
+      // ⚠️ Y con una capa que de verdad la pinte. Esta guarda comprobaba el
+      // texto y el «25 km» y nada más, así que bendecía una clave de color
+      // huérfana: `PGA_SIN_COBERTURA` sólo existía como `background` de una
+      // muestra de la leyenda y NINGUNA capa del mapa la usaba. Una leyenda que
+      // explica algo que no está en pantalla es, estructuralmente, la leyenda
+      // MMI que esta tarea vino a cerrar.
+      const tinta = cssVariables["--tk-pga-sin-cobertura"];
+      const usan = capas().filter((l) => JSON.stringify(l["paint"] ?? {}).includes(tinta));
+      expect(
+        usan.map((l) => String(l["id"])),
+        `la leyenda promete la tinta ${tinta} y ninguna capa la pinta`,
+      ).not.toEqual([]);
+      // Y la pinta como BORDE: el halo marca el límite, no tiñe un área.
+      const paint = (usan[0]["paint"] ?? {}) as Record<string, unknown>;
+      expect(paint["circle-stroke-color"]).toBe(tinta);
+      expect(paint["circle-color"], "un relleno teñiría media pantalla").toBe("rgba(0,0,0,0)");
+    });
+
+    it("sin NINGUNA medida no hay halo, y la leyenda no promete la cobertura de nada", () => {
+      // La fila colgaba de `shakemap !== undefined`, no de que hubiera algo que
+      // cubrir: un incidente sin snapshot calculado imprimía «SIN COBERTURA · A
+      // MÁS DE 25 km DE UN INMUEBLE INSTRUMENTADO» justo al lado de «ESTE
+      // INCIDENTE AÚN NO TIENE SNAPSHOT».
+      montar({
+        shakemap: { ...SHAKEMAP, estado: "pendiente", calculado_en: null, modelado: null },
+      });
+      expect(datos("shakemap-cobertura").features).toEqual([]);
+      expect(screen.getByTestId("map-legend-pga")).not.toHaveTextContent(/SIN COBERTURA/);
+      expect(screen.getByTestId("shakemap-pendiente")).toBeInTheDocument();
+    });
+
+    it("la leyenda conserva la frase honesta y escribe el modelo COMO modelo", () => {
+      montar();
+      // La frase de la leyenda vieja sigue en pantalla: el color de un edificio
+      // es lo que ÉL midió, no la severidad de la alerta.
+      expect(screen.getByText(/SACUDIDA MEDIDA EN EL EDIFICIO/i)).toBeInTheDocument();
+      const leyenda = screen.getByTestId("map-legend-pga");
+      expect(leyenda).toHaveTextContent(/MODELO/);
+      expect(leyenda).toHaveTextContent(/ATTEN-LAW v1/);
+      expect(leyenda).toHaveTextContent(/ESTIMACIÓN/);
+      // Y sigue sin haber escala de intensidad que prometer.
+      expect(capas().some((l) => String(l["id"]).startsWith("mmi"))).toBe(false);
+      expect(screen.queryByText(/INTENSIDAD MMI/i)).not.toBeInTheDocument();
+      expect(leyenda).not.toHaveTextContent(/MMI/);
+    });
+
+    it("sin epicentro ni magnitud la capa modelada NO se dibuja, y se DECLARA", () => {
+      montar({
+        shakemap: { ...SHAKEMAP, estado: "solo_observado", epicentro: null, modelado: null },
+      });
+      expect(datos("shakemap-modelado").features).toEqual([]);
+      expect(datos("shakemap-observado").features).toHaveLength(1);
+      expect(screen.getByTestId("shakemap-sin-modelo")).toHaveTextContent(/NO SE MODELA/i);
+      // Y la leyenda tampoco explica un anillo que no está: la fila del MODELO
+      // cuelga de que haya modelo, no de que exista la capa.
+      expect(screen.getByTestId("map-legend-pga")).not.toHaveTextContent(/ANILLO DISCONTINUO/);
+      expect(screen.getByTestId("map-legend-pga")).toHaveTextContent(/MEDIDO EN EL EDIFICIO/);
+    });
+
+    it("pendiente, sin datos y error se declaran cada uno con su causa", () => {
+      const { unmount } = montar({
+        shakemap: { ...SHAKEMAP, estado: "pendiente", calculado_en: null, modelado: null },
+      });
+      expect(screen.getByTestId("shakemap-pendiente")).toBeInTheDocument();
+      unmount();
+
+      const sinDatos = render(
+        <MapPanel
+          sites={[CRITICAL]}
+          epicenters={[]}
+          onSelectSite={vi.fn()}
+          shakemap={{
+            ...SHAKEMAP,
+            estado: "sin_datos",
+            observado: { type: "FeatureCollection", features: [] },
+          }}
+        />,
+      );
+      expect(screen.getByTestId("shakemap-sin-datos")).toHaveTextContent(
+        /SIN INMUEBLES INSTRUMENTADOS/i,
+      );
+      sinDatos.unmount();
+
+      render(
+        <MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} shakemapError={true} />,
+      );
+      expect(screen.getByTestId("shakemap-error")).toHaveTextContent(/NO DISPONIBLE/i);
+    });
+
+    it("apagar la capa se lleva su leyenda Y TODAS sus capas, no una", () => {
+      // Mismo trato que la leyenda de ENLACE (T-2.46). Una leyenda que describe
+      // una capa apagada explica algo que no está en pantalla.
+      //
+      // ⚠️ La lista de ids se DERIVA de lo que se colgó del mapa, no se teclea.
+      // Escrita a mano, esta guarda sólo comprobaba `shakemap-anillo`: reducir
+      // el grupo a ese único id dejaba el interruptor apagando la leyenda y los
+      // anillos mientras los discos, sus valores y los rótulos seguían pintados
+      // — y los 50 tests de este fichero seguían verdes.
+      montar();
+      const ids = capas()
+        .filter((l) => String(l["source"] ?? "").startsWith("shakemap-"))
+        .map((l) => String(l["id"]));
+      expect(ids.length, "el grupo SACUDIDA tiene más de una capa").toBeGreaterThan(1);
+      mocks.map.setLayoutProperty.mockClear();
+      fireEvent.click(screen.getByTestId("layer-shakemap"));
+      expect(screen.queryByTestId("map-legend-pga")).toBeNull();
+      for (const id of ids) {
+        expect(
+          mocks.map.setLayoutProperty,
+          `${id} se quedó pintada después de apagar SACUDIDA`,
+        ).toHaveBeenCalledWith(id, "visibility", "none");
+      }
+    });
+
+    it("el inmueble que NO publicó nada se pinta HUECO, y lo dice", () => {
+      // El relleno es lo que afirma que HAY un valor. Sustituir el `case` por un
+      // `["get","color"]` pinta relleno a un sitio que no midió —o sea, como si
+      // tuviera valor— y ninguna prueba lo veía: la propiedad `medido` se
+      // probaba pura y su único consumidor, el `paint`, no se probaba; ninguna
+      // prueba del DOM montaba jamás un punto con `pga_g: null`.
+      montar({
+        shakemap: {
+          ...SHAKEMAP,
+          estado: "solo_observado",
+          modelado: null,
+          observado: {
+            type: "FeatureCollection",
+            features: [
+              {
+                ...SHAKEMAP.observado.features[0],
+                properties: {
+                  ...SHAKEMAP.observado.features[0].properties,
+                  pga_g: null,
+                  pgv_cms: null,
+                  residuo_log10: null,
+                },
+              },
+            ],
+          },
+        },
+      });
+      const props = datos("shakemap-observado").features[0].properties;
+      expect(props["medido"]).toBe(false);
+      expect(props["label"]).toBe("SIN MEDIDA EN LA VENTANA");
+      // Y el `paint` DERIVA el relleno de esa propiedad, con transparencia total
+      // cuando no hay medida.
+      const relleno = (capa("shakemap-punto")["paint"] as Record<string, unknown>)["circle-color"];
+      expect(Array.isArray(relleno), "el relleno del disco no depende de `medido`").toBe(true);
+      const expr = relleno as unknown[];
+      expect(expr[0]).toBe("case");
+      expect(expr[1]).toEqual(["get", "medido"]);
+      expect(String(expr[3]).replace(/\s/g, ""), "sin medida el disco tiene que ir HUECO").toBe(
+        "rgba(0,0,0,0)",
+      );
+      // Un sitio que no midió tampoco da cobertura: rodearlo diría que sí.
+      expect(datos("shakemap-cobertura").features).toEqual([]);
+    });
+
+    it("un estado que no se sabe leer SUPRIME los puntos aunque los haya, y lo declara", () => {
+      // `pintaObservado` es un gate REAL y no un adorno, pero ninguna prueba lo
+      // podía demostrar: las fixtures de `pendiente` y `sin_datos` llegaban con
+      // `observado.features: []`, así que «no pinta» y «no hay» se veían igual.
+      // Aquí el snapshot TRAE una medida y aun así no se pinta ninguna, porque
+      // no se sabe qué significa el estado que la acompaña.
+      montar({ shakemap: { ...SHAKEMAP, estado: "recalculando" } });
+      expect(SHAKEMAP.observado.features.length).toBe(1);
+      expect(datos("shakemap-observado").features).toEqual([]);
+      expect(datos("shakemap-modelado").features).toEqual([]);
+      expect(screen.getByTestId("shakemap-no-interpretable")).toHaveTextContent(/recalculando/);
+      // Y NO se fecha: «CALCULADO …» sobre un mapa que se acaba de declarar
+      // ilegible lo vuelve a presentar como un mapa válido y reciente.
+      expect(screen.queryByTestId("shakemap-calculado")).toBeNull();
+    });
+
+    it("el snapshot que se declara SIN DATOS y trae una medida pinta la medida", () => {
+      // El rótulo lo escribió un worker; la medida, un acelerómetro.
+      montar({ shakemap: { ...SHAKEMAP, estado: "sin_datos" } });
+      expect(datos("shakemap-observado").features).toHaveLength(1);
+      const leyenda = screen.getByTestId("map-legend-pga");
+      expect(leyenda).not.toHaveTextContent(/NINGÚN INMUEBLE/i);
+      expect(screen.getByTestId("shakemap-sin-datos-discrepa")).toHaveTextContent(/1 MEDIDA/);
+    });
+
+    it("el `sin_datos` que la nube SÍ produce no se acusa de contradicción ni tapa su nota", () => {
+      // ⚠️ LA FALSA ALARMA. Éste es el snapshot literal que publica la nube
+      // cuando nadie midió: `estado: sin_datos` y un punto MUDO por cada
+      // inmueble instrumentado (`servicio.py::_medidas_de` no filtra por
+      // `peak_pga_g`). Con la discrepancia gateada por `puntos.length`, la
+      // leyenda del SOC imprimía CUATRO afirmaciones que el propio dato
+      // desmiente —«TRAE 2 MEDIDA(S)» con cero medidas, «SE PINTA LO MEDIDO»
+      // sin nada medido, «DISCO CON SU VALOR» sobre discos sin valor y «SIN
+      // COBERTURA · A MÁS DE 25 km» sin un solo halo— y **tapaba la nota
+      // correcta**, que es la única que el operador necesita leer.
+      //
+      // Ninguna guarda lo vio porque las dos fixtures de `sin_datos` llegaban
+      // con `observado.features: []`: ninguna montaba la forma que la nube sí
+      // produce.
+      const mudo = (id: string) => ({
+        ...SHAKEMAP.observado.features[0],
+        properties: {
+          ...SHAKEMAP.observado.features[0].properties,
+          site_id: id,
+          pga_g: null,
+          pgv_cms: null,
+          pga_g_modelada: null,
+          residuo_log10: null,
+          medido_en: null,
+        },
+      });
+      montar({
+        shakemap: {
+          ...SHAKEMAP,
+          estado: "sin_datos",
+          modelado: null,
+          observado: { type: "FeatureCollection", features: [mudo("crit"), mudo("s-2")] },
+        },
+      });
+      const leyenda = screen.getByTestId("map-legend-pga");
+      expect(screen.queryByTestId("shakemap-sin-datos-discrepa")).toBeNull();
+      expect(screen.getByTestId("shakemap-sin-datos")).toHaveTextContent(
+        /NINGUNO DE LOS 2 INMUEBLES INSTRUMENTADOS MIDIÓ EN LA VENTANA/,
+      );
+      expect(leyenda, "cero medidas no son «2 MEDIDA(S)»").not.toHaveTextContent(/MEDIDA\(S\)/);
+      // Y la leyenda no explica ninguna capa que no esté en pantalla.
+      expect(leyenda).not.toHaveTextContent(/DISCO CON SU VALOR/);
+      expect(leyenda).not.toHaveTextContent(/SIN COBERTURA/);
+      expect(datos("shakemap-observado").features).toEqual([]);
+      expect(datos("shakemap-cobertura").features).toEqual([]);
+    });
+
+    it("con puntos y NINGUNA medida la leyenda tampoco promete cobertura", () => {
+      // La fila de `SIN COBERTURA` colgaba de `pintaObservado`, que es «hay
+      // puntos que pintar». El halo, en cambio, cuelga de `medido`: un inmueble
+      // que no publicó no da cobertura ninguna. Con puntos mudos las dos cosas
+      // discrepan y la leyenda vuelve a prometer un límite que ninguna capa
+      // dibuja — el defecto de la clave de color huérfana, otra vez.
+      montar({
+        shakemap: {
+          ...SHAKEMAP,
+          estado: "solo_observado",
+          modelado: null,
+          observado: {
+            type: "FeatureCollection",
+            features: [
+              {
+                ...SHAKEMAP.observado.features[0],
+                properties: {
+                  ...SHAKEMAP.observado.features[0].properties,
+                  pga_g: null,
+                  pgv_cms: null,
+                  residuo_log10: null,
+                },
+              },
+            ],
+          },
+        },
+      });
+      expect(datos("shakemap-observado").features, "el punto mudo sí se pinta, hueco").toHaveLength(
+        1,
+      );
+      expect(datos("shakemap-cobertura").features, "sin medida no hay halo").toEqual([]);
+      expect(screen.getByTestId("map-legend-pga")).not.toHaveTextContent(/SIN COBERTURA/);
+    });
+
+    it("un rasgo SIN procedencia no se pinta, y la leyenda DICE cuántos se quedaron fuera", () => {
+      // El contador se probaba puro; su declaración en pantalla, no
+      // (`shakemap-sin-procedencia` no aparecía en ninguna prueba). Anular la
+      // fila dejaba la suite entera en verde — y descartar en silencio es
+      // cambiar un dato sospechoso por una pantalla tranquila.
+      montar({
+        shakemap: {
+          ...SHAKEMAP,
+          observado: {
+            type: "FeatureCollection",
+            features: [
+              SHAKEMAP.observado.features[0],
+              {
+                ...SHAKEMAP.observado.features[0],
+                properties: {
+                  ...SHAKEMAP.observado.features[0].properties,
+                  site_id: "sin-proc",
+                  procedencia: "modeled" as unknown as "measured",
+                },
+              },
+            ],
+          },
+        },
+      });
+      expect(datos("shakemap-observado").features).toHaveLength(1);
+      expect(screen.getByTestId("shakemap-sin-procedencia")).toHaveTextContent(
+        /1 RASGO\(S\) SIN PROCEDENCIA/,
+      );
+    });
+
+    it("el mapa NO es en vivo y DICE cuándo se calculó", () => {
+      // Única declaración de con qué información se hizo este mapa (regla de
+      // oro 7). Anular la fila dejaba 146 pruebas en verde.
+      montar();
+      expect(screen.getByTestId("shakemap-calculado")).toHaveTextContent(
+        /CALCULADO 2026-09-14 · 10:41 UTC/,
+      );
+    });
+
+    it("CONSULTANDO se declara: la espera no se ve igual que un incidente sin mapa", () => {
+      render(
+        <MapPanel
+          sites={[CRITICAL]}
+          epicenters={[]}
+          onSelectSite={vi.fn()}
+          shakemapLoading={true}
+        />,
+      );
+      act(() => {
+        mocks.handlers.get("style.load")?.();
+      });
+      expect(screen.getByTestId("shakemap-cargando")).toHaveTextContent(/CONSULTANDO/i);
+      // Y no promete ni codificación ni cobertura de nada.
+      expect(screen.getByTestId("map-legend-pga")).not.toHaveTextContent(/SIN COBERTURA/);
+    });
+
+    it("sin la prop, la capa NO existe: el wall no estrena una leyenda vacía", () => {
+      render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+      act(() => {
+        mocks.handlers.get("style.load")?.();
+      });
+      expect(screen.queryByTestId("map-legend-pga")).toBeNull();
+      expect(screen.queryByTestId("layer-shakemap")).toBeNull();
+    });
   });
 
   it("estilo remoto caído ⇒ degrada al estilo LOCAL, re-cuelga las capas y lo declara", () => {

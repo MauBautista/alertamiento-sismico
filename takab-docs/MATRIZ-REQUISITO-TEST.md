@@ -20,10 +20,10 @@ La única excepción es el sello 🔒: un test que *puede* saltarse pero cuyo sa
 
 | Requisitos de software | Requisitos | Afirmaciones |
 |---|---:|---:|
-| `CUBIERTO` | 11 | 62 |
+| `CUBIERTO` | 10 | 63 |
 | `PARCIAL` | 5 | — |
 | `SIN COBERTURA` | 1 | 6 |
-| **Total** | **17** | **68** |
+| **Total** | **16** | **69** |
 
 Y **10 gates físicos / de despliegue** que ningún test de software puede cerrar: piden hardware en sitio o una cuenta AWS. Se listan al final para que el documento de entrega no dé la impresión de que no queda nada por acreditar presencialmente.
 
@@ -98,8 +98,8 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 |---|---|---|---|---|
 | RO-5.a | Toda tabla de negocio lleva `tenant_id`, comprobado DERIVANDO la lista del catálogo y no de una lista escrita a mano. | `CUBIERTO` | `api/tests/test_censo_multitenancy.py:330`<br>`test_toda_tabla_de_negocio_lleva_tenant_id`<br>`api/tests/test_censo_multitenancy.py:349`<br>`test_toda_tabla_de_negocio_esta_aislada`<br>`api/tests/test_censo_multitenancy.py:402`<br>`test_una_vista_barrera_sobre_una_base_legible_no_aisla_nada` | El criterio de «tabla de negocio» es INCLUSIVO a propósito —toda relación ordinaria de `public` que no sea miembro de una extensión—, y la razón está medida: los criterios sustantivos («tiene FK a `tenants`», «la crea el migrador») reintroducen el defecto, porque eximen a la tabla infractora justo por lo que la hace sospechosa. El único criterio seguro es el que una tabla nueva no puede dejar de cumplir: existir.<br>Tres formas de cumplir, no una: RLS propia, o vista `security_barrier` con la base REVOCADA al rol de la API y anclada en una tabla con RLS. Las tres condiciones juntas o no cuenta.<br>No es sello de goma: devolver el `SELECT` sobre la base dentro de una transacción tira `waveform_features_1s` a «sin aislamiento», nombrada. |
 | RO-5.b | Toda tabla con `tenant_id` tiene RLS activa y con políticas, derivado del catálogo de Postgres. | `CUBIERTO` | `api/tests/ops/test_restore_check.py:84`<br>`test_la_base_migrada_pasa_entera` | `verify()` recorre `pg_catalog` y falla cualquier tabla con `tenant_id` sin `relrowsecurity`, y cualquier tabla con RLS y cero políticas. |
-| RO-5.c | Una lectura cruzada entre tenants no devuelve nada. | `CUBIERTO` | `api/tests/test_rls_isolation.py:38`<br>`test_app_cannot_read_other_tenant` | Como `takab_app` con `app.tenant_id=B`, contar filas de A da 0. |
-| RO-5.d | Una escritura cruzada entre tenants es rechazada por la DB. | `CUBIERTO` | `api/tests/test_rls_isolation.py:53`<br>`test_app_cannot_write_other_tenant` | El `INSERT` etiquetado con otro tenant levanta `InsufficientPrivilege` (WITH CHECK). |
+| RO-5.c | Una lectura cruzada entre tenants no devuelve nada. | `CUBIERTO` | `api/tests/test_rls_isolation.py:39`<br>`test_app_cannot_read_other_tenant` | Como `takab_app` con `app.tenant_id=B`, contar filas de A da 0. |
+| RO-5.d | Una escritura cruzada entre tenants es rechazada por la DB. | `CUBIERTO` | `api/tests/test_rls_isolation.py:54`<br>`test_app_cannot_write_other_tenant` | El `INSERT` etiquetado con otro tenant levanta `InsufficientPrivilege` (WITH CHECK). |
 | RO-5.e | La API rechaza el cruce con un JWT real, no sólo la DB. | `CUBIERTO` | `api/tests/auth/test_guc_propagation.py:43`<br>`test_gucs_propagate_and_no_cross_tenant_read` | Petición HTTP real: el token de A ve el incidente de A y no el de B, y simétrico. |
 | RO-5.f | La función de alcance, invocada con el filtro puesto, deja cero sitios ante un claim vacío. | `CUBIERTO` | `api/tests/auth/test_console_scope.py:85`<br>`test_fase_B_un_claim_vacio_significa_cero_sitios` | Unidad pura con `enforced=True`: claim vacío ⇒ cero sitios. |
 | RO-5.g | El servidor filtra de verdad por sitio en el despliegue real. | `SIN COBERTURA`<br><sub>sin test</sub> | — | — |
@@ -134,6 +134,8 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 | RO-7.c | El panel del gabinete no pinta una medición de hace dos horas como viva. | `CUBIERTO` | `edge/tests/test_local_api_panel.py:1525`<br>`test_feature_vieja_no_se_pinta_como_medicion_viva`<br>🔒 *lleva `skipif`, pero el CI lo impide con `run: node --version`* | Con `age_s=7200` las barras dicen S/D y la brújula estampa SIN SEÑAL DEL SENSOR. |
 | RO-7.d | La app móvil sirve la copia vieja con su edad, nunca como dato fresco. | `CUBIERTO` | `mobile/src/ui/StateFrame.test.tsx:42`<br>`stale: contenido VIEJO con banner DATOS RETENIDOS + edad honesta` | El contenido viejo se pinta bajo `state-stale` con la edad real. |
 | RO-7.e | La tira de KPI de `/fleet` dice S/D cuando no hay dato, jamás cero. | `CUBIERTO` | `web/src/features/fleet/FleetPage.test.tsx:293`<br>`sin dato (%s) los KPI dicen S/D, no CERO` | Con la consulta en error 503 o cargando, los cuatro KPI dicen S/D. |
+| RO-7.f | El dictamen no presenta lo modelado como medido: la medida y el modelo no comparten codificación visual, cada celda de la tabla sale bajo su columna, el radio dibujado se mide con la barra de escala del propio croquis, la ausencia de medida no se pinta como una medida, y los estados del mapa se declaran por separado. | `CUBIERTO` | `api/tests/dictamen/test_mapa_de_la_sacudida.py:781`<br>`test_lo_MEDIDO_y_lo_MODELADO_no_comparten_CODIFICACION`<br>`api/tests/dictamen/test_mapa_de_la_sacudida.py:888`<br>`test_cada_celda_de_la_tabla_sale_BAJO_SU_COLUMNA`<br>`api/tests/dictamen/test_mapa_de_la_sacudida.py:747`<br>`test_el_radio_dibujado_se_mide_con_la_BARRA_DE_ESCALA_del_propio_croquis`<br>`api/tests/dictamen/test_mapa_de_la_sacudida.py:818`<br>`test_un_inmueble_que_NO_publico_no_se_pinta_como_una_MEDICION`<br>`api/tests/dictamen/test_mapa_de_la_sacudida.py:1056`<br>`test_la_leyenda_nombra_SOLO_los_simbolos_que_la_figura_dibuja`<br>`api/tests/dictamen/test_mapa_de_la_sacudida.py:433`<br>`test_cada_estado_del_mapa_dice_LO_SUYO_y_no_lo_del_vecino` | El invariante de `D-08 · §A.3` medido sobre el PDF: relleno para lo que midió un sensor, trazo discontinuo para lo que predice la ley, y las dos codificaciones DISTINTAS entre sí.<br>Cabecera y fila casadas por POSICIÓN: intercambiar `MEDIDO (g)` y `MODELO (g)` imprimiría la predicción bajo el rótulo de la medición, que es literalmente lo que esta regla prohíbe.<br>El radio de cada anillo, medido con la barra que el mismo papel imprime al lado, da los kilómetros que dice su rótulo. Es la lección exacta que mató a `mmi-severa`: un radio en unidades de pantalla no significa kilómetros.<br>Regla de oro 7 en la tinta: el inmueble que no publicó lleva símbolo propio y nombrado en la leyenda, en vez del disco lleno con que la figura afirmaba lo que la tabla negaba.<br>La leyenda va DENTRO de la sección y nombra sólo lo dibujado: ni anillos ni cruz sobre una figura degradada, ni leyenda ninguna donde no hay figura.<br>«No calculado todavía», «se calculó y nadie midió» y «se midió y no hay con qué compararlo» son tres hechos distintos, y ninguno de los tres avisos se cuela donde significa lo contrario. |
+| RO-7.g | La consola tampoco: medido y modelado se pintan distinto, y ninguna capa con significado físico usa unidades de pantalla. | `CUBIERTO` | `web/src/features/console/MapPanel.test.tsx:539`<br>`cada valor viaja con su PROCEDENCIA, y medido y modelado NO se mezclan`<br>`web/src/features/console/MapPanel.test.tsx:568`<br>`NINGUNA capa con significado físico se dibuja en unidades de PANTALLA`<br>`web/src/features/console/MapPanel.test.tsx:726`<br>`sin epicentro ni magnitud la capa modelada NO se dibuja, y se DECLARA`<br>`web/src/features/console/MapPanel.test.tsx:674`<br>``SIN COBERTURA` es un estado PROPIO de la leyenda, con su radio Y CON SU CAPA` | La procedencia va EN EL DATO, no en la capa que lo lleva: quien mezcle features no puede perderla por el camino.<br>**La sustituta directa de `DIF-shakemap.a`.** Aquella guarda nació de dos capas con `circle-radius` de 55 y 100 PÍXELES rotuladas «INTENSIDAD MMI»: el mismo anillo afirmaba ~22 km a zoom 8.5 y ~1 km a zoom 13.<br>Degradado es degradado: dibujarlo igual sería peor que callarlo, porque el operador creería al dibujo.<br>No un color pálido —que se lee como una medición con menos confianza—: un estado con nombre y con el número que lo hace verificable. |
 
 ### RO-8 · Control de actuadores por nube = superficie más sensible.
 
@@ -190,7 +192,7 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 | RO-11.c | ARCO anonimiza al titular sin perder una sola fila. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:373`<br>`test_arco_anonimiza_al_titular_sin_perder_una_sola_fila` | Censo de filas sobre 9 tablas idéntico antes y después. |
 | RO-11.d | El hecho sobrevive a la anonimización: el check-in sigue contando. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:415`<br>`test_el_checkin_anonimizado_sigue_contando_para_el_incidente` | El conteo del incidente no cambia; la geometría precisa sí se anula. |
 
-## Invariantes y diferido (`BLUEPRINT §14`)
+## Invariantes (`BLUEPRINT §14`)
 
 ### INV-T-MINUS · **T-MINUS countdown** — WR-1 es boolean; no hay dato de ETA.
 
@@ -230,16 +232,6 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 | INV-IA.b | El motor de decisión de tier (`edge/takab_edge/rules/`) tampoco puede. | `SIN COBERTURA`<br><sub>sin test</sub> | — | — |
 
 - **`SIN COBERTURA` · INV-IA.b** (sin test) — La guarda de importación existe sólo para el proceso `gpio`. `rules/` —el código que decide el tier y, con el opt-in de `RO-1.g`, dispara— no tiene lista blanca equivalente. Es un hueco de alcance, no de intención: el mecanismo ya está escrito y le falta el segundo objetivo.
-
-### DIF-mini-ShakeMap · **Microservicio "mini-ShakeMap"** (scipy/pykrige, PostGIS, MapLibre) — fase futura; **es la única viñeta que una tarea puede derogar**, y la tarea que lo haría es `T-3.09`.
-
-**Fuente:** `BLUEPRINT §14` · **Veredicto:** `CUBIERTO`
-
-> Único DIFERIDO de `§14`: no es una prohibición permanente sino trabajo aplazado a `T-3.09`. Se lista para que el documento de entrega pueda decir qué NO hace el sistema.
-
-| # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
-|---|---|---|---|---|
-| DIF-shakemap.a | La consola no promete una escala de intensidad que no existe. | `CUBIERTO` | `web/src/features/console/MapPanel.test.tsx:418`<br>`NO pinta bandas de intensidad: ni capas MMI ni una leyenda que prometa una escala inexistente` | Ninguna capa de MapLibre empieza por `mmi` ni hay leyenda «INTENSIDAD MMI». |
 
 ### INV-Shake OS · **Modificar el Shake OS** — el RS4D es solo sensor (P3).
 
@@ -328,5 +320,5 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 Está entera en el archivo que la genera (`api/tests/test_matriz_trazabilidad.py`, sección final). En corto:
 
 - **La semántica la decide un humano.** El generador comprueba que el test exista, que no se salte y que un job bloqueante lo corra; que además *demuestre* lo que la fila dice, no lo comprueba nadie automáticamente.
-- **La descomposición en afirmaciones es un juicio editorial.** Las once reglas, los seis invariantes y los diez gates se derivan de su fuente; partirlos en `a`/`b`/`c` no. Una afirmación que nadie escribió no aparece como hueco.
+- **La descomposición en afirmaciones es un juicio editorial.** Las 11 reglas de oro, los 5 invariantes y los 10 gates se derivan de su fuente; partirlos en `a`/`b`/`c` no. Una afirmación que nadie escribió no aparece como hueco.
 - **`CUBIERTO` no dice «bien cubierto».** Dice que hay al menos una prueba viva. Un requisito con una prueba superficial sale igual de verde que uno con quince.

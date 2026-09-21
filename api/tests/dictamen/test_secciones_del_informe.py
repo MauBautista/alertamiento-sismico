@@ -31,6 +31,7 @@ fija cuáles pueden faltar y por qué; cualquier otro hueco pone la prueba roja.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -64,12 +65,34 @@ def _capturado(m=None, variante: str = "technical"):
     return cap
 
 
+def _cadena(nodo: ast.expr) -> str | None:
+    """El valor de un argumento de `section()`, sea literal o constante del módulo.
+
+    [T-7.24] Resolver el `ast.Name` es nuevo, y tapa un agujero REAL del censo: una
+    sección cuyo título viviera en una constante —como `MAPA_SACUDIDA`, que existe
+    porque la prueba trocea el render por TÍTULO y no por número— era invisible
+    para este barrido, así que `test_TODA_seccion_escrita_se_EMITE…` no la
+    vigilaba y podía quedarse huérfana sin que nada avisara.
+
+    Se resuelve contra el módulo ya importado y no interpretando el árbol: lo que
+    el censo tiene que ver es lo que el render pasa de verdad. Un nombre que no
+    resuelva a una cadena sigue siendo invisible —no hay forma honesta de
+    adivinarlo— y por eso la mitad (a), que mide lo EMITIDO, no sobra.
+    """
+    if isinstance(nodo, ast.Constant) and isinstance(nodo.value, str):
+        return nodo.value
+    if isinstance(nodo, ast.Name):
+        valor = getattr(pdf_mod, nodo.id, None)
+        return valor if isinstance(valor, str) else None
+    return None
+
+
 def _literales_de_seccion() -> list[tuple[str, str]]:
     """Cada `pdf.section("n", "TÍTULO")` que el módulo escribe, por AST.
 
-    Devuelve `(numero, titulo)` de las llamadas con los dos argumentos literales.
-    Una llamada con el número calculado no se vería, y por eso la mitad (a) mide
-    lo que realmente se emitió: las dos se cruzan.
+    Devuelve `(numero, titulo)` de las llamadas cuyos dos argumentos se pueden
+    resolver a una cadena. Una llamada con el número calculado no se vería, y por
+    eso la mitad (a) mide lo que realmente se emitió: las dos se cruzan.
     """
     arbol = ast.parse(FUENTE.read_text(encoding="utf-8"), filename=str(FUENTE))
     salida: list[tuple[str, str]] = []
@@ -78,9 +101,10 @@ def _literales_de_seccion() -> list[tuple[str, str]]:
             continue
         if nodo.func.attr != "section" or len(nodo.args) != 2:
             continue
-        if not all(isinstance(a, ast.Constant) and isinstance(a.value, str) for a in nodo.args):
+        valores = [_cadena(a) for a in nodo.args]
+        if any(v is None for v in valores):
             continue
-        salida.append((nodo.args[0].value, nodo.args[1].value))
+        salida.append((valores[0], valores[1]))
     return salida
 
 
@@ -106,6 +130,101 @@ def test_el_barrido_AST_lee_el_modulo_de_verdad() -> None:
     literales = _literales_de_seccion()
     assert len(literales) > 10, f"el AST solo encontró {len(literales)} llamadas a section()"
     assert ("7", "RED DE ESTACIONES") in literales
+    # [T-7.24] Y la que el barrido NO veía hasta esta ficha: su título es una
+    # constante, no un literal. Si `_cadena` dejara de resolver nombres, esta
+    # línea cae y no la ausencia silenciosa de una sección entera del censo.
+    assert ("8", pdf_mod.MAPA_SACUDIDA) in literales
+
+
+# ───────────────────────────────── las CITAS del código a las secciones de aquí
+
+
+#: Cómo se cita una sección de ESTE documento desde el código: `§12 (CADENA DE
+#: CUSTODIA)`. El título entre paréntesis es lo que la hace comprobable — un
+#: `§12` a secas no se puede cruzar con nada, y un `§4.4` con punto es de otro
+#: documento (el blueprint), así que el patrón exige el paréntesis.
+#:
+#: ⚠️ Y el título **en mayúsculas**, que es como este documento titula sus
+#: secciones. Sin esa condición el patrón se llevaba por delante
+#: `mseed.py:12`, que cita «SEED Manual v2.4 §8 (Fixed Section of Data Header)»:
+#: una sección de OTRO documento, con la que no hay nada que cruzar.
+_RE_CITA = re.compile(r"§(\d+)\s*\(([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9 ·,\-]*)\)")
+
+#: Dónde se buscan. El paquete entero del dictamen: una cita envejece igual en
+#: `model.py` que en `pdf.py`, y las tres que esta guarda nació cazando estaban
+#: repartidas entre los dos.
+_MODULOS_DEL_DICTAMEN = sorted(FUENTE.parent.glob("*.py"))
+
+
+def _citas_a_secciones() -> list[tuple[str, int, str, str]]:
+    """Cada cita `§N (TÍTULO)` del paquete, con su fichero y su línea."""
+    salida: list[tuple[str, int, str, str]] = []
+    for modulo in _MODULOS_DEL_DICTAMEN:
+        for n, linea in enumerate(modulo.read_text(encoding="utf-8").splitlines(), start=1):
+            for numero, titulo in _RE_CITA.findall(linea):
+                salida.append((modulo.name, n, numero, titulo.strip()))
+    return salida
+
+
+def test_toda_CITA_a_una_seccion_del_dictamen_casa_con_su_numero_real() -> None:
+    """⚠️ `T-7.24` renumeró el pericial y tres citas del código se quedaron atrás.
+
+    El mapa de la sacudida entró como §8 y corrió una posición a todas las de
+    abajo. La portada y la suite de la huella se corrigieron; estas tres no, y
+    ninguna prueba las miraba porque **nada cruzaba los «§N» del código con la
+    numeración que `pdf.section(...)` escribe**:
+
+      * `pdf.py::_custody_section` decía «la bitácora se fue a la §12», que es esa
+        misma función: la bitácora es hoy la §13.
+      * `model.py` citaba dos veces la «§10» —la cadena de custodia y la
+        bitácora—, que hoy son la §12 y la §13.
+
+    Una cita a una sección equivocada es peor que ninguna: manda a leer otra cosa
+    y la otra cosa existe, así que nadie sospecha. Por eso la cita lleva ahora el
+    TÍTULO al lado: es lo que permite cruzarla con el AST en vez de creerla.
+
+    Sólo mide las citas escritas en esa forma. Un `§12` a secas sigue sin
+    comprobarse —no hay con qué—, y ése es el motivo de escribirlas así.
+    """
+    numeros = {titulo: numero for numero, titulo in _literales_de_seccion()}
+    citas = _citas_a_secciones()
+    assert len(citas) >= 3, (
+        f"el barrido de citas sólo encontró {len(citas)}: el patrón dejó de casar y esta "
+        "guarda estaría aprobando por no saber mirar"
+    )
+
+    malas = [
+        f"{fichero}:{linea} cita «§{numero} ({titulo})» y {titulo} es la "
+        f"§{numeros.get(titulo, '—')}"
+        for fichero, linea, numero, titulo in citas
+        if numeros.get(titulo) != numero
+    ]
+    assert not malas, (
+        "citas a secciones que no son las que el documento imprime:\n  "
+        + "\n  ".join(malas)
+        + "\n  El número sale de `pdf.section(...)`; si renumeraste, arregla la cita en el "
+        "mismo commit."
+    )
+
+
+def test_la_prosa_IMPRESA_cita_la_cadena_de_custodia_por_su_numero_real() -> None:
+    """La misma clase de defecto, pero en texto que LEE EL CLIENTE, no en un comentario.
+
+    El párrafo de la huella dice «la cadena de custodia que imprime la §N», y ese
+    N estuvo en 11 hasta que `T-7.24` metió el mapa de la sacudida. Aquí se cruza
+    contra el número que `pdf.section(...)` escribe de verdad, para que la próxima
+    renumeración no deje al dictamen firmado mandando al lector a otra sección.
+    """
+    esperado = {titulo: numero for numero, titulo in _literales_de_seccion()}["CADENA DE CUSTODIA"]
+    parrafos = [
+        linea for linea in _capturado().texto.splitlines() if "identifica ESTA EXPORTACIÓN" in linea
+    ]
+    assert parrafos, "el párrafo de la huella dejó de imprimirse: no hay cita que medir"
+    citados = re.findall(r"§(\d+)", parrafos[0])
+    assert citados, "el párrafo dejó de citar la sección de la cadena de custodia"
+    assert citados == [esperado], (
+        f"el documento manda al lector a la §{citados} y la CADENA DE CUSTODIA es la §{esperado}"
+    )
 
 
 # ───────────────────────────────────────────────── el censo, en sus dos mitades

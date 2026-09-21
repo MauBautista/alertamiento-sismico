@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **387** · `[~]` **10** · `[ ]` **45**
+**Conteo de tareas:** total **442** · `[x]` **389** · `[~]` **10** · `[ ]` **43**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -10616,16 +10616,22 @@ tipos**, no de documentación.
 - [ ] Si el sitio no tiene dos sensores, la vista dice `SIN COBERTURA`, no un número.
 
 ### [ ] T-3.09 · Mini-ShakeMap — `SOFTWARE` + `DECISIÓN`
-- [ ] **Primer criterio: derogar explícitamente la viñeta `[DIFERIDO · mini-ShakeMap]`** de
-      `BLUEPRINT §14` y su mención en `CLAUDE.md §8` —**esa viñeta y ninguna otra**— en el
-      mismo commit y con la razón escrita. Sin eso, esta tarea está prohibida por los
-      documentos canónicos.
-- [ ] **Lo que este criterio NO deroga.** Las otras cinco viñetas de `BLUEPRINT §14` están
-      marcadas `[INVARIANTE · …]` (T-MINUS, magnitud preliminar, streaming crudo continuo, IA
-      en la ruta de disparo, tocar el Shake OS) y son **prohibiciones, no diferidos** — ver la
-      sección INVARIANTES al final de este archivo. Derogar "la §14" entera tumbaría las
-      reglas de oro 1 y 9 para poder pintar un mapa. **El bullet de `CLAUDE.md §8` mezcla
-      mini-ShakeMap y streaming crudo en una sola línea: hay que partirlo, no borrarlo.**
+- [x] **Primer criterio, CONSUMADO el 2026-09-20 dentro de `T-7.24`: derogada la viñeta
+      `[DIFERIDO · mini-ShakeMap]`** de `BLUEPRINT §14` y su mención en `CLAUDE.md §8` —**esa
+      viñeta y ninguna otra**—, en el mismo commit y con la razón escrita. Esto ya no es una
+      orden: es el registro de lo que ocurrió, y por eso está en pasado. La viñeta salió de la
+      lista del blueprint (una lista de lo que NO se hace no puede contener algo hecho) y su
+      derogación quedó anotada en el preámbulo de la §14, con fecha y ficha, más
+      `CLAVES_YA_DEROGADAS` en `api/tests/test_docs_consistency.py`.
+- [x] **Lo que esa derogación NO tocó, y sigue sin tocarse.** Las otras cinco viñetas de
+      `BLUEPRINT §14` están marcadas `[INVARIANTE · …]` (T-MINUS, magnitud preliminar,
+      streaming crudo continuo, IA en la ruta de disparo, tocar el Shake OS) y son
+      **prohibiciones, no diferidos** — ver la sección INVARIANTES al final de este archivo.
+      Derogar "la §14" entera habría tumbado las reglas de oro 1 y 9 para poder pintar un mapa.
+      **El bullet de `CLAUDE.md §8` mezclaba mini-ShakeMap y streaming crudo en una sola línea:
+      se partió en dos y se borró sólo el del mapa.** Desde la derogación no queda ninguna
+      viñeta diferida, y la guarda que impide derogar la sección entera se midió con fichas
+      falsas para comprobar que una orden sin clave sigue en rojo.
 - [x] **Arquitectura escrita ANTES del código** — [`design/BLOQUE-IV-ARQUITECTURA.md`](design/BLOQUE-IV-ARQUITECTURA.md)
       parte A (`D-08`, 2026-08-16). Lo que fija, y que cambia el alcance de esta ficha:
   - [ ] **Tres capas que NO se mezclan**: observado (puntos medidos), estimado (superficie de
@@ -15020,42 +15026,115 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Tests de censo que toca:** `test_panel_render_census` · **Token nuevo:** no · **Cambia
   algo que un test defiende hoy:** no.
 
-### [ ] T-7.24 · **Mini-ShakeMap por evento** — `SOFTWARE` + `DECISIÓN`
+### [x] T-7.24 · **Mini-ShakeMap por evento** — `SOFTWARE` + `DECISIÓN` · **CERRADA 2026-09-21**
 - **Componente:** api · web · docs · **Depende de:** T-3.09, T-7.14 · **Prioridad:** F5 · media
 - **Objetivo:** ejecutar `T-3.09` con la arquitectura de `D-08`: tres capas que no se mezclan,
   procedencia pintada distinto, `SIN COBERTURA` como estado, sin microservicio.
 - **Criterios de aceptación:**
-  - [ ] Commit de derogación: derogar explícitamente la viñeta `[DIFERIDO · mini-ShakeMap]`
-    de `BLUEPRINT §14` —**esa viñeta y ninguna otra**— y partir la viñeta de `CLAUDE.md §8`
-    sin borrarla, con la razón escrita. Las cinco viñetas `[INVARIANTE · …]` de la §14
-    (T-MINUS, magnitud preliminar, streaming crudo continuo, IA en la ruta de disparo, tocar
-    el Shake OS) **no se tocan**; la matriz se regenera en el mismo commit.
-  - [ ] Cálculo por evento en el worker de incidentes (numpy): capa estimada de ATTEN-LAW,
+  - [x] Commit de derogación, HECHO el 2026-09-20 en el blueprint y en `CLAUDE.md`, y la
+    matriz regenerada el 2026-09-21 al cerrar.
+    ⚠️ **Este criterio estuvo marcado `[x]` siendo falso durante una vuelta entera**, y lo
+    destapó el escéptico: el `.md` publicado —el que lee el cliente— seguía anunciando
+    `DIF-mini-ShakeMap` como diferido y citando un test de `MapPanel` ya renombrado, con 22
+    líneas de diferencia contra lo derivado y
+    `test_el_archivo_de_matriz_es_el_que_deriva_el_registro` EN ROJO diciéndolo. La lección es
+    de procedimiento y vale para cualquier ficha: **el registro y el documento publicado son
+    dos cosas, y marcar el criterio mirando sólo el primero es afirmar lo que nadie comprobó.**
+    Lo derogado: la viñeta
+    `[DIFERIDO · mini-ShakeMap]` de `BLUEPRINT §14` —**esa viñeta y ninguna otra**— con la
+    razón escrita en el preámbulo de la propia §14, y partida en dos la viñeta de
+    `CLAUDE.md §8` para borrar sólo la del mapa. Las cinco viñetas `[INVARIANTE · …]` de la
+    §14 (T-MINUS, magnitud preliminar, streaming crudo continuo, IA en la ruta de disparo,
+    tocar el Shake OS) **no se tocaron**. Lo que
+    se puso rojo a propósito y se resolvió con él: la mitad de
+    `test_cada_vineta_del_blueprint_14_declara_si_es_prohibicion_o_diferido` que exigía MEZCLA
+    de clases —retirada, porque su propio mensaje decía que sobra cuando deja de haberla,
+    mientras la otra mitad (toda viñeta clasificada) sigue en pie—, y
+    `test_ninguna_tarea_manda_derogar_la_seccion_entera_de_los_invariantes`, que con cero
+    diferidos denunciaba hasta el registro de la derogación ya hecha: ahora las claves
+    citables son las diferidas vivas **más** las ya derogadas (`CLAVES_YA_DEROGADAS`), y que
+    una orden sin clave siga en rojo se mide con fichas falsas en vez de confiar en que
+    `TASKS.md` esté bien escrito.
+  - [x] Cálculo por evento en el worker de incidentes: capa estimada de ATTEN-LAW,
     puntos observados de features y votos, residuo, `SIN COBERTURA` fuera del radio;
     `GET /incidents/{id}/shakemap` GeoJSON con `measured`/`modeled`.
-  - [ ] Capa y leyenda en MapLibre pintadas distinto por procedencia (test sobre el DOM), con
-    tokens semánticos `--tk-mmi-*` para la escala; en el PDF, dibujo vectorial con fpdf.
-  - [ ] Degradado y declarado cuando no hay magnitud; `DIF-shakemap.a` de la matriz se
-    sustituye por la guarda nueva.
+  - [x] Capa y leyenda en MapLibre pintadas distinto por procedencia (test sobre el DOM); en
+    el PDF, dibujo vectorial con fpdf. **Los tokens NO se llaman `--tk-mmi-*` sino
+    `--tk-pga-*`, y la desviación es del integrador:** no se implementa MMI, porque
+    `dictamen/model.py::NO_MMI` ya está impreso en documentos firmados diciendo que TAKAB no
+    reporta intensidad macrosísmica ni isosistas, y derivar una escala MMI de la PGA de un
+    solo sensor volvería falsa una frase ya firmada — la familia de defectos que costó
+    `T-7.34`, `T-7.38` y `T-7.39`. Lo que los tokens codifican es PGA en g.
+  - [x] Degradado y declarado cuando no hay magnitud; `DIF-shakemap.a` de la matriz se
+    sustituye por la guarda nueva. El `Requisito("DIF-mini-ShakeMap")` **salió** del registro
+    —el censo compara por igualdad contra el blueprint y allí ya no hay viñeta— y su
+    afirmación pasó a `RO-7.f` (el papel) y `RO-7.g` (la consola), dicha en positivo: cada
+    valor lleva su procedencia, medido y modelado se pintan distinto, `SIN COBERTURA` es
+    estado propio y ninguna capa con significado físico usa unidades de pantalla.
 - **Tests de censo que toca:** `MapPanel.test` (`:417`), `test_matriz_trazabilidad`,
-  `test_docs_consistency` · **Token nuevo:** sí, `--tk-mmi-*` · **Cambia algo que un test
-  defiende hoy:** sí — la guarda «la consola no promete una escala de intensidad».
+  `test_docs_consistency`, `test_avisos_impresos`, `test_secciones_del_informe` · **Token
+  nuevo:** sí, `--tk-pga-*` (no `--tk-mmi-*`: ver arriba) · **Cambia algo que un test defiende
+  hoy:** sí — la guarda «la consola no promete una escala de intensidad», y el texto de
+  `NO_MMI`, que decía que el mapa estaba DIFERIDO y dejó de ser cierto con esta ficha.
 
-### [ ] T-7.25 · **Consulta a la fuente tras el evento: USGS** — `SOFTWARE`
+### [x] T-7.25 · **Consulta a la fuente tras el evento: USGS** — `SOFTWARE` · **CERRADA 2026-09-21**
 - **Componente:** api · **Depende de:** T-3.13, T-7.13 · **Prioridad:** F5 · media
 - **Objetivo:** que un evento real se correlacione con el catálogo vivo de USGS y su
   procedencia pase de `consultando` a `preliminar` o `confirmado`, sin inventar nada cuando
   no hay red. Cubre la mitad USGS de `T-3.13`; la mitad SSN sigue bloqueada por atribución.
 - **Criterios de aceptación:**
-  - [ ] Paso del worker al entrar en revisión: consulta FDSN por ventana temporal y caja
+  - [x] Paso del worker al entrar en revisión: consulta FDSN por ventana temporal y caja
     geográfica; escribe `reference_earthquakes` (`source='USGS'`, `consulted_at`,
-    `review_status`, `provider_event_id`); el worker es el único escritor.
-  - [ ] Sin red o sin coincidencia: `consultando` / `sin_dato_externo` / `sin_correlacion`,
+    `review_status`, `provider_event_id`); el worker es el único escritor. La «caja» se
+    implementa como CÍRCULO (`maxradiuskm` del `Criterio` de `T-5.11`): el círculo ES el
+    criterio de identidad que ya existe y un rectángulo sería un superconjunto suyo que
+    habría necesitado su propia justificación.
+  - [x] Sin red o sin coincidencia: `consultando` / `sin_dato_externo` / `sin_correlacion`,
     declarados; jamás una cifra sin fuente.
-  - [ ] Tests con respuestas grabadas (`respx`), sin red en CI; el reporte dice que el SSN no
-    se consulta y por qué.
+    ⚠️ **`consultando` era INALCANZABLE y ése fue el hallazgo de fondo de la ficha:** se
+    derivaba de una fila de `reference_earthquakes` que, mientras la pregunta está en vuelo,
+    todavía no existe. Nace `catalog_consultations` (migración `0068`), que registra el
+    INTENTO y lo COMMITEA antes de salir a la red — un worker que muera a mitad deja
+    «pregunté» escrito en vez de parecer que nadie preguntó nunca.
+  - [x] Tests con respuestas grabadas, sin red en CI; el reporte dice que el SSN no se
+    consulta y por qué. **`respx` NO se usa y la desviación es del integrador:** no existe en
+    este repositorio y el patrón real es `httpx.MockTransport` inyectado por `transport=`
+    (`notify/providers.py`, `tests/narrative/test_openrouter.py`). El control de «sin red» se
+    construye saboteando el cliente entero, porque en CI nada impide salir a internet: eso
+    había que escribirlo, no se heredaba.
 - **Tests de censo que toca:** `test_procedencia` (estados intactos) · **Token nuevo:** no ·
   **Cambia algo que un test defiende hoy:** no.
+
+> **Cómo se cerró, y las cuatro vueltas que hicieron falta.** Lo que el escéptico encontró y
+> ninguna de las tres primeras versiones veía:
+>
+> **1. La pasada BLOQUEABA el bucle del worker hasta 120 s** —20 llamadas HTTP seriales por
+> 6 s de timeout—, y en ese bucle viven la actuación comandada por el quórum y la
+> correlación. Hoy tiene presupuesto de reloj de pared MEDIDO por una prueba, no prometido en
+> un comentario. De camino se destapó que **el timeout de httpx es POR OPERACIÓN**: una
+> fuente que gotee bytes no lo dispara nunca (medido: 10 s de bucle parado con 0.2 s
+> configurados).
+>
+> **2. Invertir lon/lat en el INSERT del epicentro dejaba 493 pruebas en verde.** PostGIS no
+> protege: coacciona al rango con un simple `NOTICE` y guarda el punto en otro continente.
+>
+> **3. El PAPEL FIRMADO mentía en cuatro de los cinco hechos posibles.** Sin fila de consulta
+> imprimía «ningún sismo publicado satisface el criterio de identidad» — afirmando sobre el
+> catálogo algo que nadie comprobó—; y cuando la consulta SÍ correlacionaba pero el criterio
+> forense no reconocía el acierto, imprimía esa misma exoneración. Los cinco hechos dan hoy
+> cinco líneas distintas, y **el censo que lo vigila se DERIVA del glosario** en vez de
+> enumerar tres a mano: enumerarlos a mano es justo lo que dejó pasar el defecto tres vueltas.
+>
+> **4. La fuga del cerrojo de SESIÓN.** El `unlock` corría sobre una transacción ya abortada:
+> se perdía la excepción original y el cerrojo se quedaba tomado en una conexión que el motor
+> no cierra, así que la pasada **no volvía a entrar nunca**. Y la rama que lo detectaba
+> devolvía una pasada vacía sin una línea de log — el no-op silencioso que la propia suite
+> llama «el modo de fallo más caro de este repositorio».
+>
+> **Lo que queda y no es de esta ficha:** encenderla en la nube (`TAKAB_API_CATALOG_USGS_ENABLED`),
+> que es una decisión de despliegue; medirla contra el USGS real con internet; y la vigilancia
+> de la AUSENCIA que `D-06` pide para cualquier ingesta de catálogo — la tabla ya da el dato
+> (`answered_at IS NULL` con su índice parcial) y nadie la mira todavía.
 
 ### [ ] T-7.26 · **OpenRouter encendido en la nube** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · deploy · **Depende de:** T-7.22 · **Prioridad:** F6 · media

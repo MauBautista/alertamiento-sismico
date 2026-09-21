@@ -14,7 +14,13 @@ import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import type { ForensicsOut } from "@takab/sdk";
 import type { ForensicsState } from "./useForensics";
-import { pintaCifra } from "./procedencia";
+import {
+  citaDeProcedencia,
+  esEstadoConocido,
+  pintaCifra,
+  rotuloProcedencia,
+  significadoProcedencia,
+} from "./procedencia";
 
 const LEAD_REASON: Record<string, string> = {
   not_sasmex: "NO APLICA · el incidente no vino de SASMEX",
@@ -57,6 +63,90 @@ export function leadTimeView(f: ForensicsOut): {
   return { value: `${f.lead_time_s.toFixed(1)} s`, tone: "ok" };
 }
 
+type Correlacion = NonNullable<ForensicsOut["catalog_correlation"]>;
+
+/**
+ * [T-7.25 · consola] LO QUE HAY EN EL CATÁLOGO CUANDO NO HAY ACIERTO: cinco
+ * hechos, y hasta esta ficha se pintaban todos como el más comprometido.
+ *
+ *     (a) no se preguntó              →  el estado del glosario, y punto
+ *     (b) se preguntó, no contestaron →  con a quién y a qué hora
+ *     (c) contestaron, ninguno casa   →  SIN CORRELACIÓN EN EL CATÁLOGO
+ *     (d) correlacionó · preliminar   →  CORRELACIÓN EN DISPUTA
+ *     (e) correlacionó · confirmado   →  CORRELACIÓN EN DISPUTA
+ *
+ * (c) es una afirmación **sobre el sismo**: exonera al catálogo de referencia.
+ * Pintarla en (a) o en (b) es dar por concluido lo que nadie concluyó — y (a) es
+ * el caso NORMAL, porque la consulta automática se despliega apagada, así que el
+ * operador leía esa conclusión en todos los incidentes. Es el mismo defecto que
+ * `dictamen/builder.py::_linea_sin_acierto` cerró en el papel; el papel dejó de
+ * mentir en T-7.25 y la pantalla seguía mintiendo.
+ *
+ * (d) y (e) comparten frase y se separan por el rótulo del glosario, que va en
+ * la nota: una solución que la propia fuente declara PRELIMINAR puede cambiar
+ * mañana, y discrepar de ella no es lo mismo que discrepar de una ya revisada.
+ *
+ * **Las ramas se DERIVAN del glosario**, no se enumeran: el rótulo sale de
+ * `rotuloProcedencia`, la explicación de `significadoProcedencia` y la disputa
+ * de `pintaCifra` —los dos estados que autorizan una cifra externa son
+ * exactamente los que pueden haber correlacionado—. Un sexto estado en
+ * `shared/glossary/procedencia.json` no hereda la afirmación más cara del
+ * bloque: sale por la rama de lo no interpretable, que DECLARA la ignorancia en
+ * vez de exonerar.
+ */
+export function sinAciertoView(corr: Correlacion | null | undefined): {
+  value: string;
+  note?: string;
+} {
+  // Los descartes son del catálogo YA CARGADO en la base, y eso no cierra la
+  // pregunta a la fuente viva: se dicen siempre, pero DETRÁS del hecho que manda.
+  const descartes = corr?.descartes ?? [];
+  const cargado =
+    descartes.length === 0
+      ? ""
+      : ` En el catálogo ya cargado había ${descartes.length} evento(s) en la ventana y ` +
+        `ninguno es éste: ` +
+        descartes
+          .slice(0, 2)
+          .map((d) => `${d.catalog_key} — ${d.detalle}`)
+          .join(" · ");
+
+  // Sin correlación PUBLICADA no se sabe siquiera si se preguntó. No es (c): es
+  // que este incidente no trae la consulta, y decir otra cosa sería inventarla.
+  if (!corr) {
+    return {
+      value: "SIN CONSULTA REGISTRADA",
+      note: `Este incidente no publica correlación con el catálogo: no se afirma nada sobre él.${cargado}`,
+    };
+  }
+
+  if (!esEstadoConocido(corr.estado)) {
+    return {
+      value: "ESTADO NO INTERPRETABLE",
+      note: `Esta consola no sabe traducir el estado «${corr.estado}»: no se afirma nada sobre el catálogo.${cargado}`,
+    };
+  }
+
+  const cita = citaDeProcedencia(corr.fuente, corr.consultado_en);
+  const quien = cita === null ? "" : ` ${cita}.`;
+  const significa = significadoProcedencia(corr.estado) ?? "";
+
+  if (pintaCifra(corr.estado)) {
+    // La consulta correlacionó y el criterio de identidad de T-5.11 —más
+    // estricto que la ventana de la consulta— no reconoce el acierto. Que los
+    // dos procedimientos discrepen no es un fallo de ninguno; lo que no puede
+    // pasar es que la pantalla elija el desenlace más tranquilizador.
+    return {
+      value: "CORRELACIÓN EN DISPUTA",
+      note:
+        `La consulta correlacionó y el criterio de identidad no reconoce el acierto. ` +
+        `${significa} La fuente la declara ${rotuloProcedencia(corr.estado)}.${quien}${cargado}`,
+    };
+  }
+
+  return { value: rotuloProcedencia(corr.estado), note: `${significa}${quien}${cargado}` };
+}
+
 /**
  * La correlación con el catálogo de referencia.
  *
@@ -77,24 +167,8 @@ export function leadTimeView(f: ForensicsOut): {
  */
 export function catalogView(f: ForensicsOut): { value: string; note?: string } {
   const corr = f.catalog_correlation;
-  if (!f.catalog || !f.catalog_delta) {
-    const descartes = corr?.descartes ?? [];
-    if (descartes.length > 0) {
-      return {
-        value: "SIN CORRELACIÓN",
-        note:
-          `${descartes.length} sismo(s) del catálogo en la ventana y ninguno es éste: ` +
-          descartes
-            .slice(0, 2)
-            .map((d) => `${d.catalog_key} — ${d.detalle}`)
-            .join(" · "),
-      };
-    }
-    return {
-      value: "SIN CORRELACIÓN",
-      note: "Ningún sismo del catálogo de referencia satisface el criterio de identidad.",
-    };
-  }
+  // Sin acierto no hay UN caso sino CINCO, y los separa `sinAciertoView`.
+  if (!f.catalog || !f.catalog_delta) return sinAciertoView(corr);
   const d = f.catalog_delta;
   // [T-5.10] La cifra externa solo se pinta con procedencia. Casar no la concede.
   const mag =
