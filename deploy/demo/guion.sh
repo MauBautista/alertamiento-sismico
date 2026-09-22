@@ -635,7 +635,9 @@ full() {
     echo "  pausas no paran nada y saldría una tabla de tiempos que no miden nada —y que" >&2
     echo "  se parece a la de un ensayo de verdad, que es lo peligroso." >&2
     echo >&2
-    echo "  · Para ENSAYAR: córrelo desde tu terminal, con el gabinete delante." >&2
+    echo "  · Para ENSAYAR: córrelo desde una TERMINAL DE VERDAD, con el gabinete" >&2
+    echo "    delante. ⚠️ El «!» de una sesión asistida NO es un terminal: llega aquí" >&2
+    echo "    igual que un cron. Abre una ventana de terminal y córrelo allí." >&2
     echo "  · Para PROBAR EL GUION sin ensayar: TAKAB_DEMO_SIN_PAUSA=1, y entonces la" >&2
     echo "    tabla lo dice en su pie para que nadie la pegue en el § Registro." >&2
     # `exit`, no `return`: el despachador llama a `resumen` después de `full`, y
