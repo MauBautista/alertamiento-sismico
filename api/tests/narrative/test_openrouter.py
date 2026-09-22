@@ -30,6 +30,12 @@ from takab_api.settings import Settings
 from tests.dictamen.test_pdf import model
 from tests.narrative.test_redact import BASIS
 
+#: Clave de MENTIRA con la forma del emisor: `sk-or-v1-` + 64 hex. No es una clave
+#: real y no puede serlo; lo que aporta es que ATRAVIESE `_tiene_forma_de_clave`, que es
+#: por donde pasa la de verdad.
+SECRETO_CON_FORMA = "sk-or-v1-" + "0123456789abcdef" * 4
+
+
 FACTS = facts_from(model(verdict_basis=BASIS))
 BUENAS = {t: c for t, c in sections_for(FACTS)}
 
@@ -105,10 +111,15 @@ def test_la_clave_sale_del_secreto_cuando_no_esta_inline() -> None:
     class SM:
         def get_secret_value(self, SecretId: str) -> dict:  # noqa: N803
             assert SecretId == "takab/dev/openrouter"
-            return {"SecretString": json.dumps({"api_key": "sk-del-secreto"})}
+            # Con FORMA de clave de OpenRouter a propósito. Decía «sk-del-secreto»,
+            # que no la tiene, y pasaba sólo porque nada miraba el valor: desde
+            # `_tiene_forma_de_clave` (2026-09-22) una cadena así se rechaza antes de
+            # salir a la red. Un doble que no puede existir en producción prueba un
+            # camino que en producción no ocurre.
+            return {"SecretString": json.dumps({"api_key": SECRETO_CON_FORMA})}
 
     s = _settings(openrouter_api_key="", openrouter_secret_id="takab/dev/openrouter")
-    assert resolve_api_key(s, client=SM()).api_key == "sk-del-secreto"
+    assert resolve_api_key(s, client=SM()).api_key == SECRETO_CON_FORMA
 
 
 def test_un_secreto_irresoluble_degrada_a_clave_vacia() -> None:
