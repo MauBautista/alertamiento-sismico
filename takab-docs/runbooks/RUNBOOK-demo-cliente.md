@@ -65,6 +65,7 @@ que resetear el gabinete y volver a empezar el acto, con el cliente delante. De 
 | la sección de espectro **salía vacía siempre** porque el worker que archiva la onda no estaba desplegado | `T-7.02` **cerrada** el 2026-09-12 (el worker corre en la nube) y `T-7.38/39` construyeron el espectrograma | el dictamen técnico trae el espectro cuando hay registro archivado. **Sigue sin llamarse «el espectrograma del sismo» a la ligera:** es del registro de ESTE edificio. |
 | la magnitud y el epicentro **no se contrastaban** con ninguna fuente | `T-7.25` **cerrada** el 2026-09-21: consulta a USGS con procedencia y hora | se puede decir que el sistema consulta la fuente oficial tras el evento **y que registra qué preguntó y cuándo**. Lo que el sistema afirma sigue siendo lo que midió en el edificio. |
 | no había mapa de sacudida | `T-7.24` **cerrada** el 2026-09-21 (mini-ShakeMap, `D-08`) | se puede enseñar el mapa por evento. **Y con él llega una prohibición nueva: la de abajo.** |
+| «le llega una **notificación** al teléfono» estaba en simulado | **medido en el ensayo del 2026-09-22**: el aviso salió `sent`, no `simulated`; el ARN de FCM sale del terraform y la instancia lo trae | se puede decir que **la notificación a Android es real y se entrega con la pantalla bloqueada**. ⚠️ **iOS sigue en cero**: su *platform application* sólo se crea con la clave de firma de APNs. Y **SMS y WhatsApp siguen simulados** — esa mitad de la fila original no ha cambiado |
 
 ### Las filas NUEVAS que F5 y F6 trajeron
 
@@ -391,6 +392,79 @@ como está; si la abres sin red, cae al respaldo solo.
 ---
 
 ## Registro
+
+### Ensayo **1 de 2** · 2026-09-22 · corrida `20260922T180248Z` — `29 ✓ · 0 ✗`
+
+**Primera corrida cronometrada de `guion.sh --full`** (`T-7.28`), con el WR-1 real, el gabinete
+de Puebla y el Pixel. Preflight: **13 ✓**.
+
+| Acto | Duración | Veredicto | Qué midió la máquina |
+|---|---|---|---|
+| 0 · Preflight | 0:07 | ✓ | 13 ✓ |
+| 1 · El SOC operando normal | 0:59 | ✓ | nivel `normal` · relés en reposo · **135 910 paquetes / 0 huecos** |
+| 2 · Movimiento aislado, SIN señal del WR-1 | 1:45 | ✓ | incidente `d5af54e5` · **0 actuaciones** |
+| 3 · El pulso del WR-1 | 9:44 | ✓ | 6 ✓ · 0 ✗ |
+| 4 · Después de la sacudida | 46:57 | ✓ | 3 ✓ · 0 ✗ |
+
+> **De qué reloj son estas duraciones.** De la máquina que corrió `guion.sh --full`, y son
+> tiempos de **representación**: cuánto se tardó en ejecutar cada acto delante de quien miraba.
+> **No son latencias del sistema** — ésas las mide el propio sistema y están en las filas de
+> abajo.
+
+**Lo que el sistema midió de sí mismo:**
+
+- **Acta del reflejo: 0,22 ms** (presupuesto 100 ms). ⚠️ El 2026-09-12 fueron **4,96 ms**, así
+  que son **22× más rápido de un día para otro**. Pasa de sobra en los dos casos, pero una
+  mejora de ese orden sin un cambio que la explique **merece una segunda medición antes de
+  citarse ante un cliente**: si resultara un artefacto, es justo el número que luego nadie
+  puede defender.
+- **Relés `siren` y `strobe` accionados**, acusados por el propio gabinete.
+- **La app derivó `phase=alert_active`** — la pantalla de crisis es lo que tocaba.
+- **El aviso al teléfono salió `sent`, no `simulated`.** Ver abajo: esto cambia lo que se puede
+  prometer.
+- **PDF de 7 páginas con 2 imágenes distintas**, sobre un incidente con **1 fotografía** de
+  brigada (`report-technical-20260922T185707Z.pdf`).
+
+**Cronología que el panel conserva:**
+
+```
+18:04:53  normal → watch              (local_threshold)  ┐ acto 2
+18:05:02  watch  → normal                                 │ dos golpes
+18:05:03  normal → watch                                  │
+18:05:08  watch  → normal                                 ┘
+18:14:13  normal → evacuate_or_hold   (sasmex)            ← acto 3 · el pulso
+18:14:13  evacuate_or_hold → normal   (local_threshold)
+22:24:00  ACCIÓN reset (vía lan)
+```
+
+#### Lo que esta corrida enseñó, y hay que tener delante en la segunda
+
+**⚠️ Dura una hora, y eso no cabe en una demostración.** 59 minutos en total, y **47 de ellos
+son el acto 4** — la foto en el Pixel, el dictamen firmado en la consola y la generación del
+PDF. Ningún cliente espera cuarenta y siete minutos. Para la presentación real hay que
+**pre-cargar** parte del acto 4 (tener el reporte de daños ya subido y el incidente listo para
+firmar) y enseñar en vivo sólo la firma y el PDF. El acto 3, que es el que vende, tardó **9:44**.
+
+**⚠️ El acto 2 sólo llegó a `watch`, dos veces.** No a `restricted` ni a `evacuate_or_hold`. El
+acto funcionó y abrió su incidente, pero el escalón es el más bajo: el ensayo del 2026-09-12
+llegó a `evacuate_or_hold` con **0,357 g**. Si la demostración busca impacto, **el golpe tiene
+que ser más seco** — y conviene ensayarlo antes, no descubrirlo con el cliente delante.
+
+**⚠️ La limpieza se hizo a las 22:24**, más de cuatro horas después del pulso. El runbook dice
+que es **parte del guion, no del después**. No rompió nada —el estado quedó correcto— pero un
+enclavado vivo durante horas es exactamente lo que el preflight del día siguiente habría
+cazado en rojo.
+
+**✅ Y una buena que cambia la lista de «lo que NO debe decirse»:** el push llegó **`sent`**, no
+`simulated`. El ARN de FCM sale del terraform y la instancia lo trae, así que **la notificación
+a Android es real**. La fila de la lista que dice «le llega una notificación al teléfono» era
+cierta como advertencia en septiembre y ha dejado de serlo para Android — iOS sigue en cero,
+porque su *platform application* sólo se crea con la clave de firma de APNs.
+
+**Pendiente de esta corrida:** clasificar el incidente `b420daaa` como **`reproduccion`**.
+
+---
+
 
 **Ensayo completo del 2026-09-12/13 · con el WR-1 real, el gabinete de Puebla y el Pixel 8 Pro.**
 Preflight previo: **13 ✓ · 0 • · 0 ✗**.
