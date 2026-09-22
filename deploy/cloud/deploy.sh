@@ -217,7 +217,39 @@ TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # cifras sigue sin cerrar (D-06 / T-2.149 BLOQUEADA) y el papel lo declara.
 TAKAB_API_CATALOG_USGS_ENABLED=true
 TAKAB_API_OPENROUTER_ENABLED=true
-TAKAB_API_OPENROUTER_MODEL=anthropic/claude-sonnet-5
+# [2026-09-22] Modelo elegido por CALIDAD/PRECIO sobre el catálogo REAL de OpenRouter
+# (442 modelos, leídos de su API el mismo día), no de memoria. Tres filtros duros y
+# uno de criterio:
+#
+# (SIN COMILLAS INVERTIDAS en todo el bloque: este heredoc va sin comillas y un
+#  backtick aqui es SUSTITUCION DE ORDENES. Es la SEGUNDA vez en el mismo dia que
+#  se cuela; la primera fue con catalog_consultations. Lo caza test_censo_banderas.)
+#
+#   1. VISIÓN OBLIGATORIA. D-32 manda fotografías, y build_narrative exige que el
+#      modelo DECLARE que admite imágenes o se cae al determinista. Eso deja 276 de 442.
+#   2. NADA DE ':batch'. Son más baratos porque NO son en tiempo real, y esto corre
+#      dentro de la petición HTTP de una exportación. Los descarta el sufijo.
+#   3. NADA gratuito ni alias '~': no se pone un despliegue encima de un enrutado.
+#   4. El codo de la curva, no el suelo. Lo que se le pide no es razonar: es seguir un
+#      formato de secciones en castellano sin inventarse un veredicto —y si no lo sigue,
+#      el guardrail lo descarta y el informe sale con prosa determinista igualmente—.
+#      La gama "flash-lite" existe exactamente para eso: salida estructurada en volumen.
+#
+# Coste MEDIDO sobre nuestra carga real (≈4300 tokens de entrada + 800 de salida, del
+# ensayo de T-7.26), por informe:
+#
+#      anthropic/claude-sonnet-5        US$ 0.01660   ← lo que había
+#      google/gemini-2.5-flash-lite     US$ 0.00075   ← 22× más barato
+#      openai/gpt-4o-mini               US$ 0.00112   ← el siguiente escalón
+#      qwen/qwen3.7-flash               US$ 0.00023   ← 71×, pero gama muy por debajo
+#
+# ⚠️ Lo que este comentario NO puede afirmar todavía: que redacte BIEN nuestro informe.
+# Eso no lo dice el precio, lo dice make cloud-medir-latencia-ia, que además de la
+# latencia delata al modelo que no sabe seguir el formato —sale degradada con su
+# razón—. No se pudo medir el 2026-09-22 porque la clave del secreto devuelve 401.
+# Si al medirlo degrada, el escalón siguiente es openai/gpt-4o-mini y después
+# google/gemini-2.5-flash; y sigue siendo 5× más barato que lo que había.
+TAKAB_API_OPENROUTER_MODEL=google/gemini-2.5-flash-lite
 TAKAB_API_OPENROUTER_SECRET_ID=${OPENROUTER_SECRET_ID}
 # [T-5.18 - T-7.26] Tope de gasto de la IA, POR TENANT y al mes, en dolares. El
 # codigo trae 5 (deliberadamente conservador: el defecto de una cuota no puede ser

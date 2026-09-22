@@ -527,9 +527,22 @@ async def consultar_vision(
         return Vision(False, motivo_con_causa(MOTIVO_VISION_ILEGIBLE, str(exc)))
     except Exception as exc:  # noqa: BLE001 - fail-open: la evidencia sale igual
         # ⚠️ Aquí NO se estrena vocabulario. El catálogo es una petición al MISMO
-        # proveedor, así que un 401 es «no aceptó la clave» y un 500 es «respondió con
-        # error», exactamente como si hubiera fallado al redactar (`_motivo_del_fallo`,
-        # T-7.26). Decir «no se pudo comprobar si el modelo admite imágenes (HTTP 401)»
+        # proveedor, así que un 500 es «respondió con error», exactamente como si
+        # hubiera fallado al redactar (`_motivo_del_fallo`, T-7.26).
+        #
+        # ⚠️⚠️ PERO UN 401 AQUÍ NO VA A LLEGAR NUNCA, y conviene saberlo antes de
+        # apoyarse en esta comprobación: `GET /api/v1/models` de OpenRouter es
+        # **público**. Medido el 2026-09-22 — devuelve 200 sin cabecera de
+        # autorización y 200 con una clave inventada. O sea que `admite_imagenes()`
+        # contesta «sí, admite» con la credencial rota, y el 401 sólo aparece después,
+        # al redactar. Eso NO es un defecto de esta función —su trabajo es la
+        # modalidad, no la credencial— pero sí invalida usarla como pre-chequeo de la
+        # clave, que es la lectura fácil de este bloque. Ocurrió: la capa llevaba
+        # encendida desde el 2026-09-21 devolviendo 401 en cada dictamen mientras el
+        # censo de conformidad daba VERDE (sólo mira que el secreto EXISTA y que el
+        # rol pueda leerlo, no que el proveedor lo acepte).
+        #
+        # Decir «no se pudo comprobar si el modelo admite imágenes (HTTP 401)»
         # sería técnicamente cierto y operativamente inútil: con la clave revocada
         # mandaría a quien lee el papel a mirar el catálogo en vez del secreto, que es
         # el defecto que T-7.26 vino a cerrar.

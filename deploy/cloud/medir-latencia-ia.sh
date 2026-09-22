@@ -66,6 +66,8 @@ uso: bash deploy/cloud/medir-latencia-ia.sh [opciones]
   --rondas N            llamadas por brazo (por defecto 5)
   --tope-medicion S     tope en segundos SOLO para medir (por defecto 90). Ver la
                         cabecera: medir con el tope de producción borra la cola.
+  --modelo SLUG         probar ESE modelo en vez del desplegado (no cambia nada en
+                        la instancia: vive sólo dentro del proceso de medición)
   --solo-texto          sólo el brazo sin fotografías
   --solo-fotos          sólo el brazo con seis fotografías al tope
   --crudo               imprime también las líneas MEDIDA tal cual
@@ -78,12 +80,19 @@ USO
 
 RONDAS=5
 TOPE_MEDICION=90
+#: Slug a PROBAR, distinto del desplegado. Vacío = el que la nube tiene puesto.
+#: Existe para contestar «¿cuál elegimos?» y no sólo «¿cuánto tarda el que hay?»:
+#: la medición es además la prueba de CALIDAD, porque un modelo que no sabe seguir
+#: el formato de secciones cae en el guardrail y el informe sale con prosa
+#: determinista — eso aquí aparece como `degradada`, no como una latencia buena.
+MODELO=""
 ARMAS="texto,fotos"
 CRUDO=0
 while [ $# -gt 0 ]; do
   case "$1" in
   --rondas) RONDAS="${2:-}"; shift 2 ;;
   --tope-medicion) TOPE_MEDICION="${2:-}"; shift 2 ;;
+  --modelo) MODELO="${2:-}"; shift 2 ;;
   --solo-texto) ARMAS="texto"; shift ;;
   --solo-fotos) ARMAS="fotos"; shift ;;
   --crudo) CRUDO=1; shift ;;
@@ -114,11 +123,16 @@ echo "  (el tope de producción NO se toca; ver la cabecera de este fichero)"
 
 # El programa remoto. Los parámetros viajan por entorno porque el heredoc va entre
 # comillas simples a propósito: nada de lo de dentro se expande en esta máquina.
-PRELUDIO="$(printf 'RONDAS=%s\nTOPE=%s\nARMAS=%s\nexport RONDAS TOPE ARMAS\n' \
-  "$RONDAS" "$TOPE_MEDICION" "$ARMAS")"
-CMD="$PRELUDIO$(
+# ⚠️ El prelúdio y el cuerpo van dentro de UNA SOLA sustitución, y no es cosmética:
+# `$( )` SE COME LOS SALTOS DE LÍNEA FINALES. Con dos sustituciones concatenadas, el
+# `\n` que cierra `export RONDAS TOPE ARMAS` desaparecía y la línea quedaba pegada al
+# `docker exec` siguiente — el remoto moría con «export: '-i': not a valid identifier»
+# y la medición no llegaba a empezar. Medido contra la instancia el 2026-09-22.
+CMD="$(
+  printf 'RONDAS=%s\nTOPE=%s\nARMAS=%s\nMODELO=%s\nexport RONDAS TOPE ARMAS MODELO\n' \
+    "$RONDAS" "$TOPE_MEDICION" "$ARMAS" "$MODELO"
   cat <<'REMOTO'
-docker exec -i -e RONDAS -e TOPE -e ARMAS takab-cloud-api-1 python - <<'PY'
+docker exec -i -e RONDAS -e TOPE -e ARMAS -e MODELO takab-cloud-api-1 python - <<'PY'
 import asyncio, hashlib, io, json, os, sys, time
 
 from takab_api.settings import Settings
@@ -137,7 +151,10 @@ ARMAS = [a for a in os.environ.get("ARMAS", "texto,fotos").split(",") if a]
 # Igual que `routers/reports.py`: se instancia, se lee del entorno del contenedor.
 base = Settings()
 # ⚠️ EL OVERRIDE. Sin esto la medición se corta justo donde empieza la pregunta.
-s = base.model_copy(update={"openrouter_timeout_s": TOPE})
+_cambios = {"openrouter_timeout_s": TOPE}
+if os.environ.get("MODELO"):
+    _cambios["openrouter_model"] = os.environ["MODELO"]
+s = base.model_copy(update=_cambios)
 
 print("CFG\tmodelo=%s\ttope_produccion=%.1f\ttope_medicion=%.1f" % (
     s.openrouter_model, base.openrouter_timeout_s, TOPE), flush=True)
@@ -253,6 +270,15 @@ asyncio.run(main())
 PY
 REMOTO
 )"
+
+# Antes de mandarlo: ¿PARSEA? Un guion roto viaja igual, cuesta un viaje a SSM y vuelve
+# con un error del intérprete remoto en vez de una medición. `bash -n` lo caza aquí, gratis,
+# y es exactamente lo que faltaba el día que el `export` se pegó a la línea siguiente.
+if ! bash -n <<<"$CMD" 2>/dev/null; then
+  echo "medir-latencia-ia: el guion remoto NO parsea; no se manda nada. Detalle:" >&2
+  bash -n <<<"$CMD" >&2 || true
+  exit 2
+fi
 
 P="$(mktemp)"
 jq -n --arg c "$CMD" '{commands: [$c]}' >"$P"

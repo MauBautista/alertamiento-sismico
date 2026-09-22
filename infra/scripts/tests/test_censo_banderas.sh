@@ -283,6 +283,20 @@ SSM_OK="${SSM_OK:-1}"
 pieza_bandera "$NOMBRE" "ficha de prueba"
 ESCENA
 huella() { printf '%s' "$1" | sha256sum | cut -c1-12; }
+# El slug del modelo se DERIVA de deploy.sh, no se fija aqui. Fijarlo obligaba a tocar
+# ESTE fichero cada vez que se cambia de modelo —y el 2026-09-22, al pasar de
+# claude-sonnet-5 a gemini-2.5-flash-lite, el arnes se puso rojo por dos sitios sin que
+# nada estuviera mal—. Lo que este censo tiene que defender es que deploy.sh y la
+# instancia digan LO MISMO, no CUAL es el modelo: eso ultimo es una decision, y vive en
+# el comentario de deploy.sh con su tabla de precios.
+slug_del_modelo() {
+  local s
+  s="$(grep -oE '^TAKAB_API_OPENROUTER_MODEL=[^[:space:]#]+' "$DEPLOY" |
+    head -1 | cut -d= -f2-)"
+  [ -n "$s" ] || { echo "test_censo_banderas: deploy.sh no declara el slug del modelo" >&2; exit 1; }
+  printf '%s' "$s"
+}
+
 escena() { # <NOMBRE> <ENV_INSTANCIA> [TF_VALOR] [TF_FALLA] -> «VEREDICTO|evidencia»
   NOMBRE="$1" ENV_INSTANCIA="$2" TF_VALOR="${3:-}" TF_FALLA="${4:-}" \
     ROOT="$ROOT" BANDERA="$TMP/bandera.sh" bash "$TMP/escena-bandera.sh" 2>&1
@@ -304,7 +318,7 @@ mide "la bandera puesta a true en la instancia es VERDE" \
 mide "el slug del modelo VACIO en la instancia es ROJO" \
   ROJO "$(escena OPENROUTER_MODEL 'TAKAB_API_OPENROUTER_MODEL vacio -')"
 mide "el slug del modelo que declara deploy.sh es VERDE" \
-  VERDE "$(escena OPENROUTER_MODEL "TAKAB_API_OPENROUTER_MODEL con-valor $(huella anthropic/claude-sonnet-5)")"
+  VERDE "$(escena OPENROUTER_MODEL "TAKAB_API_OPENROUTER_MODEL con-valor $(huella "$(slug_del_modelo)")")"
 mide "OTRO slug del modelo en la instancia es ROJO (desplegada, pero no esta)" \
   ROJO "$(escena OPENROUTER_MODEL "TAKAB_API_OPENROUTER_MODEL con-valor $(huella otro/modelo)")"
 mide "el id del secreto VACIO en la instancia es ROJO" \
@@ -396,7 +410,7 @@ echo "== las cuatro lineas que encienden la capa narrativa (T-7.26) =="
 # prosa determinista — que es el suelo correcto, pero silencioso.
 for linea in \
   "TAKAB_API_OPENROUTER_ENABLED=true" \
-  "TAKAB_API_OPENROUTER_MODEL=anthropic/claude-sonnet-5" \
+  "TAKAB_API_OPENROUTER_MODEL=$(slug_del_modelo)" \
   "TAKAB_API_AI_MONTHLY_CAP_USD=10"; do
   if grep -qxF "$linea" "$TMP/cloud.env"; then
     ok "cloud.env trae $linea"

@@ -493,8 +493,42 @@ que solo Mauricio puede poner: **una cuenta de OpenRouter con crédito**, su **c
 Manager como `takab/dev/openrouter` (con `!` desde su terminal — nunca pegada en el chat ni en un
 fichero del repo, regla de oro 6) y un **tope mensual** en el panel de OpenRouter, además del tope
 por tenant que ya aplica la API (`ai_monthly_cap_usd`, 10 USD en dev). Modelo recomendado:
-`anthropic/claude-sonnet-5` (admite imágenes, que `D-32` necesita); `anthropic/claude-haiku-4.5`
-si el coste manda. Un informe completo cuesta del orden de centavos.
+**`google/gemini-2.5-flash-lite`** desde el 2026-09-22, elegido por calidad/precio sobre el
+catálogo real de OpenRouter (442 modelos leídos de su API ese día; 276 admiten imagen, que es lo
+que `D-32` exige). Coste medido sobre nuestra carga: **US$ 0.00075 por informe**, frente a los
+**US$ 0.01660** de `anthropic/claude-sonnet-5` — **22× más barato**. Si al medirlo resulta que no
+sigue el formato de secciones, el escalón siguiente es `openai/gpt-4o-mini` (US$ 0.00112) y
+después `google/gemini-2.5-flash` (US$ 0.00329); la tabla y el porqué viven en el comentario de
+`deploy/cloud/deploy.sh`.
+
+### ⚠️ LA CLAVE DEL SECRETO NUNCA SE ESCRIBIÓ — y por eso la IA lleva desde el 2026-09-21 sin redactar
+
+Medido el 2026-09-22: el secreto `takab/dev/openrouter` tiene **una sola versión**, creada el
+2026-09-21 a las 09:14 y **jamás modificada**. El intento de esa tarde falló con
+`ResourceExistsException` **porque `create-secret` no actualiza un secreto que ya existe**. Así
+que el valor que hay dentro es el del primer día, y el proveedor responde **HTTP 401**.
+
+El sistema se comportó bien —la capa degrada al determinista y lo DECLARA en el papel— pero la
+función nunca ha funcionado. Y no se veía: el censo de conformidad da VERDE porque comprueba que
+el secreto **exista** y que el rol pueda **leerlo**, no que el proveedor lo **acepte**; y el
+pre-chequeo de visión tampoco lo delata, porque `GET /models` de OpenRouter es público.
+
+**Para arreglarlo — `put-secret-value`, NO `create-secret`** (desde tu terminal con `!`, nunca en
+el chat, regla de oro 6):
+
+```bash
+aws secretsmanager put-secret-value --profile takab-dev --region us-east-2 \
+  --secret-id takab/dev/openrouter --secret-string '{"api_key":"sk-or-..."}'
+```
+
+Y después, lo que lo confirma de verdad:
+
+```bash
+make cloud-medir-latencia-ia
+```
+
+Si sigue saliendo `no aceptó la clave (HTTP 401)`, la clave es inválida o no tiene crédito. Si
+sale con latencias, entonces sí está funcionando — y con esa cifra **se cierra en** `T-7.26`.
 
 **✅ Hecho el 2026-09-21:** el secreto está creado, el rol de la instancia tiene permiso para
 leerlo (hacía falta una línea de terraform que nadie había puesto: sin ella el despliegue
