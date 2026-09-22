@@ -35,6 +35,7 @@ configuración pedida, y marcarla llenaría de avisos un documento correcto.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -53,7 +54,12 @@ from takab_api.narrative.base import (
     Narrative,
 )
 from takab_api.narrative.deterministic import DeterministicProvider
-from takab_api.narrative.openrouter import resolve_api_key
+from takab_api.narrative.openrouter import (
+    CODIGO_CLAVE_SIN_FORMA,
+    CODIGO_SECRETO_SIN_CLAVE,
+    _tiene_forma_de_clave,
+    resolve_api_key,
+)
 from takab_api.settings import Settings
 from tests.dictamen.test_pdf import model
 
@@ -514,3 +520,64 @@ async def test_una_redaccion_de_VERDAD_si_se_cobra(monkeypatch) -> None:
 
     await build_narrative(model(), Settings(), provider=Redacta(), conn=object(), tenant_id="t-1")
     assert cobros == [pytest.approx(0.0042)]
+
+
+# ---------------------------------------------------------------------------
+# [2026-09-22] La clave que NO es una clave
+# ---------------------------------------------------------------------------
+#
+# El caso real, y costó dos rondas de medición contra la nube: el secreto
+# `takab/dev/openrouter` llevaba desde el 2026-09-21 con un valor que nunca fue una
+# clave —el marcador de posición de la documentación, pegado tal cual—, el sistema salía
+# a la red, OpenRouter devolvía 401 y el papel decía «el proveedor no aceptó la clave».
+# Cierto, y apuntando al sitio equivocado: quien lo lee revisa cuotas y permisos del
+# proveedor cuando lo que hay es un marcador dentro del secreto.
+#
+# Las otras dos superficies que deberían haberlo delatado miran otra cosa: el censo de
+# conformidad comprueba que el secreto EXISTA y que el rol pueda LEERLO, y
+# `consultar_vision` pregunta a `GET /models`, que es PÚBLICO (medido: 200 sin cabecera
+# de auth). `resolve_api_key` es la única que ve el valor, así que le toca a ella.
+
+
+@pytest.mark.parametrize(
+    "valor,es_clave",
+    [
+        # Lo que hay que cazar: el marcador de la propia documentación.
+        ("sk-or-...", False),
+        ("sk-or-…", False),
+        ("pega-aqui-tu-clave", False),
+        ("sk-or-corta", False),
+        # Una clave de OTRO emisor pegada por error.
+        ("sk-ant-api03-" + "x" * 40, False),
+        # Y lo que tiene que PASAR: una clave con la forma del emisor. Que esté
+        # revocada o sin crédito NO se decide aquí — eso es un 401 legítimo del
+        # proveedor y tiene que llegar al papel como tal.
+        ("sk-or-v1-" + "a" * 64, True),
+        ("  sk-or-v1-" + "b" * 64 + "  ", True),
+    ],
+)
+def test_una_cadena_que_no_puede_ser_clave_se_distingue_de_una_clave_rechazada(
+    valor: str, es_clave: bool
+) -> None:
+    """Laxa a propósito: descarta lo imposible, no valida lo posible.
+
+    Apretarla de más convertiría «la cuenta no tiene crédito» en «tu secreto está mal»,
+    que es el mismo defecto en la otra dirección.
+    """
+    assert _tiene_forma_de_clave(valor) is es_clave
+
+
+def test_el_marcador_de_posicion_NO_sale_a_la_red_y_lo_dice_con_su_codigo() -> None:
+    """Conducta, no forma: con un marcador dentro, `resolve_api_key` devuelve vacío y un
+    código PROPIO — así el papel no acusa al proveedor de algo que no hizo."""
+
+    class _SM:
+        def get_secret_value(self, SecretId: str) -> dict:  # noqa: N803 - lo fija boto3
+            return {"SecretString": json.dumps({"api_key": "sk-or-..."})}
+
+    s = Settings(openrouter_secret_id="takab/dev/openrouter", openrouter_api_key="")
+    clave = resolve_api_key(s, client=_SM())
+    assert clave.api_key == ""
+    assert clave.error == CODIGO_CLAVE_SIN_FORMA
+    # Y lo que NO puede pasar: que se confunda con «el secreto no trae api_key».
+    assert clave.error != CODIGO_SECRETO_SIN_CLAVE

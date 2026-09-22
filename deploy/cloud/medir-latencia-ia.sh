@@ -66,6 +66,8 @@ uso: bash deploy/cloud/medir-latencia-ia.sh [opciones]
   --rondas N            llamadas por brazo (por defecto 5)
   --tope-medicion S     tope en segundos SOLO para medir (por defecto 90). Ver la
                         cabecera: medir con el tope de producción borra la cola.
+  --modelo SLUG         probar ESE modelo en vez del desplegado (no cambia nada en
+                        la instancia: vive sólo dentro del proceso de medición)
   --solo-texto          sólo el brazo sin fotografías
   --solo-fotos          sólo el brazo con seis fotografías al tope
   --crudo               imprime también las líneas MEDIDA tal cual
@@ -78,12 +80,19 @@ USO
 
 RONDAS=5
 TOPE_MEDICION=90
+#: Slug a PROBAR, distinto del desplegado. Vacío = el que la nube tiene puesto.
+#: Existe para contestar «¿cuál elegimos?» y no sólo «¿cuánto tarda el que hay?»:
+#: la medición es además la prueba de CALIDAD, porque un modelo que no sabe seguir
+#: el formato de secciones cae en el guardrail y el informe sale con prosa
+#: determinista — eso aquí aparece como `degradada`, no como una latencia buena.
+MODELO=""
 ARMAS="texto,fotos"
 CRUDO=0
 while [ $# -gt 0 ]; do
   case "$1" in
   --rondas) RONDAS="${2:-}"; shift 2 ;;
   --tope-medicion) TOPE_MEDICION="${2:-}"; shift 2 ;;
+  --modelo) MODELO="${2:-}"; shift 2 ;;
   --solo-texto) ARMAS="texto"; shift ;;
   --solo-fotos) ARMAS="fotos"; shift ;;
   --crudo) CRUDO=1; shift ;;
@@ -114,11 +123,16 @@ echo "  (el tope de producción NO se toca; ver la cabecera de este fichero)"
 
 # El programa remoto. Los parámetros viajan por entorno porque el heredoc va entre
 # comillas simples a propósito: nada de lo de dentro se expande en esta máquina.
-PRELUDIO="$(printf 'RONDAS=%s\nTOPE=%s\nARMAS=%s\nexport RONDAS TOPE ARMAS\n' \
-  "$RONDAS" "$TOPE_MEDICION" "$ARMAS")"
-CMD="$PRELUDIO$(
+# ⚠️ El prelúdio y el cuerpo van dentro de UNA SOLA sustitución, y no es cosmética:
+# `$( )` SE COME LOS SALTOS DE LÍNEA FINALES. Con dos sustituciones concatenadas, el
+# `\n` que cierra `export RONDAS TOPE ARMAS` desaparecía y la línea quedaba pegada al
+# `docker exec` siguiente — el remoto moría con «export: '-i': not a valid identifier»
+# y la medición no llegaba a empezar. Medido contra la instancia el 2026-09-22.
+CMD="$(
+  printf 'RONDAS=%s\nTOPE=%s\nARMAS=%s\nMODELO=%s\nexport RONDAS TOPE ARMAS MODELO\n' \
+    "$RONDAS" "$TOPE_MEDICION" "$ARMAS" "$MODELO"
   cat <<'REMOTO'
-docker exec -i -e RONDAS -e TOPE -e ARMAS takab-cloud-api-1 python - <<'PY'
+docker exec -i -e RONDAS -e TOPE -e ARMAS -e MODELO takab-cloud-api-1 python - <<'PY'
 import asyncio, hashlib, io, json, os, sys, time
 
 from takab_api.settings import Settings
@@ -137,7 +151,10 @@ ARMAS = [a for a in os.environ.get("ARMAS", "texto,fotos").split(",") if a]
 # Igual que `routers/reports.py`: se instancia, se lee del entorno del contenedor.
 base = Settings()
 # ⚠️ EL OVERRIDE. Sin esto la medición se corta justo donde empieza la pregunta.
-s = base.model_copy(update={"openrouter_timeout_s": TOPE})
+_cambios = {"openrouter_timeout_s": TOPE}
+if os.environ.get("MODELO"):
+    _cambios["openrouter_model"] = os.environ["MODELO"]
+s = base.model_copy(update=_cambios)
 
 print("CFG\tmodelo=%s\ttope_produccion=%.1f\ttope_medicion=%.1f" % (
     s.openrouter_model, base.openrouter_timeout_s, TOPE), flush=True)
@@ -236,6 +253,22 @@ async def main():
             t1 = time.monotonic()
             n = await prov.generate(req)
             ms_gen = int((time.monotonic() - t1) * 1000)
+            # [2026-09-22] Si la respuesta no se pudo INTERPRETAR, enseña su FORMA.
+            # Sin esto, «no se pudo interpretar» es un callejón sin salida: el papel
+            # dice que el modelo contestó algo ilegible y no hay manera de saber QUÉ
+            # sin instrumentar la nube. Se imprime acotado y en una línea.
+            #
+            # Se puede enseñar porque los hechos de esta medición son SINTÉTICOS —los
+            # fabrica `hechos()` aquí mismo— y no hay un incidente real detrás. Con
+            # datos de verdad esto no se imprimiría: sería sacar prosa del dictamen de
+            # un cliente por el registro de una herramienta.
+            if n.degraded_reason:
+                try:
+                    crudo = await prov._post(orm.cuerpo_de(req))  # noqa: SLF001
+                    c = orm._content_of(crudo)  # noqa: SLF001
+                    print("FORMA\t%s\t%r" % (arma, (c or "")[:220]), flush=True)
+                except Exception as exc:  # noqa: BLE001
+                    print("FORMA\t%s\tno se pudo repetir: %s" % (arma, type(exc).__name__), flush=True)
             print("MEDIDA\t%s\t%d\t%d\t%d\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (
                 arma, r, ms_cat, ms_gen, pesa,
                 n.prompt_tokens if n.prompt_tokens is not None else "-",
@@ -253,6 +286,15 @@ asyncio.run(main())
 PY
 REMOTO
 )"
+
+# Antes de mandarlo: ¿PARSEA? Un guion roto viaja igual, cuesta un viaje a SSM y vuelve
+# con un error del intérprete remoto en vez de una medición. `bash -n` lo caza aquí, gratis,
+# y es exactamente lo que faltaba el día que el `export` se pegó a la línea siguiente.
+if ! bash -n <<<"$CMD" 2>/dev/null; then
+  echo "medir-latencia-ia: el guion remoto NO parsea; no se manda nada. Detalle:" >&2
+  bash -n <<<"$CMD" >&2 || true
+  exit 2
+fi
 
 P="$(mktemp)"
 jq -n --arg c "$CMD" '{commands: [$c]}' >"$P"
@@ -294,16 +336,48 @@ if printf '%s\n' "$SALIDA" | grep -q '^ABORTA'; then
   echo "  rol de la instancia. Eso es T-7.26 criterio 1: secreto + terraform + despliegue."
   exit 1
 fi
-[ "$CRUDO" -eq 1 ] && printf '%s\n' "$SALIDA" | grep '^MEDIDA'
+# ⚠️ `FORMA` TAMBIÉN. Este filtro decía sólo `^MEDIDA`, así que las líneas de
+# diagnóstico del remoto llegaban y las tiraba el lado LOCAL — y el síntoma era
+# idéntico a que el remoto no las emitiera: costó tres mediciones averiguar que el
+# problema estaba aquí y no allí. Un filtro por prefijo fijo envejece en cuanto el
+# otro lado aprende a decir algo nuevo.
+[ "$CRUDO" -eq 1 ] && printf '%s\n' "$SALIDA" | grep -E '^(MEDIDA|FORMA)'
 
-printf '%s\n' "$SALIDA" | grep '^MEDIDA' | TOPE_PROD="$(
-  printf '%s\n' "$SALIDA" | grep '^CFG' | sed 's/.*tope_produccion=\([0-9.]*\).*/\1/')" python3 - <<'AGREGA'
+# ⚠️ Los datos van por FICHERO, no por tubería, y es la corrección de un defecto que
+# costó cinco mediciones: `python3 - <<'AGREGA'` toma el HEREDOC como stdin —el `-`
+# significa «lee el programa de stdin»—, así que lo que se le tubaba por delante no
+# llegaba nunca. El agregador de este guion NO SE EJECUTÓ JAMÁS sobre datos reales.
+#
+# Se disfrazó de conducta correcta: sin medidas imprime «no hubo ni una medida», que
+# es exactamente lo que hay que decir cuando todas degradan — y las primeras corridas
+# degradaban todas por el 401. El síntoma real y el falso eran la misma frase.
+#
+# Y mis pruebas no lo cazaron porque ejercían el agregador EXTRAÍDO a un fichero
+# (`python3 ag.py`), donde el programa viene de argv y stdin queda libre. Probar una
+# pieza fuera de su montaje prueba la pieza, no el montaje.
+AG_DATOS="$(mktemp)"
+trap 'rm -f "$AG_DATOS"' EXIT
+printf '%s\n' "$SALIDA" | grep '^MEDIDA' >"$AG_DATOS" || true
+
+# Y la guarda que impide que esto vuelva a pasar callado: si el remoto emitió medidas
+# y el agregador no las ve, eso es un fallo del ARNÉS, no una medición vacía.
+if [ -s "$AG_DATOS" ] || ! printf '%s\n' "$SALIDA" | grep -q '^MEDIDA'; then :; else
+  echo "medir-latencia-ia: el remoto emitió MEDIDAs y no llegaron al agregador." >&2
+  exit 3
+fi
+
+TOPE_PROD="$(
+  printf '%s\n' "$SALIDA" | grep '^CFG' | sed 's/.*tope_produccion=\([0-9.]*\).*/\1/')" \
+  AG_DATOS="$AG_DATOS" python3 - <<'AGREGA'
 import os, statistics, sys
 
 tope = float(os.environ.get("TOPE_PROD") or 8.0)
 por_arma = {}
 degradadas = []
-for linea in sys.stdin:
+# De FICHERO, no de stdin: stdin lo ocupa el propio programa (ver arriba).
+with open(os.environ["AG_DATOS"], encoding="utf-8") as _f:
+    _lineas = _f.readlines()
+for linea in _lineas:
     c = linea.rstrip("\n").split("\t")
     if len(c) < 12:
         continue

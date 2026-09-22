@@ -645,7 +645,37 @@ class Settings(BaseSettings):
     openrouter_secret_id: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     # Sin reintentos: 8 s ya es mucho dentro de un request que genera evidencia.
-    openrouter_timeout_s: float = 8.0
+    # [D-37 · 2026-09-22] 30 s, y el número sale de una MEDICIÓN, no de una intuición.
+    # Estuvo en 8.0 desde T-2.42 sin que nadie midiera contra el proveedor real.
+    #
+    # Medido con `make cloud-medir-latencia-ia` contra la nube desplegada, 5 rondas por
+    # brazo, con `google/gemini-2.5-flash-lite`:
+    #
+    #     sin fotografías     p50  2 595 ms   p95  3 051 ms   max  3 051 ms
+    #     con 6 fotografías   p50 13 686 ms   p95 20 604 ms   max 20 604 ms
+    #
+    # O sea que 8 s sobraba para el dictamen sin fotos y **cortaba SIEMPRE el que las
+    # lleva** — que es el caso que `T-7.27` creó y el único en el que alguien va a leer
+    # la prosa. La medición no se pudo hacer antes por dos fallos encadenados: el
+    # secreto tenía dentro el marcador de posición (401) y el modelo anterior devolvía
+    # el contenido vacío.
+    #
+    # Por qué 30 y no 21: con 5 muestras la cola NO está caracterizada. 30 da margen
+    # sobre el peor viaje visto (20 604 ms) sin llegar al minuto.
+    #
+    # Por qué se sube el tope en vez de sacar la generación de la petición con sondeo
+    # —la otra salida que la ficha planteaba—: la exportación la inicia una persona y
+    # la espera; el fail-open ya garantiza que un plantón no rompe nada (sale el
+    # informe con prosa determinista y lo DECLARA en el pie); y el sondeo es trabajo
+    # grande para ahorrar quince segundos en una acción manual. Si algún día la
+    # redacción se dispara sola o en lote, esta decisión se revisa: entonces el sondeo
+    # sí lo paga.
+    #
+    # ⚠️ Son DOS viajes bajo este MISMO tope: el catálogo (`GET /models`, que
+    # `build_narrative` pide en toda exportación) y la generación. El catálogo mide
+    # 62–142 ms, o sea que no mueve la aguja — pero el día que ese endpoint se ponga
+    # lento, este número acota los dos por separado, no su suma.
+    openrouter_timeout_s: float = 30.0
 
     # --- Alcance por sitio en la consola web (T-2.45) ---
     # Cutover en DOS FASES. `custom:site_scope` no está aprovisionado para usuarios

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **391** · `[~]` **12** · `[ ]` **39**
+**Conteo de tareas:** total **442** · `[x]` **392** · `[~]` **11** · `[ ]` **39**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15187,7 +15187,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 > de la AUSENCIA que `D-06` pide para cualquier ingesta de catálogo — la tabla ya da el dato
 > (`answered_at IS NULL` con su índice parcial) y nadie la mira todavía.
 
-### [~] T-7.26 · **OpenRouter encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **software HECHO 2026-09-21 · falta MEDIR la latencia en la nube**
+### [x] T-7.26 · **OpenRouter encendido en la nube** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-22 · latencia medida contra la nube, tope decidido en `D-37`**
 - **Componente:** api · deploy · **Depende de:** T-7.22 · **Prioridad:** F6 · media
 - **Objetivo:** que la capa narrativa que ya existe redacte de verdad, con su coste contado,
   su tope y su procedencia registrada, y que su ausencia se declare.
@@ -15199,7 +15199,33 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     despliegue «enciende» la IA y la nube sigue escribiendo prosa determinista — y hasta esta
     ficha lo habría hecho **en silencio**, porque `resolve_api_key` se tragaba el `AccessDenied`
     entero. Ahora el permiso existe, acotado a ese ARN, y el fallo se declara.
-  - [ ] **Latencia real del modelo MEDIDA antes de decidir.** Es lo único que queda y no es
+  - [x] **Latencia real del modelo MEDIDA — 2026-09-22, y decidido en `D-37`: el tope sube
+    de 8 s a 30 s.** Cinco rondas por brazo contra la nube desplegada, con
+    `google/gemini-2.5-flash-lite`: sin fotografías p50 **2 595 ms** / p95 **3 051 ms**; con
+    seis fotografías p50 **13 686 ms** / p95 **20 604 ms**. O sea que 8 s sobraba para el
+    dictamen sin fotos y **cortaba SIEMPRE el que las lleva** — el caso que `T-7.27` creó y el
+    único en el que alguien va a leer la prosa. Coste real medido: **US$ 0.0004 por informe**.
+    ⚠️ **Y no se pudo medir antes por DOS fallos encadenados, ninguno visible:**
+      1. **El secreto tenía dentro el MARCADOR DE POSICIÓN** de la documentación. `create-secret`
+         **no actualiza** un secreto que ya existe: devuelve `ResourceExistsException` y no
+         escribe. La clave se dio por puesta un día entero. Hoy lo caza `_tiene_forma_de_clave`
+         antes de abrir el socket, con un código propio (`ClaveSinForma`) distinto del 401 — y
+         hay guion para ponerla sin que el valor toque la línea de comandos
+         (`infra/scripts/poner-clave-openrouter.sh`).
+      2. **`anthropic/claude-sonnet-5` devolvía el contenido VACÍO**: 20 s de latencia y cero
+         caracteres, porque se gastaba los 1 600 tokens de `MAX_OUTPUT_TOKENS` razonando. La
+         capa llevaba encendida desde el 2026-09-21 sin producir un solo párrafo, primero por
+         el 401 y después por esto. El modelo pasa a `google/gemini-2.5-flash-lite`, que además
+         es **22× más barato** por lista y el único de los dos que redacta.
+    ⚠️ **Y el agregador del propio medidor NO SE EJECUTÓ NUNCA sobre datos reales:**
+    `python3 - <<'AGREGA'` toma el heredoc como stdin, así que los datos tubados no llegaban.
+    Se disfrazó de conducta correcta —«no hubo ni una medida» es lo que hay que decir cuando
+    todas degradan, y las primeras corridas degradaban todas por el 401—, así que el síntoma
+    real y el falso eran la misma frase. Mis pruebas no lo vieron porque ejercían el agregador
+    EXTRAÍDO a un fichero, donde el programa viene de argv y stdin queda libre: **probar una
+    pieza fuera de su montaje prueba la pieza, no el montaje.**
+    **Por qué esta medición no se podía improvisar** (escrito antes de hacerla, y las tres
+    siguen siendo ciertas): Es lo único que queda y no es
     software: `openrouter_timeout_s` sigue en 8.0 s porque **ese número no se inventa**. Exige
     la clave viva, `terraform apply` (el permiso de arriba) y la nube desplegada, en ese orden.
     Hasta medirlo no se decide si sube o si la generación sale de la petición con sondeo.

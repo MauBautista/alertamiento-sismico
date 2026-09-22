@@ -74,15 +74,16 @@ arriba es la interpretación y no se regenera.
 > vecinos; las MAC que empiezan por `b8:27:eb` o `e4:5f:01` son Raspberry).
 
 <!-- conformidad:inicio -->
-_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-21T22:40:35Z · HEAD `10a8b3b` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
+_Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-09-22T14:42:40Z · HEAD `3fb22a6` · consola https://16-58-11-196.sslip.io. Se regenera entero: no editar entre los marcadores._
 
 | Pieza | Veredicto | Evidencia |
 |---|---|---|
-| build de la nube | 🟢 VERDE | /api/health.build=10a8b3b == HEAD |
+| build de la nube | 🟢 VERDE | /api/health.build=3fb22a6 == HEAD |
 | esquema de la nube | 🟢 VERDE | estado=al_dia aplicada=0069_mapa_de_sacudida == última migración del repo (0069_mapa_de_sacudida) |
-| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :10a8b3b) |
-| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 15 passed in 0.37s |
+| servicios del compose en la instancia | 🟢 VERDE | 8/8 declarados corriendo (imagen :3fb22a6) |
+| test compose↔workers | 🟢 VERDE | pytest --noconftest api/tests/test_compose_cubre_los_workers.py: 15 passed in 0.45s |
 | entorno que la nube exige | 🟢 VERDE | todo en el heredoc de deploy.sh/takab-secrets.sh: Settings.REQUERIDOS_EN_PRODUCCION (8 nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL |
+| bandera TAKAB_API_CATALOG_USGS_ENABLED | 🟢 VERDE | deploy.sh la fija a «true» y la instancia la trae en true |
 | bandera TAKAB_API_CONSOLE_SCOPE_ENFORCED | 🟢 VERDE | deploy.sh la fija a «true» y la instancia la trae en true |
 | bandera TAKAB_API_OPENROUTER_ENABLED | 🟢 VERDE | deploy.sh la fija a «true» y la instancia la trae en true |
 | bandera TAKAB_API_OPS_METRICS_ENABLED | 🟢 VERDE | deploy.sh la fija a «true» y la instancia la trae en true |
@@ -93,11 +94,11 @@ _Generado por `deploy/cloud/conformidad.sh` (`make cloud-conformidad`) el 2026-0
 | cola de backfill | 🟢 VERDE | takab-dev-q-backfill: 0 visibles (0 en vuelo) · takab-dev-q-backfill-dlq: 0 |
 | terraform plan | 🟢 VERDE | sin cambios: código == estado == AWS |
 | alarmas de CloudWatch | 🟢 VERDE | ninguna alarma en ALARM |
-| release activa del Pi | 🟢 VERDE | release 20260921T220025Z-10a8b3b == HEAD |
+| release activa del Pi | 🟢 VERDE | release 20260921T220025Z-10a8b3b: nada de lo que el gabinete ejecuta cambió desde 10a8b3b (HEAD 3fb22a6) |
 | modo prueba del Pi | 🟢 VERDE | test_mode.active=false · audio.profile: {"applied":{},"rejected":{},"test_tone":true} |
-| APK del Pixel | ⚪ NO MEDIDO | sin teléfono por USB (adb get-state: nada); conecta el Pixel con depuración USB |
+| APK del Pixel | 🟢 VERDE | com.takab.ailert 0.1.0 instalado 2026-09-22 08:26:28 ≥ último cambio de mobile/ (2793be8 2026-09-21T15:30:51-06:00) |
 
-**RESUMEN:** 17 VERDE · 0 AMARILLO · 0 ROJO · 1 NO MEDIDO
+**RESUMEN:** 19 VERDE · 0 AMARILLO · 0 ROJO · 0 NO MEDIDO
 <!-- conformidad:fin -->
 
 **Dos apostillas a esa corrida, medidas después de generarla.** El «no medido» del modo prueba del gabinete era un defecto del propio script —leía la bandera con una expresión que trata el `false` como ausente, así que el caso bueno salía sin medir— y quedó corregido; a mano, el modo prueba está **desarmado**, que es lo que la demostración necesita. Y la cola de mensajes muertos del backfill creció a cuatro al desplegar el worker: no son evidencia perdida, son los informes en PDF que la propia API escribe bajo el mismo prefijo y que el worker no sabe reconocer (`T-7.05`, H-2).

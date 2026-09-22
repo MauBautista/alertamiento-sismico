@@ -76,7 +76,7 @@ existen o cosas que no se pueden construir así.
 | **`TakabPDF` es el membrete de facto** y el dictamen ya trae croquis, trazas, espectrograma (FFT en numpy, dibujo vectorial) y duración; **la API no tiene matplotlib**, el edge sí tiene scipy | F4 promociona el membrete; el shakemap del PDF se dibuja vectorial (`T-7.21`, `T-7.24`) | `api/src/takab_api/dictamen/layout.py`, `espectrograma.py`, `api/pyproject.toml`, `edge/pyproject.toml` |
 | **El panel del gabinete no tiene FFT ni filtros** y sirve 60 s decimados; su banner de alerta **ya parpadea** | El sismógrafo vive en el panel (`T-7.23`); `D-30` en el panel es verificar, no añadir | `edge/takab_edge/signal/waveform.py`, `local_api/index.html` |
 | `T-3.09` tiene arquitectura decidida (`D-08`) | `T-7.24` la ejecuta tal cual | `TASKS.md` § T-3.09, `design/BLOQUE-IV-ARQUITECTURA.md` |
-| USGS (dominio público) tiene los eventos exactos; OpenRouter sirve `anthropic/claude-sonnet-5` con herramientas y visión a 2/10 USD por millón de tokens | Fuente viva = USGS; modelo recomendado = `sonnet-5` | consultas de la sesión de planificación |
+| USGS (dominio público) tiene los eventos exactos; OpenRouter sirve `google/gemini-2.5-flash-lite` con herramientas y visión a 2/10 USD por millón de tokens | Fuente viva = USGS; modelo recomendado = `sonnet-5` | consultas de la sesión de planificación |
 
 **Arribos calculados** para el 19-S-2017 (18.5499, −98.4887, 48 km de profundidad; S a 4 km/s,
 P a 7 km/s): Puebla +19.6 s · Tlaxcala +25.3 s · CDMX +32.1 s · Toluca +38.7 s. Es la coreografía
@@ -346,7 +346,7 @@ procedencia, y ampliar lo que ve (`D-32`) sin que toque jamás el veredicto.
 
 **Subagentes.** Uno de implementación y uno verificador (contrato y redacción), en paralelo.
 **Aporta Mauricio.** Cuenta de OpenRouter, clave en Secrets Manager (`takab/dev/openrouter`, con
-`!`, nunca en el chat), tope mensual en su panel, el modelo (recomendado `anthropic/claude-sonnet-5`;
+`!`, nunca en el chat), tope mensual en su panel, el modelo (hoy `google/gemini-2.5-flash-lite`, elegido por calidad/precio el 2026-09-22;
 `anthropic/claude-haiku-4.5` si el coste manda), y la cláusula de consentimiento (pendientes §2.13
 y §4.7).
 

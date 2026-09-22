@@ -396,6 +396,25 @@ class ClaveOpenRouter:
 #: puede vigilar. El papel lo imprime igual de legible: «… la clave no se pudo leer
 #: (SecretoSinApiKey); texto determinista».
 CODIGO_SECRETO_SIN_CLAVE = "SecretoSinApiKey"
+#: El secreto trae `api_key` y su valor NO tiene forma de clave de OpenRouter. El caso
+#: real: el marcador de posición de la documentación (`sk-or-...`) pegado tal cual.
+CODIGO_CLAVE_SIN_FORMA = "ClaveSinForma"
+
+
+def _tiene_forma_de_clave(clave: str) -> bool:
+    """¿Esto PUEDE ser una clave de OpenRouter? No valida: descarta lo imposible.
+
+    Deliberadamente laxo. Lo que caza es el marcador de posición y el dedo —una cadena
+    corta, con puntos suspensivos, o sin el prefijo del emisor—, no una clave revocada
+    ni una sin crédito: esas SÍ son un 401 legítimo del proveedor y tienen que llegar
+    como tal. Apretar esto de más convertiría un problema de cuenta en un diagnóstico
+    equivocado, que es justo el defecto que viene a cerrar, en la otra dirección.
+
+    **Nunca se registra el valor**, ni recortado: una clave en un log es una clave
+    filtrada (regla de oro 6). Lo que viaja al papel es el CÓDIGO, no la cadena.
+    """
+    c = clave.strip()
+    return c.startswith("sk-or-") and len(c) >= 24 and "..." not in c and "…" not in c
 
 
 def _codigo_de(exc: Exception) -> str:
@@ -442,6 +461,19 @@ def resolve_api_key(settings: Settings, *, client: Any | None = None) -> ClaveOp
         # El secreto existe y se leyó, pero no trae `api_key`. Es un fallo de contenido
         # y no una ausencia de configuración: quien lo creó creyó que estaba puesto.
         return ClaveOpenRouter("", error=CODIGO_SECRETO_SIN_CLAVE)
+    if not _tiene_forma_de_clave(clave):
+        # [2026-09-22] El secreto trae `api_key`, pero lo que trae no es una clave.
+        # Sin esto el sistema salía a la red, OpenRouter devolvía 401 y el papel decía
+        # «el proveedor no aceptó la clave» — cierto, y apuntando al sitio equivocado:
+        # quien lo lea va a revisar permisos y cuotas del proveedor cuando lo que hay
+        # es un marcador de posición dentro del secreto.
+        #
+        # Ocurrió, y costó dos rondas de medición: el secreto llevaba desde el
+        # 2026-09-21 con un valor que nunca fue una clave, y las dos superficies que
+        # deberían haberlo delatado miran otra cosa — el censo comprueba que el secreto
+        # EXISTA y que el rol pueda LEERLO, y `consultar_vision` pregunta a un endpoint
+        # PÚBLICO. Esta es la única que mira el valor, así que le toca a ella.
+        return ClaveOpenRouter("", error=CODIGO_CLAVE_SIN_FORMA)
     return ClaveOpenRouter(clave)
 
 
@@ -527,9 +559,22 @@ async def consultar_vision(
         return Vision(False, motivo_con_causa(MOTIVO_VISION_ILEGIBLE, str(exc)))
     except Exception as exc:  # noqa: BLE001 - fail-open: la evidencia sale igual
         # ⚠️ Aquí NO se estrena vocabulario. El catálogo es una petición al MISMO
-        # proveedor, así que un 401 es «no aceptó la clave» y un 500 es «respondió con
-        # error», exactamente como si hubiera fallado al redactar (`_motivo_del_fallo`,
-        # T-7.26). Decir «no se pudo comprobar si el modelo admite imágenes (HTTP 401)»
+        # proveedor, así que un 500 es «respondió con error», exactamente como si
+        # hubiera fallado al redactar (`_motivo_del_fallo`, T-7.26).
+        #
+        # ⚠️⚠️ PERO UN 401 AQUÍ NO VA A LLEGAR NUNCA, y conviene saberlo antes de
+        # apoyarse en esta comprobación: `GET /api/v1/models` de OpenRouter es
+        # **público**. Medido el 2026-09-22 — devuelve 200 sin cabecera de
+        # autorización y 200 con una clave inventada. O sea que `admite_imagenes()`
+        # contesta «sí, admite» con la credencial rota, y el 401 sólo aparece después,
+        # al redactar. Eso NO es un defecto de esta función —su trabajo es la
+        # modalidad, no la credencial— pero sí invalida usarla como pre-chequeo de la
+        # clave, que es la lectura fácil de este bloque. Ocurrió: la capa llevaba
+        # encendida desde el 2026-09-21 devolviendo 401 en cada dictamen mientras el
+        # censo de conformidad daba VERDE (sólo mira que el secreto EXISTA y que el
+        # rol pueda leerlo, no que el proveedor lo acepte).
+        #
+        # Decir «no se pudo comprobar si el modelo admite imágenes (HTTP 401)»
         # sería técnicamente cierto y operativamente inútil: con la clave revocada
         # mandaría a quien lee el papel a mirar el catálogo en vez del secreto, que es
         # el defecto que T-7.26 vino a cerrar.
