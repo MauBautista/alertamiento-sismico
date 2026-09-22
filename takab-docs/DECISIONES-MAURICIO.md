@@ -12,10 +12,10 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-19 · **36 decisiones** · 30 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-22 · **37 decisiones** · 31 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
 > 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
-> 2026-09-19), 6 delegadas (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
+> 2026-09-19, 1 el 2026-09-22), 6 delegadas (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
 > tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
@@ -92,6 +92,7 @@
 | [D-34](#d-34) | El arnés de los E2E móviles se muda a un sitio propio con su ocupante; la demostración conserva Puebla y la guarda no lleva excepción | 2026-09-17 | Mauricio |
 | [D-35](#d-35) | El arnés necesita **DOS** identidades, no una: el táctico resuelve su sitio por el `[0]` de `site_scope`, así que con una sola el brigadista mira Puebla | 2026-09-18 | Mauricio |
 | [D-36](#d-36) | El papel de TAKAB **no lleva firmante nominal**: emite y responde la persona moral, y el renglón de la firma lo dice en vez de quedarse en blanco | 2026-09-19 | Mauricio |
+| [D-37](#d-37) | El tope de la redacción asistida sube de 8 s a **30 s** y la generación sigue dentro de la petición: con fotografías se midió p50 13 686 ms y máximo 20 604 ms, así que 8 s **cortaba siempre** el dictamen que las lleva | 2026-09-22 | Mauricio |
 
 ---
 
@@ -1827,3 +1828,48 @@ El día que haya un firmante nominal —un representante legal con cargo—, se 
 `FIRMA_INSTITUCIONAL` por su nombre y cargo en `identidad.py` y se regenera la hoja en el mismo
 commit (`make drift` lo exige). Lo que **no** cambia en ninguna revocación: el renglón nunca se
 queda en blanco, y `""` nunca es una forma válida de decir nada.
+
+## D-37 · El tope de la redacción asistida son **30 s**, y el número sale de una medición
+
+**Fecha:** 2026-09-22 · **Ficha:** `T-7.26` · **Toca:** `settings.openrouter_timeout_s`
+
+**Lo que se decidió.** `openrouter_timeout_s` sube de **8 s a 30 s**, y la generación **sigue
+dentro de la petición HTTP de la exportación** — no se saca a un sondeo.
+
+**Por qué 8 s no valía, medido.** Estuvo en 8.0 desde `T-2.42` sin que nadie lo midiera contra
+el proveedor real. Con `make cloud-medir-latencia-ia` contra la nube desplegada, cinco rondas
+por brazo y `google/gemini-2.5-flash-lite`:
+
+| brazo | p50 | p95 | máximo |
+|---|---|---|---|
+| sin fotografías | 2 595 ms | 3 051 ms | 3 051 ms |
+| **con 6 fotografías** | **13 686 ms** | **20 604 ms** | **20 604 ms** |
+
+O sea que 8 s sobraba para el dictamen sin fotos y **cortaba siempre el que las lleva** — el
+caso que `T-7.27` creó y el único en el que alguien va a leer la prosa.
+
+**Por qué 30 y no 21.** Con cinco muestras la cola larga **no está caracterizada**. 30 da margen
+sobre el peor viaje visto sin llegar al minuto.
+
+**Por qué no el sondeo**, que era la otra salida que la ficha planteaba: la exportación la
+inicia una persona y la espera; el fail-open ya garantiza que un plantón no rompe nada —sale el
+informe con prosa determinista y lo **declara** en el pie—; y el sondeo es trabajo grande para
+ahorrar quince segundos en una acción manual.
+
+**Cuándo se revisa esta decisión.** El día que la redacción se dispare **sola o en lote**.
+Entonces nadie espera delante de la pantalla, quince segundos por informe sí se acumulan, y el
+sondeo sí se paga.
+
+**⚠️ Lo que este número acota son DOS viajes, no uno.** El catálogo (`GET /models`, que
+`build_narrative` pide en **toda** exportación para que el modelo declare que admite imágenes,
+`D-32`) y la generación. El catálogo mide 62–142 ms y no mueve la aguja, pero el tope los acota
+**por separado**, no su suma: una exportación en frío puede pagar los dos.
+
+**Lo que hizo falta para poder medir, y conviene no re-descubrirlo.** Dos fallos encadenados lo
+impedían y ninguno se veía: el secreto tenía dentro el **marcador de posición** de la
+documentación (`create-secret` no actualiza un secreto que ya existe, y devuelve su error sin
+escribir), y el modelo anterior —`anthropic/claude-sonnet-5`— **devolvía el contenido vacío**,
+gastándose los 1 600 tokens de `MAX_OUTPUT_TOKENS` en razonar. Veinte segundos de latencia y
+cero caracteres.
+
+---
