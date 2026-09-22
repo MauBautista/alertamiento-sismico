@@ -681,6 +681,101 @@ def test_una_tarea_hecha_no_puede_cerrar_una_tarea_abierta() -> None:
     )
 
 
+#: [T-7.01·auditoría] Los documentos de GOBIERNO que también declaran cierres. `CIERRA_RE`
+#: y su tabla de formas ya estaban probados, pero el único que los aplicaba era el escaneo
+#: de `TASKS.md`: el plan podía decir «ejecuta y **cierra** `T-2.89`» con `T-2.89` en `[ ]`
+#: y la suite daba verde. Se midió el 2026-09-22 ejecutando el propio `CIERRA_RE` contra
+#: `takab-docs/**/*.md`: SEIS aciertos fuera de `TASKS.md`, uno de ellos esa mentira.
+#:
+#: Se derivan del árbol —no se enumeran— por la razón de siempre: un censo escrito a mano
+#: acaba divergiendo, y aquí divergir significa que un documento nuevo nace sin vigilancia.
+DOCS_DE_GOBIERNO = tuple(
+    sorted(p for p in (TASKS.parent).rglob("*.md") if p.name != "TASKS.md")
+)
+
+#: ⚠️ La NEGACIÓN, que es la trampa que esta guarda tenía que resolver para no nacer en
+#: rojo. `CIERRA_RE` no la ve —está declarado como punto ciego `L1` al final de este
+#: fichero— y hay DOS frases legítimas en el repositorio con la forma «**no cierra
+#: `T-2.92`**» (`DECISIONES-MAURICIO.md` y `PENDIENTES-MAURICIO.md`), escritas justamente
+#: para advertir de que acreditar `G-01` NO cierra esa tarea. Contarlas como cierres
+#: habría dado dos falsos rojos, y un falso rojo se «arregla» acotando el patrón — que es
+#: la regresión más cara de `CIERRA_RE` según su propio comentario.
+#:
+#: Se mira hacia ATRÁS desde el verbo, no hacia delante, y se admite el `**` de por medio.
+_NEGACION_ANTES = re.compile(r"\b(?:no|sin|jamás|nunca|tampoco)\s+(?:\*\*)?\s*$", re.I)
+
+
+def _cierres_declarados(texto: str) -> list[tuple[int, str, str]]:
+    """(nº de línea, id cerrado, línea) de cada cierre AFIRMADO. Las negaciones no cuentan."""
+    out: list[tuple[int, str, str]] = []
+    for n, linea in enumerate(texto.splitlines(), 1):
+        for m in CIERRA_RE.finditer(linea):
+            if _NEGACION_ANTES.search(linea[: m.start()]):
+                continue
+            out.append((n, m.group("id"), linea.strip()))
+    return out
+
+
+#: Frases reales del repositorio, con lo que la guarda DEBE ver en cada una. Es lo que
+#: impide que el tratamiento de la negación se vuelva goloso y deje de ver cierres de
+#: verdad: el escaneo se pone verde en cuanto se corrige el documento, esta tabla no.
+FORMAS_CON_NEGACION = (
+    ("acreditar `G-01` **no cierra `T-2.92`** — sigue siendo obra pendiente", []),
+    ("> **Ojo:** acreditar `G-01` **no cierra `T-2.92`**. Es uno de tres.", []),
+    ("| `T-7.06` | `console_scope_enforced` encendido; ejecuta y cierra `T-2.89` |", ["T-2.89"]),
+    ("Esto **sin** cerrar `T-1.44`, que sigue abierta.", []),
+    ("Esta tarea cierra T-2.60 y nada más.", ["T-2.60"]),
+    ("El soft-gate #2 queda CERRADO por T-1.46.", ["T-1.46"]),
+)
+
+
+@pytest.mark.parametrize("linea,esperado", FORMAS_CON_NEGACION, ids=lambda v: str(v)[:34])
+def test_la_negacion_no_cuenta_como_cierre_y_la_afirmacion_si(
+    linea: str, esperado: list[str]
+) -> None:
+    """«No cierra T-X» es una ADVERTENCIA, y contarla al revés invierte su sentido."""
+    visto = [tid for _, tid, _ in _cierres_declarados(linea)]
+    assert visto == esperado, (
+        f"lectura equivocada de:\n    {linea}\n  esperado: {esperado}\n  visto:    {visto}"
+    )
+
+
+def test_ningun_documento_de_gobierno_declara_cerrada_una_tarea_abierta() -> None:
+    """Gemela de `test_una_tarea_hecha_no_puede_cerrar_una_tarea_abierta`, para los
+    documentos que NO son `TASKS.md`.
+
+    **El agujero, medido.** Aquella guarda construye su corpus con `_bloques()`, que lee
+    `TASKS.md` y nada más. Así que `PLAN-PROTOTIPO-FUNCIONAL.md` podía afirmar —y afirmaba—
+    que `T-7.06` «ejecuta y **cierra** `T-2.89`» con `T-2.89` en `[ ]`, y la suite entera
+    daba verde. El plan es el documento desde el que se decide si una fase está cerrada:
+    que mienta ahí es peor que en el backlog, porque el backlog lo lee quien ejecuta y el
+    plan lo lee quien da el trabajo por terminado.
+
+    Lo que NO hace esta guarda, a propósito: no exige que un documento cite tareas, ni le
+    importa el orden. Sólo una cosa — si afirmas en pretérito que algo quedó cerrado, esa
+    ficha tiene que estar en `[x]`. La redacción honesta para lo que aún no ocurrió es
+    futura: «se cierra en `T-X`, en curso».
+    """
+    bloques = _bloques()
+    fallos: list[str] = []
+    for doc in DOCS_DE_GOBIERNO:
+        for n, objetivo, linea in _cierres_declarados(doc.read_text(encoding="utf-8")):
+            rel = doc.relative_to(TASKS.parent.parent)
+            if objetivo not in bloques:
+                fallos.append(f"{rel}:{n} declara cerrar {objetivo}, que no existe en TASKS.md")
+            elif bloques[objetivo][0] != "x":
+                fallos.append(
+                    f"{rel}:{n} afirma que {objetivo} queda cerrada, "
+                    f"pero sigue en `[{bloques[objetivo][0]}]`\n      {linea[:110]}"
+                )
+    assert not fallos, (
+        "Documentos de gobierno que dan por cerrado lo que sigue abierto:\n  "
+        + "\n  ".join(fallos)
+        + "\n  Si la tarea sigue abierta, la redacción honesta es futura "
+        "('se cierra en T-X, en curso'), no pretérita."
+    )
+
+
 # ---------------------------------------------------------------------------
 # 6 · La ruta al cierre no se contradice consigo misma
 # ---------------------------------------------------------------------------

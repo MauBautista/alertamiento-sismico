@@ -11,12 +11,25 @@ pantalla que lo edite). ``claims.site_scope`` es default-deny, así que aplicar 
 tal cual dejaría a **todo** ``soc_operator`` con cero sitios — una consola en blanco en
 una plataforma de alertamiento.
 
-- **Fase A** (``console_scope_enforced=False``, la que se despliega): un claim vacío
-  significa *sin restricción declarada* y no filtra, pero se **audita como hueco**
-  (``scope_gap``) para que la ausencia sea visible y contable en vez de silenciosa. Un
-  claim que SÍ trae sitios se respeta desde ya: honrarlo es estrictamente más seguro.
+- **Fase A** (``console_scope_enforced=False``): un claim vacío significa *sin
+  restricción declarada* y no filtra, pero se **audita como hueco** (``scope_gap``) para
+  que la ausencia sea visible y contable en vez de silenciosa. Un claim que SÍ trae
+  sitios se respeta desde ya: honrarlo es estrictamente más seguro.
 - **Fase B** (``True``): un claim vacío filtra a cero filas, que es lo que el claim
-  significa. Se enciende cuando T-2.54 pueda escribir ``custom:site_scope``.
+  significa. Se encendió cuando T-2.54 pudo escribir ``custom:site_scope``.
+
+⚠️ **La fase que se despliega HOY es la B**, y este docstring decía «Fase A … la que se
+despliega» hasta el 2026-09-22. `T-7.06` encendió la perilla en la nube el 2026-09-12
+(`deploy/cloud/deploy.sh · TAKAB_API_CONSOLE_SCOPE_ENFORCED=true`, verificado dentro de la
+instancia por el censo de conformidad), y desde entonces el valor está **ratificado**:
+`settings.VALOR_RATIFICADO_EN_PRODUCCION` lo fija y un test se pone rojo si alguien lo
+cambia en el despliegue. Que el código describiera la fase contraria a la desplegada es
+exactamente el tipo de comentario que manda a depurar al sitio equivocado.
+
+⚠️ Y una consecuencia de estar en Fase B: con la perilla encendida ``gap`` sale ``False``
+y la fila ``scope_gap`` **deja de escribirse**. La ventana para censar los huecos se cerró
+el 2026-09-12; el criterio 1 de ``T-2.89`` sólo puede contestarse ya hacia atrás, con un
+``SELECT`` por fecha sobre el ``audit_log`` desplegado.
 
 Fuera de alcance se responde **404, nunca 403**: un 403 confirma que el recurso existe.
 """

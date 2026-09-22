@@ -167,6 +167,31 @@ PROHIBIDOS_EN_PRODUCCION: dict[str, str] = {
     ),
 }
 
+#: [T-7.01·auditoría 2026-09-22] Banderas cuyo **VALOR** es una decisión ratificada, no una
+#: preferencia de despliegue. `{nombre sin prefijo: (valor obligatorio, por qué)}`.
+#:
+#: **El agujero que cierra, medido.** El censo de conformidad comprueba que `deploy.sh` y la
+#: instancia digan LO MISMO — o sea consistencia, no corrección. Poner `=false` en `deploy.sh`
+#: y redesplegar dejaba el censo ENTERO en verde (`banderas.sh` casa `=(true|false)` por
+#: igual y `conformidad.sh` compara uno contra otro), y la brecha se reabría en silencio.
+#:
+#: Fijando aquí el valor de `deploy.sh`, la instancia queda fijada por composición: el censo
+#: ya exige que coincidan. Son dos guardas distintas y ninguna sustituye a la otra.
+#:
+#: **Esto NO es una lista de "banderas importantes".** Entrar aquí significa que apagarla
+#: revoca una decisión que ya se tomó con su razón escrita, así que añadir una obliga a citar
+#: el `D-nn` que la ratificó. `openrouter_enabled` NO está y no debe estar: apagarla es una
+#: opción legítima —la capa narrativa nace apagada y degrada declarándolo—, y meterla aquí
+#: convertiría una perilla en un dogma.
+VALOR_RATIFICADO_EN_PRODUCCION: dict[str, tuple[str, str]] = {
+    "console_scope_enforced": (
+        "true",
+        "D-18 lo decidió y T-7.06 lo encendió el 2026-09-12: sin él la consola sirve datos "
+        "de un tenant a la sesión de otro. Apagarlo no es configurar, es revocar el "
+        "aislamiento multi-tenant (regla de oro 5) desde un fichero de despliegue",
+    ),
+}
+
 #: Perfiles válidos de ``TAKAB_API_ENV``. Un typo (`prod`, `PRODUCTION`) NO puede
 #: degradar a "no es producción" en silencio: se rechaza al construir.
 PERFILES = ("dev", "production")
@@ -595,9 +620,18 @@ class Settings(BaseSettings):
     dictamen_pga_window_post_s: float = 180.0
 
     # --- Capa narrativa del dictamen (T-2.42) ---
-    # APAGADA por defecto y así se despliega: el gate #9 del plan maestro sitúa la IA
-    # en Fase 3 y en modo sombra. Con esto en False no se abre un socket, y la prosa
-    # la produce el proveedor determinista (que es el suelo, no un relleno).
+    # APAGADA por DEFECTO: con esto en False no se abre un socket, y la prosa la produce
+    # el proveedor determinista (que es el suelo, no un relleno).
+    #
+    # ⚠️ Este comentario decía «y así se despliega», y dejó de ser verdad el 2026-09-21:
+    # `T-7.26` la ENCENDIÓ en la nube de desarrollo (`deploy.sh` la fija a `true` y el
+    # censo de conformidad la mide `true` dentro de la instancia). El defecto sigue
+    # siendo False —para tests, local y cualquier despliegue que no la encienda— pero
+    # «lo que se despliega» es otra cosa y el default no puede afirmarlo.
+    #
+    # NO entra en `VALOR_RATIFICADO_EN_PRODUCCION` a propósito: apagarla es una opción
+    # legítima (la capa degrada al determinista y lo DECLARA en el papel), y meterla ahí
+    # convertiría una perilla en un dogma.
     #
     # Encenderla exige LAS TRES: flag, clave resoluble y slug de modelo. El slug NO
     # tiene default a propósito — un identificador de modelo hardcodeado caduca en
