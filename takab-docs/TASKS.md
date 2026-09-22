@@ -15337,6 +15337,22 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 - **Criterios de aceptación:**
   - [~] `guion.sh --full` dos veces con tiempos por acto en el Registro; cada corrida se
     clasifica `reproduccion` y queda como historial honesto.
+    **CORRIDA 1 DE 2 HECHA** el 2026-09-22 (`20260922T180248Z`): **29 ✓ · 0 ✗**, con el WR-1
+    real, el gabinete y el Pixel. Tiempos y hallazgos en `RUNBOOK-demo-cliente.md § Registro`.
+    Falta la segunda, y clasificar `b420daaa` como `reproduccion`.
+    ⚠️ **Tres cosas que la primera corrida enseñó y que la segunda tiene que tener delante:**
+      · **Dura una hora, y eso no cabe en una demostración.** 59 min, de los que **47 son el
+        acto 4**. Hay que pre-cargar el reporte de daños y enseñar en vivo sólo la firma y el
+        PDF. El acto 3 —el que vende— tardó 9:44.
+      · **El golpe del acto 2 sólo llegó a `watch`**, no a `restricted`. Funcionó y abrió su
+        incidente, pero con el escalón más bajo: el ensayo del 12-sep llegó a
+        `evacuate_or_hold` con 0,357 g. Hay que golpear más seco, y ensayarlo antes.
+      · **La limpieza se hizo 4 h después del pulso**, y el runbook dice que es parte del
+        guion. No rompió nada, pero es lo que el preflight del día siguiente caza en rojo.
+    ⚠️ **Y un número que NO se cita ante un cliente hasta medirlo otra vez:** el acta del
+    reflejo dio **0,22 ms** contra los **4,96 ms** del 12-sep — 22× mejor de un día para otro,
+    sin un cambio que lo explique. Pasa el presupuesto (100 ms) en los dos casos; lo que no se
+    puede es publicarlo sin confirmarlo.
     ⚠️ **`--full` NO EXISTÍA.** La ficha nombraba un modo que nunca se construyó: el guion tenía
     `--preflight`, `--check` y `--reporte` sueltos, y nada que los recorriera en orden ni que
     cronometrara. Ya existe, y es **un cronómetro y un director de escena, no un actuador**: el
