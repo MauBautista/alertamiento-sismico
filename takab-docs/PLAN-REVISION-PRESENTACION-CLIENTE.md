@@ -136,7 +136,7 @@ media sesión no engancha el respaldo. **Abre la consola antes** y recarga si sa
    ```bash
    make cloud-images && make cloud-deploy
    ```
-2. **Medir la latencia de la IA** y decidir el tope (cierra `T-7.26`):
+2. **Medir la latencia de la IA** y decidir el tope (con esto **se cierra en** `T-7.26`, hoy en `[~]`):
    ```bash
    make cloud-medir-latencia-ia
    ```
