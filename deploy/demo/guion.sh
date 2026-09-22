@@ -453,6 +453,26 @@ ACTO_R0=0
 #: Reloj del ensayo. Único sitio donde se lee la hora, para que no haya dos.
 ahora_epoch() { date +%s; }
 
+#: ¿Hay alguien al otro lado? Se comprueba UNA vez y se recuerda, porque de esto
+#: depende si la tabla que salga significa algo.
+#:
+#: ⚠️ EL AGUJERO QUE CIERRA, medido el 2026-09-22. `read -r r </dev/tty` SIN terminal
+#: no bloquea: falla, deja `r` vacío y `pausa` devuelve 0 — o sea que el guion recorría
+#: los cuatro actos solo, dando cada uno por representado, y sacaba una tabla de tiempos
+#: que no medían nada. Y salía SIN el aviso del pie, porque ese aviso cuelga de
+#: `TAKAB_DEMO_SIN_PAUSA` y nadie la había puesto.
+#:
+#: Era el peor de los tres desenlaces posibles: no el que falla (se ve), ni el que avisa
+#: (es honesto), sino **el que se parece a un ensayo de verdad**. Y lo primero que se hace
+#: con esa tabla es pegarla en el § Registro, que es el documento donde se AFIRMA que el
+#: ensayo ocurrió.
+hay_terminal() {
+  # Las llaves NO son adorno: `: </dev/tty 2>/dev/null` procesa las redirecciones de
+  # izquierda a derecha, así que el fallo de abrir /dev/tty ya se ha escrito en stderr
+  # cuando el `2>/dev/null` entra en vigor. Agrupando, el silenciado cubre al grupo.
+  [ -e /dev/tty ] && { : </dev/tty; } 2>/dev/null
+}
+
 pausa() {
   if [ "${TAKAB_DEMO_SIN_PAUSA:-0}" = "1" ]; then
     printf '  \033[36m→\033[0m %s \033[2m(sin pausa)\033[0m\n' "$1"
@@ -605,6 +625,25 @@ registro_markdown() {
 }
 
 full() {
+  # Se comprueba ANTES de empezar, no en el primer acto: abortar en el acto 3 deja al
+  # gabinete a medias y con el cliente delante.
+  if [ "${TAKAB_DEMO_SIN_PAUSA:-0}" != "1" ] && ! hay_terminal; then
+    echo "guion.sh --full: no hay terminal, así que NO HAY NADIE a quien esperar." >&2
+    echo >&2
+    echo "  Un ensayo es una persona representando los actos: golpear la losa, pulsar" >&2
+    echo "  el WR-1, sacar la foto en el Pixel, firmar en la consola. Sin terminal, las" >&2
+    echo "  pausas no paran nada y saldría una tabla de tiempos que no miden nada —y que" >&2
+    echo "  se parece a la de un ensayo de verdad, que es lo peligroso." >&2
+    echo >&2
+    echo "  · Para ENSAYAR: córrelo desde tu terminal, con el gabinete delante." >&2
+    echo "  · Para PROBAR EL GUION sin ensayar: TAKAB_DEMO_SIN_PAUSA=1, y entonces la" >&2
+    echo "    tabla lo dice en su pie para que nadie la pegue en el § Registro." >&2
+    # `exit`, no `return`: el despachador llama a `resumen` después de `full`, y
+    # `resumen` decide el código por el número de ✗. Con `return 2` esta negativa salía
+    # con código 0 — un guion que se niega y dice «todo bien» es peor que uno que no se
+    # niega, porque un arnés que lo invoque lo dará por ensayado.
+    exit 2
+  fi
   ENSAYO_ID="${TAKAB_DEMO_ENSAYO_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
   echo "ENSAYO GENERAL · corrida $ENSAYO_ID · sitio $SITIO"
   echo "  Este guion NO acciona nada. Lo físico lo haces tú; él mide y comprueba."

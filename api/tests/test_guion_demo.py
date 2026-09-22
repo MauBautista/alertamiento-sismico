@@ -486,3 +486,30 @@ def test_el_ensayo_sigue_SIN_accionar_nada(sitio_demo, panel, adb_falso) -> None
     with sitio_demo.cursor() as cur:
         cur.execute("SELECT count(*) FROM actuation_records WHERE site_id = %s", (SITIO_D,))
         assert cur.fetchone()[0] == 0
+
+
+def test_sin_terminal_el_ensayo_SE_NIEGA_en_vez_de_fingir(sitio_demo, panel, adb_falso) -> None:
+    """El desenlace peligroso no es el que falla: es el que **se parece a un ensayo**.
+
+    Medido el 2026-09-22: `read -r r </dev/tty` sin terminal NO bloquea — falla, deja la
+    respuesta vacía y `pausa` devuelve 0. O sea que `--full` recorría los cuatro actos
+    solo, dando cada uno por representado, y sacaba una tabla de tiempos que no medían
+    nada. Y sin el aviso del pie, porque ese aviso cuelga de `TAKAB_DEMO_SIN_PAUSA` y
+    nadie la había puesto.
+
+    Lo primero que se hace con esa tabla es pegarla en el § Registro del runbook, que es
+    el documento donde se AFIRMA que el ensayo ocurrió. Por eso aquí no vale degradar con
+    un aviso: hay que negarse.
+
+    ⚠️ Y negarse con código 0 sería igual de malo. El despachador llama a `resumen`
+    después de `full`, y `resumen` decide el código por el número de ✗: con un `return`
+    la negativa salía diciendo «todo bien», y cualquier arnés que lo invocara lo daría
+    por ensayado.
+    """
+    url, _ = panel
+    r = correr("--full", url, adb_falso)  # SIN TAKAB_DEMO_SIN_PAUSA: pytest no da tty
+    assert r.returncode == 2, f"esperaba 2 y salió {r.returncode}\n{r.stdout}\n{r.stderr}"
+    assert "no hay terminal" in r.stderr
+    # Y lo que NO puede haber pasado: que representara actos sin nadie delante.
+    assert "REGISTRO · pega esto" not in r.stdout, "sacó una tabla sin ensayo detrás"
+    assert "pulsa el WR-1" not in r.stdout
