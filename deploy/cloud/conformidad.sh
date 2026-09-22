@@ -556,6 +556,7 @@ declare -A FICHA_BANDERA=(
   [OPS_METRICS_ENABLED]="métrica de gabinetes fantasma: T-2.60.a"
   [CONSOLE_SCOPE_ENFORCED]="alcance por rol: T-7.06 · D-18"
   [OPENROUTER_ENABLED]="capa narrativa del dictamen: T-7.26"
+  [CATALOG_USGS_ENABLED]="consulta al catálogo externo tras el evento: T-7.25"
 )
 
 # Banderas que NO son un booleano literal y por eso no se derivan solas: llegan

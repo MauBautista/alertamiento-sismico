@@ -200,6 +200,22 @@ TAKAB_API_TRANSFER_BUCKET=$(tf transfer_bucket)
 # ejecutaria en la maquina lo que hubiera dentro. Lo cazan
 # test_ningun_heredoc_del_despliegue_ejecuta_lo_que_creia_comentar (api) y, ya
 # sobre el fichero RENDERIZADO, infra/scripts/tests/test_censo_banderas.sh.
+# [T-7.25] La consulta al catalogo externo (USGS) tras el evento. El codigo lleva
+# desplegado desde el 2026-09-21 y la bandera seguia APAGADA con su defecto
+# —medido el 2026-09-22: NINGUN fichero del repositorio la encendia—, asi que la
+# casilla "MAGNITUD (CATALOGO)" del dictamen salia vacia en TODOS los incidentes
+# reales y la tabla catalog_consultations no tenia una sola fila. (SIN COMILLAS
+# INVERTIDAS, como avisa el comentario de abajo: este heredoc va sin comillas y un
+# backtick aqui es SUSTITUCION DE ORDENES. Lo cazo test_censo_banderas.sh.)
+#
+# Es trafico SALIENTE a earthquake.usgs.gov y se acota solo: 6 s de tope, 512 KiB
+# de respuesta maxima, 200 eventos por consulta y reintento a los 15 min. Si no
+# contesta, el dictamen lo DECLARA en vez de callarlo (T-7.25, criterio del
+# "sin acierto") — o sea que encenderla no puede romper una exportacion.
+#
+# ⚠️ NO trae el Sismologico Nacional, y eso es deliberado: la atribucion de sus
+# cifras sigue sin cerrar (D-06 / T-2.149 BLOQUEADA) y el papel lo declara.
+TAKAB_API_CATALOG_USGS_ENABLED=true
 TAKAB_API_OPENROUTER_ENABLED=true
 TAKAB_API_OPENROUTER_MODEL=anthropic/claude-sonnet-5
 TAKAB_API_OPENROUTER_SECRET_ID=${OPENROUTER_SECRET_ID}

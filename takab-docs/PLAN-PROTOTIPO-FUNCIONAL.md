@@ -129,7 +129,7 @@ puede afirmar **con la alerta en pantalla**, no con la consola en reposo.
 | `T-7.03` | Push real por FCM con respaldo medido si no hay credenciales | integrador |
 | `T-7.04` | Censo de solapes con `alert` y `review` forzadas (consola, panel, Pixel) y conteo de clics | B |
 | `T-7.05` | Correcciones del censo, un criterio por hallazgo | según hallazgos |
-| `T-7.06` | `console_scope_enforced` encendido; ejecuta y cierra `T-2.89` | integrador |
+| `T-7.06` | `console_scope_enforced` encendido; **adelanta `T-2.89` sin cerrarla** (a `T-2.89` le quedan vivos su criterio 1 —la consulta de `scope_gap` sobre `audit_log` en las 24 h previas al encendido— y su criterio 3 —la prueba ENTRE CLIENTES contra el entorno desplegado—, y los dos exigen una sesión con MFA contra la nube) | integrador |
 
 **Goal F0** (exit 0 ⇒ fase cerrada):
 
@@ -138,7 +138,13 @@ set -e; cd "$(git rev-parse --show-toplevel)"
 make verify
 bash deploy/cloud/conformidad.sh          # build==HEAD · esquema al día · compose cubre workers · env completo · backfill vacío · Pi · APK
 ( cd web && PW_BASE_URL=https://16-58-11-196.sslip.io npx playwright test e2e/deployed.spec.ts && npx playwright test e2e/layout.spec.ts )
-! grep -q '🔴' takab-docs/INFORME-CONFORMIDAD-DEMO.md
+# La tabla VIVA (entre los marcadores) sin un solo ROJO. NO el fichero entero:
+# la LEYENDA del informe usa 🔴 para DEFINIR qué significa 🔴, y el §1 es la
+# historia de defectos ya corregidos («🔴 → 🟢»). Escrito como estaba, este
+# criterio devolvía 1 SIEMPRE — o sea que F0 y F7 no podían declararse cerradas
+# ni con el sistema entero en verde. Medido el 2026-09-21.
+sed -n '/conformidad:inicio/,/conformidad:fin/p' takab-docs/INFORME-CONFORMIDAD-DEMO.md |
+  grep -qE '^\*\*RESUMEN:\*\*.* 0 ROJO'
 ```
 
 **Subagentes.** Tres `Explore` previos con contrato fijo por pieza (`PIEZA · VEREDICTO · EVIDENCIA
@@ -359,7 +365,13 @@ por cada cosa que puede fallar.
 for i in 1 2; do bash deploy/demo/guion.sh --full || exit 1; done
 mobile/.maestro/run.sh 01a-crisis.yaml && mobile/.maestro/run.sh 01b-checkin-sync.yaml && mobile/.maestro/run.sh 02-tactico-foto-danos.yaml && mobile/.maestro/run.sh 03-dictamen-liberacion.yaml
 ( cd web && PW_BASE_URL=https://16-58-11-196.sslip.io npx playwright test e2e/deployed.spec.ts e2e/screens.spec.ts )
-! grep -q '🔴' takab-docs/INFORME-CONFORMIDAD-DEMO.md
+# La tabla VIVA (entre los marcadores) sin un solo ROJO. NO el fichero entero:
+# la LEYENDA del informe usa 🔴 para DEFINIR qué significa 🔴, y el §1 es la
+# historia de defectos ya corregidos («🔴 → 🟢»). Escrito como estaba, este
+# criterio devolvía 1 SIEMPRE — o sea que F0 y F7 no podían declararse cerradas
+# ni con el sistema entero en verde. Medido el 2026-09-21.
+sed -n '/conformidad:inicio/,/conformidad:fin/p' takab-docs/INFORME-CONFORMIDAD-DEMO.md |
+  grep -qE '^\*\*RESUMEN:\*\*.* 0 ROJO'
 ```
 
 ---

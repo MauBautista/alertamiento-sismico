@@ -3687,7 +3687,8 @@ redespliegue al final (T-2.57).
   - [ ] **Cablear `TAKAB_API_COGNITO_USER_POOL_ID` en `deploy.sh` + permisos
         `cognito-idp:Admin*`** en el rol de instancia. Sin ambos, la gestión de usuarios
         arranca SIMULADA: grita en cada escritura, no finge. Exige `terraform apply`.
-  - [ ] **`console_scope_enforced` sigue en `False`.** El bloqueante cayó con T-2.54,
+  - [x] **`console_scope_enforced` ENCENDIDO el 2026-09-12** (`T-7.06`; decía «sigue en
+        `False`» hasta el 2026-09-22). El bloqueante cayó con T-2.54,
         pero encenderlo antes de asignar alcances dejaría a cada `soc_operator` con cero
         estaciones. Secuencia: recorrer los `scope_gap` del `audit_log` → asignar por
         usuario → encender.
@@ -10364,9 +10365,14 @@ sería documentar intenciones.
 ### [ ] T-2.89 · Encender `console_scope_enforced` — `HUMANO-AWS`
 - **Componente:** api + operación · **Depende de:** T-2.54
 - **Decisión:** [`D-18`](DECISIONES-MAURICIO.md#d-18) — `console_scope_enforced` se enciende ya.
-- **Es la única brecha multi-tenant viva en producción.**
-  `api/src/takab_api/settings.py · console_scope_enforced` lo tiene en `False`. (Citado por
-  símbolo y no por línea a propósito: la cita `:212` llevaba meses apuntando a otra cosa.)
+- **⚠️ YA NO es una brecha viva: se encendió el 2026-09-12** (`T-7.06`). El *default* de
+  `api/src/takab_api/settings.py · console_scope_enforced` sigue en `False` —para tests y
+  local—, pero **el despliegue lo fija a `true`** y el censo de conformidad lo mide `true`
+  dentro de la instancia. Desde el 2026-09-22 el valor está ratificado
+  (`settings.VALOR_RATIFICADO_EN_PRODUCCION`) y hay un test que se pone rojo si alguien lo
+  cambia en `deploy.sh`. Lo que le queda a esta ficha es **acreditación, no construcción**.
+  (El símbolo se cita sin número de línea a propósito: la cita `:212` llevaba meses
+  apuntando a otra cosa.)
 - **⚠️ AVISO MEDIDO (matriz `RO-5.g`, 2026-08-08): encenderlo PONDRÁ LA SUITE EN ROJO.** Dos
   tests HTTP fijan hoy la conducta **no** impuesta. No es una regresión: es que la conducta
   cambia y los tests la anclan como está. **Que no lo descubra nadie en mitad de la ventana** —

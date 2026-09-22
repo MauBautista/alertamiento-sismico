@@ -30,6 +30,7 @@ from takab_api.settings import (
     MARCADORES_DE_NUBE,
     PROHIBIDOS_EN_PRODUCCION,
     REQUERIDOS_EN_PRODUCCION,
+    VALOR_RATIFICADO_EN_PRODUCCION,
     ConfiguracionInvalida,
     Settings,
 )
@@ -302,6 +303,123 @@ def test_el_despliegue_de_hoy_activa_el_perfil_de_produccion() -> None:
     assert {m.upper() for m in MARCADORES_DE_NUBE} & del_despliegue, (
         "el despliegue no escribe ni un MARCADOR_DE_NUBE: `es_produccion` daría "
         "False en la nube y todo este fichero sería decorativo"
+    )
+
+
+def _valor_literal_en_el_despliegue(nombre: str) -> str | None:
+    """El valor que `deploy.sh` fija A PELO para `TAKAB_API_<nombre>`, o None.
+
+    Sólo la forma literal (`=true`), que es la única cuyo valor se puede afirmar leyendo
+    el fichero. Si algún día esa bandera pasa a resolverse con una sustitución, esto
+    devuelve None y el test de abajo lo dice en vez de dar por bueno lo que no leyó.
+    """
+    texto = (REPO_ROOT / "deploy" / "cloud" / "deploy.sh").read_text(encoding="utf-8")
+    hallados = re.findall(
+        rf"^[ \t]*TAKAB_API_{re.escape(nombre.upper())}=([^\s#]+)[ \t]*$", texto, re.M
+    )
+    if len(hallados) != 1:
+        return None
+    return hallados[0]
+
+
+@pytest.mark.parametrize("campo", sorted(VALOR_RATIFICADO_EN_PRODUCCION))
+def test_el_despliegue_fija_el_valor_RATIFICADO_y_no_solo_la_bandera(campo: str) -> None:
+    """El censo de conformidad comprueba CONSISTENCIA; esto comprueba CORRECCIÓN.
+
+    **Lo que se midió el 2026-09-22 y motivó esta guarda.** `deploy/cloud/banderas.sh`
+    casa `=(true|false)` por igual y `conformidad.sh` compara lo que dice `deploy.sh`
+    contra lo que trae la instancia. Las dos cosas son correctas y ninguna impide lo
+    único que importa aquí: cambiar `deploy.sh` a `=false`, redesplegar, y que el censo
+    ENTERO siga en verde porque los dos lados coinciden — con el aislamiento
+    multi-tenant apagado y sin una sola línea roja.
+
+    Aquí se fija el valor en `deploy.sh`. La instancia queda fijada **por composición**,
+    porque el censo ya exige que coincidan: son dos guardas y ninguna sustituye a la otra.
+    """
+    esperado, razon = VALOR_RATIFICADO_EN_PRODUCCION[campo]
+    visto = _valor_literal_en_el_despliegue(campo)
+    assert visto is not None, (
+        f"`deploy.sh` no fija TAKAB_API_{campo.upper()} con un valor literal (o lo fija "
+        f"dos veces). No se puede afirmar qué se despliega, y lo que no se puede afirmar "
+        f"no se da por bueno.\n  Por qué importa: {razon}"
+    )
+    assert visto == esperado, (
+        f"TAKAB_API_{campo.upper()} está ratificada en «{esperado}» y `deploy.sh` la "
+        f"fija a «{visto}».\n  {razon}\n"
+        "  Si de verdad hay que cambiarla, el sitio para hacerlo no es este fichero: es "
+        "revocar la decisión en DECISIONES-MAURICIO.md —con su bloque REVOCADA y su "
+        "razón— y sacarla de VALOR_RATIFICADO_EN_PRODUCCION en el mismo commit."
+    )
+
+
+def test_el_censo_de_valores_ratificados_no_esta_vacio() -> None:
+    """Una guarda parametrizada sobre una colección vacía **pasa sin ejercer nada**.
+
+    Es el defecto que este repositorio lleva seis fichas cazando (censos nacidos ciegos),
+    y aquí sería especialmente silencioso: vaciar el diccionario dejaría el test de arriba
+    en «0 passed» y la suite en verde.
+    """
+    assert VALOR_RATIFICADO_EN_PRODUCCION, (
+        "VALOR_RATIFICADO_EN_PRODUCCION está vacío: el test parametrizado de arriba no "
+        "ejerce nada y la brecha que cerró queda sin vigilar"
+    )
+
+
+#: [T-7.01·auditoría] Lo que el documento de ENTREGA AL CLIENTE tiene que afirmar por cada
+#: decisión ratificada. `{campo: (frase obligatoria, por qué esa y no otra)}`.
+#:
+#: **Por qué existe.** `ENTREGA-Y-ACEPTACION-TAKAB.md` es el documento que se le pone
+#: delante al cliente, y se midió el 2026-09-22 que **ningún test ni script del repositorio
+#: lo abría** (`grep -rln` ⇒ cero). Llevaba diez días afirmando que el alcance por sitio «no
+#: está impuesto en producción» y que era «la única brecha multi-tenant viva», con la
+#: perilla encendida desde el 2026-09-12. Rancearse así no cuesta un fallo técnico: cuesta
+#: subestimar el producto por escrito delante de quien lo va a comprar.
+#:
+#: **Se comprueba la AFIRMACIÓN, no la ausencia de la contraria.** Buscar «apagada» o
+#: «False» daría falsos rojos con las notas honestas que explican que el *default* del
+#: código sigue en `False` para tests y local — que es cierto y hay que poder escribirlo.
+#: Exigir la frase positiva no tiene esa ambigüedad.
+FRASE_EXIGIDA_EN_LA_ENTREGA: dict[str, tuple[str, str]] = {
+    "console_scope_enforced": (
+        "IMPUESTO en producción",
+        "es lo contrario de lo que el documento dijo durante diez días, y es la única "
+        "forma de que revocar D-18 obligue a tocar también el documento del cliente",
+    ),
+}
+
+ENTREGA = REPO_ROOT / "takab-docs" / "ENTREGA-Y-ACEPTACION-TAKAB.md"
+
+
+@pytest.mark.parametrize("campo", sorted(FRASE_EXIGIDA_EN_LA_ENTREGA))
+def test_el_documento_de_entrega_no_contradice_una_decision_ratificada(campo: str) -> None:
+    """El documento del cliente y la realidad del despliegue dicen lo mismo."""
+    frase, razon = FRASE_EXIGIDA_EN_LA_ENTREGA[campo]
+    assert campo in VALOR_RATIFICADO_EN_PRODUCCION, (
+        f"`{campo}` exige una frase en la entrega pero ya no está ratificado: si la "
+        "decisión se revocó, las dos colecciones se tocan en el MISMO commit"
+    )
+    texto = ENTREGA.read_text(encoding="utf-8")
+    assert frase in texto, (
+        f"`{ENTREGA.name}` no afirma «{frase}», y `{campo}` está ratificado en "
+        f"«{VALOR_RATIFICADO_EN_PRODUCCION[campo][0]}».\n  {razon}\n"
+        "  Este documento se le entrega al cliente: lo que diga de menos lo paga el "
+        "producto."
+    )
+
+
+def test_cada_decision_ratificada_dice_que_afirma_la_entrega() -> None:
+    """Ninguna decisión ratificada puede quedarse sin su frase en el documento del cliente.
+
+    Es el lado que impide que la guarda de arriba se vuelva decorativa: sin esto, añadir
+    una bandera a `VALOR_RATIFICADO_EN_PRODUCCION` y no tocar `FRASE_EXIGIDA_EN_LA_ENTREGA`
+    la dejaría ratificada en el despliegue y ausente del documento — que es exactamente el
+    desfase que este par de tests vino a cerrar.
+    """
+    huerfanas = sorted(set(VALOR_RATIFICADO_EN_PRODUCCION) - set(FRASE_EXIGIDA_EN_LA_ENTREGA))
+    assert not huerfanas, (
+        f"ratificadas sin frase en la entrega: {huerfanas}. Decide qué dice el documento "
+        "del cliente sobre cada decisión ratificada — o justifica por qué no dice nada, "
+        "pero decídelo."
     )
 
 
