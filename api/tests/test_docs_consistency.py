@@ -689,9 +689,7 @@ def test_una_tarea_hecha_no_puede_cerrar_una_tarea_abierta() -> None:
 #:
 #: Se derivan del árbol —no se enumeran— por la razón de siempre: un censo escrito a mano
 #: acaba divergiendo, y aquí divergir significa que un documento nuevo nace sin vigilancia.
-DOCS_DE_GOBIERNO = tuple(
-    sorted(p for p in (TASKS.parent).rglob("*.md") if p.name != "TASKS.md")
-)
+DOCS_DE_GOBIERNO = tuple(sorted(p for p in (TASKS.parent).rglob("*.md") if p.name != "TASKS.md"))
 
 #: ⚠️ La NEGACIÓN, que es la trampa que esta guarda tenía que resolver para no nacer en
 #: rojo. `CIERRA_RE` no la ve —está declarado como punto ciego `L1` al final de este
