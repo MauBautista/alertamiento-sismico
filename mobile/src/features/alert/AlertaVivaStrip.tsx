@@ -11,8 +11,9 @@
 // glifo de alerta. Las franjas del producto se distinguen por la FORMA, no por
 // el matiz, para que una persona daltónica las lea igual.
 import { Feather } from "@expo/vector-icons";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { emergency, fontSize, palette, space } from "@/ui/theme";
 
 export function AlertaVivaStrip(props: {
@@ -25,7 +26,7 @@ export function AlertaVivaStrip(props: {
     return null;
   }
   return (
-    <Pressable
+    <Pulsable
       accessibilityRole="button"
       onPress={onVolver}
       style={[styles.strip, { paddingTop: topInset + space[2] }]}
@@ -40,7 +41,7 @@ export function AlertaVivaStrip(props: {
         <Text style={styles.titulo}>ALERTA SÍSMICA ACTIVA</Text>
         <Text style={styles.nota}>Toque para volver a la instrucción</Text>
       </View>
-    </Pressable>
+    </Pulsable>
   );
 }
 

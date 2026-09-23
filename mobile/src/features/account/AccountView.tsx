@@ -4,7 +4,6 @@
 // TOTP (Cognito) llega en T-2.14 (hardening) — la fila lo declara.
 import type { ReactNode } from "react";
 import {
-  Pressable,
   StyleSheet,
   Switch,
   Text,
@@ -12,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export type AccountProfile = {
@@ -69,7 +69,7 @@ export function AccountView(props: {
         testID="input-phone"
         value={props.profile.phone}
       />
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={props.savingProfile || !props.canSave}
         onPress={props.onSaveProfile}
@@ -82,7 +82,7 @@ export function AccountView(props: {
         <Text style={styles.saveText}>
           {props.savingProfile ? "GUARDANDO…" : "GUARDAR"}
         </Text>
-      </Pressable>
+      </Pulsable>
       {props.profileSavedAt !== null ? (
         <Text style={styles.savedNote}>Perfil guardado en el servidor.</Text>
       ) : null}
@@ -99,7 +99,7 @@ export function AccountView(props: {
         {/* [T-6.20] La fila es el control; el interruptor, el indicador. En
             Android el `hitSlop` de un `<Switch>` nativo se ignora (ver
             `privacidad.tsx`). */}
-        <Pressable
+        <Pulsable
           accessibilityRole="switch"
           accessibilityState={{ checked: props.gpsConsent }}
           onPress={() => props.onToggleConsent(!props.gpsConsent)}
@@ -117,21 +117,21 @@ export function AccountView(props: {
             </Text>
           </View>
           <Switch pointerEvents="none" value={props.gpsConsent} />
-        </Pressable>
-        <Pressable
+        </Pulsable>
+        <Pulsable
           accessibilityRole="button"
           onPress={props.onOpenPermisos}
           style={styles.linkBtn}
         >
           <Text style={styles.link}>Estado de permisos de alerta →</Text>
-        </Pressable>
-        <Pressable
+        </Pulsable>
+        <Pulsable
           accessibilityRole="button"
           onPress={props.onOpenPrivacidad}
           style={styles.linkBtn}
         >
           <Text style={styles.link}>Aviso de privacidad →</Text>
-        </Pressable>
+        </Pulsable>
       </View>
 
       {props.isOccupant ? (
@@ -140,15 +140,18 @@ export function AccountView(props: {
           <Text style={styles.rowLabel}>
             Verificación en dos pasos — OPCIONAL
           </Text>
+          {/* [T-8.11 · A-234] Decía «(decisión #7)… se habilita en T-2.14
+              (hardening)»: el vocabulario del equipo en el teléfono del
+              cliente. La fila sigue declarando que la activación NO existe
+              todavía (T-2.14), en palabras de quien la lee. */}
           <Text style={styles.rowDetail}>
-            Disponible para su perfil (decisión #7). El flujo de activación TOTP
-            se habilita en T-2.14 (hardening); mientras tanto su cuenta opera
-            con contraseña.
+            Disponible para su perfil. La activación desde la app todavía no
+            está habilitada: mientras tanto su cuenta opera con contraseña.
           </Text>
         </View>
       ) : null}
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         onPress={props.onOpenVincular}
         style={styles.linkBtn}
@@ -156,16 +159,16 @@ export function AccountView(props: {
         <Text style={styles.link}>
           Vincular a un edificio (código de sitio) →
         </Text>
-      </Pressable>
+      </Pulsable>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         onPress={props.onLogout}
         style={styles.logoutBtn}
         testID="logout"
       >
         <Text style={styles.logoutText}>CERRAR SESIÓN</Text>
-      </Pressable>
+      </Pulsable>
     </View>
   );
 }

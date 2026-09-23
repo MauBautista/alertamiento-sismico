@@ -86,7 +86,38 @@ make cloud-staging-incident PHASE=reset     # ← el 03 va APARTE y empieza por 
 make cloud-staging-incident PHASE=crisis
 make cloud-staging-incident PHASE=reentry
 .maestro/run.sh 03-dictamen-liberacion.yaml # sin TOTP: corre solo
+
+make cloud-staging-incident PHASE=reset     # ← los recorridos, SIN incidente
+.maestro/run.sh recorrido-ocupante.yaml     # sin TOTP: corre solo
+.maestro/run.sh recorrido-tactico.yaml      # pide el TOTP del táctico
 ```
+
+**Los recorridos (`T-8.11`) no acreditan un camino: pasan por TODAS las pantallas** y pulsan
+cada botón de lectura —pestañas, enlaces, abrir y cancelar la cámara, descargar la copia offline—
+dejando una captura por pantalla (`ocupante-NN-…`, `tactico-NN-…`) en los artefactos de Maestro.
+Existen para que un botón que no responde se vea en el banco y no delante del cliente. **No
+pulsan nada que mute**: ni sirena, ni pánico, ni check-in (tampoco el delegado), ni firmar,
+enviar o cerrar sesión; cada cabecera lista lo que se salta y por qué. Por eso piden
+`PHASE=reset`: con la sacudida concluida el check-in de vida toma la pantalla, y contestarlo
+sería un check-in real — el táctico falla diciéndolo en vez de contestarlo.
+
+**Un salto no es un aprobado.** Con `PHASE=reset` no existen el dictamen, el formulario de
+TRIAGE ni el filtro de LISTA, así que el recorrido del táctico **no los pulsa**: cada bloque
+condicional que se salta deja su captura `tactico-NN-OMITIDO-…`, y la carpeta de artefactos
+dice lo que no se tocó. Para tocarlos hace falta la **segunda pasada**, con el mismo fichero:
+
+```bash
+# justo tras .maestro/run-offline.sh (incidente abierto, el táctico ya respondió):
+.maestro/run.sh recorrido-tactico.yaml      # TRIAGE con formulario y cámara; LISTA con filtro
+# justo tras el 03 (dictamen firmado):
+.maestro/run.sh recorrido-tactico.yaml      # PANEL → VER DICTAMEN y DESCARGAR
+```
+
+Si en alguna de las dos el check-in de vida del táctico toma la pantalla, el recorrido falla
+diciéndolo; no lo contesta. Y toda captura de un recorrido va seguida de `assertNotVisible`
+sobre `state-error`: una pestaña en «SIN CONEXIÓN CON EL SERVIDOR» sale en ROJO, no en verde
+(lo exige `tests/flujos-maestro.test.ts`). **Los recorridos no se han corrido todavía en el
+Pixel**: `maestro check-syntax` y los censos de jest no sustituyen esa corrida.
 
 **El `03` empieza por `reset` y eso no es ceremonia.** Dadas las tres órdenes, el `crisis` de en
 medio ya deja al ocupante en `alert_active` (medido en `T-7.62`), así que el banner no puede venir
@@ -141,7 +172,9 @@ done
 | Táctico: foto → daños → Triage | `02-tactico-foto-danos.yaml` | **sí** | evidencia forense + reporte llegan a Triage con hash | `PHASE=crisis` **y luego `conclude`** |
 | Dictamen → liberación | `03-dictamen-liberacion.yaml` | no | dictamen firmado → reingreso liberado en la app | `PHASE=reset` → `crisis` → `reentry` |
 | Pánico quórum-de-2 | `04-panico-quorum.yaml` | no | 1er voto queda en `1 DE 2`; NO es alerta sísmica | ninguna |
-| Offline-first (3 partes) | `05a-offline-preparar.yaml` → `05b` → `05c`, por `run-offline.sh` | **sí** | declara MODO OFFLINE, deja el trabajo PENDIENTE, la cola drena sola | `PHASE=crisis` → `conclude` → `roster` |
+| Offline-first (3 partes) | `05a-offline-preparar.yaml` → `05b` → `05c`, por `run-offline.sh` | **sí** | declara MODO OFFLINE, deja el check-in delegado PENDIENTE **en su tarjeta** (`sync-<id>`), la cola lo drena sola | `PHASE=crisis` → `conclude` → `roster` |
+| Recorrido del ocupante | `recorrido-ocupante.yaml` | no | pulsa cada pestaña y cada botón que no muta; una captura por pantalla | `PHASE=reset` |
+| Recorrido del táctico | `recorrido-tactico.yaml` | **sí** | pulsa las siete pestañas y cada botón que no muta; una captura por pantalla | `PHASE=reset` |
 
 ### La columna TOTP es la que decide si hace falta una persona
 

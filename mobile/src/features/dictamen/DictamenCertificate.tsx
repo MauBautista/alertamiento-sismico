@@ -1,8 +1,9 @@
 // 2.7 · Certificado de reingreso — presentacional. Folio, firmante, vigencia y
 // sello "FIRMA DIGITAL · INSPECTOR". El PDF (mismo artefacto de la consola) se
 // descarga y cachea offline; sin PDF aún, se declara (no se finge).
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import type { CertificateView } from "./dictamenView";
@@ -36,16 +37,16 @@ export function DictamenCertificate(props: {
 
       {props.cert.hasPdf ? (
         props.pdfCached ? (
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             onPress={props.onOpenPdf}
             style={styles.pdfBtn}
             testID="open-pdf"
           >
             <Text style={styles.pdfText}>ABRIR CERTIFICADO (PDF) · DISPONIBLE OFFLINE</Text>
-          </Pressable>
+          </Pulsable>
         ) : (
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             disabled={props.downloading}
             onPress={props.onDownloadPdf}
@@ -57,7 +58,7 @@ export function DictamenCertificate(props: {
             ) : (
               <Text style={styles.pdfText}>DESCARGAR CERTIFICADO (PDF)</Text>
             )}
-          </Pressable>
+          </Pulsable>
         )
       ) : (
         <Text style={styles.noPdf} testID="no-pdf">

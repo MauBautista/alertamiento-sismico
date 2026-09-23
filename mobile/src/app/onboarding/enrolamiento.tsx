@@ -19,10 +19,11 @@
 import { enrollMeEnrollmentPost, type EnrollmentOut } from "@takab/sdk";
 import { useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { setWatchedSite } from "@/services/mySite";
 import { markOnboardingDone } from "@/services/onboarding";
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 /** Quién falló: el código que trajo la persona, o la nube. */
@@ -102,7 +103,7 @@ export default function Enrolamiento() {
             value={code}
           />
           {fallo ? <Text style={styles.error}>{MENSAJE[fallo]}</Text> : null}
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             disabled={busy || code.trim().length < 4}
             onPress={submit}
@@ -114,13 +115,13 @@ export default function Enrolamiento() {
             ) : (
               <Text style={styles.primaryBtnText}>VINCULAR</Text>
             )}
-          </Pressable>
+          </Pulsable>
 
           <View
             style={salidaDestacada ? styles.salidaCard : styles.salida}
             testID={salidaDestacada ? "enrolamiento-salida-destacada" : "enrolamiento-salida"}
           >
-            <Pressable
+            <Pulsable
               accessibilityRole="button"
               onPress={finish}
               style={salidaDestacada ? styles.salidaBtn : styles.ghostBtn}
@@ -129,7 +130,7 @@ export default function Enrolamiento() {
               <Text style={salidaDestacada ? styles.salidaBtnText : styles.ghostBtnText}>
                 {salidaDestacada ? "CONTINUAR SIN VINCULAR" : "Continuar sin vincular"}
               </Text>
-            </Pressable>
+            </Pulsable>
             {/* Qué se pierde al salir por aquí: continuar a ciegas también es
                 una forma de mentir. */}
             <Text style={styles.salidaCosto} testID="enrolamiento-salida-costo">
@@ -147,9 +148,9 @@ export default function Enrolamiento() {
               {result.evac_policy ? ` · política: ${result.evac_policy}` : ""}
             </Text>
           </View>
-          <Pressable accessibilityRole="button" onPress={finish} style={styles.primaryBtn}>
+          <Pulsable accessibilityRole="button" onPress={finish} style={styles.primaryBtn}>
             <Text style={styles.primaryBtnText}>TERMINAR</Text>
-          </Pressable>
+          </Pulsable>
         </>
       )}
     </View>

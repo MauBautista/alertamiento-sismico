@@ -179,6 +179,18 @@ describe("logout() — best-effort", () => {
     expect(useSessionStore.getState().status).toBe("anonymous");
   });
 
+  it("[T-8.11] desde ACCESO DENEGADO también cierra la Hosted UI del pool que se usó", async () => {
+    // El gate de /me borra la sesión guardada y el perfil al denegar; sin
+    // recordar el pool del intento, logout() no sabía qué /logout abrir, la
+    // cookie de Cognito sobrevivía y el siguiente «iniciar sesión» volvía a
+    // entrar con la MISMA cuenta denegada.
+    useSessionStore.getState().setDenied("wrong_surface", "tactical");
+    const informe = await logout();
+    expect(openAuthSession).toHaveBeenCalledTimes(1);
+    expect(informe.hostedUi).toBe("closed");
+    expect(useSessionStore.getState().status).toBe("anonymous");
+  });
+
   it("dos toques seguidos ⇒ UNA secuencia", async () => {
     await sesion();
     await Promise.all([logout(), logout()]);

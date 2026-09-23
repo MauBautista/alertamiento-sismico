@@ -34,6 +34,34 @@ function flujos(dir: string): string[] {
   );
 }
 
+/** Los `timeout:` puestos DENTRO de un comando que no los acepta. El bloque de
+ *  un comando son las líneas con MÁS sangría que su guion: al volver a su
+ *  sangría (o a menos) empieza el comando siguiente. */
+function timeoutsMalPuestos(texto: string): string[] {
+  const lineas = texto.split("\n");
+  const malos: string[] = [];
+  lineas.forEach((linea, i) => {
+    const m = /^(\s*)-\s+(\w+):\s*$/.exec(linea);
+    if (!m || !SIN_TIMEOUT.includes(m[2])) {
+      return;
+    }
+    const sangria = m[1].length;
+    for (let j = i + 1; j < lineas.length; j++) {
+      const propia = /^(\s*)\S/.exec(lineas[j]);
+      if (!propia) {
+        break; // línea en blanco: fin del bloque (como antes)
+      }
+      if (propia[1].length <= sangria) {
+        break;
+      }
+      if (/^\s+timeout:/.test(lineas[j])) {
+        malos.push(`${m[2]} en la línea ${j + 1}`);
+      }
+    }
+  });
+  return malos;
+}
+
 describe("flujos de Maestro", () => {
   const ficheros = flujos(RAIZ);
 
@@ -41,26 +69,31 @@ describe("flujos de Maestro", () => {
     expect(ficheros.length).toBeGreaterThan(5);
   });
 
+  it("el analizador caza el `timeout:` del comando y no el del comando SIGUIENTE", () => {
+    // El caso real de `03` (T-7.63): la propiedad dentro del bloque.
+    expect(timeoutsMalPuestos('- assertVisible:\n    text: "x"\n    timeout: 5000\n')).toEqual([
+      "assertVisible en la línea 3",
+    ]);
+    // [T-8.11] Anidado en `commands:`: el bloque termina donde vuelve la
+    // sangría del comando. Antes se leía «toda línea indentada que sigue» y el
+    // `timeout:` del `extendedWaitUntil` hermano se le atribuía a él.
+    const anidado = [
+      "- runFlow:",
+      "    commands:",
+      "      - assertNotVisible:",
+      '          id: "state-error"',
+      "      - extendedWaitUntil:",
+      "          visible: x",
+      "          timeout: 5000",
+      "",
+    ].join("\n");
+    expect(timeoutsMalPuestos(anidado)).toEqual([]);
+  });
+
   it.each(ficheros.map((f) => [f.slice(RAIZ.length + 1), f]))(
     "%s no pone `timeout:` donde Maestro no lo acepta",
     (_nombre, ruta) => {
-      const lineas = readFileSync(ruta, "utf8").split("\n");
-      const malos: string[] = [];
-      lineas.forEach((linea, i) => {
-        const comando = /^\s*-\s+(\w+):\s*$/.exec(linea)?.[1];
-        if (!comando || !SIN_TIMEOUT.includes(comando)) {
-          return;
-        }
-        // El bloque del comando: las líneas indentadas que le siguen.
-        for (let j = i + 1; j < lineas.length; j++) {
-          if (!/^\s+\S/.test(lineas[j])) {
-            break;
-          }
-          if (/^\s+timeout:/.test(lineas[j])) {
-            malos.push(`${comando} en la línea ${j + 1}`);
-          }
-        }
-      });
+      const malos = timeoutsMalPuestos(readFileSync(ruta, "utf8"));
       expect(
         malos.join("; ") +
           (malos.length
@@ -243,4 +276,64 @@ describe("censo · las cabeceras de los flujos dicen la verdad", () => {
       ).toBe("");
     },
   );
+});
+
+/**
+ * CENSO · una captura de un RECORRIDO no puede ser la de una pantalla rota.
+ *
+ * [T-8.11 · verificador] Los recorridos (`recorrido-*.yaml`) pasan por todas las
+ * pestañas dejando una captura, pero en PANEL, TRIAGE, LISTA y SYNC no afirmaban
+ * nada del contenido: un `waitForAnimationToEnd` y la foto. Una pestaña en
+ * «SIN CONEXIÓN CON EL SERVIDOR» salía en VERDE, y la corrida se leía como «todo
+ * responde» justo cuando no.
+ *
+ * Toda `takeScreenshot` de un recorrido va seguida —como SIGUIENTE comando, al
+ * mismo nivel— de `assertNotVisible` sobre `state-error`, el `testID` del
+ * estado de error de `StateFrame`. La captura va PRIMERO: si la aserción falla,
+ * la foto del error ya está en los artefactos.
+ */
+const RECORRIDOS = RAIZ_FLUJOS.filter((n) => n.startsWith("recorrido-"));
+
+/** Las capturas de un flujo que NO van seguidas de la aserción de error. */
+function capturasSinAsercion(texto: string): string[] {
+  const lineas = texto.split("\n").map((l) => l.replace(/\s+#.*$/, "").replace(/^\s*#.*$/, ""));
+  const malas: string[] = [];
+  lineas.forEach((linea, i) => {
+    const m = /^(\s*)-\s+takeScreenshot:\s*(\S+)/.exec(linea);
+    if (!m) {
+      return;
+    }
+    const sangria = m[1];
+    const j = lineas.findIndex((l, k) => k > i && l.trim() !== "");
+    const siguiente = j === -1 ? "" : lineas[j];
+    const bloque = j === -1 ? "" : lineas.slice(j + 1, j + 3).join("\n");
+    const ok =
+      siguiente === `${sangria}- assertNotVisible:` &&
+      new RegExp(`^${sangria}\\s+id:\\s*"state-error"`, "m").test(bloque);
+    if (!ok) {
+      malas.push(`${m[2]} (línea ${i + 1})`);
+    }
+  });
+  return malas;
+}
+
+describe("censo · los recorridos no fotografían una pantalla en error como si respondiera", () => {
+  it("hay recorridos que barrer", () => {
+    expect(RECORRIDOS).toEqual(["recorrido-ocupante.yaml", "recorrido-tactico.yaml"]);
+  });
+
+  it("el analizador caza una captura sin aserción y acepta la que la lleva", () => {
+    const bien = '- takeScreenshot: a\n- assertNotVisible:\n    id: "state-error"\n';
+    const mal = "- takeScreenshot: b\n- back\n";
+    const anidada = '  - runFlow:\n      commands:\n        - takeScreenshot: c\n        - back\n';
+    expect(capturasSinAsercion(bien)).toEqual([]);
+    expect(capturasSinAsercion(mal)).toEqual(["b (línea 1)"]);
+    expect(capturasSinAsercion(anidada)).toEqual(["c (línea 3)"]);
+  });
+
+  it.each(RECORRIDOS)("%s: cada captura va seguida de assertNotVisible state-error", (nombre) => {
+    const texto = readFileSync(join(RAIZ, nombre), "utf8");
+    expect(texto).toMatch(/takeScreenshot:/);
+    expect(capturasSinAsercion(texto)).toEqual([]);
+  });
 });

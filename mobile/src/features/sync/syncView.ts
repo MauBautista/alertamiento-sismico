@@ -51,6 +51,9 @@ export function formatBytes(bytes: number): string {
 
 const KIND_LABEL: Record<QueueKind, string> = {
   checkin: "Check-in de vida",
+  // [T-8.11] No es «Check-in de vida»: quien mira la cola tiene que distinguir
+  // su propio reporte del de la persona que verificó en el pase de lista.
+  delegated_checkin: "Verificación en persona",
   evidence: "Foto forense",
   damage_report: "Reporte de daños",
 };

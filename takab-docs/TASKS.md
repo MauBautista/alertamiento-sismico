@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **461** · `[x]` **394** · `[~]` **14** · `[ ]` **53**
+**Conteo de tareas:** total **461** · `[x]` **394** · `[~]` **15** · `[ ]` **52**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17521,16 +17521,23 @@ se registra en su RUNBOOK.
     red la corroboró (`node_count` ≥ mínimo de cuórum): la misma regla que ya aplica el móvil.
 - **Hallazgos:** A-063.
 
-### [ ] T-8.11 · **Móvil: dictamen, cámara, cuenta y respuesta al toque** — `SOFTWARE`
+### [~] T-8.11 · **Móvil: dictamen, cámara, cuenta y respuesta al toque** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-8.04 · **Prioridad:** F3 · P1
 - **Criterios de aceptación:**
-  - [ ] «VER DICTAMEN» abre el dictamen firmado aunque el incidente ya se haya cerrado.
-  - [ ] La revisión de la cámara muestra la foto tomada, y es esa la que se sella.
-  - [ ] En CUENTA, cerrar sesión se ve siempre; solo la tarjeta de perfil entra en error, con REINTENTAR.
-  - [ ] Todo `Pressable` responde al toque, respetando `reduceMotion`.
-  - [ ] El check-in delegado se encola sin red, y su flujo Maestro comprueba un item concreto.
+  - [x] «VER DICTAMEN» abre el dictamen firmado aunque el incidente ya se haya cerrado.
+  - [x] La revisión de la cámara muestra la foto tomada, y es esa la que se sella.
+  - [x] En CUENTA, cerrar sesión se ve siempre; solo la tarjeta de perfil entra en error, con REINTENTAR.
+  - [x] Todo `Pressable` responde al toque, respetando `reduceMotion`.
+  - [x] El check-in delegado se encola sin red, y su flujo Maestro comprueba un item concreto.
   - [ ] Flujos Maestro de recorrido para el ocupante y el táctico, en verde en el Pixel.
 - **Hallazgos:** A-021, A-022, A-023, A-024, A-062, A-234.
+
+> **Estado (2026-09-23).** Hecho en software: jest 98 suites / 866 pruebas, typecheck y lint. Falta
+> lo que exige el Pixel: correr `recorrido-ocupante.yaml` y `recorrido-tactico.yaml` y ver la
+> respuesta al toque en un dispositivo. Dos defectos que la ficha no preveía, destapados al cablear
+> el cierre completo: `takab://auth/logout` no tenía ruta (la app acababa en «Unmatched Route», en
+> inglés, cada vez que se cerraba sesión para cambiar de ocupante a táctico), y ACCESO DENEGADO
+> usaba el cierre local, así que la cookie de Cognito volvía a entrar con la misma cuenta denegada.
 
 ### [x] T-8.12 · **El PDF que se entrega** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** api · **Depende de:** T-8.01 · **Prioridad:** F4 · P1

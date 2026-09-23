@@ -36,7 +36,7 @@ import { emergency, space } from "@/ui/theme";
 export default function Panel() {
   const router = useRouter();
   const siteId = useWatchedSiteId();
-  const { data, loading, error, staleSinceMs } = useAlertState(siteId);
+  const { data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
   const incidentId = data?.incident?.incident_id ?? null;
 
   const [live, setLive] = useState<LivePill>("closed");
@@ -200,6 +200,7 @@ export default function Panel() {
       emptyText="Sin sitio vigilado. Vincúlese o revise su alcance con el administrador."
       error={data === null ? error : null}
       loading={loading}
+      onRetry={refetch}
       staleSinceMs={staleSinceMs}
     >
       {data !== null && health !== null ? (

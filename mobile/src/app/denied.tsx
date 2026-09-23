@@ -1,9 +1,11 @@
 // Acceso denegado — el default-deny se DECLARA (spec §8): el rol/superficie
 // que respondió /me no tiene superficie móvil.
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import type { GateDenyReason } from "@/auth/profileGate";
+import { logout } from "@/auth/logout";
 import { useSessionStore } from "@/auth/session.store";
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 const REASON_TEXT: Record<GateDenyReason, string> = {
@@ -16,16 +18,22 @@ const REASON_TEXT: Record<GateDenyReason, string> = {
 
 export default function Denied() {
   const reason = useSessionStore((s) => s.deniedReason);
-  const signOut = useSessionStore((s) => s.signOut);
 
   return (
     <View style={styles.wrap}>
       <View style={styles.card}>
         <Text style={styles.eyebrow}>ACCESO DENEGADO</Text>
         <Text style={styles.text}>{REASON_TEXT[reason ?? "no_session"]}</Text>
-        <Pressable accessibilityRole="button" onPress={signOut} style={styles.btn}>
+        <Pulsable
+          accessibilityRole="button"
+          // [T-8.11] El cierre COMPLETO: con el local, la cookie de la Hosted UI
+          // sobrevivía y «volver a iniciar sesión» entraba con la MISMA cuenta
+          // denegada — la persona no podía cambiar de cuenta desde aquí.
+          onPress={() => void logout()}
+          style={styles.btn}
+        >
           <Text style={styles.btnText}>VOLVER AL INICIO DE SESIÓN</Text>
-        </Pressable>
+        </Pulsable>
       </View>
     </View>
   );
@@ -48,7 +56,12 @@ const styles = StyleSheet.create({
     padding: space[5],
     gap: space[4],
   },
-  eyebrow: { color: palette.crit, fontSize: fontSize.xs, letterSpacing: 2, fontWeight: "700" },
+  eyebrow: {
+    color: palette.crit,
+    fontSize: fontSize.xs,
+    letterSpacing: 2,
+    fontWeight: "700",
+  },
   text: { color: palette.fg2, fontSize: fontSize.sm, lineHeight: 20 },
   btn: {
     minHeight: touch.min,

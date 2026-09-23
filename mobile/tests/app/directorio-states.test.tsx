@@ -8,7 +8,7 @@
 // «su edificio no publica contactos» (vacío) NO es «no hay copia local»
 // (error). La primera es una verdad del edificio; la segunda, una del teléfono.
 import type { DirectoryEntryOut } from "@takab/sdk";
-import { act, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { expectFourStates } from "@/test-utils/expectFourStates";
 
@@ -129,5 +129,19 @@ describe("1.7 · directorio · contrato de 4 estados (regla de oro 7)", () => {
       },
       { asentar },
     );
+  });
+});
+
+describe("1.7 · directorio · el error tiene salida (T-8.11)", () => {
+  it("sin copia y sin red ofrece REINTENTAR, y reintentar RE-CONSULTA", async () => {
+    mockDirectorio = resultado({ error: "No se pudo cargar el directorio." });
+
+    const v = await render(<Directorio />);
+    await asentar();
+
+    await act(async () => {
+      fireEvent.press(v.getByTestId("state-retry"));
+    });
+    expect(mockDirectorio.refetch).toHaveBeenCalledTimes(1);
   });
 });

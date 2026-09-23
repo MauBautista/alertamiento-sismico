@@ -186,14 +186,17 @@ describe("bootstrapSession", () => {
 describe("exchangeAndResolve (login)", () => {
   it("guarda authAt = auth_time del token (ms), idTokenExp y el tope que dice /me", async () => {
     const authTime = nowS() - 5;
-    const idToken = fakeJwt({ exp: nowS() + 3600, auth_time: authTime });
+    // El `exp` se fija UNA vez: calcularlo otra vez en la aserción cruzaba de
+    // segundo en una suite cargada y el test fallaba por 1 s (2026-09-23).
+    const exp = nowS() + 3600;
+    const idToken = fakeJwt({ exp, auth_time: authTime });
     exchangeCodeAsync.mockResolvedValue({ idToken, refreshToken: "rt-login" });
 
     await exchangeAndResolve("tactical", "code-único", "verifier");
 
     const s = await loadSession();
     expect(s?.authAt).toBe(authTime * 1000);
-    expect(s?.idTokenExp).toBe(nowS() + 3600);
+    expect(s?.idTokenExp).toBe(exp);
     expect(s?.refreshToken).toBe("rt-login");
     expect(s?.maxAgeS).toBe(2_592_000);
     const st = useSessionStore.getState();

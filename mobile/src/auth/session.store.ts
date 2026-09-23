@@ -12,7 +12,8 @@ import { create } from "zustand";
 import type { GateDenyReason, ProfileGroup } from "./profileGate";
 import { clearSession } from "./secureTokens";
 
-export type SessionStatus = "booting" | "anonymous" | "authenticated" | "denied";
+export type SessionStatus =
+  "booting" | "anonymous" | "authenticated" | "denied";
 
 /** Por qué terminó una sesión:
  * - `user`: la cerró la persona (botón);
@@ -22,7 +23,11 @@ export type SessionStatus = "booting" | "anonymous" | "authenticated" | "denied"
  *   sirve, hay que volver a entrar con contraseña. */
 export type SignOutReason = "user" | "expired" | "max_age";
 
-const MOTIVOS: ReadonlySet<string> = new Set<SignOutReason>(["user", "expired", "max_age"]);
+const MOTIVOS: ReadonlySet<string> = new Set<SignOutReason>([
+  "user",
+  "expired",
+  "max_age",
+]);
 
 interface SessionState {
   status: SessionStatus;
@@ -30,6 +35,8 @@ interface SessionState {
   idToken: string | null;
   me: MeResponse | null;
   deniedReason: GateDenyReason | null;
+  /** [T-8.11] Pool del intento denegado (ver `setDenied`). */
+  deniedProfile: ProfileGroup | null;
   /** [T-8.04 · D-38] epoch ms del login REAL; no cambia al renovar. */
   authAt: number | null;
   /** [T-8.04 · D-38] edad máxima de la sesión del rol (s), de `/me`. */
@@ -45,7 +52,13 @@ interface SessionState {
     authAt?: number | null;
     maxAgeS?: number | null;
   }) => void;
-  setDenied: (reason: GateDenyReason) => void;
+  /**
+   * [T-8.11] `profile`: el pool con el que se intentó entrar. El gate borra la
+   * sesión al denegar, y sin recordarlo `logout()` no sabría qué Hosted UI cerrar:
+   * la cookie de Cognito sobreviviría y el siguiente login volvería a entrar con
+   * la misma cuenta denegada.
+   */
+  setDenied: (reason: GateDenyReason, profile?: ProfileGroup | null) => void;
   /** Cierre LOCAL: purga el almacén seguro y vuelve a anónimo, sin red ni
    * navegador (para eso está `logout()` en `auth/logout.ts`).
    *
@@ -63,6 +76,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   idToken: null,
   me: null,
   deniedReason: null,
+  deniedProfile: null,
   authAt: null,
   maxAgeS: null,
   signOutReason: null,
@@ -74,6 +88,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       idToken: null,
       me: null,
       deniedReason: null,
+      deniedProfile: null,
       authAt: null,
       maxAgeS: null,
     }),
@@ -85,15 +100,17 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       idToken,
       me,
       deniedReason: null,
+      deniedProfile: null,
       authAt: authAt === undefined ? s.authAt : authAt,
       maxAgeS: maxAgeS === undefined ? s.maxAgeS : maxAgeS,
       signOutReason: null,
     })),
 
-  setDenied: (reason) =>
+  setDenied: (reason, profile = null) =>
     set({
       status: "denied",
       profile: null,
+      deniedProfile: profile,
       idToken: null,
       me: null,
       deniedReason: reason,
@@ -121,6 +138,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       idToken: null,
       me: null,
       deniedReason: null,
+      deniedProfile: null,
       authAt: null,
       maxAgeS: null,
       signOutReason: motivo,

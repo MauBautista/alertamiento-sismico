@@ -3,8 +3,9 @@
 // la fuente etiquetada. PROHIBIDO cualquier cronómetro regresivo o magnitud
 // preliminar. Presentacional puro: todo entra por props (testeable).
 import { useEffect, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { emergency, fontSize, motion, palette, radius, space } from "@/ui/theme";
 
 import { ALERT_SOURCE_CARRIES_ETA, formatElapsed } from "./machine";
@@ -176,14 +177,14 @@ export function CrisisView({
 
         {onSalir ? (
           <View style={styles.salida}>
-            <Pressable
+            <Pulsable
               accessibilityRole="button"
               onPress={onSalir}
               style={styles.salidaBoton}
               testID="crisis-salir-tactico"
             >
               <Text style={styles.salidaTexto}>SILENCIAR Y VOLVER AL PANEL</Text>
-            </Pressable>
+            </Pulsable>
             {/* Salir de la PANTALLA no es que se acabó la alerta, y decirlo aquí
                 cuesta una línea: quien pulsa se lleva la franja de alerta viva a
                 todas las pestañas y puede volver tocándola. */}

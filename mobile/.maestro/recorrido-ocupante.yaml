@@ -1,0 +1,191 @@
+# Recorrido · el OCUPANTE pulsa todo lo que se puede pulsar sin cambiar nada.
+#
+# [T-8.11] Para qué existe: la app se enseña en un Pixel 8 Pro real, y los
+# cinco flujos numerados recorren CAMINOS (crisis, check-in, pánico…), no
+# PANTALLAS. Nadie había tocado cada pestaña y cada botón de lectura con la app
+# instalada, así que un botón que no responde —o que responde y no se ve, que
+# es lo que arregló A-062— se descubría delante del cliente. Este flujo pasa por
+# todas y deja una captura de cada una en la carpeta de artefactos de Maestro.
+#
+# PRECONDICIÓN: el sitio del arnés SIN incidente — nada toma la pantalla.
+#     make cloud-staging-incident PHASE=reset
+# Con un incidente abierto la toma de crisis o el check-in de vida tapan las
+# pestañas, y este recorrido NO contesta el check-in: sería uno real.
+#
+# NO PIDE TOTP: `login-occupant.yaml` entra por el pool de OCUPANTES, cuyo MFA
+# es opcional. Corre solo.
+#
+# LO QUE NO PULSA, a propósito (mutan o sacan de la app):
+#   · «ALARMA DEL INMUEBLE»: se ABRE y se mira, pero el voto (mantener pulsado)
+#     no se da — sería un voto real del cuórum de pánico.
+#   · LLAMAR (inicio y directorio) y ABRIR (rutas): abren el marcador o el
+#     visor del sistema, fuera de la app.
+#   · En CUENTA: guardar perfil, el interruptor de GPS y CERRAR SESIÓN.
+#   · En el aviso de privacidad: aceptar; en vincular: el código de sitio.
+#
+# Córrelo con `TAKAB_MAESTRO_ENV=.env.e2e .maestro/run.sh recorrido-ocupante.yaml`.
+# Las capturas salen con el prefijo `ocupante-NN-…`.
+appId: com.takab.ailert
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+- runFlow: shared/enrolar-sitio.yaml
+
+# El armazón del ocupante está montado cuando se ve su barra.
+- extendedWaitUntil:
+    visible: "INICIO"
+    timeout: 30000
+- assertNotVisible: "¿Se encuentra bien?"
+
+# ── INICIO ────────────────────────────────────────────────────────────────
+- tapOn: "INICIO"
+- takeScreenshot: ocupante-01-inicio
+- assertNotVisible:
+    id: "state-error"
+
+# INICIO es una lista que se desplaza: cada botón se busca BAJANDO antes de
+# pulsarlo, en el orden en que aparecen (la pestaña conserva el desplazamiento
+# al volver, así que el siguiente siempre queda más abajo).
+- scrollUntilVisible:
+    element:
+      text: "Ver directorio completo →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Ver directorio completo →"
+- extendedWaitUntil:
+    visible: "CONTACTOS DE EMERGENCIA DEL INMUEBLE"
+    timeout: 15000
+- takeScreenshot: ocupante-02-inicio-a-directorio
+- assertNotVisible:
+    id: "state-error"
+
+- tapOn: "INICIO"
+- scrollUntilVisible:
+    element:
+      text: "RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →"
+- extendedWaitUntil:
+    visible: "RUTAS Y DOCUMENTOS DEL INMUEBLE"
+    timeout: 15000
+- takeScreenshot: ocupante-03-inicio-a-rutas
+- assertNotVisible:
+    id: "state-error"
+
+# La alarma del inmueble: se abre, se lee su advertencia, y se sale SIN votar.
+# OBLIGATORIO, no condicional: INICIO la pinta SIEMPRE que tiene estado
+# (`inicio.tsx` pasa `onOpenPanic` sin condición). Era `optional` + `when`, y un
+# INICIO sin ese botón se saltaba el bloque en silencio y salía verde
+# [T-8.11 · verificador].
+- tapOn: "INICIO"
+- scrollUntilVisible:
+    element:
+      id: "open-panic"
+    direction: DOWN
+    timeout: 10000
+- tapOn:
+    id: "open-panic"
+- extendedWaitUntil:
+    visible:
+      text: ".*NO es la alerta sísmica.*"
+    timeout: 15000
+- takeScreenshot: ocupante-04-alarma-del-inmueble-sin-votar
+- assertNotVisible:
+    id: "state-error"
+- back
+
+# ── RUTAS ─────────────────────────────────────────────────────────────────
+- tapOn: "RUTAS"
+- extendedWaitUntil:
+    visible: "RUTAS Y DOCUMENTOS DEL INMUEBLE"
+    timeout: 15000
+- takeScreenshot: ocupante-05-rutas
+- assertNotVisible:
+    id: "state-error"
+# Descargar la copia offline es de LECTURA: guarda en el teléfono lo que el
+# servidor ya publicó. Solo existe si el sitio tiene documentos sin copia.
+- runFlow:
+    when:
+      visible: "DESCARGAR PARA OFFLINE"
+    commands:
+      - tapOn: "DESCARGAR PARA OFFLINE"
+      - extendedWaitUntil:
+          visible: "DISPONIBLE OFFLINE"
+          timeout: 30000
+          optional: true
+      - takeScreenshot: ocupante-06-rutas-descargada
+      - assertNotVisible:
+          id: "state-error"
+
+# ── DIRECTORIO ────────────────────────────────────────────────────────────
+- tapOn: "DIRECTORIO"
+- extendedWaitUntil:
+    visible: "CONTACTOS DE EMERGENCIA DEL INMUEBLE"
+    timeout: 15000
+- takeScreenshot: ocupante-07-directorio
+- assertNotVisible:
+    id: "state-error"
+
+# ── CUENTA ────────────────────────────────────────────────────────────────
+- tapOn: "CUENTA"
+- extendedWaitUntil:
+    visible:
+      text: "CUENTA · .*"
+    timeout: 15000
+- takeScreenshot: ocupante-08-cuenta
+- assertNotVisible:
+    id: "state-error"
+
+- scrollUntilVisible:
+    element:
+      text: "Estado de permisos de alerta →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Estado de permisos de alerta →"
+- extendedWaitUntil:
+    visible: "CONFIGURACIÓN · PASO 1 DE 3"
+    timeout: 15000
+- takeScreenshot: ocupante-09-cuenta-permisos
+- assertNotVisible:
+    id: "state-error"
+- back
+
+- scrollUntilVisible:
+    element:
+      text: "Aviso de privacidad →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Aviso de privacidad →"
+- extendedWaitUntil:
+    visible: "CONFIGURACIÓN · PASO 2 DE 3"
+    timeout: 15000
+- takeScreenshot: ocupante-10-cuenta-privacidad
+- assertNotVisible:
+    id: "state-error"
+- back
+
+- scrollUntilVisible:
+    element:
+      text: "Vincular a un edificio \\(código de sitio\\) →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Vincular a un edificio (código de sitio) →"
+- extendedWaitUntil:
+    visible: "CONFIGURACIÓN · PASO 3 DE 3"
+    timeout: 15000
+- takeScreenshot: ocupante-11-cuenta-vincular
+- assertNotVisible:
+    id: "state-error"
+- back
+
+# Y de vuelta en su pestaña, hasta el final: CERRAR SESIÓN se VE, no se pulsa.
+- scrollUntilVisible:
+    element:
+      id: "logout"
+    direction: DOWN
+    timeout: 10000
+- takeScreenshot: ocupante-12-cuenta-final
+- assertNotVisible:
+    id: "state-error"

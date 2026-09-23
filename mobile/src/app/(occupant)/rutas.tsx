@@ -4,11 +4,12 @@
 // declara (jamás spinner infinito).
 import { listSiteAssetsSitesSiteIdAssetsGet, type SiteAssetOut } from "@takab/sdk";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { assetRowKind, downloadAsset, isCached, openAsset } from "@/features/routes/assetsCache";
 import { useCachedQuery } from "@/offline/useCachedQuery";
 import { useWatchedSiteId } from "@/services/mySite";
+import { Pulsable } from "@/ui/Pulsable";
 import { StateFrame } from "@/ui/StateFrame";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -64,24 +65,24 @@ function AssetRow(props: { asset: SiteAssetOut }) {
           <View style={styles.badge}>
             <Text style={styles.badgeText}>DISPONIBLE OFFLINE</Text>
           </View>
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             onPress={() => void openAsset(asset).catch(() => setError("No se pudo abrir."))}
             style={styles.actionBtn}
           >
             <Text style={styles.actionText}>ABRIR</Text>
-          </Pressable>
+          </Pulsable>
         </View>
       ) : null}
       {kind === "downloadable" ? (
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           disabled={busy}
           onPress={download}
           style={[styles.actionBtn, busy && styles.dim]}
         >
           <Text style={styles.actionText}>{busy ? "DESCARGANDO…" : "DESCARGAR PARA OFFLINE"}</Text>
-        </Pressable>
+        </Pulsable>
       ) : null}
       {kind === "unavailable" ? (
         <Text style={styles.unavailable}>SIN COPIA OFFLINE · requiere conexión</Text>
@@ -118,6 +119,7 @@ export default function Rutas() {
       }
       error={assets.error}
       loading={assets.loading}
+      onRetry={assets.refetch}
       staleSinceMs={assets.staleSinceMs}
     >
       <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>

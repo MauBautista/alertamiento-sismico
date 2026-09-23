@@ -8,13 +8,13 @@ import { Feather } from "@expo/vector-icons";
 import type { DirectoryEntryOut, MobileStateOut } from "@takab/sdk";
 import {
   Linking,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 import { healthBanner, wr1Chip, type HealthTone } from "./health";
@@ -190,7 +190,7 @@ export function HomeView(props: {
                 <Text style={styles.muted}>{b.role.toUpperCase()}</Text>
               </View>
               {b.phone ? (
-                <Pressable
+                <Pulsable
                   accessibilityRole="button"
                   hitSlop={slopHasta(CHIP_ALTO)}
                   onPress={() => void Linking.openURL(`tel:${b.phone}`)}
@@ -198,21 +198,21 @@ export function HomeView(props: {
                   testID={`call-${b.user_id}`}
                 >
                   <Text style={styles.callText}>LLAMAR</Text>
-                </Pressable>
+                </Pulsable>
               ) : null}
             </View>
           ))
         )}
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           onPress={props.onOpenDirectorio}
           style={styles.linkBtn}
         >
           <Text style={styles.link}>Ver directorio completo →</Text>
-        </Pressable>
+        </Pulsable>
       </View>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         onPress={props.onOpenRutas}
         style={styles.routesBtn}
@@ -220,10 +220,10 @@ export function HomeView(props: {
         <Text style={styles.routesText}>
           RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →
         </Text>
-      </Pressable>
+      </Pulsable>
 
       {props.onOpenPanic ? (
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           onPress={props.onOpenPanic}
           style={styles.panicBtn}
@@ -232,7 +232,7 @@ export function HomeView(props: {
           <Text style={styles.panicText}>
             ALARMA DEL INMUEBLE (NO SÍSMICA) →
           </Text>
-        </Pressable>
+        </Pulsable>
       ) : null}
     </ScrollView>
   );

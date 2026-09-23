@@ -2,12 +2,17 @@
 #
 # VIENE DE `05b`, sin `clearState`. `run-offline.sh` restaura el WiFi antes.
 #
-# QUÉ SE MIDE, y por qué no es «SINCRONIZADO». La versión anterior esperaba una
-# fila con esa etiqueta y no podía pasar nunca: al confirmarse, el elemento SALE
-# de la cola y la pantalla se queda sin fila que mirar. Lo observable es que el
-# contador de PENDIENTES baja a cero **sin que aparezca ningún FALLIDO** y sin
-# que nadie pulse reintentar — que es justo el comportamiento offline-first: la
-# cola drena sola al recuperar la red.
+# QUÉ SE MIDE: que el contador de PENDIENTES baja a cero **sin que aparezca
+# ningún FALLIDO** y sin que nadie pulse reintentar — que es justo el
+# comportamiento offline-first: la cola drena sola al recuperar la red.
+#
+# ⚠️ [T-8.11 · A-024] …y que lo que drenó es LO QUE `05b` ENCOLÓ. «0 PENDIENTE(S)»
+# solo, también es cierto con la cola vacía: como `05b` no encolaba nada, este
+# flujo salía verde sin haber drenado nada. Aquí decía que esperar
+# «SINCRONIZADO» «no podía pasar nunca» porque el elemento SALE de la cola al
+# confirmarse; medido en el código, no es así: `shouldPurge` solo poda a las
+# 24 h (`RETENTION_AFTER_SYNC_MS`) y la pantalla SYNC pinta también los
+# sincronizados. La fila no aparecía porque nunca había existido.
 #
 # LO QUE ESTE FLUJO **NO** ACREDITA, y hay que decirlo: que el elemento llegara
 # al servidor. «Salió de la cola» y «lo recibió la nube» no son lo mismo, y desde
@@ -22,6 +27,12 @@ appId: com.takab.ailert
     visible:
       text: "SINCRONIZACIÓN · 0 PENDIENTE\\(S\\)"
     timeout: 60000
+# La tarjeta de la verificación en persona, ya SINCRONIZADA.
+- assertVisible:
+    id: "sync-.*"
+    containsDescendants:
+      - text: "Verificación en persona"
+      - text: "SINCRONIZADO"
 # Y que no haya drenado a la papelera: ni un fallido, ni un reintento pendiente.
 - assertNotVisible:
     text: ".*FALLÓ.*"

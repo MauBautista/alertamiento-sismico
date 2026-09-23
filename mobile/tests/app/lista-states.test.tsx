@@ -15,9 +15,21 @@
 //  3. El error de `mobile-state` no viajaba al marco: con la consulta caída,
 //     `incidentId` es null y la pantalla afirmaba «Sin incidente activo en su
 //     sitio» — la afirmación más tranquilizadora posible, y falsa.
+//
+// [T-8.11 · A-024] Y el arreglo de (1) se quedó a medias: capturar el fallo
+// hacía que la pantalla DIJERA que no quedó registrado, pero sin red seguía sin
+// registrarse. El check-in delegado es de la cola desde esta ficha —igual que
+// el propio, la foto y el reporte—: sin red se GUARDA y se dice que se guardó.
 import type { RosterOut } from "@takab/sdk";
 import { act, fireEvent, render } from "@testing-library/react-native";
 
+import {
+  configureQueuePersistence,
+  resetQueueStoreForTests,
+  useQueueStore,
+} from "@/offline/queue.store";
+import { MemoryQueuePersistence } from "@/offline/store";
+import { drainQueue } from "@/offline/sync";
 import { expectFourStates } from "@/test-utils/expectFourStates";
 
 import Lista from "@/app/(brigadista)/lista";
@@ -48,6 +60,17 @@ jest.mock("@/live/socket", () => ({
     subscribe: () => () => undefined,
   }),
 }));
+
+// La cola es la de verdad (en memoria): lo que se afirma es que el check-in
+// delegado ENTRA en ella, no que alguien llame a una función.
+jest.mock("expo-crypto", () => {
+  let n = 0;
+  return {
+    CryptoDigestAlgorithm: { SHA256: "SHA-256" },
+    digestStringAsync: jest.fn(async (_alg: string, data: string) => `sha256:${data.length}`),
+    randomUUID: jest.fn(() => `uuid-${++n}`),
+  };
+});
 
 // La consulta del roster se conduce a mano: así se puede poner la pantalla en
 // cada uno de los cuatro estados sin pelearse con el reloj de react-query.
@@ -123,7 +146,10 @@ function consulta(over: Record<string, unknown> = {}) {
   };
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  resetQueueStoreForTests();
+  configureQueuePersistence(new MemoryQueuePersistence());
+  await useQueueStore.getState().hydrate();
   mockSnapshot = instantanea();
   mockRoster = consulta();
   mockVerificar.mockReset();
@@ -147,26 +173,171 @@ async function pulsar(v: { getByTestId: (id: string) => unknown }, id: string): 
 
 // ------------------------------------------------------------------ tests
 
-describe("2.6 · pase de lista · el check-in DELEGADO no se traga su fallo", () => {
-  it("si el SDK LANZA, la fila se libera y se dice que NO quedó contabilizada", async () => {
+describe("2.6 · pase de lista · el check-in DELEGADO va por la COLA (T-8.11 · A-024)", () => {
+  const delegados = () =>
+    useQueueStore.getState().items.filter((i) => i.kind === "delegated_checkin");
+
+  it("con red sale en el acto, con subject_user_id, y no pinta ningún aviso", async () => {
+    const v = await render(<Lista />);
+    await asentar();
+    await pulsar(v, "verify-u-1");
+
+    expect(mockVerificar).toHaveBeenCalledTimes(1);
+    const [item] = delegados();
+    expect(item.state).toBe("synced");
+    const call = mockVerificar.mock.calls[0][0] as { path: { incident_id: string }; body: unknown };
+    expect(call.path.incident_id).toBe("inc-1");
+    expect(call.body).toMatchObject({
+      checkin_id: item.id,
+      status: "safe",
+      subject_user_id: "u-1",
+    });
+    expect(v.queryByTestId("headcount-outcome")).toBeNull();
+    expect(mockRoster.refetch).toHaveBeenCalled();
+  });
+
+  it("SIN RED se ENCOLA —no se pierde— y lo dice: guardada en el teléfono, sigue SIN REPORTE", async () => {
     mockVerificar.mockRejectedValue(new TypeError("Network request failed"));
 
     const v = await render(<Lista />);
     await asentar();
     await pulsar(v, "verify-u-1");
 
-    // La fila vuelve: se puede reintentar (el botón dice VERIFICAR, no "…").
-    expect(v.getByTestId("verify-u-1")).toHaveTextContent("VERIFICAR");
-    expect(v.getByTestId("headcount-outcome")).toHaveTextContent(/No se pudo verificar/);
-    expect(v.getByTestId("headcount-outcome")).toHaveTextContent(/sigue SIN REPORTE/);
+    const items = delegados();
+    expect(items).toHaveLength(1);
+    expect(items[0].state).toBe("pending");
+    expect(items[0].payload).toMatchObject({ incident_id: "inc-1", subject_user_id: "u-1" });
+
+    const aviso = v.getByTestId("headcount-outcome");
+    expect(aviso).toHaveTextContent(/GUARDADA EN ESTE TELÉFONO/);
+    expect(aviso).toHaveTextContent(/sigue SIN REPORTE/);
+    // La fila no se puede volver a marcar: un segundo toque sería OTRO check-in
+    // con otro id, no un reintento del primero.
+    expect(v.queryByTestId("verify-u-1")).toBeNull();
+    expect(v.getByTestId("queued-u-1")).toHaveTextContent("EN COLA");
   });
 
-  it("si sale bien no se pinta ningún error", async () => {
+  it("cuando la cola la entrega, el pase de lista se re-consulta solo y el aviso se va", async () => {
+    mockVerificar.mockRejectedValue(new TypeError("Network request failed"));
+    const v = await render(<Lista />);
+    await asentar();
+    await pulsar(v, "verify-u-1");
+    (mockRoster.refetch as jest.Mock).mockClear();
+
+    // Vuelve la red: la cola drena (lo haría `OfflineSyncGate`).
+    mockVerificar.mockResolvedValue({ data: {} });
+    await act(async () => {
+      await drainQueue(Date.now() + 10 * 60_000);
+    });
+    await asentar();
+
+    expect(delegados()[0].state).toBe("synced");
+    expect(mockRoster.refetch).toHaveBeenCalled();
+    expect(v.queryByTestId("headcount-outcome")).toBeNull();
+  });
+
+  it("si el servidor la RECHAZA, se dice y NO se da por verificada", async () => {
+    mockVerificar.mockResolvedValue({ data: undefined, response: { status: 404 } });
+
     const v = await render(<Lista />);
     await asentar();
     await pulsar(v, "verify-u-1");
 
-    expect(mockVerificar).toHaveBeenCalledTimes(1);
+    expect(delegados()[0].state).toBe("failed");
+    const aviso = v.getByTestId("headcount-outcome");
+    expect(aviso).toHaveTextContent(/rechazó/);
+    expect(aviso).toHaveTextContent(/sigue SIN REPORTE/);
+    // Fallida no retiene la fila: se puede volver a intentar.
+    expect(v.getByTestId("verify-u-1")).toHaveTextContent("VERIFICAR");
+  });
+
+  it("si ni siquiera se puede GUARDAR en el teléfono, lo dice y la fila se libera", async () => {
+    resetQueueStoreForTests();
+    const rota = new MemoryQueuePersistence();
+    rota.upsert = async () => {
+      throw new Error("disco lleno");
+    };
+    configureQueuePersistence(rota);
+    await useQueueStore.getState().hydrate();
+
+    const v = await render(<Lista />);
+    await asentar();
+    await pulsar(v, "verify-u-1");
+
+    expect(mockVerificar).not.toHaveBeenCalled();
+    const aviso = v.getByTestId("headcount-outcome");
+    expect(aviso).toHaveTextContent(/No se pudo guardar/);
+    expect(aviso).toHaveTextContent(/sigue SIN REPORTE/);
+    expect(v.getByTestId("verify-u-1")).toHaveTextContent("VERIFICAR");
+  });
+});
+
+// [T-8.11 · verificador] El aviso de la cola tiene que seguir siendo CIERTO
+// mientras se ve. Dos desenlaces lo desmentían:
+//   · con red, la segunda verificación seguida encuentra la cola drenando (una
+//     sola pasada a la vez) y quedaba «pending»: el aviso culpaba a una conexión
+//     que no se había perdido;
+//   · si el drenaje de FONDO la rechazaba después (404/403), el aviso se
+//     retiraba en silencio y la fila volvía a VERIFICAR sin decir por qué.
+describe("2.6 · pase de lista · el aviso de la cola sigue siendo cierto mientras se ve", () => {
+  const delegados = () =>
+    useQueueStore.getState().items.filter((i) => i.kind === "delegated_checkin");
+
+  it("si el drenaje de fondo la RECHAZA después, el aviso pasa a crítico: no desaparece en silencio", async () => {
+    mockVerificar.mockRejectedValue(new TypeError("Network request failed"));
+    const v = await render(<Lista />);
+    await asentar();
+    await pulsar(v, "verify-u-1");
+    expect(v.getByTestId("headcount-outcome")).toHaveTextContent(/GUARDADA EN ESTE TELÉFONO/);
+
+    // Vuelve la red, pero el servidor la rechaza (404: el incidente ya no está).
+    mockVerificar.mockResolvedValue({ data: undefined, response: { status: 404 } });
+    await act(async () => {
+      await drainQueue(Date.now() + 10 * 60_000);
+    });
+    await asentar();
+
+    expect(delegados()[0].state).toBe("failed");
+    const aviso = v.getByTestId("headcount-outcome");
+    expect(aviso).toHaveTextContent(/rechazó/);
+    expect(aviso).toHaveTextContent(/sigue SIN REPORTE/);
+    expect(v.getByTestId("verify-u-1")).toHaveTextContent("VERIFICAR");
+  });
+
+  it("CON RED, dos verificaciones seguidas: la segunda no culpa a una conexión que no se perdió", async () => {
+    const pendientes = roster().entries.map((e) => ({ ...e, checkin: null }));
+    mockRoster = consulta({
+      data: roster({
+        unreported: 2,
+        entries: [pendientes[0], { ...pendientes[1], user_id: "u-3" }],
+      }),
+    });
+    // La primera entrega se queda EN VUELO: la cola sigue drenando cuando llega
+    // el segundo toque.
+    let soltar: (r: unknown) => void = () => undefined;
+    mockVerificar.mockImplementationOnce(
+      () =>
+        new Promise((r) => {
+          soltar = r;
+        }),
+    );
+
+    const v = await render(<Lista />);
+    await asentar();
+    await pulsar(v, "verify-u-1");
+    await pulsar(v, "verify-u-3");
+
+    const aviso = v.getByTestId("headcount-outcome");
+    expect(aviso).toHaveTextContent(/GUARDADA EN ESTE TELÉFONO/);
+    expect(aviso).toHaveTextContent(/todavía no ha llegado al servidor/);
+    expect(aviso).not.toHaveTextContent(/conexión/);
+
+    // El drenaje en curso entrega las dos, y el aviso se retira solo.
+    await act(async () => {
+      soltar({ data: {} });
+    });
+    await asentar();
+    expect(delegados().map((i) => i.state)).toEqual(["synced", "synced"]);
     expect(v.queryByTestId("headcount-outcome")).toBeNull();
   });
 });

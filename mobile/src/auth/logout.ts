@@ -65,20 +65,31 @@ const esFalloDeRed = (err: unknown): boolean => err instanceof TypeError;
 let enCurso: Promise<LogoutReport> | null = null;
 
 /** Cierre de sesión explícito del usuario. Dos toques seguidos ⇒ una secuencia. */
-export function logout(opts: { hostedUiTimeoutMs?: number } = {}): Promise<LogoutReport> {
+export function logout(
+  opts: { hostedUiTimeoutMs?: number } = {},
+): Promise<LogoutReport> {
   if (enCurso === null) {
-    enCurso = secuencia(opts.hostedUiTimeoutMs ?? HOSTED_UI_TIMEOUT_MS).finally(() => {
-      enCurso = null;
-    });
+    enCurso = secuencia(opts.hostedUiTimeoutMs ?? HOSTED_UI_TIMEOUT_MS).finally(
+      () => {
+        enCurso = null;
+      },
+    );
   }
   return enCurso;
 }
 
 async function secuencia(hostedUiTimeoutMs: number): Promise<LogoutReport> {
-  const informe: LogoutReport = { push: "skipped", refresh: "none", hostedUi: "skipped" };
+  const informe: LogoutReport = {
+    push: "skipped",
+    refresh: "none",
+    hostedUi: "skipped",
+  };
   try {
     const stored = await loadSession().catch(() => null);
-    const profile = stored?.profile ?? useSessionStore.getState().profile;
+    // [T-8.11] Desde ACCESO DENEGADO no hay sesión guardada ni perfil: el pool es
+    // el del intento, que el gate deja en `deniedProfile`.
+    const estado = useSessionStore.getState();
+    const profile = stored?.profile ?? estado.profile ?? estado.deniedProfile;
     const pool = profile ? POOLS[profile] : null;
 
     // 1 · push — mientras la sesión sigue viva (el DELETE lleva Bearer).
@@ -143,7 +154,10 @@ async function cerrarHostedUi(
     `https://${domain}/logout?client_id=${encodeURIComponent(clientId)}` +
     `&logout_uri=${encodeURIComponent(LOGOUT_URI)}`;
   try {
-    const r = await conTope(WebBrowser.openAuthSessionAsync(url, LOGOUT_URI), timeoutMs);
+    const r = await conTope(
+      WebBrowser.openAuthSessionAsync(url, LOGOUT_URI),
+      timeoutMs,
+    );
     if (r === TIMEOUT) {
       // Sin esto la sesión del navegador quedaría abierta y el siguiente login
       // fallaría con «WebBrowser is already open».

@@ -23,8 +23,9 @@
 // quién despierta. Que las dos salgan de ahí no es economía: si divergieran,
 // alguien despertado sin poder acusar parecería «sin respuesta» para siempre y
 // dispararía el escalado por un fallo de permisos.
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { emergency, fontSize, radius, space } from "@/ui/theme";
 
 import { AMBAR_CLARO } from "./BuildingAlarmView";
@@ -65,7 +66,7 @@ export function TacticalAckButton({
   const enviando = estado === "enviando";
   return (
     <View>
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         accessibilityState={{ busy: enviando, disabled: enviando }}
         disabled={enviando}
@@ -78,7 +79,7 @@ export function TacticalAckButton({
         ) : (
           <Text style={styles.botonTexto}>ESTOY ATENDIENDO</Text>
         )}
-      </Pressable>
+      </Pulsable>
       <Text style={styles.pie}>
         Avisa al centro de monitoreo de que la brigada respondió. No silencia la sirena.
       </Text>

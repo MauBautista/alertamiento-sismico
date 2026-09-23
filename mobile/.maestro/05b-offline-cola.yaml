@@ -12,6 +12,20 @@ appId: com.takab.ailert
 # quedar encolado: ni perdido, ni dado por enviado.
 - tapOn:
     id: "verify-.*"
+# [T-8.11 · A-024] La fila lo dice en el acto: esa persona queda «EN COLA» y el
+# aviso explica que la verificación está en el teléfono, no en el servidor.
+# Hasta T-8.11 aquí salía «No se pudo verificar…» y NO se encolaba nada: la
+# lista hacía un POST directo.
+- extendedWaitUntil:
+    visible:
+      id: "queued-.*"
+    timeout: 15000
+# ESPERA: el aviso se pinta cuando el intento inmediato de envío VUELVE sin red,
+# y la fila «EN COLA» ya se ve mientras ese intento sigue en vuelo.
+- extendedWaitUntil:
+    visible:
+      text: ".*GUARDADA EN ESTE TELÉFONO.*"
+    timeout: 30000
 
 - tapOn: "SYNC"
 # ESPERA y no aserción inmediata: el banner se pinta cuando la APP detecta que se
@@ -23,5 +37,18 @@ appId: com.takab.ailert
     timeout: 30000
 - assertVisible:
     text: "MODO OFFLINE.*"
-- assertVisible:
-    text: ".*PENDIENTE.*"
+# ⚠️ [T-8.11 · A-024] UN ELEMENTO CONCRETO DE LA COLA, no la cabecera. Aquí se
+# afirmaba `text: ".*PENDIENTE.*"`, y esa regex casa SIEMPRE: con la cabecera
+# «SINCRONIZACIÓN · 0 PENDIENTE(S)» y con el contador «PENDIENTES», haya lo que
+# haya en la cola. El flujo salía verde sin que el check-in delegado se hubiera
+# encolado nunca — y no se encolaba. Lo que se afirma ahora es la TARJETA
+# (`sync-<id>`) de la verificación en persona, en estado PENDIENTE: el texto de
+# estado es exacto («PENDIENTE», no «PENDIENTE(S)» ni «PENDIENTES») y el título
+# solo lo lleva el check-in delegado, no el check-in propio del táctico.
+- extendedWaitUntil:
+    visible:
+      id: "sync-.*"
+      containsDescendants:
+        - text: "Verificación en persona"
+        - text: "PENDIENTE"
+    timeout: 15000

@@ -215,6 +215,75 @@ describe("drainQueue", () => {
 
 // ─── [T-2.108] Los otros dos tipos de la cola ────────────────────────────────
 
+/* ====================================================================
+   [T-8.11 · A-024] El check-in DELEGADO del pase de lista.
+
+   La lista hacía un POST directo: sin red decía «No se pudo verificar…» y no
+   encolaba nada, y el E2E `05b` lo daba por encolado porque su regex casaba con
+   la cabecera de SYNC. Ahora viaja por la cola como los otros tres tipos.
+   ==================================================================== */
+describe("check-in DELEGADO en la cola (2.6)", () => {
+  const VERIFICADO = {
+    incident_id: "inc-1",
+    subject_user_id: "u-7",
+    status: "safe" as const,
+    ts_device: "2026-07-16T10:05:00Z",
+  };
+
+  async function encolarDelegado() {
+    await nuevaCola();
+    return useQueueStore.getState().enqueueDelegatedCheckin(VERIFICADO);
+  }
+
+  it("viaja con subject_user_id y con checkin_id = id del item (idempotencia)", async () => {
+    const item = await encolarDelegado();
+    mockSubmit.mockResolvedValue({ data: { checkin_id: item.id }, response: { status: 201 } });
+
+    await drainQueue(Date.now());
+
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+    const call = mockSubmit.mock.calls[0][0] as { path: { incident_id: string }; body: unknown };
+    expect(call.path.incident_id).toBe("inc-1");
+    expect(call.body).toEqual({
+      checkin_id: item.id,
+      status: "safe",
+      subject_user_id: "u-7",
+      ts_device: VERIFICADO.ts_device,
+    });
+    expect(useQueueStore.getState().items[0].state).toBe("synced");
+  });
+
+  it("sin red queda PENDIENTE —no se pierde— y no cuenta como check-in propio", async () => {
+    const item = await encolarDelegado();
+    mockSubmit.mockRejectedValueOnce(new TypeError("Network request failed"));
+
+    await drainQueue(Date.now(), () => 0.5);
+    const tras = useQueueStore.getState().items[0];
+    expect(tras.state).toBe("pending");
+    expect(tras.attempts).toBe(1);
+    expect(hasLocalCheckin(useQueueStore.getState().items, "inc-1")).toBe(false);
+
+    // Vuelve la red: el replay lleva EL MISMO id — el servidor no duplica.
+    mockSubmit.mockResolvedValue({ data: { checkin_id: item.id }, response: { status: 200 } });
+    await drainQueue(tras.next_attempt_at + 1);
+    const replay = mockSubmit.mock.calls[1][0] as { body: { checkin_id: string } };
+    expect(replay.body.checkin_id).toBe(item.id);
+    expect(useQueueStore.getState().items[0].state).toBe("synced");
+  });
+
+  it("persona fuera del roster (404) ⇒ failed visible, sin reintentos", async () => {
+    await encolarDelegado();
+    mockSubmit.mockResolvedValue({ data: undefined, response: { status: 404 } });
+
+    await drainQueue(Date.now());
+    expect(useQueueStore.getState().items[0].state).toBe("failed");
+    expect(useQueueStore.getState().items[0].last_error).toBe("HTTP 404");
+
+    await drainQueue(Date.now() + 10 * 60_000);
+    expect(mockSubmit).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("foto forense en la cola (§2.3)", () => {
   it("sin red queda pending y NO se registra nada en el servidor", async () => {
     await nuevaCola();

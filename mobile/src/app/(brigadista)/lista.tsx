@@ -11,20 +11,28 @@
 //     no pintaban nada: no había forma de saber si la notificación salió.
 //   · el error de `mobile-state` no viajaba al marco, así que con la consulta
 //     caída la pantalla afirmaba «Sin incidente activo en su sitio».
+//
+// [T-8.11 · A-024] …y el check-in delegado, aun capturando el fallo, hacía un
+// POST DIRECTO: sin red decía «No se pudo verificar» y no guardaba nada. Es la
+// pantalla del trío offline y la única captura del táctico que no pasaba por la
+// cola. Ahora se ENCOLA (tipo `delegated_checkin`) y se intenta en el acto; sin
+// red queda guardado en el teléfono y la fila lo dice («EN COLA»).
 import {
   closeHeadcountIncidentsIncidentIdHeadcountClosePost,
   incidentRosterIncidentsIncidentIdRosterGet,
   notifyUnreportedIncidentsIncidentIdHeadcountNotifyUnreportedPost,
-  submitCheckinIncidentsIncidentIdCheckinsPost,
   TOPIC_INCIDENTS,
 } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { useAlertState } from "@/features/alert/useAlertState";
 import { HeadcountView } from "@/features/headcount/HeadcountView";
 import { getLiveSocket } from "@/live/socket";
+import { delegadosEnCola } from "@/offline/queue";
+import { useQueueStore } from "@/offline/queue.store";
+import { drainQueue } from "@/offline/sync";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
 import { useStaleSince } from "@/ui/useStaleSince";
@@ -33,10 +41,32 @@ import { fontSize, palette, radius, space } from "@/ui/theme";
 /** Piso de frescura del pase de lista (vida): también es su umbral de vejez. */
 const ROSTER_POLL_MS = 15_000;
 
-/** Desenlace de una acción del táctico. `ok=false` tiene que decir SIEMPRE qué
- *  NO pasó (nadie avisado, nadie contabilizado): el silencio de esta pantalla
- *  se lee como éxito. */
-type Desenlace = { ok: boolean; text: string };
+/** Desenlace de una acción del táctico. `crit` tiene que decir SIEMPRE qué NO
+ *  pasó (nadie avisado, nadie contabilizado): el silencio de esta pantalla se
+ *  lee como éxito. `warn` es lo que está a medio camino —guardado en el
+ *  teléfono, sin llegar al servidor— y lleva `itemId`, el de SU item de la
+ *  cola: el aviso sigue a ese item mientras se ve (ver `aviso`, abajo). */
+type Desenlace = { tone: "ok" | "warn" | "crit"; text: string; itemId?: string };
+
+/** El mismo texto para el rechazo en el acto y para el que llega después, en el
+ *  drenaje de fondo: sin el código HTTP, que queda en su tarjeta de SYNC. */
+const RECHAZADA =
+  "El servidor rechazó la verificación: esa persona sigue SIN REPORTE en el pase de lista. Queda en SYNC, con el motivo, para reintentarla.";
+
+/** Pendiente. Vale para los DOS caminos que la dejan así —sin red, o con red y
+ *  la cola ya drenando otra (una sola pasada a la vez)—, así que no culpa a la
+ *  conexión: [T-8.11 · verificador] decía «al recuperar la conexión» también
+ *  cuando la conexión nunca se había perdido. */
+const GUARDADA =
+  "Verificación GUARDADA EN ESTE TELÉFONO: todavía no ha llegado al servidor y se enviará sola, sin repetirla. Hasta que llegue, esa persona sigue SIN REPORTE en el pase de lista.";
+
+const TONO: Record<Desenlace["tone"], string> = {
+  ok: palette.ok,
+  warn: palette.warn,
+  crit: palette.crit,
+};
+
+const SIN_PERSONAS: ReadonlySet<string> = new Set();
 
 export default function Lista() {
   const siteId = useWatchedSiteId();
@@ -79,6 +109,33 @@ export default function Lista() {
   // del edificio y en qué estado.
   const rosterStaleSinceMs = useStaleSince(roster.dataUpdatedAt, ROSTER_POLL_MS);
 
+  // [T-8.11] Lo que este teléfono ya verificó y aún no llegó al servidor. Sale
+  // de la COLA, no de un estado de la pantalla: sobrevive a salir y volver, y a
+  // cerrar la app.
+  const queueItems = useQueueStore((s) => s.items);
+  const enCola = incidentId === null ? SIN_PERSONAS : delegadosEnCola(queueItems, incidentId);
+  // Cuántas entregó ya la cola. Cuando sube, el roster del servidor ya las
+  // cuenta: se re-consulta en el acto, sin esperar al WS ni al sondeo de 15 s.
+  const entregadas =
+    incidentId === null
+      ? 0
+      : queueItems.filter(
+          (i) =>
+            i.kind === "delegated_checkin" &&
+            i.payload.incident_id === incidentId &&
+            i.state === "synced",
+        ).length;
+  // Solo cuando SUBE: al montar, la consulta del roster ya sale por su cuenta, y
+  // las entregadas en otra visita (la cola las guarda 24 h) no son noticia.
+  const entregadasAntes = useRef(entregadas);
+  const refetchRoster = roster.refetch;
+  useEffect(() => {
+    if (entregadas > entregadasAntes.current) {
+      void refetchRoster();
+    }
+    entregadasAntes.current = entregadas;
+  }, [entregadas, refetchRoster]);
+
   // Live: la señal `roster` (o cualquier frame de incidente del sitio) refresca
   // el roster en <2 s. El pill del estado viene por continuación (lint v6).
   useEffect(() => {
@@ -110,7 +167,7 @@ export default function Lista() {
   }, [incidentId, siteId, roster]);
 
   const markVerified = (userId: string) => {
-    if (incidentId === null) {
+    if (incidentId === null || enCola.has(userId)) {
       return;
     }
     setMarkingId(userId);
@@ -118,19 +175,31 @@ export default function Lista() {
     void (async () => {
       try {
         // Check-in DELEGADO: subject_user_id ≠ portador ⇒ via='delegated',
-        // verified_by=táctico (distinguible del propio del ocupante).
-        const res = await submitCheckinIncidentsIncidentIdCheckinsPost({
-          path: { incident_id: incidentId },
-          body: { status: "safe", subject_user_id: userId, ts_device: new Date().toISOString() },
+        // verified_by=táctico (distinguible del propio del ocupante). Se sella
+        // AL TOQUE y se guarda antes de intentar nada: la red no decide si la
+        // verificación existe, solo cuándo llega.
+        const item = await useQueueStore.getState().enqueueDelegatedCheckin({
+          incident_id: incidentId,
+          subject_user_id: userId,
+          status: "safe",
+          ts_device: new Date().toISOString(),
         });
-        if (!res.data) {
-          throw new Error("el servidor no aceptó el check-in delegado");
+        await drainQueue(); // intento inmediato; sin red queda pending con backoff
+        const ahora = useQueueStore.getState().items.find((i) => i.id === item.id);
+        if (ahora?.state === "synced") {
+          void roster.refetch();
+        } else if (ahora?.state === "failed") {
+          setDesenlace({ tone: "crit", text: RECHAZADA });
+        } else {
+          // Pendiente: sin red, o la cola ya estaba drenando. Las dos cosas se
+          // dicen igual, porque las dos son ciertas: está en el teléfono y
+          // todavía no en el servidor.
+          setDesenlace({ tone: "warn", itemId: item.id, text: GUARDADA });
         }
-        void roster.refetch();
       } catch {
         setDesenlace({
-          ok: false,
-          text: "No se pudo verificar a esa persona: sigue SIN REPORTE en el pase de lista. Nada quedó registrado — vuelva a intentarlo.",
+          tone: "crit",
+          text: "No se pudo guardar la verificación en este teléfono: esa persona sigue SIN REPORTE en el pase de lista y nada quedó registrado — vuelva a intentarlo.",
         });
       } finally {
         setMarkingId(null);
@@ -153,12 +222,12 @@ export default function Lista() {
           throw new Error("el servidor no aceptó la notificación");
         }
         setDesenlace({
-          ok: true,
+          tone: "ok",
           text: "Notificación enviada a quienes no han reportado.",
         });
       } catch {
         setDesenlace({
-          ok: false,
+          tone: "crit",
           text: "No se pudo notificar: nadie ha sido avisado. Revise su conexión e intente de nuevo.",
         });
       } finally {
@@ -184,10 +253,10 @@ export default function Lista() {
         if (!res.data) {
           throw new Error("el servidor no aceptó el cierre");
         }
-        setDesenlace({ ok: true, text: "Headcount cerrado y registrado." });
+        setDesenlace({ tone: "ok", text: "Headcount cerrado y registrado." });
       } catch {
         setDesenlace({
-          ok: false,
+          tone: "crit",
           text: "No se pudo cerrar el headcount: sigue abierto y sin registrar. Revise su conexión e intente de nuevo.",
         });
       } finally {
@@ -195,6 +264,26 @@ export default function Lista() {
       }
     })();
   };
+
+  // El aviso de «guardada en el teléfono» sigue a SU item de la cola, porque
+  // deja de ser cierto sin que nadie toque nada:
+  //   · entregado (o podado a las 24 h) ⇒ se retira solo;
+  //   · RECHAZADO después, en el drenaje de fondo (404/403) ⇒ pasa a crítico
+  //     con el mismo texto que el rechazo en el acto. Antes se retiraba EN
+  //     SILENCIO y la fila volvía a VERIFICAR sin decir por qué: el motivo solo
+  //     se veía en SYNC [T-8.11 · verificador].
+  const vigilado =
+    desenlace?.itemId === undefined
+      ? null
+      : (queueItems.find((i) => i.id === desenlace.itemId) ?? null);
+  const aviso: Desenlace | null =
+    desenlace?.itemId === undefined
+      ? desenlace
+      : vigilado === null || vigilado.state === "synced"
+        ? null
+        : vigilado.state === "failed"
+          ? { tone: "crit", text: RECHAZADA }
+          : desenlace;
 
   return (
     <StateFrame
@@ -215,21 +304,17 @@ export default function Lista() {
     >
       {roster.data ? (
         <View style={styles.pila}>
-          {desenlace !== null ? (
+          {aviso !== null ? (
             <View
-              style={[
-                styles.desenlace,
-                { borderColor: desenlace.ok ? palette.ok : palette.crit },
-              ]}
+              style={[styles.desenlace, { borderColor: TONO[aviso.tone] }]}
               testID="headcount-outcome"
             >
-              <Text style={[styles.desenlaceText, { color: desenlace.ok ? palette.ok : palette.crit }]}>
-                {desenlace.text}
-              </Text>
+              <Text style={[styles.desenlaceText, { color: TONO[aviso.tone] }]}>{aviso.text}</Text>
             </View>
           ) : null}
           <HeadcountView
             busy={busy}
+            enCola={enCola}
             live={live}
             markingId={markingId}
             onCloseHeadcount={closeHeadcount}

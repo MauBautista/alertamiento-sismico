@@ -1,0 +1,301 @@
+# Recorrido · el TÁCTICO pulsa todo lo que se puede pulsar sin cambiar nada.
+#
+# [T-8.11] Hermano de `recorrido-ocupante.yaml`, con la misma razón: los flujos
+# numerados recorren caminos y éste recorre PANTALLAS. Pulsa las siete pestañas
+# y cada botón de lectura, y deja una captura de cada una (`tactico-NN-…`).
+#
+# PRECONDICIÓN: el sitio del arnés SIN incidente.
+#     make cloud-staging-incident PHASE=reset
+# Con la sacudida concluida el check-in de vida toma la pantalla, y este
+# recorrido NO lo contesta —sería un check-in real—: falla diciéndolo. Si se
+# corre justo después del trío offline (el táctico ya respondió), también vale:
+# los botones que solo existen con incidente —el formulario de TRIAGE, el filtro
+# de LISTA— se pulsan si están y se saltan si no.
+#
+# UN SALTO NO ES UN APROBADO [T-8.11 · verificador]: con `PHASE=reset` el
+# dictamen, el formulario de TRIAGE y el filtro de LISTA NO existen, y el
+# recorrido pasaba en verde sin haberlos pulsado. Cada bloque condicional deja
+# ahora su captura `tactico-NN-OMITIDO-…` cuando se salta, para que la carpeta de
+# artefactos diga lo que NO se tocó. Para tocarlos, la SEGUNDA PASADA del README
+# (tras el trío offline, con incidente y el táctico ya respondido; y tras el 03,
+# con el dictamen firmado). Toda captura va seguida de `assertNotVisible` sobre
+# `state-error`: una pestaña en «SIN CONEXIÓN CON EL SERVIDOR» ya no sale verde
+# (lo exige `tests/flujos-maestro.test.ts`).
+#
+# PIDE TOTP: entra por `login-tactico.yaml`, pool PRINCIPAL con MFA obligatorio.
+# Maestro no genera el código: hace falta una persona delante.
+#
+# LO QUE NO PULSA, a propósito (mutan o sacan de la app):
+#   · PANEL: ACTIVAR SIRENA y SILENCIAR — abren el mando firmado de la sirena.
+#   · TRIAGE: ENVIAR REPORTE y CAPTURAR (la cámara se abre y se cancela).
+#   · LISTA: VERIFICAR (check-in delegado), NOTIFICAR, CERRAR HEADCOUNT y LLAMAR.
+#   · SYNC: los reintentos. DICTAMEN: abrir el PDF (visor del sistema).
+#   · RUTAS/DIRECTORIO: ABRIR y LLAMAR. CUENTA: guardar, GPS y CERRAR SESIÓN.
+#
+# Córrelo con `TAKAB_MAESTRO_ENV=.env.e2e .maestro/run.sh recorrido-tactico.yaml`.
+appId: com.takab.ailert
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-tactico.yaml
+
+# ── entrar SIN contestar nada ─────────────────────────────────────────────
+# No se usa `esperar-pestanas-tacticas.yaml` porque su bucle llama a
+# `atender-checkin.yaml`, que pulsa «ESTOY BIEN». Aquí solo se atiende lo que no
+# escribe nada: el asistente de bienvenida (sin vincular) y la línea de tiempo.
+- extendedWaitUntil:
+    visible:
+      id: "tabs-tacticas"
+    timeout: 25000
+    optional: true
+- runFlow:
+    when:
+      notVisible:
+        id: "tabs-tacticas"
+    commands:
+      - repeat:
+          times: 10
+          commands:
+            - runFlow: shared/onboarding-tactico.yaml
+            - runFlow:
+                when:
+                  visible: "LÍNEA DE TIEMPO"
+                commands:
+                  - back
+            - waitForAnimationToEnd:
+                timeout: 2000
+# Si lo que tapa las pestañas es el check-in de vida, se dice aquí y no 30 s
+# después con un «no encuentro tabs-tacticas».
+- assertNotVisible: "¿Se encuentra bien?"
+- extendedWaitUntil:
+    visible:
+      id: "tabs-tacticas"
+    timeout: 30000
+
+# ── PANEL ─────────────────────────────────────────────────────────────────
+- tapOn: "PANEL"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: tactico-01-panel
+- assertNotVisible:
+    id: "state-error"
+- scrollUntilVisible:
+    element:
+      id: "open-dictamen"
+    direction: DOWN
+    timeout: 10000
+    optional: true
+- runFlow:
+    when:
+      visible:
+        id: "open-dictamen"
+    commands:
+      - tapOn:
+          id: "open-dictamen"
+      - waitForAnimationToEnd:
+          timeout: 5000
+      - takeScreenshot: tactico-02-dictamen
+      - assertNotVisible:
+          id: "state-error"
+      # Descargar el certificado es de LECTURA (copia local del PDF firmado).
+      - runFlow:
+          when:
+            visible:
+              id: "download-pdf"
+          commands:
+            - tapOn:
+                id: "download-pdf"
+            - extendedWaitUntil:
+                visible:
+                  id: "open-pdf"
+                timeout: 30000
+                optional: true
+            - takeScreenshot: tactico-03-dictamen-descargado
+            - assertNotVisible:
+                id: "state-error"
+      - back
+- runFlow:
+    when:
+      notVisible:
+        id: "open-dictamen"
+    commands:
+      - takeScreenshot: tactico-02-OMITIDO-sin-dictamen-firmado
+      - assertNotVisible:
+          id: "state-error"
+
+# ── TRIAGE ────────────────────────────────────────────────────────────────
+- tapOn: "TRIAGE"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: tactico-04-triage
+- assertNotVisible:
+    id: "state-error"
+# Solo con incidente hay formulario. Marcar y desmarcar una categoría es estado
+# del borrador en el teléfono —nada viaja hasta ENVIAR REPORTE—, y se deja como
+# estaba. La cámara se abre y se CANCELA: capturar crearía evidencia forense.
+- runFlow:
+    when:
+      visible: "REPORTE RÁPIDO DE DAÑOS"
+    commands:
+      - tapOn: "Daño estructural"
+      - takeScreenshot: tactico-05-triage-categoria
+      - assertNotVisible:
+          id: "state-error"
+      - tapOn: "Daño estructural"
+      - scrollUntilVisible:
+          element:
+            id: "add-photo"
+          direction: DOWN
+          timeout: 10000
+      - tapOn:
+          id: "add-photo"
+      - extendedWaitUntil:
+          visible: "CAPTURAR"
+          timeout: 15000
+      - takeScreenshot: tactico-06-camara-sin-capturar
+      - assertNotVisible:
+          id: "state-error"
+      - tapOn: "Cancelar"
+      - extendedWaitUntil:
+          visible:
+            id: "add-photo"
+          timeout: 15000
+- runFlow:
+    when:
+      notVisible: "REPORTE RÁPIDO DE DAÑOS"
+    commands:
+      - takeScreenshot: tactico-05-OMITIDO-triage-sin-incidente
+      - assertNotVisible:
+          id: "state-error"
+
+# ── LISTA ─────────────────────────────────────────────────────────────────
+- tapOn: "LISTA"
+- waitForAnimationToEnd:
+    timeout: 5000
+- takeScreenshot: tactico-07-lista
+- assertNotVisible:
+    id: "state-error"
+# El filtro es de la pantalla: se pulsa dos veces y queda como estaba.
+- runFlow:
+    when:
+      visible:
+        id: "filter-unreported"
+    commands:
+      - tapOn:
+          id: "filter-unreported"
+      - takeScreenshot: tactico-08-lista-todos
+      - assertNotVisible:
+          id: "state-error"
+      - tapOn:
+          id: "filter-unreported"
+- runFlow:
+    when:
+      notVisible:
+        id: "filter-unreported"
+    commands:
+      - takeScreenshot: tactico-08-OMITIDO-lista-sin-incidente
+      - assertNotVisible:
+          id: "state-error"
+
+# ── RUTAS ─────────────────────────────────────────────────────────────────
+- tapOn: "RUTAS"
+- extendedWaitUntil:
+    visible: "RUTAS Y DOCUMENTOS DEL INMUEBLE"
+    timeout: 15000
+- takeScreenshot: tactico-09-rutas
+- assertNotVisible:
+    id: "state-error"
+- runFlow:
+    when:
+      visible: "DESCARGAR PARA OFFLINE"
+    commands:
+      - tapOn: "DESCARGAR PARA OFFLINE"
+      - extendedWaitUntil:
+          visible: "DISPONIBLE OFFLINE"
+          timeout: 30000
+          optional: true
+      - takeScreenshot: tactico-10-rutas-descargada
+      - assertNotVisible:
+          id: "state-error"
+
+# ── DIRECTORIO ────────────────────────────────────────────────────────────
+- tapOn: "DIRECTORIO"
+- extendedWaitUntil:
+    visible: "CONTACTOS DE EMERGENCIA DEL INMUEBLE"
+    timeout: 15000
+- takeScreenshot: tactico-11-directorio
+- assertNotVisible:
+    id: "state-error"
+
+# ── SYNC ──────────────────────────────────────────────────────────────────
+- tapOn: "SYNC"
+- extendedWaitUntil:
+    visible:
+      text: "SINCRONIZACIÓN.*"
+    timeout: 15000
+- takeScreenshot: tactico-12-sync
+- assertNotVisible:
+    id: "state-error"
+
+# ── CUENTA ────────────────────────────────────────────────────────────────
+- tapOn: "CUENTA"
+- extendedWaitUntil:
+    visible:
+      text: "CUENTA · .*"
+    timeout: 15000
+- takeScreenshot: tactico-13-cuenta
+- assertNotVisible:
+    id: "state-error"
+
+# CUENTA se desplaza: cada enlace se busca BAJANDO, en su orden.
+- scrollUntilVisible:
+    element:
+      text: "Estado de permisos de alerta →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Estado de permisos de alerta →"
+- extendedWaitUntil:
+    visible: "CONFIGURACIÓN · PASO 1 DE 3"
+    timeout: 15000
+- takeScreenshot: tactico-14-cuenta-permisos
+- assertNotVisible:
+    id: "state-error"
+- back
+
+- scrollUntilVisible:
+    element:
+      text: "Aviso de privacidad →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Aviso de privacidad →"
+- extendedWaitUntil:
+    visible: "CONFIGURACIÓN · PASO 2 DE 3"
+    timeout: 15000
+- takeScreenshot: tactico-15-cuenta-privacidad
+- assertNotVisible:
+    id: "state-error"
+- back
+
+- scrollUntilVisible:
+    element:
+      text: "Vincular a un edificio \\(código de sitio\\) →"
+    direction: DOWN
+    timeout: 10000
+- tapOn: "Vincular a un edificio (código de sitio) →"
+- extendedWaitUntil:
+    visible: "CONFIGURACIÓN · PASO 3 DE 3"
+    timeout: 15000
+- takeScreenshot: tactico-16-cuenta-vincular
+- assertNotVisible:
+    id: "state-error"
+- back
+
+# Hasta el final de su pestaña: CERRAR SESIÓN se VE, no se pulsa.
+- scrollUntilVisible:
+    element:
+      id: "logout"
+    direction: DOWN
+    timeout: 10000
+- takeScreenshot: tactico-17-cuenta-final
+- assertNotVisible:
+    id: "state-error"

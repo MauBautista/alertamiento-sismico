@@ -58,6 +58,32 @@ async function sendCheckin(item: QueueItemOf<"checkin">): Promise<SendOutcome> {
   }
 }
 
+/** [T-8.11 · A-024] El check-in DELEGADO: mismo endpoint que el propio, con
+ *  `subject_user_id`. El `checkin_id` es el id del item, así que el replay tras
+ *  una red que murió a medias resuelve a LA MISMA fila (el servidor deduplica
+ *  por id y portador). Un 404 —la persona ya no está en el roster— o un 403
+ *  —el rol perdió el permiso— no se reintentan: quedan `failed` y visibles. */
+async function sendDelegatedCheckin(item: QueueItemOf<"delegated_checkin">): Promise<SendOutcome> {
+  try {
+    const res = await submitCheckinIncidentsIncidentIdCheckinsPost({
+      path: { incident_id: item.payload.incident_id },
+      body: {
+        checkin_id: item.id,
+        status: item.payload.status,
+        subject_user_id: item.payload.subject_user_id,
+        ts_device: item.payload.ts_device,
+      },
+    });
+    if (res.data) {
+      return { ok: true };
+    }
+    const status = res.response?.status ?? 0;
+    return { ok: false, retryable: isRetryableStatus(status), error: `HTTP ${status}` };
+  } catch {
+    return { ok: false, retryable: true, error: "sin red" };
+  }
+}
+
 /** La foto: se comprueba su huella, se registra y sube por el PUT presignado.
  *  El `evidence_id` que devuelve el servidor se guarda en `server_id` — es lo
  *  que después liga el reporte de daños con esta foto.
@@ -112,6 +138,7 @@ async function sendDamageReport(
  *  nuevo en la cola sin emisor aquí rompe la compilación. */
 const SENDERS: { [K in QueueKind]: (item: QueueItemOf<K>, byId: ById) => Promise<SendOutcome> } = {
   checkin: sendCheckin,
+  delegated_checkin: sendDelegatedCheckin,
   evidence: sendEvidence,
   damage_report: sendDamageReport,
 };
