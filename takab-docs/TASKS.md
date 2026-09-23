@@ -17620,11 +17620,14 @@ se registra en su RUNBOOK.
   sin un despliegue pendiente.
 - **Criterios de aceptación:**
   - [ ] `main` desplegado en la nube, `terraform apply` hecho y la APK release en el Pixel.
-  - [ ] Identidades de demostración: `takab_support`; inspector y building_admin con superficie
+  - [x] Identidades de demostración: `takab_support`; inspector y building_admin con superficie
     `both` y un sitio concreto; gov_operator en un cliente Protección Civil, con el cliente de la
-    demostración marcado `gov_shared`.
+    demostración marcado `gov_shared`. *Hecho el 2026-09-23 con `!`: gov_operator en «Protección
+    Civil (demo)» (`eb71a49f-…`), inspector y building_admin con el sitio `site-dev`
+    (`d1000000-…`). `seed_console_users.sh` borraba del secreto las contraseñas de los demás
+    usuarios al sembrar uno solo; ahora las fusiona.*
   - [ ] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
-  - [ ] La guía de la demostración explica la sesión del día.
+  - [x] La guía de la demostración explica la sesión del día (`GUIA-DEMOSTRACION-POR-ROLES` §0·bis).
   - [ ] Pase final por rol en la nube y en el Pixel; ensayo 2 registrado.
   - [ ] `goal-presentacion.sh` devuelve 0 y hay un tag de congelación.
 - **Hallazgos:** A-041, A-044, A-045, A-049, A-066, A-084, A-085, A-086, A-088 y los P2 de

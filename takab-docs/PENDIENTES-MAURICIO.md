@@ -944,11 +944,11 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
 
 ### 3.8 · [`T-8.13`](TASKS.md) · La tarde del miércoles 23: identidades por rol, Pixel y ensayo 2
 
-- **Identidades de demostración** (el clasificador no me deja tocar Cognito: van con `!`):
-  `takab_support` (`infra/scripts/seed_console_users.sh takab_support`); inspector y
-  building_admin con `surface=both` y un sitio concreto (hoy son `web` y la app los manda a
-  «sin acceso»); gov_operator en un cliente «Protección Civil», con el cliente de la demostración
-  marcado `gov_shared` (hoy vive en un tenant privado y ACUSAR le da 404).
+- ✅ **Identidades de demostración — HECHO el 2026-09-23** (con `!`): `takab_support` completado
+  (ya existía; le faltaba el grupo); inspector y building_admin con `surface=both` y el sitio
+  `site-dev`; gov_operator en «Protección Civil (demo)», con «TAKAB Ailert · Demostración»
+  marcado `gov_shared`. ⚠️ **No vuelvas a correr `seed_console_users.sh` sin argumentos ni con
+  esos tres roles**: les pone contraseña nueva y deshace estos ajustes.
 - **Pixel por USB** para los flujos Maestro y para entrar con cada rol móvil (el TOTP de los
   tácticos lo tecleas tú).
 - **Ensayo 2** con el gabinete y el WR-1: es la segunda corrida de `T-7.28`. Antes, clasificar
