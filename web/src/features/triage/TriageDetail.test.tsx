@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 
@@ -189,7 +189,10 @@ function arrange(
         detail={detail}
         forensics={FORENSICS}
         cctv={CCTV}
+        canReadCctv
         canDownloadClip={false}
+        clipDownload={{ download: vi.fn(), pendingClipId: null, failure: null }}
+        canVerifyDictamen
         minNodes={3}
         incidentStaleSince={null}
         estaciones={ESTACIONES_VACIAS}
@@ -523,5 +526,114 @@ describe("[T-7.48] la huella del ARCHIVO", () => {
     arrange({ evidence: resource<EvidenceObject[]>({ data: [] }) });
     expect(screen.queryByText(/sha256 del archivo/i)).toBeNull();
     expect(screen.queryByTestId(/^verify-/)).toBeNull();
+  });
+});
+
+// ═══════════════════ [T-8.08] lo que la pantalla ofrece, según lo que el rol TIENE
+
+describe("TriageDetail · la firma del PRIMER dictamen [A-015]", () => {
+  // La API firma sin cabeza de cadena (`supersedes=None`, dictamens.py). Si la
+  // pasada automática no dejó preliminar —worker caído, ventana vencida,
+  // incidente manual— el inspector que llega por el correo de `dictamen_request`
+  // no tenía con qué firmar: la tarjeta vivía dentro de `{verdict && head && …}`.
+  it("sin dictamen previo la firma APARECE, y el vacío se sigue declarando", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [] }) }, { canSign: true });
+    expect(screen.getByText("SIN DICTAMEN REGISTRADO PARA ESTE INCIDENTE")).toBeInTheDocument();
+    const firmar = screen.getByRole("button", { name: /FIRMAR DICTAMEN/ });
+    expect(firmar).toBeEnabled();
+    // Dice que ésta es la primera versión: no hay preliminar que sustituir.
+    expect(screen.getByText(/PRIMERA VERSIÓN DE LA CADENA/)).toBeInTheDocument();
+  });
+
+  it("…y firma con el MISMO flujo de dos clics", () => {
+    const sign = vi.fn();
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [] }), sign }, { canSign: true });
+    fireEvent.change(screen.getByLabelText("Status del dictamen a firmar"), {
+      target: { value: "normal_operation" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /FIRMAR DICTAMEN/ }));
+    expect(sign).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(sign).toHaveBeenCalledWith("normal_operation", null);
+  });
+
+  it.each([
+    ["cargando", { loading: true }],
+    ["con la cadena caída", { error: "HTTP 503" }],
+  ])("%s NO se ofrece firmar: no se firma sobre una cadena que no se conoce", (_c, over) => {
+    arrange({ dictamens: resource<DictamenOut[]>(over) }, { canSign: true });
+    expect(screen.queryByRole("button", { name: /FIRMAR DICTAMEN/ })).toBeNull();
+  });
+
+  it("con la cadena VIEJA no afirma que no hay preliminar: FECHA la lectura", () => {
+    // [verificador] «NO HAY PRELIMINAR AUTOMÁTICO QUE SUSTITUIR» es una afirmación
+    // sobre la cadena de AHORA, y lo que se tiene es la de la última lectura: un
+    // preliminar pudo llegar después. La firma sigue ofrecida —la API calcula
+    // `supersedes` con la cabeza REAL (dictamens.py), así que no hay daño—, pero
+    // el rótulo dice de cuándo es lo que se sabe.
+    const leida = Date.parse("2026-09-19T11:02:03Z");
+    arrange(
+      { dictamens: resource<DictamenOut[]>({ data: [], staleSince: leida }) },
+      { canSign: true },
+    );
+    expect(screen.queryByText(/NO HAY PRELIMINAR AUTOMÁTICO QUE SUSTITUIR/)).toBeNull();
+    expect(screen.getByText(/SEGÚN LA LECTURA DE LAS 11:02:03 UTC/)).toBeInTheDocument();
+    expect(screen.getByText(/SI LLEGÓ UN PRELIMINAR DESPUÉS, ESTA FIRMA LO SUSTITUYE/));
+    expect(screen.getByRole("button", { name: /FIRMAR DICTAMEN/ })).toBeEnabled();
+  });
+
+  it("sin `sign_dictamen` la tarjeta dice por qué, igual que con cabeza", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [] }) }, { canSign: false });
+    const firmar = screen.getByRole("button", { name: /FIRMAR DICTAMEN/ });
+    expect(firmar).toBeDisabled();
+    expect(firmar.getAttribute("title")).toMatch(/sign_dictamen/);
+  });
+
+  it("con cabeza la firma sigue DENTRO del marco de la cadena, una sola vez", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [DICTAMEN] }) }, { canSign: true });
+    expect(screen.getAllByRole("button", { name: /FIRMAR DICTAMEN/ })).toHaveLength(1);
+    expect(screen.queryByText(/PRIMERA VERSIÓN DE LA CADENA/)).toBeNull();
+  });
+});
+
+describe("TriageDetail · sin `cctv_read` no hay panel de CCTV [A-042]", () => {
+  it("el panel no se monta: no hay un 403 que pintar", () => {
+    arrange({}, { canReadCctv: false });
+    expect(screen.queryByTestId("cctv-panel")).toBeNull();
+  });
+
+  it("con la acción, el panel está", () => {
+    arrange({}, { canReadCctv: true });
+    expect(screen.getByTestId("cctv-panel")).toBeInTheDocument();
+  });
+});
+
+describe("TriageDetail · VERIFICAR la huella del dictamen exige `dictamen_read` [A-052]", () => {
+  const PDF = {
+    created_at: "2026-09-19T11:00:00Z",
+    evidence_id: "ev-dictamen",
+    kind: "report_pdf",
+    s3_key: "k/pdf",
+    sha256: "a".repeat(64),
+  } as EvidenceObject;
+
+  it("sin la acción NO hay botón que responda 404 en rojo, y se dice por qué", () => {
+    // `POST /evidence/{id}/verify` con `kind=report_pdf` exige `dictamen_read`
+    // y responde 404 a los demás (para no confirmar que el objeto existe). El
+    // botón pintaba «NO SE PUDO VERIFICAR» en rojo delante del cliente.
+    arrange(
+      { evidence: resource<EvidenceObject[]>({ data: [PDF] }) },
+      { canVerifyDictamen: false },
+    );
+    expect(screen.queryByTestId("verify-ev-dictamen")).toBeNull();
+    expect(screen.getByTestId("verify-dictamen-denied")).toHaveTextContent(/dictamen_read/);
+    // La huella SIGUE: se puede comparar a mano con `sha256sum`.
+    expect(screen.getByText("a".repeat(64))).toBeInTheDocument();
+  });
+
+  it("con la acción, el botón está y no hay excusa", () => {
+    arrange({ evidence: resource<EvidenceObject[]>({ data: [PDF] }) }, { canVerifyDictamen: true });
+    expect(screen.getByTestId("verify-ev-dictamen")).toBeInTheDocument();
+    expect(screen.queryByTestId("verify-dictamen-denied")).toBeNull();
   });
 });

@@ -3,7 +3,6 @@
 // backend la convierte en notificación inmediata al SOC). Evidencias de 2.3
 // ligadas por conteo.
 import {
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 import {
@@ -93,7 +93,7 @@ export function DamageForm(props: {
             style={[styles.catCard, on && styles.catOn, on && danger && styles.catDanger]}
             testID={`cat-${cat.key}`}
           >
-            <Pressable
+            <Pulsable
               accessibilityRole="button"
               onPress={() => props.onToggle(cat.key)}
               style={styles.catHead}
@@ -102,11 +102,11 @@ export function DamageForm(props: {
                 {on ? "✓" : "○"}
               </Text>
               <Text style={[styles.catLabel, danger && styles.catLabelDanger]}>{cat.label}</Text>
-            </Pressable>
+            </Pulsable>
             {on ? (
               <View style={styles.sevRow}>
                 {SEVERITIES.map((s) => (
-                  <Pressable
+                  <Pulsable
                     accessibilityRole="button"
                     hitSlop={slopHasta(CHIP_ALTO)}
                     key={s}
@@ -120,7 +120,7 @@ export function DamageForm(props: {
                     <Text style={[styles.sevText, sev === s && { color: SEV_COLOR[s] }]}>
                       {s.toUpperCase()}
                     </Text>
-                  </Pressable>
+                  </Pulsable>
                 ))}
               </View>
             ) : null}
@@ -138,7 +138,7 @@ export function DamageForm(props: {
         value={props.notes}
       />
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         onPress={props.onAddPhoto}
         style={styles.photoBtn}
@@ -147,9 +147,9 @@ export function DamageForm(props: {
         <Text style={styles.photoText}>
           CÁMARA FORENSE{props.evidenceCount > 0 ? ` · ${props.evidenceCount} foto(s)` : ""}
         </Text>
-      </Pressable>
+      </Pulsable>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={!canSubmit}
         onPress={props.onSubmit}
@@ -157,7 +157,7 @@ export function DamageForm(props: {
         testID="submit-damage"
       >
         <Text style={styles.submitText}>{props.busy ? "ENVIANDO…" : "ENVIAR REPORTE"}</Text>
-      </Pressable>
+      </Pulsable>
     </ScrollView>
   );
 }

@@ -37,6 +37,7 @@ from pathlib import Path
 import pytest
 
 from takab_api.dictamen import pdf as pdf_mod
+from takab_api.dictamen import rotulos
 from takab_api.dictamen.bitacora import SIN_ROTULO
 from takab_api.dictamen.model import (
     CRONOLOGIA_SIN_ROTULO,
@@ -395,7 +396,8 @@ def test_la_cronologia_SALIO_de_la_cadena_de_custodia() -> None:
     assert "SIRENA ACTIVADA" not in custodia
     assert "siren_on" not in custodia
     # Y la custodia sigue haciendo lo suyo: los objetos archivados con su huella.
-    assert "MINISEED" in custodia
+    # [T-8.12 · A-144] Con su nombre en castellano, no `MINISEED` en mayúsculas.
+    assert rotulos.EVIDENCIA["miniseed"] in custodia
 
 
 def test_un_verbo_SIN_ROTULO_sale_declarado_y_contado() -> None:

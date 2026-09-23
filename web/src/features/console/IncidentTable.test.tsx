@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { NUEVO_MS } from "./filasNuevas";
@@ -390,5 +390,157 @@ describe("cola de incidentes · sus propios estados [T-6.06]", () => {
   it("sin error y fresca, la cola vacía sigue siendo la BUENA noticia de siempre", () => {
     renderTable({ incidents: [], queueError: null, queueStaleSince: null });
     expect(screen.getByText("SIN INCIDENTES ABIERTOS EN EL ALCANCE")).toBeInTheDocument();
+  });
+});
+
+/* =====================================================================
+   [T-8.07] el acuse dice lo que pasó y cae sobre la fila elegida
+   ===================================================================== */
+
+describe("[A-096 · T-8.07] la cola muestra el ESTADO de cada incidente", () => {
+  it("cada fila dice si está ABIERTO, ACUSADO o EN REVISIÓN", () => {
+    renderTable({
+      incidents: [
+        incident("a", { state: "open", max_pga_g: 0.3 }),
+        incident("b", { state: "acked", max_pga_g: 0.2 }),
+        incident("c", { state: "in_review", max_pga_g: 0.1 }),
+      ],
+    });
+    expect(screen.getByRole("columnheader", { name: "Estado" })).toBeInTheDocument();
+    const fila = (pga: string) => screen.getByText(pga).closest("tr") as HTMLElement;
+    expect(fila("0.300g")).toHaveTextContent("ABIERTO");
+    expect(fila("0.200g")).toHaveTextContent("ACUSADO");
+    expect(fila("0.100g")).toHaveTextContent("EN REVISIÓN");
+  });
+
+  it("un estado que la consola no conoce se imprime tal cual, no se disfraza", () => {
+    renderTable({ incidents: [incident("a", { state: "raro" })] });
+    expect(screen.getAllByRole("row")[1]).toHaveTextContent("RARO");
+  });
+});
+
+describe("[A-011 · T-8.07] el acuse espera al servidor", () => {
+  it("un incidente YA acusado no se vuelve a acusar: apagado y dice por qué", () => {
+    const { onAck } = renderTable({
+      incidents: [incident("a", { state: "acked" })],
+      selectedId: "a",
+    });
+    const button = screen.getByRole("button", { name: /CONFIRMAR ACUSE/ });
+    expect(button).toBeDisabled();
+    expect(button.closest("span[title]")).toHaveAttribute(
+      "title",
+      expect.stringContaining("ACUSADO"),
+    );
+    fireEvent.click(button);
+    fireEvent.click(button);
+    expect(onAck).not.toHaveBeenCalled();
+  });
+
+  it("con la promesa en vuelo dice ENVIANDO…; ACUSADO solo cuando resuelve", async () => {
+    let resolver!: () => void;
+    const onAck = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolver = resolve;
+        }),
+    );
+    renderTable({ selectedId: "a", onAck });
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
+    fireEvent.click(screen.getByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ }));
+    expect(onAck).toHaveBeenCalledWith("a");
+    expect(screen.getByRole("button", { name: /ENVIANDO/ })).toBeDisabled();
+    expect(screen.queryByText("ACUSADO", { selector: "button *" })).toBeNull();
+    await act(async () => {
+      resolver();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("ACUSADO", { selector: "button *" })).toBeInTheDocument();
+  });
+
+  it("el error del servidor se pinta junto al botón, con role=alert", () => {
+    renderTable({ selectedId: "a", ackError: "NO SE ACUSÓ · YA NO ESTÁ ABIERTO (HTTP 409)" });
+    expect(screen.getByRole("alert")).toHaveTextContent("NO SE ACUSÓ · YA NO ESTÁ ABIERTO");
+  });
+});
+
+describe("[A-012 · T-8.07] la selección es por INCIDENTE", () => {
+  it("la fila elegida se marca por su incident_id, aunque comparta sitio", () => {
+    renderTable({
+      incidents: [
+        incident("a", { site_id: "s-1", max_pga_g: 0.3 }),
+        incident("b", { site_id: "s-1", max_pga_g: 0.1 }),
+      ],
+      selectedId: "b",
+    });
+    expect(screen.getByText("0.100g").closest("tr")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("0.300g").closest("tr")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("la fila elegida se VE, no solo se anuncia al lector de pantalla", () => {
+    // `aria-selected` no tiene regla en la hoja: sin un fondo propio la fila
+    // sobre la que caen ACUSE, REUBICAR y DICTAMEN era indistinguible.
+    renderTable({
+      incidents: [incident("a", { max_pga_g: 0.3 }), incident("b", { max_pga_g: 0.1 })],
+      selectedId: "b",
+    });
+    const elegida = screen.getByText("0.100g").closest("tr") as HTMLElement;
+    const otra = screen.getByText("0.300g").closest("tr") as HTMLElement;
+    expect(elegida.style.backgroundColor).toContain("--tk-cyan-08");
+    expect(otra.style.backgroundColor).toBe("");
+  });
+});
+
+describe("[T-8.07] el segundo paso cae sobre el incidente que se ARMÓ", () => {
+  // Armar el acuse sobre A y cambiar de fila en los 5 s dejaba el botón armado:
+  // el siguiente clic acusaba B sin que nadie hubiera confirmado B. Cambiar de
+  // fila DESARMA.
+  function montar(onAck = vi.fn(), onRequestDictamen = vi.fn()) {
+    const props = {
+      incidents: [incident("a", { max_pga_g: 0.3 }), incident("b", { max_pga_g: 0.1 })],
+      siteInfoOf: () => ({ name: "Planta Cholula", coords: null, code: "site-cholula-a" }),
+      nowMs: NOW,
+      liveStatus: "ready" as const,
+      operatorLabel: "TENANT_ADMIN · SOC",
+      onSelect: vi.fn(),
+      canAck: true,
+      onAck,
+      canRelocate: true,
+      onRelocate: vi.fn(),
+      canRequestDictamen: true,
+      onRequestDictamen,
+    };
+    const vista = render(<IncidentTable {...props} selectedId="a" />);
+    return {
+      elegir: (id: string) => vista.rerender(<IncidentTable {...props} selectedId={id} />),
+    };
+  }
+
+  it("CONFIRMAR ACUSE armado sobre A se desarma al elegir B", () => {
+    const onAck = vi.fn();
+    const { elegir } = montar(onAck);
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
+    expect(screen.getByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ })).toBeInTheDocument();
+
+    elegir("b");
+    expect(screen.queryByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ })).toBeNull();
+    // El clic siguiente ARMA sobre B; no acusa nada.
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
+    expect(onAck).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ }));
+    expect(onAck).toHaveBeenCalledWith("b");
+  });
+
+  it("SOLICITAR DICTAMEN armado sobre A se desarma al elegir B", () => {
+    const onRequestDictamen = vi.fn();
+    const { elegir } = montar(vi.fn(), onRequestDictamen);
+    fireEvent.click(screen.getByRole("button", { name: /SOLICITAR DICTAMEN/ }));
+    expect(
+      screen.getByRole("button", { name: /CLIC DE NUEVO PARA SOLICITAR/ }),
+    ).toBeInTheDocument();
+
+    elegir("b");
+    expect(screen.queryByRole("button", { name: /CLIC DE NUEVO PARA SOLICITAR/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /SOLICITAR DICTAMEN/ }));
+    expect(onRequestDictamen).not.toHaveBeenCalled();
   });
 });

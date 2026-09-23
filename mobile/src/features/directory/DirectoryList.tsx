@@ -2,8 +2,9 @@
 // llamada de un toque. Sin teléfono publicado NO hay botón (honesto, no un
 // tel: que truena).
 import type { DirectoryEntryOut } from "@takab/sdk";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space } from "@/ui/theme";
 /**
  * [T-6.20] Alto VISIBLE del chip que vive DENTRO de una fila. Crecerlo hasta el
@@ -45,7 +46,7 @@ export function DirectoryList(props: { entries: DirectoryEntryOut[] }) {
                 <Text style={styles.role}>{ROLE_LABEL[e.role] ?? e.role.toUpperCase()}</Text>
               </View>
               {e.phone ? (
-                <Pressable
+                <Pulsable
                   accessibilityRole="button"
                   hitSlop={slopHasta(CHIP_ALTO)}
                   onPress={() => void Linking.openURL(`tel:${e.phone}`)}
@@ -53,7 +54,7 @@ export function DirectoryList(props: { entries: DirectoryEntryOut[] }) {
                   testID={`dir-call-${e.user_id}`}
                 >
                   <Text style={styles.callText}>LLAMAR</Text>
-                </Pressable>
+                </Pulsable>
               ) : (
                 <Text style={styles.noPhone}>sin teléfono</Text>
               )}

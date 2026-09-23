@@ -81,6 +81,33 @@ describe("OpenWindowDialog — abrir una ventana de mantenimiento", () => {
     expect(screen.getByTestId("open-window-error")).toHaveTextContent("HTTP 403");
   });
 
+  // [A-099 · T-8.09] `aria-describedby="open-window-keeps"` apuntaba a un id que
+  // no existía (el párrafo solo tenía `data-testid`): el lector de pantalla no
+  // leía lo que la ventana NO apaga, que es justo lo que hay que oír antes de
+  // silenciar un edificio.
+  it("el motivo está DESCRITO por el párrafo de lo que no se toca", () => {
+    arrange();
+    const ids = (screen.getByTestId("open-window-reason").getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .filter(Boolean);
+    expect(ids.length).toBeGreaterThan(0);
+    for (const id of ids) {
+      expect(document.getElementById(id), `aria-describedby → #${id}`).not.toBeNull();
+    }
+    expect(ids.map((id) => document.getElementById(id)?.textContent ?? "").join(" ")).toMatch(
+      /NO se toca/,
+    );
+  });
+
+  it("los controles llevan el vestido de la consola, no el del navegador", () => {
+    arrange();
+    // Mismas clases que el resto de formularios de la flota: sin ellas el
+    // diálogo salía con los controles nativos del navegador en mitad del SOC.
+    expect(screen.getByTestId("open-window-reason").closest(".fleet__form")).not.toBeNull();
+    expect(screen.getByTestId("open-window-confirm")).toHaveClass("soc-btn");
+    expect(screen.getByTestId("open-window-cancel")).toHaveClass("soc-btn");
+  });
+
   it("cancelar no abre nada", () => {
     const { onCancel, onConfirm } = arrange();
     fireEvent.click(screen.getByTestId("open-window-cancel"));

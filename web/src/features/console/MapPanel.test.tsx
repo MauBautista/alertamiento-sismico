@@ -1419,3 +1419,132 @@ describe("MapPanel · la ráfaga de arribo", () => {
     expect(arrivalsFeatureCollection([], []).features).toEqual([]);
   });
 });
+
+// [A-060 · T-8.09] EL FARO SEGUÍA PULSANDO CON `prefers-reduced-motion`.
+//
+// El loop rAF llamaba a `pulseAt()` en cada tick sin mirar la preferencia:
+// `reducedMotionRef` se declaraba y se asignaba, pero NUNCA se leía. Con la
+// reducción puesta la leyenda afirmaba «ANILLOS ESTÁTICOS (MOVIMIENTO REDUCIDO)»
+// mientras el anillo rojo seguía expandiéndose de 15 a 60 px cada 1.6 s — la
+// pantalla contradiciéndose y, para quien lo pidió, el síntoma que el SO ya
+// había declarado. Con reducción el faro no se APAGA (sigue diciendo «este
+// edificio disparó»): se queda quieto y puesto, como el anillo de arribo.
+describe("MapPanel · el faro con movimiento reducido [A-060]", () => {
+  const original = Object.getOwnPropertyDescriptor(window, "matchMedia");
+
+  function reduccion(activa: boolean): void {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn((q: string) => ({
+        matches: activa && q.includes("prefers-reduced-motion"),
+        media: q,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+  }
+
+  function restaurar(): void {
+    if (original) Object.defineProperty(window, "matchMedia", original);
+    else delete (window as unknown as { matchMedia?: unknown }).matchMedia;
+  }
+
+  /** Monta, arranca el estilo y corre dos ticks del rAF separados por 400 ms. */
+  function dosInstantes(): { radios: unknown[]; opacidades: unknown[]; atributos: string[] } {
+    mocks.handlers.clear();
+    mocks.sources.clear();
+    mocks.layers.clear();
+    vi.clearAllMocks();
+    const frames: FrameRequestCallback[] = [];
+    const atributos: string[] = [];
+    // El ÚLTIMO montado: el caso anterior del mismo test sigue en el DOM.
+    const leeRadio = () =>
+      atributos.push(
+        [...document.querySelectorAll("[data-faro-radio]")]
+          .at(-1)
+          ?.getAttribute("data-faro-radio") ?? "",
+      );
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    try {
+      render(<MapPanel sites={[CRITICAL]} epicenters={[]} onSelectSite={vi.fn()} />);
+      act(() => {
+        mocks.handlers.get("style.load")?.();
+      });
+      // El loop fecha el pulso contra el `performance.now()` del style.load: los
+      // instantes van DESPUÉS de él, o el delta sale negativo, se clampa a 0 y
+      // los dos fotogramas coinciden por accidente (el test pasaría en vacío).
+      const t0 = performance.now();
+      act(() => {
+        frames[frames.length - 1](t0 + 200);
+      });
+      leeRadio();
+      act(() => {
+        frames[frames.length - 1](t0 + 600);
+      });
+      leeRadio();
+    } finally {
+      rafSpy.mockRestore();
+    }
+    const de = (prop: string) =>
+      mocks.map.setPaintProperty.mock.calls
+        .filter((c) => c[0] === "pulse" && c[1] === prop)
+        .map((c) => c[2]);
+    return { radios: de("circle-radius"), opacidades: de("circle-stroke-opacity"), atributos };
+  }
+
+  // El e2e (`e2e/motion.spec.ts`) lee ESTE atributo en el navegador real, con la
+  // preferencia real del SO emulada: tiene que decir lo mismo que el paint.
+  it("el radio pintado se publica en `data-faro-radio` (lo que lee el e2e)", () => {
+    reduccion(true);
+    try {
+      const { radios, atributos } = dosInstantes();
+      expect(atributos).toEqual([
+        (radios.at(-1) as number).toFixed(2),
+        (radios.at(-1) as number).toFixed(2),
+      ]);
+    } finally {
+      restaurar();
+    }
+    reduccion(false);
+    try {
+      const { atributos } = dosInstantes();
+      expect(atributos[0]).not.toBe("");
+      expect(atributos[0]).not.toBe(atributos[1]);
+    } finally {
+      restaurar();
+    }
+  });
+
+  it("con reducción, el faro queda QUIETO: el mismo radio en dos instantes", () => {
+    reduccion(true);
+    try {
+      const { radios, opacidades } = dosInstantes();
+      expect(radios.length).toBeGreaterThan(0);
+      expect(new Set(radios).size).toBe(1);
+      expect(new Set(opacidades).size).toBe(1);
+      // …y PUESTO: quieto no es apagado. El edificio sigue diciendo que disparó.
+      expect(opacidades[0] as number).toBeGreaterThan(0.3);
+      expect(radios[0] as number).toBeGreaterThan(15);
+    } finally {
+      restaurar();
+    }
+  });
+
+  it("NO-VACUIDAD: sin reducción, el faro se expande entre los dos instantes", () => {
+    reduccion(false);
+    try {
+      const { radios } = dosInstantes();
+      expect(new Set(radios).size).toBeGreaterThan(1);
+    } finally {
+      restaurar();
+    }
+  });
+});

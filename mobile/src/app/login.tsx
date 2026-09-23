@@ -3,10 +3,11 @@
 //   · PERSONAL OPERATIVO → pool principal (MFA ON, no negociable)
 // Ambos: Hosted UI + código + PKCE. Un pool sin config se DECLARA (no se finge).
 import { Redirect } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useLogin } from "@/auth/useAuth";
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export default function Login() {
@@ -26,7 +27,7 @@ export default function Login() {
       </View>
 
       <View style={styles.actions}>
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           disabled={!occupant.ready}
           onPress={occupant.promptAsync}
@@ -34,14 +35,14 @@ export default function Login() {
         >
           <Text style={styles.primaryBtnText}>INICIAR SESIÓN</Text>
           <Text style={styles.btnSub}>Ocupante · acceso simple</Text>
-        </Pressable>
+        </Pulsable>
         {!occupant.configured ? (
           <Text style={styles.configWarn}>
             Pool de ocupantes sin configurar (EXPO_PUBLIC_COGNITO_OCCUPANTS_*) — ver mobile/README.md
           </Text>
         ) : null}
 
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           disabled={!tactical.ready}
           onPress={tactical.promptAsync}
@@ -49,7 +50,7 @@ export default function Login() {
         >
           <Text style={styles.ghostBtnText}>Acceso personal operativo</Text>
           <Text style={styles.btnSubGhost}>Brigadista / seguridad / inspección · MFA obligatorio</Text>
-        </Pressable>
+        </Pulsable>
         {!tactical.configured ? (
           <Text style={styles.configWarn}>
             Pool táctico sin configurar (EXPO_PUBLIC_COGNITO_TACTICAL_*) — ver mobile/README.md

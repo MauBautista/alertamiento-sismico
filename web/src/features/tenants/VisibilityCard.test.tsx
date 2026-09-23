@@ -83,8 +83,10 @@ describe("VisibilityCard", () => {
     render(<VisibilityCard grantee={GRANTEE} allTenants={[GRANTEE, TARGET]} />);
     fireEvent.change(screen.getByLabelText(/Conceder que vea a/), { target: { value: "t-2" } });
     fireEvent.click(screen.getByLabelText(/datos en vivo/)); // + datos (metadatos ya está)
+    // [A-110] Datos EN VIVO de otro cliente: dos pasos (arma, confirma).
     fireEvent.click(screen.getByRole("button", { name: /Conceder/ }));
-    expect(grant).toHaveBeenCalledWith({
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(grant.mock.calls[0][0]).toEqual({
       grantee_tenant_id: "g-1",
       target_all: false,
       target_tenant_id: "t-2",
@@ -99,9 +101,41 @@ describe("VisibilityCard", () => {
     render(<VisibilityCard grantee={GRANTEE} allTenants={[GRANTEE, TARGET]} />);
     fireEvent.change(screen.getByLabelText(/Conceder que vea a/), { target: { value: "ALL" } });
     fireEvent.click(screen.getByRole("button", { name: /Conceder/ }));
-    expect(grant).toHaveBeenCalledWith(
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(grant.mock.calls[0][0]).toEqual(
       expect.objectContaining({ target_all: true, target_tenant_id: null }),
     );
+  });
+
+  // [A-110 · T-8.09] Conceder a TODOS los clientes —con datos en vivo incluidos—
+  // salía de un solo clic, y el formulario se vaciaba aunque el servidor lo
+  // rechazara: el operador se quedaba sin saber qué había pedido.
+  it("conceder a TODOS no sale de un solo clic", () => {
+    const grant = vi.fn();
+    mocks.useVisibilityMutations.mockReturnValue(visMut({ grant }));
+    render(<VisibilityCard grantee={GRANTEE} allTenants={[GRANTEE, TARGET]} />);
+    fireEvent.change(screen.getByLabelText(/Conceder que vea a/), { target: { value: "ALL" } });
+    fireEvent.click(screen.getByRole("button", { name: /Conceder/ }));
+    expect(grant).not.toHaveBeenCalled();
+  });
+
+  it("si el servidor lo rechaza, lo elegido SIGUE en el formulario", () => {
+    const grant = vi.fn(); // nunca llama a onSuccess: el servidor falló
+    mocks.useVisibilityMutations.mockReturnValue(visMut({ grant }));
+    render(<VisibilityCard grantee={GRANTEE} allTenants={[GRANTEE, TARGET]} />);
+    fireEvent.change(screen.getByLabelText(/Conceder que vea a/), { target: { value: "t-2" } });
+    fireEvent.click(screen.getByRole("button", { name: /Conceder/ }));
+    expect(grant).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText(/Conceder que vea a/)).toHaveValue("t-2");
+  });
+
+  it("si sale bien, el formulario se vacía", () => {
+    const grant = vi.fn((_body: unknown, opts?: { onSuccess?: () => void }) => opts?.onSuccess?.());
+    mocks.useVisibilityMutations.mockReturnValue(visMut({ grant }));
+    render(<VisibilityCard grantee={GRANTEE} allTenants={[GRANTEE, TARGET]} />);
+    fireEvent.change(screen.getByLabelText(/Conceder que vea a/), { target: { value: "t-2" } });
+    fireEvent.click(screen.getByRole("button", { name: /Conceder/ }));
+    expect(screen.getByLabelText(/Conceder que vea a/)).toHaveValue("");
   });
 
   it("Revocar llama al revoke con el grant_id", () => {

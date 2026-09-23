@@ -5,7 +5,7 @@
 // compliance, no de UI: «no hay dictamen firmado» y «no pudimos consultarlo»
 // autorizan cosas distintas, y un spinner eterno no autoriza ninguna.
 import type { MobileDictamenOut, MobileStateOut } from "@takab/sdk";
-import { act, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { expectFourStates } from "@/test-utils/expectFourStates";
 
@@ -157,6 +157,52 @@ describe("2.7 · dictamen · sin incidente, sin firma y sin red dicen cosas dist
 
     expect(v.getByTestId("state-stale")).toHaveTextContent(/DATOS RETENIDOS/);
     expect(v.getByTestId("certificate")).toBeTruthy();
+  });
+});
+
+describe("2.7 · dictamen · tras el cierre automático de D-33 (T-8.11 · A-022)", () => {
+  it("con el incidente ya cerrado y el dictamen firmado, se enseña el certificado", async () => {
+    // Desde D-33 el motor cierra el incidente segundos después de la firma:
+    // mobile-state devuelve `incident: null` con `reentry.dictamen_signed` y el
+    // incidente AL QUE PERTENECE el dictamen. Antes, esta pantalla solo miraba
+    // `incident` y decía «Sin incidente activo» justo cuando existe el papel.
+    mockSnapshot = {
+      data: {
+        ...conIncidente(),
+        phase: "reentry_approved",
+        incident: null,
+        reentry: {
+          blocked: false,
+          dictamen_status: "inhabit_monitor",
+          dictamen_signed: true,
+          incident_id: "inc-1",
+        },
+      } as unknown as MobileStateOut,
+    };
+    mockDictamen = consulta({ data: firmado(), dataUpdatedAt: AHORA });
+
+    const v = await render(<Dictamen />);
+    await asentar();
+
+    expect(v.queryByText(/Sin incidente activo/)).toBeNull();
+    expect(v.getByTestId("certificate")).toBeTruthy();
+  });
+
+  it("si la descarga del PDF falla, se dice (antes se tragaba el error)", async () => {
+    mockDictamen = consulta({ data: firmado(), dataUpdatedAt: AHORA });
+    const fs = jest.requireMock("expo-file-system") as {
+      File: { downloadFileAsync: jest.Mock };
+    };
+    fs.File.downloadFileAsync = jest.fn(async () => {
+      throw new Error("403 Forbidden: la URL firmada caducó");
+    });
+
+    const v = await render(<Dictamen />);
+    await asentar();
+    await fireEvent.press(v.getByTestId("download-pdf"));
+    await asentar();
+
+    expect(v.getByTestId("download-error")).toHaveTextContent(/No se pudo descargar/);
   });
 });
 

@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import io
 import math
+from datetime import UTC
 
 from fpdf.enums import MethodReturnValue, XPos, YPos
 
 from takab_api.compliance import compliance_block
-from takab_api.dictamen import plot, sketch
+from takab_api.dictamen import plot, rotulos, sketch
 from takab_api.dictamen.bitacora import rotulo as rotulo_de_accion
 from takab_api.dictamen.espectrograma import leyenda as leyenda_espectrograma
 from takab_api.dictamen.layout import (
@@ -30,6 +31,7 @@ from takab_api.dictamen.layout import (
     INK,
     MARGIN,
     MUTED,
+    PRIMER_BLOQUE_MM,
     RULE,
     VERDICT_COLORS,
     TakabPDF,
@@ -107,6 +109,8 @@ from takab_api.shakemap import calculo as shk
 #: no existía para la guarda— y `test_el_censo_de_figuras_las_tiene_TODAS` deriva
 #: del propio `pdf.py` quién dibuja, para que la lista no vuelva a quedarse atrás.
 _TRACE_H = 18.0
+#: Lo que ocupa la nota de la envolvente (`ENVELOPE_NOTE`, 7 pt, dos renglones).
+_NOTA_ENVOLVENTE_MM = 8.0
 _SKETCH_H = 78.0
 _ESPECTRO_H = 26.0
 _ESPECTROGRAMA_H = 32.0
@@ -180,13 +184,45 @@ def _render_technical(m: ReportModel) -> bytes:
     return bytes(pdf.output())
 
 
+def _clasificacion(m: ReportModel) -> str:
+    """[T-8.12 · A-053] La MISMA línea en la portada y en el ejecutivo."""
+    return rotulos.clasificacion(
+        m.clasificacion,
+        m.clasificacion_en,
+        legible=m.clasificacion_legible,
+        zona=m.zona_horaria,
+    )
+
+
+def _cierre(m: ReportModel) -> str:
+    """El campo CIERRE: la hora con su local, o los dos casos sin hora de `cierre_text`."""
+    if m.closed_at is not None:
+        return rotulos.instante(m.closed_at, m.zona_horaria)
+    return cierre_text(None, m.state, m.cierre_sin_hora, TS_FMT)
+
+
 def _cover(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.verdict_banner(m.verdict_status or "", m.verdict_label, m.verdict_signed)
+    # [T-8.12 · A-053] La leyenda de la reproducción TAMBIÉN aquí, debajo del
+    # veredicto: la portada es lo que se lee de un vistazo, y sin la frase afirma
+    # un veredicto sobre una sacudida que no ocurrió. Es ADITIVA: se deriva igual
+    # que en la §7 (`seismic_events.meta.reproduccion`) y la §7 no cambia.
+    if m.reproduccion:
+        pdf.callout(REPRODUCCION_NOTE)
     pdf.field("INMUEBLE", f"{m.site_name} ({m.site_code})")
     pdf.field("INCIDENTE", m.incident_id)
-    pdf.field("APERTURA", f"{m.opened_at:{TS_FMT}}")
-    pdf.field("CIERRE", cierre_text(m.closed_at, m.state, m.cierre_sin_hora, TS_FMT))
-    pdf.field("SEVERIDAD · DISPARO", f"{m.severity} · {disparo_line(m.opened_trigger, m.trigger)}")
+    # [T-8.12 · A-150] La UTC primero —es la que casa con la consola y con el
+    # pie— y la hora local del inmueble al lado, que es la que lee el cliente.
+    pdf.field("APERTURA", rotulos.instante(m.opened_at, m.zona_horaria))
+    pdf.field("CIERRE", _cierre(m))
+    # [T-8.12 · A-053] Lo que una PERSONA decidió que fue esto. Aditiva a la
+    # leyenda de reproducción: aquélla la deriva el evento y ésta la pone alguien.
+    pdf.field("CLASIFICACIÓN", _clasificacion(m))
+    pdf.field(
+        "SEVERIDAD · DISPARO",
+        f"{rotulos.rotulo(rotulos.SEVERIDAD, m.severity)} · "
+        f"{disparo_line(m.opened_trigger, m.trigger)}",
+    )
     pdf.field("EVENTO DE RED", m.event_id or "SIN EVENTO ASOCIADO")
     pdf.field("FOLIO", m.folio)
     # Se imprime la huella del CONTENIDO; la del archivo no cabe dentro de sí mismo.
@@ -204,13 +240,14 @@ def _cover(pdf: TakabPDF, m: ReportModel) -> None:
     # número que cambia sin explicar por qué se lee como inestable, y un perito que
     # compare dos exportaciones concluiría que alguien tocó el expediente.
     #
-    # ⚠️ Aquí decía además «compárelo contra ese registro desde la consola», y era
-    # falso por tres vías medidas: la consola sólo busca `kind === "miniseed"`,
-    # `ReportOut` no devuelve el sha del archivo —`DrillReportOut` sí— y
-    # `POST /evidence/{id}/verify` filtra `kind = 'photo'`, así que para un
-    # `report_pdf` da 404. El sha del archivo de un dictamen HOY no lo puede
-    # obtener nadie. La superficie que falta está fichada; hasta que exista, el
-    # papel no manda hacer lo que no se puede.
+    # ⚠️ Aquí decía además «compárelo contra ese registro desde la consola», y en
+    # su día era falso por tres vías medidas (la consola sólo buscaba miniSEED,
+    # `ReportOut` no devolvía el sha del archivo y `verify` daba 404 a un
+    # `report_pdf`). [T-8.12 · A-246] `T-7.48` construyó las tres —la huella en
+    # Triage, `verify` de `report_pdf` y `ReportOut.sha256`—, y por eso la frase
+    # de abajo SÍ remite a Triage. Lo que no se promete es que cualquier rol
+    # pueda re-verificar: `verify` de un `report_pdf` exige `dictamen_read`
+    # (hallazgo `A-052`, ficha `T-8.08`).
     pdf.para(
         "Esta huella identifica ESTA EXPORTACIÓN: no el incidente, y no este archivo "
         "—el SHA-256 de un archivo no cabe dentro de sí mismo—. Es la misma que va al "
@@ -244,7 +281,6 @@ def _relleno_por_defecto(pdf: TakabPDF) -> None:
 
 
 def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("1", "CROQUIS DEL EVENTO")
     points: list[sketch.Point] = []
     if m.site_lat is not None and m.site_lon is not None:
         points.append(sketch.Point(m.site_lat, m.site_lon, m.site_code, "site"))
@@ -257,6 +293,11 @@ def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
             )
 
     drawn = sketch.project(points, CONTENT_W, _SKETCH_H)
+    # [T-8.12 · 2ª vuelta] Se proyecta ANTES del título para que el título viaje
+    # con la figura: sin geometría, con su aviso.
+    pdf.section(
+        "1", "CROQUIS DEL EVENTO", con=_SKETCH_H + 6 if drawn is not None else PRIMER_BLOQUE_MM
+    )
     if drawn is None:
         pdf.callout(NO_GEOMETRY)
         return
@@ -327,7 +368,12 @@ def _sketch_section(pdf: TakabPDF, m: ReportModel) -> None:
 
 
 def _envelope_section(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.section("2", "ENVOLVENTE DE ACELERACIÓN POR CANAL")
+    # El título viaja con la nota y la PRIMERA traza, que es lo que titula.
+    pdf.section(
+        "2",
+        "ENVOLVENTE DE ACELERACIÓN POR CANAL",
+        con=_NOTA_ENVOLVENTE_MM + _TRACE_H + 3 if m.series else PRIMER_BLOQUE_MM,
+    )
     if not m.series:
         pdf.callout("SIN FEATURES EN LA VENTANA DEL INCIDENTE.")
         return
@@ -667,6 +713,23 @@ def _umbral_celda(e) -> str:  # noqa: ANN001 - EstacionFila
     return f"{num(e.umbral_pga_g, 4)} {origen}"
 
 
+def _dibujo_de_la_red(m: ReportModel) -> sketch.Sketch | None:
+    """La proyección del mapa de la §7, o `None` si no hay geometría que situar."""
+    puntos: list[sketch.Point] = []
+    # El inmueble del dictamen se distingue de las demás estaciones aunque
+    # aparezca en las dos listas: es el sujeto del documento, no un testigo.
+    propio = m.site_code
+    if m.site_lat is not None and m.site_lon is not None:
+        puntos.append(sketch.Point(m.site_lat, m.site_lon, propio, "site"))
+    if m.epicenter_lat is not None and m.epicenter_lon is not None:
+        puntos.append(sketch.Point(m.epicenter_lat, m.epicenter_lon, "EPICENTRO", "epicenter"))
+    for e in m.estaciones:
+        if e.lat is None or e.lon is None or e.site_code == propio:
+            continue
+        puntos.append(sketch.Point(e.lat, e.lon, e.site_code, "station"))
+    return sketch.project(puntos, CONTENT_W, _MAPA_RED_H)
+
+
 def _mapa_de_la_red(pdf: TakabPDF, m: ReportModel) -> None:
     """Mapa estático VECTORIAL de la red: dónde está cada estación y el epicentro.
 
@@ -686,20 +749,7 @@ def _mapa_de_la_red(pdf: TakabPDF, m: ReportModel) -> None:
     y el papel lo dice: lleva barra de escala y norte, que es lo que permite leer
     distancias sin fingir que hay costas.
     """
-    puntos: list[sketch.Point] = []
-    # El inmueble del dictamen se distingue de las demás estaciones aunque
-    # aparezca en las dos listas: es el sujeto del documento, no un testigo.
-    propio = m.site_code
-    if m.site_lat is not None and m.site_lon is not None:
-        puntos.append(sketch.Point(m.site_lat, m.site_lon, propio, "site"))
-    if m.epicenter_lat is not None and m.epicenter_lon is not None:
-        puntos.append(sketch.Point(m.epicenter_lat, m.epicenter_lon, "EPICENTRO", "epicenter"))
-    for e in m.estaciones:
-        if e.lat is None or e.lon is None or e.site_code == propio:
-            continue
-        puntos.append(sketch.Point(e.lat, e.lon, e.site_code, "station"))
-
-    dibujo = sketch.project(puntos, CONTENT_W, _MAPA_RED_H)
+    dibujo = _dibujo_de_la_red(m)
     if dibujo is None:
         # Declarar la ausencia, no dejar el hueco: sin geometría no se puede
         # situar nada, y un mapa vacío se lee como «no hay estaciones».
@@ -756,7 +806,12 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
     motor—, y ésta dice QUÉ MIDIÓ cada inmueble. En una reproducción no hay votos
     y esta tabla es la única que cuenta lo que pasó en la red.
     """
-    pdf.section("7", "RED DE ESTACIONES")
+    # [T-8.12 · 2ª vuelta] Sin la leyenda de reproducción, lo primero es el MAPA:
+    # el título viaja con él (se quedaba solo al pie con el mapa en la otra hoja).
+    abre_con_mapa = not m.reproduccion and m.estaciones and _dibujo_de_la_red(m) is not None
+    pdf.section(
+        "7", "RED DE ESTACIONES", con=_MAPA_RED_H + 6 if abre_con_mapa else PRIMER_BLOQUE_MM
+    )
     # [T-7.22] La leyenda va ANTES que nada: condiciona todo lo que sigue. Un
     # lector que llegue a la tabla de arribos sin haberla leído está midiendo la
     # respuesta de un edificio a un sismo que no ocurrió.
@@ -777,7 +832,10 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
         muted=True,
     )
     pdf.set_font(pdf.body_font, "", 7)
-    with pdf.table(col_widths=(40, 17, 20, 20, 20, 24, 17), text_align="LEFT") as table:
+    # [T-8.12 · A-144] «NIVEL» y no «TIER», y el nivel en castellano: la columna
+    # imprimía `evacuate_or_hold` partido en dos renglones. Se ensancha lo que
+    # pierde ESTACIÓN porque sus rótulos son los del panel del gabinete.
+    with pdf.table(col_widths=(36, 17, 20, 20, 20, 24, 21), text_align="LEFT") as table:
         head = table.row()
         for h in (
             "ESTACIÓN",
@@ -786,7 +844,7 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
             "MEDIDO (s)",
             "PICO (g)",
             "UMBRAL (g)",
-            "TIER",
+            "NIVEL",
         ):
             head.cell(pdf.text_of(h))
         for e in m.estaciones:
@@ -803,7 +861,7 @@ def _estaciones_section(pdf: TakabPDF, m: ReportModel) -> None:
             # más estrecha partiría el rótulo de procedencia en dos líneas.
             row.cell(pdf.text_of(_umbral_celda(e)))
             # Vacío no es `normal`: el gabinete no dijo que estuviera en calma.
-            row.cell(pdf.text_of(e.tier or "S/D"))
+            row.cell(pdf.text_of(rotulos.rotulo(rotulos.NIVEL, e.tier) if e.tier else "S/D"))
 
 
 #: [T-7.24] Título de la sección del mapa de la sacudida, en un solo sitio.
@@ -907,7 +965,13 @@ def _epicentro_del_mapa(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
     if b.epicentro_lat is None or b.epicentro_lon is None:
         return "NO CITADO · sin él no hay capa modelada"
     magnitud = "M " + num(b.epicentro_magnitud, 1) if b.epicentro_magnitud is not None else ABSENT
-    fuente = b.epicentro_fuente or "fuente no declarada"
+    # [T-8.12 · A-144] `seismic_events.source` en castellano; una fuente libre
+    # («SSN») se imprime tal cual, que ya es un nombre propio.
+    fuente = (
+        rotulos.FUENTE_DEL_EVENTO.get(b.epicentro_fuente, b.epicentro_fuente)
+        if b.epicentro_fuente
+        else "fuente no declarada"
+    )
     procedencia = b.epicentro_procedencia or "procedencia no declarada"
     return f"{b.epicentro_lat:.2f}, {b.epicentro_lon:.2f} · {magnitud} · {fuente} · {procedencia}"
 
@@ -1061,7 +1125,8 @@ def _niveles_suprimidos(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
         return "el snapshot no declara cuáles."
     return (
         "; ".join(
-            f"{n.umbral} ({num(n.pga_g, 3, 'g')}) — {shk.MOTIVOS_FUERA.get(n.motivo, n.motivo)}"
+            f"{rotulos.rotulo(rotulos.UMBRAL, n.umbral)} ({num(n.pga_g, 3, 'g')}) — "
+            f"{shk.MOTIVOS_FUERA.get(n.motivo, n.motivo)}"
             for n in b.fuera_de_alcance
         )
         + "."
@@ -1386,10 +1451,15 @@ def _sensors_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.callout("SIN SENSORES ACTIVOS REGISTRADOS PARA ESTE INMUEBLE.")
         return
     for sn in m.sensors:
+        # [T-8.12 · A-144] `STRUCTURAL` y `concrete_column` salían crudos. Y el
+        # MODELO pasa al valor: en el rótulo, un nombre de modelo largo —un dato de
+        # la base— empujaba el rótulo sobre el valor (A-146).
+        montaje = sn.get("mount")
         pdf.field(
-            f"{sn.get('kind', '?').upper()} · {sn.get('model', '?')}",
+            rotulos.rotulo(rotulos.SENSOR, sn.get("kind")),
+            f"{sn.get('model') or 'modelo no declarado'} · "
             f"serie {sn.get('serial') or 'S/N'} · {sn.get('sample_rate') or '?'} sps · "
-            f"montaje {sn.get('mount') or 'no declarado'} · "
+            f"montaje {rotulos.rotulo(rotulos.MONTAJE, montaje) if montaje else 'no declarado'} · "
             f"calibración {sn.get('calibration_source') or 'NO DECLARADA'}",
         )
 
@@ -1408,7 +1478,8 @@ def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
             row = table.row()
             row.cell(pdf.text_of("FIRMADO" if d.signed_by else "PRELIMINAR"))
             row.cell(pdf.text_of(STATUS_LABELS.get(d.status, d.status)))
-            row.cell(pdf.text_of(f"{d.created_at:%Y-%m-%d %H:%M}"))
+            # [T-8.12 · A-150] Con su «UTC»: era la única fecha del papel sin zona.
+            row.cell(pdf.text_of(f"{d.created_at.astimezone(UTC):%Y-%m-%d %H:%M} UTC"))
             row.cell(pdf.text_of(d.rule_set_version))
             row.cell(pdf.text_of((d.supersedes or "—")[:8]))
     pdf.ln(1)
@@ -1449,7 +1520,8 @@ def _custody_section(pdf: TakabPDF, m: ReportModel) -> None:
             # presentado como verificable es peor que no imprimirlo.
             # No había razón de espacio — 64 hex miden 108.7 mm de los 128 que
             # deja la columna, así que entran en una sola línea.
-            pdf.field(e.kind.upper(), huella_de_custodia(e.sha256))
+            # [T-8.12 · A-144] `REPORT_PDF`/`MINISEED` en castellano.
+            pdf.field(rotulos.rotulo(rotulos.EVIDENCIA, e.kind), huella_de_custodia(e.sha256))
     else:
         # [T-7.38·K] Esta sección solo lee `evidence_objects`. El material de vídeo
         # es custodia igual —el apartado siguiente lo relaciona con su sha256— y
@@ -1491,31 +1563,58 @@ def _cronologia_section(pdf: TakabPDF, m: ReportModel) -> None:
         return
     pdf.set_font(pdf.body_font, "", 7)
     sin_rotulo = 0
-    with pdf.table(col_widths=(34, 86, 38), text_align="LEFT") as table:
+    # Quien firmó un dictamen de la cadena NO es «OPERADOR»: se nombra por su rol,
+    # y quien firmó la cabeza exactamente como en el FIRMÓ.
+    firmantes = rotulos.firmantes_de_la_cadena(
+        [(d.signed_by, d.firmante_nombre) for d in m.dictamens]
+    )
+    with pdf.table(col_widths=(38, 82, 38), text_align="LEFT") as table:
         head = table.row()
-        for h in ("INSTANTE (UTC)", "QUÉ PASÓ", "QUIÉN"):
+        for h in ("INSTANTE (UTC · LOCAL)", "QUÉ PASÓ", "QUIÉN"):
             head.cell(pdf.text_of(h))
         for a in m.actions:
             texto, conocido = rotulo_de_accion(a.kind)
             sin_rotulo += 0 if conocido else 1
             row = table.row()
-            row.cell(pdf.text_of(f"{a.ts:{TS_FMT}}"))
+            # [T-8.12 · A-150] La UTC y, debajo, la hora local del inmueble.
+            row.cell(pdf.text_of(rotulos.instante(a.ts, m.zona_horaria).replace(" · ", "\n", 1)))
             row.cell(pdf.text_of(texto))
-            row.cell(pdf.text_of(a.actor))
+            # [T-8.12 · A-144] `system:edge` → «SISTEMA · gabinete»; una persona,
+            # como en la consola, por los ocho primeros caracteres de su `sub`.
+            row.cell(pdf.text_of(rotulos.actor(a.actor, firmantes)))
     if sin_rotulo:
         # Declarar el recuento, no solo marcar las filas: quien audite tiene que
         # poder saber de un vistazo cuánto del documento no se supo traducir.
         pdf.callout(f"{CRONOLOGIA_SIN_ROTULO}{sin_rotulo} de {len(m.actions)}.")
 
 
-#: Ancho de cada fotografía impresa. Dos por fila en el ancho útil, con aire
+#: Lo que se reserva para que la cabecera de un reporte de daños (su renglón y el
+#: arranque de su tabla) no se parta del resto.
+_CABECERA_DE_REPORTE = 24.0
+
+#: Ancho de la COLUMNA de cada fotografía. Dos por fila en el ancho útil, con aire
 #: entre ellas. Más pequeñas no dejan ver una grieta; más grandes obligan a una
 #: página por foto y el documento deja de poder hojearse.
 _FOTO_W = 88.0
 _FOTO_GAP = (CONTENT_W - 2 * _FOTO_W) / 1.0
-#: Alto que se RESERVA por fila de fotos: el máximo posible (una foto de retrato
-#: a 1024×1024 sale cuadrada) más el pie de dos líneas.
-_FOTO_FILA_H = _FOTO_W + 10.0
+#: [T-8.12 · A-051] La CAJA donde se encaja cada foto: 88 × 88 mm, conservando la
+#: proporción. El comentario de la reserva anterior decía que «una foto de retrato
+#: a 1024×1024 sale cuadrada», y era falso: `preparar()` conserva la proporción y
+#: una foto 3:4 de teléfono salía a 768×1024 → 88 × 117 mm, con 98 mm reservados.
+#: `pdf.image()` no salta de página, así que según dónde empezara la fila la foto
+#: bajaba hasta 19 mm dentro del pie. Encajada en la caja, la más alta mide 88.
+_FOTO_CAJA = 88.0
+#: El pie de cada foto: mono 5.2 pt en renglones de 2.4 mm.
+_PIE_FOTO_PT = 5.2
+_PIE_FOTO_RENGLON = 2.4
+
+
+def _caja_de_foto(foto) -> tuple[float, float]:  # noqa: ANN001 - FotoFila
+    """`(ancho, alto)` en mm de la foto ENCAJADA en `_FOTO_CAJA`, sin deformarla."""
+    if not (foto.ancho and foto.alto):
+        return _FOTO_CAJA, _FOTO_CAJA
+    escala = min(_FOTO_CAJA / foto.ancho, _FOTO_CAJA / foto.alto)
+    return foto.ancho * escala, foto.alto * escala
 
 
 def _danos_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -1537,15 +1636,20 @@ def _danos_section(pdf: TakabPDF, m: ReportModel) -> None:
     original convertiría «verifique el sha256» en falso, que es el defecto que
     `T-5.26` ya cazó una vez con el hash truncado.
     """
-    pdf.section("14", "DAÑOS REPORTADOS EN CAMPO")
+    # El título viaja con la cabecera del PRIMER reporte, que reserva lo suyo.
+    pdf.section(
+        "14", "DAÑOS REPORTADOS EN CAMPO", con=_CABECERA_DE_REPORTE if m.danos else PRIMER_BLOQUE_MM
+    )
     if not m.danos:
         pdf.callout(SIN_DANOS)
         return
     for dano in m.danos:
-        pdf.reserva(24.0)
-        quien = dano.rol or ROL_NO_RESUELTO
+        pdf.reserva(_CABECERA_DE_REPORTE)
+        # [T-8.12 · A-144] El rol en castellano (`security_guard` salía crudo).
+        quien = rotulos.rotulo(rotulos.ROL, dano.rol) if dano.rol else ROL_NO_RESUELTO
         donde = dano.zona or "zona no declarada"
-        pdf.field("REPORTE", f"{quien} · {donde} · {dano.ts:{TS_FMT}}")
+        cuando = rotulos.instante(dano.ts, m.zona_horaria, segundos=False)
+        pdf.field("REPORTE", f"{quien} · {donde} · {cuando}")
         if dano.personas_en_riesgo:
             # Lo más importante que puede decir un reporte de campo, y no puede
             # quedar como una casilla más de la tabla de categorías.
@@ -1558,9 +1662,15 @@ def _danos_section(pdf: TakabPDF, m: ReportModel) -> None:
                     head.cell(pdf.text_of(h))
                 for cat in dano.categorias:
                     row = table.row()
-                    row.cell(pdf.text_of(str(cat.get("key", "—"))))
-                    row.cell(pdf.text_of(str(cat.get("severity", "—"))))
+                    # [T-8.12 · A-144] Las claves de la app en castellano, con
+                    # las MISMAS palabras que eligió quien reportó.
+                    row.cell(pdf.text_of(rotulos.rotulo(rotulos.CATEGORIA_DE_DANO, cat.get("key"))))
+                    row.cell(
+                        pdf.text_of(rotulos.rotulo(rotulos.SEVERIDAD_DE_DANO, cat.get("severity")))
+                    )
                     row.cell(pdf.text_of(str(cat.get("note") or "")))
+            # La foto no puede empezar pegada al borde de la tabla.
+            pdf.ln(2)
         else:
             pdf.para(SIN_CATEGORIAS, size=7.5, muted=True)
         if dano.notas:
@@ -1582,38 +1692,60 @@ def _fotos_del_reporte(pdf: TakabPDF, dano) -> None:  # noqa: ANN001 - DanoFila
 
     ⚠️ `pdf.image()` NO dispara el salto de página automático de fpdf2, igual que
     `rect` y `line`: sin `reserva()` la fotografía se pinta encima del filete del
-    pie, sobre el sha256 y la paginación. Lo vigila `test_NINGUNA_caja_pisa_el_PIE`,
-    que desde `T-7.22` sabe leer el operador de imagen.
+    pie, sobre el sha256 y la paginación.
+
+    [T-8.12] La fila se reserva ENTERA —la foto más alta, su aire y el pie de foto
+    más largo, MEDIDO con `dry_run`— y el cursor acaba en el FONDO del pie más
+    bajo. Antes:
+
+    * **A-050** — el pie de la foto de la izquierda se escribía con
+      `new_y=YPos.TOP`, pensando en que la de la derecha lo bajaría. Con UNA foto,
+      o con la última de un número impar, no había foto de la derecha: el cursor
+      volvía ARRIBA del pie, y el reporte siguiente —o el título de la §15— se
+      imprimía encima de las huellas DECLARADA, MEDIDA e IMPRESA.
+    * **A-051** — se reservaban 98 mm con fotos de hasta 117 mm de alto.
+
+    Lo vigilan `test_NADA_se_imprime_encima_de_otra_cosa_desde_los_DANOS` (texto
+    contra texto y contra foto, con 1, 3 y 4 fotos, apaisadas y en vertical) y
+    `test_las_fotos_respetan_el_PIE_ENTRE_DONDE_ENTREN`.
     """
     impresas = [f for f in dano.fotos if f.jpeg is not None]
     ausentes = [f for f in dano.fotos if f.jpeg is None]
 
     for i in range(0, len(impresas), 2):
-        pdf.reserva(_FOTO_FILA_H)
         fila = impresas[i : i + 2]
-        top = pdf.get_y()
-        alto_fila = 0.0
-        for j, foto in enumerate(fila):
-            x = MARGIN + j * (_FOTO_W + _FOTO_GAP)
-            alto = _FOTO_W * (foto.alto / foto.ancho) if foto.ancho and foto.alto else _FOTO_W
-            pdf.image(io.BytesIO(foto.jpeg), x=x, y=top, w=_FOTO_W)
-            alto_fila = max(alto_fila, alto)
-        # El pie de cada foto va DEBAJO de la fila entera, no al lado: dos fotos
-        # de alto distinto dejarían los pies desalineados y sin saber cuál es cuál.
-        pdf.set_y(top + alto_fila + 1)
-        for j, foto in enumerate(fila):
-            pdf.set_x(MARGIN + j * (_FOTO_W + _FOTO_GAP))
-            pdf.set_font(pdf.mono_font, "", 5.2)
-            pdf.set_text_color(*MUTED)
+        cajas = [_caja_de_foto(f) for f in fila]
+        alto_fotos = max(alto for _, alto in cajas)
+        pdf.set_font(pdf.mono_font, "", _PIE_FOTO_PT)
+        pies = [pdf.text_of(_pie_de_foto(foto)) for foto in fila]
+        alto_pies = max(
             pdf.multi_cell(
                 _FOTO_W,
-                2.4,
-                pdf.text_of(_pie_de_foto(foto)),
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT if j else YPos.TOP,
+                _PIE_FOTO_RENGLON,
+                pie,
+                dry_run=True,
+                output=MethodReturnValue.HEIGHT,
             )
+            for pie in pies
+        )
+        pdf.reserva(alto_fotos + 1 + alto_pies)
+        top = pdf.get_y()
+        for j, (foto, (ancho, alto)) in enumerate(zip(fila, cajas, strict=True)):
+            x = MARGIN + j * (_FOTO_W + _FOTO_GAP)
+            pdf.image(io.BytesIO(foto.jpeg), x=x, y=top, w=ancho, h=alto)
+        # El pie de cada foto va DEBAJO de la fila entera, no al lado: dos fotos
+        # de alto distinto dejarían los pies desalineados y sin saber cuál es cuál.
+        y_pies = top + alto_fotos + 1
+        fondo = y_pies
+        pdf.set_text_color(*MUTED)
+        for j, pie in enumerate(pies):
+            pdf.set_xy(MARGIN + j * (_FOTO_W + _FOTO_GAP), y_pies)
+            pdf.multi_cell(_FOTO_W, _PIE_FOTO_RENGLON, pie, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            fondo = max(fondo, pdf.get_y())
         pdf.set_text_color(*INK)
-        pdf.ln(1)
+        # El cursor, al FONDO del pie más bajo de la fila — nunca arriba de ninguno.
+        pdf.set_y(fondo)
+        pdf.ln(2)
 
     for foto in ausentes:
         pdf.callout(f"FOTOGRAFÍA {foto.evidence_id[:8]} NO IMPRESA · {foto.motivo}")
@@ -1679,9 +1811,16 @@ def _cctv_section(pdf: TakabPDF, m: ReportModel) -> None:
         return
     pdf.para("Custodia del material de vídeo:", size=9, muted=True)
     for obj in bloque.objetos:
-        etiqueta = obj.papel or obj.tipo
-        cuando = obj.momento.strftime(TS_FMT) if obj.momento else ABSENT
-        pdf.field(f"{etiqueta} · {cuando}", obj.estado)
+        # [T-8.12 · A-144 · A-146] El papel del still en castellano, y la HORA al
+        # valor: `«egress» · AAAA-MM-DD HH:MM:SS UTC` no cabía en la columna de
+        # rótulos (52 mm) y se montaba sobre el estado.
+        etiqueta = (
+            rotulos.rotulo(rotulos.PAPEL_CCTV, obj.papel)
+            if obj.papel
+            else rotulos.rotulo(rotulos.TIPO_CCTV, obj.tipo)
+        )
+        cuando = rotulos.instante(obj.momento, m.zona_horaria) if obj.momento else ABSENT
+        pdf.field(etiqueta, f"{cuando} · {obj.estado}")
         # [T-5.26] Entero y en su propia línea. Iba a 16 de 64 con puntos
         # suspensivos: honesto sobre estar cortado, e igual de inútil para
         # verificar. Y son custodia igual que el miniSEED —lo dice esta misma
@@ -1702,8 +1841,23 @@ def _narrative_section(pdf: TakabPDF, m: ReportModel) -> None:
         pdf.callout(
             f"{NARRATIVE_AI_NOTE} ({m.rule_set_version or 'sin versión'}) y no dependen de ella."
         )
+    # [T-8.12 · A-149] QUIÉN redactó la prosa, dicho en el papel. Hasta aquí sólo
+    # quedaba en `audit_log` (`narrative_generated`), y la meta de F6 buscaba
+    # «Narrativa: openrouter» en el texto de un PDF que no la imprimía.
+    if m.narrative_provider:
+        pdf.para(f"Narrativa: {_proveedor(m.narrative_provider)}", size=7, muted=True)
     if m.narrative_degraded:
         pdf.para(f"NARRATIVA DEGRADADA · {m.narrative_degraded}", size=7, muted=True)
+
+
+#: [T-8.12 · A-149] Cómo se llama en el papel cada redactor de la prosa. Lo que
+#: no está aquí es el nombre del proveedor externo (`openrouter`, `bedrock`), que
+#: se imprime tal cual: es un nombre propio y es lo que consta en `audit_log`.
+_REDACTOR = {"deterministic": "determinista · sin asistencia de IA"}
+
+
+def _proveedor(proveedor: str) -> str:
+    return _REDACTOR.get(proveedor, proveedor)
 
 
 def _compliance_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -1728,7 +1882,12 @@ def _closing(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.section("18", "FIRMA Y DESLINDE")
     head = m.dictamens[0] if m.dictamens else None
     if head and head.signed_by:
-        pdf.field("FIRMÓ", head.signed_by)
+        # [T-8.12 · A-145] El rol y, si lo hay, el nombre de `user_profiles`. Se
+        # imprimía el `sub` de Cognito —un UUID entero— en la línea de más peso
+        # del documento. `D-36` no cambia: el renglón de firma del emisor sigue
+        # siendo la persona moral; ésta es la línea de QUIÉN firmó el dictamen.
+        pdf.field("FIRMÓ", rotulos.firmante(head.firmante_nombre))
+        pdf.field("FECHA DE FIRMA", rotulos.instante(head.created_at, m.zona_horaria))
         pdf.para(
             "Firma de usuario autenticado (Cognito). NO es una firma criptográfica ni "
             "un sello de tiempo de HSM.",
@@ -1759,10 +1918,21 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.add_page()
 
     pdf.verdict_banner(m.verdict_status or "", m.verdict_label, m.verdict_signed)
+    # [T-8.12 · A-053] La clasificación humana, igual que en la portada.
+    pdf.field("CLASIFICACIÓN", _clasificacion(m))
+    # [T-8.12 · A-139] Y la leyenda de la reproducción. El censo la eximía del
+    # ejecutivo porque «no tiene tabla de red que rotular», pero lo que la
+    # justifica no es la tabla: es que el papel AFIRMA una sacudida —«el sensor
+    # del inmueble midió un pico de…»— que no ocurrió. Eso el ejecutivo lo dice
+    # en su segunda frase.
+    if m.reproduccion:
+        pdf.callout(REPRODUCCION_NOTE)
 
     pdf.section("", "QUÉ PASÓ")
+    utc = m.opened_at.astimezone(UTC)
     pdf.para(
-        f"El {m.opened_at:%d/%m/%Y} a las {m.opened_at:%H:%M UTC} se abrió un incidente "
+        f"El {utc:%d/%m/%Y} a las {utc:%H:%M} UTC "
+        f"({rotulos.hora_local(m.opened_at, m.zona_horaria)}) se abrió un incidente "
         f"en {m.site_name} por {disparo_line(m.opened_trigger, m.trigger)}. "
         + (
             f"El sensor del inmueble midió un pico de {num(m.peak_pga_g, 3, 'g')}."

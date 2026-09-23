@@ -5,11 +5,15 @@
 import { getProfileMeProfileGet, putProfileMeProfilePut } from "@takab/sdk";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 
+import { logout } from "@/auth/logout";
 import { useSessionStore } from "@/auth/session.store";
-import { AccountView, type AccountProfile } from "@/features/account/AccountView";
+import {
+  AccountView,
+  type AccountProfile,
+} from "@/features/account/AccountView";
 import { getGpsConsent, setGpsConsent } from "@/services/onboarding";
 import { StateFrame } from "@/ui/StateFrame";
 import { useStaleSince } from "@/ui/useStaleSince";
@@ -23,7 +27,6 @@ export function AccountScreen() {
   const router = useRouter();
   const me = useSessionStore((s) => s.me);
   const profileGroup = useSessionStore((s) => s.profile);
-  const signOut = useSessionStore((s) => s.signOut);
 
   const remote = useQuery({
     queryKey: ["me-profile"],
@@ -39,7 +42,10 @@ export function AccountScreen() {
   // edita— pero puede cambiarlo un administrador desde la consola, y esta
   // pantalla enseña el rol y el sitio asignado: un rol de hace media hora,
   // pintado como vigente, es lo que hace que alguien crea que puede firmar.
-  const perfilStaleSinceMs = useStaleSince(remote.dataUpdatedAt, PERFIL_STALE_MS / 3);
+  const perfilStaleSinceMs = useStaleSince(
+    remote.dataUpdatedAt,
+    PERFIL_STALE_MS / 3,
+  );
 
   // Estado DERIVADO (lint v6: sin setState en effects): mientras el usuario no
   // edite, el formulario refleja el perfil del servidor; al teclear, manda lo
@@ -91,33 +97,48 @@ export function AccountScreen() {
     void setGpsConsent(granted);
   };
 
-  return (
+  // [T-8.11 · A-021] El marco de estados envuelve SOLO la tarjeta de perfil. Sin
+  // red o con /me/profile caído, CERRAR SESIÓN, permisos y privacidad siguen a la
+  // vista: pestanasTacticas.ts la describe como «sin ella no hay forma de cerrar
+  // sesión ni de reintentar», y el marco de pantalla completa la hacía desaparecer.
+  const marcoDelPerfil = (card: ReactNode) => (
     <StateFrame
       empty={false}
       emptyText=""
-      error={remote.isError && !remote.data ? "No se pudo cargar su perfil." : null}
+      error={
+        remote.isError && !remote.data ? "No se pudo cargar su perfil." : null
+      }
       loading={remote.isLoading}
+      onRetry={() => void remote.refetch()}
       staleSinceMs={perfilStaleSinceMs}
     >
-      <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
-        <AccountView
-          canSave={form.displayName.trim().length > 0}
-          gpsConsent={gpsConsent}
-          isOccupant={profileGroup === "occupant"}
-          onLogout={signOut}
-          onOpenPermisos={() => router.push("/onboarding/permisos")}
-          onOpenPrivacidad={() => router.push("/onboarding/privacidad")}
-          onOpenVincular={() => router.push("/onboarding/enrolamiento")}
-          onProfileChange={setEdited}
-          onSaveProfile={saveProfile}
-          onToggleConsent={toggleConsent}
-          profile={form}
-          profileSavedAt={savedAt}
-          role={me?.role ?? profileGroup ?? "occupant"}
-          savingProfile={saving}
-        />
-      </ScrollView>
+      {card}
     </StateFrame>
+  );
+
+  return (
+    <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
+      <AccountView
+        canSave={form.displayName.trim().length > 0}
+        gpsConsent={gpsConsent}
+        isOccupant={profileGroup === "occupant"}
+        // [T-8.11] El cierre COMPLETO (T-8.04): da de baja el push, revoca el
+        // refresh y borra la cookie de la Hosted UI. El `signOut` local dejaba el
+        // refresh vivo en Cognito — con sesiones de 30 días, eso ya no es menor.
+        onLogout={() => void logout()}
+        onOpenPermisos={() => router.push("/onboarding/permisos")}
+        onOpenPrivacidad={() => router.push("/onboarding/privacidad")}
+        onOpenVincular={() => router.push("/onboarding/enrolamiento")}
+        onProfileChange={setEdited}
+        onSaveProfile={saveProfile}
+        onToggleConsent={toggleConsent}
+        profile={form}
+        profileSavedAt={savedAt}
+        role={me?.role ?? profileGroup ?? "occupant"}
+        renderProfile={marcoDelPerfil}
+        savingProfile={saving}
+      />
+    </ScrollView>
   );
 }
 

@@ -22,9 +22,19 @@ const INCIDENT: LiveIncident = {
 
 const con = (trigger: string): LiveIncident => ({ ...INCIDENT, trigger });
 
+/**
+ * [T-8.10 · A-063] Ninguna estación corroboró nada. Se pasa EXPLÍCITO en cada
+ * montaje: `epicentros` va a ser obligatoria en cuanto `ConsolePage` la pase
+ * (es un `= []` por defecto lo que abrió A-063), y estas pruebas ya no dependen
+ * de ese valor por defecto.
+ */
+const SIN_RED = [] as const;
+
 describe("AlertBanner", () => {
   it("sin incidente crítico no renderiza nada", () => {
-    const { container } = render(<AlertBanner incident={null} siteName={null} />);
+    const { container } = render(
+      <AlertBanner epicentros={SIN_RED} incident={null} siteName={null} />,
+    );
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -33,7 +43,13 @@ describe("AlertBanner", () => {
     // este titular. Hasta T-5.03 el fixture de este test traía
     // `trigger: "local_threshold"` y aun así esperaba «PROTÉJASE» — o sea que la
     // prueba del invariante estaba escrita ALREDEDOR del defecto que T-5.03 cierra.
-    render(<AlertBanner incident={INCIDENT} siteName="Planta Cholula · Edificio A" />);
+    render(
+      <AlertBanner
+        epicentros={SIN_RED}
+        incident={INCIDENT}
+        siteName="Planta Cholula · Edificio A"
+      />,
+    );
     expect(screen.getByRole("alert")).toHaveTextContent("ALERTA SÍSMICA · PROTÉJASE");
     expect(screen.getByRole("alert")).toHaveTextContent("Planta Cholula · Edificio A");
     expect(screen.getByRole("alert")).toHaveTextContent("EVENT_ID EVT-20260708-1041");
@@ -54,7 +70,7 @@ describe("AlertBanner", () => {
 // mismo evento contradiciéndose delante del mismo cliente.
 describe("AlertBanner · el titular se atribuye a quien lo dijo", () => {
   it("una activación manual NO se titula como sismo ni se le cuelga al sensor", () => {
-    render(<AlertBanner incident={con("manual")} siteName="Torre B" />);
+    render(<AlertBanner epicentros={SIN_RED} incident={con("manual")} siteName="Torre B" />);
     const caja = screen.getByRole("alert");
     expect(caja).toHaveTextContent("ALERTA ACTIVADA MANUALMENTE");
     expect(caja).toHaveAttribute("data-seismic", "false");
@@ -66,7 +82,9 @@ describe("AlertBanner · el titular se atribuye a quien lo dijo", () => {
   });
 
   it("el umbral de una sola estación dice AVISO, no PROTÉJASE (política T-2.32)", () => {
-    render(<AlertBanner incident={con("local_threshold")} siteName="Torre B" />);
+    render(
+      <AlertBanner epicentros={SIN_RED} incident={con("local_threshold")} siteName="Torre B" />,
+    );
     const caja = screen.getByRole("alert");
     expect(caja).toHaveTextContent("AVISO SÍSMICO · UMBRAL INSTRUMENTAL");
     expect(caja).toHaveTextContent("SOLO AVISO, SIN ACTUACIÓN");
@@ -85,14 +103,16 @@ describe("AlertBanner · el titular se atribuye a quien lo dijo", () => {
       ["manual", "false"],
       ["teletransporte", "false"],
     ] as const) {
-      const { unmount } = render(<AlertBanner incident={con(trigger)} siteName="Torre B" />);
+      const { unmount } = render(
+        <AlertBanner epicentros={SIN_RED} incident={con(trigger)} siteName="Torre B" />,
+      );
       expect(screen.getByRole("alert"), trigger).toHaveAttribute("data-authorizes", esperado);
       unmount();
     }
   });
 
   it("el quórum se atribuye a la red y declara que el comando iba firmado", () => {
-    render(<AlertBanner incident={con("quorum")} siteName="Torre B" />);
+    render(<AlertBanner epicentros={SIN_RED} incident={con("quorum")} siteName="Torre B" />);
     const caja = screen.getByRole("alert");
     expect(caja).toHaveTextContent("SISMO CONFIRMADO POR LA RED");
     expect(caja).toHaveTextContent("COMANDO FIRMADO");
@@ -100,7 +120,9 @@ describe("AlertBanner · el titular se atribuye a quien lo dijo", () => {
   });
 
   it("un trigger que nadie mapeó se rotula desconocido, no sísmico", () => {
-    render(<AlertBanner incident={con("teletransporte")} siteName="Torre B" />);
+    render(
+      <AlertBanner epicentros={SIN_RED} incident={con("teletransporte")} siteName="Torre B" />,
+    );
     const caja = screen.getByRole("alert");
     expect(caja).toHaveTextContent("ORIGEN NO RECONOCIDO");
     expect(caja).toHaveTextContent("TELETRANSPORTE");
@@ -115,7 +137,9 @@ describe("AlertBanner · la carcasa viva", () => {
 
   it("declara VIVA la alerta que el servidor todavía sostiene", () => {
     for (const state of ["open", "acked"]) {
-      const { unmount } = render(<AlertBanner incident={conEstado(state)} siteName={null} />);
+      const { unmount } = render(
+        <AlertBanner epicentros={SIN_RED} incident={conEstado(state)} siteName={null} />,
+      );
       expect(screen.getByTestId("alert-banner").dataset.alive, state).toBe("true");
       unmount();
     }
@@ -123,7 +147,9 @@ describe("AlertBanner · la carcasa viva", () => {
 
   it("en REVISIÓN y CERRADO deja de estarlo: el estado la apaga, no un reloj", () => {
     for (const state of ["in_review", "closed"]) {
-      const { unmount } = render(<AlertBanner incident={conEstado(state)} siteName={null} />);
+      const { unmount } = render(
+        <AlertBanner epicentros={SIN_RED} incident={conEstado(state)} siteName={null} />,
+      );
       expect(screen.getByTestId("alert-banner").dataset.alive, state).toBe("false");
       unmount();
     }
@@ -132,7 +158,13 @@ describe("AlertBanner · la carcasa viva", () => {
   it("el TEXTO no depende de que esté viva: se lee igual con la animación apagada", () => {
     // Condición 2 de `D-30`: siempre hay un portador que no es movimiento. Con
     // la alerta viva y el halo apagado (`reduce-motion`) el titular es el mismo.
-    render(<AlertBanner incident={conEstado("acked")} siteName="Edificio Central" />);
+    render(
+      <AlertBanner
+        epicentros={SIN_RED}
+        incident={conEstado("acked")}
+        siteName="Edificio Central"
+      />,
+    );
     const banner = screen.getByTestId("alert-banner");
     expect(banner.textContent).toContain("ALERTA SÍSMICA");
     expect(banner.dataset.authorizes).toBe("true");
@@ -147,6 +179,7 @@ describe("AlertBanner · la carcasa viva", () => {
     // enteraba. Lo cazó la corrida real del e2e, no una prueba de unidad.
     render(
       <AlertBanner
+        epicentros={SIN_RED}
         incident={conEstado("in_review")}
         siteName="Edificio Central"
         now={Date.parse(INCIDENT.opened_at) + 90_000}
@@ -168,6 +201,7 @@ describe("AlertBanner · la carcasa viva", () => {
   it("[T-7.20] pasadas seis horas sin clasificar, el muro habla en PASADO", () => {
     render(
       <AlertBanner
+        epicentros={SIN_RED}
         incident={conEstado("in_review")}
         siteName="Edificio Central"
         now={Date.parse(INCIDENT.opened_at) + 7 * 3600_000}
@@ -185,7 +219,79 @@ describe("AlertBanner · la carcasa viva", () => {
     // SISMO CONCLUIDO.
     for (const state of ["open", "acked", "in_review", "closed"]) {
       const inc = conEstado(state);
-      expect(alertaViva(inc), state).toBe(alertKind(inc) !== "review" && state !== "closed");
+      expect(alertaViva(inc), state).toBe(alertKind(inc, []) !== "review" && state !== "closed");
     }
+  });
+});
+
+// [T-8.10 · A-063] SI LA RED CORROBORA, LA TARJETA DEL MURO DICE LO MISMO QUE EL TELÉFONO.
+//
+// El motor de cuórum no reescribe `trigger`: el incidente nace
+// `local_threshold` y la red lo corrobora escribiendo `meta.node_count` en el
+// evento que enlaza. El servidor autoriza al teléfono con esa cuenta
+// (`incident/autoridad.py`), y la tarjeta solo miraba el `trigger`: panel rojo,
+// teléfono «EVACÚE», muro ámbar «SOLO AVISO, SIN ACTUACIÓN».
+describe("AlertBanner · la corroboración de la red [A-063]", () => {
+  const LOCAL: LiveIncident = { ...INCIDENT, trigger: "local_threshold" };
+  const epi = (event_id: string, node_count: number | null) =>
+    ({
+      event_id,
+      node_count,
+      source: "local_quorum",
+      lat: 19,
+      lon: -98,
+      depth_km: null,
+      magnitude: null,
+      detected_at: "2026-07-08T10:41:28Z",
+    }) as const;
+
+  it("con ≥3 estaciones en SU evento autoriza, viste la alerta y NO dice «SIN ACTUACIÓN»", () => {
+    render(
+      <AlertBanner
+        incident={LOCAL}
+        siteName="Torre B"
+        epicentros={[epi(INCIDENT.event_id as string, 3)]}
+      />,
+    );
+    const caja = screen.getByRole("alert");
+    expect(caja).toHaveAttribute("data-authorizes", "true");
+    expect(caja).toHaveAttribute("data-kind", "alert");
+    expect(caja).toHaveAttribute("data-corroborado", "true");
+    expect(caja).toHaveTextContent("SISMO CONFIRMADO POR LA RED");
+    expect(caja).not.toHaveTextContent("SIN ACTUACIÓN");
+    // El dato crudo no se reescribe: el disparo sigue siendo el umbral local.
+    expect(caja).toHaveAttribute("data-trigger", "local_threshold");
+  });
+
+  it("con dos estaciones NO: dos no son cuórum y el aviso sigue siendo aviso", () => {
+    render(
+      <AlertBanner
+        incident={LOCAL}
+        siteName="Torre B"
+        epicentros={[epi(INCIDENT.event_id as string, 2)]}
+      />,
+    );
+    const caja = screen.getByRole("alert");
+    expect(caja).toHaveAttribute("data-authorizes", "false");
+    expect(caja).toHaveAttribute("data-corroborado", "false");
+    expect(caja).toHaveTextContent("SOLO AVISO, SIN ACTUACIÓN");
+  });
+
+  it("la cuenta de OTRO evento no corrobora a éste", () => {
+    render(<AlertBanner incident={LOCAL} siteName="Torre B" epicentros={[epi("EVT-OTRO", 9)]} />);
+    expect(screen.getByRole("alert")).toHaveAttribute("data-authorizes", "false");
+  });
+
+  it("SASMEX no necesita a la red, y no se re-atribuye a ella", () => {
+    render(
+      <AlertBanner
+        incident={INCIDENT}
+        siteName="Torre B"
+        epicentros={[epi(INCIDENT.event_id as string, 5)]}
+      />,
+    );
+    const caja = screen.getByRole("alert");
+    expect(caja).toHaveAttribute("data-corroborado", "false");
+    expect(caja).toHaveTextContent("ALERTA SÍSMICA · PROTÉJASE");
   });
 });

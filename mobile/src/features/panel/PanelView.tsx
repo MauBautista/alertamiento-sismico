@@ -3,8 +3,9 @@
 // @takab/sdk — cero transformaciones divergentes). Features de 1 s: pga/pgv/
 // rms/stalta — JAMÁS forma de onda (regla de oro 9).
 import type { ActuatorGroup, FeatureRow, MobileSiteHealthOut } from "@takab/sdk";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { timeAgoLabel } from "@/ui/timeAgo";
 
 import { LatidoPunto } from "./LatidoPunto";
@@ -117,14 +118,14 @@ export function PanelView(props: {
       </View>
 
       {props.dictamenSigned ? (
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           onPress={props.onOpenDictamen}
           style={styles.dictamenBtn}
           testID="open-dictamen"
         >
-          <Text style={styles.dictamenText}>VER DICTAMEN DE REINGRESO (2.7) →</Text>
-        </Pressable>
+          <Text style={styles.dictamenText}>VER DICTAMEN DE REINGRESO →</Text>
+        </Pulsable>
       ) : null}
 
       {props.canActivate || props.canSilence ? (
@@ -132,7 +133,7 @@ export function PanelView(props: {
           <Text style={styles.cardTitle}>CONTROL REMOTO · SIRENA</Text>
           <View style={styles.controlRow}>
             {props.canActivate ? (
-              <Pressable
+              <Pulsable
                 accessibilityRole="button"
                 onPress={props.onActivate}
                 style={[styles.controlBtn, { borderColor: palette.crit }]}
@@ -141,17 +142,17 @@ export function PanelView(props: {
                 <Text style={[styles.controlText, { color: palette.crit }]}>
                   ACTIVAR SIRENA
                 </Text>
-              </Pressable>
+              </Pulsable>
             ) : null}
             {props.canSilence ? (
-              <Pressable
+              <Pulsable
                 accessibilityRole="button"
                 onPress={props.onSilence}
                 style={[styles.controlBtn, { borderColor: palette.warn }]}
                 testID="ctl-silence"
               >
                 <Text style={[styles.controlText, { color: palette.warn }]}>SILENCIAR</Text>
-              </Pressable>
+              </Pulsable>
             ) : null}
           </View>
         </View>

@@ -8,9 +8,11 @@
 // lo leyeran cada uno a su manera acabarían discrepando, y aquí el que discrepa lleva una
 // firma debajo.
 
+import Button from "../../components/Button";
 import Card from "../../components/Card";
 import StateFrame from "../../components/StateFrame";
 import type { CctvState } from "./useCctv";
+import type { ClipDownload } from "./useClipDownload";
 
 /** Los cuatro papeles, en el orden en que el reporte los cuenta. */
 const ROTULOS: Record<string, string> = {
@@ -29,14 +31,28 @@ function segundos(v: number | null | undefined): string {
 export default function CctvPanel({
   cctv,
   canDownloadClip,
-  onDownloadClip,
+  clipDownload,
 }: {
   cctv: CctvState;
   canDownloadClip: boolean;
-  onDownloadClip?: (clipId: string) => void;
+  /**
+   * [T-8.08 · A-014] OBLIGATORIA. Era `onDownloadClip?:` y nadie la pasaba: el
+   * botón existía y el clic no hacía nada. Sin descarga no se monta el panel.
+   */
+  clipDownload: ClipDownload;
 }) {
   const d = cctv.data;
   const evac = d?.evacuacion ?? null;
+  // [T-8.08 · verificador] La descarga vive en `TriagePage`, que cambia de
+  // incidente sin desmontarse: lo que dice de un clip que no es de ESTE panel es
+  // de otro incidente. Se casa aquí, contra los clips que se pintan: un fallo
+  // ajeno no se afirma de éstos, y un clip ajeno en vuelo no apaga sus botones.
+  const propios = new Set((d?.clips ?? []).map((c) => c.clip_id));
+  const enVuelo = clipDownload.pendingClipId !== null && propios.has(clipDownload.pendingClipId);
+  const fallo =
+    clipDownload.failure !== null && propios.has(clipDownload.failure.clipId)
+      ? clipDownload.failure.message
+      : null;
 
   return (
     <Card
@@ -135,9 +151,20 @@ export default function CctvPanel({
                   // defensa —la API rechaza igual— pero ofrecer un botón que va a dar 403
                   // enseña a desconfiar de la consola.
                   canDownloadClip && (
-                    <button type="button" onClick={() => onDownloadClip?.(c.clip_id)}>
-                      DESCARGAR CLIP
-                    </button>
+                    <Button
+                      variant="secondary"
+                      // Un clip a la vez: la URL firmada caduca en 300 s y cada
+                      // descarga deja su fila en `audit_log`.
+                      disabled={enVuelo}
+                      title={
+                        clipDownload.pendingClipId === c.clip_id
+                          ? "Firmando la URL del clip…"
+                          : undefined
+                      }
+                      onClick={() => clipDownload.download(c.clip_id)}
+                    >
+                      {clipDownload.pendingClipId === c.clip_id ? "PREPARANDO…" : "DESCARGAR CLIP"}
+                    </Button>
                   )
                 ) : (
                   // El hecho sobrevive, la imagen no: la huella sigue siendo verificable.
@@ -145,6 +172,13 @@ export default function CctvPanel({
                 )}
               </div>
             ))}
+            {fallo !== null && (
+              // El fallo de la descarga se DICE aquí, junto a los clips: la pestaña
+              // reservada también lo dice, pero quien la cerró no lo leyó.
+              <p className="soc-meta" role="alert" data-testid="cctv-clip-error">
+                {fallo}
+              </p>
+            )}
           </div>
         )}
       </StateFrame>

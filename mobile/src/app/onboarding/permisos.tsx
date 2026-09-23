@@ -3,10 +3,11 @@
 // volver del background (el usuario pudo tocar ajustes del sistema).
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { AppState, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { AppState, Linking, StyleSheet, Text, View } from "react-native";
 
 import { deriveAlertability, type PermissionSnapshot } from "@/services/alertability";
 import { getPermissionSnapshot, requestPermissions } from "@/services/push";
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export default function Permisos() {
@@ -74,7 +75,7 @@ export default function Permisos() {
 
       <View style={styles.actions}>
         {snapshot && !snapshot.granted && snapshot.canAskAgain ? (
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             onPress={() => {
               void (async () => {
@@ -84,24 +85,24 @@ export default function Permisos() {
             style={styles.primaryBtn}
           >
             <Text style={styles.primaryBtnText}>PERMITIR NOTIFICACIONES</Text>
-          </Pressable>
+          </Pulsable>
         ) : null}
         {snapshot && !snapshot.granted && !snapshot.canAskAgain ? (
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             onPress={() => void Linking.openSettings()}
             style={styles.primaryBtn}
           >
             <Text style={styles.primaryBtnText}>ABRIR AJUSTES DEL SISTEMA</Text>
-          </Pressable>
+          </Pulsable>
         ) : null}
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           onPress={() => router.push("/onboarding/privacidad")}
           style={styles.ghostBtn}
         >
           <Text style={styles.ghostBtnText}>Continuar</Text>
-        </Pressable>
+        </Pulsable>
       </View>
 
       <Text style={styles.foot}>

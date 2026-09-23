@@ -75,7 +75,10 @@ export function useRuleSetPublish(): PublishState {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["rule-sets"] });
-      void qc.invalidateQueries({ queryKey: ["config-state"] });
+      // [A-224 · T-8.09] `["config-state"]` no existía: el estado del sync se
+      // lee de `["fleet", "config-state"]` y el pie seguía con el dato viejo
+      // hasta el siguiente poll, justo después del clic que lo cambia.
+      void qc.invalidateQueries({ queryKey: ["fleet", "config-state"] });
     },
     onError: () => {
       // Un 409 significa que nuestra copia está vieja: hay que traer la del servidor.

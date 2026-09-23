@@ -54,7 +54,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, StyleSheet, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
@@ -65,6 +65,7 @@ import { useDamageDraft } from "@/features/damage/draft.store";
 import { useQueueStore } from "@/offline/queue.store";
 import { drainQueue } from "@/offline/sync";
 import { useWatchedSiteId } from "@/services/mySite";
+import { Pulsable } from "@/ui/Pulsable";
 import { StateFrame } from "@/ui/StateFrame";
 import { emergency, fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -158,9 +159,9 @@ export default function Camera() {
     return (
       <View style={styles.center}>
         <Text style={styles.hint}>La cámara forense necesita permiso de cámara.</Text>
-        <Pressable accessibilityRole="button" onPress={requestPermission} style={styles.btn}>
+        <Pulsable accessibilityRole="button" onPress={requestPermission} style={styles.btn}>
           <Text style={styles.btnText}>CONCEDER PERMISO</Text>
-        </Pressable>
+        </Pulsable>
       </View>
     );
   }
@@ -272,7 +273,7 @@ export default function Camera() {
             <View style={styles.controls}>
               <AvisoIA />
               {capturaError ? <Text style={styles.error}>{capturaError}</Text> : null}
-              <Pressable
+              <Pulsable
                 accessibilityRole="button"
                 disabled={busy}
                 onPress={take}
@@ -284,14 +285,14 @@ export default function Camera() {
                 ) : (
                   <Text style={styles.shutterText}>CAPTURAR</Text>
                 )}
-              </Pressable>
-              <Pressable
+              </Pulsable>
+              <Pulsable
                 accessibilityRole="button"
                 onPress={() => router.back()}
                 style={styles.textBtn}
               >
                 <Text style={styles.cancel}>Cancelar</Text>
-              </Pressable>
+              </Pulsable>
             </View>
           </View>
         ) : null}
@@ -307,7 +308,16 @@ export default function Camera() {
                 sitio sin mover el `testID` pone la guarda en rojo, que es lo que
                 se quiere: sin ancla, medir el árbol equivocado no se nota. */}
             <View collapsable={false} ref={composeRef} style={styles.fill} testID="compose">
-              <CameraView style={styles.fill} />
+              {/* [T-8.11 · A-023] La FOTO TOMADA, no un visor en vivo. Aquí había un
+                  <CameraView> nuevo: lo que se horneaba y se hasheaba era el fotograma
+                  del visor en el instante de «USAR ESTA FOTO», y la toma que la persona
+                  revisaba se descartaba. Lo que se revisa es lo que se sella. */}
+              <Image
+                resizeMode="cover"
+                source={{ uri: photoUri }}
+                style={styles.fill}
+                testID="captured-photo"
+              />
               <View pointerEvents="none" style={styles.watermark} testID="watermark">
                 {watermarkLines(meta).map((line) => (
                   <Text key={line} style={styles.watermarkText}>
@@ -319,7 +329,7 @@ export default function Camera() {
             <View style={styles.controls}>
               <AvisoIA />
               {capturaError ? <Text style={styles.error}>{capturaError}</Text> : null}
-              <Pressable
+              <Pulsable
                 accessibilityRole="button"
                 disabled={busy}
                 onPress={use}
@@ -331,14 +341,14 @@ export default function Camera() {
                 ) : (
                   <Text style={styles.shutterText}>USAR ESTA FOTO</Text>
                 )}
-              </Pressable>
-              <Pressable
+              </Pulsable>
+              <Pulsable
                 accessibilityRole="button"
                 onPress={() => setPhotoUri(null)}
                 style={styles.textBtn}
               >
                 <Text style={styles.cancel}>Repetir</Text>
-              </Pressable>
+              </Pulsable>
             </View>
           </View>
         ) : null}

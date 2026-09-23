@@ -25,6 +25,9 @@ import type { DictamenOut, EventDetailOut, EvidenceObject, IncidentActionOut } f
 const mocks = vi.hoisted(() => ({
   useTriage: vi.fn(),
   useIncidentDetail: vi.fn(),
+  useCctv: vi.fn(),
+  descargarClip: vi.fn(),
+  useClipDownload: vi.fn(),
   useCatalog: vi.fn(() => ({ items: [], loading: false, error: null, refetch: () => undefined })),
 }));
 
@@ -52,16 +55,11 @@ vi.mock("../console/useEstaciones", async () => ({
 }));
 // [T-3.12.c] `useCctv` monta react-query por el mismo motivo que `useForensics`, y esta
 // suite no lleva provider a propósito. Su semántica se prueba en `CctvPanel.test.tsx`.
-vi.mock("./useCctv", () => ({
-  useCctv: () => ({
-    data: undefined,
-    loading: false,
-    error: null,
-    refetch: vi.fn(),
-    dataUpdatedAt: 0,
-    staleSince: null,
-  }),
-}));
+vi.mock("./useCctv", () => ({ useCctv: mocks.useCctv }));
+// [T-8.08 · A-014] La descarga del clip es una mutación (react-query): stub por
+// el mismo motivo. Su semántica se prueba en `useClipDownload.test.tsx`; aquí se
+// prueba que la página la CABLEA, que era lo que faltaba.
+vi.mock("./useClipDownload", () => ({ useClipDownload: mocks.useClipDownload }));
 // [T-5.12] `useClassification` monta react-query por el mismo motivo que `useCctv`, y
 // esta suite no lleva provider a propósito. Su semántica se prueba en
 // `ClassificationPanel.test.tsx`.
@@ -161,10 +159,29 @@ function seedRole(role: keyof typeof ME_FIXTURES): void {
   });
 }
 
+/** CCTV sin datos: el estado por defecto del arnés. */
+function cctvData(over: Record<string, unknown> = {}) {
+  return {
+    data: undefined,
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+    dataUpdatedAt: 0,
+    staleSince: null,
+    ...over,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   seedRole("inspector");
   mocks.useIncidentDetail.mockReturnValue(detailData());
+  mocks.useCctv.mockReturnValue(cctvData());
+  mocks.useClipDownload.mockReturnValue({
+    download: mocks.descargarClip,
+    pendingClipId: null,
+    failure: null,
+  });
 });
 
 describe("TriagePage · regla de oro 7", () => {
@@ -531,5 +548,95 @@ describe("TriagePage · hechos fuera del gate del dictamen (T-1.52)", () => {
     );
     render(pageAt());
     expect(screen.getByRole("note")).toHaveTextContent("SIN EVIDENCIA INSTRUMENTAL");
+  });
+});
+
+// ═══════════════════ [T-8.08] EVALUACIÓN: nada de 403 en pantalla, y el clip descarga
+
+describe("TriagePage · CCTV solo se pide con `cctv_read` [A-042]", () => {
+  it.each(["gov_operator", "takab_support"] as const)(
+    "%s: no se pide y el panel no se monta (la API le respondería 403)",
+    (role) => {
+      seedRole(role);
+      mocks.useTriage.mockReturnValue(triageData());
+      render(pageAt());
+      // `useCctv(null)` es «no hay nada que pedir»: la query ni se lanza.
+      expect(mocks.useCctv).toHaveBeenCalled();
+      for (const [arg] of mocks.useCctv.mock.calls) expect(arg).toBeNull();
+      expect(screen.queryByTestId("cctv-panel")).toBeNull();
+    },
+  );
+
+  it("soc_operator sí la tiene: se pide para el incidente en foco y el panel está", () => {
+    seedRole("soc_operator");
+    mocks.useTriage.mockReturnValue(triageData());
+    render(pageAt());
+    expect(mocks.useCctv).toHaveBeenLastCalledWith(ROWS[0].incident.incident_id);
+    expect(screen.getByTestId("cctv-panel")).toBeInTheDocument();
+  });
+});
+
+describe("TriagePage · DESCARGAR CLIP llega a la mutación [A-014]", () => {
+  it("con `cctv_video`, el clic pide la URL firmada de ESE clip", () => {
+    seedRole("soc_operator");
+    mocks.useTriage.mockReturnValue(triageData());
+    mocks.useCctv.mockReturnValue(
+      cctvData({
+        data: {
+          incident_id: ROWS[0].incident.incident_id,
+          con_camara: true,
+          estado: "CLIP DISPONIBLE · ANÁLISIS PENDIENTE",
+          clips: [
+            {
+              clip_id: "clip-1",
+              started_at: "2026-07-08T09:00:00Z",
+              ended_at: "2026-07-08T09:11:00Z",
+              disponible: true,
+              purged_at: null,
+            },
+          ],
+          capturas: [],
+          evacuacion: null,
+          discrepancia: null,
+        },
+      }),
+    );
+    render(pageAt());
+    fireEvent.click(screen.getByRole("button", { name: "DESCARGAR CLIP" }));
+    expect(mocks.descargarClip).toHaveBeenCalledWith("clip-1");
+  });
+});
+
+describe("TriagePage · VERIFICAR la huella del dictamen solo con `dictamen_read` [A-052]", () => {
+  const PDF = {
+    created_at: "2026-07-08T11:00:00Z",
+    evidence_id: "ev-pdf",
+    kind: "report_pdf",
+    s3_key: "k/pdf",
+    sha256: "f".repeat(64),
+  } as EvidenceObject;
+
+  it.each([
+    "takab_superadmin",
+    "takab_support",
+    "tenant_admin",
+    "soc_operator",
+    "gov_operator",
+  ] as const)("%s: sin botón que respondería 404; la causa se declara", (role) => {
+    seedRole(role);
+    mocks.useTriage.mockReturnValue(triageData());
+    mocks.useIncidentDetail.mockReturnValue(detailData({ evidence: res<EvidenceObject[]>([PDF]) }));
+    render(pageAt());
+    expect(screen.queryByTestId("verify-ev-pdf")).toBeNull();
+    expect(screen.getByTestId("verify-dictamen-denied")).toBeInTheDocument();
+  });
+
+  it("inspector (lee dictámenes): el botón está", () => {
+    seedRole("inspector");
+    mocks.useTriage.mockReturnValue(triageData());
+    mocks.useIncidentDetail.mockReturnValue(detailData({ evidence: res<EvidenceObject[]>([PDF]) }));
+    render(pageAt());
+    expect(screen.getByTestId("verify-ev-pdf")).toBeInTheDocument();
+    expect(screen.queryByTestId("verify-dictamen-denied")).toBeNull();
   });
 });

@@ -9,7 +9,7 @@
 
 import type { RuleSetOut } from "@takab/sdk";
 
-import Button from "../../components/Button";
+import ConfirmButton from "../../components/ConfirmButton";
 import Card from "../../components/Card";
 import { utcStamp } from "../../lib/time";
 import { useRuleSetRollback } from "./useRuleSetRollback";
@@ -57,21 +57,25 @@ export default function RuleSetHistory({
               {vuelveA !== undefined && <span className="rs-hist__from">VUELVE A v{vuelveA}</span>}
               {/* La activa no ofrece volver a sí misma: el servidor lo rechaza
                   con 409, y un botón que solo puede fallar es una trampa. */}
+              {/* [A-109 · T-8.09] Dos pasos: volver cambia los umbrales de DISPARO
+                  en producción y se hacía con un solo clic sobre una fila del
+                  histórico — la misma fricción que APLICAR Y SINCRONIZAR. */}
               {canEdit && !v.is_active && activa !== null && (
-                <Button
-                  variant="ghost"
+                <ConfirmButton
+                  label={
+                    rollback.pendingId === v.rule_set_id ? "VOLVIENDO…" : `VOLVER A v${v.version}`
+                  }
+                  variant="secondary"
                   disabled={rollback.pendingId === v.rule_set_id}
                   title={
                     rollback.pendingId === v.rule_set_id
                       ? "Volviendo…"
                       : `Crea una versión nueva que vuelve a v${v.version}; no borra nada`
                   }
-                  onClick={() =>
+                  onConfirm={() =>
                     rollback.volver({ ruleSetId: v.rule_set_id, baseVersion: activa.version })
                   }
-                >
-                  {rollback.pendingId === v.rule_set_id ? "VOLVIENDO…" : `VOLVER A v${v.version}`}
-                </Button>
+                />
               )}
             </li>
           );

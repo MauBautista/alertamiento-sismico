@@ -111,9 +111,16 @@ _require_window = require_roles(*sorted({*WINDOW_ROLES, *PLATFORM_WINDOW_ROLES})
 # Leer QUÉ está silenciado no es apagar nada: lo puede ver cualquiera que llegue
 # a la consola. Es justo lo contrario de un secreto — una ventana invisible es
 # el modo de fallo que el criterio 2 existe para evitar.
-_require_read = require_roles(
-    *sorted({*WINDOW_ROLES, *PLATFORM_WINDOW_ROLES, "soc_operator", "takab_support"})
+#:
+#: [T-8.09] Con NOMBRE para que la consola aplique la MISMA regla antes de pedir
+#: (`web/src/features/console/useMaintenanceWindows.ts::puedeLeerVentanas`): el
+#: recorrido por rol de 2026-09-23 midió un 403 de esta ruta en CADA página para
+#: gov_operator, inspector y building_admin, que la franja de escena pide siempre.
+#: Lo ancla `tests/api/test_maintenance_windows.py::test_READ_ROLES_es_la_regla_de_la_consola`.
+READ_ROLES: tuple[str, ...] = tuple(
+    sorted({*WINDOW_ROLES, *PLATFORM_WINDOW_ROLES, "soc_operator", "takab_support"})
 )
+_require_read = require_roles(*READ_ROLES)
 
 # `active` DERIVADO: sin cierre manual y dentro de la ventana (sin worker de
 # cierre — calcado de `drills`, api/src/takab_api/routers/drills.py).

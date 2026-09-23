@@ -16,10 +16,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 from typing import Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, Query, Response
+import anyio
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -30,8 +32,9 @@ from takab_api.auth.matrix import roles_with_action
 from takab_api.commands.intent import canonical_intent, intent_sha256, intent_signature_valid
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
-from takab_api.routers._s3 import presign_put, read_object
+from takab_api.routers._s3 import presign_get, presign_put, read_object
 from takab_api.routers.incidents import CONSOLE_ROLES
+from takab_api.routers.reports import ORIGEN_CERTIFICADO_MOVIL, generate_report
 from takab_api.schemas.mobile import (
     CheckinIn,
     CheckinOut,
@@ -68,6 +71,7 @@ _require_dictamen_read = require_roles(*_DICTAMEN_READ_ROLES)
 _HABITABLE = frozenset({"normal_operation", "inhabit_monitor"})
 
 router = APIRouter()
+log = logging.getLogger(__name__)
 
 
 async def _incident_in_scope(conn: AsyncConnection, claims: Claims, incident_id: UUID) -> Any:
@@ -383,7 +387,11 @@ async def read_dictamen(
     conn: AsyncConnection = Depends(get_session),
 ) -> MobileDictamenOut:
     """[T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos
-    del dictamen FIRMADO + PDF presignado del reporte EXISTENTE. No genera PDF."""
+    del dictamen FIRMADO + PDF presignado del informe FIRMADO.
+
+    [T-8.12 · A-054] El PDF es uno generado DESPUÉS de la firma vigente; si no lo
+    hay, se genera aquí con la MISMA función que la consola (ver `_certificado`).
+    """
     incident = await _incident_in_scope(conn, claims, incident_id)
     row = (await conn.execute(q.LATEST_SIGNED_DICTAMEN, {"incident": str(incident_id)})).first()
     if row is None:
@@ -400,11 +408,7 @@ async def read_dictamen(
     settings = Settings()
     pdf_url: str | None = None
     if settings.evidence_bucket:
-        pdf_row = (await conn.execute(q.LATEST_REPORT_PDF, {"incident": str(incident_id)})).first()
-        if pdf_row is not None:
-            from takab_api.routers._s3 import presign_get
-
-            pdf_url = presign_get(settings, pdf_row.s3_key)
+        pdf_url = await _certificado(conn, claims, incident, settings)
     await audit_async(
         conn,
         tenant_id=str(incident.tenant_id),
@@ -422,6 +426,76 @@ async def read_dictamen(
         habitable=row.status in _HABITABLE,
         pdf_url=pdf_url,
     )
+
+
+async def _certificado(
+    conn: AsyncConnection, claims: Claims, incident: Any, settings: Settings
+) -> str | None:
+    """[T-8.12 · A-054] La URL del informe FIRMADO, o `None` si no se puede certificar.
+
+    Servía «el `report_pdf` más reciente», y firmar no regenera el PDF: el
+    brigadista descargaba el que decía «DICTAMEN OPERATIVO PRELIMINAR · SIN FIRMA
+    DE INSPECTOR». Ahora:
+
+    1. Si la CABEZA de la cadena de dictámenes no está firmada —una corrección
+       posterior que nadie firmó—, cualquier PDF de hoy diría PRELIMINAR: `None`.
+    2. Si hay un `report_pdf` generado DESPUÉS de esa firma, ése.
+    3. Si no, se GENERA ahora llamando a `routers/reports.generate_report` —la
+       misma función que la consola, no una copia— bajo el mismo freno de
+       exportación, y una sola vez aunque lleguen dos lecturas a la vez (candado
+       consultivo de la transacción).
+
+    Por qué generar y no devolver `None`: es el flujo de la presentación —el
+    inspector firma en el teléfono y el brigadista descarga—, y con `None` el
+    certificado no existiría justo cuando la RBAC §3 lo concede. El coste es el
+    de UNA exportación por firma, igual que si la hubiera pedido la consola.
+    """
+    incident_id = str(incident.incident_id)
+    vigente = (await conn.execute(q.DICTAMEN_VIGENTE, {"incident": incident_id})).first()
+    if vigente is None or vigente.signed_by is None:
+        return None
+    buscar = {
+        "incident": incident_id,
+        "firmado": vigente.created_at,
+        "dictamen": str(vigente.dictamen_id),
+    }
+    fila = (await conn.execute(q.REPORT_PDF_TRAS_LA_FIRMA, buscar)).first()
+    if fila is not None:
+        return await anyio.to_thread.run_sync(presign_get, settings, fila.s3_key)
+    clave = f"certificado:{incident_id}"
+    if not (await conn.execute(q.CANDADO_DEL_CERTIFICADO, {"clave": clave})).scalar_one():
+        # Otra lectura lo está generando ahora mismo. ⚠️ El móvil NO sondea esta
+        # pantalla (`mobile/src/app/dictamen.tsx`: sin `refetchInterval`); lo
+        # obtiene en la siguiente lectura —al volver a abrirla o enfocarla—, que
+        # sirve el que generó la otra (`test_DOS_lecturas_SIMULTANEAS…`).
+        return None
+    # Con el candado en la mano se vuelve a mirar: otra lectura pudo generarlo y
+    # confirmarlo entre la consulta de arriba y ésta (READ COMMITTED lo ve).
+    fila = (await conn.execute(q.REPORT_PDF_TRAS_LA_FIRMA, buscar)).first()
+    if fila is not None:
+        return await anyio.to_thread.run_sync(presign_get, settings, fila.s3_key)
+    try:
+        # En un SAVEPOINT: si la generación falla a medias, la lectura del
+        # certificado sigue en pie —sus metadatos y su `dictamen_read` se
+        # escriben igual— y sólo el PDF sale `null`.
+        async with conn.begin_nested():
+            informe = await generate_report(
+                incident_id=incident.incident_id,
+                variant="technical",
+                claims=claims,
+                conn=conn,
+                # Explícito, y no deducido del rol: un inspector también lee el
+                # certificado, y también puede exportar desde la consola.
+                origen=ORIGEN_CERTIFICADO_MOVIL,
+            )
+    except HTTPException:
+        # El freno agotado (429) o el incidente fuera de la vista (404): no se
+        # genera por encima del freno; la siguiente lectura lo vuelve a intentar.
+        return None
+    except Exception:  # noqa: BLE001 - un fallo de S3 no puede tumbar el certificado
+        log.warning("certificado: no se pudo generar el informe de %s", incident_id, exc_info=True)
+        return None
+    return informe.url
 
 
 @router.post(

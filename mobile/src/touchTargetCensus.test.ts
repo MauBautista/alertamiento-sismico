@@ -51,6 +51,8 @@ interface Control {
   donde: string;
   /** Texto de la etiqueta de apertura, sin el `<Pressable` ni el `>`. */
   props: string;
+  /** La clase de control (`Pressable`, `Pulsable`, `TextInput`, `Switch`). */
+  tag: string;
   cumple: boolean;
   razon: string;
 }
@@ -153,9 +155,22 @@ function declaraAltoSuficiente(cuerpo: string): boolean {
  */
 const CLASES = [
   { tag: "Pressable", soloIndicador: false },
+  // [T-8.11 · A-062] El `Pressable` que responde al toque. Es el mismo control
+  // con otro nombre: su `style` viaja tal cual en la etiqueta, y por eso el
+  // censo lo sigue leyendo igual que antes.
+  { tag: "Pulsable", soloIndicador: false },
   { tag: "TextInput", soloIndicador: false },
   { tag: "Switch", soloIndicador: true },
 ] as const;
+
+/**
+ * [T-8.11] Ficheros cuyo `<Pressable` NO es un control sino el ENVOLTORIO que
+ * los demás usan: reenvía el `style` de quien lo pone en pantalla, y ese uso SÍ
+ * se censa —como `<Pulsable`— con su alto declarado. Contarlo aquí lo daría por
+ * un control sin alto, y eximirlo por `ruta:línea` lo dejaría caer al primer
+ * comentario que se le añada. La guarda de abajo exige que sea exactamente UNO.
+ */
+const ENVOLTORIOS = ["ui/Pulsable.tsx"];
 
 /**
  * Tapa los comentarios SIN mover un solo carácter (espacios por dentro, saltos
@@ -198,6 +213,7 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
         out.push({
           donde,
           props,
+          tag,
           cumple: indicador,
           razon: indicador
             ? "indicador: el objetivo es su fila"
@@ -212,6 +228,7 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
         out.push({
           donde,
           props,
+          tag,
           cumple: derivado,
           razon: derivado ? "hitSlop derivado del token" : "hitSlop escrito a mano (usa slopHasta)",
         });
@@ -220,7 +237,7 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
 
       const estilo = valorDeProp(props, "style");
       if (estilo === null) {
-        out.push({ donde, props, cumple: false, razon: "sin estilo y sin hitSlop" });
+        out.push({ donde, props, tag, cumple: false, razon: "sin estilo y sin hitSlop" });
         continue;
       }
       const nombres = [...estilo.matchAll(/styles\.([A-Za-z0-9_]+)/g)].map((m) => m[1]);
@@ -231,6 +248,7 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
       out.push({
         donde,
         props,
+        tag,
         cumple,
         razon: cumple
           ? "minHeight del token"
@@ -242,7 +260,12 @@ function censarFuente(fuente: FuenteEntrada, src: string): Control[] {
 }
 
 const PRODUCCION = fuentesDeProduccion(SRC);
-const CONTROLES = PRODUCCION.flatMap((f) => censarFuente(f, SRC));
+const ENVUELTOS = PRODUCCION.filter((f) => ENVOLTORIOS.includes(relative(SRC, f.path))).flatMap(
+  (f) => censarFuente(f, SRC),
+);
+const CONTROLES = PRODUCCION.filter((f) => !ENVOLTORIOS.includes(relative(SRC, f.path))).flatMap(
+  (f) => censarFuente(f, SRC),
+);
 
 /**
  * Controles que NO cumplen y por qué se les perdona. **Vacía**: el día que haga
@@ -258,7 +281,17 @@ const EXENTOS: string[] = [];
 describe("censo táctil · el barrido encuentra la app", () => {
   it("hay fuentes de producción y controles que censar", () => {
     expect(PRODUCCION.length).toBeGreaterThan(40);
-    expect(CONTROLES.length).toBeGreaterThanOrEqual(45);
+    // [T-8.11] 64 al pasar los 57 `Pressable` a `Pulsable` (56) + el de pánico
+    // (1) + 4 `TextInput` + 3 `Switch`. Era un piso de 45 con 64 controles
+    // reales: cambiar la etiqueta podía dejar ciegos a 19 sin que nada se
+    // pusiera rojo. Si la población BAJA, el barrido dejó de ver algo.
+    expect(CONTROLES.length).toBeGreaterThanOrEqual(64);
+    // Y la etiqueta nueva se VE: sin ella en `CLASES`, los 56 desaparecen.
+    expect(CONTROLES.filter((c) => c.tag === "Pulsable").length).toBeGreaterThanOrEqual(56);
+  });
+
+  it("el envoltorio de `Pulsable` es UN Pressable, y fuera de él no se censa", () => {
+    expect(ENVUELTOS).toHaveLength(1);
   });
 
   it("el mínimo sale del paquete de tokens, no de un número escrito aquí", () => {

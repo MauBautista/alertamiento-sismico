@@ -85,8 +85,11 @@ export default function AuditPage() {
           setFilters(draft);
         }}
       >
-        {field("actor", "Actor", "text", "user:<sub> · gateway:<id>")}
-        {field("verb", "Verbo", "text", "ack · siren_test · user_update")}
+        {/* [A-229 · T-8.09] Actor y Verbo filtran por IGUALDAD y no lo decían:
+            teclear «user» o «siren» devolvía cero filas sin explicar por qué,
+            mientras Objeto —a su lado— sí es un prefijo y lo rotula. */}
+        {field("actor", "Actor (exacto)", "text", "user:<sub> · gateway:<id>")}
+        {field("verb", "Verbo (exacto)", "text", "ack · siren_test · user_update")}
         {field("object", "Objeto (prefijo)", "text", "incident: · gateway:")}
         {field("from", "Desde (UTC)", "datetime-local")}
         {field("to", "Hasta (UTC)", "datetime-local")}

@@ -31,7 +31,21 @@ export type SirenPhase =
   /** Venció el TTL sin acuse: el gabinete no respondió. */
   | "expired"
   /** No pudimos ni emitirlo (403, rate-limit, sin clave HMAC…). */
-  | "failed";
+  | "failed"
+  // [A-019 · T-8.09] Las fases del SILENCIO son otras frases, no las mismas. Hasta
+  // aquí `phaseOf` miraba el estado del comando y no su acción: el acuse de
+  // `deactivate` se pintaba «SIRENA SONANDO · ACUSADA» y volvía a ofrecer
+  // SILENCIAR — la pantalla afirmaba lo contrario de lo que acababa de pasar.
+  /** La orden de silencio salió; el gabinete todavía no ha acusado. */
+  | "silence_issued"
+  /** El edge confirmó el silencio. */
+  | "silenced"
+  /** Rechazada o sin acuse en el TTL: la sirena PUEDE seguir sonando. */
+  | "silence_unconfirmed"
+  /** La orden de silencio ni salió: la sirena sigue contando como sonando. */
+  | "silence_failed";
+
+type SirenAction = "activate" | "deactivate";
 
 export interface SirenTestData {
   phase: SirenPhase;
@@ -47,6 +61,20 @@ export interface SirenTestData {
 
 function phaseOf(command: CommandOut | null): SirenPhase {
   if (command === null) return "idle";
+  if (command.action === "deactivate") {
+    switch (command.status) {
+      case "acked":
+        return "silenced";
+      case "rejected":
+      case "expired":
+        // Rechazo y TTL se funden A PROPÓSITO en el silencio: para quien está
+        // delante las dos dicen lo mismo —la sirena puede seguir sonando— y el
+        // motivo concreto viaja en `detail`.
+        return "silence_unconfirmed";
+      default:
+        return "silence_issued";
+    }
+  }
   switch (command.status) {
     case "pending":
       return "issued";
@@ -64,7 +92,7 @@ function phaseOf(command: CommandOut | null): SirenPhase {
 export function useSirenTest(siteId: string | null): SirenTestData {
   const queryClient = useQueryClient();
   const [commandId, setCommandId] = useState<string | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ action: SirenAction; message: string } | null>(null);
 
   // Solo sondeamos mientras hay un comando en vuelo: logging por evento, no por
   // intervalo (regla de oro 10). En cuanto se resuelve, el polling se apaga.
@@ -93,7 +121,7 @@ export function useSirenTest(siteId: string | null): SirenTestData {
       : ((listing.data?.items ?? []).find((c) => c.command_id === commandId) ?? null);
 
   const mutation = useMutation({
-    mutationFn: async (action: "activate" | "deactivate") => {
+    mutationFn: async (action: SirenAction) => {
       const { data, response } = await issueCommandSitesSiteIdCommandsPost({
         path: { site_id: siteId as string },
         body: { channel: "siren", action },
@@ -109,9 +137,9 @@ export function useSirenTest(siteId: string | null): SirenTestData {
       // Sembramos la fila recién creada para no depender del primer poll.
       await queryClient.invalidateQueries({ queryKey: ["siteCommands", siteId] });
     },
-    onError: (err: Error) => {
+    onError: (err: Error, action) => {
       setCommandId(null);
-      setFailure(err.message);
+      setFailure({ action, message: err.message });
     },
   });
 
@@ -120,12 +148,17 @@ export function useSirenTest(siteId: string | null): SirenTestData {
     setFailure(null);
   }, []);
 
-  const phase: SirenPhase = failure !== null ? "failed" : phaseOf(command);
+  const phase: SirenPhase =
+    failure !== null
+      ? failure.action === "deactivate"
+        ? "silence_failed"
+        : "failed"
+      : phaseOf(command);
 
   return {
     phase,
     command,
-    detail: failure ?? command?.error ?? null,
+    detail: failure?.message ?? command?.error ?? null,
     activate: () => mutation.mutate("activate"),
     deactivate: () => mutation.mutate("deactivate"),
     reset,

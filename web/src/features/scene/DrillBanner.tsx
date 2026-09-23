@@ -30,6 +30,7 @@ import { AlertTriangle, CalendarClock } from "lucide-react";
 import { useMemo } from "react";
 
 import Button from "../../components/Button";
+import ConfirmButton from "../../components/ConfirmButton";
 import { staleDeLectura } from "../../components/staleDeLectura";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
@@ -101,7 +102,16 @@ export default function DrillBanner({ data, scene }: { data: ActiveDrillData; sc
           due={armedPhase(armed, now) === "due"}
           canAct={canAct}
           pending={pending}
-          onRun={() => start({ fromScheduled: armed.drill_id })}
+          onRun={() =>
+            // `start` nunca rechaza: devuelve si arrancó. Para ConfirmButton un
+            // «no arrancó» es un rechazo — vuelve a reposo y el error lo pinta la
+            // propia franja, que ya lee `error` del hook.
+            start({ fromScheduled: armed.drill_id }).then((ok) => {
+              if (!ok) {
+                throw new Error("el simulacro no arrancó");
+              }
+            })
+          }
           onCancel={() => cancel(armed.drill_id)}
         />
       ) : null}
@@ -197,7 +207,7 @@ function ArmedBanner({
   due: boolean;
   canAct: boolean;
   pending: boolean;
-  onRun: () => void;
+  onRun: () => Promise<unknown>;
   onCancel: () => void;
 }) {
   return (
@@ -210,20 +220,23 @@ function ArmedBanner({
       </span>
       {canAct && (
         <>
-          <Button
-            variant="primary" /* Antes de la hora el botón está a la vista pero inerte: el aviso es
-               la información, el disparo es el acto. Se habilita a T−0 y sigue
-               siendo un clic humano — nunca un temporizador. */
+          {/* Antes de la hora el botón está a la vista pero inerte: el aviso es la
+              información, el disparo es el acto. Se habilita a T−0 y sigue siendo un
+              acto humano — nunca un temporizador. [T-8.07] Y de DOS clics: el
+              simulacro vocea en edificios reales, así que va con la confirmación de
+              toda acción de operador que toca actuadores (RBAC §4.3). */}
+          <ConfirmButton
+            label="EJECUTAR AHORA"
+            armedLabel="CLIC DE NUEVO PARA EJECUTAR"
+            doneLabel="EN CURSO"
             disabled={!due || pending}
             title={
               due
                 ? "Emite el simulacro AHORA a los sitios programados"
                 : "Se habilita a la hora programada"
             }
-            onClick={onRun}
-          >
-            EJECUTAR AHORA
-          </Button>
+            onConfirm={onRun}
+          />
           <Button variant="secondary" disabled={pending} onClick={onCancel}>
             CANCELAR
           </Button>

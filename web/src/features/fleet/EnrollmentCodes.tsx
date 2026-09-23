@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import type { SiteOut } from "@takab/sdk";
 
 import Button from "../../components/Button";
+import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { utcStamp } from "../../lib/time";
 import { useNow } from "../../lib/useNow";
@@ -220,14 +221,20 @@ export default function EnrollmentCodes({ site, onClose }: EnrollmentCodesProps)
                 >
                   {revealed === c.code ? "OCULTAR" : "VER"}
                 </Button>
+                {/* [A-222 · T-8.09] Irreversible —quien iba a enrolarse con este
+                    código ya no puede—: dos pasos, y el apagado dice por qué. */}
                 {c.active && (
-                  <Button
+                  <ConfirmButton
+                    label="REVOCAR"
                     variant="secondary"
                     disabled={revoke.isPending}
-                    onClick={() => revoke.mutate({ siteId: site.site_id, code: c.code })}
-                  >
-                    REVOCAR
-                  </Button>
+                    title={
+                      revoke.isPending
+                        ? "Revocando otro código…"
+                        : "Irreversible: el código deja de servir para enrolarse"
+                    }
+                    onConfirm={() => revoke.mutate({ siteId: site.site_id, code: c.code })}
+                  />
                 )}
               </div>
             </li>

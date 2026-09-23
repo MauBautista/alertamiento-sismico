@@ -20,12 +20,13 @@
 // consentimiento distinto, sobre un dato distinto.
 import { useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { getGpsConsent, markOnboardingDone, setGpsConsent } from "@/services/onboarding";
 import { decideConsent, fetchConsentStatus, needsConsent } from "@/services/privacy";
 import type { ConsentStatus } from "@/services/privacy";
+import { Pulsable } from "@/ui/Pulsable";
 import { StateFrame } from "@/ui/StateFrame";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -157,7 +158,7 @@ export default function Privacidad() {
           INDICADOR (`pointerEvents="none"`) y quien recibe el dedo es la fila,
           con el alto del token. De paso es lo que hace todo el mundo: se pulsa
           la línea entera, no el dibujo de 27 dp. */}
-      <Pressable
+      <Pulsable
         accessibilityRole="switch"
         accessibilityState={{ checked: gps }}
         onPress={() => {
@@ -178,9 +179,9 @@ export default function Privacidad() {
           trackColor={{ true: palette.card, false: palette.card }}
           value={gps}
         />
-      </Pressable>
+      </Pulsable>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={enviando}
         onPress={() => void aceptarYContinuar()}
@@ -190,7 +191,7 @@ export default function Privacidad() {
         <Text style={styles.primaryBtnText}>
           {enviando ? "REGISTRANDO…" : yaAceptado ? "CONTINUAR" : "ACEPTAR Y CONTINUAR"}
         </Text>
-      </Pressable>
+      </Pulsable>
 
       <Text style={styles.foot}>
         SU CONSENTIMIENTO QUEDA REGISTRADO CON LA VERSIÓN EXACTA QUE ACEPTÓ. NUNCA BLOQUEA EL

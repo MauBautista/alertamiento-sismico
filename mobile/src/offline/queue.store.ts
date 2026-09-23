@@ -11,6 +11,7 @@ import {
   withPriority,
   type CheckinPayload,
   type DamageReportPayload,
+  type DelegatedCheckinPayload,
   type EvidencePayload,
   type QueueItem,
   type QueueItemOf,
@@ -44,6 +45,10 @@ type QueueStoreState = {
   items: QueueItem[];
   hydrate: () => Promise<void>;
   enqueueCheckin: (payload: CheckinPayload) => Promise<QueueItemOf<"checkin">>;
+  /** [T-8.11 · A-024] «Verificado en persona» desde el pase de lista. */
+  enqueueDelegatedCheckin: (
+    payload: DelegatedCheckinPayload,
+  ) => Promise<QueueItemOf<"delegated_checkin">>;
   /** La huella se calculó sobre los BYTES del archivo AL CAPTURAR y entra tal
    *  cual: la cola nunca re-hashea ni reescribe la evidencia (§4.2). */
   enqueueEvidence: (
@@ -118,6 +123,9 @@ export const useQueueStore = create<QueueStoreState>()((set, get) => {
 
     enqueueCheckin: async (payload) =>
       enqueue({ kind: "checkin", payload, sha256: await sha256OfJson(payload) }),
+
+    enqueueDelegatedCheckin: async (payload) =>
+      enqueue({ kind: "delegated_checkin", payload, sha256: await sha256OfJson(payload) }),
 
     enqueueEvidence: (payload, sha256) => enqueue({ kind: "evidence", payload, sha256 }),
 

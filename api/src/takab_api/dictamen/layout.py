@@ -29,6 +29,7 @@ from takab_api.documentos.membrete import (
     PAGE_H,
     PAGE_W,
     PIE_MM,
+    PRIMER_BLOQUE_MM,
     RULE,
     MembretePDF,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "PAGE_H",
     "PAGE_W",
     "PIE_MM",
+    "PRIMER_BLOQUE_MM",
     "RULE",
     "VERDICT_COLORS",
     "TakabPDF",

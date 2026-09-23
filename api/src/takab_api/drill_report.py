@@ -28,6 +28,7 @@ from datetime import datetime
 
 from fpdf.enums import XPos, YPos
 
+from takab_api.dictamen.rotulos import ZONA_POR_DEFECTO, instante
 from takab_api.documentos.huella import content_sha256 as huella_de_contenido
 from takab_api.documentos.membrete import MUTED, MembretePDF
 
@@ -152,7 +153,7 @@ def motivo_sin_acuse(sitio: SitioReporte) -> str:
     return "SIN ACUSE — la orden salió y el gabinete no contestó"
 
 
-def linea_de_aborto(sitio: SitioReporte) -> str:
+def linea_de_aborto(sitio: SitioReporte, zona: str = ZONA_POR_DEFECTO) -> str:
     """[T-6.17] Un sitio que acusó y DESPUÉS cortó el simulacro por lo real.
 
     Cadena vacía si no abortó: quien lee no tiene por qué ver una línea que
@@ -161,7 +162,8 @@ def linea_de_aborto(sitio: SitioReporte) -> str:
     if sitio.aborted_at is None:
         return ""
     razon = sitio.abort_reason or "el gabinete no declaró la razón"
-    return f"ABORTADO {sitio.aborted_at:%H:%M:%S} UTC — {razon}"
+    # [T-8.12 · A-150] Con la hora local al lado, como el INICIO y el FIN.
+    return f"ABORTADO {instante(sitio.aborted_at, zona)} — {razon}"
 
 
 @dataclass
@@ -176,6 +178,10 @@ class ReporteSimulacro:
     sitios: list[SitioReporte] = field(default_factory=list)
     #: [T-6.16] `manual` | `aborted` | `cancelled` | `executed` | None.
     stop_reason: str | None = None
+    #: [T-8.12 · A-150] La zona de la hora local que va JUNTO a la UTC. Un
+    #: simulacro puede tocar varios inmuebles; por defecto, la del centro, que es
+    #: la misma que el DDL pone a `sites.timezone`.
+    zona_horaria: str = ZONA_POR_DEFECTO
 
     def content_sha256(self) -> str:
         """[T-7.42] Huella del CONTENIDO: identifica qué acredita este reporte.
@@ -250,6 +256,56 @@ class ReportePDF(MembretePDF):
     afirma_datos = True
 
 
+#: [T-8.12 · A-143] Ancho, en caracteres de la monoespaciada, de la columna del
+#: estado (`ACUSÓ`, `NO ACUSÓ`, `SIN GABINETE`) y de la sangría del detalle (`↳`).
+_COL_ESTADO = 16
+_COL_DETALLE = 18
+
+
+def _renglon(
+    pdf: MembretePDF, estado: str, texto: str, alto: float, *, columna: int = _COL_ESTADO
+) -> None:
+    """[T-8.12 · A-143] Una línea del acuse por sitio que NUNCA pasa del margen.
+
+    Eran `cell(0, …)`, que no envuelve: el relleno `:<34` no recorta, y con un
+    nombre de más de ~35 caracteres —o un motivo de rechazo largo— el texto se
+    salía por el borde derecho de la hoja (medido en el render de la auditoría:
+    «RECHAZADO POR EL GABINETE — command_enabled» cortado por el canto).
+
+    Ahora el estado va en su columna y el resto en un `multi_cell` que empieza
+    DESPUÉS de ella: un renglón corto sale en el mismo sitio que antes, y uno
+    largo continúa con SANGRÍA bajo el nombre, no debajo del estado —donde se
+    leería como otra fila—. `align="L"` explícito: justificar una monoespaciada
+    deforma su rejilla (la nota de `MembretePDF.field`).
+    """
+    ancho = pdf.get_string_width(" " * columna)
+    pdf.set_x(pdf.l_margin)
+    if estado:
+        pdf.cell(ancho, alto, pdf.text_of(estado))
+    else:
+        pdf.set_x(pdf.l_margin + ancho)
+    pdf.multi_cell(0, alto, pdf.text_of(texto), align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+
+#: El ancho de la columna del NOMBRE del sitio en la línea de acuse (`:<34`).
+_COL_NOMBRE = 34
+
+
+def _sitio(pdf: MembretePDF, estado: str, nombre: str, dato: str) -> None:
+    """[T-8.12 · 2ª vuelta] El nombre del sitio y su dato (latencia o motivo).
+
+    Con un nombre que cabe en su columna, en la misma línea, alineados como
+    siempre —byte a byte—. Con uno más largo, el relleno no alinea nada y el dato
+    salía PEGADO al nombre («…Estacionamiento 12 s», «…Estacionamiento EXPIRADO —»),
+    leyéndose como parte de él: va en su propio renglón, con la sangría del detalle.
+    """
+    if len(nombre) <= _COL_NOMBRE:
+        _renglon(pdf, estado, f"{nombre:<{_COL_NOMBRE}} {dato}", 3.8)
+        return
+    _renglon(pdf, estado, nombre, 3.8)
+    _renglon(pdf, "", f"↳ {dato}", 3.4, columna=_COL_DETALLE)
+
+
 def render(rep: ReporteSimulacro) -> bytes:
     """PDF determinista del post-simulacro."""
     # La fecha del sello es la del SIMULACRO, no la de la exportación: si fuera la
@@ -266,8 +322,11 @@ def render(rep: ReporteSimulacro) -> bytes:
 
     pdf.section("1", "EL SIMULACRO")
     pdf.field("IDENTIFICADOR", rep.drill_id)
-    pdf.field("INICIO", f"{rep.started_at:%Y-%m-%d %H:%M:%S} UTC" if rep.started_at else "S/D")
-    pdf.field("FIN", f"{rep.stopped_at:%Y-%m-%d %H:%M:%S} UTC" if rep.stopped_at else "SIN CERRAR")
+    # [T-8.12 · A-150] La UTC y, al lado, la hora local: Protección Civil lee la
+    # segunda, y la primera es la que casa con la consola y con el pie.
+    zona = rep.zona_horaria
+    pdf.field("INICIO", instante(rep.started_at, zona) if rep.started_at else "S/D")
+    pdf.field("FIN", instante(rep.stopped_at, zona) if rep.stopped_at else "SIN CERRAR")
     pdf.field("DURACIÓN PEDIDA", f"{rep.duration_s} s")
     # [T-6.16] CÓMO TERMINÓ. Sin esta línea, quien recibe el documento tiene que
     # llamar por teléfono para saber si el simulacro se cumplió, lo paró alguien
@@ -289,51 +348,21 @@ def render(rep: ReporteSimulacro) -> bytes:
     pdf.ln(1)
     pdf.set_font(pdf.mono_font, "", 7.5)
     for s in rep.acusaron:
-        pdf.cell(
-            0,
-            3.8,
-            pdf.text_of(f"ACUSÓ           {s.site_name:<34} {_t(s.latency_s)}"),
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
+        _sitio(pdf, "ACUSÓ", s.site_name, _t(s.latency_s))
         # [T-5.17] Qué sonó, debajo del acuse y no en una sección aparte: quien
         # lee esta línea está preguntando por ESE edificio.
-        pdf.cell(
-            0,
-            3.4,
-            pdf.text_of(f"                  ↳ {linea_de_audio(s)}"),
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
+        _renglon(pdf, "", f"↳ {linea_de_audio(s)}", 3.4, columna=_COL_DETALLE)
         # [T-6.17] Acusar y después cortar por una alerta real son DOS hechos;
         # el sitio cuenta como acuse y el corte se lee debajo, con su hora.
-        aborto = linea_de_aborto(s)
+        aborto = linea_de_aborto(s, zona)
         if aborto:
-            pdf.cell(
-                0,
-                3.4,
-                pdf.text_of(f"                  ↳ {aborto}"),
-                new_x=XPos.LMARGIN,
-                new_y=YPos.NEXT,
-            )
+            _renglon(pdf, "", f"↳ {aborto}", 3.4, columna=_COL_DETALLE)
     # [T-6.16] El guion de antes decía «falta el acuse» y nada más. Ahora va el
     # PORQUÉ, que es lo que la consola ya distinguía y el documento colapsaba.
     for s in rep.no_acusaron:
-        pdf.cell(
-            0,
-            3.8,
-            pdf.text_of(f"NO ACUSÓ        {s.site_name:<34} {motivo_sin_acuse(s)}"),
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
+        _sitio(pdf, "NO ACUSÓ", s.site_name, motivo_sin_acuse(s))
     for s in rep.sin_gabinete:
-        pdf.cell(
-            0,
-            3.8,
-            pdf.text_of(f"SIN GABINETE    {s.site_name:<34} {motivo_sin_acuse(s)}"),
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
+        _sitio(pdf, "SIN GABINETE", s.site_name, motivo_sin_acuse(s))
 
     pdf.section("3", "TIEMPOS")
     if rep.latencia_mediana_s is None:
@@ -362,8 +391,11 @@ def render(rep: ReporteSimulacro) -> bytes:
     # [T-7.43] Y dice lo que el dictamen NO puede decir. La asimetría es real y
     # está medida: este modelo se arma de `drills`/`drill_sites` y **no lee
     # `evidence_objects`**, así que exportarlo no se añade a sí mismo; tampoco
-    # tiene hora de generación, y su clave S3 es fija. Si los dos papeles dijeran
-    # lo mismo, el lector trasladaría al dictamen una garantía que sólo tiene éste.
+    # tiene hora de generación. [T-8.12 · A-142] Su clave S3 ya NO es fija: lleva
+    # el sha256 del archivo (`…/<sha256>/reporte.pdf`), así que cada fila de
+    # evidencia apunta a SUS bytes.
+    # Si los dos papeles dijeran lo mismo, el lector trasladaría al dictamen una
+    # garantía que sólo tiene éste.
     pdf.para(
         "La huella al pie identifica el CONTENIDO de este reporte, no este archivo: "
         "el SHA-256 de un archivo no cabe dentro de sí mismo. A diferencia del "

@@ -46,9 +46,22 @@ export interface HardwareFormProps {
   submitting: boolean;
   error: string | null;
   onCreateGateway: (values: GatewayValues) => void;
-  onCreateSensor: (values: SensorValues) => void;
+  /**
+   * [A-104] `onCreated` lo llama quien crea, SOLO cuando el servidor confirmó el
+   * alta: entonces el formulario acusa y se limpia. Antes no pasaba nada visible
+   * al pulsar, y el segundo clic creaba un sensor duplicado.
+   */
+  onCreateSensor: (values: SensorValues, onCreated: () => void) => void;
   onDone: () => void;
 }
+
+const SENSOR_VACIO: SensorValues = {
+  kind: "structural",
+  model: "RS4D",
+  serial: "",
+  mount: "",
+  calibration_source: "",
+};
 
 export default function HardwareForm({
   site,
@@ -65,13 +78,10 @@ export default function HardwareForm({
     has_wr1: true,
     equipment: { ...EQUIPMENT_ALL },
   });
-  const [sensor, setSensor] = useState<SensorValues>({
-    kind: "structural",
-    model: "RS4D",
-    serial: "",
-    mount: "",
-    calibration_source: "",
-  });
+  const [sensor, setSensor] = useState<SensorValues>(SENSOR_VACIO);
+  // [A-104] Lo último que el servidor CONFIRMÓ haber dado de alta. Se enseña
+  // hasta la siguiente alta: es el acuse, no un toast que se escapa.
+  const [sensorAck, setSensorAck] = useState<string | null>(null);
 
   return (
     <div className="fleet__form" data-testid="hardware-form">
@@ -213,17 +223,29 @@ export default function HardwareForm({
         </p>
         <Button
           disabled={submitting || sensor.model.trim() === ""}
-          onClick={() =>
-            onCreateSensor({
+          onClick={() => {
+            const enviado: SensorValues = {
               ...sensor,
               model: sensor.model.trim(),
               serial: sensor.serial.trim(),
               calibration_source: sensor.calibration_source.trim(),
-            })
-          }
+            };
+            setSensorAck(null);
+            onCreateSensor(enviado, () => {
+              setSensorAck(
+                `${enviado.model}${enviado.serial === "" ? " · SIN SERIAL" : ` · ${enviado.serial}`}`,
+              );
+              setSensor(SENSOR_VACIO);
+            });
+          }}
         >
           AÑADIR SENSOR
         </Button>
+        {sensorAck !== null && (
+          <p className="fleet__hint" role="status" data-testid="sensor-ack">
+            SENSOR AÑADIDO · {sensorAck}. El formulario queda limpio para el siguiente.
+          </p>
+        )}
       </fieldset>
 
       {error !== null && (

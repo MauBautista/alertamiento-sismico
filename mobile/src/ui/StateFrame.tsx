@@ -3,8 +3,9 @@
 // lo que se muestra es viejo). Mostrar un dato congelado como "live" es peor
 // que mostrar "sin datos".
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -62,14 +63,14 @@ export function StateFrame(props: {
         <Text style={styles.errorTitle}>SIN CONEXIÓN CON EL SERVIDOR</Text>
         <Text style={styles.errorBody}>{props.error}</Text>
         {props.onRetry ? (
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             onPress={props.onRetry}
             style={styles.retryBtn}
             testID="state-retry"
           >
             <Text style={styles.retryText}>REINTENTAR</Text>
-          </Pressable>
+          </Pulsable>
         ) : null}
       </View>
     );

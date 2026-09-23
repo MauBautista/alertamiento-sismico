@@ -1386,7 +1386,10 @@
   cursor: pointer;
 }
 
-.fleet__hint--warn { color: var(--tk-status-warning); }
+/* [T-8.09] Doble clase: la base `.fleet__hint` está MÁS ABAJO en esta hoja con la
+   misma especificidad, así que el ámbar perdía y el aviso salía gris — el mismo
+   color que una nota cualquiera. */
+.fleet__hint.fleet__hint--warn { color: var(--tk-status-warning); }
 
 /* Acuse de alta: los UUID que el runbook manda pegar en el edge.env del Pi. */
 /* [T-2.55] El BLOQUE `.acuse` se escribió en T-2.37 sin regla: heredaba el

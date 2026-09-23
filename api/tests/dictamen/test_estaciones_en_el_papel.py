@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from takab_api.dictamen import rotulos
 from takab_api.dictamen.model import EstacionFila, ReportModel
 from takab_api.dictamen.pdf import render
 from takab_api.documentos.membrete import MembretePDF
@@ -77,7 +78,9 @@ def test_la_seccion_imprime_una_fila_por_estacion() -> None:
     assert "RED DE ESTACIONES" in texto
     assert "Edificio Central (AM.R4F74)" in texto
     assert "Centro Tlaxcala" in texto
-    for celda in ("79", "19.7", "20.1", "0.0712", "evacuate_or_hold"):
+    # [T-8.12 · A-144] El nivel en castellano, con el rótulo del panel del gabinete:
+    # aquí se exigía `evacuate_or_hold` CRUDO, que es el defecto que la ficha cierra.
+    for celda in ("79", "19.7", "20.1", "0.0712", rotulos.NIVEL["evacuate_or_hold"]):
         assert celda in texto, celda
 
 

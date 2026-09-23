@@ -3,8 +3,9 @@
 // persona" (check-in delegado). "Notificar a no reportados" = push OPS;
 // "Cerrar headcount" habilitado solo si todos están contabilizados.
 import type { RosterOut } from "@takab/sdk";
-import { Linking, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Linking, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
 import { allAccounted, rosterRows, type PersonState } from "./rosterView";
@@ -43,6 +44,9 @@ export function HeadcountView(props: {
   onlyUnreported: boolean;
   live: boolean;
   markingId: string | null;
+  /** [T-8.11 · A-024] Personas que este teléfono ya verificó y cuya
+   *  verificación espera en la cola: se pintan «EN COLA», sin VERIFICAR. */
+  enCola?: ReadonlySet<string>;
   onToggleFilter: (v: boolean) => void;
   onMarkVerified: (userId: string) => void;
   onNotifyUnreported: () => void;
@@ -72,7 +76,7 @@ export function HeadcountView(props: {
       {/* [T-6.20] La fila es el control; el interruptor, el indicador. En
           Android el `hitSlop` de un `<Switch>` nativo se ignora (ver
           `privacidad.tsx`). */}
-      <Pressable
+      <Pulsable
         accessibilityRole="switch"
         accessibilityState={{ checked: props.onlyUnreported }}
         onPress={() => props.onToggleFilter(!props.onlyUnreported)}
@@ -81,7 +85,7 @@ export function HeadcountView(props: {
       >
         <Text style={styles.filterLabel}>Solo no reportados</Text>
         <Switch pointerEvents="none" value={props.onlyUnreported} />
-      </Pressable>
+      </Pulsable>
 
       {rows.length === 0 ? (
         <Text style={styles.empty}>
@@ -104,7 +108,7 @@ export function HeadcountView(props: {
               {r.state === "unreported" ? (
                 <View style={styles.actions}>
                   {r.phone ? (
-                    <Pressable
+                    <Pulsable
                       accessibilityRole="button"
                       hitSlop={slopHasta(CHIP_ALTO)}
                       onPress={() => void Linking.openURL(`tel:${r.phone}`)}
@@ -112,20 +116,28 @@ export function HeadcountView(props: {
                       testID={`call-${r.userId}`}
                     >
                       <Text style={styles.callText}>LLAMAR</Text>
-                    </Pressable>
+                    </Pulsable>
                   ) : null}
-                  <Pressable
-                    accessibilityRole="button"
-                    disabled={props.markingId === r.userId}
-                    hitSlop={slopHasta(CHIP_ALTO)}
-                    onPress={() => props.onMarkVerified(r.userId)}
-                    style={styles.verifyBtn}
-                    testID={`verify-${r.userId}`}
-                  >
-                    <Text style={styles.verifyText}>
-                      {props.markingId === r.userId ? "…" : "VERIFICAR"}
-                    </Text>
-                  </Pressable>
+                  {props.enCola?.has(r.userId) ? (
+                    // No es un botón: la verificación ya existe en el teléfono
+                    // y un segundo toque sería OTRO check-in, no un reintento.
+                    <View style={styles.queuedChip} testID={`queued-${r.userId}`}>
+                      <Text style={styles.queuedText}>EN COLA</Text>
+                    </View>
+                  ) : (
+                    <Pulsable
+                      accessibilityRole="button"
+                      disabled={props.markingId === r.userId}
+                      hitSlop={slopHasta(CHIP_ALTO)}
+                      onPress={() => props.onMarkVerified(r.userId)}
+                      style={styles.verifyBtn}
+                      testID={`verify-${r.userId}`}
+                    >
+                      <Text style={styles.verifyText}>
+                        {props.markingId === r.userId ? "…" : "VERIFICAR"}
+                      </Text>
+                    </Pulsable>
+                  )}
                 </View>
               ) : null}
             </View>
@@ -133,7 +145,7 @@ export function HeadcountView(props: {
         ))
       )}
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={props.roster.unreported === 0 || props.busy}
         onPress={props.onNotifyUnreported}
@@ -141,9 +153,9 @@ export function HeadcountView(props: {
         testID="notify-unreported"
       >
         <Text style={styles.notifyText}>NOTIFICAR A NO REPORTADOS ({props.roster.unreported})</Text>
-      </Pressable>
+      </Pulsable>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={!canClose || props.busy}
         onPress={props.onCloseHeadcount}
@@ -153,7 +165,7 @@ export function HeadcountView(props: {
         <Text style={styles.closeText}>
           {canClose ? "CERRAR HEADCOUNT (FIRMADO)" : "FALTAN POR CONTABILIZAR"}
         </Text>
-      </Pressable>
+      </Pulsable>
     </ScrollView>
   );
 }
@@ -183,6 +195,8 @@ const styles = StyleSheet.create({
   callText: { color: palette.bg, fontSize: fontSize.xs, fontWeight: "700" },
   verifyBtn: { minHeight: CHIP_ALTO, justifyContent: "center", borderColor: palette.ok, borderWidth: 1, borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2 },
   verifyText: { color: palette.ok, fontSize: fontSize.xs, fontWeight: "700" },
+  queuedChip: { minHeight: CHIP_ALTO, justifyContent: "center", borderColor: palette.warn, borderWidth: 1, borderStyle: "dashed", borderRadius: radius.sm, paddingHorizontal: space[2], paddingVertical: 2 },
+  queuedText: { color: palette.warn, fontSize: fontSize.xs, fontWeight: "700" },
   notifyBtn: { minHeight: touch.min, justifyContent: "center", borderColor: palette.warn, borderWidth: 1, borderRadius: radius.md, paddingVertical: space[3], alignItems: "center", marginTop: space[2] },
   notifyText: { color: palette.warn, fontWeight: "700", fontSize: fontSize.sm, letterSpacing: 1 },
   closeBtn: { minHeight: touch.min, justifyContent: "center", backgroundColor: palette.cyan, borderRadius: radius.lg, paddingVertical: space[3], alignItems: "center" },

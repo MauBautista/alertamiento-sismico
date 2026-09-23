@@ -26,6 +26,20 @@ export interface EpicenterModalProps {
   onClose: () => void;
 }
 
+/**
+ * [T-8.07] Por qué no se reubicó, en texto. `throwOnError` del cliente hey-api
+ * lanza el CUERPO de FastAPI (`{ detail }`), no un `Error`: el aviso quedaba en
+ * «NO SE PUDO REUBICAR — » sin motivo.
+ */
+function relocateErrorText(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "object" && error !== null) {
+    const detail = (error as { detail?: unknown }).detail;
+    if (typeof detail === "string" && detail.trim() !== "") return detail;
+  }
+  return "el servidor no dio motivo";
+}
+
 export default function EpicenterModal({ incident, site, onClose }: EpicenterModalProps) {
   const relocate = useEpicenter();
   const eventId = incident.event_id;
@@ -116,7 +130,7 @@ export default function EpicenterModal({ incident, site, onClose }: EpicenterMod
 
         {relocate.isError && (
           <p className="soc-user__error" role="alert">
-            NO SE PUDO REUBICAR — {relocate.error instanceof Error ? relocate.error.message : ""}
+            NO SE PUDO REUBICAR — {relocateErrorText(relocate.error)}
           </p>
         )}
 
@@ -126,17 +140,19 @@ export default function EpicenterModal({ incident, site, onClose }: EpicenterMod
             armedLabel="CLIC DE NUEVO PARA REUBICAR"
             variant="primary"
             disabled={relocate.isPending}
-            onConfirm={() => {
-              relocate.mutate(
-                {
+            // [A-163 · T-8.07] La promesa vuelve al botón: «ENVIANDO…» mientras
+            // vuela y el cierre sólo con la reubicación registrada. El rechazo lo
+            // pinta el aviso de arriba y el botón vuelve a reposo.
+            onConfirm={() =>
+              relocate
+                .mutateAsync({
                   incidentId: incident.incident_id,
                   lon: effective.lon,
                   lat: effective.lat,
                   note: note.trim() === "" ? null : note.trim(),
-                },
-                { onSuccess: onClose },
-              );
-            }}
+                })
+                .then(() => onClose())
+            }
           />
         </div>
       </div>

@@ -36,6 +36,7 @@ export default function Directorio() {
       }
       error={directory.error}
       loading={directory.loading}
+      onRetry={directory.refetch}
       staleSinceMs={directory.staleSinceMs}
     >
       <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>

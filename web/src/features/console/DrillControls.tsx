@@ -55,10 +55,14 @@ export default function DrillControls() {
         <DrillModal
           pending={pending}
           error={error}
-          onSubmit={(input) => {
-            start(input);
-            setModalOpen(false);
-          }}
+          // [A-094 · T-8.07] Se cierra sólo si el servidor lo registró. Con un
+          // rechazo el modal sigue abierto con lo llenado y pinta el `error`.
+          onSubmit={(input) =>
+            start(input).then((ok) => {
+              if (ok) setModalOpen(false);
+              return ok;
+            })
+          }
           onClose={() => setModalOpen(false)}
         />
       )}

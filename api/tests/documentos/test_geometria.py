@@ -636,10 +636,12 @@ def test_el_censo_de_figuras_las_tiene_TODAS() -> None:
         # entra con ellos. Medirlo solo exigiría inventarle un centro que en el
         # documento sale del croquis proyectado.
         "_anillos_del_modelo",
-        # Las fotografías del brigadista tienen guarda propia y más específica:
-        # `tests/dictamen/test_fotos_en_el_papel.py::
-        # test_NINGUNA_fotografia_pisa_el_PIE_ni_se_sale_del_filete`, que además
-        # necesita JPEG de verdad.
+        # Las fotografías del brigadista tienen guardas propias y más específicas,
+        # que además necesitan JPEG de verdad: en
+        # `tests/dictamen/test_fotos_en_el_papel.py`, el mismo barrido «entre
+        # donde entren» de aquí (`test_las_fotos_respetan_el_PIE_ENTRE_DONDE_ENTREN`,
+        # con fotos en VERTICAL) y la de solapes de TEXTO que esta suite no puede
+        # ver (`test_NADA_se_imprime_encima_de_otra_cosa_desde_los_DANOS`, T-8.12).
         "_fotos_del_reporte",
     }
     fuera = sorted(dibujan - set(_las_figuras_del_dictamen()) - exentos)

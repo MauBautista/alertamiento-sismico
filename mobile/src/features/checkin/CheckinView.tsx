@@ -1,8 +1,9 @@
 // Pantalla 1.4 · Check-in de vida (spec §7): dos botones GIGANTES con
 // transparencia total de qué se enviará. Presentacional puro — la captura de
 // GPS, el encolado y el estado derivado viven en la ruta.
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { whatWillBeSent } from "./payload";
@@ -25,7 +26,7 @@ export function CheckinView(props: {
         en cuanto haya red.
       </Text>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={disabled}
         onPress={() => props.onCheckin("safe")}
@@ -40,9 +41,9 @@ export function CheckinView(props: {
         <Text style={styles.btnCaptionDark}>
           {whatWillBeSent({ status: "safe", gpsConsent: props.gpsConsent, zoneName: props.zoneName })}
         </Text>
-      </Pressable>
+      </Pulsable>
 
-      <Pressable
+      <Pulsable
         accessibilityRole="button"
         disabled={disabled}
         onPress={() => props.onCheckin("need_help")}
@@ -61,7 +62,7 @@ export function CheckinView(props: {
             zoneName: props.zoneName,
           })}
         </Text>
-      </Pressable>
+      </Pulsable>
     </View>
   );
 }

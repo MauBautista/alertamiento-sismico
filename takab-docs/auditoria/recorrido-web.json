@@ -1,0 +1,1970 @@
+{
+  "base_url": "http://localhost:5173",
+  "roles": [
+    "brigadista",
+    "building_admin",
+    "gov_operator",
+    "inspector",
+    "occupant",
+    "security_guard",
+    "soc_operator",
+    "takab_superadmin",
+    "takab_support",
+    "tenant_admin"
+  ],
+  "resumen": {
+    "controles": 268,
+    "por_resultado": {
+      "efecto": 201,
+      "deshabilitado": 42,
+      "mutante_no_pulsado": 19,
+      "no_visible": 6
+    },
+    "hallazgos": 1
+  },
+  "hallazgos": [
+    {
+      "tipo": "no_medido",
+      "rol": "occupant",
+      "ruta": "/",
+      "detalle": "el login dev no emitió token para este rol en este entorno (¿pool de ocupantes sin configurar?)"
+    }
+  ],
+  "detalle": [
+    {
+      "rol": "brigadista",
+      "rutas": [
+        "/"
+      ],
+      "controles": [],
+      "hallazgos": []
+    },
+    {
+      "rol": "building_admin",
+      "rutas": [
+        "/console",
+        "/triage",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "BUILDING_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 4 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "BUILDING_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "BUILDING_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "PROBAR SIRENA",
+          "resultado": "mutante_no_pulsado"
+        }
+      ],
+      "hallazgos": []
+    },
+    {
+      "rol": "gov_operator",
+      "rutas": [
+        "/console",
+        "/fleet",
+        "/triage",
+        "/audit",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "GOV_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 4 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "GOV_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "select",
+          "rotulo": "Orden de la flota",
+          "resultado": "efecto",
+          "detalle": "4 opciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "AUTODIAGNÓSTICO SILENCIOSO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "GOV_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "GOV_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "APLICAR",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "LIMPIAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "GOV_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        }
+      ],
+      "hallazgos": []
+    },
+    {
+      "rol": "inspector",
+      "rutas": [
+        "/console",
+        "/triage",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "INSPECTOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 3 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 2 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "INSPECTOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "INSPECTOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        }
+      ],
+      "hallazgos": []
+    },
+    {
+      "rol": "occupant",
+      "rutas": [
+        "/"
+      ],
+      "controles": [],
+      "hallazgos": [
+        {
+          "tipo": "no_medido",
+          "rol": "occupant",
+          "ruta": "/",
+          "detalle": "el login dev no emitió token para este rol en este entorno (¿pool de ocupantes sin configurar?)"
+        }
+      ]
+    },
+    {
+      "rol": "security_guard",
+      "rutas": [
+        "/"
+      ],
+      "controles": [],
+      "hallazgos": []
+    },
+    {
+      "rol": "soc_operator",
+      "rutas": [
+        "/console",
+        "/fleet",
+        "/triage",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOC_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 3 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "SOC_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "select",
+          "rotulo": "Orden de la flota",
+          "resultado": "efecto",
+          "detalle": "4 opciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "AUTODIAGNÓSTICO SILENCIOSO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "SOC_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "SOC_OPERATOR",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        }
+      ],
+      "hallazgos": []
+    },
+    {
+      "rol": "takab_superadmin",
+      "rutas": [
+        "/console",
+        "/fleet",
+        "/triage",
+        "/tenants",
+        "/audit",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPERADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 2 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "INICIAR SIMULACRO",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 2 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPERADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "select",
+          "rotulo": "Orden de la flota",
+          "resultado": "efecto",
+          "detalle": "4 opciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "VENTANA",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "AUTODIAGNÓSTICO SILENCIOSO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "EDITAR GABINETE",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "RETIRAR",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "NUEVA ESTACIÓN",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 10 peticiones · 74 mutaciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "EDITAR",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "HARDWARE",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "CÓDIGOS",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPERADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPERADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "+ NUEVO CLIENTE",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "TAKAB Dev dev · 21 sitios · active LÓGICO",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "EDITAR FICHA",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar API · Webhook",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar WhatsApp Business",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar SMS",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar Correo electrónico",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "RESTAURAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "APLICAR Y SINCRONIZAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "select",
+          "rotulo": "— elige una clase — Marco al que el cliente declara estar sujeto Protocolo inter",
+          "resultado": "efecto",
+          "detalle": "6 opciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Añadir",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "+ NUEVO USUARIO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "select",
+          "rotulo": "— elige un cliente — TODOS los clientes",
+          "resultado": "efecto",
+          "detalle": "2 opciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Conceder",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPERADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "APLICAR",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "LIMPIAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPERADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "PROBAR SIRENA",
+          "resultado": "mutante_no_pulsado"
+        }
+      ],
+      "hallazgos": []
+    },
+    {
+      "rol": "takab_support",
+      "rutas": [
+        "/console",
+        "/fleet",
+        "/triage",
+        "/tenants",
+        "/audit",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPPORT",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 4 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPPORT",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "select",
+          "rotulo": "Orden de la flota",
+          "resultado": "efecto",
+          "detalle": "4 opciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "AUTODIAGNÓSTICO SILENCIOSO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPPORT",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPPORT",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "TAKAB Dev dev · 21 sitios · active LÓGICO",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar API · Webhook",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar WhatsApp Business",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar SMS",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar Correo electrónico",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "RESTAURAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "APLICAR Y SINCRONIZAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPPORT",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "APLICAR",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "LIMPIAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "CARGAR MÁS",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 1 peticiones · 8 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "TAKAB_SUPPORT",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        }
+      ],
+      "hallazgos": []
+    },
+    {
+      "rol": "tenant_admin",
+      "rutas": [
+        "/console",
+        "/fleet",
+        "/triage",
+        "/tenants",
+        "/audit",
+        "/building/d1000000-0000-0000-0000-000000000000"
+      ],
+      "controles": [
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TENANT_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "LEER EL AVISO COMPLETO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ACEPTO ESTE AVISO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 2 peticiones · 11 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "INICIAR SIMULACRO",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "HISTORIAL",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "OCULTAR SIN ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 2 peticiones · 6 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ESTACIONES",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "EPICENTROS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ENLACE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "ONDAS",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "select",
+          "rotulo": "Orden de la cola de incidentes",
+          "resultado": "efecto",
+          "detalle": "5 opciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "REUBICAR EPICENTRO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CONFIRMAR ACUSE",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "TENANT_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "select",
+          "rotulo": "Orden de la flota",
+          "resultado": "efecto",
+          "detalle": "4 opciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "VENTANA",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "AUTODIAGNÓSTICO SILENCIOSO",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "EDITAR GABINETE",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "RETIRAR",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "NUEVA ESTACIÓN",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 10 peticiones · 74 mutaciones"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "EDITAR",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "HARDWARE",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/fleet",
+          "tipo": "button",
+          "rotulo": "CÓDIGOS",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TENANT_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "TODOS",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CRÍTICOS",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "ADVERTENCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "VIGILANCIA",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "NORMAL",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
+          "resultado": "efecto",
+          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "TENANT_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "TAKAB Dev dev · 21 sitios · active LÓGICO",
+          "resultado": "efecto",
+          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar API · Webhook",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar WhatsApp Business",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar SMS",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "Habilitar Correo electrónico",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "RESTAURAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "APLICAR Y SINCRONIZAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/tenants",
+          "tipo": "button",
+          "rotulo": "+ NUEVO USUARIO",
+          "resultado": "efecto",
+          "detalle": "aria ||→|| · 0 peticiones · 2 mutaciones"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "TENANT_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "APLICAR",
+          "resultado": "mutante_no_pulsado"
+        },
+        {
+          "ruta": "/audit",
+          "tipo": "button",
+          "rotulo": "LIMPIAR",
+          "resultado": "deshabilitado"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "TENANT_ADMIN",
+          "resultado": "efecto",
+          "detalle": "abre diálogo"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "1H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "6H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "24H",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "7D",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
+        },
+        {
+          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
+          "tipo": "button",
+          "rotulo": "PROBAR SIRENA",
+          "resultado": "mutante_no_pulsado"
+        }
+      ],
+      "hallazgos": []
+    }
+  ]
+}

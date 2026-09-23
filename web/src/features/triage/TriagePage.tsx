@@ -14,6 +14,7 @@ import TriageDetail from "./TriageDetail";
 import TriageTable from "./TriageTable";
 import { inspectionMatrix } from "./priority";
 import { useCctv } from "./useCctv";
+import { useClipDownload } from "./useClipDownload";
 import { useForensics } from "./useForensics";
 import { TRIAGE_STALE_MS, useTriage } from "./useTriage";
 import { useIncidentDetail } from "./useIncidentDetail";
@@ -94,7 +95,15 @@ export default function TriagePage() {
   );
   const forensics = useForensics(current?.incident.incident_id ?? null);
   // [T-3.12.c] CCTV: misma cadencia y mismo reloj de frescura que forensics.
-  const cctv = useCctv(current?.incident.incident_id ?? null);
+  // [T-8.08 · A-042] Y sólo si el rol la puede LEER (`cctv_read`): a
+  // `takab_support` y `gov_operator` la API les responde 403 por decisión de
+  // T-3.12.c, y la pantalla les pintaba ese 403 dentro de Evaluación. Sin la
+  // acción no hay nada que pedir —`null`— y el panel ni se monta.
+  const canReadCctv = me?.allowed_actions.cctv_read === true;
+  const cctv = useCctv(canReadCctv ? (current?.incident.incident_id ?? null) : null);
+  // [T-8.08 · A-014] La descarga del clip, que el panel pintaba y nadie cableaba.
+  // El fallo y la espera llevan SU clip: `CctvPanel` los casa con los clips que pinta.
+  const clip = useClipDownload();
   // [T-7.17] La red de estaciones del incidente en foco. Misma forma que
   // `forensics` y `cctv`: la página lee, el panel pinta.
   const estaciones = useEstaciones(current?.incident.incident_id ?? null);
@@ -250,7 +259,11 @@ export default function TriagePage() {
             incidentStaleSince={staleSince}
             canSign={me?.allowed_actions.sign_dictamen === true}
             canExport={me?.allowed_actions.export === true}
+            canReadCctv={canReadCctv}
             canDownloadClip={me?.allowed_actions.cctv_video === true}
+            clipDownload={clip}
+            // [T-8.08 · A-052] Verificar un `report_pdf` exige `dictamen_read`.
+            canVerifyDictamen={me?.allowed_actions.dictamen_read === true}
             canGenerateReport={me?.allowed_actions.generate_report === true}
             // [T-6.02] Un enlace no promete lo que el rol no tiene: `allowed_routes`
             // del servidor, como los guards.

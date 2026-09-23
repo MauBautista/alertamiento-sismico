@@ -468,7 +468,10 @@ DAMAGE_CATEGORY_KEYS = frozenset(
         "people_trapped",
     }
 )
-DAMAGE_SEVERITIES = frozenset({"low", "medium", "critical"})
+#: [T-8.12] Las CUATRO que ofrece el formulario de la app (`categories.ts`). Eran tres:
+#: «Alta» (`high`) daba 422 y el reporte de daños no entraba. Lo cruza
+#: `tests/contracts/test_formulario_de_danos_movil.py`.
+DAMAGE_SEVERITIES = frozenset({"low", "medium", "high", "critical"})
 
 
 class DamageCategoryIn(BaseModel):

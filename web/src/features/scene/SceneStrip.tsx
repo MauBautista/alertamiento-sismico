@@ -51,7 +51,10 @@ export default function SceneStrip() {
   const demo = useDemoMode();
 
   const alert = sceneAlert(incidents.incidents);
-  const kind = alertKind(alert);
+  // [T-8.10 · A-063] Con los epicentros del MISMO snapshot: un aviso que la red
+  // corroboró autoriza, igual que en el teléfono. Sin snapshot todavía, la
+  // cuenta es desconocida y la regla cae del lado prudente (aviso).
+  const kind = alertKind(alert, map.epicenters);
   const scene = resolveScene({
     // [T-7.16] La casilla la decide `sceneSlot`, no este componente: una
     // revisión entra por `notice` y la razón vive en la tabla, con ella.

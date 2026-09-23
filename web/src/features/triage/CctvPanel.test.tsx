@@ -4,7 +4,7 @@
 // el hallazgo de seguridad se vea antes de leerse, y que el botón de descargar no exista
 // para quien la API va a rechazar.
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CctvOut } from "@takab/sdk";
@@ -12,6 +12,7 @@ import type { CctvOut } from "@takab/sdk";
 import { expectFourStates, type UiState } from "../../test-utils/states";
 import CctvPanel from "./CctvPanel";
 import type { CctvState } from "./useCctv";
+import type { ClipDownload } from "./useClipDownload";
 
 const HORA = Date.now() - 3_600_000;
 
@@ -55,8 +56,19 @@ const EVAC = {
   notas: [],
 };
 
-function pintar(over: Partial<CctvState> = {}, canDownloadClip = false) {
-  return render(<CctvPanel cctv={estado(over)} canDownloadClip={canDownloadClip} />);
+/** La descarga del clip, en reposo. */
+function descarga(over: Partial<ClipDownload> = {}): ClipDownload {
+  return { download: vi.fn(), pendingClipId: null, failure: null, ...over };
+}
+
+function pintar(
+  over: Partial<CctvState> = {},
+  canDownloadClip = false,
+  clip: ClipDownload = descarga(),
+) {
+  return render(
+    <CctvPanel cctv={estado(over)} canDownloadClip={canDownloadClip} clipDownload={clip} />,
+  );
 }
 
 describe("CctvPanel · regla de oro 7", () => {
@@ -70,6 +82,7 @@ describe("CctvPanel · regla de oro 7", () => {
           staleSince: s === "stale" ? HORA : null,
         })}
         canDownloadClip={false}
+        clipDownload={descarga()}
       />
     ));
   });
@@ -179,5 +192,70 @@ describe("CctvPanel", () => {
 
     pintar({ data: datos({ clips: [clip] }) }, true);
     expect(screen.getByRole("button", { name: /DESCARGAR/ })).toBeInTheDocument();
+  });
+});
+
+// [T-8.08 · A-014] EL BOTÓN QUE NO HACÍA NADA.
+//
+// `CctvPanel` pintaba DESCARGAR CLIP con `onDownloadClip?.(clip_id)` y
+// `TriagePage` nunca le pasaba el callback: el `?.` convertía el clic en nada,
+// sin error, delante del cliente. Ahora la descarga es una prop OBLIGATORIA —el
+// compilador no deja montar el panel sin ella— y el clic tiene tres desenlaces
+// visibles: en curso, fallo declarado, o la pestaña con el vídeo.
+describe("CctvPanel · DESCARGAR CLIP descarga [A-014]", () => {
+  const CLIP = {
+    clip_id: "c1",
+    started_at: "2026-08-30T10:00:00Z",
+    ended_at: "2026-08-30T10:11:00Z",
+    disponible: true,
+    purged_at: null,
+  } as never;
+
+  it("pide ESE clip, por su id", () => {
+    const clip = descarga();
+    pintar({ data: datos({ clips: [CLIP] }) }, true, clip);
+    fireEvent.click(screen.getByRole("button", { name: "DESCARGAR CLIP" }));
+    expect(clip.download).toHaveBeenCalledWith("c1");
+  });
+
+  it("mientras se firma la URL el botón se apaga y DICE que está en curso", () => {
+    pintar({ data: datos({ clips: [CLIP] }) }, true, descarga({ pendingClipId: "c1" }));
+    const boton = screen.getByRole("button", { name: /PREPARANDO/ });
+    expect(boton).toBeDisabled();
+  });
+
+  it("un fallo se declara junto a los clips, no se traga", () => {
+    pintar(
+      { data: datos({ clips: [CLIP] }) },
+      true,
+      descarga({
+        failure: { clipId: "c1", message: "EL CLIP YA NO ESTÁ: la retención de vídeo lo podó" },
+      }),
+    );
+    expect(screen.getByTestId("cctv-clip-error")).toHaveTextContent(/retención de vídeo/);
+    expect(screen.getByTestId("cctv-clip-error")).toHaveAttribute("role", "alert");
+  });
+
+  // [T-8.08 · verificador] La descarga vive en `TriagePage`, que cambia de
+  // incidente sin desmontarse. Lo que dice de un clip que NO es de este panel
+  // es de otro incidente, y aquí sería mentira.
+  it("el fallo de un clip de OTRO incidente no se pinta aquí", () => {
+    pintar(
+      { data: datos({ clips: [CLIP] }) },
+      true,
+      descarga({ failure: { clipId: "clip-de-otro", message: "EL CLIP YA NO ESTÁ" } }),
+    );
+    expect(screen.queryByTestId("cctv-clip-error")).toBeNull();
+  });
+
+  it("un clip de OTRO incidente en vuelo no apaga los botones de éste", () => {
+    pintar({ data: datos({ clips: [CLIP] }) }, true, descarga({ pendingClipId: "clip-de-otro" }));
+    expect(screen.getByRole("button", { name: "DESCARGAR CLIP" })).toBeEnabled();
+  });
+
+  it("uno de ESTE panel en vuelo sí apaga los demás: un clip a la vez", () => {
+    const OTRO = { ...(CLIP as object), clip_id: "c2" } as never;
+    pintar({ data: datos({ clips: [CLIP, OTRO] }) }, true, descarga({ pendingClipId: "c1" }));
+    expect(screen.getByRole("button", { name: "DESCARGAR CLIP" })).toBeDisabled();
   });
 });

@@ -216,14 +216,19 @@ describe("DrillBanner", () => {
     expect(screen.queryByTestId("drill-armed")).toBeNull();
   });
 
-  it("a T−0 EJECUTAR AHORA queda precargado: un clic humano, con su agenda", () => {
+  it("a T−0 EJECUTAR AHORA pide DOS clics: arma y después dispara, con su agenda", () => {
+    // [T-8.07] Era un clic: el simulacro VOCEA en edificios reales, y un clic
+    // accidental en la franja lo disparaba. Mismo patrón de dos pasos que toda
+    // acción de operador que toca actuadores (ConfirmButton, RBAC §4.3).
     vi.setSystemTime(Date.parse("2026-08-04T18:06:00Z"));
     useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
-    const start = vi.fn();
+    const start = vi.fn(async () => true);
     pintar(drillData({ scheduled: [AGENDA], start }), "normal");
     const run = screen.getByRole("button", { name: "EJECUTAR AHORA" });
     expect(run).toBeEnabled();
     fireEvent.click(run);
+    expect(start).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CLIC DE NUEVO PARA EJECUTAR/ }));
     expect(start).toHaveBeenCalledWith({ fromScheduled: "ag-1" });
   });
 

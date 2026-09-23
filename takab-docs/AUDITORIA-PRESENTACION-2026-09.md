@@ -1939,10 +1939,50 @@ prórroga para el SOC. Las demás siguen abiertas y cada una vive en la ficha qu
 
 | Qué | Cómo | Resultado | Fecha |
 |---|---|---|---|
-| Recorrido web por rol, local | `web/e2e/recorrido_por_rol.spec.ts` | ❔ NO MEDIDO | — |
+| Recorrido web por rol, local | `web/e2e/recorrido_por_rol.spec.ts` | ✅ 10 roles · 268 controles · **0 inesperados** (ver §11). Occupant ❔ NO MEDIDO en local: sin pool de ocupantes, `/dev/token` responde 503 | 2026-09-23 |
 | Recorrido web por rol, nube | el mismo con `PW_BASE_URL` | ❔ NO MEDIDO | — |
 | Recorridos móviles en el Pixel | Maestro `recorrido-ocupante` / `recorrido-tactico` | ❔ NO MEDIDO | — |
 | `auth_time` al refrescar en Cognito real | fragmento de DevTools | ❔ NO MEDIDO | — |
-| Consola abierta más de 70 min sin logout | consola desplegada | ❔ NO MEDIDO | — |
+| Consola abierta más de 70 min sin logout | consola desplegada | ❔ NO MEDIDO en la nube. En local ✅: `web/e2e/sesion.spec.ts` 3/3 (token de 60 s y consola abierta 90 s ⇒ sigue dentro; aviso a 30 min del tope; tope ⇒ la entrada dice por qué) | 2026-09-23 |
 | App 70 min sin pedir login | Pixel | ❔ NO MEDIDO | — |
-| PDF: 10 variantes rasterizadas y revisadas | `auditoria/render-pdfs.sh` | ❔ NO MEDIDO | — |
+| PDF: 10 variantes rasterizadas y revisadas | `auditoria/render-pdfs.sh` | ✅ sin solapes de texto (0 en las 10 variantes, medido con `cajas_de_texto.py`), clasificación en portada y ejecutivo, hora local, FIRMÓ con rol y nombre, sin inglés crudo. Revisado a ojo por el verificador y por el integrador. Pendiente: el informe de un incidente REAL de la nube con fotos y onda (ensayo 2) | 2026-09-23 |
+
+## 11 · El recorrido de la consola, rol por rol (navegador de verdad)
+
+`web/e2e/recorrido_por_rol.spec.ts` contra `make soc-local`, el 2026-09-23 (volcado íntegro en
+[`auditoria/recorrido-web.json`](auditoria/recorrido-web.json)). Para cada rol: las rutas que el
+servidor le concede, y en cada una cada botón, desplegable, pestaña y menú **no mutante** pulsado.
+Cuenta como fallo toda respuesta HTTP ≥ 400, todo error de página y todo control que no haga nada.
+Los controles **mutantes** (acusar, firmar, ejecutar, borrar…) no se pulsan aquí; los ejercen las specs
+de flujo.
+
+| Rol | Rutas | Con efecto | Deshabilitados con causa | Mutantes (no pulsados) | Re-renderizados | Resultado |
+|---|---|---|---|---|---|---|
+| `brigadista` | 1 | 0 | 0 | 0 | 0 | ✅ |
+| `building_admin` | 3 | 24 | 3 | 1 | 0 | ✅ |
+| `gov_operator` | 5 | 27 | 5 | 1 | 0 | ✅ |
+| `inspector` | 3 | 24 | 3 | 0 | 0 | ✅ |
+| `occupant` | 1 | 0 | 0 | 0 | 0 | ❔ NO MEDIDO (entorno) |
+| `security_guard` | 1 | 0 | 0 | 0 | 0 | ✅ |
+| `soc_operator` | 4 | 26 | 4 | 0 | 0 | ✅ |
+| `takab_superadmin` | 6 | 37 | 9 | 8 | 3 | ✅ |
+| `takab_support` | 6 | 30 | 11 | 1 | 0 | ✅ |
+| `tenant_admin` | 6 | 33 | 7 | 8 | 3 | ✅ |
+
+**Lo que encontró el recorrido y ningún test veía:** gov_operator, inspector y building_admin
+pedían `GET /maintenance-windows` en CADA página y recibían 403. La pantalla lo toleraba, pero cada
+petición estaba condenada de antemano. La consola aplica ya la regla del servidor antes de pedir
+(`useMaintenanceWindows.ts::puedeLeerVentanas` ↔ `routers/maintenance.py::READ_ROLES`, ancladas
+una contra la otra).
+
+**Lo que el recorrido tuvo que aprender de sí mismo:**
+
+- `locator.evaluate()` sobre un elemento que ya no existe espera hasta el timeout del test. El
+  superadmin se quedó 25 minutos detrás de «ACEPTO ESTE AVISO», que desaparece al pulsarlo.
+- Enumerar los controles de uno en uno (cuatro viajes al navegador por elemento) no cabía en
+  `/fleet`, con 21 gabinetes.
+- El `title` de un botón deshabilitado vive en su envoltorio: la consola lo pone ahí porque un
+  botón deshabilitado no recibe eventos.
+
+Una corrida larga contra el servidor de desarrollo de Vite llegó a agotar los recursos del navegador
+(`ERR_INSUFFICIENT_RESOURCES`); repetido solo, el rol salió limpio.

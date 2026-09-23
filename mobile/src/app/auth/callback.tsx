@@ -7,11 +7,12 @@
 import { Redirect, useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { type CallbackParams, planCallback } from "@/auth/callback";
 import { takePendingAuth } from "@/auth/pendingAuth";
 import { exchangeAndResolve } from "@/auth/useAuth";
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 type UiState = { phase: "working" } | { phase: "done" } | { phase: "error"; message: string };
@@ -70,13 +71,13 @@ export default function AuthCallback() {
       <View style={styles.wrap} testID="auth-callback-error">
         <Text style={styles.title}>NO SE COMPLETÓ EL ACCESO</Text>
         <Text style={styles.message}>{ui.message}</Text>
-        <Pressable
+        <Pulsable
           accessibilityRole="button"
           onPress={() => router.replace("/login")}
           style={styles.btn}
         >
           <Text style={styles.btnText}>VOLVER A INICIAR SESIÓN</Text>
-        </Pressable>
+        </Pulsable>
       </View>
     );
   }

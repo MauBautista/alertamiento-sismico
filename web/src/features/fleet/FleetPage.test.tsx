@@ -1,4 +1,4 @@
-import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +33,14 @@ const mocks = vi.hoisted(() => ({
   updateMutate: vi.fn(),
   retireMutate: vi.fn(),
   restoreMutate: vi.fn(),
+  openWindowMutate: vi.fn(),
+  // [A-098/A-100] El estado de las mutaciones se puede fijar por test: la
+  // pantalla tiene que PINTAR su error, y un doble que siempre dice `error: null`
+  // no deja escribir ese caso.
+  openWindowError: null as Error | null,
+  restoreError: null as Error | null,
+  restoreVariables: undefined as string | undefined,
+  restorePending: false,
 }));
 
 vi.mock("./useFleet", () => ({
@@ -61,7 +69,16 @@ vi.mock("./useFleetMutations", () => ({
   useRetireCodeConfigured: (...args: unknown[]) => mocks.useRetireCodeConfigured(...args),
   useUpdateGateway: () => idleMutation(mocks.updateMutate),
   useRetireGateway: () => idleMutation(mocks.retireMutate),
-  useRestoreGateway: () => idleMutation(mocks.restoreMutate),
+  useRestoreGateway: () => ({
+    ...idleMutation(mocks.restoreMutate),
+    isPending: mocks.restorePending,
+    error: mocks.restoreError,
+    variables: mocks.restoreVariables,
+  }),
+  useOpenMaintenanceWindow: () => ({
+    ...idleMutation(mocks.openWindowMutate),
+    error: mocks.openWindowError,
+  }),
 }));
 
 // FleetAdmin tiene su propia suite y aquí solo estorba (monta /sites, formularios y
@@ -142,6 +159,10 @@ function maintData(over: Partial<MaintenanceData> = {}): MaintenanceData {
 // la página reventaría en el bloque que no lo prepara.
 beforeEach(() => {
   mocks.useMaintenanceWindows.mockReturnValue(maintData());
+  mocks.openWindowError = null;
+  mocks.restoreError = null;
+  mocks.restoreVariables = undefined;
+  mocks.restorePending = false;
 });
 
 // --- [C3] El fallo de lectura de ventanas no se puede TRAGAR -----------------
@@ -225,6 +246,23 @@ describe("FleetPage · ventanas de mantenimiento ilegibles [C3]", () => {
     mocks.useMaintenanceWindows.mockReturnValue(maintData());
     render(<FleetPage />);
     expect(screen.queryByTestId("fleet-maint-error")).toBeNull();
+  });
+
+  // [A-017 · T-8.09] `gov_operator` entra a /fleet pero NO lee ventanas: la API
+  // le da 403 y el hook lo modela como `forbidden`. Eso es una respuesta sobre
+  // el ALCANCE, no un fallo: pintarle en rojo «PUEDE HABER GABINETES CON LA
+  // ALARMA MUDA» con un REINTENTAR que devolverá 403 para siempre es una alarma
+  // permanente que no se puede apagar — la franja de escena ya lo sabía.
+  it("un 403 de ALCANCE no es un fallo de lectura: gov_operator no ve la alarma roja", () => {
+    seedAuthenticated(ME_FIXTURES.gov_operator);
+    mocks.useMaintenanceWindows.mockReturnValue(
+      maintData({ readError: "GET /maintenance-windows falló (403)", forbidden: true }),
+    );
+    render(<FleetPage />);
+    expect(screen.queryByTestId("fleet-maint-error")).toBeNull();
+    expect(screen.queryByRole("button", { name: "REINTENTAR VENTANAS" })).toBeNull();
+    // NO-VACUIDAD: la flota sí se pinta; lo único que se calla es lo que el rol no lee.
+    expect(screen.getByText("TKB-1")).toBeInTheDocument();
   });
 });
 
@@ -409,8 +447,6 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
   });
 
   it("con maintenance_window se ofrece, y el motivo llega al servidor", () => {
-    const maint = maintData();
-    mocks.useMaintenanceWindows.mockReturnValue(maint);
     seedAuthenticated(ME_FIXTURES.tenant_admin);
     render(<FleetPage />);
     fireEvent.click(screen.getByTestId("open-window"));
@@ -418,11 +454,37 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
       target: { value: "cambio de UPS" },
     });
     fireEvent.click(screen.getByTestId("open-window-confirm"));
-    expect(maint.open).toHaveBeenCalledWith({
+    expect(mocks.openWindowMutate.mock.calls[0][0]).toEqual({
       gateway_id: "1",
       reason: "cambio de UPS",
       duration_s: 1800,
     });
+  });
+
+  // [A-098 · T-8.09] El diálogo se cerraba EN EL MISMO CLIC, antes de que el
+  // servidor contestara: un 403/404/502 al abrir la ventana no lo veía nadie, y
+  // el operador se iba creyendo que el edificio estaba en mantenimiento.
+  it("el diálogo NO se cierra al pulsar: se cierra cuando el servidor dice que se abrió", () => {
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByTestId("open-window"));
+    fireEvent.change(screen.getByTestId("open-window-reason"), {
+      target: { value: "cambio de UPS" },
+    });
+    fireEvent.click(screen.getByTestId("open-window-confirm"));
+    // Pulsado y sin respuesta: el diálogo sigue ahí para enseñar lo que venga.
+    expect(screen.getByTestId("open-window-reason")).toBeInTheDocument();
+    const opciones = mocks.openWindowMutate.mock.calls[0][1] as { onSuccess: () => void };
+    act(() => opciones.onSuccess());
+    expect(screen.queryByTestId("open-window-reason")).toBeNull();
+  });
+
+  it("si abrir la ventana falla, el motivo del servidor se LEE en el diálogo", () => {
+    mocks.openWindowError = new Error("SIN PERMISO · gabinete no encontrado");
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
+    render(<FleetPage />);
+    fireEvent.click(screen.getByTestId("open-window"));
+    expect(screen.getByTestId("open-window-error")).toHaveTextContent("gabinete no encontrado");
   });
 
   // Dos ventanas sobre el mismo gabinete no suman silencio: suman confusión sobre
@@ -483,6 +545,46 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
     render(<FleetPage />);
     fireEvent.click(screen.getByRole("checkbox", { name: /VER RETIRADOS/ }));
     expect(mocks.useFleet).toHaveBeenLastCalledWith({ includeRetired: true });
+  });
+
+  // [A-100 · T-8.09] RESTAURAR fallaba en silencio: la tarjeta seguía diciendo
+  // RETIRADO y nada explicaba por qué el clic no había hecho nada.
+  it("si RESTAURAR falla, el motivo se pinta en la tarjeta", () => {
+    mocks.restoreError = new Error("CONFLICTO · la estación del gabinete está retirada");
+    mocks.restoreVariables = "9";
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    const retired = cabinet("9", "SIN ENLACE");
+    retired.gateway.status = "retired";
+    const otro = cabinet("8", "SIN ENLACE");
+    otro.gateway.status = "retired";
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [retired, otro] }));
+    render(<FleetPage />);
+    // En la tarjeta que lo PIDIÓ, y sólo en ella.
+    expect(screen.getAllByTestId("restore-error")).toHaveLength(1);
+    expect(screen.getByTestId("restore-error")).toHaveTextContent("la estación del gabinete");
+    expect(
+      document.querySelector('[data-gateway="9"] [data-testid="restore-error"]'),
+    ).not.toBeNull();
+  });
+
+  // [A-100 · T-8.09 · verificador] `restoring` era el `isPending` GLOBAL de la
+  // mutación: al restaurar UNO, TODAS las tarjetas retiradas decían «RESTAURANDO…»
+  // y quedaban deshabilitadas. El error ya se acotaba por `variables`; el
+  // «pendiente» no, y afirmaba una operación sobre gabinetes que nadie tocó.
+  it("mientras se restaura UNO, sólo esa tarjeta dice RESTAURANDO…", () => {
+    mocks.restorePending = true;
+    mocks.restoreVariables = "9";
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    const retired = cabinet("9", "SIN ENLACE");
+    retired.gateway.status = "retired";
+    const otro = cabinet("8", "SIN ENLACE");
+    otro.gateway.status = "retired";
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [retired, otro] }));
+    render(<FleetPage />);
+    const nueve = document.querySelector('[data-gateway="9"]') as HTMLElement;
+    const ocho = document.querySelector('[data-gateway="8"]') as HTMLElement;
+    expect(within(nueve).getByRole("button", { name: "RESTAURANDO…" })).toBeDisabled();
+    expect(within(ocho).getByRole("button", { name: "RESTAURAR" })).toBeEnabled();
   });
 
   it("un gabinete retirado se rotula y ofrece RESTAURAR en vez de retirar", () => {
@@ -645,6 +747,38 @@ describe("FleetPage · fantasmas vivos", () => {
     const seccion = screen.getByTestId("fleet-ghosts");
     expect(seccion.textContent).toMatch(/ana@takab\.mx/);
     expect(seccion.textContent).toMatch(/2026/);
+  });
+
+  // [A-101 · T-8.09] La sección decía «Decida: restaurarlo» y no había con qué:
+  // el fantasma no entra en la reja (T-2.35), así que su RESTAURAR no existía en
+  // ninguna parte de la web y había que ir por `curl`.
+  it("quien administra la flota puede RESTAURAR al fantasma desde su sección", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    mocks.restoreMutate.mockClear();
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [fantasma("1")] }));
+    render(<FleetPage />);
+    const seccion = screen.getByTestId("fleet-ghosts");
+    fireEvent.click(within(seccion).getByRole("button", { name: "RESTAURAR" }));
+    expect(mocks.restoreMutate).toHaveBeenCalledWith("1");
+  });
+
+  it("mientras se restaura UN fantasma, los demás no dicen RESTAURANDO…", () => {
+    seedAuthenticated(ME_FIXTURES.takab_superadmin);
+    mocks.restorePending = true;
+    mocks.restoreVariables = "1";
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [fantasma("1"), fantasma("2")] }));
+    render(<FleetPage />);
+    const seccion = screen.getByTestId("fleet-ghosts");
+    expect(within(seccion).getAllByRole("button", { name: "RESTAURANDO…" })).toHaveLength(1);
+    expect(within(seccion).getAllByRole("button", { name: "RESTAURAR" })).toHaveLength(1);
+  });
+
+  it("sin manage_fleet el fantasma se delata igual, pero no se ofrece restaurarlo", () => {
+    seedAuthenticated(ME_FIXTURES.soc_operator);
+    mocks.useFleet.mockReturnValue(fleetData({ cabinets: [fantasma("1")] }));
+    render(<FleetPage />);
+    const seccion = screen.getByTestId("fleet-ghosts");
+    expect(within(seccion).queryByRole("button", { name: "RESTAURAR" })).toBeNull();
   });
 
   it("NO se cuela además en el grid normal: eso resucitaría el bug de T-2.35", () => {

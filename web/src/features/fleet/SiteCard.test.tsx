@@ -150,7 +150,10 @@ describe("SiteCard", () => {
     );
     expect(screen.getByText("SIN ENLACE")).toBeInTheDocument();
     expect(container.querySelector(".soc-pill--crit")).not.toBeNull();
-    expect(screen.getAllByText("— sin enlace —")).toHaveLength(2);
+    // MQTT, SeedLink y —desde T-8.09— EVIDENCIA: las tres pills del enlace. Eran
+    // dos porque la evidencia se enseñaba como actual con el gabinete mudo.
+    expect(screen.getAllByText("— sin enlace —")).toHaveLength(3);
+    expect(screen.getByTestId("card-disk").textContent).toMatch(/— sin enlace —/);
     expect(screen.getByText("S/D")).toBeInTheDocument();
     expect(screen.queryByText("ARMADO")).toBeNull();
     expect(screen.getByText(/HB —/)).toBeInTheDocument();
@@ -619,5 +622,109 @@ describe("[T-7.53] evidencia sin subir", () => {
       <SiteCard cabinet={cabinet({}, { evidence_pending: 2, evidence_oldest_age_s: 2940 })} />,
     );
     expect(container.textContent ?? "").not.toMatch(/RETENID/i);
+  });
+});
+
+// [A-102 · T-8.09] Si el POST del autodiagnóstico fallaba (409 por alerta viva,
+// 403, 502…), la fase pasaba a `failed` pero el marco sólo sabía de `expired` y
+// `rejected`: se pintaba un LIMPIAR suelto sin decir qué había pasado.
+describe("SiteCard · el autodiagnóstico que NO salió dice por qué", () => {
+  it("el motivo del servidor se lee, como error del marco", async () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+    sdk.issueCommandSitesSiteIdCommandsPost.mockResolvedValue({
+      data: undefined,
+      error: { detail: "hay una alerta viva en el sitio" },
+      response: { status: 409 },
+    });
+    const { container } = render(<SiteCard cabinet={cabinet()} />);
+    fireEvent.click(screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ }));
+    await waitFor(() => expect(container.querySelector('[data-state="error"]')).not.toBeNull());
+    expect(screen.getByText(/NO SALIÓ/)).toBeInTheDocument();
+    expect(screen.getByText(/hay una alerta viva en el sitio/)).toBeInTheDocument();
+  });
+});
+
+// [A-056 · T-8.09] El disco del Pi aterrizaba en la base desde T-7.53 y ninguna
+// superficie web lo enseñaba.
+describe("SiteCard · el disco del gabinete", () => {
+  it("dice cuánto disco lleva usado", () => {
+    render(<SiteCard cabinet={cabinet({}, { disk_used_pct: 71.4 })} />);
+    expect(screen.getByText(/71 % usado/)).toBeInTheDocument();
+  });
+
+  it("sin medición dice s/d, no un disco vacío", () => {
+    render(<SiteCard cabinet={cabinet({}, { disk_used_pct: null })} />);
+    const disco = screen.getByTestId("card-disk");
+    expect(disco.textContent).toMatch(/s\/d/);
+    expect(disco.textContent).not.toMatch(/0 %/);
+  });
+});
+
+// [A-056 · T-8.09 · verificador] Desde que la API entrega evidencia y disco, una
+// tarjeta SIN ENLACE los enseñaba con el valor del último latido COMO SI FUERA
+// ACTUAL, mientras MQTT y SeedLink ya decían «— sin enlace —». Dos cifras vivas
+// junto a dos silencios en la misma tarjeta es el dato congelado presentado como
+// vivo (regla de oro 7). Lo que queda del último latido se FECHA; la edad de la
+// evidencia más vieja se CALLA, porque desde entonces ha crecido y no se sabe cuánto.
+describe("SiteCard · SIN ENLACE no enseña evidencia ni disco como actuales", () => {
+  const caido = { derived_state: SIN_ENLACE, mqtt_rtt_ms: null, seedlink_lag_s: null };
+
+  it("la evidencia pendiente se fecha al último latido y pierde su edad", () => {
+    render(
+      <SiteCard
+        cabinet={cabinet({}, { ...caido, evidence_pending: 2, evidence_oldest_age_s: 2940 })}
+      />,
+    );
+    expect(screen.getByText(/— sin enlace — · 2 sin subir al último latido/)).toBeInTheDocument();
+    expect(screen.queryByText(/la más vieja 49 min/)).not.toBeInTheDocument();
+  });
+
+  it("sin pendientes conocidos, no afirma «sin pendientes» de un gabinete mudo", () => {
+    render(<SiteCard cabinet={cabinet({}, { ...caido, evidence_pending: 0 })} />);
+    expect(screen.queryByText(/sin pendientes/)).not.toBeInTheDocument();
+  });
+
+  it("el disco se fecha al último latido y deja de decir «usado» en presente", () => {
+    render(<SiteCard cabinet={cabinet({}, { ...caido, disk_used_pct: 71.4 })} />);
+    const disco = screen.getByTestId("card-disk");
+    expect(disco.textContent).toMatch(/— sin enlace — · 71 % al último latido/);
+    expect(disco.textContent).not.toMatch(/71 % usado/);
+  });
+
+  it("CONTROL: con enlace, evidencia y disco siguen siendo cifras actuales", () => {
+    render(
+      <SiteCard
+        cabinet={cabinet(
+          {},
+          { evidence_pending: 2, evidence_oldest_age_s: 2940, disk_used_pct: 71.4 },
+        )}
+      />,
+    );
+    expect(screen.getByText(/2 sin subir · la más vieja 49 min/)).toBeInTheDocument();
+    expect(screen.getByTestId("card-disk").textContent).toMatch(/71 % usado/);
+  });
+});
+
+// [A-100 / A-223 · T-8.09] Lo retirado no se opera como si estuviera vivo, y el
+// fallo de RESTAURAR se dice en la tarjeta que lo pidió.
+describe("SiteCard · gabinete retirado", () => {
+  it("el fallo de RESTAURAR se pinta en su franja", () => {
+    render(
+      <SiteCard
+        cabinet={cabinet({}, { status: "retired" })}
+        onRestore={() => undefined}
+        restoreError="CONFLICTO · la estación está retirada"
+      />,
+    );
+    expect(screen.getByTestId("restore-error")).toHaveTextContent("la estación está retirada");
+  });
+
+  it("no ofrece abrir VENTANA ni el autodiagnóstico sobre hardware dado de baja", () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
+    render(
+      <SiteCard cabinet={cabinet({}, { status: "retired" })} onOpenWindow={() => undefined} />,
+    );
+    expect(screen.queryByTestId("open-window")).toBeNull();
+    expect(screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ })).toBeDisabled();
   });
 });

@@ -154,3 +154,32 @@ describe("SiteForm · en qué cliente se escribe (T-6.03)", () => {
     expect(writeTargetLabel(OWN, null)).toBe("Industrias del Valle");
   });
 });
+
+// [A-105 · T-8.09] La ubicación decide la ventana del quórum (blueprint §4.5).
+describe("SiteForm · una estación no nace en un punto que nadie eligió", () => {
+  it("borrar la LATITUD no la convierte en 0 (el Golfo de Guinea): el envío se apaga", () => {
+    const onSubmit = renderForm(OWN);
+    fillRequired();
+    fireEvent.change(screen.getByLabelText("LATITUD"), { target: { value: "" } });
+    const submit = screen.getByRole("button", { name: "CREAR ESTACIÓN" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("con el marcador en el punto por defecto, el alta lo AVISA", () => {
+    renderForm(OWN);
+    expect(screen.getByTestId("site-form-default-point")).toHaveTextContent(/POR DEFECTO/);
+  });
+
+  it("en cuanto se coloca el punto, el aviso se va", () => {
+    renderForm(OWN);
+    fireEvent.change(screen.getByLabelText("LATITUD"), { target: { value: "19.3139" } });
+    expect(screen.queryByTestId("site-form-default-point")).toBeNull();
+  });
+
+  it("al EDITAR no se avisa: el punto es el del edificio, no el de fábrica", () => {
+    renderForm({ kind: "own", tenantId: "t-2", tenantName: "Hospital Uno" }, SITE);
+    expect(screen.queryByTestId("site-form-default-point")).toBeNull();
+  });
+});

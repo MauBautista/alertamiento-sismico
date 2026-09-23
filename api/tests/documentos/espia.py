@@ -24,10 +24,11 @@ ni la hoja en blanco.
 
 ## Las dos trampas que el troceo por sección tiene, y que están medidas
 
-1. **La numeración no basta para delimitar.** El ejecutivo imprime `. QUÉ PASÓ`
-   —número vacío—, así que una expresión regular sobre `^\\d+\\.` no encuentra
-   allí ninguna sección. Se marca la posición **en la llamada a `section()`**,
-   que es universal: la usan el dictamen, el ejecutivo y el reporte de simulacro.
+1. **La numeración no basta para delimitar.** El ejecutivo titula SIN número
+   —imprimía `. QUÉ PASÓ` hasta `T-8.12 · A-140`, y ahora `QUÉ PASÓ` a secas—,
+   así que una expresión regular sobre `^\\d+\\.` no encuentra allí ninguna
+   sección. Se marca la posición **en la llamada a `section()`**, que es
+   universal: la usan el dictamen, el ejecutivo y el reporte de simulacro.
 2. **El membrete cae DENTRO de las rebanadas.** Cabecera y pie se dibujan al
    saltar de página, o sea en mitad de una sección; sin distinguirlos, un
    `assert "TAKAB AILERT" not in seccion` fallaría por el pie y no por la
@@ -129,9 +130,9 @@ def espia_del_render() -> Iterator[Capturado]:
         cap.fragmentos.append((en_chrome, value))
         return text_of(self, value)
 
-    def _section(self: MembretePDF, number: str, title: str) -> None:
+    def _section(self: MembretePDF, number: str, title: str, **kw) -> None:  # noqa: ANN003
         inicio = len(cap.fragmentos)
-        resultado = section(self, number, title)
+        resultado = section(self, number, title, **kw)
         # El cuerpo empieza DESPUÉS del rótulo que `section()` acaba de escribir.
         cap.marcadores.append((inicio, len(cap.fragmentos), number, title))
         return resultado

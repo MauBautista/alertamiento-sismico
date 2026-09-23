@@ -101,7 +101,7 @@ describe("AuditPage · la bitácora se lee, no se toca", () => {
 describe("AuditPage · filtros y paginación", () => {
   it("los filtros NO se aplican al teclear: se aplican al enviar", () => {
     render(<AuditPage />);
-    fireEvent.change(screen.getByLabelText("Verbo"), { target: { value: "ack" } });
+    fireEvent.change(screen.getByLabelText("Verbo (exacto)"), { target: { value: "ack" } });
     // Aún no: la última llamada sigue con el filtro vacío.
     expect(mocks.useAudit).toHaveBeenLastCalledWith(expect.objectContaining({ verb: "" }));
     fireEvent.click(screen.getByRole("button", { name: "APLICAR" }));
@@ -110,7 +110,7 @@ describe("AuditPage · filtros y paginación", () => {
 
   it("LIMPIAR devuelve el formulario y la consulta al estado sin filtro", () => {
     render(<AuditPage />);
-    fireEvent.change(screen.getByLabelText("Actor"), { target: { value: "user:ana" } });
+    fireEvent.change(screen.getByLabelText("Actor (exacto)"), { target: { value: "user:ana" } });
     fireEvent.click(screen.getByRole("button", { name: "APLICAR" }));
     fireEvent.click(screen.getByRole("button", { name: "LIMPIAR" }));
     expect(mocks.useAudit).toHaveBeenLastCalledWith(
@@ -124,7 +124,7 @@ describe("AuditPage · filtros y paginación", () => {
     expect(screen.getByText("SIN REGISTROS VISIBLES PARA ESTE ROL")).toBeTruthy();
 
     rerender(<AuditPage />);
-    fireEvent.change(screen.getByLabelText("Verbo"), { target: { value: "ack" } });
+    fireEvent.change(screen.getByLabelText("Verbo (exacto)"), { target: { value: "ack" } });
     fireEvent.click(screen.getByRole("button", { name: "APLICAR" }));
     expect(screen.getByText("SIN REGISTROS PARA EL FILTRO")).toBeTruthy();
   });

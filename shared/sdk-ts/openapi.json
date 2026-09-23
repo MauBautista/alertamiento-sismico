@@ -15183,7 +15183,7 @@
     },
     "/incidents/{incident_id}/dictamen": {
       "get": {
-        "description": "[T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos\ndel dictamen FIRMADO + PDF presignado del reporte EXISTENTE. No genera PDF.",
+        "description": "[T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos\ndel dictamen FIRMADO + PDF presignado del informe FIRMADO.\n\n[T-8.12 · A-054] El PDF es uno generado DESPUÉS de la firma vigente; si no lo\nhay, se genera aquí con la MISMA función que la consola (ver `_certificado`).",
         "operationId": "read_dictamen_incidents__incident_id__dictamen_get",
         "parameters": [
           {
@@ -15721,7 +15721,7 @@
     },
     "/incidents/{incident_id}/report": {
       "post": {
-        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.\n\n[T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de\nevidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK\ndel DDL por una etiqueta no lo valdría.\n\nEl gate de \"sin dictamen no hay PDF\" se retiró: un incidente sin dictamen YA tiene\nhechos que reportar —lo que midió el sensor, quién acusó, qué estaciones\ncorroboraron— y el documento lo rotula como preliminar.",
+        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.\n\n[T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de\nevidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK\ndel DDL por una etiqueta no lo valdría.\n\nEl gate de \"sin dictamen no hay PDF\" se retiró: un incidente sin dictamen YA tiene\nhechos que reportar —lo que midió el sensor, quién acusó, qué estaciones\ncorroboraron— y el documento lo rotula como preliminar.\n\n[T-8.12 · A-054] Es TAMBIÉN la función que llama el certificado del móvil\n(`routers/mobile_incident._certificado`) cuando no hay un informe posterior a\nla firma: una sola tubería para el mismo documento, y un solo escritor de\n`export_pdf` —lo que hace contables los dos techos del freno\n(`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`)—. Desde allí\nse llama como función, sin la puerta de rol del decorador: el certificado es\nun derivado de un dictamen YA firmado y lo pide un rol con `dictamen_read`.\nEl freno sí se aplica, aquí dentro, igual que desde la consola.\n\n[T-8.12 · A-080] Lo SÍNCRONO va a un hilo: el render de fpdf2 es CPU pura y\n`put_object`/`presign_get` son boto3 bloqueante. La API corre con UN solo\nworker (`deploy/cloud/docker-compose.yml`), así que en el loop congelaban el\nWebSocket de la consola, `/health` y el sondeo que la app hace cada 5 s en\ncrisis mientras duraba el render. Es el patrón de `commands/service.py`.",
         "operationId": "generate_report_incidents__incident_id__report_post",
         "parameters": [
           {

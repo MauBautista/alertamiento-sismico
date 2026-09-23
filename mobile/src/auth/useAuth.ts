@@ -17,7 +17,12 @@ import {
   secondsLeft,
   signOutDead,
 } from "./refresh";
-import { clearSession, loadSession, numericClaim, saveSession } from "./secureTokens";
+import {
+  clearSession,
+  loadSession,
+  numericClaim,
+  saveSession,
+} from "./secureTokens";
 import { useSessionStore } from "./session.store";
 
 /** Cuánto espera el ARRANQUE a Cognito antes de seguir con el token guardado:
@@ -64,12 +69,16 @@ export async function exchangeAndResolve(
   if (!tokens.idToken) {
     throw new Error("el intercambio no devolvió id_token");
   }
-  await resolveSessionFromMe(tokens.idToken, tokens.refreshToken);
+  await resolveSessionFromMe(tokens.idToken, tokens.refreshToken, profile);
 }
 
 /** Consulta /me con el token dado, aplica el gate default-deny y fija el
  * estado de sesión (+persistencia segura). Lanza si /me no responde. */
-async function resolveSessionFromMe(idToken: string, refreshToken?: string): Promise<void> {
+async function resolveSessionFromMe(
+  idToken: string,
+  refreshToken?: string,
+  loginProfile?: ProfileGroup,
+): Promise<void> {
   const store = useSessionStore.getState();
   // El interceptor del SDK lee el token del store: fijarlo ANTES de /me.
   useSessionStore.setState({ idToken });
@@ -83,13 +92,17 @@ async function resolveSessionFromMe(idToken: string, refreshToken?: string): Pro
       res.error && typeof res.error === "object" && "detail" in res.error
         ? String((res.error as { detail?: unknown }).detail)
         : null;
-    const suffix = [status ? `HTTP ${status}` : null, detail].filter(Boolean).join(" · ");
-    throw new Error(`no se pudo verificar la sesión (/me${suffix ? ` — ${suffix}` : ""})`);
+    const suffix = [status ? `HTTP ${status}` : null, detail]
+      .filter(Boolean)
+      .join(" · ");
+    throw new Error(
+      `no se pudo verificar la sesión (/me${suffix ? ` — ${suffix}` : ""})`,
+    );
   }
   const gate = gateFor(res.data);
   if (!gate.allowed) {
     await clearSession();
-    store.setDenied(gate.reason);
+    store.setDenied(gate.reason, loginProfile ?? null);
     return;
   }
   const now = Date.now();
@@ -107,7 +120,13 @@ async function resolveSessionFromMe(idToken: string, refreshToken?: string): Pro
     authAt,
     maxAgeS,
   });
-  store.setAuthenticated({ profile: gate.group, idToken, me: res.data, authAt, maxAgeS });
+  store.setAuthenticated({
+    profile: gate.group,
+    idToken,
+    me: res.data,
+    authAt,
+    maxAgeS,
+  });
 }
 
 /** Arranque de la app: reconstruye la sesión desde el almacén seguro y la
@@ -136,7 +155,9 @@ export async function bootstrapSession(): Promise<void> {
     return;
   }
   if (secondsLeft(stored.idToken) < RENEW_MARGIN_S) {
-    const outcome = await refreshSession({ timeoutMs: BOOT_REFRESH_TIMEOUT_MS });
+    const outcome = await refreshSession({
+      timeoutMs: BOOT_REFRESH_TIMEOUT_MS,
+    });
     if (outcome === "dead") {
       signOutDead();
       return;
@@ -144,7 +165,8 @@ export async function bootstrapSession(): Promise<void> {
     // `offline`: se sigue con el token guardado; /me dirá (sin red ⇒ retenida).
   }
   /** El token vigente AHORA: el interceptor pudo renovarlo durante /me. */
-  const tokenActual = (): string => useSessionStore.getState().idToken ?? stored.idToken;
+  const tokenActual = (): string =>
+    useSessionStore.getState().idToken ?? stored.idToken;
   try {
     const res = await meMeGet();
     if (res.data) {
@@ -163,19 +185,27 @@ export async function bootstrapSession(): Promise<void> {
         });
       } else {
         await clearSession();
-        store.setDenied(gate.reason);
+        store.setDenied(gate.reason, stored.profile);
       }
       return;
     }
     // res.error sin data: si fue un 401 sin arreglo, el interceptor ya cerró la
     // sesión; si no (sin red para renovar), queda retenida.
     if (useSessionStore.getState().status !== "anonymous") {
-      store.setAuthenticated({ profile: stored.profile, idToken: tokenActual(), me: null });
+      store.setAuthenticated({
+        profile: stored.profile,
+        idToken: tokenActual(),
+        me: null,
+      });
     }
   } catch {
     // Sin red: sesión cacheada, honesta (me = null ⇒ la UI declara datos retenidos).
     if (useSessionStore.getState().status !== "anonymous") {
-      store.setAuthenticated({ profile: stored.profile, idToken: tokenActual(), me: null });
+      store.setAuthenticated({
+        profile: stored.profile,
+        idToken: tokenActual(),
+        me: null,
+      });
     }
   }
 }
@@ -220,7 +250,8 @@ export function useLogin(profile: "occupant" | "tactical"): LoginController {
   const [exchangeError, setExchangeError] = useState<string | null>(null);
   const providerError =
     response?.type === "error"
-      ? (response.error?.message ?? "el proveedor de identidad rechazó el login")
+      ? (response.error?.message ??
+        "el proveedor de identidad rechazó el login")
       : null;
 
   useEffect(() => {
@@ -231,7 +262,11 @@ export function useLogin(profile: "occupant" | "tactical"): LoginController {
       try {
         // iOS intercepta el redirect aquí ⇒ la ruta /auth/callback no correrá.
         clearPendingAuth();
-        await exchangeAndResolve(profile, response.params.code, request.codeVerifier ?? "");
+        await exchangeAndResolve(
+          profile,
+          response.params.code,
+          request.codeVerifier ?? "",
+        );
       } catch (err) {
         setExchangeError(err instanceof Error ? err.message : String(err));
       }
@@ -248,7 +283,11 @@ export function useLogin(profile: "occupant" | "tactical"): LoginController {
       // Android: el redirect llega como deep link a /auth/callback, que necesita
       // el verifier + state para canjear el code (el hook no los verá).
       if (request?.codeVerifier) {
-        setPendingAuth({ profile, codeVerifier: request.codeVerifier, state: request.state });
+        setPendingAuth({
+          profile,
+          codeVerifier: request.codeVerifier,
+          state: request.state,
+        });
       }
       void promptAsync();
     },

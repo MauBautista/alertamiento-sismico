@@ -154,10 +154,30 @@ export default function SiteForm({
     setValues((prev) => ({ ...prev, [key]: value }));
   }
 
+  // [A-105] El mapa sigue al último punto VÁLIDO: con un campo a medio teclear
+  // (`NaN`) no hay marcador que colocar, y desmontar el mapa en cada tecla lo
+  // haría parpadear.
+  const [pickerPoint, setPickerPoint] = useState<LonLat>(values.point);
+  function setPoint(point: LonLat) {
+    set("point", point);
+    if (isValidPoint(point)) setPickerPoint(point);
+  }
+
+  /**
+   * [A-105 · T-8.09] Un campo vacío NO es 0: `Number("")` daba 0 y la estación
+   * nacía en el Golfo de Guinea con el envío habilitado. `NaN` la deja inválida
+   * (`isValidPoint`) y el botón dice por qué.
+   */
+  function coord(text: string): number {
+    return text.trim() === "" ? Number.NaN : Number(text);
+  }
+  const enPuntoPorDefecto =
+    !editing && values.point.lat === DEFAULT_PICK.lat && values.point.lon === DEFAULT_PICK.lon;
+
   /** Pegar "19.0633, -98.3014" (formato Google Maps / GPS) coloca el marcador. */
   function onPasteCoords(text: string) {
     const parsed = parseLatLonPair(text);
-    if (parsed !== null) set("point", parsed);
+    if (parsed !== null) setPoint(parsed);
   }
 
   const chooser = !editing && writeTarget.kind === "choose" ? writeTarget : null;
@@ -267,8 +287,8 @@ export default function SiteForm({
           <input
             type="number"
             step="0.000001"
-            value={values.point.lat}
-            onChange={(e) => set("point", { ...values.point, lat: Number(e.target.value) })}
+            value={Number.isFinite(values.point.lat) ? values.point.lat : ""}
+            onChange={(e) => setPoint({ ...values.point, lat: coord(e.target.value) })}
             onPaste={(e) => onPasteCoords(e.clipboardData.getData("text"))}
           />
         </label>
@@ -277,12 +297,25 @@ export default function SiteForm({
           <input
             type="number"
             step="0.000001"
-            value={values.point.lon}
-            onChange={(e) => set("point", { ...values.point, lon: Number(e.target.value) })}
+            value={Number.isFinite(values.point.lon) ? values.point.lon : ""}
+            onChange={(e) => setPoint({ ...values.point, lon: coord(e.target.value) })}
             onPaste={(e) => onPasteCoords(e.clipboardData.getData("text"))}
           />
         </label>
-        <MapPointPicker value={values.point} onChange={(point) => set("point", point)} />
+        {/* [A-105] El punto de fábrica (Puebla) es un punto que NADIE eligió. No se
+            bloquea —puede ser el edificio de verdad—, pero se dice: una estación
+            mal ubicada estira o encoge la ventana del quórum de sus vecinas. */}
+        {enPuntoPorDefecto && (
+          <p
+            className="fleet__hint fleet__hint--warn"
+            role="status"
+            data-testid="site-form-default-point"
+          >
+            EL MARCADOR SIGUE EN EL PUNTO POR DEFECTO · colócalo sobre el edificio antes de crear la
+            estación.
+          </p>
+        )}
+        <MapPointPicker value={pickerPoint} onChange={setPoint} />
       </fieldset>
 
       {error !== null && (

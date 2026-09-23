@@ -64,6 +64,13 @@ export type ComplianceLabelsBody = ComplianceLabelsIn;
  */
 export const COMPLIANCE_STALE_MS = 300_000;
 
+/**
+ * [A-112 bis · T-8.09] Relectura del documento. Sin cadencia (y con
+ * `refetchOnWindowFocus: false`) se pedía UNA vez y la tarjeta rotulaba «DATOS
+ * RETENIDOS» a los 5 min con el sistema sano. Dos oportunidades antes del umbral.
+ */
+export const COMPLIANCE_REFRESH_MS = 120_000;
+
 const COMPLIANCE_FRESH_MS = 60_000;
 
 export function complianceErrorMessage(status: number): string {
@@ -106,6 +113,7 @@ export function useComplianceLabels(tenantId: string | null): ComplianceData {
     },
     enabled: tenantId !== null,
     staleTime: COMPLIANCE_FRESH_MS,
+    refetchInterval: COMPLIANCE_REFRESH_MS,
   });
   const age = Date.now() - query.dataUpdatedAt;
   return {

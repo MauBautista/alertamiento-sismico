@@ -791,3 +791,21 @@ describe("TenantsPage · de la ficha del cliente al alta de estación (T-6.03)",
     expect(screen.queryByTestId("tenant-new-site-link")).toBeNull();
   });
 });
+
+// [A-226 · T-8.09] `GET /notify/channels` lo lee sólo quien edita umbrales
+// (`notify.py`: `roles_with_action("edit_thresholds")`). La página lo pedía a
+// TODO rol que entrara a /tenants: `takab_support` se llevaba un 403 en cada
+// carga — ruido en la red y en los logs por algo que su rol nunca iba a ver.
+// No se amplía el permiso: se deja de pedir.
+describe("TenantsPage · la realidad de los canales sólo se pide con permiso", () => {
+  it("sin edit_thresholds (takab_support) no se pide", () => {
+    seedRole("takab_support");
+    renderPage();
+    expect(mocks.useNotifyChannels).toHaveBeenLastCalledWith(false);
+  });
+
+  it("con edit_thresholds (tenant_admin) sí", () => {
+    renderPage();
+    expect(mocks.useNotifyChannels).toHaveBeenLastCalledWith(true);
+  });
+});

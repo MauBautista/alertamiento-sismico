@@ -12,7 +12,8 @@
 // `checkin`, así que la cámara forense y el formulario de daños hacían POST
 // directo y SIN RED SE PERDÍAN. El tipo se extiende por `QueuePayloadByKind`:
 // añadir `headcount` = una clave aquí + su etiqueta en syncView + su emisor en
-// sync.ts, y el compilador exige las tres (son `Record<QueueKind, …>`).
+// sync.ts, y el compilador exige las tres (son `Record<QueueKind, …>`). Así
+// entró el check-in DELEGADO en T-8.11.
 import { orderByPriority } from "@/features/damage/categories";
 
 import { retryDelayMs } from "./backoff";
@@ -26,6 +27,23 @@ export type CheckinPayload = {
   /** [lon, lat] SOLO con consentimiento GPS y solo en need_help (LFPDPPP). */
   location: [number, number] | null;
   /** Sellado al TOQUE del botón (el servidor sella created_at aparte). */
+  ts_device: string;
+};
+
+/** [T-8.11 · A-024] Check-in DELEGADO (2.6): el táctico marca «verificado en
+ *  persona» a OTRA persona del pase de lista. Es su propio tipo —y no un campo
+ *  más de `CheckinPayload`— porque todo lo que lee `kind === "checkin"` lo lee
+ *  como el check-in DEL PORTADOR (`hasLocalCheckin` decide si al táctico se le
+ *  vuelve a preguntar «¿Se encuentra bien?»): verificar a otro sin red no puede
+ *  darle a él por reportado. Va al mismo endpoint, con `subject_user_id`; el
+ *  servidor lo registra `via='delegated'` con `verified_by` = el táctico. */
+export type DelegatedCheckinPayload = {
+  incident_id: string;
+  /** La persona verificada (≠ portador). */
+  subject_user_id: string;
+  /** Verificar en persona es darla por a salvo: no hay otro estado que marcar. */
+  status: "safe";
+  /** Sellado al TOQUE, no al enviar: la hora es la de la verificación. */
   ts_device: string;
 };
 
@@ -59,6 +77,7 @@ export type DamageReportPayload = {
  *  la UI y emisor en el motor de sync — no se puede olvidar a medias. */
 export type QueuePayloadByKind = {
   checkin: CheckinPayload;
+  delegated_checkin: DelegatedCheckinPayload;
   evidence: EvidencePayload;
   damage_report: DamageReportPayload;
 };
@@ -202,6 +221,26 @@ export function hasLocalCheckin(items: QueueItem[], incidentId: string): boolean
   return items.some(
     (i) => i.kind === "checkin" && i.payload.incident_id === incidentId && i.state !== "failed",
   );
+}
+
+/** [T-8.11 · A-024] Personas del incidente que ESTE teléfono ya verificó y que
+ *  todavía no llegaron al servidor (pendiente o subiendo). El pase de lista las
+ *  pinta «EN COLA» y no deja volver a marcarlas: un segundo toque sería un
+ *  segundo check-in con otro id, no un reintento del primero. Sincronizada deja
+ *  de contar (manda el roster del servidor); fallida también, para que se pueda
+ *  volver a intentar. */
+export function delegadosEnCola(items: QueueItem[], incidentId: string): Set<string> {
+  const out = new Set<string>();
+  for (const i of items) {
+    if (
+      i.kind === "delegated_checkin" &&
+      i.payload.incident_id === incidentId &&
+      (i.state === "pending" || i.state === "uploading")
+    ) {
+      out.add(i.payload.subject_user_id);
+    }
+  }
+  return out;
 }
 
 export function indexById(items: QueueItem[]): Map<string, QueueItem> {

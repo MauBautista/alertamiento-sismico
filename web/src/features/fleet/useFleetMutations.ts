@@ -16,6 +16,7 @@ import {
   getRetireCodeStateTenantsTenantIdRetireCodeGet,
   fleetHealthHistoryFleetHealthHistoryGet,
   listGatewayConfigStatesFleetConfigStateGet,
+  openWindowMaintenanceWindowsPost,
   restoreGatewayFleetGatewaysGatewayIdRestorePost,
   retireGatewayFleetGatewaysGatewayIdRetirePost,
   retireSiteSitesSiteIdRetirePost,
@@ -28,11 +29,14 @@ import type {
   GatewayHealthOut,
   GatewayRetire,
   GatewayUpdate,
+  MaintenanceWindowIn,
   SensorCreate,
   SiteCreate,
   SiteRetire,
   SiteUpdate,
 } from "@takab/sdk";
+
+import { MAINTENANCE_KEY } from "../console/useMaintenanceWindows";
 
 /** Traduce el status HTTP a algo que un operador pueda accionar. */
 export function messageFor(status: number, fallback: string): string {
@@ -215,6 +219,44 @@ export function useRestoreGateway() {
         "La restauración del gabinete",
       ),
     onSuccess: invalidate,
+  });
+}
+
+/** [A-098] Los rechazos de ABRIR VENTANA dichos por lo que el operador puede hacer. */
+function windowMessageFor(status: number, fallback: string): string {
+  switch (status) {
+    case 403:
+      return "SIN PERMISO · tu rol no silencia los avisos de este gabinete.";
+    case 404:
+      return "NO ENCONTRADO · el gabinete no existe o no es de tu cliente.";
+    default:
+      return fallback;
+  }
+}
+
+/**
+ * [A-098 · T-8.09] ABRIR una ventana de mantenimiento desde la tarjeta.
+ *
+ * Existe aparte de `useMaintenanceWindows().open` por UNA razón: aquel devuelve
+ * `void`, así que quien lo llamaba no podía esperar la respuesta — y la pantalla
+ * cerraba el diálogo en el mismo clic. Un 403/404/502 al abrir la ventana no lo
+ * veía nadie y el operador se iba creyendo que el edificio estaba en
+ * mantenimiento. Con la mutación propia, el diálogo se cierra en `onSuccess` y
+ * el error se pinta DENTRO de él. Invalida la MISMA clave que lee el banner,
+ * así que el rótulo de la tarjeta aparece en cuanto el servidor lo confirma.
+ */
+export function useOpenMaintenanceWindow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (body: MaintenanceWindowIn) =>
+      unwrap(
+        openWindowMaintenanceWindowsPost({ body }),
+        "La apertura de la ventana",
+        windowMessageFor,
+      ),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: MAINTENANCE_KEY });
+    },
   });
 }
 

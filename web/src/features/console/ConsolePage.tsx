@@ -10,9 +10,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
-import { ackIncidentIncidentsIncidentIdAckPost } from "@takab/sdk";
-import { useQueryClient } from "@tanstack/react-query";
-
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useAuthEvidence } from "../../auth/useAuthEvidence";
@@ -34,6 +31,7 @@ import { useAutoPopup } from "./useAutoPopup";
 import { useDictamenRequest } from "./useDictamenRequest";
 import { useEstaciones } from "./useEstaciones";
 import { useReproduccion } from "./useReproduccion";
+import { useIncidentAck } from "./useIncidentAck";
 import { useIncidentActions } from "./useIncidentActions";
 import { useLiveIncidents } from "./useLiveIncidents";
 import { useQuorumCommands } from "./useQuorumCommands";
@@ -60,7 +58,6 @@ function ConsoleWall() {
   // [T-6.02] Lo que se puede afirmar de la autenticación, no un literal del mockup.
   const auth = useAuthEvidence();
   const now = useNow(1000);
-  const queryClient = useQueryClient();
   const incidents = useLiveIncidents();
   // [T-6.06] De aquí sale el ÁMBITO del vacío: la misma fuente que la insignia.
   const scope = useSiteScope();
@@ -78,6 +75,11 @@ function ConsoleWall() {
   const sitioDeEntrada = searchParams.get("sitio");
   const [selectedSiteId, setSelectedSiteId] = useState<string | null>(sitioDeEntrada);
   const [detailOpen, setDetailOpen] = useState(sitioDeEntrada !== null);
+  // [A-012 · T-8.07] El INCIDENTE elegido en la cola, aparte del sitio. Con dos
+  // abiertos en el mismo edificio la selección por sitio caía siempre en el
+  // primero: la segunda fila no se podía elegir y el acuse, la reubicación y el
+  // dictamen actuaban sobre el incidente equivocado.
+  const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
   // [T-2.28] comparativa histórica en dos pasos: sismo del catálogo → sitio.
   const catalog = useCatalog();
@@ -91,7 +93,15 @@ function ConsoleWall() {
   const features = useSiteFeatures(focusSiteId);
   const soh = useSiteSoh(focusSiteId);
   const relays = useSiteRelays(focusSiteId);
-  const focusIncident = incidents.incidents.find((i) => i.site_id === focusSiteId) ?? null;
+  // El elegido manda mientras siga en la cola y sea del sitio enfocado (un clic
+  // en el mapa o el pop-up automático cambian de sitio y lo sueltan); si no, el
+  // primero del sitio, como antes.
+  const focusIncident =
+    incidents.incidents.find(
+      (i) => i.incident_id === selectedIncidentId && i.site_id === focusSiteId,
+    ) ??
+    incidents.incidents.find((i) => i.site_id === focusSiteId) ??
+    null;
   const actions = useIncidentActions(focusIncident?.incident_id ?? null);
   // [T-7.17] La red de estaciones del incidente en foco. Una sola consulta, sin
   // poll: describe un evento que ya ocurrió.
@@ -189,16 +199,19 @@ function ConsoleWall() {
       : null;
 
   const canAck = me?.allowed_actions.ack_incident === true;
-  const onAck = useCallback(
-    (incidentId: string) => {
-      void (async () => {
-        await ackIncidentIncidentsIncidentIdAckPost({ path: { incident_id: incidentId } });
-        await queryClient.invalidateQueries({ queryKey: ["incidents", "open"] });
-        await queryClient.invalidateQueries({ queryKey: ["incident", incidentId, "actions"] });
-      })();
-    },
-    [queryClient],
-  );
+  // [A-011 · T-8.07] Se devuelve la PROMESA: el botón espera al servidor y sólo
+  // dice «ACUSADO» con un 2xx. El rechazo lo absorbe el botón (vuelve a reposo)
+  // y lo DECLARA la cola con el mensaje de abajo.
+  const ack = useIncidentAck();
+  const { mutateAsync: ackAsync } = ack;
+  const onAck = useCallback((incidentId: string) => ackAsync(incidentId), [ackAsync]);
+  // El error es del incidente que se intentó acusar: al elegir otro no se arrastra.
+  const ackError =
+    ack.isError && ack.variables === focusIncident?.incident_id
+      ? ack.error instanceof Error
+        ? ack.error.message
+        : "NO SE ACUSÓ"
+      : null;
 
   // T-1.51: botones del operador — gates de la matriz (allowed_actions).
   const navigate = useNavigate();
@@ -206,6 +219,7 @@ function ConsoleWall() {
   const [epicenterFor, setEpicenterFor] = useState<string | null>(null);
   const canRelocate = me?.allowed_actions.relocate_epicenter === true;
   const canRequestDictamen = me?.allowed_actions.request_dictamen === true;
+  const { mutateAsync: requestDictamenAsync } = dictamenRequest;
   const onRequestDictamen = useCallback(
     (incidentId: string) => {
       // La solicitud aterriza en el timeline; el flujo del dictamen vive en
@@ -216,11 +230,14 @@ function ConsoleWall() {
       // triage es un callejón: se firma y se vuelve a una consola vacía.
       const sitio = incidents.incidents.find((i) => i.incident_id === incidentId)?.site_id ?? null;
       const volver = sitio === null ? "" : `&volver=${encodeURIComponent(sitio)}`;
-      dictamenRequest.mutate(incidentId, {
-        onSuccess: () => void navigate(`/triage?incident=${incidentId}${volver}`),
-      });
+      // [A-163 · T-8.07] La promesa vuelve al botón: «ENVIANDO…» mientras vuela
+      // y el salto a triage sólo con la solicitud registrada. El rechazo lo
+      // pinta el aviso de abajo (`dictamenRequest.isError`).
+      return requestDictamenAsync(incidentId).then(
+        () => void navigate(`/triage?incident=${incidentId}${volver}`),
+      );
     },
-    [dictamenRequest, navigate, incidents.incidents],
+    [requestDictamenAsync, navigate, incidents.incidents],
   );
   const epicenterIncident =
     epicenterFor !== null
@@ -295,6 +312,9 @@ function ConsoleWall() {
               <AlertBanner
                 incident={critical}
                 now={now}
+                // [T-8.10 · A-063] La MISMA regla que el teléfono y que la franja:
+                // un aviso que la red corroboró (node_count ≥ 3) autoriza.
+                epicentros={map.epicenters}
                 siteName={critical ? (siteById.get(critical.site_id)?.name ?? null) : null}
                 siteCode={critical ? (siteById.get(critical.site_id)?.code ?? null) : null}
               />
@@ -321,9 +341,13 @@ function ConsoleWall() {
             }
             authBadge={auth.badge}
             selectedId={focusIncident?.incident_id ?? null}
-            onSelect={(incident) => openDetail(incident.site_id)}
+            onSelect={(incident) => {
+              setSelectedIncidentId(incident.incident_id);
+              openDetail(incident.site_id);
+            }}
             canAck={canAck}
             onAck={onAck}
+            ackError={ackError}
             canRelocate={canRelocate}
             onRelocate={setEpicenterFor}
             canRequestDictamen={canRequestDictamen}

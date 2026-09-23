@@ -3,6 +3,7 @@ import { BASE_DELAY_MS, MAX_DELAY_MS, retryDelayMs } from "./backoff";
 import { canonicalJson } from "./custody";
 import {
   blockingRefs,
+  delegadosEnCola,
   dueForDispatch,
   hasLocalCheckin,
   indexById,
@@ -19,6 +20,7 @@ import {
   withPriority,
   type CheckinPayload,
   type DamageReportPayload,
+  type DelegatedCheckinPayload,
   type EvidencePayload,
   type QueueItem,
 } from "./queue";
@@ -35,6 +37,20 @@ const T0 = 1_800_000_000_000;
 
 function item() {
   return newQueueItem({ kind: "checkin", id: "id-1", payload: PAYLOAD, sha256: "hash-1", now: T0 });
+}
+
+/** [T-8.11 · A-024] El táctico marca «verificado en persona» a otra persona. */
+function delegado(id: string, subject: string, over: Partial<QueueItem> = {}): QueueItem {
+  const payload: DelegatedCheckinPayload = {
+    incident_id: "inc-1",
+    subject_user_id: subject,
+    status: "safe",
+    ts_device: "2026-07-16T10:00:00Z",
+  };
+  return {
+    ...newQueueItem({ kind: "delegated_checkin", id, payload, sha256: `sha-${id}`, now: T0 }),
+    ...over,
+  } as QueueItem;
 }
 
 function foto(id: string, over: Partial<QueueItem> = {}): QueueItem {
@@ -146,10 +162,34 @@ describe("hasLocalCheckin — el dato local cuenta, el fallido no", () => {
     expect(hasLocalCheckin([], "inc-1")).toBe(false);
   });
 
+  it("[T-8.11] verificar A OTRA persona no es el check-in PROPIO del táctico", () => {
+    // Si contara, el táctico que marca a alguien sin red dejaría de ver SU
+    // propio «¿Se encuentra bien?»: la app lo daría por reportado a él.
+    expect(hasLocalCheckin([delegado("d-1", "u-7")], "inc-1")).toBe(false);
+  });
+
   it("una FOTO del incidente no se cuenta como check-in de vida", () => {
     // Sin el filtro por `kind`, la cola multi-tipo haría creer al ocupante que
     // ya dijo "estoy a salvo" por haber sacado una foto.
     expect(hasLocalCheckin([foto("ev-1")], "inc-1")).toBe(false);
+  });
+});
+
+describe("[T-8.11 · A-024] delegadosEnCola — a quién ya verificó este teléfono", () => {
+  it("pendiente o subiendo cuenta; sincronizado, fallido u otro incidente, no", () => {
+    const items = [
+      delegado("d-1", "u-1"),
+      markUploading(delegado("d-2", "u-2")),
+      markSynced(delegado("d-3", "u-3"), T0),
+      markFailed(delegado("d-4", "u-4"), "HTTP 404"),
+      { ...delegado("d-5", "u-5"), payload: { ...(delegado("d-5", "u-5").payload as object), incident_id: "inc-OTRO" } } as QueueItem,
+      item(),
+    ];
+    expect([...delegadosEnCola(items, "inc-1")].sort()).toEqual(["u-1", "u-2"]);
+  });
+
+  it("un check-in PROPIO no aparece como persona verificada", () => {
+    expect(delegadosEnCola([item()], "inc-1").size).toBe(0);
   });
 });
 

@@ -18,6 +18,7 @@ import { Link } from "react-router";
 import { alertHeadline } from "../console/alertHeadline";
 import type { LiveIncident } from "../console/useLiveIncidents";
 import SiteLabel from "../../components/SiteLabel";
+import { authorizes } from "./scene";
 
 export default function AlertLine({
   incident,
@@ -31,7 +32,12 @@ export default function AlertLine({
   /** [T-6.04] `sites.code`: la línea pinta la cinta DEMO si el sitio es simulado. */
   siteCode: string | null;
 }) {
-  const fuente = alertHeadline(incident.trigger);
+  // [T-8.10 · A-063] Una alerta cuyo disparo, SOLO, no autoriza —pero la red
+  // sí— la autorizó el cuórum: se titula como tal. Con el titular del umbral
+  // local, la línea diría «SOLO AVISO, SIN ACTUACIÓN» vestida de rojo, al
+  // mismo tiempo que la nube comandaba la actuación firmada.
+  const porLaRed = kind === "alert" && !authorizes(incident, []);
+  const fuente = alertHeadline(porLaRed ? "quorum" : incident.trigger);
   return (
     <div
       className="soc-scene__alert"
@@ -39,6 +45,7 @@ export default function AlertLine({
       data-testid="scene-alert"
       data-kind={kind}
       data-trigger={incident.trigger ?? "desconocido"}
+      data-corroborado={String(porLaRed)}
     >
       <AlertOctagon size={14} aria-hidden />
       <span className="soc-scene__alert-title">{fuente.title}</span>

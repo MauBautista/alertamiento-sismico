@@ -13,7 +13,7 @@ import { StateFrame } from "@/ui/StateFrame";
 export default function Inicio() {
   const router = useRouter();
   const siteId = useWatchedSiteId();
-  const { data, loading, error, staleSinceMs, dataUpdatedAt } = useAlertState(siteId);
+  const { data, loading, error, staleSinceMs, dataUpdatedAt, refetch } = useAlertState(siteId);
 
   const directory = useCachedQuery<DirectoryEntryOut[]>({
     cacheKey: `directory:${siteId ?? "none"}`,
@@ -40,6 +40,11 @@ export default function Inicio() {
       emptyText="Sin sitio vigilado. Vincúlese a su edificio con el código de su administrador (Cuenta → Vincular)."
       error={data === null ? error : null}
       loading={loading}
+      // [T-8.11] El error tiene salida: re-consulta el estado Y el directorio.
+      onRetry={() => {
+        refetch();
+        directory.refetch();
+      }}
       staleSinceMs={staleSinceMs}
     >
       {data !== null ? (

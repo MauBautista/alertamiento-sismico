@@ -205,7 +205,11 @@ describe("EnrollmentCodes · vigencia, usos y revocación", () => {
     const revoke = mutation();
     mocks.useRevokeEnrollmentCode.mockReturnValue(revoke);
     const { rerender } = renderCard();
+    // [A-222 · T-8.09] Revocar es IRREVERSIBLE (quien iba a enrolarse con ese
+    // código ya no puede): dos pasos, como el resto de lo que no se deshace.
     fireEvent.click(screen.getByRole("button", { name: "REVOCAR" }));
+    expect(revoke.mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
     expect(revoke.mutate).toHaveBeenCalledWith({ siteId: "s-1", code: "ABCD2345" });
 
     mocks.useEnrollmentCodes.mockReturnValue(codesData({ codes: [code({ active: false })] }));

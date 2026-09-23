@@ -16,6 +16,7 @@ import hashlib
 import logging
 from datetime import UTC, datetime
 
+import anyio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
@@ -36,6 +37,7 @@ from takab_api.dictamen.model import (
     SIN_CONSULTA_A_FUENTE_EXTERNA,
     STATUS_LABELS,
     TS_FMT,
+    ZONA_POR_DEFECTO,
     ActionRow,
     AnilloFila,
     CctvBlock,
@@ -77,6 +79,17 @@ _INCIDENT = text(
            i.cierre_sin_hora,
            i.severity, i.state, i.trigger, i.opened_trigger,
            s.name AS site_name, s.code AS site_code, s.criticality,
+           s.timezone AS site_timezone,
+           -- [T-8.12 · A-053] ¿Puede ESTA sesión leer la clasificación? La RLS de
+           -- `incident_classifications` compara con el tenant de la sesión sin
+           -- rama interna, y con el tenant VACÍO la consulta no devuelve cero
+           -- filas: revienta (`invalid input syntax for type uuid: ""`, medido
+           -- el 2026-09-22) y abortaría la exportación entera. Se pregunta aquí,
+           -- donde no puede fallar, y sólo se lee si la respuesta es sí.
+           COALESCE(
+             nullif(current_setting('app.tenant_id', true), '')::uuid = i.tenant_id,
+             false
+           ) AS clasificacion_legible,
            ST_Y(s.geom::geometry)::float8 AS site_lat,
            ST_X(s.geom::geometry)::float8 AS site_lon,
            e.source AS event_source,
@@ -91,8 +104,30 @@ _INCIDENT = text(
 )
 
 _DICTAMENS = text(
-    "SELECT dictamen_id, status, created_at, signed_by, basis, supersedes_dictamen_id "
-    "FROM dictamens WHERE incident_id = CAST(:id AS uuid) ORDER BY created_at DESC"
+    # [T-8.12 · A-145] El NOMBRE de quien firmó, de `user_profiles` y en la misma
+    # lectura: el papel imprimía el `sub` de Cognito. LEFT JOIN porque un perfil
+    # que no existe —o cuyo nombre se podó por retención de PII— deja el rol solo,
+    # y el dictamen no puede desaparecer por eso.
+    "SELECT d.dictamen_id, d.status, d.created_at, d.signed_by, d.basis, "
+    "d.supersedes_dictamen_id, p.display_name AS firmante_nombre "
+    "FROM dictamens d LEFT JOIN user_profiles p ON p.user_sub = d.signed_by "
+    "WHERE d.incident_id = CAST(:id AS uuid) ORDER BY d.created_at DESC"
+)
+
+#: [T-8.12 · A-053] La clasificación VIGENTE: la más reciente que nadie sustituye.
+#: Es la MISMA regla que la tasa de falsos positivos de la consola
+#: (`routers/classification.py::_STATS`), para que el papel y la pantalla no
+#: puedan discrepar sobre qué fue este incidente.
+_CLASIFICACION_VIGENTE = text(
+    """
+    SELECT c.classification, c.classified_at
+    FROM incident_classifications c
+    WHERE c.incident_id = CAST(:id AS uuid)
+      AND NOT EXISTS (SELECT 1 FROM incident_classifications s
+                       WHERE s.supersedes_id = c.classification_id)
+    ORDER BY c.classified_at DESC, c.classification_id DESC
+    LIMIT 1
+    """
 )
 
 _ACTIONS = text(
@@ -358,6 +393,7 @@ async def build_model(
             signed_by=str(r.signed_by) if r.signed_by else None,
             rule_set_version=(r.basis or {}).get("rule_set_version", "sin versión"),
             supersedes=str(r.supersedes_dictamen_id) if r.supersedes_dictamen_id else None,
+            firmante_nombre=r.firmante_nombre if r.signed_by else None,
         )
         for r in dictamen_rows
     ]
@@ -381,6 +417,10 @@ async def build_model(
     )
 
     danos = await _danos(conn, incident_id, evidence_rows, fetch_object)
+
+    clasificacion = None
+    if inc["clasificacion_legible"]:
+        clasificacion = (await conn.execute(_CLASIFICACION_VIGENTE, {"id": incident_id})).first()
 
     estaciones = [
         EstacionFila(
@@ -483,6 +523,12 @@ async def build_model(
         # la consola. Sin `red` no se puede afirmar que NO lo sea, pero un
         # incidente sin evento enlazado tampoco tiene sismo histórico detrás.
         reproduccion=(red.reproduccion if red is not None else False),
+        # [T-8.12 · A-053] Y, APARTE, lo que una persona decidió que fue. No
+        # sustituye a la de arriba: las dos se imprimen.
+        clasificacion=clasificacion.classification if clasificacion else None,
+        clasificacion_en=clasificacion.classified_at if clasificacion else None,
+        clasificacion_legible=bool(inc["clasificacion_legible"]),
+        zona_horaria=inc["site_timezone"] or ZONA_POR_DEFECTO,
         danos=danos,
         verdict_basis=head_basis,
         # [T-2.82] Marco DECLARADO por el cliente. Sale de la MISMA función que lo
@@ -738,12 +784,12 @@ async def _danos(conn, incident_id: str, evidence_rows, fetch_object) -> list[Da
                     )
                 )
                 continue
-            try:
-                crudo = fetch_object(objeto.s3_key)
-            except Exception as exc:  # noqa: BLE001 - un fallo de S3 no tumba la evidencia
-                log.warning("dictamen: foto ilegible (%s): %s", objeto.s3_key, exc)
-                crudo = None
-            derivada = fotos_mod.preparar(crudo)
+            # [T-8.12 · A-080] Fuera del event loop: `fetch_object` es boto3
+            # SÍNCRONO y `preparar` redimensiona y recodifica con Pillow. Dentro
+            # del loop, cada foto congelaba el WebSocket de la consola y el
+            # sondeo del móvil —la API corre con UN solo worker—.
+            crudo = await anyio.to_thread.run_sync(_leer_objeto, fetch_object, objeto.s3_key)
+            derivada = await anyio.to_thread.run_sync(fotos_mod.preparar, crudo)
             if derivada.ok and derivada.jpeg is not None:
                 presupuesto -= len(derivada.jpeg)
             fotos.append(
@@ -774,6 +820,15 @@ async def _danos(conn, incident_id: str, evidence_rows, fetch_object) -> list[Da
     return salida
 
 
+def _leer_objeto(fetch_object, s3_key: str) -> bytes | None:  # noqa: ANN001
+    """La lectura de una foto, o `None` con su rastro: un fallo de S3 no tumba la evidencia."""
+    try:
+        return fetch_object(s3_key)
+    except Exception as exc:  # noqa: BLE001 - un fallo de S3 no tumba la evidencia
+        log.warning("dictamen: foto ilegible (%s): %s", s3_key, exc)
+        return None
+
+
 async def _raw_waveform(evidence_rows, fetch_object, variant: str):
     """`(waveform, rate, spectrum, peak_hz, espectrograma, duracion, reason)`.
 
@@ -791,6 +846,13 @@ async def _raw_waveform(evidence_rows, fetch_object, variant: str):
     if mseed is None:
         return {}, None, None, None, None, None, None
 
+    # [T-8.12 · A-080] La lectura de S3 (boto3 síncrono), el decodificado y las
+    # tres transformadas son I/O y CPU: van a un hilo, no al event loop.
+    return await anyio.to_thread.run_sync(_onda_de, mseed, fetch_object)
+
+
+def _onda_de(mseed, fetch_object):  # noqa: ANN001, ANN202 - fila de evidence_objects
+    """La parte SÍNCRONA de `_raw_waveform`: se ejecuta en un hilo."""
     try:
         blob = fetch_object(mseed.s3_key)
         traces = read_traces(blob)

@@ -51,7 +51,10 @@ export function useRuleSetRollback(): RollbackState {
       // El gabinete todavía NO tiene esto: lo trae el worker de sync. Se
       // invalida el estado de config para que el poll diga la verdad en vez de
       // que la pantalla la suponga.
-      void qc.invalidateQueries({ queryKey: ["config-state"] });
+      // [A-224 · T-8.09] `["config-state"]` no existía: el estado del sync se
+      // lee de `["fleet", "config-state"]` y el pie seguía con el dato viejo
+      // hasta el siguiente poll, justo después del clic que lo cambia.
+      void qc.invalidateQueries({ queryKey: ["fleet", "config-state"] });
     },
   });
 

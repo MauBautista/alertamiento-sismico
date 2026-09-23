@@ -98,6 +98,18 @@ describe("la cola SE NOMBRA a sí misma (§7 · 2.5)", () => {
     expect(syncItemView(item("pending"), 0).title).toBe("Check-in de vida");
     expect(syncItemView(foto("pending", 100), 0).title).toBe("Foto forense");
     expect(syncItemView(reporte([]), 0).title).toBe("Reporte de daños");
+    // [T-8.11 · A-024] El check-in delegado NO es «Check-in de vida»: quien mira
+    // la cola tiene que distinguir su propio reporte del de la persona que
+    // verificó en el pase de lista.
+    expect(
+      syncItemView(
+        item("pending", {
+          kind: "delegated_checkin",
+          payload: { incident_id: "inc-1", subject_user_id: "u-7", status: "safe", ts_device: "t" },
+        }),
+        0,
+      ).title,
+    ).toBe("Verificación en persona");
   });
 
   it("una foto pendiente declara cuánto pesa; el reporte urgente, su prioridad", () => {

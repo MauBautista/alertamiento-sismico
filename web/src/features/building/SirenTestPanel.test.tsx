@@ -95,6 +95,47 @@ describe("SirenTestPanel", () => {
     expect(screen.getByRole("button", { name: /PROBAR SIRENA/ })).toBeDisabled();
   });
 
+  // [A-019 · T-8.09] Tras SILENCIAR el panel decía «SIRENA SONANDO» y volvía a
+  // ofrecer SILENCIAR. Cada fase del silencio tiene su propia frase.
+  it("con el silencio ACUSADO dice que la sirena se silenció, y ofrece volver a probar", () => {
+    render(<SirenTestPanel siren={siren("silenced")} canTest={true} />);
+    const phase = screen.getByTestId("siren-phase");
+    expect(phase).toHaveTextContent("SIRENA SILENCIADA · ACUSADA POR EL EDGE");
+    expect(phase).not.toHaveTextContent("SONANDO");
+    expect(screen.queryByRole("button", { name: /SILENCIAR SIRENA/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /PROBAR SIRENA/ })).toBeEnabled();
+  });
+
+  it("la orden de silencio en vuelo espera SU acuse y no deja reemitir", () => {
+    render(<SirenTestPanel siren={siren("silence_issued")} canTest={true} />);
+    expect(screen.getByTestId("siren-phase")).toHaveTextContent("ORDEN DE SILENCIO EMITIDA");
+    expect(screen.getByRole("button", { name: /SILENCIAR SIRENA/ })).toBeDisabled();
+  });
+
+  it("un silencio SIN confirmar avisa de que puede seguir sonando y deja reintentar", () => {
+    const deactivate = vi.fn();
+    render(<SirenTestPanel siren={siren("silence_unconfirmed", { deactivate })} canTest={true} />);
+    expect(screen.getByTestId("siren-phase")).toHaveTextContent("PUEDE SEGUIR SONANDO");
+    confirm(/SILENCIAR SIRENA/);
+    expect(deactivate).toHaveBeenCalledTimes(1);
+  });
+
+  it("una orden de silencio que no salió deja reintentar el silencio, no probar", () => {
+    render(<SirenTestPanel siren={siren("silence_failed")} canTest={true} />);
+    expect(screen.getByTestId("siren-phase")).toHaveTextContent("LA ORDEN DE SILENCIO NO SALIÓ");
+    expect(screen.getByRole("button", { name: /SILENCIAR SIRENA/ })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /PROBAR SIRENA/ })).toBeNull();
+  });
+
+  // [A-019] Al recargar se pierde el comando y el panel afirmaba «SIRENA EN
+  // REPOSO» sin haberlo comprobado: esta pantalla no lee el relé.
+  it("sin orden en curso no afirma el estado del relé", () => {
+    render(<SirenTestPanel siren={siren("idle")} canTest={true} />);
+    const phase = screen.getByTestId("siren-phase");
+    expect(phase).not.toHaveTextContent("REPOSO");
+    expect(phase).toHaveTextContent("SIN ORDEN");
+  });
+
   it("un rechazo muestra el motivo del gabinete y se puede descartar", () => {
     const reset = vi.fn();
     render(

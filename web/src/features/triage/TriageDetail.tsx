@@ -15,7 +15,7 @@ import Card from "../../components/Card";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import EvidenceVerifier from "./EvidenceVerifier";
-import { utcStamp } from "../../lib/time";
+import { utcClock, utcStamp } from "../../lib/time";
 import ComplianceDeclared from "./ComplianceDeclared";
 import IncidentTimeline from "./IncidentTimeline";
 import NotifyChain from "./NotifyChain";
@@ -44,6 +44,7 @@ import {
 } from "./model";
 import type { TriageRow } from "./model";
 import type { CctvState } from "./useCctv";
+import type { ClipDownload } from "./useClipDownload";
 import type { ForensicsState } from "./useForensics";
 import type { IncidentDetailData, Resource } from "./useIncidentDetail";
 import SiteLabel from "../../components/SiteLabel";
@@ -116,9 +117,22 @@ export interface TriageDetailProps {
   /** `me.allowed_actions` — server-driven, default-deny. */
   canSign: boolean;
   canExport: boolean;
+  /**
+   * [T-8.08 · A-042] `cctv_read`. Sin ella el panel de CCTV NO se monta: la API
+   * responde 403 (`takab_support` y `gov_operator` quedan fuera por T-3.12.c) y
+   * pintar un fallo que siempre ocurre enseña a no leer el panel.
+   */
+  canReadCctv: boolean;
   /** `cctv_video` del token: sin ella no se pinta el botón de descargar el clip. */
   canDownloadClip: boolean;
-  onDownloadClip?: (clipId: string) => void;
+  /** [T-8.08 · A-014] La descarga del clip, cableada. Era un `?:` que nadie pasaba. */
+  clipDownload: ClipDownload;
+  /**
+   * [T-8.08 · A-052] `dictamen_read`. Verificar la huella de un `report_pdf` la
+   * exige (`_ALCANCE_DE_VERIFICACION`, mobile_incident.py) y responde 404 a los
+   * demás; sin ella el botón pintaba «NO SE PUDO VERIFICAR» en rojo.
+   */
+  canVerifyDictamen: boolean;
   canGenerateReport: boolean;
   /**
    * [T-6.02] `allowed_routes` incluye `/fleet`. Un `inspector` no la tiene: el
@@ -213,8 +227,10 @@ export default function TriageDetail({
   estaciones,
   canSign,
   canExport,
+  canReadCctv,
   canDownloadClip,
-  onDownloadClip,
+  clipDownload,
+  canVerifyDictamen,
   canGenerateReport,
   canOpenFleet,
   canOpenBuilding,
@@ -248,6 +264,50 @@ export default function TriageDetail({
   // resolvió no puede presentarse como "no hay"—, PERO una consulta fallida también
   // deja `data` en undefined, y ahí lo honesto es decir que falló, no que sigue en
   // vuelo. De ahí el `&& !evidence.error`.
+  /**
+   * [T-8.08 · A-015] LA TARJETA DE FIRMA, una sola, en los dos sitios donde se
+   * firma: sobre una cadena con cabeza (dentro del marco, bajo su banda de
+   * retenido) y sobre una cadena VACÍA ya leída. Vivía sólo dentro de
+   * `{verdict && head && …}`, y la API firma igual sin cabeza (`supersedes =
+   * NULL`, dictamens.py): si la pasada automática no dejó preliminar —worker
+   * caído, ventana vencida, incidente manual— el inspector que llegaba por el
+   * correo de `dictamen_request` no tenía con qué firmar desde la web.
+   */
+  const firma = (sub: string) => (
+    <Card title="Firma del dictamen" sub={sub}>
+      <select
+        className="soc-select"
+        aria-label="Status del dictamen a firmar"
+        value={status}
+        disabled={!canSign}
+        title={signGateTitle(canSign, detail.signing)}
+        onChange={(e) => setStatus(e.target.value)}
+      >
+        {SIGNABLE_STATUS.map((s) => (
+          <option key={s} value={s}>
+            {verdictOf(s).label}
+          </option>
+        ))}
+      </select>
+      <ConfirmButton
+        label="FIRMAR DICTAMEN"
+        icon={<ShieldCheck size={13} aria-hidden />}
+        disabled={!canSign || detail.signing}
+        title={signGateTitle(canSign, detail.signing)}
+        onConfirm={() => detail.sign(status, null)}
+      />
+      {detail.signError && (
+        <p className="soc-meta" role="alert">
+          {detail.signError}
+        </p>
+      )}
+    </Card>
+  );
+  // Una cadena VACÍA y LEÍDA —no en vuelo, no caída—: sólo entonces se puede
+  // ofrecer la primera firma. Sobre una cadena que no se conoce no se firma.
+  const cadenaVaciaLeida =
+    !dictamens.loading && !dictamens.error && dictamens.data !== undefined && head === null;
+
   const mseed = miniseedState({
     canExport,
     loading: evidence.loading || (evidenceUnknown && !evidence.error),
@@ -341,7 +401,9 @@ export default function TriageDetail({
       {/* [T-3.12.c] La ÚNICA superficie de CCTV de la consola. Va junto al resumen
           post-evento porque responde a la misma pregunta —cómo se comportó el
           inmueble— con la otra mitad del dato: la gente. */}
-      <CctvPanel cctv={cctv} canDownloadClip={canDownloadClip} onDownloadClip={onDownloadClip} />
+      {canReadCctv && (
+        <CctvPanel cctv={cctv} canDownloadClip={canDownloadClip} clipDownload={clipDownload} />
+      )}
 
       {/* [T-7.17] La red de estaciones SUSTITUYE a la tabla de cuórum cuando el
           evento es una reproducción: allí no hubo votos, y enseñar una tabla de
@@ -394,8 +456,18 @@ export default function TriageDetail({
               <Huella rotulo="Dictamen emitido" sha={dictamen.sha256} />
               {/* [T-7.48] El botón que la portada del papel PROMETÍA y no existía.
                   Re-hashea el objeto de S3 y lo confronta con la huella declarada,
-                  que es lo único que convierte «este número» en «este archivo». */}
-              <EvidenceVerifier evidenceId={dictamen.evidence_id} />
+                  que es lo único que convierte «este número» en «este archivo».
+                  [T-8.08 · A-052] Sólo para quien puede LEER el dictamen: a los
+                  demás la API les responde 404 y el botón salía en rojo. No se
+                  amplía el permiso; se dice quién verifica y cómo, a mano. */}
+              {canVerifyDictamen ? (
+                <EvidenceVerifier evidenceId={dictamen.evidence_id} />
+              ) : (
+                <p className="soc-meta" data-testid="verify-dictamen-denied">
+                  SIN RE-VERIFICACIÓN DESDE ESTE ROL · requiere la acción dictamen_read (quien lee
+                  el dictamen). La huella de arriba se compara con el sha256sum del PDF.
+                </p>
+              )}
             </>
           )}
         </StateFrame>
@@ -505,37 +577,7 @@ export default function TriageDetail({
               </p>
             )}
 
-            <Card
-              title="Firma del dictamen"
-              sub="ACTO PROFESIONAL DEL INSPECTOR · INSERTA UNA VERSIÓN NUEVA"
-            >
-              <select
-                className="soc-select"
-                aria-label="Status del dictamen a firmar"
-                value={status}
-                disabled={!canSign}
-                title={signGateTitle(canSign, detail.signing)}
-                onChange={(e) => setStatus(e.target.value)}
-              >
-                {SIGNABLE_STATUS.map((s) => (
-                  <option key={s} value={s}>
-                    {verdictOf(s).label}
-                  </option>
-                ))}
-              </select>
-              <ConfirmButton
-                label="FIRMAR DICTAMEN"
-                icon={<ShieldCheck size={13} aria-hidden />}
-                disabled={!canSign || detail.signing}
-                title={signGateTitle(canSign, detail.signing)}
-                onConfirm={() => detail.sign(status, null)}
-              />
-              {detail.signError && (
-                <p className="soc-meta" role="alert">
-                  {detail.signError}
-                </p>
-              )}
-            </Card>
+            {firma("ACTO PROFESIONAL DEL INSPECTOR · INSERTA UNA VERSIÓN NUEVA")}
 
             <div className="triage-detail__chain">
               <ShieldCheck size={11} aria-hidden />
@@ -545,6 +587,21 @@ export default function TriageDetail({
           </>
         )}
       </StateFrame>
+      {/* [T-8.08 · A-015] FUERA del marco a propósito: con la cadena vacía el marco
+          está en `empty` (o en `stale` con la ausencia fechada) y no pinta hijos.
+          Justo encima dice que no hay dictamen —o que así estaba a tal hora—, que
+          es lo que el inspector tiene que leer antes de firmar la primera versión. */}
+      {/* [verificador] Con la cadena VIEJA, «no hay preliminar» deja de ser un hecho
+          medido: pudo llegar uno después de la última lectura. Se sigue ofreciendo
+          —la API calcula `supersedes` con la cabeza REAL, dictamens.py— pero el
+          rótulo dice de cuándo es lo que se sabe (regla de oro 7). */}
+      {cadenaVaciaLeida &&
+        firma(
+          dictamens.staleSince === null
+            ? "PRIMERA VERSIÓN DE LA CADENA · NO HAY PRELIMINAR AUTOMÁTICO QUE SUSTITUIR"
+            : `PRIMERA VERSIÓN SEGÚN LA LECTURA DE LAS ${utcClock(dictamens.staleSince)} UTC · ` +
+                "SI LLEGÓ UN PRELIMINAR DESPUÉS, ESTA FIRMA LO SUSTITUYE",
+        )}
 
       {/* [T-2.10] Reportes de daños del móvil (2.4) con verificación de hash.
           [T-2.39] FUERA del gate `verdict && head` y fuera del StateFrame del

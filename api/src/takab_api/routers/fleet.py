@@ -16,6 +16,7 @@ La escritura exige además la acción ``manage_fleet`` (superadmin + tenant_admi
 
 from __future__ import annotations
 
+import math
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -228,8 +229,17 @@ async def list_gateways(
     out: list[GatewayOut] = []
     for r in rows:
         m = dict(r._mapping)
+        # [A-057 · T-8.09] El broker publicó el LWT DESPUÉS del último latido real
+        # (`queries/fleet.ENLACE_PERDIDO`): el enlace está perdido YA, aunque ese
+        # latido tenga 60 s. Se deriva con una edad INFINITA y no con `None`: el
+        # gabinete sí latió, y `derive_version_drift` lee `None` como «nunca
+        # latió» (SIN REPORTAR). Infinita es lo que el LWT afirma —que no va a
+        # llegar el siguiente— y cae en las mismas ramas que el silencio largo:
+        # SIN ENLACE y ÚLTIMA CONOCIDA. `version_age_s` y `last_heartbeat_ts`
+        # siguen siendo los reales: fechan el dato, no el enlace.
+        edad_enlace = math.inf if m["link_lost"] else m["age_s"]
         state = derive_fleet_state(
-            age_s=m["age_s"],
+            age_s=edad_enlace,
             power_status=m["power_status"],
             battery_pct=m["battery_pct"],
             cert_days_remaining=m["cert_days_remaining"],
@@ -277,7 +287,7 @@ async def list_gateways(
             # mide contra esto; el desajuste entre ambos ES el estado
             # `SIN REINICIAR`. `None` en gabinetes con contrato ≤1.8.0.
             fw_running=m["fw_running"],
-            age_s=m["age_s"],
+            age_s=edad_enlace,
             sin_enlace_s=alive_s,
             releases=releases,
         )
@@ -341,6 +351,18 @@ async def list_gateways(
                 # ese umbral de servidor no lo ha elegido nadie. El razonamiento
                 # entero está en `schemas/fleet.py`, junto al campo.
                 packet_loss_pct=m["packet_loss_pct"],
+                # [A-056 · T-8.09] El SELECT los traía y el schema los declaraba,
+                # pero NO se pasaban: la API respondía `null` siempre y la consola
+                # pintaba «EVIDENCIA · s/d · el gabinete no pudo mirar» en TODAS
+                # las tarjetas — culpando al gabinete de un hueco de este
+                # constructor. `evidence_pending` NULL sigue significando «el
+                # gabinete no pudo preguntar»; 0, «preguntó y no retiene nada».
+                # El censo que lo ata es `tests/contracts/
+                # test_todo_campo_del_latido_tiene_destino.py`, que ahora mira la
+                # SALIDA de esta ruta y no sólo la columna.
+                evidence_pending=m["evidence_pending"],
+                evidence_oldest_age_s=m["evidence_oldest_age_s"],
+                disk_used_pct=m["disk_used_pct"],
                 version_state=drift.state,
                 releases_behind=drift.releases_behind,
                 release_age_s=drift.release_age_s,

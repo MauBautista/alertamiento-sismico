@@ -11,7 +11,7 @@
 // la base local fallaba, se quedaba en "Cargando…" para siempre).
 import * as Network from "expo-network";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import {
   countByState,
@@ -24,6 +24,7 @@ import {
 import { retryFailed } from "@/offline/queue";
 import { useQueueStore } from "@/offline/queue.store";
 import { drainQueue } from "@/offline/sync";
+import { Pulsable } from "@/ui/Pulsable";
 import { StateFrame } from "@/ui/StateFrame";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -40,6 +41,7 @@ export default function Sync() {
   const apply = useQueueStore((s) => s.apply);
   const hydrated = useQueueStore((s) => s.hydrated);
   const hydrationError = useQueueStore((s) => s.hydrationError);
+  const hydrate = useQueueStore((s) => s.hydrate);
   const [online, setOnline] = useState(true);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
@@ -113,6 +115,9 @@ export default function Sync() {
             : `No se pudo abrir su cola local (${hydrationError}). Lo que capture ahora puede no guardarse: no cierre la app.`
         }
         loading={!hydrated && hydrationError === null}
+        // [T-8.11] Reintentar ABRIR la cola local: `hydrate` vuelve a intentarlo
+        // mientras no haya quedado hidratada.
+        onRetry={() => void hydrate()}
         staleSinceMs={!online && retenidoDesde !== null ? retenidoDesde : null}
       >
         <View style={styles.countsRow}>
@@ -123,14 +128,14 @@ export default function Sync() {
         </View>
 
         {counts.failed > 0 ? (
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             onPress={retryAll}
             style={styles.retryAll}
             testID="retry-all"
           >
             <Text style={styles.retryAllText}>REINTENTAR FALLIDOS ({counts.failed})</Text>
-          </Pressable>
+          </Pulsable>
         ) : null}
 
         {items
@@ -147,7 +152,7 @@ export default function Sync() {
                 {v.urgent ? <Text style={styles.itemUrgent}>PRIORIDAD MÁXIMA</Text> : null}
                 {v.detail ? <Text style={styles.itemDetail}>{v.detail}</Text> : null}
                 {v.retriable ? (
-                  <Pressable
+                  <Pulsable
                     accessibilityRole="button"
                     onPress={() => {
                       void apply(retryFailed(item)).then(() => drainQueue());
@@ -156,7 +161,7 @@ export default function Sync() {
                     testID={`retry-${v.id}`}
                   >
                     <Text style={styles.retryText}>REINTENTAR</Text>
-                  </Pressable>
+                  </Pulsable>
                 ) : null}
               </View>
             );

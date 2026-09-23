@@ -18,12 +18,48 @@ const HEIGHT = 120;
 const TOP = 8;
 const BOTTOM = HEIGHT - 18;
 
+export interface HistoryPresetPickerProps {
+  preset: HistoryPreset;
+  onPreset: (preset: HistoryPreset) => void;
+}
+
+/**
+ * [A-111 · T-8.09] El selector de rango, suelto del gráfico.
+ *
+ * Vivía SOLO dentro de `HistoryChart`, y el gráfico dentro del `StateFrame` del
+ * historial: con el rango vacío el marco pintaba «SIN MÉTRICAS EN EL RANGO» y el
+ * selector desaparecía con él. Quien eligió 1H en un sitio tranquilo se quedaba
+ * sin forma de volver a 24H o 7D. La página que tiene el marco lo pinta FUERA.
+ */
+export function HistoryPresetPicker({ preset, onPreset }: HistoryPresetPickerProps) {
+  return (
+    <div className="soc-history__presets" role="group" aria-label="Rango del historial">
+      {HISTORY_PRESETS.map((p) => (
+        <button
+          key={p}
+          type="button"
+          className={`soc-chip ${p === preset ? "soc-chip--on" : ""}`}
+          aria-pressed={p === preset}
+          onClick={() => onPreset(p)}
+        >
+          {p.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export interface HistoryChartProps {
   points: HistoryPoint[];
   bucket: string;
   calibrated: boolean | undefined;
-  preset: HistoryPreset;
-  onPreset: (preset: HistoryPreset) => void;
+  /**
+   * El rango, si el gráfico lo pinta él mismo. Ausente cuando el anfitrión ya
+   * pinta `HistoryPresetPicker` fuera de su marco (A-111): dos selectores del
+   * mismo rango en la misma tarjeta serían dos verdades.
+   */
+  preset?: HistoryPreset;
+  onPreset?: (preset: HistoryPreset) => void;
 }
 
 export default function HistoryChart({
@@ -51,19 +87,9 @@ export default function HistoryChart({
     <div className="soc-history">
       <div className="soc-history__head">
         <span className="soc-mono">MÁXIMO PGA · BUCKET {bucket.toUpperCase()}</span>
-        <div className="soc-history__presets" role="group" aria-label="Rango del historial">
-          {HISTORY_PRESETS.map((p) => (
-            <button
-              key={p}
-              type="button"
-              className={`soc-chip ${p === preset ? "soc-chip--on" : ""}`}
-              aria-pressed={p === preset}
-              onClick={() => onPreset(p)}
-            >
-              {p.toUpperCase()}
-            </button>
-          ))}
-        </div>
+        {preset !== undefined && onPreset !== undefined && (
+          <HistoryPresetPicker preset={preset} onPreset={onPreset} />
+        )}
         <NotCalibratedBadge calibrated={calibrated} />
       </div>
       <svg

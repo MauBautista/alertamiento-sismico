@@ -18,7 +18,10 @@
 // como ausencia de franja (U-45). Una consola que dedica dos franjas permanentes
 // a decir «SIN SIMULACRO» y «SIN VENTANA» enseña al operador a no leerlas.
 
+import type { MapEpicenter } from "@takab/sdk";
+
 import type { LiveIncident } from "../console/useLiveIncidents";
+import { QUORUM_MIN_NODES } from "../console/wavefront";
 
 /**
  * LA PRECEDENCIA, como tabla y no como cadena de `if`. De mayor a menor:
@@ -83,13 +86,71 @@ export const DEGRADES_UNDER_ALERT: Readonly<Record<Exclude<SceneKind, "alert">, 
 export const WALL_ROUTE = "/console";
 
 /**
- * ¿Esta fuente AUTORIZA actuar? Sólo SASMEX (contacto seco del WR-1) y el
- * cuórum de la red (comando firmado). Una estación sola sólo avisa (T-2.32), una
- * activación manual es una persona, y un origen no reconocido no autoriza nada
- * (default-deny). Espejo de `mobile/src/features/alert/source.ts`.
+ * [T-8.10 · A-063] LA MISMA REGLA QUE EL TELÉFONO, escrita una vez.
+ *
+ * Espejo de `api/src/takab_api/incident/autoridad.py::autoriza_evacuacion`, que
+ * es la que `mobile_state` aplica para decidir si el teléfono dice «EVACÚE»:
+ * autoriza el WR-1 de SASMEX, el trigger `quorum`, **o** un incidente cuyo
+ * evento enlazado lleve `node_count ≥ quorum_min_nodes`. Esa tercera rama es la
+ * que faltaba aquí. El motor de correlación NO reescribe `trigger` —solo enlaza
+ * `event_id` y escribe `meta.node_count`—, así que un incidente que nace
+ * `local_threshold` y la red corrobora seguía siendo un aviso para la consola:
+ * panel del gabinete rojo, teléfono «EVACÚE», muro ámbar «SIN ACTUACIÓN».
+ *
+ * `minNodes` es el `quorum_min_nodes` del servidor (Settings, por defecto 3).
+ * La consola no lo lee de ninguna parte: usa el mismo espejo que el mapa
+ * (`QUORUM_MIN_NODES`, blueprint §4.5). Si un despliegue lo sube, el defecto
+ * que produce es el prudente —la consola llama aviso a lo que el teléfono ya
+ * trata como alerta—, no el contrario.
+ *
+ * Default-deny: un origen desconocido sin corroboración no autoriza nada.
  */
-export function authorizes(trigger: string | null | undefined): boolean {
-  return trigger === "sasmex" || trigger === "quorum";
+export function autorizaEvacuacion(
+  trigger: string | null | undefined,
+  nodeCount: number | null,
+  minNodes: number = QUORUM_MIN_NODES,
+): boolean {
+  if (trigger === "sasmex" || trigger === "quorum") return true;
+  return nodeCount !== null && nodeCount >= minNodes;
+}
+
+/**
+ * Lo que la consola sabe de la corroboración de un evento: su id y cuántas
+ * estaciones lo formaron. Viaja en el epicentro del snapshot del mapa
+ * (`GET /telemetry/map/state`, `(e.meta->>'node_count')::int`), que sale de la
+ * MISMA columna que lee `mobile_state` (`queries/mobile.py::OPEN_INCIDENT`).
+ */
+export type Corroboracion = Pick<MapEpicenter, "event_id" | "node_count">;
+
+/**
+ * Las estaciones que corroboraron el evento de ESTE incidente, o `null` si no
+ * se sabe: sin evento enlazado, sin ese evento en el snapshot, o un evento que
+ * no es de cuórum. `null` y no `0`: una cuenta ausente no es una cuenta de cero.
+ */
+export function nodosQueCorroboran(
+  incident: Pick<LiveIncident, "event_id">,
+  epicentros: readonly Corroboracion[],
+): number | null {
+  if (incident.event_id === null) return null;
+  const epicentro = epicentros.find((e) => e.event_id === incident.event_id);
+  return epicentro?.node_count ?? null;
+}
+
+/**
+ * ¿Este incidente AUTORIZA actuar? SASMEX (contacto seco del WR-1), el cuórum de
+ * la red, o un aviso que la red corroboró. Una estación sola sólo avisa
+ * (T-2.32), una activación manual es una persona, y un origen no reconocido no
+ * autoriza nada (default-deny).
+ *
+ * `epicentros` es OBLIGATORIO a propósito: con un `= []` por defecto, el
+ * llamador que no supiera de la tercera rama se llevaba la regla vieja sin que
+ * nada se pusiera rojo — que es exactamente como se abrió A-063.
+ */
+export function authorizes(
+  incident: Pick<LiveIncident, "trigger" | "event_id">,
+  epicentros: readonly Corroboracion[],
+): boolean {
+  return autorizaEvacuacion(incident.trigger, nodosQueCorroboran(incident, epicentros));
 }
 
 /**
@@ -115,10 +176,13 @@ export type AlertKind = "alert" | "notice" | "review";
  * rojo como «PROTÉJASE» es pintar como vigente lo que el servidor ya no sostiene
  * (regla de oro 7). Que lo abriera el WR-1 no lo devuelve a la alerta.
  */
-export function alertKind(incident: LiveIncident | null): AlertKind | null {
+export function alertKind(
+  incident: LiveIncident | null,
+  epicentros: readonly Corroboracion[],
+): AlertKind | null {
   if (incident === null) return null;
   if (incident.state === "in_review") return "review";
-  return authorizes(incident.trigger) ? "alert" : "notice";
+  return authorizes(incident, epicentros) ? "alert" : "notice";
 }
 
 /**

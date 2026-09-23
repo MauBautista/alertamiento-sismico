@@ -28,7 +28,12 @@ export interface DrillTemplatesData {
   refetch: () => void;
   crear: (input: DrillTemplateIn) => void;
   editar: (templateId: string, input: DrillTemplateIn) => void;
-  borrar: (templateId: string) => void;
+  /**
+   * [T-8.07] La promesa del DELETE: resuelve cuando el servidor lo borró y
+   * RECHAZA si no (el porqué queda en `mutationError`). Quien confirma el borrado
+   * la espera para no afirmar nada antes de tiempo.
+   */
+  borrar: (templateId: string) => Promise<void>;
   /** Mutación en vuelo: el formulario se deshabilita mientras dura. */
   pending: boolean;
   /** Error de la última mutación, ya en mayúsculas para pintarlo. */
@@ -127,7 +132,7 @@ export function useDrillTemplates(enabled: boolean = true): DrillTemplatesData {
     },
     crear: (input) => crear.mutate(input),
     editar: (templateId, input) => editar.mutate({ templateId, input }),
-    borrar: (templateId) => borrar.mutate(templateId),
+    borrar: (templateId) => borrar.mutateAsync(templateId),
     pending: enVuelo.some((m) => m.isPending),
     mutationError: fallida?.error ? fallida.error.message.toUpperCase() : null,
   };

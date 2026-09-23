@@ -8,12 +8,12 @@ import {
   ActivityIndicator,
   Animated,
   PanResponder,
-  Pressable,
   StyleSheet,
   Text,
   View,
 } from "react-native";
 
+import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { ackView, type AckContext } from "./ackState";
@@ -115,9 +115,9 @@ export function ControlSheet(props: {
         <Text style={styles.ackDetail} testID="ack-detail">
           {view.detail}
         </Text>
-        <Pressable accessibilityRole="button" onPress={props.onClose} style={styles.closeBtn}>
+        <Pulsable accessibilityRole="button" onPress={props.onClose} style={styles.closeBtn}>
           <Text style={styles.closeText}>CERRAR</Text>
-        </Pressable>
+        </Pulsable>
       </View>
     );
   }
@@ -145,7 +145,7 @@ export function ControlSheet(props: {
               No se cumplen todas las precondiciones. Revise el estado real antes de continuar.
             </Text>
           ) : null}
-          <Pressable
+          <Pulsable
             accessibilityRole="button"
             disabled={!allMet}
             onPress={() => setArmed(true)}
@@ -153,10 +153,10 @@ export function ControlSheet(props: {
             testID="to-step-2"
           >
             <Text style={styles.primaryText}>CONTINUAR</Text>
-          </Pressable>
-          <Pressable accessibilityRole="button" onPress={props.onClose} style={styles.ghostBtn}>
+          </Pulsable>
+          <Pulsable accessibilityRole="button" onPress={props.onClose} style={styles.ghostBtn}>
             <Text style={styles.ghostText}>Cancelar</Text>
-          </Pressable>
+          </Pulsable>
         </>
       ) : (
         <>
@@ -176,9 +176,9 @@ export function ControlSheet(props: {
             label={copy.slide}
             onConfirm={props.onConfirm}
           />
-          <Pressable accessibilityRole="button" onPress={props.onClose} style={styles.ghostBtn}>
+          <Pulsable accessibilityRole="button" onPress={props.onClose} style={styles.ghostBtn}>
             <Text style={styles.ghostText}>Cancelar</Text>
-          </Pressable>
+          </Pulsable>
         </>
       )}
     </View>
