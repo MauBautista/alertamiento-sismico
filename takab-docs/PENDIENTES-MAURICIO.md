@@ -9,13 +9,31 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-19 · **30 puntos abiertos** (§2: 12 · §3: 8 · §4: 7 · §5: 3),
+> **Última actualización:** 2026-09-22 · **30 puntos abiertos** (§2: 12 · §3: 8 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
 > **El conteo se puede rehacer, y por eso se dice cómo:** cuenta un `###` salvo que su título
 > esté tachado o lleve ✅. Única excepción, el **§4.3** — su ✅ dice que la compra está
-> *autorizada*, no hecha. (La tabla de decisiones de la §1 también lleva ✅ y no son puntos.)
+> *autorizada*, no hecha.
+>
+> ⚠️ **Y el 2026-09-22 se comprobó que había divergido, por donde nadie mira.** La cabecera decía
+> «§2: 12» y la receta daba **13**: el commit de esa mañana metió en la §2 un `###` que no era un
+> punto sino una nota dentro del §2.13 («LA CLAVE DEL SECRETO NUNCA SE ESCRIBIÓ»), y **un `###`
+> cuenta**. Ya no lo es. Sigue sin haber ninguna prueba que cuente esta cabecera, así que es la
+> receta de arriba, a mano, lo único que la sostiene.
+>
+> ## Lo que cambió el 2026-09-22
+>
+> **Se cerró el §2.13** (clave de OpenRouter): la clave está puesta, la IA **redacta** y la
+> latencia quedó medida contra la nube — el tope sube a 30 s por
+> [`D-37`](DECISIONES-MAURICIO.md#d-37). Pedía un paso que ya se había dado esa misma mañana.
+> **Y entró el §2.14**, que es lo único vivo que quedaba dentro: el tope mensual de gasto en el
+> panel de OpenRouter. Por eso el total sigue en 30 — uno sale, otro entra, y no es que nadie
+> haya tocado la lista.
+>
+> **Y salió la copia de la tabla de decisiones de la §1**, que decía «veinticinco» sobre 26
+> filas y se había quedado en `D-26` con la bitácora en `D-37`.
 >
 > ## Lo que cambió el 2026-09-19
 >
@@ -102,38 +120,20 @@ antes se arranquen, antes dejan de ser el cuello de botella**: el alta de WhatsA
 
 ## 1 · DECISIONES — ✅ **sección cerrada** (re-verificada el 2026-08-17)
 
-**No queda ninguna** — pero esta frase ya fue falsa una vez, así que ahora viene con la lista
-completa. Las **veinticinco** decisiones tomadas, cada una con su razón escrita y su condición de
-revocación, están en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md):
+**No queda ninguna** — pero esta frase ya fue falsa una vez, así que viene con dónde
+comprobarla: la lista completa, cada decisión con su razón escrita y su condición de revocación,
+vive en [**`DECISIONES-MAURICIO.md`**](DECISIONES-MAURICIO.md), que **declara su propio conteo en
+la cabecera y tiene tests que lo cuentan** — uno cruza cabecera, índice y anclas, y otro exige que
+ninguna decisión se quede sin fila o sin sección.
 
-| ID | Decisión | Fecha |
-|---|---|---|
-| `D-01` | Entre `empty` y `stale`, **gana `stale`** | 2026-08-12 |
-| `D-02` | `lock_timeout` del request: **se pone, ~10 s** | 2026-08-12 |
-| `D-03` | La consola **arranca con la base caída**, en degradado y declarándolo | 2026-08-12 |
-| `D-04` | Dueño de los pines GPIO: **ventana avisada (A)**, nunca hardware | 2026-08-15 |
-| `D-05` | Push de pánico: **solo a tácticos**, y sin acuse **escala al SOC** | 2026-08-15 |
-| `D-06` | Catálogo SSN: **se automatiza** la ingesta | 2026-08-15 |
-| `D-07` | Teléfono del consentimiento: **cripto-borrado** | 2026-08-15 |
-| `D-08` | Bloque IV (mini-ShakeMap y CCTV): **se planifica ya** | 2026-08-15 |
-| `D-09` | `enforce_admins`: **queda en `false`**, con gatillo escrito | 2026-08-15 |
-| `D-10` | Ruta de hardware de la sirena: **variante B**, fallback con watchdog | 2026-08-16 |
-| `D-11` | El quórum de pánico **abre incidente** `trigger='manual'` | 2026-08-16 |
-| **`D-12`** | **Dominio raíz `takabailert.com`**, DNS en Route 53 *(enmendada 21-ago)* | **2026-08-17** |
-| **`D-13`** | Teléfono de soporte: **número Twilio mexicano** | **2026-08-17** |
-| **`D-14`** | CCTV: **híbrido** — aforo en sitio + clips de evento confirmado | **2026-08-17** |
-| **`D-15`** | Sirena por jack: **encendida** en el gabinete de desarrollo | **2026-08-17** |
-| **`D-16`** | Compras: **sí** dominio y Twilio · **no todavía** BOM de `G-02` ni Apple | **2026-08-17** |
-| **`D-17`** | La ventana AWS se parte en **dos**: applies (A) y restore (B) | **2026-08-17** |
-| **`D-18`** | `console_scope_enforced`: **se enciende ya**, tests en el mismo commit | **2026-08-17** |
-| **`D-19`** | Tono de la app: **propio**, no el oficial de CIRES | **2026-08-17** |
-| **`D-20`** | Consulta legal: **espera a que un cliente la pida** | **2026-08-17** |
-| **`D-21`** | Sesión de vida: **se parte** — `G-01` esta semana, solo | **2026-08-17** |
-| **`D-22`** | La consola **se abre al público**; Cognito con MFA, única capa | **2026-08-22** |
-| **`D-23`** | ARCO por teléfono: **lo acredita el cliente institucional** | **2026-08-22** |
-| **`D-24`** | CCTV: el **conteo pasa a la nube**; el clip se ve y se descarga *(enmienda `D-14`)* | **2026-08-29** |
-| **`D-25`** | Bloque IV **arranca ya en software**; encenderlo espera a `G-04` | **2026-08-29** |
-| **`D-26`** | El CCTV **no graba audio** — vídeo mudo; derogarlo exige base legal | **2026-08-30** |
+> ⚠️ **Aquí había una copia de esa tabla, y la copia divergió** (retirada el 2026-09-22). Decía
+> «las **veinticinco** decisiones» encima de **26** filas, y las filas se detenían en `D-26`
+> (2026-08-30) mientras la bitácora iba por **`D-37`**. O sea que quien hoy buscara aquí por qué
+> el tope de la redacción asistida son 30 s —`D-37`, del 2026-09-22— habría concluido que esa
+> decisión no existe. Se retira la copia en vez de actualizarla, que es lo que ya falló: **un
+> censo duplicado a mano acaba divergiendo**, y el original ya tiene quien lo cuente. Lo que sí
+> se queda es lo único que esta lista tiene que decir de las decisiones — **cuáles te dejan una
+> acción tuya**.
 
 > **Las que generan trabajo de software se fichan en `TASKS.md` y NO vuelven a esta lista** —`D-05`
 > (cablear `notify/` al voto de pánico, acuse del táctico, escalado al SOC), `D-06` (job de ingesta
@@ -486,74 +486,58 @@ takab_api.ops.prune_cctv`, sin `--apply`) para ver el censo con los ojos, y solo
 > tabla queda **deshabilitada** y el job no toca un byte, así que se puede desplegar antes de
 > decidir — igual que el de PII.
 
-### 2.13 · [`T-7.26`](TASKS.md) · Clave de OpenRouter en Secrets Manager y tope mensual
+### 2.13 · ~~[`T-7.26`](TASKS.md) · Clave de OpenRouter en Secrets Manager~~ — ✅ **HECHO el 2026-09-22**
 
-La capa narrativa existe desde `T-2.42`, lista y apagada; encenderla en la nube exige tres cosas
-que solo Mauricio puede poner: **una cuenta de OpenRouter con crédito**, su **clave** en Secrets
-Manager como `takab/dev/openrouter` (con `!` desde su terminal — nunca pegada en el chat ni en un
-fichero del repo, regla de oro 6) y un **tope mensual** en el panel de OpenRouter, además del tope
-por tenant que ya aplica la API (`ai_monthly_cap_usd`, 10 USD en dev). Modelo recomendado:
-**`google/gemini-2.5-flash-lite`** desde el 2026-09-22, elegido por calidad/precio sobre el
-catálogo real de OpenRouter (442 modelos leídos de su API ese día; 276 admiten imagen, que es lo
-que `D-32` exige). Coste medido sobre nuestra carga: **US$ 0.00075 por informe**, frente a los
-**US$ 0.01660** de `anthropic/claude-sonnet-5` — **22× más barato**. Si al medirlo resulta que no
-sigue el formato de secciones, el escalón siguiente es `openai/gpt-4o-mini` (US$ 0.00112) y
-después `google/gemini-2.5-flash` (US$ 0.00329); la tabla y el porqué viven en el comentario de
-`deploy/cloud/deploy.sh`.
+**El resultado, medido.** La clave quedó escrita, el proveedor la acepta y la capa narrativa
+**redacta**. `make cloud-medir-latencia-ia`, contra la nube desplegada y con
+`google/gemini-2.5-flash-lite`: sin fotografías **p50 2 595 ms**; con seis fotografías **p50
+13 686 ms** y **máximo 20 604 ms**; coste real **US$ 0.0004 por informe**. Con esa tabla se
+decidió subir el tope de 8 s a **30 s** y dejar la generación dentro de la petición HTTP —
+[`D-37`](DECISIONES-MAURICIO.md#d-37)—, y `T-7.26` quedó en `[x]` ese mismo día. **El tope
+mensual del panel de OpenRouter no entraba en esa medición y sigue sin poner: se fue a la
+§2.14.**
 
-### ⚠️ LA CLAVE DEL SECRETO NUNCA SE ESCRIBIÓ — y por eso la IA lleva desde el 2026-09-21 sin redactar
+**Lo que enseñó, que es lo que no se borra.** Dos fallos encadenados tuvieron la capa encendida
+y muda desde el 2026-09-21, y ninguno se veía desde fuera:
 
-Medido el 2026-09-22: el secreto `takab/dev/openrouter` tiene **una sola versión**, creada el
-2026-09-21 a las 09:14 y **jamás modificada**. El intento de esa tarde falló con
-`ResourceExistsException` **porque `create-secret` no actualiza un secreto que ya existe**. Así
-que el valor que hay dentro es el del primer día, y el proveedor responde **HTTP 401**.
+1. **La clave del secreto nunca llegó a escribirse.** `takab/dev/openrouter` tuvo **una sola
+   versión** durante un día entero: el intento de ponerla falló con `ResourceExistsException`
+   —**`create-secret` no actualiza un secreto que ya existe**, devuelve su error y no escribe—,
+   así que dentro seguía el marcador de posición de la documentación y el proveedor respondía
+   **HTTP 401**. Se pone con **`put-secret-value`**, nunca con `create-secret`, y hoy hay guion
+   para hacerlo sin que el valor toque la línea de comandos
+   (`infra/scripts/poner-clave-openrouter.sh`).
+2. **El modelo anterior devolvía el contenido vacío.** `anthropic/claude-sonnet-5` se gastaba
+   los 1 600 tokens de salida razonando: veinte segundos de latencia y cero caracteres. El
+   cambio a `google/gemini-2.5-flash-lite` lo arregló y además es **22× más barato por lista**
+   (US$ 0.00075 por informe frente a US$ 0.01660; el coste **medido** ya con el modelo nuevo es
+   el US$ 0.0004 de arriba, y es el que vale). El siguiente escalón, si alguna vez deja de
+   seguir el formato de secciones, es `openai/gpt-4o-mini` (US$ 0.00112) y después
+   `google/gemini-2.5-flash` (US$ 0.00329); la tabla y el porqué viven en el comentario de
+   `deploy/cloud/deploy.sh`.
 
-El sistema se comportó bien —la capa degrada al determinista y lo DECLARA en el papel— pero la
-función nunca ha funcionado. Y no se veía: el censo de conformidad da VERDE porque comprueba que
-el secreto **exista** y que el rol pueda **leerlo**, no que el proveedor lo **acepte**; y el
-pre-chequeo de visión tampoco lo delata, porque `GET /models` de OpenRouter es público.
+**Por qué ninguna guarda lo delataba:** el sistema se comportó bien —la capa degrada a la prosa
+determinista y lo **declara** en el papel—, pero el censo de conformidad daba VERDE porque
+comprueba que el secreto **exista** y que el rol pueda **leerlo**, no que el proveedor lo
+**acepte**; y el pre-chequeo de visión tampoco lo delataba, porque `GET /models` de OpenRouter
+es público. Hoy la forma de la clave se comprueba antes de abrir el socket, con un código propio
+distinto del 401, para que el papel no diga «no respondió» cuando respondió rechazando.
 
-**Para arreglarlo — `put-secret-value`, NO `create-secret`** (desde tu terminal con `!`, nunca en
-el chat, regla de oro 6):
+> ⚠️ **Y hasta esta revisión esta ficha pedía el paso que ya se había dado.** Decía «queda UN
+> paso, y son tres minutos de terminal: `make cloud-medir-latencia-ia`», daba por rota la IA
+> («lleva desde el 2026-09-21 sin redactar», «HTTP 401») y ofrecía un árbol de decisión —«si el
+> tope de 8 s aguanta…»— cuyo desenlace ya estaba tomado y fichado como `D-37` esa misma mañana.
+> Queda escrito porque es el modo de fallo propio de esta lista: **la lista de lo que falta
+> envejece al revés**, y lo que cuesta es una ventana de AWS repitiendo lo hecho.
 
-```bash
-aws secretsmanager put-secret-value --profile takab-dev --region us-east-2 \
-  --secret-id takab/dev/openrouter --secret-string '{"api_key":"sk-or-..."}'
-```
+### 2.14 · Tope mensual de gasto en el panel de OpenRouter
 
-Y después, lo que lo confirma de verdad:
-
-```bash
-make cloud-medir-latencia-ia
-```
-
-Si sigue saliendo `no aceptó la clave (HTTP 401)`, la clave es inválida o no tiene crédito. Si
-sale con latencias, entonces sí está funcionando — y con esa cifra **se cierra en** `T-7.26`.
-
-**✅ Hecho el 2026-09-21:** el secreto está creado, el rol de la instancia tiene permiso para
-leerlo (hacía falta una línea de terraform que nadie había puesto: sin ella el despliegue
-«encendía» la IA y la nube seguía escribiendo prosa determinista **en silencio**) y la nube
-está desplegada con la capa encendida.
-
-**Queda UN paso, y son tres minutos de terminal:**
-
-```bash
-make cloud-medir-latencia-ia
-```
-
-Mide cuánto tarda de verdad el modelo, desde la instancia y contra el proveedor real, y
-dice en su veredicto si el tope de 8 s aguanta o si la generación tiene que salir de la
-petición HTTP. Sólo lee; gasta unos centavos en llamadas reales. **Tiene que correrlo
-Mauricio** porque entrar a la instancia por SSM es una acción que el clasificador de la
-sesión asistida deniega, no porque el software no sepa hacerlo.
-
-Qué hacer con lo que salga:
-- «EL TOPE AGUANTA con holgura» → no se toca nada y `T-7.26` se cierra.
-- «poco margen» o «SE QUEDA CORTO» → hay que elegir entre subir `openrouter_timeout_s`
-  (deja la petición de exportación colgada ese tiempo) o sacar la generación de la petición
-  y servirla con sondeo. Esa decisión es de producto y se ficha como `D-nn`.
-- «NO SE PUEDE FIJAR UN TOPE» → primero mirar la razón que imprime: si dice que no aceptó
-  la clave o que respondió con error, el problema no es la latencia.
+Es lo único que quedó vivo de la §2.13 y no lo puede poner el software: el **límite de gasto de
+la cuenta**, desde el panel de OpenRouter. La API ya aplica el suyo **por tenant**
+(`ai_monthly_cap_usd`, 10 USD en dev, exportado por `deploy/cloud/deploy.sh`), pero ése reparte
+el gasto entre clientes; no protege a la cuenta de una clave filtrada ni de un bucle. Con el
+coste medido —**US$ 0.0004 por informe**— el riesgo no es el uso normal, y por eso el tope es
+barato de poner y caro de no tener.
 
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 

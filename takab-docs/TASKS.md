@@ -13490,7 +13490,10 @@ sesión, vive en [`PLAN-PROTOTIPO-FUNCIONAL.md`](PLAN-PROTOTIPO-FUNCIONAL.md); a
 fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
 
-> **Estado de las fases (2026-09-20): `F0`, `F1`, `F2`, `F3` y `F4` CERRADAS. Sigue `F5`.** `F1`
+> **Estado de las fases (2026-09-22): `F0` … `F6` CERRADAS. Sigue `F7`, con su única ficha
+> `T-7.28` en `[~]`.** (Esta línea decía «`F0`…`F4` CERRADAS, sigue `F5`» con fecha del
+> 2026-09-20: mandaba trabajar en dos fases ya terminadas, ocho líneas por encima de donde el
+> propio bloque registra el cierre de `F5`.) `F1`
 > cerró con el acto 2 mirado en la consola —lo último que le faltaba—, y con ello el guion de punta
 > a punta está ejecutado y medido contra el gabinete real. `F2` **CERRADA** (`T-7.10`, `T-7.11`,
 > `T-7.12`). `F3` **CERRADA**: las ocho fichas de la vida del sismo más `T-7.39`, `T-7.40` y
@@ -13506,11 +13509,22 @@ fichas. Las decisiones que lo gobiernan son `D-30` a `D-33` de
 > ⚠️ Y lo que NO deja cerrado, porque es decisión de una persona: el dueño de los pines corre
 > código anterior y alinearlo exige una ventana de mantenimiento con el edificio avisado.
 >
+> `F6` **CERRADA el 2026-09-22** con sus dos fichas (`T-7.27` el 2026-09-21, `T-7.26` el
+> 2026-09-22). La fase no construyó la capa narrativa —existía y estaba apagada—: la encendió
+> **y la midió**, que es lo que faltaba. De ahí salen `D-37` (el tope sube de 8 s a 30 s, porque
+> con seis fotografías el p50 es 13 686 ms y 8 s cortaba SIEMPRE el dictamen con daños) y el
+> cambio de modelo a `google/gemini-2.5-flash-lite`, 22× más barato y el único de los dos que
+> redactaba: `anthropic/claude-sonnet-5` devolvía el contenido VACÍO gastándose los 1 600 tokens
+> de salida en razonar. Coste medido: **US$ 0.0004 por informe**. Esta fase no aparecía en este
+> encabezado hasta el 2026-09-22.
+>
 > `F4` **CERRADA el 2026-09-20** con sus **24 fichas en `[x]`** y las dos líneas ejecutables de su
-> «Goal» en verde: 414 pruebas de papel y el membrete regenerado sin deriva. Los dos `[~]` que
-> quedan dentro de fichas ya cerradas están declarados por su causa y no son deuda oculta: el mapa
-> de intensidad del informe espera a `T-7.24` —la única viñeta diferida del blueprint— y el aviso
-> de evidencia retenida se fichó aparte como `T-7.53`, que está en `[x]`.
+> «Goal» en verde: 414 pruebas de papel y el membrete regenerado sin deriva. El `[~]` que queda
+> dentro de una ficha ya cerrada está declarado por su causa y no es deuda oculta: el aviso de
+> evidencia retenida se fichó aparte como `T-7.53`, que está en `[x]`. **Eran dos hasta el
+> 2026-09-22**: el otro era el mapa de intensidad del informe, que esperaba a `T-7.24` —la única
+> viñeta diferida del blueprint—. `T-7.24` la derogó el 2026-09-20 y el mapa se construyó, así
+> que ese hueco dejó de existir y su criterio pasó a `[x]` en `T-7.22`.
 >
 > **La tercera línea del «Goal» es a mano contra la nube, y se cierra con lo que se MIDIÓ.** Con la
 > nube desplegada en `26bde26`, el informe que la nube generó y guardó como evidencia trae el
@@ -13748,7 +13762,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     píxeles por debajo del rótulo más bajo. Lo fija una guarda que no mira píxeles sino **órdenes de
     dibujo**, y exige que todas caigan dentro de alguna pista, así que cualquier capa futura la
     hereda.
-  - [ ] **H-1 · contrato del latido.** `health_snapshot` admite `packet_loss_pct: null` cuando aún
+  - [x] **H-1 · contrato del latido.** `health_snapshot` admite `packet_loss_pct: null` cuando aún
     no hay medida —así lo emite el gabinete al arrancar y así llegó a la DLQ de telemetría el
     2026-09-10— en el esquema compartido, en el validador de ingesta, en la base y en el tipo TS
     regenerado (`make drift`), **y con la versión del paquete de contratos subida**: la relajación
@@ -13759,7 +13773,14 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     la única memoria del incidente. El vector entra **por el consumidor real**: con el esquema de
     aquel día, traído de git y no transcrito, reproduce la razón del rechazo carácter por carácter y
     acaba en la cola de mensajes muertos; con el de hoy entra y deja la fila con «sin dato».
-  - [ ] **H-2 · el worker de backfill rechaza los PDF de la propia API.** Al desplegarlo
+    **HECHO en `9e67b25` (2026-09-12), y esta casilla siguió sin marcar diez días más**:
+    `shared/schemas/health_snapshot.schema.json:89` trae el `anyOf` número/nulo con
+    `"default": null` y el paquete en `"version": "1.17.0"`; el vector es
+    `shared/schemas/tests/latido_arranque_sin_dato.json`, y lo ejercen
+    `api/tests/test_ingest_latido_arranque.py` (por el consumidor real) y
+    `edge/tests/test_contrato_latido_arranque.py`. En la base, `db/schema.sql:531`
+    `packet_loss_pct real` —anulable—, y el tipo TS regenerado en `shared/sdk-ts/src/gen/types.gen.ts`.
+  - [x] **H-2 · el worker de backfill rechaza los PDF de la propia API.** Al desplegarlo
     (2026-09-12) drenó 65 mensajes y mandó 4 a su DLQ: notificaciones `ObjectCreated` de S3 por
     los `report-technical-*.pdf` que `POST /incidents/{id}/report` escribe bajo `evidence/`. Un
     objeto del prefijo de evidencia que no es forma de onda ni vídeo se reconoce **por su autor
@@ -13767,6 +13788,13 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     se descarta con acuse y no vuelve a la cola de mensajes muertos; si **no** se sabe, no se traga
     en silencio, que sería un fallback declarándose correcto. Test con la notificación exacta que fue
     a la cola.
+    **HECHO en `9e67b25` (2026-09-12), y esta casilla siguió sin marcar los mismos diez días**:
+    `api/src/takab_api/backfill/objects.py` trae `_AJENOS_CONOCIDOS` con los tres autores
+    (`report-`, `reporte.pdf`, `photo-`) y `_reconocer_ajeno`, que **acusa** al autor conocido y
+    **rechaza** al desconocido en vez de tragárselo; el censo no se enumera a ciegas, lo deriva del
+    AST (`test_el_censo_de_ajenos_se_DERIVA_del_codigo_que_escribe`), y la prueba de la
+    notificación exacta es `api/tests/backfill/test_objects_ajenos.py`. Medido en la nube el
+    2026-09-22: `takab-dev-q-backfill-dlq: 0`.
   - [x] Verificación **contra lo servido, no contra el marcado**: el barrido de la consola pasa de
     48 pasadas con 24 fallos a **72 pasadas y cero fallos** (los 18 saltados son la escena `review`,
     que llega en F3). El del panel, con la espera corregida —esperaba dos segundos fijos y las marcas
@@ -14653,16 +14681,21 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   - [x] Línea de epicentro con procedencia (existe `catalog_line` — y **no funcionaba en la
     nube**, ver abajo); cronología desde `incident_actions` promovida a su §12 y rotulada en
     castellano; reporte de daños del brigadista en §13 con fotos redimensionadas y embebidas.
-  - [~] Sección de mapa de intensidad. **Se desvía de la letra de la ficha, con razón medida:**
-    no dice «SIN MAGNITUD» porque un evento de reproducción SÍ trae magnitud y la §8 la imprime
-    tres páginas antes — el papel se desmentiría a sí mismo, que es la familia de defectos que
-    costó `T-7.34`, `T-7.38` y `T-7.39`. Se declara por su CAUSA: la viñeta
-    `[DIFERIDO · mini-ShakeMap]` de `blueprint §14`, que sólo `T-7.24` deroga —y **sólo esa
-    viñeta**: las otras cinco de esa sección están marcadas `INVARIANTE` (T-MINUS, magnitud
-    preliminar, streaming crudo continuo, IA en la ruta de disparo y tocar el Shake OS) y son
-    prohibiciones que no se tocan. Esta ficha no deroga ninguna: sólo NOMBRA la diferida como
-    causa del hueco, para que el día que se levante alguien encuentre esta frase. Narrativa
-    intacta hasta `T-7.27`.
+  - [x] Sección de mapa de intensidad. **ENTREGADA, y no por esta ficha.** El hueco quedó abierto
+    aquí y lo llenó `T-7.24` el 2026-09-20 derogando la viñeta que lo causaba; hoy el informe
+    técnico imprime la sección **MAPA DE LA SACUDIDA** (`dictamen/pdf.py::_shakemap_section`,
+    en el orden de `_render_technical`, con su prueba `tests/dictamen/test_mapa_de_la_sacudida.py`).
+    **Lo que esta casilla decía, y qué lo desmintió** —porque su propio texto pedía que el día
+    que se levantara alguien encontrase la frase, y ese día fue el 2026-09-20—: se declaraba
+    `[~]` por su CAUSA, la viñeta `[DIFERIDO · mini-ShakeMap]` de `blueprint §14`, «que sólo
+    `T-7.24` deroga». `T-7.24` la derogó, y la alegación caducó con ella; siguió escrita en
+    presente dos días más. Lo que NO caducó y se conserva entero: la desviación de la letra de la
+    ficha —**no dice «SIN MAGNITUD»** porque un evento de reproducción SÍ trae magnitud y la §8 la
+    imprime tres páginas antes, o sea que el papel se desmentiría a sí mismo, la familia de
+    defectos que costó `T-7.34`, `T-7.38` y `T-7.39`—; y que la derogación alcanzó a **esa viñeta
+    y a ninguna otra**: las otras cinco de esa sección están marcadas `INVARIANTE` (T-MINUS,
+    magnitud preliminar, streaming crudo continuo, IA en la ruta de disparo y tocar el Shake OS)
+    y son prohibiciones que no se tocan. Narrativa intacta hasta `T-7.27`.
   - [x] Espía del render por sección (`tests/documentos/espia.py`, uno solo y compartido);
     `report_rate_*` sin tocar — `settings.py`, `routers/reports.py` y `routers/exports.py` no
     tienen una línea de diferencia contra `main`.
@@ -15224,11 +15257,16 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     real y el falso eran la misma frase. Mis pruebas no lo vieron porque ejercían el agregador
     EXTRAÍDO a un fichero, donde el programa viene de argv y stdin queda libre: **probar una
     pieza fuera de su montaje prueba la pieza, no el montaje.**
-    **Por qué esta medición no se podía improvisar** (escrito antes de hacerla, y las tres
-    siguen siendo ciertas): Es lo único que queda y no es
-    software: `openrouter_timeout_s` sigue en 8.0 s porque **ese número no se inventa**. Exige
-    la clave viva, `terraform apply` (el permiso de arriba) y la nube desplegada, en ese orden.
-    Hasta medirlo no se decide si sube o si la generación sale de la petición con sondeo.
+    **Por qué esta medición no se podía improvisar** (escrito ANTES de hacerla; el tope ya está
+    en 30.0 s por `D-37`, y las tres lecciones de abajo siguen siendo ciertas). ⚠️ Este párrafo
+    decía en presente «es lo único que queda y no es software: `openrouter_timeout_s` **sigue en
+    8.0 s**… hasta medirlo no se decide si sube», veintiséis líneas por debajo de la línea de
+    este mismo criterio que anuncia que subió: lo desmiente `api/src/takab_api/settings.py:678`
+    (`openrouter_timeout_s: float = 30.0`) y la propia instancia, que no trae override en
+    `/etc/takab/cloud.env` y por tanto corre los 30.0 del default de la imagen. Se deja dicho
+    porque quien venga a revocar `D-37` leerá esta ficha, y leía lo contrario de lo que corre.
+    Lo que el párrafo acertaba y se conserva: **ese número no se inventa**, y medirlo exigía la
+    clave viva, `terraform apply` (el permiso de arriba) y la nube desplegada, en ese orden.
     El instrumento ya existe y es repetible: **`make cloud-medir-latencia-ia`**
     (`deploy/cloud/medir-latencia-ia.sh`). Sólo lee —no toca base, ni S3, ni la
     configuración de la instancia— y no imprime ni la clave ni la prosa. Escribirlo
@@ -15330,7 +15368,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 >
 > api 4166 · mobile 728 · 23 mutaciones dirigidas, 23 rojas.
 
-### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · faltan las DOS CORRIDAS, que exigen persona y gabinete**
+### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · CORRIDA 1 DE 2 HECHA el 2026-09-22 (29 ✓ · 0 ✗) · falta la SEGUNDA, más capturas, vídeo y veredicto de flujos — todo ello exige persona y gabinete**
 - **Componente:** todas · **Depende de:** T-7.20, T-7.22 · **Prioridad:** F7 · alta
 - **Objetivo:** que la presentación se haya ejecutado dos veces entera antes de tener un
   cliente delante, con tiempos, capturas y un plan para cada cosa que puede fallar.
@@ -15359,8 +15397,10 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     invariante «solo lee» de `deploy/demo/guion.sh` sigue intacto —lo físico lo hace la persona y
     el guion dice cuándo, mide, y después le pregunta a la máquina si pasó lo que el acto promete—.
     Al final saca la tabla del § Registro lista para pegar.
-    **Lo que falta son las dos corridas**, y no las puede dar el software: exigen el WR-1, el
-    gabinete, el Pixel y una persona.
+    **Lo que falta es la SEGUNDA corrida** —la primera está hecha y contada arriba—, y no la
+    puede dar el software: exige el WR-1, el gabinete, el Pixel y una persona. (Esta frase decía
+    «las dos corridas» hasta el 2026-09-22; se escribió antes de la primera y el registro se
+    quedó contradiciéndose consigo mismo siete líneas más abajo de donde la registra.)
     Tres decisiones del modo que conviene no deshacer:
       1. **Aborta en el preflight.** Con un ✗ no sigue, y sobre todo **no dice «pulsa el WR-1»**:
          el modo prueba armado convierte el pulso en un ensayo que no publica a la nube, y el acto
@@ -15378,8 +15418,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     (app en primer plano), sin IA (determinista declarado), sin tiles (`FALLBACK_STYLE`).
     Los cuatro en `RUNBOOK-demo-cliente.md § Plan B`, **con cifras verificadas** y con la frase con
     la que se cuenta cada uno: el sondeo en primer plano es de 5 s en crisis / 15 s la brigada /
-    30 s el panel; sin IA el papel imprime `NARRATIVA DEGRADADA · <razón>` y la razón distingue «no
-    respondió» de «no aceptó la clave».
+    30 s el panel; sin IA el papel imprime `NARRATIVA DEGRADADA · <razón>` y la razón manda a mirar
+    **tres** sitios distintos, no dos: «no respondió» (la red), «no aceptó la clave» (permisos y
+    cuota en OpenRouter) y «la clave no se pudo leer» (dentro del secreto, sin salir a la red).
+    ⚠️ La tercera se añadió el 2026-09-22 y es la que mordió: hasta `T-7.26` salía **disfrazada
+    de la segunda** —el marcador de posición `sk-or-...` provocaba un 401 real— y el papel
+    mandaba a revisar la cuenta del proveedor mientras el fallo estaba dentro del secreto.
     ⚠️ Y una trampa medida en `MapPanel.tsx` que cambia el consejo: **`FALLBACK_STYLE` sólo entra
     si el estilo inicial NUNCA cargó.** Un tile que falle a media sesión no borra el mapa ya
     dibujado —eso es deliberado— pero tampoco engancha el respaldo. Por eso el Plan B manda abrir

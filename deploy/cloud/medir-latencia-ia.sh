@@ -1,23 +1,34 @@
 #!/bin/bash
 # deploy/cloud/medir-latencia-ia.sh — [T-7.26] Cuánto tarda de verdad la capa narrativa.
 #
-# Existe porque `openrouter_timeout_s` vale 8.0 s y ese número NO SE INVENTA: el
-# criterio 2 de T-7.26 pide medirlo contra el proveedor real, desde la instancia real,
-# con el modelo que el despliegue tiene puesto. Hasta que esta medición exista no se
-# puede decidir si el tope sube o si la generación tiene que salir de la petición HTTP
-# y servirse con sondeo.
+# Existe porque `openrouter_timeout_s` NO SE INVENTA: el criterio 2 de T-7.26 pide
+# medirlo contra el proveedor real, desde la instancia real, con el modelo que el
+# despliegue tiene puesto. La medición ya se hizo —2026-09-22, cinco rondas por brazo
+# sobre `google/gemini-2.5-flash-lite`— y con ella `D-37` decidió: el tope pasó de
+# 8.0 s a **30.0 s** y la generación se queda dentro de la petición HTTP, sin sondeo.
+# Esta cabecera razonaba contra los 8 s hasta ese día; se corrige aquí porque el
+# guion se vuelve a correr en cada cambio de modelo y es lo que alguien lee para
+# elegir con qué `--tope-medicion` lanzarlo.
+#
+# Lo medido, que es de donde salen los 30: sin fotografías p50 2 595 ms / p95
+# 3 051 ms; con seis fotografías p50 13 686 ms y **máximo 20 604 ms**. Los 8 s viejos
+# sobraban para el dictamen corriente y cortaban SIEMPRE el que lleva daños.
 #
 # ---------------------------------------------------------------------------
 # LA TRAMPA QUE ESTE SCRIPT EXISTE PARA NO PISAR
 # ---------------------------------------------------------------------------
-# **No se puede medir a través del guardia que se está validando.** Con el tope en 8 s,
-# toda llamada más lenta que 8 s no devuelve una latencia: devuelve una degradación
-# («el proveedor no respondió») y `Narrative.latency_ms` se queda en `None`. O sea que
-# medir con la configuración puesta borraría exactamente la cola que se quiere ver, y
-# la conclusión sería «nunca pasa de 8 s» — cierto por construcción y falso en el
-# mundo. Por eso la medición corre con un tope ALTO y propio (`--tope-medicion`,
-# 90 s por defecto), que vive sólo dentro del proceso de medición: no se escribe nada
-# en `/etc/takab/cloud.env` y el contenedor que sirve sigue con su 8.0.
+# **No se puede medir a través del guardia que se está validando.** Con el tope de
+# producción puesto (hoy 30 s), toda llamada más lenta no devuelve una latencia:
+# devuelve una degradación («el proveedor no respondió») y `Narrative.latency_ms` se
+# queda en `None`. O sea que medir con la configuración puesta borraría exactamente la
+# cola que se quiere ver, y la conclusión sería «nunca pasa del tope» — cierto por
+# construcción y falso en el mundo. Por eso la medición corre con un tope ALTO y propio
+# (`--tope-medicion`, 90 s por defecto), que vive sólo dentro del proceso de medición:
+# no se escribe nada en `/etc/takab/cloud.env` y el contenedor que sirve sigue con el
+# suyo. ⚠️ Ese margen **encogió con D-37**: los 90 s eran 11× el tope de 8 y hoy son 3×
+# el de 30 (4,4× el peor viaje visto). Sigue bastando para ver la cola, pero un modelo
+# apreciablemente más lento que el actual exige subir `--tope-medicion` ANTES de creerse
+# el veredicto, o el techo de medición volverá a disfrazarse de medida.
 #
 # ---------------------------------------------------------------------------
 # QUÉ MIDE, Y POR QUÉ SON TRES NÚMEROS Y NO UNO
@@ -371,7 +382,24 @@ TOPE_PROD="$(
   AG_DATOS="$AG_DATOS" python3 - <<'AGREGA'
 import os, statistics, sys
 
-tope = float(os.environ.get("TOPE_PROD") or 8.0)
+# ⚠️ NO hay valor por defecto, y no es un olvido. Hasta el 2026-09-22 esta línea decía
+# `or 8.0`: si la línea CFG del remoto no llegaba —el contenedor no arrancó, la salida se
+# truncó—, el agregador seguía adelante y estampaba «tope en producción: 8.0 s» en el
+# VEREDICTO, con la forma de un dato leído de la instancia. Y ese 8.0 dejó de ser cierto
+# ese mismo día (`D-37` lo subió a 30.0), así que el fallback pasó de inexacto a FALSO:
+# con 30 s reales y 8 supuestos, una medición que el tope aguanta de sobra se leería como
+# «el tope no cubre lo medido, súbelo». Un fallback que se declara correcto es la trampa
+# que este guion entero viene a evitar: el tope de producción se LEE de la instancia.
+#
+# Y cuando no se puede leer, lo que se calla es el VEREDICTO, no la tabla: las llamadas
+# ya se hicieron y se cobraron, así que tirar las medidas por no saber contra qué juzgarlas
+# haría pagar dos veces por el mismo dato.
+_tp = (os.environ.get("TOPE_PROD") or "").strip()
+try:
+    tope = float(_tp) if _tp else None
+except ValueError:
+    tope = None
+    print("⚠️ el `tope_produccion` que declaró el remoto no es un número: %r" % _tp)
 por_arma = {}
 degradadas = []
 # De FICHERO, no de stdin: stdin lo ocupa el propio programa (ver arriba).
@@ -444,6 +472,16 @@ if degradadas:
 
 print()
 print("  ── VEREDICTO ─────────────────────────────────────────────────────────────")
+if tope is None:
+    # La tabla de arriba SÍ vale: son latencias medidas contra el proveedor real. Lo
+    # que no hay es contra qué juzgarlas, y eso se dice en vez de suponerlo.
+    print("  ✗ SIN VEREDICTO: el remoto no declaró su `tope_produccion` (falta la línea")
+    print("    CFG, o vino ilegible). Las latencias de arriba son buenas —ya se pagaron—,")
+    print("    pero el veredicto compara lo medido contra el tope que la instancia tiene")
+    print("    PUESTO, y suponerlo sería inventar justo el número que este guion mide.")
+    print("    Repite con --crudo y mira si el contenedor de la API llegó a arrancar.")
+    print("  Peor viaje MEDIDO: %d ms." % peor)
+    sys.exit(1)
 print("  tope en producción: %.1f s (%d ms). Peor viaje MEDIDO: %d ms." % (tope, int(tope * 1000), peor))
 margen = tope * 1000 / peor if peor else float("inf")
 if degradadas:
