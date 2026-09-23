@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **442** · `[x]` **392** · `[~]` **11** · `[ ]` **39**
+**Conteo de tareas:** total **461** · `[x]` **393** · `[~]` **11** · `[ ]` **57**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17325,6 +17325,289 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
   defecto, y la primera en que el ciego era la regla que medía a las otras.
 - **Tests de censo que toca:** ninguno · **Token nuevo:** no · **Cambia algo que un test defiende
   hoy:** no — `derive_version_drift` no se toca; lo que faltaba es que sus datos existieran.
+
+## BLOQUE IX · AUDITORÍA DE PRESENTACIÓN — que nada de lo que se enseña se caiga delante del cliente
+
+**Por qué existe este bloque.** El 2026-09-22, con el Bloque VIII casi cerrado y la presentación
+fijada para el **jueves 24-sep-2026**, Mauricio pidió una auditoría de todo el sistema. Pidió revisar
+la UI/UX página a página: cada botón, cada desplegable, cada rol y sus flujos, los permisos, la
+duración de la sesión, el PDF, los estatus visibles y las animaciones. Pidió también las mejoras de
+móvil, edge y nube, y la lista de funciones básicas con lo que falta. Un descubrimiento de solo
+lectura con diez agentes produjo **356 hallazgos**, y están en
+[`AUDITORIA-PRESENTACION-2026-09.md`](AUDITORIA-PRESENTACION-2026-09.md) con identificador
+`A-nnn`. El plan, con el objetivo ejecutable de cada fase, está en
+[`PLAN-AUDITORIA-PRESENTACION.md`](PLAN-AUDITORIA-PRESENTACION.md). La decisión que lo gobierna es
+`D-38` (duración de sesión por rol) de [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
+
+**El hallazgo que ordena el bloque.** La sesión real dura **unos 60 minutos** en las dos superficies,
+diga lo que diga Cognito. En la consola, el WebSocket cierra con 4401 al vencer el token del
+handshake y el cliente responde con `logout()`. En la app, el refresh token se guarda y ningún
+código lo usa. El ensayo 1 del Bloque VIII duró 59 minutos.
+
+**Dos tramos, por fecha y no por gusto.** Del martes 22 al miércoles 23, hasta la congelación de
+despliegues a las 18:00, van `T-8.01` a `T-8.13`: lo que se vería en la demostración. Lo demás
+(`T-8.14` a `T-8.19`) va después de la presentación. **El edge no se despliega antes del jueves.**
+Lo que a las 13:00 del miércoles no esté verde no se mergea, y la guía de la demostración lo
+marca como «no se enseña».
+
+**Un cruce hacia fuera del bloque, escrito donde se planifica.** `T-8.13` depende de `T-7.28`
+(Bloque VIII): el ensayo 2 que la presentación necesita es la segunda corrida de aquella ficha, y
+se registra en su RUNBOOK.
+
+## Fase 8.0 · Auditoría y puesta a punto para la presentación
+
+> **El criterio de cierre de cada ficha es el del Bloque VII:** implementada, con test, **y
+> ejercida al menos una vez fuera de los tests** — navegador real, Pixel real, nube real. Cada
+> fase del plan tiene un objetivo ejecutable (un bloque de comandos que devuelve 0) que se corre
+> en `/loop` hasta que pasa.
+
+### [x] T-8.01 · **La auditoría escrita y la línea base** — `SOFTWARE` · **CERRADA 2026-09-22**
+- **Componente:** docs · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** que los 356 hallazgos del descubrimiento vivan en el repositorio con identificador
+  estable, ficha y forma de verificarlos, y que la rama de instrumentos de `T-7.28` esté en `main`.
+- **Criterios de aceptación:**
+  - [x] `AUDITORIA-PRESENTACION-2026-09.md`: funciones básicas, matriz rol × flujo, los 356
+    hallazgos con `A-nnn`, el detalle de los P0/P1, «lo que un cliente esperaría», animaciones
+    propuestas y rechazadas, cómo se verifica cada dimensión y la tabla de verificación en
+    ejecución que rellenan las fases.
+  - [x] El volcado íntegro en `auditoria/descubrimiento-2026-09-22.json`.
+  - [x] `PLAN-AUDITORIA-PRESENTACION.md` y este bloque, con la cabecera recontada.
+  - [x] La PR #274 (instrumentos de la presentación) mergeada en `main`.
+- **Hallazgos:** A-087, A-136.
+
+> **Cómo se cerró.** El documento se genera del volcado del descubrimiento, no se escribió a mano:
+> 356 hallazgos, 7 P0 y 76 P1 más los P2/P3 y el inventario de lo que está bien, cada uno con su
+> `A-nnn` y su ficha de este bloque. La PR #274 entró en `main` con squash (`c5968b4`), así que el
+> hash `b804039` que citaba el plan ya no existe en `main`: el objetivo de F0 busca `(#274)`.
+
+### [ ] T-8.02 · **Sesión por rol · la API impone el tope** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-8.01 · **Prioridad:** F1 · P0
+- **Objetivo:** la API rechaza un token cuya sesión superó la edad máxima de su rol, contada desde
+  el login real y no desde el último refresco. Brigadista e inspector 30 días, ocupante 90 días y
+  el resto 24 h (`D-38`).
+- **Criterios de aceptación:**
+  - [ ] Medido antes de escribir el tope: ¿Cognito conserva `auth_time` al refrescar? Si no, el
+    tope se cuenta desde la primera vez que la API ve el `origin_jti` de la sesión.
+  - [ ] `SESSION_MAX_AGE_S` en `auth/matrix.py`, con un censo que exija exactamente los 10 roles.
+    Un rol desconocido cuenta como caducado.
+  - [ ] 401 con `detail="sesion_expirada"` y `WWW-Authenticate … error_description="sesion_expirada"`,
+    aplicado en `deps.get_claims` después del ancla pool→rol. El WS cierra con 4440 (distinto del
+    4401 del token vencido, que se puede renovar).
+  - [ ] `/me` expone `session_expires_at`; `/dev/token` y las fábricas de tokens de test emiten
+    `auth_time`, con edad configurable.
+  - [ ] Deshabilitar un usuario cierra todas sus sesiones (`admin_user_global_sign_out`).
+  - [ ] Tests: soc_operator de 24 h + 1 s → 401; brigadista de 29 d → 200; ocupante de 89 d → 200 y
+    de 91 d → 401; token sin `auth_time` → 401; WS caducado → 4440; `require_mfa` intacto.
+- **Hallazgos:** A-006, A-026, A-027, A-028, A-029, A-035, A-036, A-124, A-127.
+
+### [ ] T-8.03 · **Sesión por rol · la consola aguanta su día (o su mes)** — `SOFTWARE`
+- **Componente:** web · sdk-ts · deploy · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
+- **Objetivo:** que la consola no expulse a nadie a los 60 minutos, que sobreviva a cerrar la
+  pestaña y que, cuando el tope se cumpla, lo diga con su causa.
+- **Criterios de aceptación:**
+  - [ ] `LiveSocket` renueva el token y reconecta ante un 4401; solo el 4440 termina la sesión.
+  - [ ] Sesión en `localStorage` con `revokeTokensOnSignout`; el arranque intenta la renovación
+    silenciosa antes de declarar la sesión anónima si hay refresh.
+  - [ ] `LoginPage` distingue «SU SESIÓN DE 24 H TERMINÓ» del 401 genérico.
+  - [ ] Aviso en la Topbar 60 minutos antes de `session_expires_at`, con «RENOVAR AHORA». Sin
+    prórroga durante un incidente (`D-38`).
+  - [ ] CSP en el Caddyfile. Se aplica solo si el recorrido desplegado da cero violaciones; si no,
+    queda en *Report-Only* y lo hereda `T-8.16`.
+  - [ ] e2e local: con un token de 120 s y `/console` abierta 150 s, la sesión sigue viva.
+- **Hallazgos:** A-004, A-010, A-032, A-033, A-034, A-039, A-040.
+
+### [ ] T-8.04 · **Sesión por rol · la app usa por fin su refresh** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
+- **Objetivo:** que la app no vuelva a pedir contraseña ni código a los 60 minutos, y que cerrar
+  la sesión la cierre de verdad.
+- **Criterios de aceptación:**
+  - [ ] `refreshSession()` de vuelo único con `AuthSession.refreshAsync`. Se dispara al arrancar,
+    al volver a primer plano, antes de conectar el WS y ante un 401 que no sea `sesion_expirada`.
+  - [ ] El token renovado se persiste en el almacén seguro; `sesion_expirada` lleva al login.
+  - [ ] Cerrar sesión da de baja el token push, revoca el refresh y cierra la cookie de la Hosted UI.
+  - [ ] Tests de jest para el vuelo único, el 401 → refresco → reintento y el tope.
+  - [ ] En el Pixel: 70 minutos con la app abierta, en el perfil táctico y en el de ocupante, sin
+    que pida login.
+- **Hallazgos:** A-001, A-002, A-003, A-005, A-007, A-009, A-020, A-116.
+
+### [ ] T-8.05 · **Sesión por rol · Cognito, `D-38` y los documentos** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** infra · docs · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
+- **Objetivo:** que Cognito emita refresh tokens tan largos como el rol más largo de cada cliente,
+  y que la decisión y su precio estén escritos.
+- **Criterios de aceptación:**
+  - [ ] `identity/main.tf`: web 30 d, táctico 30 d, ocupantes 90 d. Un `.tftest.hcl` los ancla y
+    el `terraform plan` solo cambia los clientes, sin recrear pools.
+  - [ ] `D-38` con su precio: MFA una vez al mes en roles con actuadores, el teléfono perdido y el
+    riesgo de `localStorage`.
+  - [ ] `RBAC-TAKAB.md` con la tabla de duración por rol, y un test que la cruce con la del código.
+  - [ ] La especificación del pool y la de la app citan la duración nueva.
+- **Hallazgos:** A-008, A-031, A-037, A-038, A-067, A-083, A-123, A-125, A-126.
+
+### [ ] T-8.06 · **Recorrido de la consola rol por rol, control por control** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-8.01 · **Prioridad:** F2 · crítica
+- **Objetivo:** probar en un navegador que cada botón y cada desplegable de cada página hace algo,
+  para los 10 roles, y que ninguna pantalla pide al servidor lo que el rol no puede tener.
+- **Criterios de aceptación:**
+  - [ ] `web/e2e/recorrido_por_rol.spec.ts`: entra con cada rol, visita sus rutas, pulsa cada
+    control no mutante, registra errores de página, respuestas de 400 o más y controles sin efecto.
+    Los controles mutantes se censan y se ejercen en specs dirigidas.
+  - [ ] `auditoria/recorrido-web.json` con 10 roles y cero inesperados, en local **y** contra la nube.
+  - [ ] Capturas por rol y ruta.
+- **Hallazgos:** A-115, A-230.
+
+### [ ] T-8.07 · **MONITOREO: el acuse, la selección, el foco y el simulacro** — `SOFTWARE`
+- **Componente:** web · api · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
+- **Objetivo:** que las acciones de la consola digan lo que de verdad pasó, y que caigan sobre el
+  incidente que el operador eligió.
+- **Criterios de aceptación:**
+  - [ ] El acuse espera la respuesta: pendiente, error visible y «EJECUTADO» solo tras el 200.
+  - [ ] La selección de la cola es por incidente y no por sitio.
+  - [ ] El Modal no roba el foco cada segundo: se puede teclear en Reubicar, Comparativa y Simulacro.
+  - [ ] Un simulacro de un rol interno exige un cliente explícito. Borrar una plantilla y
+    «EJECUTAR/INICIAR AHORA» piden confirmación.
+  - [ ] La cola muestra el estado de cada incidente.
+- **Hallazgos:** A-011, A-012, A-013, A-016 y los P2/P3 de MONITOREO del documento.
+
+### [ ] T-8.08 · **EVALUACIÓN: el clip, la firma y nada de 403 en pantalla** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
+- **Criterios de aceptación:**
+  - [ ] «DESCARGAR CLIP» descarga (URL prefirmada, con auditoría).
+  - [ ] La firma del dictamen aparece también sin un dictamen previo.
+  - [ ] CCTV, verificación de huella y comandos de cuórum solo se piden si el rol tiene la acción.
+    No se amplían permisos: se deja de pedir lo que no se tiene.
+- **Hallazgos:** A-014, A-015, A-042, A-052 y los P2/P3 de EVALUACIÓN del documento.
+
+### [ ] T-8.09 · **Flota, edificio y clientes: lo que la pantalla afirma es cierto** — `SOFTWARE`
+- **Componente:** web · api · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
+- **Criterios de aceptación:**
+  - [ ] gov_operator no ve la alarma roja permanente de ventanas de mantenimiento.
+  - [ ] Tras silenciar la sirena el panel dice «SILENCIADA», no «SONANDO».
+  - [ ] La tarjeta de usuarios de un cliente solo lista a los de ese cliente, con paginación.
+  - [ ] `GET /fleet/gateways` devuelve la evidencia retenida y el disco, y el censo mira la
+    **salida** de la API, no solo la columna.
+  - [ ] La fila de desconexión (LWT) no cuenta como latido.
+  - [ ] Dar de baja, cambiar el rol y «VOLVER A vN» piden confirmación.
+  - [ ] El faro del mapa respeta `prefers-reduced-motion`.
+- **Hallazgos:** A-017, A-018, A-019, A-056, A-057, A-060 y los P2/P3 de flota, edificio y
+  clientes del documento.
+
+### [ ] T-8.10 · **Cuórum: consola y teléfono dicen lo mismo** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
+- **Criterios de aceptación:**
+  - [ ] La consola considera que una alerta autoriza actuación si su disparo lo hace **o** si la
+    red la corroboró (`node_count` ≥ mínimo de cuórum): la misma regla que ya aplica el móvil.
+- **Hallazgos:** A-063.
+
+### [ ] T-8.11 · **Móvil: dictamen, cámara, cuenta y respuesta al toque** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** T-8.04 · **Prioridad:** F3 · P1
+- **Criterios de aceptación:**
+  - [ ] «VER DICTAMEN» abre el dictamen firmado aunque el incidente ya se haya cerrado.
+  - [ ] La revisión de la cámara muestra la foto tomada, y es esa la que se sella.
+  - [ ] En CUENTA, cerrar sesión se ve siempre; solo la tarjeta de perfil entra en error, con REINTENTAR.
+  - [ ] Todo `Pressable` responde al toque, respetando `reduceMotion`.
+  - [ ] El check-in delegado se encola sin red, y su flujo Maestro comprueba un item concreto.
+  - [ ] Flujos Maestro de recorrido para el ocupante y el táctico, en verde en el Pixel.
+- **Hallazgos:** A-021, A-022, A-023, A-024, A-062, A-234.
+
+### [ ] T-8.12 · **El PDF que se entrega** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-8.01 · **Prioridad:** F4 · P1
+- **Criterios de aceptación:**
+  - [ ] Con una foto, con un número impar de fotos y con fotos en vertical, nada se imprime
+    encima de otra cosa. Guardas de geometría para los tres casos.
+  - [ ] La portada y el ejecutivo imprimen la clasificación humana del incidente.
+  - [ ] Los títulos del ejecutivo salen sin el punto suelto, y ningún valor crudo sale en inglés.
+  - [ ] FIRMÓ lleva el rol y el nombre, no el identificador de Cognito. La hora local va junto a la UTC.
+  - [ ] El certificado del móvil solo sirve un informe posterior a la firma.
+  - [ ] El render no bloquea el event loop. El reporte de simulacro no sobrescribe su objeto.
+  - [ ] Diez variantes rasterizadas y revisadas a ojo, registradas en la auditoría.
+- **Hallazgos:** A-050, A-051, A-053, A-054, A-055, A-065, A-080 y los P2/P3 del PDF del documento.
+
+### [ ] T-8.13 · **Lista para presentar** — `SOFTWARE` + `GATE-AWS` + `FÍSICO`
+- **Componente:** deploy · docs · **Depende de:** T-8.02, T-8.03, T-8.04, T-8.05, T-7.28 ·
+  **Prioridad:** F5 · crítica
+- **Objetivo:** llegar al jueves con la nube, el Pixel y el guion al día, con un usuario por rol y
+  sin un despliegue pendiente.
+- **Criterios de aceptación:**
+  - [ ] `main` desplegado en la nube, `terraform apply` hecho y la APK release en el Pixel.
+  - [ ] Identidades de demostración: `takab_support`; inspector y building_admin con superficie
+    `both` y un sitio concreto; gov_operator en un cliente Protección Civil, con el cliente de la
+    demostración marcado `gov_shared`.
+  - [ ] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+  - [ ] La guía de la demostración explica la sesión del día.
+  - [ ] Pase final por rol en la nube y en el Pixel; ensayo 2 registrado.
+  - [ ] `goal-presentacion.sh` devuelve 0 y hay un tag de congelación.
+- **Hallazgos:** A-041, A-044, A-045, A-049, A-066, A-084, A-085, A-086, A-088 y los P2 de
+  presentación del documento.
+
+### [ ] T-8.14 · **Estatus que tienen dato y no tienen pantalla** — `SOFTWARE`
+- **Componente:** api · web · edge · **Depende de:** T-8.13 · **Prioridad:** después de la presentación
+- **Objetivo:** que todo estatus que el sistema ya guarda se pueda ver, con su edad.
+- **Criterios de aceptación:**
+  - [ ] La bitácora del gabinete (`actuation_records`): endpoint, panel en edificio y evaluación,
+    y sección en el PDF.
+  - [ ] El conteo del pase de lista para el SOC, sin datos personales (antes, una decisión que
+    amplíe la RBAC).
+  - [ ] El modo prueba del WR-1 y la versión del proceso dueño de los pines, en el latido.
+  - [ ] Temperatura, UPS y días de certificado; nivel de alerta vigente por sitio; rollouts;
+    alarmas de operación; coste de la IA.
+- **Hallazgos:** A-043, A-058, A-059 y los P2/P3 de estatus del documento.
+
+### [ ] T-8.15 · **Animaciones curadas, pasivas incluidas** — `SOFTWARE`
+- **Componente:** web · mobile · edge · **Depende de:** T-8.13 · **Prioridad:** después de la presentación
+- **Objetivo:** el movimiento que falta y confirma, sin el que miente. Con `D-30`, y con los
+  rechazos del documento respetados.
+- **Criterios de aceptación:**
+  - [ ] El parpadeo del banner del gabinete deja de atenuar la instrucción.
+  - [ ] Entradas y salidas de modales y menús, estados `:active`, confirmación de acción en una
+    región `role=status`, barra de carga, tinte único al llegar una fila o cambiar un KPI,
+    gesto de refrescar y hápticos en el móvil.
+  - [ ] Pasivas: la cabeza de escritura que late solo con el dato vivo, el punto de backfill y la
+    barra por fila al enviar.
+  - [ ] Todo con `prefers-reduced-motion` / `reduceMotion` y su censo.
+- **Hallazgos:** A-061 y los P2/P3 de animaciones del documento.
+
+### [ ] T-8.16 · **Nube: lo que se cae sin avisar** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** infra · deploy · **Depende de:** T-8.13 · **Prioridad:** después de la presentación
+- **Criterios de aceptación:**
+  - [ ] Alarma de la edad del mensaje más viejo de las colas principales y healthcheck por worker.
+  - [ ] El despliegue descarga las imágenes antes de migrar y no tira el stack entero.
+  - [ ] La CSP aplicada si quedó en *Report-Only*. Logs fuera del host, comprobación externa de
+    disponibilidad y métrica de memoria.
+- **Hallazgos:** A-073, A-079, A-081, A-082 y los P2 de nube del documento.
+
+### [ ] T-8.17 · **Edge: despliegue, hilo de SeedLink y latido** — `SOFTWARE` + `FÍSICO`
+- **Componente:** edge · deploy · **Depende de:** T-8.13 · **Prioridad:** después de la presentación, con
+  ventana de mantenimiento
+- **Criterios de aceptación:**
+  - [ ] El despliegue compara contra la release que el dueño de los pines cargó al arrancar, y la
+    poda no la borra.
+  - [ ] Publicar a la nube no bloquea el hilo de SeedLink.
+  - [ ] Watchdog real, latido con memoria, subtensión, uptime y cola MQTT, y temperatura ausente
+    en vez de 0.
+- **Hallazgos:** A-076, A-077, A-078 y los P2/P3 de edge del documento.
+
+### [ ] T-8.18 · **Móvil: sin red, con la sesión vencida y en teléfono compartido** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** T-8.04 · **Prioridad:** después de la presentación
+- **Criterios de aceptación:**
+  - [ ] Con la sesión vencida, la pantalla de crisis sigue con los datos cacheados (especificación §0.1).
+  - [ ] Caché del perfil y del estado del sitio para arrancar sin red.
+  - [ ] La cola offline y el consentimiento son por usuario, no por teléfono.
+  - [ ] Confirmación biométrica opcional antes de un comando de actuador (compensación de `D-38`).
+- **Hallazgos:** A-025, A-030, A-047 y los P2/P3 móviles del documento.
+
+### [ ] T-8.19 · **Las funciones básicas que faltan** — `SOFTWARE` + `DECISIÓN`
+- **Componente:** api · web · mobile · **Depende de:** T-8.13 · **Prioridad:** después de la
+  presentación; cada una con su decisión previa
+- **Objetivo:** cerrar la distancia entre lo que un cliente espera de la plataforma y lo que hoy se
+  puede demostrar (§2 y §6 del documento de auditoría).
+- **Criterios de aceptación:**
+  - [ ] Alta de zonas y pisos con su política de evacuación.
+  - [ ] Alta de ocupantes (código o QR del edificio, o invitación masiva) y padrón.
+  - [ ] Enrolamiento y autodiagnóstico del administrador de edificio desde su pantalla.
+  - [ ] Reporte periódico y porcentaje de disponibilidad; prueba de canal; exportación de la bitácora.
+  - [ ] Planos de evacuación; números externos en el directorio; interruptor del modo demostración.
+  - [ ] Derechos ARCO y aviso de privacidad con pantalla; gestión de usuarios real en la nube.
+- **Hallazgos:** A-046, A-048, A-064, A-068…A-075 y los P2/P3 de funciones del documento.
 
 ## RUTA CRÍTICA
 
