@@ -1941,7 +1941,9 @@ prórroga para el SOC. Las demás siguen abiertas y cada una vive en la ficha qu
 |---|---|---|---|
 | Recorrido web por rol, local | `web/e2e/recorrido_por_rol.spec.ts` | ✅ 10 roles · 268 controles · **0 inesperados** (ver §11). Occupant ❔ NO MEDIDO en local: sin pool de ocupantes, `/dev/token` responde 503 | 2026-09-23 |
 | Recorrido web por rol, nube | el mismo con `PW_BASE_URL` | ❔ NO MEDIDO | — |
-| Recorridos móviles en el Pixel | Maestro `recorrido-ocupante` / `recorrido-tactico` | ❔ NO MEDIDO | — |
+| Recorridos móviles en el Pixel | Maestro `recorrido-ocupante` / `recorrido-tactico`, APK release de `e039802` | ✅ ocupante 11 pantallas · táctico 7 pestañas y 16 capturas, sin `state-error`. La primera corrida cayó en DIRECTORIO: el flujo no aceptaba el vacío declarado del sitio del arnés (arreglado en el flujo, no en la app). Con `PHASE=reset` quedan OMITIDOS el dictamen, el formulario de TRIAGE y el filtro de LISTA (los ejercen 02 y 03) | 2026-09-23 |
+| Flujos numerados en el Pixel | Maestro 01a · 01b · 02 · 03 | ✅ 01a (toma de crisis sin magnitud ni cuenta regresiva) · ✅ 01b (check-in con su destino declarado) · ✅ 02 (foto forense + reporte, TOTP a mano) · ✅ 03 (dictamen firmado ⇒ «REINGRESO AUTORIZADO») | 2026-09-23 |
+| DIRECTORIO y RUTAS con datos | app, sitio de la demostración | ❔ NO MEDIDO. En el arnés salen VACÍOS y lo declaran. El directorio solo lista a quien se vinculó al inmueble con un código de su rol, y no hay pantalla para emitirlo: si Puebla está igual, el cliente ve «Su edificio aún no publica contactos de emergencia» | — |
 | `auth_time` al refrescar en Cognito real | fragmento de DevTools | ✅ se CONSERVA (1790184184 antes y después; `iat` cambia; mismo `origin_jti`) | 2026-09-23 |
 | Consola abierta más de 70 min sin logout | consola desplegada | ❔ NO MEDIDO en la nube. En local ✅: `web/e2e/sesion.spec.ts` 3/3 (token de 60 s y consola abierta 90 s ⇒ sigue dentro; aviso a 30 min del tope; tope ⇒ la entrada dice por qué) | 2026-09-23 |
 | App 70 min sin pedir login | Pixel | ❔ NO MEDIDO | — |

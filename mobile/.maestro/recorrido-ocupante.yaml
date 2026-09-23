@@ -7,6 +7,13 @@
 # es lo que arregló A-062— se descubría delante del cliente. Este flujo pasa por
 # todas y deja una captura de cada una en la carpeta de artefactos de Maestro.
 #
+# UN VACÍO DECLARADO ES UNA RESPUESTA, NO UN FALLO [T-8.13]: la primera corrida
+# en el Pixel (2026-09-23) murió en DIRECTORIO porque el sitio del arnés no
+# publica contactos, y la pantalla decía bien «Su edificio aún no publica…». RUTAS
+# y DIRECTORIO aceptan ahora el encabezado O ese vacío, y el vacío deja además su
+# captura `…-VACIO-…` para que la carpeta diga qué NO se vio con datos. «Sin sitio
+# vigilado» NO casa: es un enrolamiento roto y sigue fallando.
+#
 # PRECONDICIÓN: el sitio del arnés SIN incidente — nada toma la pantalla.
 #     make cloud-staging-incident PHASE=reset
 # Con un incidente abierto la toma de crisis o el check-in de vida tapan las
@@ -54,11 +61,19 @@ appId: com.takab.ailert
     timeout: 10000
 - tapOn: "Ver directorio completo →"
 - extendedWaitUntil:
-    visible: "CONTACTOS DE EMERGENCIA DEL INMUEBLE"
+    visible:
+      text: "CONTACTOS DE EMERGENCIA DEL INMUEBLE|Su edificio aún no publica contactos.*"
     timeout: 15000
 - takeScreenshot: ocupante-02-inicio-a-directorio
 - assertNotVisible:
     id: "state-error"
+- runFlow:
+    when:
+      visible: "Su edificio aún no publica contactos.*"
+    commands:
+      - takeScreenshot: ocupante-02-VACIO-inicio-a-directorio-sin-contactos
+      - assertNotVisible:
+          id: "state-error"
 
 - tapOn: "INICIO"
 - scrollUntilVisible:
@@ -68,11 +83,19 @@ appId: com.takab.ailert
     timeout: 10000
 - tapOn: "RUTAS DE EVACUACIÓN Y PUNTO DE REUNIÓN →"
 - extendedWaitUntil:
-    visible: "RUTAS Y DOCUMENTOS DEL INMUEBLE"
+    visible:
+      text: "RUTAS Y DOCUMENTOS DEL INMUEBLE|Su edificio aún no publica rutas.*"
     timeout: 15000
 - takeScreenshot: ocupante-03-inicio-a-rutas
 - assertNotVisible:
     id: "state-error"
+- runFlow:
+    when:
+      visible: "Su edificio aún no publica rutas.*"
+    commands:
+      - takeScreenshot: ocupante-03-VACIO-inicio-a-rutas-sin-documentos
+      - assertNotVisible:
+          id: "state-error"
 
 # La alarma del inmueble: se abre, se lee su advertencia, y se sale SIN votar.
 # OBLIGATORIO, no condicional: INICIO la pinta SIEMPRE que tiene estado
@@ -99,11 +122,19 @@ appId: com.takab.ailert
 # ── RUTAS ─────────────────────────────────────────────────────────────────
 - tapOn: "RUTAS"
 - extendedWaitUntil:
-    visible: "RUTAS Y DOCUMENTOS DEL INMUEBLE"
+    visible:
+      text: "RUTAS Y DOCUMENTOS DEL INMUEBLE|Su edificio aún no publica rutas.*"
     timeout: 15000
 - takeScreenshot: ocupante-05-rutas
 - assertNotVisible:
     id: "state-error"
+- runFlow:
+    when:
+      visible: "Su edificio aún no publica rutas.*"
+    commands:
+      - takeScreenshot: ocupante-05-VACIO-rutas-sin-documentos
+      - assertNotVisible:
+          id: "state-error"
 # Descargar la copia offline es de LECTURA: guarda en el teléfono lo que el
 # servidor ya publicó. Solo existe si el sitio tiene documentos sin copia.
 - runFlow:
@@ -122,11 +153,19 @@ appId: com.takab.ailert
 # ── DIRECTORIO ────────────────────────────────────────────────────────────
 - tapOn: "DIRECTORIO"
 - extendedWaitUntil:
-    visible: "CONTACTOS DE EMERGENCIA DEL INMUEBLE"
+    visible:
+      text: "CONTACTOS DE EMERGENCIA DEL INMUEBLE|Su edificio aún no publica contactos.*"
     timeout: 15000
 - takeScreenshot: ocupante-07-directorio
 - assertNotVisible:
     id: "state-error"
+- runFlow:
+    when:
+      visible: "Su edificio aún no publica contactos.*"
+    commands:
+      - takeScreenshot: ocupante-07-VACIO-directorio-sin-contactos
+      - assertNotVisible:
+          id: "state-error"
 
 # ── CUENTA ────────────────────────────────────────────────────────────────
 - tapOn: "CUENTA"
