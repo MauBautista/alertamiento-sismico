@@ -1,3 +1,12 @@
+# [T-8.13] Un `make` a secas corre el objetivo por defecto, que era el PRIMERO del
+# fichero: desde T-7.11, `cloud-demo-red`, que ESCRIBE en la base de la nube. Pasó
+# el 2026-09-23 con una línea partida al pegarla (`make` en una línea y el objetivo
+# en la siguiente). Sin objetivo, ahora solo se lista lo que hay.
+.DEFAULT_GOAL := help
+.PHONY: help
+help: ## Lista los objetivos documentados (es lo que corre un `make` a secas)
+	@grep -hE '^[a-zA-Z0-9_-]+:.*## ' $(MAKEFILE_LIST) | sed -E 's/:.*## /\t/'
+
 .PHONY: cloud-demo-red cloud-demo-red-down cloud-e2e-site cloud-e2e-site-down
 # [T-7.11] La red de demostración: tres estaciones simuladas de tres tipos, para
 # que /fleet enseñe una RED y no un gabinete solo. Va APARTE de `deploy.sh` a
