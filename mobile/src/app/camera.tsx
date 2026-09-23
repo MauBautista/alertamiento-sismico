@@ -54,7 +54,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Crypto from "expo-crypto";
 import { useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
@@ -307,7 +307,16 @@ export default function Camera() {
                 sitio sin mover el `testID` pone la guarda en rojo, que es lo que
                 se quiere: sin ancla, medir el árbol equivocado no se nota. */}
             <View collapsable={false} ref={composeRef} style={styles.fill} testID="compose">
-              <CameraView style={styles.fill} />
+              {/* [T-8.11 · A-023] La FOTO TOMADA, no un visor en vivo. Aquí había un
+                  <CameraView> nuevo: lo que se horneaba y se hasheaba era el fotograma
+                  del visor en el instante de «USAR ESTA FOTO», y la toma que la persona
+                  revisaba se descartaba. Lo que se revisa es lo que se sella. */}
+              <Image
+                resizeMode="cover"
+                source={{ uri: photoUri }}
+                style={styles.fill}
+                testID="captured-photo"
+              />
               <View pointerEvents="none" style={styles.watermark} testID="watermark">
                 {watermarkLines(meta).map((line) => (
                   <Text key={line} style={styles.watermarkText}>

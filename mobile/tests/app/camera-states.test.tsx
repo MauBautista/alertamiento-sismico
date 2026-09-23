@@ -577,6 +577,19 @@ describe("[T-7.27] lo que se HORNEA en el JPEG: el subárbol de `composeRef`", (
     expect(v.getByTestId("aviso-ia")).toHaveTextContent(/PUEDE SALIR DEL INMUEBLE/);
   });
 
+  it("[T-8.11 · A-023] lo que se sella es la FOTO TOMADA, no un visor en vivo", async () => {
+    // Antes, la vista de revisión montaba un <CameraView> NUEVO dentro de
+    // `composeRef`: «USAR ESTA FOTO» horneaba el fotograma del visor en el
+    // instante de confirmar, y la foto disparada se descartaba. «Repetir» hacía
+    // creer que se revisaba una toma fija.
+    const { v } = await revisarYConfirmar();
+
+    const cocido = v.getByTestId("compose");
+    expect(within(cocido).queryByTestId("camera-view")).toBeNull();
+    const foto = within(cocido).getByTestId("captured-photo");
+    expect(foto.props.source).toEqual({ uri: "file:///shot.jpg" });
+  });
+
   it("CRITERIO · dentro de `composeRef` no hay más texto que el sello", async () => {
     const { v } = await revisarYConfirmar();
 

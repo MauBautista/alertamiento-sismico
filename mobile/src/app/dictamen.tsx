@@ -21,7 +21,11 @@ const DICTAMEN_STALE_MS = 60_000;
 export default function Dictamen() {
   const siteId = useWatchedSiteId();
   const { data: state } = useAlertState(siteId);
-  const incidentId = state?.incident?.incident_id ?? null;
+  // [T-8.11 · A-022] Desde D-33 el motor cierra el incidente segundos después de
+  // la firma: `incident` vuelve a null y el dictamen sigue vigente. Su incidente
+  // viaja en `reentry.incident_id`; sin él, esta pantalla decía «Sin incidente
+  // activo» justo cuando el certificado existe.
+  const incidentId = state?.incident?.incident_id ?? state?.reentry?.incident_id ?? null;
 
   const dictamen = useQuery({
     queryKey: ["dictamen", incidentId],
@@ -46,6 +50,10 @@ export default function Dictamen() {
 
   const [downloading, setDownloading] = useState(false);
   const [cached, setCached] = useState(false);
+  // [T-8.11] Una descarga que falla (sin red, URL firmada caducada) se DICE: antes
+  // el `finally` sin `catch` la dejaba en silencio y el botón volvía a su sitio
+  // como si nada.
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const localPdf = useMemo(
     () => (incidentId ? new File(Paths.document, `dictamen-${incidentId}.pdf`) : null),
@@ -74,6 +82,7 @@ export default function Dictamen() {
       return;
     }
     setDownloading(true);
+    setDownloadError(null);
     void (async () => {
       try {
         if (localPdf.exists) {
@@ -81,6 +90,10 @@ export default function Dictamen() {
         }
         await File.downloadFileAsync(dictamen.data.pdf_url as string, localPdf);
         setCached(true);
+      } catch {
+        setDownloadError(
+          "No se pudo descargar el certificado. Compruebe la conexión y vuelva a intentarlo.",
+        );
       } finally {
         setDownloading(false);
       }
@@ -109,6 +122,7 @@ export default function Dictamen() {
         <DictamenCertificate
           cert={cert}
           downloading={downloading}
+          downloadError={downloadError}
           onDownloadPdf={download}
           onOpenPdf={open}
           pdfCached={cached}

@@ -10,6 +10,8 @@ import type { CertificateView } from "./dictamenView";
 export function DictamenCertificate(props: {
   cert: CertificateView;
   downloading: boolean;
+  /** Motivo de la última descarga fallida; `null` si no la hubo. */
+  downloadError?: string | null;
   pdfCached: boolean;
   onDownloadPdf: () => void;
   onOpenPdf: () => void;
@@ -63,6 +65,11 @@ export function DictamenCertificate(props: {
           firma del inspector.
         </Text>
       )}
+      {props.downloadError ? (
+        <Text style={styles.downloadError} testID="download-error" accessibilityRole="alert">
+          {props.downloadError}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -100,6 +107,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     marginTop: space[2],
   },
+  downloadError: { color: palette.crit, fontSize: fontSize.sm },
   sealText: { color: palette.fg2, fontSize: fontSize.xs, letterSpacing: 1, fontWeight: "700" },
   pdfBtn: {
     minHeight: touch.min,

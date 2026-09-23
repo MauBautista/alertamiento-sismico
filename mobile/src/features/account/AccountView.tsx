@@ -2,7 +2,15 @@
 // occupant (decisión #7: su pool es mfa=OPTIONAL; los tácticos tienen MFA
 // obligatorio a nivel de pool — no hay nada que optar). El flujo de asociación
 // TOTP (Cognito) llega en T-2.14 (hardening) — la fila lo declara.
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from "react-native";
+import type { ReactNode } from "react";
+import {
+  Pressable,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -27,45 +35,64 @@ export function AccountView(props: {
   onOpenPrivacidad: () => void;
   onOpenVincular: () => void;
   onLogout: () => void;
+  /**
+   * [T-8.11 · A-021] Envuelve SOLO la tarjeta de perfil (la única que depende del
+   * servidor). Antes el marco de estados envolvía la pantalla entera, y sin red
+   * desaparecían con él CERRAR SESIÓN, permisos y privacidad — la única salida de
+   * la sesión estaba detrás de un dato que no llegaba.
+   */
+  renderProfile?: (card: ReactNode) => ReactNode;
 }) {
+  const perfil = (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>PERFIL</Text>
+      <Text style={styles.fieldLabel}>Nombre para el roster</Text>
+      <TextInput
+        onChangeText={(t) =>
+          props.onProfileChange({ ...props.profile, displayName: t })
+        }
+        placeholder="Su nombre"
+        placeholderTextColor={palette.fg3}
+        style={styles.input}
+        testID="input-name"
+        value={props.profile.displayName}
+      />
+      <Text style={styles.fieldLabel}>Teléfono (llamada de un toque)</Text>
+      <TextInput
+        keyboardType="phone-pad"
+        onChangeText={(t) =>
+          props.onProfileChange({ ...props.profile, phone: t })
+        }
+        placeholder="+52 …"
+        placeholderTextColor={palette.fg3}
+        style={styles.input}
+        testID="input-phone"
+        value={props.profile.phone}
+      />
+      <Pressable
+        accessibilityRole="button"
+        disabled={props.savingProfile || !props.canSave}
+        onPress={props.onSaveProfile}
+        style={[
+          styles.saveBtn,
+          (props.savingProfile || !props.canSave) && styles.dim,
+        ]}
+        testID="save-profile"
+      >
+        <Text style={styles.saveText}>
+          {props.savingProfile ? "GUARDANDO…" : "GUARDAR"}
+        </Text>
+      </Pressable>
+      {props.profileSavedAt !== null ? (
+        <Text style={styles.savedNote}>Perfil guardado en el servidor.</Text>
+      ) : null}
+    </View>
+  );
   return (
     <View style={styles.wrap}>
       <Text style={styles.eyebrow}>CUENTA · {props.role.toUpperCase()}</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>PERFIL</Text>
-        <Text style={styles.fieldLabel}>Nombre para el roster</Text>
-        <TextInput
-          onChangeText={(t) => props.onProfileChange({ ...props.profile, displayName: t })}
-          placeholder="Su nombre"
-          placeholderTextColor={palette.fg3}
-          style={styles.input}
-          testID="input-name"
-          value={props.profile.displayName}
-        />
-        <Text style={styles.fieldLabel}>Teléfono (llamada de un toque)</Text>
-        <TextInput
-          keyboardType="phone-pad"
-          onChangeText={(t) => props.onProfileChange({ ...props.profile, phone: t })}
-          placeholder="+52 …"
-          placeholderTextColor={palette.fg3}
-          style={styles.input}
-          testID="input-phone"
-          value={props.profile.phone}
-        />
-        <Pressable
-          accessibilityRole="button"
-          disabled={props.savingProfile || !props.canSave}
-          onPress={props.onSaveProfile}
-          style={[styles.saveBtn, (props.savingProfile || !props.canSave) && styles.dim]}
-          testID="save-profile"
-        >
-          <Text style={styles.saveText}>{props.savingProfile ? "GUARDANDO…" : "GUARDAR"}</Text>
-        </Pressable>
-        {props.profileSavedAt !== null ? (
-          <Text style={styles.savedNote}>Perfil guardado en el servidor.</Text>
-        ) : null}
-      </View>
+      {props.renderProfile ? props.renderProfile(perfil) : perfil}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>PRIVACIDAD Y PERMISOS</Text>
@@ -80,7 +107,9 @@ export function AccountView(props: {
           testID="consent-switch"
         >
           <View style={styles.rowInfo}>
-            <Text style={styles.rowLabel}>Enviar mi ubicación GPS si pido ayuda</Text>
+            <Text style={styles.rowLabel}>
+              Enviar mi ubicación GPS si pido ayuda
+            </Text>
             <Text style={styles.rowDetail} testID="consent-note">
               {props.gpsConsent
                 ? "Consentido: su ubicación viaja SOLO en un check-in de auxilio."
@@ -90,17 +119,17 @@ export function AccountView(props: {
           <Switch pointerEvents="none" value={props.gpsConsent} />
         </Pressable>
         <Pressable
-        accessibilityRole="button"
-        onPress={props.onOpenPermisos}
-        style={styles.linkBtn}
-      >
+          accessibilityRole="button"
+          onPress={props.onOpenPermisos}
+          style={styles.linkBtn}
+        >
           <Text style={styles.link}>Estado de permisos de alerta →</Text>
         </Pressable>
         <Pressable
-        accessibilityRole="button"
-        onPress={props.onOpenPrivacidad}
-        style={styles.linkBtn}
-      >
+          accessibilityRole="button"
+          onPress={props.onOpenPrivacidad}
+          style={styles.linkBtn}
+        >
           <Text style={styles.link}>Aviso de privacidad →</Text>
         </Pressable>
       </View>
@@ -108,10 +137,13 @@ export function AccountView(props: {
       {props.isOccupant ? (
         <View style={styles.card} testID="totp-row">
           <Text style={styles.cardTitle}>SEGURIDAD DE LA CUENTA</Text>
-          <Text style={styles.rowLabel}>Verificación en dos pasos — OPCIONAL</Text>
+          <Text style={styles.rowLabel}>
+            Verificación en dos pasos — OPCIONAL
+          </Text>
           <Text style={styles.rowDetail}>
-            Disponible para su perfil (decisión #7). El flujo de activación TOTP se habilita en
-            T-2.14 (hardening); mientras tanto su cuenta opera con contraseña.
+            Disponible para su perfil (decisión #7). El flujo de activación TOTP
+            se habilita en T-2.14 (hardening); mientras tanto su cuenta opera
+            con contraseña.
           </Text>
         </View>
       ) : null}
@@ -121,7 +153,9 @@ export function AccountView(props: {
         onPress={props.onOpenVincular}
         style={styles.linkBtn}
       >
-        <Text style={styles.link}>Vincular a un edificio (código de sitio) →</Text>
+        <Text style={styles.link}>
+          Vincular a un edificio (código de sitio) →
+        </Text>
       </Pressable>
 
       <Pressable
@@ -169,13 +203,27 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: space[1],
   },
-  saveText: { color: palette.bg, fontWeight: "700", fontSize: fontSize.xs, letterSpacing: 1 },
+  saveText: {
+    color: palette.bg,
+    fontWeight: "700",
+    fontSize: fontSize.xs,
+    letterSpacing: 1,
+  },
   savedNote: { color: palette.ok, fontSize: fontSize.xs },
-  row: { minHeight: touch.min, flexDirection: "row", alignItems: "center", gap: space[2] },
+  row: {
+    minHeight: touch.min,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[2],
+  },
   rowInfo: { flex: 1, gap: 2 },
   rowLabel: { color: palette.fg, fontSize: fontSize.sm, fontWeight: "600" },
   rowDetail: { color: palette.fg3, fontSize: fontSize.xs, lineHeight: 16 },
-  link: { color: palette.cyan, fontSize: fontSize.sm, paddingVertical: space[1] },
+  link: {
+    color: palette.cyan,
+    fontSize: fontSize.sm,
+    paddingVertical: space[1],
+  },
   logoutBtn: {
     minHeight: touch.min,
     justifyContent: "center",
