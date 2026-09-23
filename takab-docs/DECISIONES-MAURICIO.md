@@ -1927,6 +1927,9 @@ WebSocket). Lo anclan `infra/terraform/modules/identity/tests/sesion.tftest.hcl`
   alternativa ya está diseñada: contarlo desde la primera vez que la API ve el `origin_jti` de la
   sesión, que no cambia al refrescar. Mientras tanto, los dos clientes llevan su propio cinturón:
   guardan la hora del login y no renuevan pasado el tope.
+  **Medido el 2026-09-23 contra Cognito real:** tras un refresco, `auth_time` es el MISMO
+  (1790184184 antes y después) mientras `iat` cambia. La premisa se cumple y la alternativa por
+  `origin_jti` no hace falta.
 
 **Cómo se revocaría.** Cambiar un número de `SESSION_MAX_AGE_S` y, si sube por encima del máximo
 de su cliente, el cliente en el Terraform: el `.tftest.hcl` exige que cada cliente declare
