@@ -140,7 +140,7 @@ c_enclavado() {
   if [ "$latch" = "false" ] && [ "$sasmex" = "false" ]; then
     verde "sin enclavado vivo: el pulso se verá como algo nuevo"
   else
-    rojo "enclavado vivo (alert_latched=$latch sasmex_active=$sasmex): límpialo con POST $PANEL/api/reset o el acto 3 no se distingue del anterior"
+    rojo "enclavado vivo (alert_latched=$latch sasmex_active=$sasmex): límpialo con el botón CERRAR ALERTA del panel (PIN) — o curl -X POST -H 'X-Takab-Pin: <PIN>' $PANEL/api/reset — o el acto 3 no se distingue del anterior"
   fi
 }
 
@@ -710,7 +710,10 @@ full() {
   # ── limpieza ────────────────────────────────────────────────────────────
   echo
   printf '\033[1m── Limpieza · parte del guion, no del después ──\033[0m\n'
-  echo "  1) suelta el enclavado:  curl -X POST $PANEL/api/reset"
+  echo "  1) suelta el enclavado: botón CERRAR ALERTA del panel, 2 clics + PIN (el campo"
+  echo "     es de contraseña: los dígitos no salen en el proyector). Por terminal, CON el PIN:"
+  echo "       curl -X POST -H 'X-Takab-Pin: <PIN>' $PANEL/api/reset"
+  echo "     Sin la cabecera el panel responde 401 {\"error\":\"pin\"}: no se colgó, falta el PIN."
   echo "  2) en la consola, clasifica el incidente como 'reproduccion'."
   echo
   echo "     ⚠️ 'reproduccion', NO 'prueba'. Las dos cierran el incidente y ninguna"

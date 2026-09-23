@@ -61,6 +61,13 @@ class Claims:
     #: así que la procedencia es lo único que la API puede exigir. Por defecto el
     #: pool principal — es lo que verifica el camino single-issuer (``ws.py``).
     pool: str = POOL_PRINCIPAL
+    #: [T-8.02 · D-38] Hora del LOGIN (epoch s): claim ``auth_time`` del ID token,
+    #: que el refresco de Cognito NO renueva. De aquí cuenta el tope de sesión por
+    #: rol (``auth/session_age.py``). Recortado a ``iat``: nadie se autentica
+    #: después de que le emitan el token, y un ``auth_time`` futuro solo serviría
+    #: para alargar la sesión. El default ``0`` (1970) es fail-closed: un ``Claims``
+    #: construido sin él tiene la sesión caducada.
+    auth_time: int = 0
 
     @classmethod
     def from_verified(cls, claims: dict[str, Any], *, pool: str = POOL_PRINCIPAL) -> Claims:
@@ -72,6 +79,8 @@ class Claims:
         surface = claims.get("custom:surface") or ""
         if surface not in _SURFACES:
             raise AuthError(f"invalid surface: {surface!r}")
+
+        auth_time = _parse_auth_time(claims)
 
         # Integridad de tenant_id (regla de oro #5): el token no trae una segunda
         # fuente para corroborarlo, así que su binding es upstream — el app client
@@ -87,7 +96,24 @@ class Claims:
             zone_id=claims.get("custom:zone_id") or "",
             surface=surface,
             pool=pool,
+            auth_time=auth_time,
         )
+
+
+def _parse_auth_time(claims: dict[str, Any]) -> int:
+    """``auth_time`` como entero, recortado a ``iat``; si no lo hay o no es un
+    entero, 401. Cognito lo emite como entero JSON: una cadena, un ``bool`` o un
+    ``float`` no son un ``auth_time`` suyo, y adivinar su significado es justo lo
+    que un tope de sesión no puede hacer."""
+    raw = claims.get("auth_time")
+    if raw is None:
+        raise AuthError("missing auth_time")
+    if type(raw) is not int:  # excluye bool (subclase de int), float y str
+        raise AuthError(f"invalid auth_time: {raw!r}")
+    iat = claims.get("iat")
+    if type(iat) is int and raw > iat:
+        return iat
+    return raw
 
 
 def scope_filter(claims: Claims) -> frozenset[str] | None:

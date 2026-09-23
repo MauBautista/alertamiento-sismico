@@ -170,7 +170,10 @@ async def test_push_version_is_monotonic_per_gateway(
 
 
 async def test_push_is_internal_only(client, gateway) -> None:
-    for role in ("tenant_admin", "soc_operator", "b_admin"):
+    # [T-8.02 · D-38] `b_admin` era un rol inventado; fuera de la matriz la API lo
+    # rechaza con 401 antes de la guarda (no tiene tope de sesión). El rol real que
+    # quería decir es `building_admin`.
+    for role in ("tenant_admin", "soc_operator", "building_admin"):
         tok = au.make_token(role, tenant=au.DB_TENANT_PRIV)
         r = await client.post(
             f"/gateways/{GW_CAT}/catalog", json={"catalog": SNAPSHOT}, headers=au.bearer(tok)

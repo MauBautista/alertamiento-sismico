@@ -36,5 +36,45 @@ describe("getMe", () => {
     const err = await getMe().catch((e: unknown) => e);
     expect(err).toBeInstanceOf(MeRequestError);
     expect((err as MeRequestError).status).toBe(401);
+    // Un 401 cualquiera NO es el tope: ese se intenta renovar.
+    expect((err as MeRequestError).sessionExpired).toBe(false);
+  });
+
+  // [T-8.03] El 401 del tope de sesión (D-38) se distingue del token vencido:
+  // renovar no sirve y reintentarlo haría un bucle contra la API.
+  it("401 con la cabecera `sesion_expirada` ⇒ sessionExpired", async () => {
+    mocks.meMeGet.mockResolvedValueOnce({
+      data: undefined,
+      error: { detail: "otra cosa" },
+      response: new Response(null, {
+        status: 401,
+        headers: {
+          "WWW-Authenticate": 'Bearer error="invalid_token", error_description="sesion_expirada"',
+        },
+      }),
+    });
+    const err = (await getMe().catch((e: unknown) => e)) as MeRequestError;
+    expect(err.status).toBe(401);
+    expect(err.sessionExpired).toBe(true);
+  });
+
+  it("401 con el cuerpo `sesion_expirada` (sin cabecera) ⇒ sessionExpired", async () => {
+    mocks.meMeGet.mockResolvedValueOnce({
+      data: undefined,
+      error: { detail: "sesion_expirada" },
+      response: new Response(null, { status: 401 }),
+    });
+    const err = (await getMe().catch((e: unknown) => e)) as MeRequestError;
+    expect(err.sessionExpired).toBe(true);
+  });
+
+  it("un 403 con ese texto NO es el tope (solo lo es un 401)", async () => {
+    mocks.meMeGet.mockResolvedValueOnce({
+      data: undefined,
+      error: { detail: "sesion_expirada" },
+      response: new Response(null, { status: 403 }),
+    });
+    const err = (await getMe().catch((e: unknown) => e)) as MeRequestError;
+    expect(err.sessionExpired).toBe(false);
   });
 });

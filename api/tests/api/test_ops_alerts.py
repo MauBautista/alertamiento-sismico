@@ -558,7 +558,10 @@ async def test_la_consola_lee_la_cadena_y_un_cliente_NO(client, red, contacto) -
     assert item["outcome"] == "esperando_acuse"
     assert item["acked_at"] is None
 
-    cliente = await client.get(RUTA_CADENA, headers=au.bearer(au.make_token("client_admin")))
+    # [T-8.02 · D-38] Era `client_admin`, un rol inventado que ahora se rechaza con
+    # 401 antes de la guarda (sin tope de sesión, default-deny). El cliente real es
+    # `tenant_admin`.
+    cliente = await client.get(RUTA_CADENA, headers=au.bearer(au.make_token("tenant_admin")))
     assert cliente.status_code in (403, 404)
 
     anonimo = await client.get(RUTA_CADENA)

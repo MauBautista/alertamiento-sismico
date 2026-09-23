@@ -35,6 +35,28 @@ AWS_PROFILE=takab-dev bash deploy/demo/guion.sh --preflight
 tenga el guion ese día —el 2026-09-12 fueron 13— y fijarse en ese número envejece; lo que no
 envejece es que **un solo ✗ hace que el guion falle en silencio**.
 
+### 0·bis · La sesión el día de la demostración (`D-38`)
+
+**Hasta el 2026-09-22 la sesión real duraba unos 60 minutos en la consola y en el teléfono**, y
+el ensayo 1 duró 59. Con `D-38` (`T-8.02`…`T-8.05`) dura lo que dice el rol, contado **desde el
+login**: 24 h los roles de consola, 30 días brigadista e inspector, 90 días el ocupante. Lo que
+eso cambia en la preparación:
+
+- **Un perfil de navegador por rol de consola** (o ventanas de incógnito separadas), porque la
+  cookie de la Hosted UI de Cognito es **compartida**: cambiar de rol en el mismo perfil obliga a
+  cerrar sesión y volver a teclear contraseña y código. Entra en cada uno **la misma mañana**. Un
+  login del día anterior puede cumplir sus 24 h en mitad del acto 4; la consola avisa una hora
+  antes con «SU SESIÓN TERMINA A LAS hh:mm · RENOVAR AHORA». Si sale ese aviso, renueva **antes**
+  de empezar, no durante.
+- **Cerrar la pestaña ya no cierra la sesión**: la consola la guarda en el navegador y la retoma.
+  Recargar tampoco la cierra.
+- **En el Pixel**, entra con brigadista e inspector el día anterior o antes: su sesión dura un
+  mes y no vuelve a pedir el código. `security_guard` y `building_admin` duran 24 h: si se
+  enseñan, entra con ellos la misma mañana.
+- **Si la sesión termina por tope**, la pantalla lo dice («SU SESIÓN DE 24 H TERMINÓ»), no un
+  error genérico. Hay que volver a entrar con contraseña y código. No hay prórroga, ni siquiera
+  con un incidente abierto: es la decisión de `D-38`.
+
 ---
 
 ## 1 · El montaje · **cuatro superficies, y no todas son una pantalla**

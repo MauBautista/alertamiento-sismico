@@ -507,6 +507,37 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
 }
 
 
+#: [T-8.02 · D-38] Edad MÁXIMA de la sesión por rol, en segundos, contada desde el
+#: LOGIN real (claim ``auth_time`` del ID token, que el refresco NO renueva; ``iat``
+#: sí se renueva y por eso no sirve). Cognito fija la vida del refresh token por
+#: app client, no por rol —y el cliente web lo comparten el SOC (24 h) y el
+#: inspector (30 d)—, así que el tope lo impone la API (``auth/session_age.py``):
+#: pasado el plazo, 401 ``sesion_expirada`` en REST y cierre 4440 en el WS.
+#:
+#: - campo (brigadista, inspector): 30 d — no se les pide contraseña ni código en
+#:   un mes; el interruptor contra un teléfono perdido es la baja, que cierra sus
+#:   sesiones (``users/directory.py``).
+#: - occupant: 90 d — su pool, su cliente.
+#: - todo rol con poder de consola u operación: 24 h.
+#:
+#: Censo: EXACTAMENTE los roles de ``ROLE_ROUTE_MATRIX`` (lo vigila
+#: ``tests/auth/test_session_age.py``). Un rol ausente aquí es default-deny: su
+#: sesión nace caducada.
+_DAY_S = 86_400
+SESSION_MAX_AGE_S: dict[str, int] = {
+    "takab_superadmin": _DAY_S,
+    "takab_support": _DAY_S,
+    "tenant_admin": _DAY_S,
+    "soc_operator": _DAY_S,
+    "gov_operator": _DAY_S,
+    "inspector": 30 * _DAY_S,
+    "building_admin": _DAY_S,
+    "brigadista": 30 * _DAY_S,
+    "security_guard": _DAY_S,
+    "occupant": 90 * _DAY_S,
+}
+
+
 def roles_with_action(action: str) -> tuple[str, ...]:
     """Roles con ``action`` concedida, ordenados. Fuente única para los routers."""
     return tuple(sorted(r for r, acts in ROLE_ACTION_MATRIX.items() if acts.get(action)))

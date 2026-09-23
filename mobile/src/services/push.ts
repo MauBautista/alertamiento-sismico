@@ -4,7 +4,11 @@
 // dos que despiertan), permisos (con Critical Alerts iOS cuando el entitlement
 // llegue — GATE-STORE) y registro del token NATIVO (FCM/APNs) en
 // /me/push-tokens; el backend lo mapea a un endpoint de SNS.
-import { registerPushTokenMePushTokensPost } from "@takab/sdk";
+import {
+  listPushTokensMePushTokensGet,
+  registerPushTokenMePushTokensPost,
+  revokePushTokenMePushTokensPushTokenIdDelete,
+} from "@takab/sdk";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
@@ -168,6 +172,67 @@ export async function registerDeviceForPush(siteId: string | null): Promise<Push
     return "registered";
   } catch (err) {
     console.warn("push: registro fallido (best-effort, se reintenta al reabrir)", err);
+    return "error";
+  }
+}
+
+export type PushUnregistration = "revoked" | "none" | "error";
+
+/** Cuánto se espera al token nativo (FCM/APNs) al cerrar sesión: sin servicios
+ * de Google o sin red puede no volver nunca, y el logout no se cuelga por eso. */
+const NATIVE_TOKEN_TIMEOUT_MS = 4_000;
+
+/** [T-8.04 · A-020] Da de baja en el backend el token push de ESTE aparato.
+ *
+ * `DELETE /me/push-tokens/{id}` existía y nadie lo llamaba: tras «Cerrar sesión»
+ * el token seguía ligado al usuario y al inmueble, y el teléfono de alguien que
+ * ya no está seguía recibiendo las alertas del edificio. Se busca la fila por
+ * el token NATIVO (el mismo que registra `registerDeviceForPush`) entre las del
+ * portador: el mismo usuario puede tener OTRO teléfono que sí debe despertar.
+ *
+ * Se llama con la sesión aún viva (el DELETE necesita Bearer). Best-effort: jamás
+ * lanza — el cierre de sesión sigue pase lo que pase aquí. */
+export async function unregisterOwnPushToken(): Promise<PushUnregistration> {
+  let token: string;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const device = await Promise.race([
+      Notifications.getDevicePushTokenAsync(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("token nativo: sin respuesta")),
+          NATIVE_TOKEN_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    token = typeof device.data === "string" ? device.data : JSON.stringify(device.data);
+  } catch {
+    // Sin token nativo este aparato no pudo registrarse nunca: nada que dar de baja.
+    return "none";
+  } finally {
+    clearTimeout(timer);
+  }
+  try {
+    const list = await listPushTokensMePushTokensGet();
+    if (!list.data) {
+      return "error";
+    }
+    const propias = list.data.filter((t) => t.token === token);
+    if (propias.length === 0) {
+      return "none";
+    }
+    let ok = true;
+    for (const fila of propias) {
+      const res = await revokePushTokenMePushTokensPushTokenIdDelete({
+        path: { push_token_id: fila.push_token_id },
+      });
+      if (res.error) {
+        ok = false;
+      }
+    }
+    return ok ? "revoked" : "error";
+  } catch (err) {
+    console.warn("push: no se pudo dar de baja el token al cerrar sesión", err);
     return "error";
   }
 }

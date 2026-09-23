@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **461** · `[x]` **393** · `[~]` **11** · `[ ]` **57**
+**Conteo de tareas:** total **461** · `[x]` **393** · `[~]` **14** · `[ ]` **54**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17380,7 +17380,7 @@ se registra en su RUNBOOK.
 > `A-nnn` y su ficha de este bloque. La PR #274 entró en `main` con squash (`c5968b4`), así que el
 > hash `b804039` que citaba el plan ya no existe en `main`: el objetivo de F0 busca `(#274)`.
 
-### [ ] T-8.02 · **Sesión por rol · la API impone el tope** — `SOFTWARE`
+### [~] T-8.02 · **Sesión por rol · la API impone el tope** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-8.01 · **Prioridad:** F1 · P0
 - **Objetivo:** la API rechaza un token cuya sesión superó la edad máxima de su rol, contada desde
   el login real y no desde el último refresco. Brigadista e inspector 30 días, ocupante 90 días y
@@ -17388,60 +17388,83 @@ se registra en su RUNBOOK.
 - **Criterios de aceptación:**
   - [ ] Medido antes de escribir el tope: ¿Cognito conserva `auth_time` al refrescar? Si no, el
     tope se cuenta desde la primera vez que la API ve el `origin_jti` de la sesión.
-  - [ ] `SESSION_MAX_AGE_S` en `auth/matrix.py`, con un censo que exija exactamente los 10 roles.
+  - [x] `SESSION_MAX_AGE_S` en `auth/matrix.py`, con un censo que exija exactamente los 10 roles.
     Un rol desconocido cuenta como caducado.
-  - [ ] 401 con `detail="sesion_expirada"` y `WWW-Authenticate … error_description="sesion_expirada"`,
+  - [x] 401 con `detail="sesion_expirada"` y `WWW-Authenticate … error_description="sesion_expirada"`,
     aplicado en `deps.get_claims` después del ancla pool→rol. El WS cierra con 4440 (distinto del
     4401 del token vencido, que se puede renovar).
-  - [ ] `/me` expone `session_expires_at`; `/dev/token` y las fábricas de tokens de test emiten
+  - [x] `/me` expone `session_expires_at`; `/dev/token` y las fábricas de tokens de test emiten
     `auth_time`, con edad configurable.
-  - [ ] Deshabilitar un usuario cierra todas sus sesiones (`admin_user_global_sign_out`).
-  - [ ] Tests: soc_operator de 24 h + 1 s → 401; brigadista de 29 d → 200; ocupante de 89 d → 200 y
+  - [x] Deshabilitar un usuario cierra todas sus sesiones (`admin_user_global_sign_out`).
+  - [x] Tests: soc_operator de 24 h + 1 s → 401; brigadista de 29 d → 200; ocupante de 89 d → 200 y
     de 91 d → 401; token sin `auth_time` → 401; WS caducado → 4440; `require_mfa` intacto.
 - **Hallazgos:** A-006, A-026, A-027, A-028, A-029, A-035, A-036, A-124, A-127.
+
+> **Estado (2026-09-23).** Código y pruebas hechos; falta la medición de `auth_time` contra
+> Cognito real (Mauricio, `PENDIENTES-MAURICIO §2.15`). La suite api entera corrió en verde tras un
+> arreglo que merece constar: tres pruebas usaban roles INVENTADOS (`operator`, `b_admin`,
+> `client_admin`) para probar un 403, y un rol fuera de la matriz ya no llega a la guarda — no tiene
+> tope de sesión y se rechaza antes con 401. Se cambiaron por roles reales sin la acción, que es lo
+> que cada prueba defendía.
 
 ### [ ] T-8.03 · **Sesión por rol · la consola aguanta su día (o su mes)** — `SOFTWARE`
 - **Componente:** web · sdk-ts · deploy · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
 - **Objetivo:** que la consola no expulse a nadie a los 60 minutos, que sobreviva a cerrar la
   pestaña y que, cuando el tope se cumpla, lo diga con su causa.
 - **Criterios de aceptación:**
-  - [ ] `LiveSocket` renueva el token y reconecta ante un 4401; solo el 4440 termina la sesión.
-  - [ ] Sesión en `localStorage` con `revokeTokensOnSignout`; el arranque intenta la renovación
+  - [x] `LiveSocket` renueva el token y reconecta ante un 4401; solo el 4440 termina la sesión.
+  - [x] Sesión en `localStorage` con `revokeTokensOnSignout`; el arranque intenta la renovación
     silenciosa antes de declarar la sesión anónima si hay refresh.
-  - [ ] `LoginPage` distingue «SU SESIÓN DE 24 H TERMINÓ» del 401 genérico.
-  - [ ] Aviso en la Topbar 60 minutos antes de `session_expires_at`, con «RENOVAR AHORA». Sin
+  - [x] `LoginPage` distingue «SU SESIÓN DE 24 H TERMINÓ» del 401 genérico.
+  - [x] Aviso en la Topbar 60 minutos antes de `session_expires_at`, con «RENOVAR AHORA». Sin
     prórroga durante un incidente (`D-38`).
   - [ ] CSP en el Caddyfile. Se aplica solo si el recorrido desplegado da cero violaciones; si no,
     queda en *Report-Only* y lo hereda `T-8.16`.
   - [ ] e2e local: con un token de 120 s y `/console` abierta 150 s, la sesión sigue viva.
 - **Hallazgos:** A-004, A-010, A-032, A-033, A-034, A-039, A-040.
 
-### [ ] T-8.04 · **Sesión por rol · la app usa por fin su refresh** — `SOFTWARE`
+> **Estado (2026-09-23).** Hecho y en verde en vitest (165 ficheros, 2646 pruebas), lint, prettier y
+> build. La CSP está en `Content-Security-Policy-Report-Only`: se aplica tras el recorrido contra la
+> nube. Falta correr `web/e2e/sesion.spec.ts` contra `make soc-local`. Al integrar se encontró un
+> defecto que la ficha no preveía: `VITE_COGNITO_DOMAIN` llega sin esquema, así que el `/logout` del
+> Hosted UI era una ruta relativa de la propia consola y la cookie de Cognito nunca se borraba. El
+> aviso de fin de sesión va dentro del mismo hijo de la barra que el menú del operador: un séptimo
+> hijo de `.soc-topbar` abre una fila implícita.
+
+### [~] T-8.04 · **Sesión por rol · la app usa por fin su refresh** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
 - **Objetivo:** que la app no vuelva a pedir contraseña ni código a los 60 minutos, y que cerrar
   la sesión la cierre de verdad.
 - **Criterios de aceptación:**
-  - [ ] `refreshSession()` de vuelo único con `AuthSession.refreshAsync`. Se dispara al arrancar,
+  - [x] `refreshSession()` de vuelo único con `AuthSession.refreshAsync`. Se dispara al arrancar,
     al volver a primer plano, antes de conectar el WS y ante un 401 que no sea `sesion_expirada`.
-  - [ ] El token renovado se persiste en el almacén seguro; `sesion_expirada` lleva al login.
-  - [ ] Cerrar sesión da de baja el token push, revoca el refresh y cierra la cookie de la Hosted UI.
-  - [ ] Tests de jest para el vuelo único, el 401 → refresco → reintento y el tope.
+  - [x] El token renovado se persiste en el almacén seguro; `sesion_expirada` lleva al login.
+  - [x] Cerrar sesión da de baja el token push, revoca el refresh y cierra la cookie de la Hosted UI.
+  - [x] Tests de jest para el vuelo único, el 401 → refresco → reintento y el tope.
   - [ ] En el Pixel: 70 minutos con la app abierta, en el perfil táctico y en el de ocupante, sin
     que pida login.
 - **Hallazgos:** A-001, A-002, A-003, A-005, A-007, A-009, A-020, A-116.
 
-### [ ] T-8.05 · **Sesión por rol · Cognito, `D-38` y los documentos** — `SOFTWARE` + `GATE-AWS`
+> **Estado (2026-09-23).** Código y 802 pruebas de jest en verde, typecheck limpio. Falta lo que exige
+> el Pixel: 70 minutos sin que pida login, en el perfil táctico y en el de ocupante. El botón CERRAR
+> SESIÓN de la Cuenta todavía llama al cierre local: cablearlo a `auth/logout.ts` es de `T-8.11`.
+
+### [~] T-8.05 · **Sesión por rol · Cognito, `D-38` y los documentos** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** infra · docs · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
 - **Objetivo:** que Cognito emita refresh tokens tan largos como el rol más largo de cada cliente,
   y que la decisión y su precio estén escritos.
 - **Criterios de aceptación:**
-  - [ ] `identity/main.tf`: web 30 d, táctico 30 d, ocupantes 90 d. Un `.tftest.hcl` los ancla y
+  - [x] `identity/main.tf`: web 30 d, táctico 30 d, ocupantes 90 d. Un `.tftest.hcl` los ancla y
     el `terraform plan` solo cambia los clientes, sin recrear pools.
-  - [ ] `D-38` con su precio: MFA una vez al mes en roles con actuadores, el teléfono perdido y el
+  - [x] `D-38` con su precio: MFA una vez al mes en roles con actuadores, el teléfono perdido y el
     riesgo de `localStorage`.
-  - [ ] `RBAC-TAKAB.md` con la tabla de duración por rol, y un test que la cruce con la del código.
-  - [ ] La especificación del pool y la de la app citan la duración nueva.
+  - [x] `RBAC-TAKAB.md` con la tabla de duración por rol, y un test que la cruce con la del código.
+  - [x] La especificación del pool y la de la app citan la duración nueva.
 - **Hallazgos:** A-008, A-031, A-037, A-038, A-067, A-083, A-123, A-125, A-126.
+
+> **Estado (2026-09-23).** Hecho en el repositorio: `terraform test` del módulo `identity` (12 en verde;
+> la aserción nueva se probó rompiéndola). Falta el `terraform apply` (Mauricio,
+> `PENDIENTES-MAURICIO §2.15`).
 
 ### [ ] T-8.06 · **Recorrido de la consola rol por rol, control por control** — `SOFTWARE`
 - **Componente:** web · **Depende de:** T-8.01 · **Prioridad:** F2 · crítica

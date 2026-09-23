@@ -32,6 +32,23 @@
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "DENY"
 		Referrer-Policy "no-referrer"
+		# [T-8.03 · D-38] CSP en modo INFORME. Desde D-38 la consola guarda la sesión
+		# en localStorage (refresh token de hasta 30 días): un XSS dejaría de robar
+		# una pestaña para robar un mes. La política se deriva de lo que la consola
+		# pide DE VERDAD (medido con grep sobre web/src e index.html el 2026-09-22):
+		#   - script: solo el bundle propio (index.html no lleva <script> en línea);
+		#   - style: el propio + 'unsafe-inline' (los <style> del arranque de
+		#     index.html, los `style={…}` de React y los que inyecta MapLibre);
+		#   - connect: la API y el WS del propio host, el discovery de Cognito
+		#     (cognito-idp) y su endpoint de token/revocación (Hosted UI), y el
+		#     estilo, teselas y sprites de openfreemap;
+		#   - worker/child: blob: (los workers de MapLibre);
+		#   - form-action: el Hosted UI (el login es un formulario suyo).
+		# Va en Report-Only hasta que el recorrido por rol contra la nube dé CERO
+		# violaciones (el navegador las escribe en la consola y el recorrido las
+		# recoge como console_error). Entonces se cambia el nombre de la cabecera a
+		# `Content-Security-Policy` y nada más (T-8.16).
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; font-src 'self' data:; connect-src 'self' wss://{$TAKAB_PUBLIC_HOST} https://tiles.openfreemap.org https://cognito-idp.us-east-2.amazonaws.com https://*.amazoncognito.com; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; form-action 'self' https://*.amazoncognito.com; base-uri 'self'; object-src 'none'"
 		-Server
 	}
 

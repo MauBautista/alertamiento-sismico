@@ -1771,6 +1771,8 @@ export type MeResponse = {
     enrolled_sites?: Array<MeEnrolledSite>;
     is_internal?: boolean;
     role: string;
+    session_expires_at?: string | null;
+    session_max_age_s?: number | null;
     site_scope: '*' | Array<string>;
     sub: string;
     surface: string;
@@ -1855,6 +1857,7 @@ export type MobileReentryOut = {
     blocked: boolean;
     dictamen_signed: boolean;
     dictamen_status: string | null;
+    incident_id?: string | null;
 };
 
 /**

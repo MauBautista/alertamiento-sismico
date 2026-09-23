@@ -28,8 +28,69 @@ export interface StoredSession {
   idToken: string;
   refreshToken?: string;
   /** epoch ms del intercambio de código (diagnóstico; la expiración real la
-   * dictan los tokens). */
+   * dictan los tokens). En sesiones anteriores a T-8.04 es también la mejor
+   * aproximación al login real (ver `authAt`). */
   issuedAt: number;
+  /** [T-8.04] epoch en SEGUNDOS del claim `exp` del `idToken` guardado. Se
+   * renueva con cada refresh. */
+  idTokenExp?: number;
+  /** [T-8.04 · D-38] epoch ms del login REAL (contraseña y, en los tácticos,
+   * código). NO cambia al renovar: el tope de la sesión cuenta desde aquí. */
+  authAt?: number;
+  /** [T-8.04 · D-38] Edad máxima de la sesión del rol en segundos
+   * (`/me.session_max_age_s`). `null`/ausente mientras /me no lo haya dicho. */
+  maxAgeS?: number | null;
+}
+
+/** Lo que devuelve `loadSession`: los campos de T-8.04 siempre presentes. Los que
+ * una sesión vieja no traía se DERIVAN — nadie queda fuera por actualizar la app. */
+export interface LoadedSession extends StoredSession {
+  idTokenExp: number;
+  authAt: number;
+  maxAgeS: number | null;
+}
+
+/** Claims de un JWT leídos SIN verificar la firma (eso lo hace la API): el
+ * teléfono sólo los usa para decidir cuándo renovar. Basura ⇒ `null`, jamás lanza. */
+export function decodeJwtClaims(jwt: string): Record<string, unknown> | null {
+  const parts = jwt.split(".");
+  if (parts.length !== 3 || parts[1] === "") {
+    return null;
+  }
+  try {
+    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
+    const parsed: unknown = JSON.parse(atob(padded));
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+
+/** Claim numérico de un JWT (`exp`, `auth_time`…), o `null`. */
+export function numericClaim(jwt: string, claim: "exp" | "auth_time" | "iat"): number | null {
+  const v = decodeJwtClaims(jwt)?.[claim];
+  return isFiniteNumber(v) ? v : null;
+}
+
+/** Completa los campos de T-8.04. Un campo con tipo equivocado se ignora y se
+ * deriva: tumbar la sesión por él sería expulsar a alguien por un formato. */
+function normalize(s: StoredSession): LoadedSession {
+  const raw = s as unknown as Record<string, unknown>;
+  return {
+    ...s,
+    // Sin `exp` legible, 0: el token cuenta como vencido y se RENUEVA (no se expulsa).
+    idTokenExp: isFiniteNumber(raw.idTokenExp)
+      ? raw.idTokenExp
+      : (numericClaim(s.idToken, "exp") ?? 0),
+    // Antes de T-8.04 `issuedAt` era la hora del canje del código: el login real.
+    authAt: isFiniteNumber(raw.authAt) ? raw.authAt : s.issuedAt,
+    maxAgeS: isFiniteNumber(raw.maxAgeS) && raw.maxAgeS > 0 ? raw.maxAgeS : null,
+  };
 }
 
 function isStoredSession(value: unknown): value is StoredSession {
@@ -51,7 +112,7 @@ export async function saveSession(session: StoredSession): Promise<void> {
 
 /** Carga la sesión; un payload corrupto se purga y devuelve null (el arranque
  * jamás debe reventar por una sesión vieja). */
-export async function loadSession(): Promise<StoredSession | null> {
+export async function loadSession(): Promise<LoadedSession | null> {
   const raw = await SecureStore.getItemAsync(SESSION_KEY);
   if (raw == null) {
     return null;
@@ -59,7 +120,7 @@ export async function loadSession(): Promise<StoredSession | null> {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (isStoredSession(parsed)) {
-      return parsed;
+      return normalize(parsed);
     }
   } catch {
     // corrupto: cae al purge de abajo

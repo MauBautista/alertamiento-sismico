@@ -166,6 +166,42 @@ git log main --oneline | grep -q '(#274)'   # la PR de instrumentos, mergeada co
 - Si **se conserva** (lo que exige OIDC Core), el tope se hace sobre `auth_time`.
 - Si **se renueva**, se usa la alternativa: una tabla `session_origins(origin_jti PK, sub, first_seen_at)` con `ON CONFLICT DO NOTHING`, y el tope se cuenta desde `first_seen_at`. `origin_jti` no cambia al renovar.
 
+El fragmento, para pegar en DevTools → Console de la consola desplegada con la sesión abierta. Lee
+la sesión de `oidc-client-ts` (en `localStorage` desde D-38, en `sessionStorage` antes), pide un
+refresco con el propio refresh token al endpoint de Cognito —lo mismo que hace la renovación
+silenciosa— e imprime **solo marcas de tiempo**, ningún token:
+
+```js
+(async () => {
+  let k, s;
+  for (const st of [localStorage, sessionStorage]) {
+    k = Object.keys(st).find((x) => x.startsWith("oidc.user:"));
+    if (k) { s = st; break; }
+  }
+  if (!k) return console.log("No hay sesión de Cognito en esta pestaña.");
+  const u = JSON.parse(s.getItem(k));
+  const dec = (t) => JSON.parse(atob(t.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  const rest = k.slice("oidc.user:".length);
+  const cut = rest.lastIndexOf(":");
+  const authority = rest.slice(0, cut), clientId = rest.slice(cut + 1);
+  const meta = await (await fetch(`${authority}/.well-known/openid-configuration`)).json();
+  const r = await fetch(meta.token_endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "refresh_token", client_id: clientId, refresh_token: u.refresh_token }),
+  });
+  const j = await r.json();
+  if (!j.id_token) return console.log("El refresco falló:", r.status, j.error);
+  const a = dec(u.id_token), b = dec(j.id_token);
+  console.table({
+    auth_time_antes: a.auth_time, auth_time_despues: b.auth_time,
+    iat_antes: a.iat, iat_despues: b.iat,
+    mismo_origin_jti: a.origin_jti === b.origin_jti,
+    CONSERVA_AUTH_TIME: a.auth_time === b.auth_time,
+  });
+})();
+```
+
 **T-8.02 · API (lote A, `api/`):**
 - `auth/matrix.py`: `SESSION_MAX_AGE_S`, con un censo que exija exactamente los 10 roles; un rol desconocido = caducado.
 - Nuevo `auth/session_age.py` con `session_deadline()` y `enforce_session_age()`, llamado en `deps.get_claims` después del ancla pool→rol (`deps.py:91-99`).

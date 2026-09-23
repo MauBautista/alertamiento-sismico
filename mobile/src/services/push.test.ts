@@ -1,7 +1,11 @@
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
-import { registerPushTokenMePushTokensPost } from "@takab/sdk";
+import {
+  listPushTokensMePushTokensGet,
+  registerPushTokenMePushTokensPost,
+  revokePushTokenMePushTokensPushTokenIdDelete,
+} from "@takab/sdk";
 
 import {
   configureAndroidChannels,
@@ -10,6 +14,7 @@ import {
   registerDeviceForPush,
   SEISMIC_CHANNEL_ID,
   SEISMIC_SOUND,
+  unregisterOwnPushToken,
 } from "./push";
 
 jest.mock("expo-notifications", () => ({
@@ -24,10 +29,14 @@ jest.mock("expo-notifications", () => ({
 
 jest.mock("@takab/sdk", () => ({
   registerPushTokenMePushTokensPost: jest.fn(),
+  listPushTokensMePushTokensGet: jest.fn(),
+  revokePushTokenMePushTokensPushTokenIdDelete: jest.fn(),
 }));
 
 const mocked = Notifications as jest.Mocked<typeof Notifications>;
 const mockedRegister = registerPushTokenMePushTokensPost as jest.Mock;
+const mockedList = listPushTokensMePushTokensGet as jest.Mock;
+const mockedRevoke = revokePushTokenMePushTokensPushTokenIdDelete as jest.Mock;
 
 function setPlatform(os: "ios" | "android") {
   Object.defineProperty(Platform, "OS", { value: os, configurable: true });
@@ -177,5 +186,60 @@ describe("registerDeviceForPush", () => {
     mocked.getDevicePushTokenAsync.mockResolvedValue({ type: "ios", data: "apns" } as never);
     mockedRegister.mockResolvedValue({ error: { detail: "boom" } });
     await expect(registerDeviceForPush("site-1")).resolves.toBe("error");
+  });
+});
+
+// [T-8.04 · A-020] Al cerrar sesión, el teléfono deja de ser destinatario.
+//
+// `DELETE /me/push-tokens/{id}` existía (mobile_me.py) y nadie lo llamaba: tras
+// «Cerrar sesión» el token seguía ligado al usuario y al inmueble, así que el
+// teléfono de alguien que ya no está seguía recibiendo las alertas del edificio.
+// Se da de baja SÓLO el token de ESTE aparato: el mismo usuario puede tener otro
+// teléfono que sí debe seguir despertando.
+describe("unregisterOwnPushToken", () => {
+  const fila = (id: string, token: string) => ({
+    push_token_id: id,
+    token,
+    platform: "android",
+    site_id: "site-1",
+    created_at: "",
+    last_seen_at: "",
+    revoked_at: null,
+  });
+
+  beforeEach(() => {
+    mocked.getDevicePushTokenAsync.mockResolvedValue({ type: "android", data: "fcm-mio" } as never);
+  });
+
+  it("da de baja la fila del token de ESTE aparato, y sólo ésa", async () => {
+    mockedList.mockResolvedValue({ data: [fila("otro-tel", "fcm-ajeno"), fila("este", "fcm-mio")] });
+    mockedRevoke.mockResolvedValue({ data: {} });
+
+    await expect(unregisterOwnPushToken()).resolves.toBe("revoked");
+
+    expect(mockedRevoke).toHaveBeenCalledTimes(1);
+    expect(mockedRevoke).toHaveBeenCalledWith({ path: { push_token_id: "este" } });
+  });
+
+  it("si este aparato nunca se registró ⇒ 'none' y no borra nada", async () => {
+    mockedList.mockResolvedValue({ data: [fila("otro-tel", "fcm-ajeno")] });
+    await expect(unregisterOwnPushToken()).resolves.toBe("none");
+    expect(mockedRevoke).not.toHaveBeenCalled();
+  });
+
+  it("sin token nativo (sin permiso o sin FCM) ⇒ 'none', sin llamar a la API", async () => {
+    mocked.getDevicePushTokenAsync.mockRejectedValue(new Error("sin FCM"));
+    await expect(unregisterOwnPushToken()).resolves.toBe("none");
+    expect(mockedList).not.toHaveBeenCalled();
+  });
+
+  it("la API falla ⇒ 'error' declarado, jamás una excepción (el logout sigue)", async () => {
+    mockedList.mockResolvedValue({ error: { detail: "boom" } });
+    await expect(unregisterOwnPushToken()).resolves.toBe("error");
+    mockedList.mockRejectedValue(new TypeError("Network request failed"));
+    await expect(unregisterOwnPushToken()).resolves.toBe("error");
+    mockedList.mockResolvedValue({ data: [fila("este", "fcm-mio")] });
+    mockedRevoke.mockResolvedValue({ error: { detail: "404" } });
+    await expect(unregisterOwnPushToken()).resolves.toBe("error");
   });
 });

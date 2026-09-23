@@ -135,6 +135,16 @@ class MeResponse(BaseModel):
     #: del "sitio vigilado" del ocupante: sin esto el dato solo existía en el
     #: SecureStore del teléfono y se heredaba entre usuarios del mismo aparato.
     enrolled_sites: list[MeEnrolledSite] = []
+    #: [T-8.02 · D-38] Cuándo termina la sesión de este portador: ``auth_time``
+    #: (la hora del login con contraseña y código, que el refresco NO renueva)
+    #: más la edad máxima de su rol (``matrix.SESSION_MAX_AGE_S``). Pasado ese
+    #: instante la API responde 401 ``sesion_expirada`` y el WS cierra con 4440.
+    #: ``null`` solo con un token que no declara ``auth_time`` — que la API ya
+    #: rechaza, así que en la práctica viene siempre.
+    session_expires_at: datetime | None = None
+    #: La edad máxima de la sesión del rol, en segundos (30 d, 90 d o 24 h).
+    #: El cliente la usa para su propio cinturón (no renovar más allá del tope).
+    session_max_age_s: int | None = None
 
 
 class ProfileOut(BaseModel):

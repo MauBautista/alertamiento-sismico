@@ -15,6 +15,7 @@ tirado al ocupante, y el siguiente usuario del mismo aparato lo heredaba.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends
@@ -26,6 +27,7 @@ from takab_api.auth.claims import ALL_SITES, Claims
 from takab_api.auth.deps import get_claims, get_session
 from takab_api.auth.matrix import INTERNAL_ROLES, allowed_actions, allowed_routes
 from takab_api.auth.scope import console_scope
+from takab_api.auth.session_age import session_deadline, session_max_age_s
 from takab_api.schemas.me import (
     MeActions,
     MeEnrolledSite,
@@ -65,6 +67,11 @@ async def me(
     [T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del
     claim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo
     primero, y es exactamente el dato que el teléfono guardaba en solitario.
+
+    [T-8.02 · D-38] ``session_expires_at`` / ``session_max_age_s``: cuándo termina
+    ESTA sesión (``auth_time`` + tope del rol) y cuánto dura la del rol. El SOC los
+    usa para avisar una hora antes; ``get_claims`` ya rechazó cualquier sesión
+    pasada de plazo, así que aquí el plazo siempre es futuro.
     """
     site_scope: Literal["*"] | list[str]
     if claims.site_scope is ALL_SITES:
@@ -72,6 +79,7 @@ async def me(
     else:
         site_scope = sorted(claims.site_scope)
     rows = (await conn.execute(_SELECT_ENROLLMENTS, {"sub": claims.sub})).all()
+    deadline = session_deadline(claims)
     return MeResponse(
         sub=claims.sub,
         tenant_id=claims.tenant_id,
@@ -85,6 +93,10 @@ async def me(
         allowed_routes=allowed_routes(claims.role),
         allowed_actions=MeActions(**allowed_actions(claims.role)),
         enrolled_sites=[MeEnrolledSite(**dict(r._mapping)) for r in rows],
+        session_expires_at=(
+            datetime.fromtimestamp(deadline, tz=UTC) if deadline is not None else None
+        ),
+        session_max_age_s=session_max_age_s(claims.role),
     )
 
 

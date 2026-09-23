@@ -7278,6 +7278,29 @@
             "title": "Role",
             "type": "string"
           },
+          "session_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Expires At"
+          },
+          "session_max_age_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Max Age S"
+          },
           "site_scope": {
             "anyOf": [
               {
@@ -7643,6 +7666,18 @@
               }
             ],
             "title": "Dictamen Status"
+          },
+          "incident_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incident Id"
           }
         },
         "required": [
@@ -16042,7 +16077,7 @@
     },
     "/me": {
       "get": {
-        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.\n\n[T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del\nclaim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo\nprimero, y es exactamente el dato que el teléfono guardaba en solitario.",
+        "description": "Perfil del portador del token: qué ve y qué puede hacer en el SOC web.\n\n``site_scope`` sale como ``\"*\"`` (todo el tenant) o lista ordenada de sitios\n(posiblemente vacía = default-deny). Un rol móvil-only devuelve rutas vacías.\n\n[T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del\nclaim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo\nprimero, y es exactamente el dato que el teléfono guardaba en solitario.\n\n[T-8.02 · D-38] ``session_expires_at`` / ``session_max_age_s``: cuándo termina\nESTA sesión (``auth_time`` + tope del rol) y cuánto dura la del rol. El SOC los\nusa para avisar una hora antes; ``get_claims`` ya rechazó cualquier sesión\npasada de plazo, así que aquí el plazo siempre es futuro.",
         "operationId": "me_me_get",
         "responses": {
           "200": {

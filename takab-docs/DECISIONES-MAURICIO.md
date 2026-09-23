@@ -12,10 +12,10 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-22 · **37 decisiones** · 31 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-22 · **38 decisiones** · 32 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
 > 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
-> 2026-09-19, 1 el 2026-09-22), 6 delegadas (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
+> 2026-09-19, 2 el 2026-09-22), 6 delegadas (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
 > tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
@@ -93,6 +93,7 @@
 | [D-35](#d-35) | El arnés necesita **DOS** identidades, no una: el táctico resuelve su sitio por el `[0]` de `site_scope`, así que con una sola el brigadista mira Puebla | 2026-09-18 | Mauricio |
 | [D-36](#d-36) | El papel de TAKAB **no lleva firmante nominal**: emite y responde la persona moral, y el renglón de la firma lo dice en vez de quedarse en blanco | 2026-09-19 | Mauricio |
 | [D-37](#d-37) | El tope de la redacción asistida sube de 8 s a **30 s** y la generación sigue dentro de la petición: con fotografías se midió p50 13 686 ms y máximo 20 604 ms, así que 8 s **cortaba siempre** el dictamen que las lleva | 2026-09-22 | Mauricio |
+| [D-38](#d-38) | La sesión dura **según el rol**, contada desde el login y no desde el último refresco: brigadista e inspector **30 días**, ocupante **90**, el resto **24 h**; la impone la API con `auth_time` porque Cognito solo sabe duraciones por cliente | 2026-09-22 | Mauricio |
 
 ---
 
@@ -1871,5 +1872,66 @@ documentación (`create-secret` no actualiza un secreto que ya existe, y devuelv
 escribir), y el modelo anterior —`anthropic/claude-sonnet-5`— **devolvía el contenido vacío**,
 gastándose los 1 600 tokens de `MAX_OUTPUT_TOKENS` en razonar. Veinte segundos de latencia y
 cero caracteres.
+
+---
+
+## D-38 · La sesión dura **según el rol**, y la impone la API contando desde el login
+
+**Fecha:** 2026-09-22 · **Ficha:** `T-8.02`…`T-8.05` · **Toca:** `matrix.SESSION_MAX_AGE_S`,
+`auth/session_age.py`, los tres app clients de `infra/terraform/modules/identity`, la sesión de la
+consola y la de la app
+
+**Lo que se decidió.** Brigadista e inspector no vuelven a teclear contraseña ni código en **30
+días**. El ocupante conserva sus **90 días**. Todos los demás —`takab_superadmin`,
+`takab_support`, `tenant_admin`, `soc_operator`, `gov_operator`, `building_admin` y
+`security_guard`— tienen **24 horas**. Es un tope **absoluto contado desde el login real** (el
+claim `auth_time`, que el refresco no renueva), no desde la última actividad. Se tomó con tres
+decisiones de detalle del mismo día:
+
+- **la consola guarda la sesión en `localStorage`**, para que el día (o el mes del inspector)
+  sobreviva a cerrar la pestaña, con el tope en el servidor y la revocación al cerrar sesión;
+- **el inspector tiene su mes también en la consola**, no solo en la app;
+- **al SOC no se le prorroga la sesión durante un incidente.** Una hora antes del tope la
+  consola avisa y ofrece renovar en un momento tranquilo; a la hora 24 pide contraseña y código
+  como cualquier login.
+
+**El problema que la hizo urgente.** Al auditar la plataforma dos días antes de la presentación
+se midió que la sesión real duraba **unos 60 minutos en las dos superficies**, dijera lo que
+dijera Cognito. En la consola, el WebSocket se cierra con 4401 al vencer el token del handshake y
+el cliente lo trataba como fin de sesión. La app guardaba el refresh token y ningún código lo
+usaba. Los 8 h, 24 h y 90 días configurados eran letra muerta.
+
+**Por qué la impone la API y no Cognito.** Cognito fija la validez del refresh **por app client**,
+no por grupo, y los clientes se comparten entre roles con duraciones distintas: el táctico lo
+usan brigadista e inspector (30 días) junto con `security_guard` y `building_admin` (24 h), y el
+web los siete roles de consola. Separar clientes obligaría a elegir el cliente **antes** de saber
+el rol. Así que cada cliente declara el máximo de los roles que lo usan —web 30 días, táctico 30,
+ocupantes 90— y la API corta a cada rol en su tope con un 401 `sesion_expirada` (4440 en el
+WebSocket). Lo anclan `infra/terraform/modules/identity/tests/sesion.tftest.hcl` y el censo de
+`SESSION_MAX_AGE_S`.
+
+**El precio, declarado.**
+
+- **El segundo factor se presenta una vez al mes** en dos roles que pueden activar y silenciar la
+  sirena (regla de oro 8). El pool sigue en MFA obligatoria y la guarda de comandos
+  (`auth/mfa.py`) sigue exigiendo el pool, no la frescura del login —que es lo que ese módulo ya
+  declaraba como decisión de producto—. Pero un teléfono perdido y desbloqueado vale 30 días.
+  Lo compensa el interruptor: **deshabilitar al usuario cierra todas sus sesiones**
+  (`admin_user_global_sign_out`). El ID token ya emitido sigue valiendo hasta una hora.
+- **`localStorage` expone el refresh token a un XSS** en una consola pública. Va con la
+  revocación al cerrar sesión y con una CSP que entra primero en modo informe y se aplica cuando
+  el recorrido desplegado dé cero violaciones.
+- **Todo el tope por rol depende de que Cognito conserve `auth_time` al refrescar**, que es lo que
+  exige OIDC y lo que la documentación de AWS **no dice** de forma explícita. Queda por medir
+  contra Cognito real. Si se renovara en cada refresco, el tope no se dispararía nunca y la
+  alternativa ya está diseñada: contarlo desde la primera vez que la API ve el `origin_jti` de la
+  sesión, que no cambia al refrescar. Mientras tanto, los dos clientes llevan su propio cinturón:
+  guardan la hora del login y no renuevan pasado el tope.
+
+**Cómo se revocaría.** Cambiar un número de `SESSION_MAX_AGE_S` y, si sube por encima del máximo
+de su cliente, el cliente en el Terraform: el `.tftest.hcl` exige que cada cliente declare
+exactamente el máximo de los roles que lo usan, así que los dos cambios van juntos o el plan se
+pone rojo. Volver a `sessionStorage` en la consola es una línea, y devuelve el «el día dura
+mientras la pestaña esté abierta».
 
 ---

@@ -41,6 +41,11 @@ class DevTokenRequest(BaseModel):
     groups: list[str] | None = None
     expires_in: int = Field(default=3600, gt=0, le=86400)
     pool: str | None = Field(default=None, pattern="^(main|occupants)$")
+    #: [T-8.02 · D-38] Hace cuánto (s) «inició sesión» el portador: el token lleva
+    #: ``auth_time = ahora − auth_age_s``. ``0`` = login recién hecho. Sirve para
+    #: ensayar el aviso de fin de sesión y el corte sin esperar un día (SOC) ni un
+    #: mes (campo). Tope 100 d: por encima de los 90 d del ocupante.
+    auth_age_s: int = Field(default=0, ge=0, le=100 * 86400)
 
 
 class DevTokenResponse(BaseModel):
@@ -79,6 +84,10 @@ def dev_token(body: DevTokenRequest) -> DevTokenResponse:
         "iat": now,
         "nbf": now,
         "exp": now + body.expires_in,
+        # SIEMPRE: la API rechaza un token sin `auth_time` (no hay de dónde contar
+        # el tope de sesión), y un /dev/token que no lo pusiera tumbaría la consola
+        # local y los E2E enteros.
+        "auth_time": now - body.auth_age_s,
         "cognito:groups": body.groups if body.groups is not None else [body.role],
         "custom:role": body.role,
         "custom:tenant_id": body.tenant_id,

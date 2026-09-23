@@ -1178,6 +1178,11 @@ export const closeWindowMaintenanceWindowsWindowIdClosePost = <ThrowOnError exte
  * [T-2.114] ``enrolled_sites`` es OTRA cosa que ``site_scope``: el alcance del
  * claim frente al alta por código (R2). Un ocupante tiene lo segundo y no lo
  * primero, y es exactamente el dato que el teléfono guardaba en solitario.
+ *
+ * [T-8.02 · D-38] ``session_expires_at`` / ``session_max_age_s``: cuándo termina
+ * ESTA sesión (``auth_time`` + tope del rol) y cuánto dura la del rol. El SOC los
+ * usa para avisar una hora antes; ``get_claims`` ya rechazó cualquier sesión
+ * pasada de plazo, así que aquí el plazo siempre es futuro.
  */
 export const meMeGet = <ThrowOnError extends boolean = false>(options?: Options<MeMeGetData, ThrowOnError>) => {
     return (options?.client ?? _heyApiClient).get<MeMeGetResponse, unknown, ThrowOnError>({

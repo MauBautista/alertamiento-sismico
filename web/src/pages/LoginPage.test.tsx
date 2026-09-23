@@ -91,11 +91,50 @@ describe("LoginPage", () => {
     expect(aviso).toHaveAttribute("role", "status");
   });
 
+  // [T-8.03 · D-38] El TOPE de la sesión no es una expiración cualquiera: el
+  // operador no hizo nada mal y renovar no sirve. Se dice distinto, con la
+  // duración que la API declaró para su rol, y sin inventarla si no se conoce.
+  it("fin por tope de 24 h ⇒ «SU SESIÓN DE 24 H TERMINÓ», no el aviso de cierre", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.setState({ sessionMaxAgeS: 86_400 });
+    useSessionStore.getState().handleUnauthorized("max_age");
+    renderRoutesAt("/");
+
+    const aviso = screen.getByTestId("login-sesion-tope");
+    expect(aviso).toHaveTextContent("SU SESIÓN DE 24 H TERMINÓ");
+    expect(aviso).toHaveTextContent(/contraseña y (su )?código/);
+    expect(aviso).toHaveAttribute("role", "status");
+    expect(screen.queryByTestId("login-sesion-cerrada")).not.toBeInTheDocument();
+  });
+
+  it("fin por tope de 30 días ⇒ «SU SESIÓN DE 30 DÍAS TERMINÓ»", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.setState({ sessionMaxAgeS: 2_592_000 });
+    useSessionStore.getState().handleUnauthorized("max_age");
+    renderRoutesAt("/");
+
+    expect(screen.getByTestId("login-sesion-tope")).toHaveTextContent(
+      "SU SESIÓN DE 30 DÍAS TERMINÓ",
+    );
+  });
+
+  it("tope sin duración conocida ⇒ aviso genérico, sin inventar un número", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.getState().handleUnauthorized("max_age");
+    renderRoutesAt("/");
+
+    const aviso = screen.getByTestId("login-sesion-tope");
+    expect(aviso).toHaveTextContent(/^SU SESIÓN TERMINÓ/);
+    expect(aviso).toHaveTextContent(/duración máxima/);
+    expect(aviso.textContent).not.toMatch(/\d+ (H|DÍAS)/);
+  });
+
   it("un arranque en frío NO acusa a nadie de haber expirado", () => {
     // El aviso solo existe cuando hubo un episodio anterior; en un login normal
     // sería una alarma falsa, y una consola que alarma sin causa se ignora.
     renderRoutesAt("/");
     expect(screen.queryByTestId("login-sesion-cerrada")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("login-sesion-tope")).not.toBeInTheDocument();
   });
 
   it("autenticado en / redirige al landing del rol (primera allowed_route)", () => {

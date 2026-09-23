@@ -115,7 +115,12 @@ class UserDirectory(Protocol):
         self, username: str, *, attributes: dict[str, str], role: str | None
     ) -> UserRecord: ...
 
-    def set_enabled(self, username: str, enabled: bool) -> UserRecord: ...
+    def set_enabled(self, username: str, enabled: bool) -> UserRecord:
+        """Habilita o deshabilita. [T-8.02 · D-38] Deshabilitar CIERRA ANTES todas
+        las sesiones de la cuenta (``AdminUserGlobalSignOut``): con sesiones de 30 d
+        (campo) y 90 d (ocupante), la baja es el interruptor contra un refresh token
+        robado. Si el cierre falla, NO se deshabilita y el error sube."""
+        ...
 
     def reset_password(self, username: str) -> None: ...
 
@@ -161,6 +166,9 @@ class SimulatedUserDirectory:
 
     def __init__(self, seed: list[UserRecord] | None = None) -> None:
         self._users: dict[str, UserRecord] = {u.username: u for u in (seed or [])}
+        #: [T-8.02] Cuentas cuyas sesiones se «cerraron» al deshabilitarlas. Es lo
+        #: que un test puede mirar; ninguna sesión real existe en este directorio.
+        self.signed_out: list[str] = []
         logger.warning(
             "TAKAB_API_COGNITO_USER_POOL_ID vacío: directorio de usuarios SIMULADO — "
             "ningún alta, cambio de rol o baja llega a Cognito. En la nube esto es un fallo."
@@ -238,10 +246,21 @@ class SimulatedUserDirectory:
         return updated
 
     def set_enabled(self, username: str, enabled: bool) -> UserRecord:
-        updated = replace(self._require(username), enabled=enabled)
+        current = self._require(username)
+        if not enabled:
+            # Mismo orden que el real: cerrar sesiones ANTES de deshabilitar, y si
+            # el cierre falla la cuenta queda como estaba.
+            self._global_sign_out(username)
+        updated = replace(current, enabled=enabled)
         self._users[username] = updated
         logger.warning("habilitación SIMULADA de %s → %s", username, enabled)
         return updated
+
+    def _global_sign_out(self, username: str) -> None:
+        self.signed_out.append(username)
+        logger.warning(
+            "cierre de sesiones SIMULADO de %s: ningún refresh token real se revocó", username
+        )
 
     def reset_password(self, username: str) -> None:
         self._require(username)
@@ -380,11 +399,39 @@ class CognitoUserDirectory:
         return self._require(username)
 
     def set_enabled(self, username: str, enabled: bool) -> UserRecord:
-        self._call(
-            "admin_enable_user" if enabled else "admin_disable_user",
-            UserPoolId=self._pool,
-            Username=username,
-        )
+        """[T-8.02 · D-38] Deshabilitar = cerrar sesiones Y DESPUÉS deshabilitar.
+
+        **El orden es la decisión.** Al revés, un fallo del cierre dejaría la cuenta
+        deshabilitada con sus refresh tokens vivos —hasta 30 d— y el reintento del
+        operador sería un no-op: el router solo llama aquí cuando ``enabled``
+        CAMBIA, y ya estaría en ``false``. El hueco quedaría abierto y en silencio.
+        Así, si el cierre falla no ha cambiado nada: el error sube (el router lo
+        traduce a 5xx y no escribe bitácora) y el reintento repite las dos cosas.
+
+        Lo que el cierre NO alcanza: el ID token ya emitido, que la API verifica
+        localmente (firma + ``exp``); vive hasta su ``exp`` (60 min en el pool).
+        """
+        if enabled:
+            self._call("admin_enable_user", UserPoolId=self._pool, Username=username)
+            return self._require(username)
+        try:
+            self._call("admin_user_global_sign_out", UserPoolId=self._pool, Username=username)
+        except DirectoryError:
+            logger.error(
+                "no se pudieron cerrar las sesiones de %s: la cuenta NO se deshabilitó "
+                "(sigue exactamente como estaba)",
+                username,
+            )
+            raise
+        try:
+            self._call("admin_disable_user", UserPoolId=self._pool, Username=username)
+        except DirectoryError:
+            logger.error(
+                "sesiones de %s cerradas, pero la cuenta sigue habilitada: puede volver "
+                "a iniciar sesión hasta que la baja se reintente",
+                username,
+            )
+            raise
         return self._require(username)
 
     def reset_password(self, username: str) -> None:

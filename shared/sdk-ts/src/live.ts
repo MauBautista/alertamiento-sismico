@@ -41,8 +41,24 @@ export interface LiveSocketOptions {
   url: string;
   /** ID token vivo de la sesión; se lee EN CADA conexión (tokens renovados). */
   getToken: () => string | null;
-  /** El servidor cerró con 4401 (token inválido/expirado): NO se reintenta. */
-  onUnauthorized: () => void;
+  /**
+   * La sesión terminó y el canal NO se reintenta. `reason`:
+   * - `'expired'`: 4401 (token inválido o vencido) y no hubo forma de renovarlo;
+   * - `'max_age'`: 4440 — la sesión cumplió la edad máxima de su rol (D-38,
+   *   `matrix.SESSION_MAX_AGE_S`). Renovar no sirve: hace falta volver a entrar.
+   */
+  onUnauthorized: (reason?: SessionEndReason) => void;
+  /**
+   * [T-8.03/T-8.04] Renueva el ID token (refresh de Cognito) y devuelve el nuevo,
+   * o `null` si no se pudo. Ante un 4401 el socket la llama UNA vez por conexión
+   * y, si devuelve token, reconecta en el acto con él (`getToken` ya lo verá).
+   *
+   * Existe porque el servidor cierra el socket al vencer el `exp` del token del
+   * handshake (60 min): sin renovación, ese cierre rutinario terminaba la sesión
+   * aunque la plataforma ya tuviera un token nuevo — la consola se cerraba a la hora.
+   * Sin esta opción el comportamiento es el de antes: 4401 ⇒ `onUnauthorized`.
+   */
+  renewToken?: () => Promise<string | null>;
   /**
    * [T-2.129] Llegó algo que este cliente no sabe repartir: `type` desconocido
    * (servidor más nuevo), JSON corrupto, o un frame de protocolo sin manejador.
@@ -64,7 +80,12 @@ export interface LiveSocketOptions {
   backoffMaxMs?: number;
 }
 
+/** Por qué terminó una sesión, visto desde el canal live. */
+export type SessionEndReason = 'expired' | 'max_age';
+
 const WS_AUTH_FAILED = 4401;
+/** [T-8.02] La sesión cumplió la edad máxima de su rol (D-38). No se reintenta. */
+export const WS_SESSION_EXPIRED = 4440;
 const DEFAULT_BACKOFF_BASE_MS = 1_000;
 const DEFAULT_BACKOFF_MAX_MS = 30_000;
 
@@ -77,7 +98,7 @@ function defaultOnServerError(frame: ErrorFrame): void {
 }
 
 export class LiveSocket {
-  private readonly options: Required<LiveSocketOptions>;
+  private readonly options: Required<Omit<LiveSocketOptions, 'renewToken'>>;
 
   private ws: WebSocket | null = null;
   private currentStatus: LiveStatus = 'closed';
@@ -87,8 +108,12 @@ export class LiveSocket {
   private attempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private closedByUser = false;
+  private readonly renewToken: (() => Promise<string | null>) | null;
+  /** Ya se intentó renovar desde el último `ready`: un segundo 4401 es definitivo. */
+  private renewAttempted = false;
 
   constructor(options: LiveSocketOptions) {
+    this.renewToken = options.renewToken ?? null;
     this.options = {
       backoffBaseMs: DEFAULT_BACKOFF_BASE_MS,
       backoffMaxMs: DEFAULT_BACKOFF_MAX_MS,
@@ -157,7 +182,7 @@ export class LiveSocket {
     const token = this.options.getToken();
     if (token === null) {
       this.setStatus('closed');
-      this.options.onUnauthorized();
+      this.options.onUnauthorized('expired');
       return;
     }
     this.setStatus('connecting');
@@ -183,6 +208,7 @@ export class LiveSocket {
     }
     if (frame.type === 'ready') {
       this.attempt = 0;
+      this.renewAttempted = false;
       this.setStatus('ready');
       for (const topic of this.listeners.keys()) {
         if (!LOCAL_TOPICS.has(topic)) {
@@ -216,12 +242,40 @@ export class LiveSocket {
     if (this.ws !== ws) return; // cierre de un socket ya reemplazado
     this.ws = null;
     if (this.closedByUser) return; // close() ya fijó el estado
-    if (code === WS_AUTH_FAILED) {
+    if (code === WS_SESSION_EXPIRED) {
       this.setStatus('closed');
-      this.options.onUnauthorized();
+      this.options.onUnauthorized('max_age');
+      return;
+    }
+    if (code === WS_AUTH_FAILED) {
+      if (this.renewToken !== null && !this.renewAttempted) {
+        this.renewAttempted = true;
+        this.setStatus('connecting');
+        void this.renewAndReconnect(this.renewToken);
+        return;
+      }
+      this.setStatus('closed');
+      this.options.onUnauthorized('expired');
       return;
     }
     this.scheduleReconnect();
+  }
+
+  /** 4401 con renovación disponible: un intento, y reconexión inmediata con el token nuevo. */
+  private async renewAndReconnect(renew: () => Promise<string | null>): Promise<void> {
+    let fresh: string | null = null;
+    try {
+      fresh = await renew();
+    } catch {
+      fresh = null;
+    }
+    if (this.closedByUser || this.ws !== null) return; // cerrado o ya reconectado entretanto
+    if (fresh === null) {
+      this.setStatus('closed');
+      this.options.onUnauthorized('expired');
+      return;
+    }
+    this.openSocket();
   }
 
   private scheduleReconnect(): void {
