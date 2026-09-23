@@ -414,6 +414,11 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
 - Cognito Hosted UI + Authorization Code + PKCE (mismo patrón que la consola). Sesión de
   ocupante de larga vida (refresh en Keychain/Keystore): la app debe alertar sin pedir login en
   plena crisis. Acciones tácticas siempre re-verifican token vigente.
+- **Duración (`D-38`, 2026-09-22):** contada desde el login, no desde el último refresco —
+  ocupante **90 días**, brigadista e inspector **30 días**, `security_guard` y `building_admin`
+  **24 h**—. La impone la API con `auth_time` (401 `sesion_expirada`, WS 4440); la app renueva el
+  ID token con el refresh al arrancar, al volver a primer plano, antes del WS y ante un 401
+  (`T-8.04`). Hasta `T-8.04` la app guardaba el refresh y no lo usaba: la sesión real duraba 60 min.
 - **Aceptación:** expiración del refresh NO bloquea la pantalla de crisis si hay incidente
   activo cacheado <15 min (se muestra con marca de datos retenidos y se re-autentica al tocar).
 

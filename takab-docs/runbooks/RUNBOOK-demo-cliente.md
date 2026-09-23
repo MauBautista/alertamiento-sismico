@@ -364,7 +364,7 @@ mobile/.maestro/run.sh 03-dictamen-liberacion.yaml
 ## Limpieza — **parte del guion, no del después**
 
 ```bash
-curl -X POST http://<ip-del-gabinete>:8080/api/reset          # suelta el enclavado
+curl -X POST -H "X-Takab-Pin: <PIN>" http://<ip-del-gabinete>:8080/api/reset   # suelta el enclavado (sin el PIN: 401; mejor el botón CERRAR ALERTA del panel)
 ```
 
 Y en la consola: **clasificar como `reproduccion` TODOS los incidentes que abrió la corrida** (ver

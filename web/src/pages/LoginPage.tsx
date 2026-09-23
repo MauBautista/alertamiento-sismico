@@ -6,6 +6,7 @@ import { getEnv } from "../app/env";
 import { landingPath } from "../app/landing";
 import logoTakab from "../assets/imagotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
+import { maxAgeLabel } from "../auth/sessionLimit";
 import { cognitoConfigured } from "../auth/userManager";
 import MobileOnlyScreen from "./MobileOnlyScreen";
 import { SplashScreen } from "./StatusScreens";
@@ -81,10 +82,25 @@ interface LoginLocationState {
   returnTo?: string;
 }
 
+/**
+ * [T-8.03 · D-38] El aviso del TOPE. La duración sale de lo que la API declaró
+ * para el rol (`session_max_age_s`); si no llegó a decirlo, el aviso es el
+ * genérico — «24 H» escrito a mano sería inventárselo para quien tiene 30 días.
+ */
+function avisoDeTope(maxAgeS: number | null): string {
+  const duracion = maxAgeLabel(maxAgeS);
+  const titular = duracion === null ? "SU SESIÓN TERMINÓ" : `SU SESIÓN DE ${duracion} TERMINÓ`;
+  return (
+    `${titular} · alcanzó la duración máxima para su rol, contada desde que entró. ` +
+    "Por seguridad hay que volver a entrar con su contraseña y su código."
+  );
+}
+
 export default function LoginPage() {
   const status = useSessionStore((s) => s.status);
   const me = useSessionStore((s) => s.me);
   const endedReason = useSessionStore((s) => s.endedReason);
+  const sessionMaxAgeS = useSessionStore((s) => s.sessionMaxAgeS);
   const loginCognito = useSessionStore((s) => s.loginCognito);
   const location = useLocation();
   const [cognitoError, setCognitoError] = useState<string | null>(null);
@@ -124,6 +140,14 @@ export default function LoginPage() {
           <p className="soc-screen__aviso" role="status" data-testid="login-sesion-cerrada">
             SU SESIÓN SE CERRÓ · el servidor dejó de reconocerla (expiró o fue revocada). Vuelva a
             entrar.
+          </p>
+        ) : null}
+        {/* [T-8.03] El tope (D-38) es OTRA causa y se dice distinto: aquí el
+            operador no hizo nada mal, no hubo revocación, y renovar no sirve —
+            la sesión cumplió la duración de su rol desde el login. */}
+        {endedReason === "max_age" ? (
+          <p className="soc-screen__aviso" role="status" data-testid="login-sesion-tope">
+            {avisoDeTope(sessionMaxAgeS)}
           </p>
         ) : null}
         {cognitoConfigured() ? (

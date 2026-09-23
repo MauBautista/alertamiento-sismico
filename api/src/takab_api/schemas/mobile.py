@@ -182,6 +182,13 @@ class MobileReentryOut(BaseModel):
     #: Estado del último dictamen del incidente (o None si no hay).
     dictamen_status: str | None
     dictamen_signed: bool
+    #: [T-8.11 · A-022] El incidente AL QUE PERTENECE el dictamen de arriba.
+    #: Desde D-33 el motor cierra el incidente segundos después de la firma, así
+    #: que ``incident`` vuelve a ``null`` mientras ``dictamen_signed`` sigue en
+    #: verdadero (ventana ``reentry_declare_s``). Sin este campo el botón «VER
+    #: DICTAMEN DE REINGRESO» se pintaba y llevaba a «Sin incidente activo»: el
+    #: certificado que la RBAC §3 concede era inalcanzable justo cuando existe.
+    incident_id: UUID | None = None
 
 
 class MobileSiteHealthOut(BaseModel):

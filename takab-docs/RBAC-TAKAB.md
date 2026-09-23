@@ -420,6 +420,33 @@ SET LOCAL app.user_id   = '{sub}';
 Las políticas RLS (definidas en el esquema de Fase 0) usan estos valores. El rol `gov_operator`
 activa la cláusula de visibilidad cruzada solo para tenants `visibility = 'gov_shared'`.
 
+### 5.4 Duración de sesión por rol (`D-38`, 2026-09-22)
+
+Tope **absoluto contado desde el login** (el claim `auth_time`, que el refresco no renueva), no
+desde la última actividad. Pasado el tope la API responde 401 `sesion_expirada` (4440 en el
+WebSocket) y hay que volver a entrar con contraseña y código. La verdad ejecutable es
+`api/src/takab_api/auth/matrix.py::SESSION_MAX_AGE_S`, y
+`api/tests/auth/test_duracion_sesion_doc.py` compara esta tabla con ella fila a fila.
+
+| Rol | Tope desde el login | Cliente Cognito (refresh del cliente) |
+|---|---|---|
+| `takab_superadmin` | 24 h | web (30 d) |
+| `takab_support` | 24 h | web (30 d) |
+| `tenant_admin` | 24 h | web (30 d) |
+| `soc_operator` | 24 h | web (30 d) |
+| `gov_operator` | 24 h | web (30 d) |
+| `inspector` | 30 d | web (30 d) y táctico (30 d) |
+| `building_admin` | 24 h | web (30 d) y táctico (30 d) |
+| `brigadista` | 30 d | táctico (30 d) |
+| `security_guard` | 24 h | táctico (30 d) |
+| `occupant` | 90 d | ocupantes (90 d) |
+
+Cognito fija la validez del refresh **por cliente**, no por grupo, así que cada cliente declara el
+**máximo** de los roles que lo usan (`infra/terraform/modules/identity/tests/sesion.tftest.hcl`) y
+la API recorta a cada rol. El MFA del pool principal sigue `ON`: brigadista e inspector lo
+presentan una vez al mes (el precio está escrito en `D-38`). Deshabilitar a un usuario cierra
+todas sus sesiones.
+
 ---
 
 ## 6. Tablas nuevas que exige este modelo

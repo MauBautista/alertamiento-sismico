@@ -92,8 +92,19 @@ def _base_claims(
     iat_delta: int = 0,
     nbf_delta: int = 0,
     exp_delta: int = 3600,
+    auth_age: int = 0,
+    drop: tuple[str, ...] = (),
     **over: Any,
 ) -> dict[str, Any]:
+    """Claims de un ID token de Cognito.
+
+    [T-8.02 · D-38] ``auth_time`` = hora del LOGIN (contraseña + código), que el
+    refresco no renueva; la API corta la sesión en ``auth_time + tope del rol``.
+    ``auth_age`` = cuántos segundos ANTES de la emisión (``iat``) ocurrió ese login:
+    ``0`` es un login recién hecho, ``86401`` un SOC al que ya se le pasó el día.
+    ``drop`` quita claims del payload (p. ej. ``("auth_time",)`` para probar el
+    rechazo de un token que no lo declara).
+    """
     now = int(time.time())
     claims: dict[str, Any] = {
         "sub": user_id or str(uuid.uuid4()),
@@ -103,6 +114,7 @@ def _base_claims(
         "iat": now + iat_delta,
         "nbf": now + nbf_delta,
         "exp": now + exp_delta,
+        "auth_time": now + iat_delta - auth_age,
         "cognito:groups": [role],
         "custom:role": role,
         "custom:tenant_id": tenant,
@@ -111,6 +123,8 @@ def _base_claims(
         "custom:zone_id": zone_id,
     }
     claims.update(over)
+    for name in drop:
+        claims.pop(name, None)
     return claims
 
 

@@ -10,6 +10,7 @@ import { edgeMqttView, useLiveHealthStore } from "../live/liveHealth.store";
 import { useNow } from "../lib/useNow";
 import { navTabsFor } from "./navItems";
 import OperatorMenu from "./OperatorMenu";
+import SessionExpiryBanner from "./SessionExpiryBanner";
 
 /** Reloj SOC. CST fijo vía America/Mexico_City (México abolió el DST en 2022). */
 function formatClock(now: Date): { utc: string; cst: string; date: string } {
@@ -125,7 +126,15 @@ export default function Topbar() {
         <span>{clock.date}</span>
       </div>
 
-      <OperatorMenu />
+      {/* [T-8.03 · D-38] El aviso del tope de sesión va DENTRO del mismo hijo que el
+          menú del operador, no como un séptimo hijo de la reja: `.soc-topbar`
+          declara sus columnas una a una y un hijo más abre una fila implícita
+          (ver el comentario de la regla en soc.css). Solo existe la última hora
+          de la sesión; el resto del tiempo el envoltorio mide lo que el menú. */}
+      <div className="soc-topbar__cuenta">
+        <SessionExpiryBanner />
+        <OperatorMenu />
+      </div>
     </header>
   );
 }

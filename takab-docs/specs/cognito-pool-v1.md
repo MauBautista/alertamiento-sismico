@@ -102,7 +102,7 @@ así que en el token viaja como **CSV** (o `"*"`), no como array. La API (`claim
 | Explicit auth flows | `ALLOW_USER_SRP_AUTH`, `ALLOW_REFRESH_TOKEN_AUTH` |
 | Access token | 60 min |
 | ID token | 60 min |
-| Refresh token | 8 h |
+| Refresh token | **30 d** desde el 2026-09-22 (`D-38`; era 8 h). No es la duración de la sesión de nadie: el tope por rol lo impone la API contando desde `auth_time` (ver `RBAC-TAKAB.md §5.4`) |
 | `prevent_user_existence_errors` | `ENABLED` |
 
 ### 4.1 Sobre PKCE

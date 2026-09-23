@@ -3,6 +3,11 @@
 Solo RS256. Verifica firma (clave del ``kid``), issuer, audience, exp/nbf
 (leeway 0) y ``token_use == 'id'`` (Cognito pone ``custom:*`` solo en el ID
 token). Cualquier fallo ⇒ ``AuthError`` (status 401 + razón).
+
+[T-8.02 · D-38] Exige además ``auth_time`` (la hora del LOGIN, que el refresco no
+renueva): es de donde cuenta el tope de sesión por rol (``auth/session_age.py``).
+Un token sin él no se acepta — no hay de dónde contar, y ``iat`` no sirve de
+sustituto porque se renueva en cada refresco.
 """
 
 from __future__ import annotations
@@ -73,8 +78,10 @@ def _decode(
             issuer=issuer,
             audience=audience,
             leeway=0,
-            options={"require": ["exp", "iat"]},
+            options={"require": ["exp", "iat", "auth_time"]},
         )
+    except jwt.MissingRequiredClaimError as exc:
+        raise AuthError(f"missing claim: {exc.claim}") from exc
     except jwt.ExpiredSignatureError as exc:
         raise AuthError("token expired") from exc
     except jwt.ImmatureSignatureError as exc:

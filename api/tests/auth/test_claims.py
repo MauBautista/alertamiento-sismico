@@ -43,7 +43,11 @@ def test_role_not_in_groups_raises_401() -> None:
 
 
 def _payload(**over: object) -> dict:
+    # [T-8.02 · D-38] Un payload VERIFICADO siempre trae `auth_time` (el decode lo
+    # exige): es de donde cuenta el tope de sesión.
     base = {
+        "auth_time": 1_700_000_000,
+        "iat": 1_700_000_000,
         "sub": "u",
         "cognito:groups": ["soc_operator"],
         "custom:role": "soc_operator",
@@ -100,3 +104,13 @@ def test_claims_is_immutable() -> None:
     claims = Claims.from_verified(_payload())
     with pytest.raises(FrozenInstanceError):
         claims.role = "takab_superadmin"  # type: ignore[misc]
+
+
+def test_payload_sin_auth_time_es_401() -> None:
+    """[T-8.02] Sin la hora del login no hay de dónde contar el tope de la sesión."""
+    payload = _payload()
+    del payload["auth_time"]
+    with pytest.raises(AuthError) as excinfo:
+        Claims.from_verified(payload)
+    assert excinfo.value.status == 401
+    assert "auth_time" in excinfo.value.reason

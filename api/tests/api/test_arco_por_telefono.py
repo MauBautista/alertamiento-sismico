@@ -105,10 +105,16 @@ def _admin(tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
 
 
 def _operador() -> dict[str, str]:
-    """Un rol que NO es responsable del tratamiento."""
+    """Un rol que NO es responsable del tratamiento.
+
+    [T-8.02 · D-38] Era un rol inventado (`operator`). Un rol fuera de los diez de la
+    matriz ya no llega a la guarda de la ruta: la API lo rechaza antes con 401,
+    porque no tiene tope de sesión (default-deny). Lo que este test defiende es
+    «un rol SIN la acción no borra», así que va un rol real sin
+    `manage_privacy_erasure`."""
     return au.bearer(
         au.make_token(
-            "operator",
+            "soc_operator",
             tenant=au.DB_TENANT_PRIV,
             site_scope="*",
             user_id="70000000-0000-0000-0000-0000000op01",

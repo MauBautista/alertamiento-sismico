@@ -7,6 +7,7 @@ import { StatusBar } from "expo-status-bar";
 import { useEffect } from "react";
 import { AppState } from "react-native";
 
+import { wireSessionToForeground } from "@/auth/refresh";
 import { useSessionStore } from "@/auth/session.store";
 import { bootstrapSession } from "@/auth/useAuth";
 import { CrisisWatcher } from "@/features/alert/CrisisWatcher";
@@ -42,6 +43,12 @@ export default function RootLayout() {
   // pantalla, y suscribirlo por pantalla dispararía un refetch por cada una
   // que estuviera montada.
   useEffect(() => wireAppStateToFocus(AppState, focusManager), []);
+
+  // [T-8.04 · A-002] Volver a primer plano RENUEVA la sesión si hace falta.
+  // Un teléfono que pasó la noche en el cajón trae un ID token vencido: sin
+  // esto, la primera consulta al volver cobraba un 401 antes de renovar. Mismo
+  // sitio y misma razón que el cable de arriba: el foco es del proceso.
+  useEffect(() => wireSessionToForeground(AppState), []);
 
   // [T-2.04] Registro del token push al quedar autenticado (best-effort:
   // sin permiso devuelve 'no-permission' y el onboarding 0.2 lo hace visible;

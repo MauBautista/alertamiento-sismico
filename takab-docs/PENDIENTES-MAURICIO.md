@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-22 · **30 puntos abiertos** (§2: 12 · §3: 8 · §4: 7 · §5: 3),
+> **Última actualización:** 2026-09-22 · **32 puntos abiertos** (§2: 13 · §3: 9 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -539,6 +539,22 @@ el gasto entre clientes; no protege a la cuenta de una clave filtrada ni de un b
 coste medido —**US$ 0.0004 por informe**— el riesgo no es el uso normal, y por eso el tope es
 barato de poner y caro de no tener.
 
+### 2.15 · [`T-8.02`…`T-8.05`](TASKS.md) · La sesión por rol (`D-38`): medir, aplicar y desplegar — **antes del jueves 24**
+
+Tres cosas, en este orden, el **miércoles 23 por la mañana** (la congelación es a las 18:00):
+
+1. **Medir si Cognito conserva `auth_time` al refrescar.** Es la premisa de todo el tope por rol y
+   la documentación de AWS no la dice. Entra en la consola desplegada, abre DevTools → Console y
+   pega el fragmento que está en `takab-docs/PLAN-AUDITORIA-PRESENTACION.md` (F1, «Paso 0»): pide
+   un refresco con tu propio refresh token e imprime una tabla sin ningún token dentro. Si
+   `CONSERVA_AUTH_TIME` sale `true`, no hay nada más que hacer. Si sale `false`, avísame antes de
+   desplegar: se activa la alternativa por `origin_jti`, ya diseñada.
+2. **`terraform apply`** de `infra/terraform/envs/dev` con SSO fresco (`aws sso logout` antes del
+   login). En el plan deben cambiar **solo tres `aws_cognito_user_pool_client`, in-place**: web
+   8 h → 30 d, táctico 24 h → 30 d, ocupantes igual.
+3. **Desplegar la nube** con el `main` que lleve `T-8.02`…`T-8.05` e instalar la APK release en el
+   Pixel. Sin el despliegue, la consola sigue cerrándose a los 60 minutos.
+
 ## 3 · SESIONES FÍSICAS — con el gabinete y el edificio
 
 > `G-04` (relés reales, latencia <100 ms acreditada) sigue abierto **desde el hito de la Fase 1**.
@@ -921,6 +937,18 @@ demostración apagado, y los destinatarios de la cascada del tenant tienen que s
 porque una alerta real suena y notifica de verdad. Hace falta el Pixel por USB (enrolado como
 ocupante) y, si lo hay, un segundo dispositivo como brigadista. Se repite en F7 dos veces con
 cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
+
+### 3.8 · [`T-8.13`](TASKS.md) · La tarde del miércoles 23: identidades por rol, Pixel y ensayo 2
+
+- **Identidades de demostración** (el clasificador no me deja tocar Cognito: van con `!`):
+  `takab_support` (`infra/scripts/seed_console_users.sh takab_support`); inspector y
+  building_admin con `surface=both` y un sitio concreto (hoy son `web` y la app los manda a
+  «sin acceso»); gov_operator en un cliente «Protección Civil», con el cliente de la demostración
+  marcado `gov_shared` (hoy vive en un tenant privado y ACUSAR le da 404).
+- **Pixel por USB** para los flujos Maestro y para entrar con cada rol móvil (el TOTP de los
+  tácticos lo tecleas tú).
+- **Ensayo 2** con el gabinete y el WR-1: es la segunda corrida de `T-7.28`. Antes, clasificar
+  como `reproduccion` los dos incidentes del ensayo 1 (`d5af54e5`, `b420daaa`).
 
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 

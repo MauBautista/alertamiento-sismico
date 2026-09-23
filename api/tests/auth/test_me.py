@@ -90,6 +90,10 @@ async def test_me_openapi_publishes_typed_response(client) -> None:
         # campo el edificio del ocupante solo existía en el SecureStore del
         # teléfono y se heredaba entre usuarios del mismo aparato.
         "enrolled_sites",
+        # [T-8.02 · D-38] Cuándo termina ESTA sesión (auth_time + tope del rol) y
+        # cuánto dura la del rol. El SOC avisa con ellos una hora antes del corte.
+        "session_expires_at",
+        "session_max_age_s",
     }
     assert (
         spec["components"]["schemas"]["MeResponse"]["properties"]["enrolled_sites"]["items"].get(

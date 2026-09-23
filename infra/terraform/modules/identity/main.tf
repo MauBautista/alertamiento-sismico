@@ -157,14 +157,24 @@ resource "aws_cognito_user_pool_client" "web" {
     "ALLOW_REFRESH_TOKEN_AUTH",
   ]
 
+  # [T-8.05 · D-38] 30 DÍAS de refresh, y NO es la duración de la sesión de nadie.
+  #
+  # Cognito fija la validez del refresh POR APP CLIENT, no por grupo: este cliente
+  # lo comparten los 7 roles web, y D-38 les da duraciones distintas — 30 días al
+  # inspector, 24 h al resto. El cliente declara el MÁXIMO (el del inspector) y el
+  # tope por rol lo impone la API contando desde `auth_time`, la hora del login con
+  # contraseña y código, que el refresco no renueva (`auth/session_age.py`,
+  # `matrix.SESSION_MAX_AGE_S`). Bajar esto a 24 h dejaría al inspector sin su mes;
+  # subirlo NO alarga la sesión de nadie, porque la API rechaza con 401
+  # `sesion_expirada` antes. Lo ancla `tests/sesion.tftest.hcl`.
   access_token_validity  = 60
   id_token_validity      = 60
-  refresh_token_validity = 8
+  refresh_token_validity = 30
 
   token_validity_units {
     access_token  = "minutes"
     id_token      = "minutes"
-    refresh_token = "hours"
+    refresh_token = "days"
   }
 
   prevent_user_existence_errors = "ENABLED"
@@ -607,7 +617,9 @@ resource "aws_cognito_user_pool_ui_customization" "occupants" {
 
 # App client móvil del pool de ocupantes: PKCE por deep link de la app.
 # Refresh de LARGA VIDA (spec móvil §8): la app debe poder alertar sin pedir
-# login en plena crisis.
+# login en plena crisis. [T-8.05 · D-38] 90 días, y coincide con el tope del rol
+# `occupant` en la API (`matrix.SESSION_MAX_AGE_S`): Mauricio decidió mantener los
+# 90 días el 2026-09-22 en vez de bajarlos al mes de brigadista e inspector.
 resource "aws_cognito_user_pool_client" "mobile_occupants" {
   name         = "takab-mobile-occupants"
   user_pool_id = aws_cognito_user_pool.occupants.id
@@ -643,7 +655,13 @@ resource "aws_cognito_user_pool_client" "mobile_occupants" {
 }
 
 # App client móvil TÁCTICO sobre el pool principal (MFA ON intacto): mismos
-# deep links; refresh corto — las acciones tácticas re-verifican token (spec §8).
+# deep links. [T-8.05 · D-38] El refresh pasa de 24 h a 30 DÍAS: brigadista e
+# inspector no vuelven a teclear contraseña ni código en un mes. security_guard y
+# building_admin comparten este cliente y D-38 les da 24 h: esa diferencia NO se
+# puede expresar aquí (Cognito no tiene validez por grupo) y la impone la API con
+# `auth_time` (`auth/session_age.py`). El MFA sigue ON en el pool: se presenta en
+# cada login, una vez al mes; la guarda de comandos (`auth/mfa.py`) exige el pool,
+# no la frescura, y eso no cambia. Lo ancla `tests/sesion.tftest.hcl`.
 resource "aws_cognito_user_pool_client" "mobile_tactical" {
   name         = "takab-mobile-tactical"
   user_pool_id = aws_cognito_user_pool.this.id
@@ -664,12 +682,12 @@ resource "aws_cognito_user_pool_client" "mobile_tactical" {
 
   access_token_validity  = 60
   id_token_validity      = 60
-  refresh_token_validity = 24
+  refresh_token_validity = 30
 
   token_validity_units {
     access_token  = "minutes"
     id_token      = "minutes"
-    refresh_token = "hours"
+    refresh_token = "days"
   }
 
   prevent_user_existence_errors = "ENABLED"

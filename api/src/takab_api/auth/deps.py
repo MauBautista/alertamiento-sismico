@@ -15,6 +15,7 @@ reconstruyen por request); en tests se limpian los caches al fijar el entorno.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import AsyncIterator, Callable
 from functools import lru_cache
 
@@ -25,6 +26,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.jwks import JWKSProvider, select_jwks, select_jwks_occupants
 from takab_api.auth.scope import ConsoleScope, console_scope
+from takab_api.auth.session_age import SESSION_EXPIRED, SessionExpired, enforce_session_age
 from takab_api.auth.tokens import (
     POOL_OCUPANTES,
     POOL_PRINCIPAL,
@@ -44,6 +46,13 @@ _MOBILE_SURFACES = frozenset({"mobile", "both"})
 
 # Reto para el cliente ante 401 (RFC 6750).
 _BEARER_CHALLENGE = {"WWW-Authenticate": "Bearer"}
+
+# [T-8.02 · D-38] Reto de la sesión CADUCADA (RFC 6750 §3.1). Es contrato con web y
+# móvil: por el ``error_description`` distinguen «pide otro token» (401 de
+# siempre, reto ``Bearer`` a secas) de «vuelve a iniciar sesión» (este).
+_SESSION_EXPIRED_CHALLENGE = {
+    "WWW-Authenticate": f'Bearer error="invalid_token", error_description="{SESSION_EXPIRED}"'
+}
 
 
 @lru_cache(maxsize=1)
@@ -75,6 +84,12 @@ def get_claims(request: Request) -> Claims:
     ocupantes SOLO puede portar ``role=occupant`` y un ``occupant`` SOLO puede
     venir de ese pool — el cruce en cualquier dirección es 401 (token forjado o
     usuario dado de alta en el pool equivocado; specs/cognito-pool-v1.md §5.2).
+
+    [T-8.02 · D-38] Después del ancla, el tope de sesión por rol: pasado
+    ``auth_time + SESSION_MAX_AGE_S[role]`` ⇒ 401 ``sesion_expirada`` con su reto
+    propio. Va aquí —y no en una guarda aparte— para que TODA ruta autenticada lo
+    herede, y ANTES que cualquier guarda que envuelva a ésta (``require_mfa``,
+    ``require_roles``): una sesión caducada es 401, nunca 403.
     """
     header = request.headers.get("Authorization") or ""
     scheme, _, token = header.partition(" ")
@@ -92,7 +107,12 @@ def get_claims(request: Request) -> Claims:
             raise AuthError("el pool de ocupantes solo emite occupant")
         if pool == POOL_PRINCIPAL and claims.role == "occupant" and _jwks_occupants() is not None:
             raise AuthError("occupant debe autenticarse en el pool de ocupantes")
+        enforce_session_age(claims, time.time())
         return claims
+    except SessionExpired as exc:
+        raise HTTPException(
+            status_code=exc.status, detail=SESSION_EXPIRED, headers=_SESSION_EXPIRED_CHALLENGE
+        ) from exc
     except AuthError as exc:
         raise HTTPException(
             status_code=exc.status, detail=exc.reason, headers=_BEARER_CHALLENGE

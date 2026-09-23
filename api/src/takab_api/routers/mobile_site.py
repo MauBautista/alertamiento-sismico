@@ -209,6 +209,7 @@ async def mobile_state(
     incident: MobileIncidentOut | None = None
     dictamen_status: str | None = None
     dictamen_signed = False
+    dictamen_incident_id: UUID | None = None
     phase: Phase = "idle"
 
     # [T-2.105] UNA ESTACIÓN SOLA NO ORDENA EVACUAR. Un incidente abierto por el
@@ -244,6 +245,7 @@ async def mobile_state(
         if dictamen_row is not None:
             dictamen_status = dictamen_row.status
             dictamen_signed = dictamen_row.signed_by is not None
+            dictamen_incident_id = incident_row.incident_id
         if dictamen_signed and dictamen_status in _HABITABLE:
             phase = "reentry_approved"
         elif latest_tier == "normal":
@@ -281,6 +283,7 @@ async def mobile_state(
         if reentry_row is not None and reentry_row.status in _HABITABLE:
             dictamen_status = reentry_row.status
             dictamen_signed = True
+            dictamen_incident_id = reentry_row.incident_id
             phase = "reentry_approved"
 
     # [T-2.106] ALARMA DEL INMUEBLE. El quórum de pánico emite un `siren/activate`
@@ -335,6 +338,7 @@ async def mobile_state(
             blocked=incident is not None and phase != "reentry_approved",
             dictamen_status=dictamen_status,
             dictamen_signed=dictamen_signed,
+            incident_id=dictamen_incident_id,
         ),
         demo_mode=await demo_mode_vivo(conn, str(claims.tenant_id)) is not None,
         assembly_point=_asset_out(assembly_row, settings) if assembly_row else None,

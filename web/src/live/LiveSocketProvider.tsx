@@ -25,8 +25,20 @@ export default function LiveSocketProvider({ children }: { children: ReactNode }
     return new LiveSocket({
       url: liveWsUrl(getEnv().apiBaseUrl),
       getToken: () => useSessionStore.getState().idToken,
-      onUnauthorized: () => {
-        void useSessionStore.getState().logout();
+      // [T-8.03 · A-004] El servidor cierra el canal con 4401 al vencer el `exp`
+      // del token del handshake (60 min). Sin renovación, ese cierre RUTINARIO
+      // terminaba la sesión aunque la renovación silenciosa ya tuviera un token
+      // nuevo: la consola se cerraba a la hora. Ahora el socket pide UNA
+      // renovación —la misma, de vuelo único, que usan los 401 del REST— y
+      // reconecta con el token nuevo.
+      renewToken: () => useSessionStore.getState().renewToken(),
+      // 4440 ⇒ la sesión cumplió el tope de su rol (D-38): fin con esa causa.
+      // 4401 sin renovación posible ⇒ fin como expirada, CON causa: antes era
+      // `logout()`, que borraba la causa y mandaba al /logout del Hosted UI, así
+      // que el operador aparecía en un login mudo (el silencio que T-6.07 cerró
+      // para el REST seguía abierto aquí).
+      onUnauthorized: (reason) => {
+        useSessionStore.getState().handleUnauthorized(reason === "max_age" ? "max_age" : "expired");
       },
     });
   }, [factory]);

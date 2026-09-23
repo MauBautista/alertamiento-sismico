@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     signinRedirectCallback: vi.fn(),
     signinSilent: vi.fn(),
     removeUser: vi.fn(),
+    revokeTokens: vi.fn(),
     events: {
       addUserLoaded: vi.fn(),
       addAccessTokenExpired: vi.fn(),
@@ -42,7 +43,7 @@ vi.mock("../app/navigation", () => ({ hardRedirect: mocks.hardRedirect }));
 import { ME_FIXTURES, TENANT_ID } from "../test-utils/meFixtures";
 import { saveDevSession } from "./devToken";
 import { MeRequestError } from "./me";
-import { resetSessionStoreForTests, useSessionStore } from "./session.store";
+import { resetSessionStoreForTests, selectSessionDeadline, useSessionStore } from "./session.store";
 
 const DEV_STORAGE_KEY = "takab.dev.session";
 
@@ -56,6 +57,7 @@ function jsonResponse(status: number, body: unknown): Response {
 describe("session.store", () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     mocks.getMe.mockReset();
     mocks.hardRedirect.mockReset();
     for (const fn of Object.values(mocks.userManager)) {
@@ -68,6 +70,7 @@ describe("session.store", () => {
     }
     mocks.userManager.getUser.mockResolvedValue(null);
     mocks.userManager.removeUser.mockResolvedValue(undefined);
+    mocks.userManager.revokeTokens.mockResolvedValue(undefined);
     mocks.userManager.signinRedirect.mockResolvedValue(undefined);
 
     vi.stubEnv("VITE_API_BASE_URL", "/api");
@@ -120,7 +123,13 @@ describe("session.store", () => {
     expect(state.idToken).toBe("cog-tok");
     expect(mocks.userManager.events.addUserLoaded).toHaveBeenCalledTimes(1);
     expect(mocks.userManager.events.addAccessTokenExpired).toHaveBeenCalledTimes(1);
-    expect(mocks.userManager.events.addSilentRenewError).toHaveBeenCalledTimes(1);
+    // [T-8.03] `addSilentRenewError` ya NO se cablea. Cerraba la sesión en el
+    // primer fallo de la renovación automática —un parpadeo de red a los 59
+    // min—, con el token aún válido un minuto más y, desde esta ficha, revocando
+    // el refresh: contraseña y código por un corte de wifi. El token vencido lo
+    // recogen tres caminos que reintentan UNA vez antes de cerrar: el
+    // `accessTokenExpired`, el 401 del REST y el 4401 del canal live.
+    expect(mocks.userManager.events.addSilentRenewError).not.toHaveBeenCalled();
   });
 
   it("bootstrap es idempotente (latch StrictMode): un solo getUser", async () => {
@@ -332,6 +341,474 @@ describe("session.store", () => {
       "invalid state",
     );
     expect(useSessionStore.getState().status).toBe("anonymous");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// [T-8.03 · D-38] LA SESIÓN SOBREVIVE AL TOKEN Y MUERE EN EL TOPE
+// ---------------------------------------------------------------------------
+//
+// Dos cosas que se tratan AL REVÉS:
+//   · el token vencido (60 min) se RENUEVA — una vez — y la sesión sigue;
+//   · el tope de la sesión (24 h / 30 días desde el login, `sesion_expirada`)
+//     NO se renueva: Cognito seguiría refrescando y la API rechazaría en bucle.
+describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
+  const T0 = Date.parse("2026-09-22T08:00:00Z");
+  const H = 3_600_000;
+
+  function fakeJwt(payload: Record<string, unknown>): string {
+    const b64 = (o: unknown) =>
+      btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(o))))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+    return `${b64({ alg: "RS256" })}.${b64(payload)}.firma`;
+  }
+
+  function meCon(expiresAt: number | null, maxAgeS: number | null) {
+    return {
+      ...ME_FIXTURES.soc_operator,
+      session_expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
+      session_max_age_s: maxAgeS,
+    };
+  }
+
+  function grabarVentana(loginAt: number, maxAgeS: number | null): void {
+    window.localStorage.setItem("takab.session.window", JSON.stringify({ loginAt, maxAgeS }));
+  }
+
+  beforeEach(() => {
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+    mocks.getMe.mockReset();
+    mocks.hardRedirect.mockReset();
+    for (const fn of Object.values(mocks.userManager)) {
+      if (typeof fn === "function") {
+        fn.mockReset();
+      }
+    }
+    for (const fn of Object.values(mocks.userManager.events)) {
+      fn.mockReset();
+    }
+    mocks.userManager.getUser.mockResolvedValue(null);
+    mocks.userManager.removeUser.mockResolvedValue(undefined);
+    mocks.userManager.revokeTokens.mockResolvedValue(undefined);
+    vi.stubEnv("VITE_API_BASE_URL", "/api");
+    vi.stubEnv("VITE_DEV_TOKEN_ENABLED", "true");
+    vi.stubEnv("VITE_COGNITO_DOMAIN", "https://takab-test.auth.us-east-2.amazoncognito.com");
+    vi.stubEnv("VITE_COGNITO_CLIENT_ID", "client-abc");
+    vi.stubEnv("VITE_COGNITO_POST_LOGOUT_URI", "http://localhost:5173/");
+    resetSessionStoreForTests();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    resetSessionStoreForTests();
+  });
+
+  // --- A-033 · el arranque ya no tira una sesión con refresh vivo ------------
+
+  it("arranque con el token VENCIDO pero refresh vivo ⇒ renueva antes de declararse anónimo", async () => {
+    mocks.userManager.getUser.mockResolvedValue({
+      id_token: "viejo",
+      expired: true,
+      refresh_token: "r-1",
+    });
+    mocks.userManager.signinSilent.mockResolvedValue({ id_token: "nuevo", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+
+    await useSessionStore.getState().bootstrap();
+
+    expect(mocks.userManager.signinSilent).toHaveBeenCalledTimes(1);
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("authenticated");
+    expect(state.idToken).toBe("nuevo");
+  });
+
+  it("…y si esa renovación falla ⇒ anónimo, diciendo que la sesión se cerró", async () => {
+    mocks.userManager.getUser.mockResolvedValue({
+      id_token: "viejo",
+      expired: true,
+      refresh_token: "r-1",
+    });
+    mocks.userManager.signinSilent.mockRejectedValue(new Error("invalid_grant"));
+
+    await useSessionStore.getState().bootstrap();
+
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("anonymous");
+    expect(state.endedReason).toBe("expired");
+    expect(mocks.getMe).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.userManager.removeUser).toHaveBeenCalled());
+  });
+
+  it("vencido y SIN refresh ⇒ anónimo sin intentar nada (como antes)", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "viejo", expired: true });
+
+    await useSessionStore.getState().bootstrap();
+
+    expect(mocks.userManager.signinSilent).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().status).toBe("anonymous");
+  });
+
+  it("con el cinturón ya cumplido NI SIQUIERA renueva: fin por tope", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + 25 * H);
+    grabarVentana(T0, 86_400);
+    mocks.userManager.getUser.mockResolvedValue({
+      id_token: "viejo",
+      expired: true,
+      refresh_token: "r-1",
+    });
+
+    await useSessionStore.getState().bootstrap();
+
+    expect(mocks.userManager.signinSilent).not.toHaveBeenCalled();
+    expect(mocks.getMe).not.toHaveBeenCalled();
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("anonymous");
+    expect(state.endedReason).toBe("max_age");
+    // La landing necesita saber CUÁNTO duraba para decirlo.
+    expect(state.sessionMaxAgeS).toBe(86_400);
+  });
+
+  // --- A-034 · el tope se distingue del 401 genérico -------------------------
+
+  it("/me dice `sesion_expirada` ⇒ fin por TOPE, sin renovar, y el refresh se revoca", async () => {
+    grabarVentana(T0, 86_400);
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "cog", expired: false });
+    mocks.getMe.mockRejectedValue(new MeRequestError(401, true));
+
+    await useSessionStore.getState().bootstrap();
+
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("anonymous");
+    expect(state.endedReason).toBe("max_age");
+    expect(state.sessionMaxAgeS).toBe(86_400);
+    expect(mocks.userManager.signinSilent).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(mocks.userManager.removeUser).toHaveBeenCalled());
+    expect(mocks.userManager.revokeTokens).toHaveBeenCalledWith(["refresh_token"]);
+    // El refresh se revoca ANTES de borrar el usuario: después no quedaría qué revocar.
+    expect(mocks.userManager.revokeTokens.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.userManager.removeUser.mock.invocationCallOrder[0],
+    );
+    expect(window.localStorage.getItem("takab.session.window")).toBeNull();
+  });
+
+  it("un 401 GENÉRICO de /me con Cognito ⇒ UNA renovación y /me otra vez", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "t1", expired: false });
+    mocks.userManager.signinSilent.mockResolvedValue({ id_token: "t2" });
+    mocks.getMe
+      .mockRejectedValueOnce(new MeRequestError(401))
+      .mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+
+    await useSessionStore.getState().bootstrap();
+
+    expect(mocks.userManager.signinSilent).toHaveBeenCalledTimes(1);
+    expect(mocks.getMe).toHaveBeenCalledTimes(2);
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("authenticated");
+    expect(state.idToken).toBe("t2");
+  });
+
+  it("si el token RENOVADO también da 401, se cierra (una sola vez, no un bucle)", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "t1", expired: false });
+    mocks.userManager.signinSilent.mockResolvedValue({ id_token: "t2" });
+    mocks.getMe.mockRejectedValue(new MeRequestError(401));
+
+    await useSessionStore.getState().bootstrap();
+
+    expect(mocks.userManager.signinSilent).toHaveBeenCalledTimes(1);
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("anonymous");
+    expect(state.endedReason).toBe("expired");
+  });
+
+  it("/me guarda el plazo y la edad máxima; la edad sobrevive a una recarga", async () => {
+    grabarVentana(T0, null);
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "cog", expired: false });
+    const expira = Date.now() + 10 * H;
+    mocks.getMe.mockResolvedValue(meCon(expira, 86_400));
+
+    await useSessionStore.getState().bootstrap();
+
+    const state = useSessionStore.getState();
+    expect(state.sessionExpiresAt).toBe(expira);
+    expect(state.sessionMaxAgeS).toBe(86_400);
+    expect(state.loginAt).toBe(T0);
+    expect(JSON.parse(window.localStorage.getItem("takab.session.window") ?? "{}")).toEqual({
+      loginAt: T0,
+      maxAgeS: 86_400,
+    });
+  });
+
+  it("el callback graba la hora del login —el `auth_time` del token— en localStorage", async () => {
+    mocks.userManager.signinRedirectCallback.mockResolvedValue({
+      id_token: fakeJwt({ auth_time: T0 / 1000 }),
+      state: {},
+    });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+
+    await useSessionStore.getState().completeCognitoCallback();
+
+    expect(useSessionStore.getState().loginAt).toBe(T0);
+    expect(JSON.parse(window.localStorage.getItem("takab.session.window") ?? "{}")).toEqual({
+      loginAt: T0,
+      maxAgeS: null,
+    });
+  });
+
+  it("sin `auth_time` en el token, la hora del login es la de la vuelta", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(T0 + 5_000);
+    mocks.userManager.signinRedirectCallback.mockResolvedValue({ id_token: "opaco", state: {} });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+
+    await useSessionStore.getState().completeCognitoCallback();
+
+    expect(useSessionStore.getState().loginAt).toBe(T0 + 5_000);
+  });
+
+  // --- El cinturón en el cliente --------------------------------------------
+
+  it("el cinturón cierra al llegar el plazo aunque el servidor no haya dicho nada", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    saveDevSession({ idToken: "dev-tok", expiresAt: T0 + H });
+    mocks.getMe.mockResolvedValue(meCon(T0 + 5_000, 86_400));
+    await useSessionStore.getState().bootstrap();
+    expect(useSessionStore.getState().status).toBe("authenticated");
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(useSessionStore.getState().status).toBe("authenticated");
+    await vi.advanceTimersByTimeAsync(1);
+
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("anonymous");
+    expect(state.endedReason).toBe("max_age");
+    expect(state.sessionMaxAgeS).toBe(86_400);
+  });
+
+  it("el plazo efectivo es el MENOR: si el servidor lo corriera, manda la marca del login", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0 + 23 * H);
+    saveDevSession({ idToken: "dev-tok", expiresAt: T0 + 24 * H, authTimeMs: T0 });
+    // El servidor dice 24 h desde un auth_time que avanzó 3 h (A-006).
+    mocks.getMe.mockResolvedValue(meCon(T0 + 27 * H, 86_400));
+    await useSessionStore.getState().bootstrap();
+    expect(selectSessionDeadline(useSessionStore.getState())).toBe(T0 + 24 * H);
+
+    await vi.advanceTimersByTimeAsync(H);
+
+    expect(useSessionStore.getState().endedReason).toBe("max_age");
+  });
+
+  it("un plazo a 30 días NO dispara al instante (setTimeout desborda a 24.8 d)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    saveDevSession({ idToken: "dev-tok", expiresAt: T0 + H });
+    mocks.getMe.mockResolvedValue(meCon(T0 + 30 * 24 * H, 2_592_000));
+    await useSessionStore.getState().bootstrap();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(useSessionStore.getState().status).toBe("authenticated");
+
+    await vi.advanceTimersByTimeAsync(30 * 24 * H);
+    expect(useSessionStore.getState().endedReason).toBe("max_age");
+  });
+
+  it("sin dato del plazo no hay cinturón que inventar", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(T0);
+    saveDevSession({ idToken: "dev-tok", expiresAt: T0 + H });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().bootstrap();
+
+    expect(selectSessionDeadline(useSessionStore.getState())).toBeNull();
+    await vi.advanceTimersByTimeAsync(100 * 24 * H);
+    expect(useSessionStore.getState().status).toBe("authenticated");
+  });
+
+  // --- renewToken: lo que el canal live usa ante un 4401 ---------------------
+
+  it("renewToken (Cognito): signinSilent y el id_token nuevo al store; dos a la vez ⇒ UNA", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "t1", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().bootstrap();
+    let soltar: (u: { id_token: string }) => void = () => undefined;
+    mocks.userManager.signinSilent.mockReturnValue(
+      new Promise((resolve) => {
+        soltar = resolve;
+      }),
+    );
+
+    const a = useSessionStore.getState().renewToken();
+    const b = useSessionStore.getState().renewToken();
+    soltar({ id_token: "t2" });
+
+    await expect(a).resolves.toBe("t2");
+    await expect(b).resolves.toBe("t2");
+    expect(mocks.userManager.signinSilent).toHaveBeenCalledTimes(1);
+    expect(useSessionStore.getState().idToken).toBe("t2");
+  });
+
+  it("renewToken (dev): re-emite con los MISMOS parámetros y lo guarda", async () => {
+    saveDevSession({
+      idToken: "dev-1",
+      expiresAt: Date.now() + 60_000,
+      request: { role: "soc_operator", tenant_id: TENANT_ID, sub: "u-7", expires_in: 120 },
+      authTimeMs: Date.now() - 10_000,
+    });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().bootstrap();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        jsonResponse(200, { id_token: "dev-2", token_use: "id", expires_in: 120 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(useSessionStore.getState().renewToken()).resolves.toBe("dev-2");
+
+    const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
+    expect(body).toMatchObject({
+      role: "soc_operator",
+      tenant_id: TENANT_ID,
+      sub: "u-7",
+      expires_in: 120,
+    });
+    expect(body.auth_age_s).toBeGreaterThanOrEqual(10);
+    expect(useSessionStore.getState().idToken).toBe("dev-2");
+    expect(JSON.parse(window.sessionStorage.getItem(DEV_STORAGE_KEY) ?? "{}").idToken).toBe(
+      "dev-2",
+    );
+  });
+
+  it("renewToken con el plazo ya cumplido no renueva: termina por tope", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "t1", expired: false });
+    mocks.getMe.mockResolvedValue(meCon(Date.now() + H, 86_400));
+    await useSessionStore.getState().bootstrap();
+    useSessionStore.setState({ sessionExpiresAt: Date.now() - 1 });
+
+    await expect(useSessionStore.getState().renewToken()).resolves.toBeNull();
+
+    expect(mocks.userManager.signinSilent).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().endedReason).toBe("max_age");
+  });
+
+  it("dev: arranque con el token vencido y parámetros ⇒ se re-emite en vez de pedir login", async () => {
+    saveDevSession({
+      idToken: "dev-viejo",
+      expiresAt: Date.now() - 1,
+      request: { role: "soc_operator", tenant_id: TENANT_ID, sub: "u-7" },
+      authTimeMs: Date.now() - 2 * H,
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          jsonResponse(200, { id_token: "dev-nuevo", token_use: "id", expires_in: 3600 }),
+        ),
+    );
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+
+    await useSessionStore.getState().bootstrap();
+
+    const state = useSessionStore.getState();
+    expect(state.status).toBe("authenticated");
+    expect(state.idToken).toBe("dev-nuevo");
+  });
+
+  // --- recoverFromUnauthorized: el 401 del REST ------------------------------
+
+  it("un 401 con un token que YA no es el vigente no renueva otra vez", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "t2", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    await useSessionStore.getState().bootstrap();
+
+    await expect(useSessionStore.getState().recoverFromUnauthorized("t1")).resolves.toBe(true);
+
+    expect(mocks.userManager.signinSilent).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().status).toBe("authenticated");
+  });
+
+  it("sin sesión no hay nada que recuperar (y no se acusa nada)", async () => {
+    await useSessionStore.getState().bootstrap();
+
+    await expect(useSessionStore.getState().recoverFromUnauthorized("t1")).resolves.toBe(false);
+    expect(useSessionStore.getState().endedReason).toBeNull();
+  });
+
+  // --- Fin de sesión ----------------------------------------------------------
+
+  it("un 'expired' tardío (el WS que cae después) no pisa el 'max_age'", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.getState().handleUnauthorized("max_age");
+    useSessionStore.getState().handleUnauthorized("expired");
+
+    expect(useSessionStore.getState().endedReason).toBe("max_age");
+  });
+
+  it("logout cognito revoca el refresh ANTES de borrar el usuario y de ir al /logout", async () => {
+    grabarVentana(T0, 86_400);
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "cog", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
+    await useSessionStore.getState().bootstrap();
+
+    await useSessionStore.getState().logout();
+
+    expect(mocks.userManager.revokeTokens).toHaveBeenCalledWith(["refresh_token"]);
+    const revocado = mocks.userManager.revokeTokens.mock.invocationCallOrder[0];
+    expect(revocado).toBeLessThan(mocks.userManager.removeUser.mock.invocationCallOrder[0]);
+    expect(revocado).toBeLessThan(mocks.hardRedirect.mock.invocationCallOrder[0]);
+    expect(window.localStorage.getItem("takab.session.window")).toBeNull();
+    // Un SALIR deliberado no es un tope ni una expiración.
+    expect(useSessionStore.getState().endedReason).toBeNull();
+  });
+
+  it("si Cognito no contesta a la revocación, SALIR no se queda colgado", async () => {
+    vi.useFakeTimers();
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "cog", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
+    await useSessionStore.getState().bootstrap();
+    mocks.userManager.revokeTokens.mockReturnValue(new Promise(() => undefined));
+
+    const salir = useSessionStore.getState().logout();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await salir;
+
+    expect(mocks.hardRedirect).toHaveBeenCalledTimes(1);
+  });
+
+  it("un userLoaded que llega DESPUÉS de cerrar (la revocación lo emite) no resucita la sesión", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "cog", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
+    await useSessionStore.getState().bootstrap();
+    const onUserLoaded = mocks.userManager.events.addUserLoaded.mock.calls[0][0] as (u: {
+      id_token: string;
+    }) => void;
+
+    await useSessionStore.getState().logout();
+    onUserLoaded({ id_token: "zombi" });
+
+    expect(useSessionStore.getState().idToken).toBeNull();
+  });
+
+  it("accessTokenExpired intenta renovar UNA vez; si falla, cierra como expirada", async () => {
+    mocks.userManager.getUser.mockResolvedValue({ id_token: "cog", expired: false });
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
+    await useSessionStore.getState().bootstrap();
+    const onExpired = mocks.userManager.events.addAccessTokenExpired.mock.calls[0][0] as () => void;
+    mocks.userManager.signinSilent.mockRejectedValue(new Error("red"));
+
+    onExpired();
+
+    await vi.waitFor(() => expect(useSessionStore.getState().status).toBe("anonymous"));
+    expect(useSessionStore.getState().endedReason).toBe("expired");
+    expect(mocks.userManager.signinSilent).toHaveBeenCalledTimes(1);
   });
 });
 
