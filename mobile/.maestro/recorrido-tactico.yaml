@@ -22,6 +22,10 @@
 # `state-error`: una pestaña en «SIN CONEXIÓN CON EL SERVIDOR» ya no sale verde
 # (lo exige `tests/flujos-maestro.test.ts`).
 #
+# RUTAS y DIRECTORIO aceptan el encabezado O el vacío declarado («Su edificio aún
+# no publica…») y dejan una captura `…-VACIO-…` [T-8.13]; ver la cabecera de
+# `recorrido-ocupante.yaml`.
+#
 # PIDE TOTP: entra por `login-tactico.yaml`, pool PRINCIPAL con MFA obligatorio.
 # Maestro no genera el código: hace falta una persona delante.
 #
@@ -200,11 +204,19 @@ appId: com.takab.ailert
 # ── RUTAS ─────────────────────────────────────────────────────────────────
 - tapOn: "RUTAS"
 - extendedWaitUntil:
-    visible: "RUTAS Y DOCUMENTOS DEL INMUEBLE"
+    visible:
+      text: "RUTAS Y DOCUMENTOS DEL INMUEBLE|Su edificio aún no publica rutas.*"
     timeout: 15000
 - takeScreenshot: tactico-09-rutas
 - assertNotVisible:
     id: "state-error"
+- runFlow:
+    when:
+      visible: "Su edificio aún no publica rutas.*"
+    commands:
+      - takeScreenshot: tactico-09-VACIO-rutas-sin-documentos
+      - assertNotVisible:
+          id: "state-error"
 - runFlow:
     when:
       visible: "DESCARGAR PARA OFFLINE"
@@ -221,11 +233,19 @@ appId: com.takab.ailert
 # ── DIRECTORIO ────────────────────────────────────────────────────────────
 - tapOn: "DIRECTORIO"
 - extendedWaitUntil:
-    visible: "CONTACTOS DE EMERGENCIA DEL INMUEBLE"
+    visible:
+      text: "CONTACTOS DE EMERGENCIA DEL INMUEBLE|Su edificio aún no publica contactos.*"
     timeout: 15000
 - takeScreenshot: tactico-11-directorio
 - assertNotVisible:
     id: "state-error"
+- runFlow:
+    when:
+      visible: "Su edificio aún no publica contactos.*"
+    commands:
+      - takeScreenshot: tactico-11-VACIO-directorio-sin-contactos
+      - assertNotVisible:
+          id: "state-error"
 
 # ── SYNC ──────────────────────────────────────────────────────────────────
 - tapOn: "SYNC"
