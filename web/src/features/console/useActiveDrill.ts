@@ -65,12 +65,24 @@ export interface ActiveDrillData {
   /** Epoch ms del último snapshot bueno de /drills/active (0 = ninguno). */
   updatedAt: number;
   refetch: () => void;
-  start: (input?: StartDrillInput) => void;
+  /**
+   * [A-094 · T-8.07] Resuelve `true` si el servidor lo registró y `false` si no
+   * (el porqué queda en `error`). NUNCA rechaza: el banner del shell lo llama sin
+   * esperar, y quien sí espera —el modal de alta— cierra sólo con `true`.
+   */
+  start: (input?: StartDrillInput) => Promise<boolean>;
   stop: (drillId: string) => void;
   cancel: (drillId: string) => void;
   pending: boolean;
   /** Error de la última MUTACIÓN (iniciar/terminar/cancelar). */
   error: string | null;
+}
+
+/** El `detail` textual de un error de FastAPI; `null` si no lo trae o no es texto. */
+function detailOf(error: unknown): string | null {
+  if (typeof error !== "object" || error === null) return null;
+  const detail = (error as { detail?: unknown }).detail;
+  return typeof detail === "string" && detail.trim() !== "" ? detail : null;
 }
 
 export function useActiveDrill(enabled: boolean = true): ActiveDrillData {
@@ -128,7 +140,7 @@ export function useActiveDrill(enabled: boolean = true): ActiveDrillData {
 
   const start = useMutation({
     mutationFn: async (input: StartDrillInput) => {
-      const { data, response } = await startDrillDrillsPost({
+      const res = await startDrillDrillsPost({
         body: {
           ...(input.durationS === undefined ? {} : { duration_s: input.durationS }),
           note: input.note ?? null,
@@ -138,10 +150,15 @@ export function useActiveDrill(enabled: boolean = true): ActiveDrillData {
           from_template: input.fromTemplate ?? null,
         },
       });
-      if (data === undefined) {
-        throw new Error(`el simulacro no arrancó (HTTP ${response.status})`);
+      if (res.data === undefined) {
+        // [T-8.07] El porqué del servidor va detrás, tal cual: «(HTTP 409)» a
+        // secas no le dice al operador qué arreglar.
+        const detail = detailOf("error" in res ? res.error : undefined);
+        throw new Error(
+          `el simulacro no arrancó (HTTP ${res.response.status})${detail === null ? "" : ` · ${detail}`}`,
+        );
       }
-      return data;
+      return res.data;
     },
     onSuccess: invalidateAll,
   });
@@ -188,7 +205,11 @@ export function useActiveDrill(enabled: boolean = true): ActiveDrillData {
       void active.refetch();
       void scheduled.refetch();
     },
-    start: (input) => start.mutate(input ?? {}),
+    start: (input) =>
+      start.mutateAsync(input ?? {}).then(
+        () => true,
+        () => false,
+      ),
     stop: (drillId) => stop.mutate(drillId),
     cancel: (drillId) => cancel.mutate(drillId),
     pending: start.isPending || stop.isPending || cancel.isPending,

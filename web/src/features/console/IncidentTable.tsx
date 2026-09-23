@@ -20,6 +20,24 @@ import { INCIDENT_ORDERS, orderIncidents, type IncidentOrderKey } from "./stats"
 import type { LiveDegradation, LiveIncident } from "./useLiveIncidents";
 import SiteLabel from "../../components/SiteLabel";
 
+/**
+ * [A-096 · T-8.07] El `state` del incidente con la etiqueta de operador (el CHECK
+ * de `incidents.state`). La cola sostiene `open`, `acked` e `in_review` a la vez
+ * y no decía cuál era cuál: tras acusar no había forma de comprobar EN LA TABLA
+ * que el acuse había entrado. Mismo rótulo que el historial de EVALUACIÓN.
+ */
+export const INCIDENT_STATE_LABEL: Record<string, string> = {
+  open: "ABIERTO",
+  acked: "ACUSADO",
+  in_review: "EN REVISIÓN",
+  closed: "CERRADO",
+};
+
+/** Un estado que la consola no conoce se imprime tal cual: disfrazarlo sería peor. */
+export function incidentStateLabel(state: string): string {
+  return INCIDENT_STATE_LABEL[state] ?? state.toUpperCase();
+}
+
 const SEV_DOT: Record<string, string> = {
   critical: "var(--tk-status-critical)",
   warning: "var(--tk-status-warning)",
@@ -60,17 +78,28 @@ export interface IncidentTableProps {
    * hasta esta ficha aquí vivía «AUTH · MFA» a fuego, también en la sesión dev.
    */
   authBadge?: AuthBadge | null;
+  /**
+   * [A-012 · T-8.07] El INCIDENTE elegido, no el sitio: con dos abiertos en el
+   * mismo edificio (pánico + sísmico) la selección por sitio actuaba siempre
+   * sobre el primero.
+   */
   selectedId: string | null;
   onSelect: (incident: LiveIncident) => void;
   /** allowed_actions.ack_incident del /me (server-driven, default-deny). */
   canAck: boolean;
-  onAck: (incidentId: string) => void;
+  /**
+   * [A-011 · T-8.07] Devuelve la PROMESA de la petición: el botón dice
+   * «ENVIANDO…» mientras vuela y «ACUSADO» sólo cuando el servidor respondió 2xx.
+   */
+  onAck: (incidentId: string) => void | Promise<unknown>;
+  /** [A-011 · T-8.07] Lo que respondió el servidor cuando el acuse NO entró. */
+  ackError?: string | null;
   /** allowed_actions.relocate_epicenter (T-1.51). */
   canRelocate: boolean;
   onRelocate: (incidentId: string) => void;
   /** allowed_actions.request_dictamen (T-1.51). */
   canRequestDictamen: boolean;
-  onRequestDictamen: (incidentId: string) => void;
+  onRequestDictamen: (incidentId: string) => void | Promise<unknown>;
   /** [T-2.50] Estaciones del snapshot: solo para el orden por DISTANCIA. */
   sites?: MapSiteState[];
   /** [T-2.50] Epicentro de referencia del orden por distancia (null = no hay). */
@@ -86,6 +115,20 @@ export interface IncidentTableProps {
 function gateTitle(allowed: boolean, selected: boolean): string | undefined {
   if (!allowed) return "Tu rol no tiene esta acción (allowed_actions)";
   if (!selected) return "Selecciona un incidente primero";
+  return undefined;
+}
+
+/**
+ * [T-8.07] El acuse sólo pasa `open → acked`: sobre uno ya acusado o en revisión
+ * la API responde 409. Se apaga ANTES y se dice por qué, en vez de dejar que el
+ * operador descubra el 409.
+ */
+function ackGateTitle(allowed: boolean, selected: LiveIncident | null): string | undefined {
+  const base = gateTitle(allowed, selected !== null);
+  if (base !== undefined || selected === null) return base;
+  if (selected.state !== "open") {
+    return `El incidente ya está ${incidentStateLabel(selected.state)}: sólo se acusa uno ABIERTO`;
+  }
   return undefined;
 }
 
@@ -117,6 +160,7 @@ export default function IncidentTable({
   onSelect,
   canAck,
   onAck,
+  ackError = null,
   canRelocate,
   onRelocate,
   canRequestDictamen,
@@ -158,6 +202,9 @@ export default function IncidentTable({
   // ref y no en estado: no dispara un render propio —lo dispara `nowMs`, que ya
   // late— y volver a censar con el mismo instante devuelve lo mismo, así que la
   // doble pintura del modo estricto no reinicia la cuenta.
+  // [A-012 · T-8.07] La fila sobre la que actúan los botones, resuelta por su id.
+  const selected = incidents.find((i) => i.incident_id === selectedId) ?? null;
+  const ackable = canAck && selected !== null && selected.state === "open";
   const censoRef = useRef<CensoFilas | null>(null);
   const { censo, nuevas } = actualizarCenso(
     censoRef.current,
@@ -232,25 +279,33 @@ export default function IncidentTable({
         <Table>
           <thead>
             <tr>
-              <th style={{ width: "26%" }}>Sitio</th>
-              <th style={{ width: "14%" }}>Severidad</th>
-              <th style={{ width: "24%" }}>Coordenadas</th>
+              <th style={{ width: "24%" }}>Sitio</th>
+              <th style={{ width: "12%" }}>Severidad</th>
+              <th style={{ width: "12%" }}>Estado</th>
+              <th style={{ width: "20%" }}>Coordenadas</th>
               <th style={{ width: "10%" }}>PGA</th>
-              <th style={{ width: "14%" }}>Hora UTC</th>
-              <th style={{ width: "12%" }}>Edad</th>
+              <th style={{ width: "12%" }}>Hora UTC</th>
+              <th style={{ width: "10%" }}>Edad</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((incident) => {
               const site = siteInfoOf(incident.site_id);
               const nueva = nuevas.has(incident.incident_id);
+              const elegida = incident.incident_id === selectedId;
               return (
                 <tr
                   key={incident.incident_id}
                   className={nueva ? "soc-table__row--nueva" : undefined}
                   onClick={() => onSelect(incident)}
-                  aria-selected={incident.incident_id === selectedId}
-                  style={{ cursor: "pointer" }}
+                  aria-selected={elegida}
+                  // [A-012 · T-8.07] La fila elegida se VE: los botones de abajo
+                  // actúan sobre ella y hasta hoy nada la distinguía (el
+                  // `aria-selected` no tenía regla en la hoja).
+                  style={{
+                    cursor: "pointer",
+                    backgroundColor: elegida ? "var(--tk-cyan-08)" : undefined,
+                  }}
                 >
                   <td className="soc-table__site">
                     <span
@@ -272,6 +327,9 @@ export default function IncidentTable({
                   </td>
                   <td>
                     <SevTag severity={incident.severity} />
+                  </td>
+                  <td className="soc-mono" data-testid="incident-state">
+                    {incidentStateLabel(incident.state)}
                   </td>
                   <td className="soc-mono" style={{ color: "var(--tk-fg-2)" }}>
                     {site?.coords ?? "—"}
@@ -295,6 +353,20 @@ export default function IncidentTable({
       {distanceUnavailable && (
         <p className="soc-incidents__note" data-testid="order-distance-unavailable" role="status">
           SIN EPICENTRO LOCALIZADO · ORDENADO POR SEVERIDAD
+        </p>
+      )}
+
+      {/* [A-011 · T-8.07] Lo que respondió el servidor cuando el acuse NO entró,
+          encima del pie y no dentro: el pie es una fila (operador | botones) y un
+          párrafo más ahí se colaría entre los dos. */}
+      {ackError !== null && (
+        <p
+          className="soc-incidents__note"
+          role="alert"
+          data-testid="ack-error"
+          style={{ color: "var(--tk-status-critical-text)" }}
+        >
+          {ackError}
         </p>
       )}
 
@@ -334,31 +406,36 @@ export default function IncidentTable({
             </button>
           </span>
           <span title={gateTitle(canRequestDictamen, selectedId !== null)}>
+            {/* [T-8.07] `key` por incidente: cambiar de fila DESARMA. Sin ella la
+                fase «armado» sobrevivía al cambio de selección y el segundo clic
+                caía sobre una fila que nadie había confirmado. */}
             <ConfirmButton
+              key={selectedId ?? "ninguno"}
               icon={<FileSearch size={13} aria-hidden />}
               label="SOLICITAR DICTAMEN TÉCNICO"
               armedLabel="CLIC DE NUEVO PARA SOLICITAR"
               variant="secondary"
               disabled={!canRequestDictamen || selectedId === null}
-              onConfirm={() => {
-                if (selectedId !== null) onRequestDictamen(selectedId);
-              }}
+              onConfirm={() => (selectedId !== null ? onRequestDictamen(selectedId) : undefined)}
             />
           </span>
           {/* [T-2.59] El envoltorio con `gateTitle` faltaba SOLO aquí: los dos
               botones de al lado explicaban su gate desde T-1.51 y el acuse —el
               más consecuente de los tres— se quedaba gris y mudo. Lo encontró
               `screens.spec.ts` inventariando los deshabilitados de cada pantalla. */}
-          <span title={gateTitle(canAck, selectedId !== null)}>
+          <span title={ackGateTitle(canAck, selected)}>
             <ConfirmButton
+              key={selectedId ?? "ninguno"}
               icon={<CheckCircle2 size={13} aria-hidden />}
               label="CONFIRMAR ACUSE"
               armedLabel="CLIC DE NUEVO PARA ACUSAR"
+              doneLabel="ACUSADO"
               variant="primary"
-              disabled={!canAck || selectedId === null}
-              onConfirm={() => {
-                if (selectedId !== null) onAck(selectedId);
-              }}
+              disabled={!ackable}
+              // [A-011 · T-8.07] Se DEVUELVE la promesa: sin ella el botón pintaba
+              // «EJECUTADO» antes de que el servidor contestara, y un 409 o un 403
+              // se tragaban en silencio.
+              onConfirm={() => (selected !== null ? onAck(selected.incident_id) : undefined)}
             />
           </span>
         </div>

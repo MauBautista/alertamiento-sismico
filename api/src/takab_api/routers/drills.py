@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import functools
 import hashlib
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
@@ -25,7 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
-from takab_api.auth.matrix import roles_with_action
+from takab_api.auth.matrix import INTERNAL_ROLES, roles_with_action
 from takab_api.commands.keys import CommandKeyProvider
 from takab_api.commands.publisher import CommandPublisher
 from takab_api.commands.service import issue_signed_command
@@ -272,6 +273,92 @@ def _drill_out(row: Any, sites: list[DrillSiteOut]) -> DrillOut:
     )
 
 
+#: [A-016 · T-8.07] Por qué un rol interno no puede lanzar «a todos».
+_SIN_CLIENTE = (
+    "un rol interno TAKAB debe elegir los sitios (o la plantilla) de UN cliente: "
+    "sin selección el simulacro alcanzaría los gabinetes de todos los clientes"
+)
+
+
+def _es_interno(claims: Claims) -> bool:
+    return claims.role in INTERNAL_ROLES
+
+
+#: [A-016 · T-8.07] Qué hacer cuando lo elegido mezcla clientes, según de dónde
+#: salió la lista: al operador que pulsa EJECUTAR AHORA no se le puede pedir que
+#: «elija los sitios» de una agenda que no edita.
+_REMEDIO_MEZCLA: dict[str, str] = {
+    "seleccion": "elige los sitios de uno solo",
+    "plantilla": "rehaz la plantilla con los sitios de uno solo",
+    "agenda": "cancela la agenda y prográmala por cliente",
+}
+
+# [A-016 · T-8.07] De qué cliente es cada sitio de la lista, comandable o no: un
+# sitio sin gabinete también queda registrado bajo el simulacro.
+_SITE_TENANTS = text(
+    "SELECT site_id, tenant_id FROM sites WHERE site_id = ANY(CAST(:sites AS uuid[]))"
+)
+
+
+def _cliente_del_simulacro(
+    claims: Claims,
+    *,
+    origen: str | None,
+    tenants_de_sitios: Iterable[Any],
+    fuente: str = "seleccion",
+) -> str:
+    """[A-016 · T-8.07] El tenant en el que se escribe el simulacro.
+
+    Un rol de cliente escribe siempre en el suyo: la RLS ya le acota los sitios a
+    su cliente. Un rol interno TAKAB NO: la RLS le abre los gabinetes de todos los
+    clientes, y la fila se escribía en el tenant DEL TOKEN —el de TAKAB—, así que
+    el cliente dueño de los edificios ni la veía en su registro. Aquí el cliente
+    sale de lo que se eligió, y tiene que ser UNO: es el mismo contrato que
+    ``resolve_write_tenant`` —el interno no escribe por omisión— sin tocar el
+    cuerpo de ``POST /drills``.
+
+    Lo dicen los SITIOS, no la fila de la plantilla o de la agenda: lo que un
+    interno guardó antes de esta ficha —y lo que ``POST /drill-templates`` sigue
+    guardando— vive en el tenant de TAKAB aunque apunte a edificios de un
+    cliente. ``origen`` (el tenant de la plantilla) sólo cuenta cuando no hay
+    lista: la plantilla «todos los comandables».
+    """
+    if not _es_interno(claims):
+        return claims.tenant_id
+    clientes = {str(t) for t in tenants_de_sitios}
+    if origen is not None:
+        clientes.add(origen)
+    if not clientes:
+        raise http_error(400, _SIN_CLIENTE)
+    if len(clientes) > 1:
+        raise http_error(
+            422,
+            f"un simulacro es de UN cliente y lo elegido pertenece a {len(clientes)}: "
+            + _REMEDIO_MEZCLA[fuente],
+        )
+    return clientes.pop()
+
+
+def _todos_de_la_plantilla(claims: Claims, plantilla: Any) -> str | None:
+    """[A-016 · T-8.07] El cliente cuyos comandables son «todos», o ``None``.
+
+    Sólo para un interno sin lista de sitios (ni explícita, ni de la plantilla, ni
+    de la agenda). Sin plantilla que lo nombre, 400: «todos» sería la plataforma.
+    """
+    if not _es_interno(claims):
+        return None
+    if plantilla is None:
+        raise http_error(400, _SIN_CLIENTE)
+    return str(plantilla["tenant_id"])
+
+
+async def _tenants_de(conn: AsyncConnection, site_ids: list[Any]) -> list[Any]:
+    if not site_ids:
+        return []
+    rows = await conn.execute(_SITE_TENANTS, {"sites": [str(s) for s in site_ids]})
+    return [row["tenant_id"] for row in rows.mappings().all()]
+
+
 def _require_scope(claims: Claims, site_ids: list[Any]) -> None:
     """403 si el usuario tiene ``site_scope`` y algún sitio queda fuera."""
     scope = scope_filter(claims)
@@ -302,7 +389,17 @@ async def _schedule_drill(
     """
     if body.scheduled_at is None or body.scheduled_at <= datetime.now(tz=UTC):
         raise http_error(422, "scheduled_at debe ser futuro")
+    # [A-016 · T-8.07] Un interno sin lista ni plantilla apuntaría a toda la
+    # plataforma: se rechaza ANTES de leer nada. Con una plantilla «todos», son
+    # los comandables DE SU cliente.
+    todos_de = (
+        _todos_de_la_plantilla(claims, plantilla)
+        if body.site_ids is None and not sitios_plantilla
+        else None
+    )
     rows = (await conn.execute(_TENANT_SITES)).mappings().all()
+    if todos_de is not None:
+        rows = [row for row in rows if str(row["tenant_id"]) == todos_de]
     by_id = {row["site_id"]: row for row in rows}
     duration, note = body.duration_s, body.note
     if plantilla is not None:
@@ -322,13 +419,21 @@ async def _schedule_drill(
         # ejecución). Puede quedar vacío: agendar antes de instalar es legítimo.
         targets = [row for row in rows if row["commandable"]]
     _require_scope(claims, [t["site_id"] for t in targets])
+    tenant = _cliente_del_simulacro(
+        claims,
+        # Una plantilla «todos» cuyo cliente aún no tiene gabinetes deja la agenda
+        # vacía (legítimo): el cliente sale entonces de la plantilla.
+        origen=todos_de,
+        tenants_de_sitios=[t["tenant_id"] for t in targets],
+        fuente="seleccion" if body.site_ids is not None else "plantilla",
+    )
 
     agenda = (
         (
             await conn.execute(
                 _INSERT_DRILL_AGENDA,
                 {
-                    "tenant": claims.tenant_id,
+                    "tenant": tenant,
                     "user_id": claims.sub,
                     "note": note,
                     "duration": duration,
@@ -346,13 +451,13 @@ async def _schedule_drill(
             {
                 "drill": agenda["drill_id"],
                 "site": target["site_id"],
-                "tenant": claims.tenant_id,
+                "tenant": tenant,
                 "command": None,
             },
         )
     await audit_async(
         conn,
-        tenant_id=claims.tenant_id,
+        tenant_id=tenant,
         actor=f"user:{claims.sub}",
         verb="drill_scheduled",
         obj=f"drill:{agenda['drill_id']}",
@@ -383,7 +488,7 @@ async def _schedule_drill(
 # simulacro no vuelve a mirarla nunca, que es lo que hace que editarla después no
 # reescriba lo ya lanzado (criterio 2 de la ficha).
 _SELECT_TEMPLATE = text(
-    "SELECT template_id, name, duration_s, note FROM drill_templates "
+    "SELECT template_id, tenant_id, name, duration_s, note FROM drill_templates "
     "WHERE template_id = CAST(:template AS uuid) AND archived_at IS NULL"
 )
 
@@ -468,8 +573,22 @@ async def start_drill(
 
     armed = None if body.from_scheduled is None else await _armed_drill(body.from_scheduled, conn)
 
+    # [A-016 · T-8.07] Un interno sin lista de sitios —ni explícita, ni de la
+    # plantilla, ni de la agenda armada— mandaría el simulacro a los gabinetes de
+    # TODOS los clientes: sin plantilla que nombre al cliente, 400; con una
+    # plantilla «todos», los comandables DE SU cliente. Con lista, el cliente lo
+    # dicen sus SITIOS (más abajo), no la fila: una agenda o plantilla que un
+    # interno guardó antes vive en el tenant de TAKAB aunque apunte a un cliente.
+    todos_de = (
+        _todos_de_la_plantilla(claims, plantilla)
+        if body.site_ids is None and not sitios_plantilla and armed is None
+        else None
+    )
+
     settings = Settings()
     commandable = (await conn.execute(_COMMANDABLE_SITES)).mappings().all()
+    if todos_de is not None:
+        commandable = [row for row in commandable if str(row["tenant_id"]) == todos_de]
     by_id = {row["site_id"]: row for row in commandable}
     # Sitios apuntados por la agenda que HOY no tienen gabinete comandable: se
     # registran sin comando en vez de abortar. La lista se eligió semanas antes;
@@ -511,8 +630,36 @@ async def start_drill(
                 f"{len(unreachable)} sitio(s) de la lista tiene hoy gateway comandable; "
                 "el simulacro no se lanza porque no sonaría en ninguna parte",
             )
+        if todos_de is not None and plantilla is not None:
+            # [A-016 · T-8.07] Tampoco aquí se culpa al inventario: lo más probable
+            # es que la plantilla la guardara un rol interno en el tenant de TAKAB.
+            raise http_error(
+                409,
+                f"la plantilla «{plantilla['name']}» apunta a «todos los comandables» "
+                "de su tenant y ése no tiene ninguno: si la guardó un rol interno quedó "
+                "en el tenant de TAKAB y no en el del cliente; vuelve a crearla con los "
+                "sitios del cliente",
+            )
         raise http_error(409, "el tenant no tiene sitios con gateway comandable")
     _require_scope(claims, [t["site_id"] for t in targets] + unreachable)
+    # [A-016 · T-8.07] Los inalcanzables también quedan bajo el simulacro: su
+    # cliente cuenta igual, o una agenda antigua que mezclaba dos le enseñaría al
+    # primero un edificio del segundo.
+    tenants_de_sitios = [t["tenant_id"] for t in targets]
+    if _es_interno(claims):
+        tenants_de_sitios += await _tenants_de(conn, unreachable)
+    tenant = _cliente_del_simulacro(
+        claims,
+        origen=todos_de,
+        tenants_de_sitios=tenants_de_sitios,
+        fuente=(
+            "seleccion"
+            if body.site_ids is not None
+            else "agenda"
+            if armed is not None
+            else "plantilla"
+        ),
+    )
 
     duration, note = body.duration_s, body.note
     if armed is not None:
@@ -526,7 +673,7 @@ async def start_drill(
             await conn.execute(
                 _INSERT_DRILL,
                 {
-                    "tenant": claims.tenant_id,
+                    "tenant": tenant,
                     "user_id": claims.sub,
                     "note": note,
                     "duration": duration,
@@ -567,7 +714,7 @@ async def start_drill(
             {
                 "drill": drill_id,
                 "site": target["site_id"],
-                "tenant": claims.tenant_id,
+                "tenant": tenant,
                 "command": str(command_id) if command_id else None,
             },
         )
@@ -589,7 +736,7 @@ async def start_drill(
             {
                 "drill": drill_id,
                 "site": site_id,
-                "tenant": claims.tenant_id,
+                "tenant": tenant,
                 "command": None,
             },
         )
@@ -607,7 +754,7 @@ async def start_drill(
 
     await audit_async(
         conn,
-        tenant_id=claims.tenant_id,
+        tenant_id=tenant,
         actor=f"user:{claims.sub}",
         verb="drill_started",
         obj=f"drill:{drill_id}",
@@ -629,7 +776,7 @@ async def start_drill(
         )
         await audit_async(
             conn,
-            tenant_id=claims.tenant_id,
+            tenant_id=tenant,
             actor=f"user:{claims.sub}",
             verb="drill_executed",
             obj=f"drill:{armed['drill_id']}",

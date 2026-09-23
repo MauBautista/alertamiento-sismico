@@ -63,6 +63,10 @@ describe("RuleSetHistory", () => {
     const e = estado();
     mocks.useRuleSetRollback.mockReturnValue(e);
     render(<RuleSetHistory versions={TRES} canEdit />);
+    // [A-109 · T-8.09] Dos pasos: VOLVER cambia los umbrales de disparo de
+    // producción, y un solo clic bastaba. El primero ARMA, el segundo vuelve.
+    fireEvent.click(within(screen.getByTestId("rs-row-1")).getByRole("button"));
+    expect(e.volver).not.toHaveBeenCalled();
     fireEvent.click(within(screen.getByTestId("rs-row-1")).getByRole("button"));
     expect(e.volver).toHaveBeenCalledWith({ ruleSetId: "rs-1", baseVersion: 3 });
   });

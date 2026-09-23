@@ -24,7 +24,13 @@ export interface NotifyChannelsData {
   error: string | null;
 }
 
-export function useNotifyChannels(): NotifyChannelsData {
+/**
+ * [A-226 · T-8.09] `enabled` = el rol puede LEER esto (`edit_thresholds`, la misma
+ * acción que la API exige en `routers/notify.py`). Sin él, cada carga de /tenants
+ * de un `takab_support` era un 403. No se amplía el permiso: se deja de pedir, y
+ * la tarjeta dice S/D, que es lo que ese rol sabe de los proveedores.
+ */
+export function useNotifyChannels(enabled: boolean): NotifyChannelsData {
   const query = useQuery({
     queryKey: ["notify", "channels"],
     queryFn: async (): Promise<NotifyChannelOut[]> => {
@@ -35,11 +41,12 @@ export function useNotifyChannels(): NotifyChannelsData {
       return data.channels;
     },
     staleTime: NOTIFY_CHANNELS_STALE_MS,
+    enabled,
   });
 
   return {
     channels: query.data,
-    loading: query.isPending,
+    loading: enabled && query.isPending,
     error: query.error ? query.error.message : null,
   };
 }

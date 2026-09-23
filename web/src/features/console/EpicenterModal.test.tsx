@@ -117,6 +117,30 @@ describe("EpicenterModal", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  // [A-163 · T-8.07] El botón decía «EJECUTADO» en verde en cuanto se
+  // confirmaba, con el POST todavía en vuelo o ya rechazado.
+  it("con el POST en vuelo dice ENVIANDO…; si falla no afirma nada y dice el porqué del servidor", async () => {
+    let rechazar!: (e: unknown) => void;
+    sdk.relocateEpicenterIncidentsIncidentIdEpicenterPost.mockReturnValue(
+      new Promise((_resolve, reject) => {
+        rechazar = reject;
+      }),
+    );
+    const onClose = vi.fn();
+    render(wrap(<EpicenterModal incident={INCIDENT} site={SITE} onClose={onClose} />));
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR REUBICACIÓN/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA REUBICAR/ }));
+    expect(await screen.findByRole("button", { name: /ENVIANDO/ })).toBeDisabled();
+    expect(screen.queryByText("EJECUTADO")).toBeNull();
+    // `throwOnError` del cliente hey-api lanza el CUERPO de FastAPI, no un Error.
+    rechazar({ detail: "el incidente ya está cerrado" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("el incidente ya está cerrado");
+    expect(await screen.findByRole("button", { name: /CONFIRMAR REUBICACIÓN/ })).toBeEnabled();
+    expect(screen.queryByText("EJECUTADO")).toBeNull();
+    expect(screen.queryByText("HECHO")).toBeNull();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it("lat,lon manual escrito a mano mueve el punto (blur aplica)", () => {
     render(wrap(<EpicenterModal incident={INCIDENT} site={SITE} onClose={vi.fn()} />));
     const input = screen.getByLabelText(/LAT, LON MANUAL/);

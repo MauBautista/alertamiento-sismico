@@ -31,6 +31,30 @@ async function pseudoAnimation(
 }
 
 /**
+ * [A-060] El radio del faro que el loop del mapa PINTA, leído dos veces con
+ * 900 ms de separación (algo más de medio periodo del pulso, 1.6 s).
+ *
+ * Se lee `data-faro-radio` —lo que `MapPanel` pasa a `setPaintProperty("pulse",
+ * "circle-radius", …)` en cada tick— y NO dos capturas del canvas: en la misma
+ * imagen se mueven el frente de onda y el anillo de arribo, y una tesela que
+ * llegue tarde también cambia píxeles. Comparar el canvas entero podía dar el
+ * caso de reducción por roto sin que el faro se moviera, o el control por bueno
+ * sin que se moviera él. El radio se pinta haya o no un edificio disparado (la
+ * capa existe siempre), así que esto se MIDE en cualquier seed: no hay «NO
+ * MEDIDO» que dependa de que el seed traiga un `trip`.
+ */
+async function radiosDelFaro(page: Page): Promise<[string, string]> {
+  const mapa = page.locator("[data-faro-radio]");
+  await expect(mapa, "el loop del mapa nunca pintó el faro").toHaveCount(1, {
+    timeout: 15_000,
+  });
+  const a = (await mapa.getAttribute("data-faro-radio")) ?? "";
+  await page.waitForTimeout(900);
+  const b = (await mapa.getAttribute("data-faro-radio")) ?? "";
+  return [a, b];
+}
+
+/**
  * [T-2.57] Monta un halo de estado y devuelve su selector.
  *
  * `.soc-dot--pulse` solo lo renderiza la app con DATO VIVO FRESCO (`DetailPanel`
@@ -101,6 +125,20 @@ test.describe("con movimiento reducido", () => {
     }
   });
 
+  test("[A-060] el faro de un edificio que DISPARÓ se queda quieto (y puesto)", async ({
+    page,
+  }) => {
+    // El loop del mapa ignoraba la preferencia: la leyenda decía «ANILLOS
+    // ESTÁTICOS» y el faro rojo seguía expandiéndose cada 1.6 s. Con el faro
+    // quieto, el radio pintado es el MISMO en dos instantes…
+    await devLogin(page);
+    await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+    const [a, b] = await radiosDelFaro(page);
+    expect(a, "el faro cambió de radio entre dos instantes bajo reducción").toBe(b);
+    // …y PUESTO: quieto no es apagado (el mínimo del pulso es 15 px).
+    expect(Number(a)).toBeGreaterThan(15);
+  });
+
   test("[T-6.10] NINGUNA transición viva sobrevive a la preferencia", async ({ page }) => {
     // Hasta esta ficha la reducción alcanzaba 2 de 18 transiciones. Se apagan
     // poniendo a cero los TOKENS de duración, así que lo que hay que comprobar
@@ -163,6 +201,17 @@ test.describe("sin preferencia declarada", () => {
     const tab = page.locator(".soc-nav__tab").first();
     await expect(tab).toBeVisible();
     expect(await tab.evaluate((el) => getComputedStyle(el).transitionDuration)).not.toBe("0s");
+  });
+
+  test("[A-060] y el faro SÍ late: el radio quieto de arriba no es un mapa congelado", async ({
+    page,
+  }) => {
+    // El control negativo del faro: sin él, un mapa que no repinta nunca dejaría
+    // en verde el caso de reducción.
+    await devLogin(page);
+    await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
+    const [a, b] = await radiosDelFaro(page);
+    expect(a, "sin reducción el faro tiene que moverse").not.toBe(b);
   });
 
   test("el halo SÍ se anima: el interruptor de arriba no es un placebo", async ({ page }) => {

@@ -374,6 +374,40 @@ describe("SceneStrip · la precedencia y la excepción escrita", () => {
     expect(screen.queryByTestId("drill-badge")).toBeNull();
   });
 
+  it("[A-063] un aviso que la RED corroboró (≥3 estaciones) es alerta: la misma regla que el teléfono", () => {
+    // El motor de cuórum no reescribe el `trigger`: enlaza el evento y escribe
+    // `meta.node_count`, que viaja en el epicentro del snapshot del mapa.
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ trigger: "local_threshold", event_id: "EVT-Q" })] }),
+    );
+    mocks.useMapState.mockReturnValue(
+      mapData({
+        epicenters: [
+          {
+            event_id: "EVT-Q",
+            node_count: 3,
+            source: "local_quorum",
+            lat: 19.06,
+            lon: -98.3,
+            depth_km: null,
+            magnitude: null,
+            detected_at: "2026-09-07T09:58:58Z",
+          } as MapStateData["epicenters"][number],
+        ],
+      }),
+    );
+    mocks.useActiveDrill.mockReturnValue(drillData({ drill: DRILL }));
+    pintar();
+    expect(screen.getByTestId("scene-strip")).toHaveAttribute("data-scene", "alert");
+    const linea = screen.getByTestId("scene-alert");
+    expect(linea).toHaveAttribute("data-kind", "alert");
+    expect(linea).toHaveAttribute("data-trigger", "local_threshold");
+    expect(linea).toHaveTextContent("SISMO CONFIRMADO POR LA RED");
+    expect(linea).not.toHaveTextContent("SIN ACTUACIÓN");
+    // Y como es real, el simulacro se degrada a badge: lo real domina.
+    expect(screen.getByTestId("drill-badge")).toHaveTextContent("LA ALERTA REAL DOMINA");
+  });
+
   it("una activación manual tampoco domina: es una persona, no una fuente que autoriza", () => {
     mocks.useLiveIncidents.mockReturnValue(
       incidentsData({ incidents: [incidente({ trigger: "manual" })] }),

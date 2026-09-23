@@ -4,6 +4,7 @@ import type { SiteOut, TenantOut, UserOut } from "@takab/sdk";
 
 import Button from "../../components/Button";
 import Card from "../../components/Card";
+import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
@@ -81,7 +82,15 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
   // [T-6.03] Lo declara `/me` (`is_internal`), no el nombre del rol: la lista de
   // roles internos vive en `auth/matrix.INTERNAL_ROLES` y viaja con el token.
   const isInternal = useSessionStore((s) => s.me?.is_internal === true);
+  // [A-108] La cuenta en sesión. Su fila no ofrece desarmarse a sí misma.
+  const meSub = useSessionStore((s) => s.me?.sub ?? null);
   const data = useUsers(true);
+  // [A-018 · T-8.09] `GET /users` sólo acota a los roles DE CLIENTE; a un rol
+  // interno le da el pool entero. La tarjeta es la de UN cliente —su subtítulo
+  // dice «QUIÉN ENTRA A {cliente}»— y pintaba debajo a los de todos. El filtro
+  // va aquí, contra el cliente de la ficha; para un rol de cliente coincide con
+  // el del servidor, así que no hay dos verdades que puedan divergir.
+  const users = data.users.filter((u) => u.tenant_id === tenant.tenant_id);
   const create = useCreateUser();
   const update = useUpdateUser();
   const remove = useDeleteUser();
@@ -91,6 +100,9 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
   const [draft, setDraft] = useState({ email: "", role: "soc_operator", surface: "web" });
   const [editing, setEditing] = useState<string | null>(null);
   const [scopeDraft, setScopeDraft] = useState<string[]>([]);
+  // [A-107] El rol ELEGIDO todavía no es el rol aplicado: cambiarlo reparte o
+  // quita acceso a datos (la RLS se ancla en `custom:role`) y se confirma aparte.
+  const [roleDraft, setRoleDraft] = useState<{ username: string; role: string } | null>(null);
 
   const tenantSites = (sites ?? []).filter((s) => s.tenant_id === tenant.tenant_id);
   const assignable = ROLES.filter((r) => isInternal || !PLATFORM_ROLES.has(r));
@@ -143,161 +155,218 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
         loading={data.loading}
         error={data.error}
         onRetry={data.refetch}
-        empty={data.users.length === 0}
+        empty={users.length === 0}
         emptyText="SIN USUARIOS EN ESTE CLIENTE"
         staleSince={staleSince}
       >
         <ul className="users__list">
-          {data.users.map((user) => (
-            <li key={user.username} className="users__row" data-testid="user-row">
-              <div className="users__id">
-                <span className="users__email">{user.email}</span>
-                <span className="soc-meta">
-                  {user.role} · {user.surface.toUpperCase()} · {scopeLabel(user, sites)} ·{" "}
-                  {user.enabled ? user.status : "DESHABILITADO"}
-                </span>
-              </div>
-              <div className="users__rowactions">
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  title={busy ? "Operación en curso…" : undefined}
-                  onClick={() => (editing === user.username ? setEditing(null) : startEdit(user))}
-                >
-                  {editing === user.username ? "CERRAR" : "EDITAR"}
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={busy}
-                  title={busy ? "Operación en curso…" : undefined}
-                  onClick={() =>
-                    update.mutate({
-                      username: user.username,
-                      body: { enabled: !user.enabled },
-                    })
-                  }
-                >
-                  {user.enabled ? "DESHABILITAR" : "HABILITAR"}
-                </Button>
-              </div>
-
-              {editing === user.username && (
-                <div className="users__editor" data-testid="user-editor">
-                  <label className="users__field">
-                    <span>Rol</span>
-                    <select
-                      value={user.role}
-                      onChange={(e) =>
-                        update.mutate({
-                          username: user.username,
-                          body: { role: e.target.value },
-                        })
+          {users.map((user) => {
+            // [A-108] Mi propia fila: ni deshabilitarme, ni quitarme el rol, ni
+            // darme de baja. El servidor sólo vetaba la baja (409), y un admin
+            // podía dejarse fuera de la consola con un clic.
+            const mine = meSub !== null && user.username === meSub;
+            const motivoMio = "Es tu propia cuenta: pídeselo a otro administrador";
+            const rolElegido =
+              roleDraft !== null && roleDraft.username === user.username ? roleDraft.role : null;
+            return (
+              <li key={user.username} className="users__row" data-testid="user-row">
+                <div className="users__id">
+                  <span className="users__email">{user.email}</span>
+                  <span className="soc-meta">
+                    {user.role} · {user.surface.toUpperCase()} · {scopeLabel(user, sites)} ·{" "}
+                    {user.enabled ? user.status : "DESHABILITADO"}
+                    {mine ? " · TU CUENTA" : ""}
+                  </span>
+                </div>
+                <div className="users__rowactions">
+                  <Button
+                    variant="secondary"
+                    disabled={busy}
+                    title={busy ? "Operación en curso…" : undefined}
+                    onClick={() => (editing === user.username ? setEditing(null) : startEdit(user))}
+                  >
+                    {editing === user.username ? "CERRAR" : "EDITAR"}
+                  </Button>
+                  {user.enabled ? (
+                    // [A-107] Deshabilitar corta el acceso de una persona: dos pasos.
+                    <ConfirmButton
+                      label="DESHABILITAR"
+                      variant="secondary"
+                      disabled={busy || mine}
+                      title={
+                        mine
+                          ? motivoMio
+                          : busy
+                            ? "Operación en curso…"
+                            : "Reversible: conserva la cuenta"
                       }
-                    >
-                      {assignable.map((r) => (
-                        <option key={r} value={r}>
-                          {r}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="users__field">
-                    <span>Superficie</span>
-                    <select
-                      value={user.surface}
-                      onChange={(e) =>
-                        update.mutate({
-                          username: user.username,
-                          body: { surface: e.target.value as "web" | "mobile" | "both" },
-                        })
+                      onConfirm={() =>
+                        update.mutate({ username: user.username, body: { enabled: false } })
                       }
-                    >
-                      {SURFACES.map((s) => (
-                        <option key={s} value={s}>
-                          {s}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <fieldset className="users__scope">
-                    <legend>Alcance por estación</legend>
-                    <p className="soc-meta">
-                      Sin ninguna marcada, el usuario ve TODO el cliente. Marcar estaciones escribe
-                      `custom:site_scope` y acota lo que el servidor le entrega.
-                    </p>
-                    {tenantSites.length === 0 && (
-                      <p className="soc-meta">SIN ESTACIONES QUE ACOTAR EN ESTE CLIENTE</p>
-                    )}
-                    {tenantSites.map((site) => (
-                      <label key={site.site_id} className="users__check">
-                        <input
-                          type="checkbox"
-                          checked={scopeDraft.includes(site.site_id)}
-                          onChange={(e) =>
-                            setScopeDraft((prev) =>
-                              e.target.checked
-                                ? [...prev, site.site_id]
-                                : prev.filter((id) => id !== site.site_id),
-                            )
-                          }
-                        />
-                        {site.code} · {siteLabelText(site.name, site.code)}
-                      </label>
-                    ))}
+                    />
+                  ) : (
                     <Button
+                      variant="secondary"
                       disabled={busy}
                       title={busy ? "Operación en curso…" : undefined}
                       onClick={() =>
-                        update.mutate({
-                          username: user.username,
-                          body: {
-                            site_scope: scopeDraft.length === 0 ? "*" : scopeDraft.join(","),
-                          },
-                        })
+                        update.mutate({ username: user.username, body: { enabled: true } })
                       }
                     >
-                      GUARDAR ALCANCE
+                      HABILITAR
                     </Button>
-                  </fieldset>
-
-                  <div className="users__rowactions">
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      title={busy ? "Operación en curso…" : undefined}
-                      onClick={() => action.mutate({ username: user.username, action: "reset" })}
-                    >
-                      RESTABLECER CONTRASEÑA
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      title={busy ? "Operación en curso…" : undefined}
-                      onClick={() => action.mutate({ username: user.username, action: "resend" })}
-                    >
-                      REENVIAR INVITACIÓN
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={busy}
-                      title={busy ? "Operación en curso…" : undefined}
-                      onClick={() => remove.mutate(user.username)}
-                    >
-                      DAR DE BAJA
-                    </Button>
-                  </div>
-                  <p className="soc-meta">
-                    DESHABILITAR es reversible y conserva la cuenta; DAR DE BAJA la elimina del
-                    pool. Su rastro en la bitácora sobrevive a ambas.
-                  </p>
+                  )}
                 </div>
-              )}
-            </li>
-          ))}
+
+                {editing === user.username && (
+                  <div className="users__editor" data-testid="user-editor">
+                    <label className="users__field">
+                      <span>Rol</span>
+                      <select
+                        value={rolElegido ?? user.role}
+                        disabled={mine}
+                        title={mine ? motivoMio : undefined}
+                        onChange={(e) =>
+                          setRoleDraft({ username: user.username, role: e.target.value })
+                        }
+                      >
+                        {assignable.map((r) => (
+                          <option key={r} value={r}>
+                            {r}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {rolElegido !== null && rolElegido !== user.role && (
+                      <div className="users__rowactions">
+                        <ConfirmButton
+                          label={`CAMBIAR ROL A ${rolElegido}`}
+                          disabled={busy}
+                          title="Cambia qué datos ve y qué puede hacer esta persona"
+                          onConfirm={() => {
+                            update.mutate({ username: user.username, body: { role: rolElegido } });
+                            setRoleDraft(null);
+                          }}
+                        />
+                        <Button variant="secondary" onClick={() => setRoleDraft(null)}>
+                          DEJAR {user.role}
+                        </Button>
+                      </div>
+                    )}
+
+                    <label className="users__field">
+                      <span>Superficie</span>
+                      <select
+                        value={user.surface}
+                        // [A-108] Quitarse la superficie web es cerrarse la consola.
+                        disabled={mine}
+                        title={mine ? motivoMio : undefined}
+                        onChange={(e) =>
+                          update.mutate({
+                            username: user.username,
+                            body: { surface: e.target.value as "web" | "mobile" | "both" },
+                          })
+                        }
+                      >
+                        {SURFACES.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <fieldset className="users__scope">
+                      <legend>Alcance por estación</legend>
+                      <p className="soc-meta">
+                        Sin ninguna marcada, el usuario ve TODO el cliente. Marcar estaciones
+                        escribe `custom:site_scope` y acota lo que el servidor le entrega.
+                      </p>
+                      {tenantSites.length === 0 && (
+                        <p className="soc-meta">SIN ESTACIONES QUE ACOTAR EN ESTE CLIENTE</p>
+                      )}
+                      {tenantSites.map((site) => (
+                        <label key={site.site_id} className="users__check">
+                          <input
+                            type="checkbox"
+                            checked={scopeDraft.includes(site.site_id)}
+                            onChange={(e) =>
+                              setScopeDraft((prev) =>
+                                e.target.checked
+                                  ? [...prev, site.site_id]
+                                  : prev.filter((id) => id !== site.site_id),
+                              )
+                            }
+                          />
+                          {site.code} · {siteLabelText(site.name, site.code)}
+                        </label>
+                      ))}
+                      <Button
+                        disabled={busy}
+                        title={busy ? "Operación en curso…" : undefined}
+                        onClick={() =>
+                          update.mutate({
+                            username: user.username,
+                            body: {
+                              site_scope: scopeDraft.length === 0 ? "*" : scopeDraft.join(","),
+                            },
+                          })
+                        }
+                      >
+                        GUARDAR ALCANCE
+                      </Button>
+                    </fieldset>
+
+                    <div className="users__rowactions">
+                      <Button
+                        variant="secondary"
+                        disabled={busy}
+                        title={busy ? "Operación en curso…" : undefined}
+                        onClick={() => action.mutate({ username: user.username, action: "reset" })}
+                      >
+                        RESTABLECER CONTRASEÑA
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={busy}
+                        title={busy ? "Operación en curso…" : undefined}
+                        onClick={() => action.mutate({ username: user.username, action: "resend" })}
+                      >
+                        REENVIAR INVITACIÓN
+                      </Button>
+                      {/* [A-107] Irreversible: dos pasos. */}
+                      <ConfirmButton
+                        label="DAR DE BAJA"
+                        variant="secondary"
+                        disabled={busy || mine}
+                        title={
+                          mine
+                            ? motivoMio
+                            : busy
+                              ? "Operación en curso…"
+                              : "Irreversible: elimina la cuenta del pool"
+                        }
+                        onConfirm={() => remove.mutate(user.username)}
+                      />
+                    </div>
+                    <p className="soc-meta">
+                      DESHABILITAR es reversible y conserva la cuenta; DAR DE BAJA la elimina del
+                      pool. Su rastro en la bitácora sobrevive a ambas.
+                    </p>
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </StateFrame>
+
+      {data.truncated && (
+        <p className="users__note" role="status" data-testid="users-truncated">
+          LISTA INCOMPLETA · el directorio tiene más identidades de las que esta pantalla recorre de
+          una vez. Faltan usuarios abajo: no la leas como la lista entera.
+        </p>
+      )}
 
       {action.data !== undefined && (
         <p className="users__ack" role="status" data-testid="user-action-ack">

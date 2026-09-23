@@ -12,6 +12,8 @@ import {
 } from "@takab/sdk";
 import type { CommandOut } from "@takab/sdk";
 
+import { serverDetail } from "./useFleetMutations";
+
 export const SELF_TEST_POLL_MS = 2_000;
 
 export type SelfTestPhase = "idle" | "issued" | "acked" | "rejected" | "expired" | "failed";
@@ -81,12 +83,16 @@ export function useSelfTest(siteId: string | null): SelfTestData {
 
   const mutation = useMutation({
     mutationFn: async () => {
-      const { data, response } = await issueCommandSitesSiteIdCommandsPost({
+      const { data, error, response } = await issueCommandSitesSiteIdCommandsPost({
         path: { site_id: siteId as string },
         body: { channel: "system", action: "self_test" },
       });
       if (data === undefined) {
-        throw new Error(`El autodiagnóstico no salió (HTTP ${response.status})`);
+        // [A-102] El `detail` del servidor dice POR QUÉ («hay una alerta viva»,
+        // «sin gabinete comandable»…), que es lo que el operador puede accionar;
+        // el código HTTP solo, no.
+        const detail = serverDetail(error);
+        throw new Error(`HTTP ${response.status}${detail === null ? "" : ` · ${detail}`}`);
       }
       return data;
     },

@@ -14,18 +14,30 @@ export interface ModalProps {
 
 export default function Modal({ title, onClose, children, footer }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  // [A-013 · T-8.07] El `onClose` VIGENTE, en una ref. Quien monta el modal suele
+  // pasarlo como flecha nueva en cada render —`ConsoleWall` se redibuja cada 1 s—
+  // y con él en las dependencias el efecto de abajo se re-ejecutaba cada tic y le
+  // quitaba el foco al campo en el que se estaba escribiendo.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Foco inicial DENTRO del diálogo (lectores de pantalla + teclado): UNA vez, al
+  // montar. Después el foco es del operador.
+  useEffect(() => {
+    dialogRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener("keydown", onKey);
-    // Foco inicial DENTRO del diálogo (lectores de pantalla + teclado).
-    dialogRef.current?.focus();
     return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   return (
     <div className="soc-modal__overlay" data-testid="modal-overlay">

@@ -17,6 +17,71 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.scope import ConsoleScope, apply_scope
 
+# [A-057 · T-8.09] ¿Esta fila de ``device_health`` (alias ``dh``) es un LATIDO?
+#
+# ``ingest/handlers.py::handle_status`` —el LWT/beacon de presencia— escribe una
+# fila ``reason='transition'`` con SOLO ``ts/tenant/gateway``: todas las métricas
+# en NULL, tanto para ``online`` como para ``offline``. La fila se conserva a
+# propósito (es la huella de la reconexión y de «retirado + vivo»), pero NO es
+# un latido: tomada como «el último», un gabinete recién CAÍDO salía OPERATIVO
+# durante ``sin_enlace_min`` (edad ≈ 0, ninguna métrica que degrade), uno en
+# batería se «curaba» con el LWT, y SIN ENLACE llegaba a los 5 min del LWT en vez
+# de a los 5 min del último latido.
+#
+# Se reconoce por su FORMA y no por un marcador porque el CHECK de ``reason`` solo
+# admite dos valores y el snapshot del gabinete también puede ser ``transition``
+# (``HealthSnapshot.transition_reason``): ése SÍ es un latido, y siempre trae
+# ``seedlink_lag_s``, ``temperature_c`` y ``ups_status`` por defecto del
+# contrato. Una fila de transición sin UNA SOLA medición no es más que presencia.
+#
+# UNA definición para todas las lecturas del último latido (flota, mapa, salud
+# móvil, orden de sirena): cuatro copias acabarían divergiendo. Anclado en
+# ``tests/api/test_lwt_no_es_un_latido.py``, que inserta la fila con el SQL del
+# propio handler.
+LATIDO_REAL = (
+    "NOT (dh.reason = 'transition' AND num_nonnulls("
+    "dh.seedlink_lag_s, dh.ntp_offset_ms, dh.mqtt_rtt_ms, dh.cpu_temp_c, dh.power_status, "
+    "dh.battery_pct, dh.battery_min_left, dh.cert_days_remaining, dh.relays_state, "
+    "dh.packet_loss_pct, dh.disk_used_pct, dh.evidence_pending, dh.evidence_oldest_age_s"
+    ") = 0)"
+)
+
+# [A-057 · T-8.09 · 2ª mitad] ¿El broker dio la sesión por MUERTA después del
+# último latido real? Expresión sobre ``g`` (``gateways``) y ``h`` (el LATERAL
+# del último latido, ya filtrado con ``LATIDO_REAL``).
+#
+# Quitar el LWT de «el último latido» no bastaba. En la secuencia REAL
+# (``edge/takab_edge/cloud``: latido cada 60 s, ``keep_alive_secs=30``) el broker
+# publica el LWT ~45 s después de la caída, cuando el último latido tiene 45–105 s:
+# con ``sin_enlace_min=5`` la consola seguía diciendo OPERATIVO otros 195–255 s con
+# el gabinete YA marcado ``offline`` por ``handle_status``. El LWT es la única
+# señal que dice «se cayó» antes de que el silencio lo demuestre; ignorarla era
+# mostrar un dato congelado como vivo (regla de oro 7).
+#
+# Las dos condiciones importan:
+#  · ``status = 'offline'``: un beacon ``online`` posterior (reconexión) lo levanta.
+#  · ``status_ts >= h.ts``: un LATIDO posterior también. Si el beacon de vuelta se
+#    pierde, ``gateways.status`` se queda en ``offline`` mientras el gabinete late:
+#    sin esta comparación lo pintaríamos SIN ENLACE para siempre. Latir es la
+#    prueba de vida; el LWT sólo manda sobre lo que es más viejo que él.
+# ``status_ts`` es la marca monotónica que escribe ``_STATUS_SQL`` (SQS reordena:
+# un LWT viejo no la pisa). Sin marca, o sin latido, no hay nada que comparar ⇒
+# ``false``: la ausencia de latido ya es SIN ENLACE por su cuenta.
+#
+# UNA definición para flota, mapa y móvil (``tests/api/test_lwt_no_es_un_latido.py``).
+ENLACE_PERDIDO = (
+    "COALESCE(g.status = 'offline' AND (g.metadata->>'status_ts')::timestamptz >= h.ts, false)"
+)
+
+#: La edad que DERIVA el enlace: la del último latido real, o NULL si el broker
+#: ya declaró la sesión muerta después de él (``derive_fleet_state`` lee NULL como
+#: SIN ENLACE). Para las lecturas que sólo derivan el enlace con la edad (mapa,
+#: salud móvil, orden de sirena). La flota NO la usa: su edad fecha también la
+#: versión, y ahí «perdió el enlace» no es «nunca latió» (``routers/fleet.py``).
+EDAD_DEL_ENLACE = (
+    f"CASE WHEN {ENLACE_PERDIDO} THEN NULL ELSE EXTRACT(EPOCH FROM (now() - h.ts))::float8 END"
+)
+
 # [T-2.35] El JOIN a `sites` y el WHERE no son adorno: eran la ÚNICA query del repo
 # que devolvía TODO sin filtrar, y de ahí salían las "estaciones fantasma". Como
 # `retire_site` tampoco tocaba `gateways`, cada retiro dejaba una tarjeta indeleble
@@ -51,6 +116,8 @@ _LIST_SQL = """
            h.evidence_oldest_age_s::float8 AS evidence_oldest_age_s,
            h.disk_used_pct::float8 AS disk_used_pct,
            EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s,
+           -- [A-057] El LWT posterior al último latido (ver `ENLACE_PERDIDO`).
+           /*+enlace_perdido*/ AS link_lost,
            r.ts    AS retired_at,
            r.actor AS retired_by
     FROM gateways g
@@ -62,6 +129,8 @@ _LIST_SQL = """
                dh.disk_used_pct
         FROM device_health dh
         WHERE dh.gateway_id = g.gateway_id
+          -- [A-057] El LWT no es un latido (ver `LATIDO_REAL`).
+          AND /*+latido_real*/
         ORDER BY dh.ts DESC
         LIMIT 1
     ) h ON true
@@ -92,10 +161,12 @@ _LIST_SQL = """
        -- Esconder al mudo, delatar al que late. El umbral es el MISMO de
        -- `derive_fleet_state` (`SIN ENLACE`), pasado desde el router: dos
        -- definiciones de "vivo" acabarían divergiendo.
-       OR h.ts > now() - make_interval(secs => :alive_s))
+       -- [A-057] …y "vivo" es lo MISMO que no-SIN-ENLACE: un retirado cuyo
+       -- broker ya publicó el LWT no es un fantasma que habla, es un mudo.
+       OR (h.ts > now() - make_interval(secs => :alive_s) AND NOT /*+enlace_perdido*/))
        /*+console_scope*/
     ORDER BY s.name, g.serial, g.gateway_id
-    """
+    """.replace("/*+latido_real*/", LATIDO_REAL).replace("/*+enlace_perdido*/", ENLACE_PERDIDO)
 # [T-2.45] Sin marcador sustituido: la variante que usan los consumidores que no
 # pasan por la consola (el espejo `_CONFIG_STATE_ALL` de abajo la deriva de esta).
 _LIST = text(_LIST_SQL.replace("/*+console_scope*/", ""))

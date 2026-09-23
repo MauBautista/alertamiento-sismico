@@ -5,17 +5,26 @@
 // INICIAR se pinta junto al botón, y que mientras no se sabe si hay simulacro
 // no se ofrece arrancar otro. El BANNER ya no es de aquí: `features/scene`.
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ useActiveDrill: vi.fn() }));
 vi.mock("./useActiveDrill", () => ({ useActiveDrill: mocks.useActiveDrill }));
 vi.mock("./DrillHistory", () => ({ default: () => <div data-testid="drill-history" /> }));
 vi.mock("./DrillModal", () => ({
-  default: ({ onClose }: { onClose: () => void }) => (
+  default: ({
+    onClose,
+    onSubmit,
+  }: {
+    onClose: () => void;
+    onSubmit: (input: object) => unknown;
+  }) => (
     <div data-testid="drill-modal">
       <button type="button" onClick={onClose}>
         CERRAR
+      </button>
+      <button type="button" onClick={() => void onSubmit({ siteIds: ["s-1"] })}>
+        LANZAR
       </button>
     </div>
   ),
@@ -124,5 +133,36 @@ describe("DrillControls", () => {
     mocks.useActiveDrill.mockReturnValue(drillData({ loading: true }));
     render(<DrillControls />);
     expect(screen.getByTestId("drill-idle")).toBeInTheDocument();
+  });
+});
+
+// [A-094 · T-8.07] El modal se cerraba EN EL ACTO al lanzar, antes de saber si el
+// servidor lo había aceptado: con un 400 el operador volvía a la consola sin su
+// formulario y con un error suelto junto a un botón que ya no miraba.
+describe("DrillControls · el alta espera al servidor", () => {
+  function abrir(start: ActiveDrillData["start"]): void {
+    useSessionStore.setState({
+      status: "authenticated",
+      idToken: "tok",
+      me: ME_FIXTURES.tenant_admin,
+    });
+    mocks.useActiveDrill.mockReturnValue(drillData({ start }));
+    render(<DrillControls />);
+    fireEvent.click(screen.getByRole("button", { name: /INICIAR SIMULACRO/ }));
+  }
+
+  it("si arrancó, el modal se cierra", async () => {
+    abrir(vi.fn(() => Promise.resolve(true)));
+    fireEvent.click(screen.getByRole("button", { name: "LANZAR" }));
+    await waitFor(() => expect(screen.queryByTestId("drill-modal")).toBeNull());
+  });
+
+  it("si NO arrancó, el modal sigue abierto con lo que se había llenado", async () => {
+    const start = vi.fn(() => Promise.resolve(false));
+    abrir(start);
+    fireEvent.click(screen.getByRole("button", { name: "LANZAR" }));
+    await waitFor(() => expect(start).toHaveBeenCalled());
+    await Promise.resolve();
+    expect(screen.getByTestId("drill-modal")).toBeInTheDocument();
   });
 });

@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
+from takab_api.queries.fleet import EDAD_DEL_ENLACE, LATIDO_REAL
 
 # --- acceso a sitio (R2) -------------------------------------------------------
 
@@ -371,11 +372,19 @@ INSERT_PANIC_INCIDENT = text(
 # reposo».
 SIREN_ORDER = text(
     "SELECT c.action, c.issued_at, c.ack->'channel_state' AS channel_state, h.relays_state, "
-    "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS gateway_age_s "
+    # [A-057 · T-8.09] NULL si el broker publicó el LWT tras el último latido
+    # (`EDAD_DEL_ENLACE`): `alarma_inmueble` lo trata como el latido viejo — no
+    # corrobora con un gabinete cuya sesión ya se dio por muerta. El JOIN es para
+    # leer `g.status`/`status_ts`; LEFT para que la RLS de `gateways` no pueda
+    # esconder la orden (sin fila, la expresión es `false` y manda la edad).
+    f"{EDAD_DEL_ENLACE} AS gateway_age_s "
     "FROM commands c "
+    "LEFT JOIN gateways g ON g.gateway_id = c.gateway_id "
     "LEFT JOIN LATERAL ("
     "  SELECT dh.ts, dh.relays_state FROM device_health dh "
-    "  WHERE dh.gateway_id = c.gateway_id ORDER BY dh.ts DESC LIMIT 1"
+    # [A-057 · T-8.09] El LWT no es un latido: con él como «último», la edad
+    # salía ≈0 y la corroboración de la sirena contaba con un gabinete caído.
+    f"  WHERE dh.gateway_id = c.gateway_id AND {LATIDO_REAL} ORDER BY dh.ts DESC LIMIT 1"
     ") h ON true "
     "WHERE c.site_id = CAST(:site AS uuid) AND c.channel = 'siren' "
     "AND c.status = 'acked' AND c.issued_by <> CAST(:actor_sistema AS uuid) "
@@ -395,13 +404,19 @@ SITE_HEALTH = text(
     # verdad única y la app del brigadista no puede decir OPERATIVO de un edificio
     # cuyo gabinete no sabe si tiene sirena.
     "h.relays_state, "
-    "EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s "
+    # [A-057 · T-8.09] NULL (⇒ SIN ENLACE en `derive_fleet_state`) si el broker
+    # publicó el LWT después del último latido. La app enseña el «último
+    # contacto» desde `health_ts`, que sigue siendo el del latido real.
+    f"{EDAD_DEL_ENLACE} AS age_s "
     "FROM gateways g "
     "LEFT JOIN LATERAL ("
     "  SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining, "
     "         dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.cpu_temp_c, "
     "         dh.relays_state "
     "  FROM device_health dh WHERE dh.gateway_id = g.gateway_id "
+    # [A-057 · T-8.09] Misma frontera que flota y mapa (`LATIDO_REAL`): sin ella,
+    # el LWT de un gabinete recién caído le decía a la app que estaba OPERATIVO.
+    f"  AND {LATIDO_REAL} "
     "  ORDER BY dh.ts DESC LIMIT 1"
     ") h ON true "
     "WHERE g.site_id = CAST(:site AS uuid) AND g.status <> 'retired'"

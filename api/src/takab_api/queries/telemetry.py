@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import TextClause, text
 
 from takab_api.auth.scope import ConsoleScope, apply_scope
+from takab_api.queries.fleet import EDAD_DEL_ENLACE, LATIDO_REAL
 
 # Columnas de la vista segura que alimentan el strip 1 s del SOC.
 _FEATURE_COLS = "ts, pga_g, pgv_cms, stalta, clipping"
@@ -225,13 +226,19 @@ LEFT JOIN LATERAL (
            h.seedlink_lag_s::float8 AS seedlink_lag_s,
            h.ntp_offset_ms::float8  AS ntp_offset_ms,
            h.relays_state,
-           EXTRACT(EPOCH FROM (now() - h.ts))::float8 AS age_s
+           -- [A-057] NULL (⇒ SIN ENLACE) si el broker publicó el LWT después del
+           -- último latido: la misma frontera que la flota (`EDAD_DEL_ENLACE`).
+           -- Aquí la edad sólo alimenta `derive_fleet_state`; el instante que se
+           -- enseña (`health_ts`) sigue siendo el del latido real.
+           /*+edad_del_enlace*/ AS age_s
     FROM gateways g
     LEFT JOIN LATERAL (
         SELECT dh.ts, dh.power_status, dh.battery_pct, dh.cert_days_remaining,
                dh.mqtt_rtt_ms, dh.seedlink_lag_s, dh.ntp_offset_ms, dh.relays_state
         FROM device_health dh
         WHERE dh.gateway_id = g.gateway_id
+          -- [A-057] El LWT no es un latido: misma frontera que la flota.
+          AND /*+latido_real*/
         ORDER BY dh.ts DESC
         LIMIT 1
     ) h ON true
@@ -257,7 +264,7 @@ LEFT JOIN LATERAL (
 ) th ON true
 WHERE s.status = 'active' /*+console_scope*/
 ORDER BY s.name ASC, s.site_id ASC
-"""
+""".replace("/*+latido_real*/", LATIDO_REAL).replace("/*+edad_del_enlace*/", EDAD_DEL_ENLACE)
 
 
 def select_map_state(scope: ConsoleScope) -> tuple[TextClause, dict[str, Any]]:

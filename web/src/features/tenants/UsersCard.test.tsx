@@ -61,6 +61,7 @@ function user(over: Partial<UserOut> = {}): UserOut {
 function usersData(over: Partial<UsersData> = {}): UsersData {
   return {
     users: [user()],
+    truncated: false,
     backend: "cognito",
     loading: false,
     error: null,
@@ -273,7 +274,10 @@ describe("UsersCard · baja reversible antes que definitiva", () => {
     const update = mutation();
     mocks.useUpdateUser.mockReturnValue(update);
     renderCard();
+    // [A-107] Dos pasos: el primer clic ARMA, el segundo confirma.
     fireEvent.click(screen.getByRole("button", { name: "DESHABILITAR" }));
+    expect(update.mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
     expect(update.mutate).toHaveBeenCalledWith({ username: "u-1", body: { enabled: false } });
   });
 
@@ -290,5 +294,102 @@ describe("UsersCard · baja reversible antes que definitiva", () => {
     );
     renderCard();
     expect(screen.getByTestId("user-action-ack").textContent).toBe("Código enviado.");
+  });
+});
+
+// [A-018 · T-8.09] `GET /users` sólo acota por tenant a los roles de cliente; a
+// un rol interno le devuelve el pool ENTERO. La tarjeta dice «QUIÉN ENTRA A
+// {cliente}» y pintaba a los usuarios de TODOS los clientes debajo.
+describe("UsersCard · sólo los usuarios DE ESTE cliente", () => {
+  it("un superadmin no ve en la ficha de un cliente a los usuarios de otro", () => {
+    seed("takab_superadmin");
+    mocks.useUsers.mockReturnValue(
+      usersData({
+        users: [
+          user({ username: "u-1", email: "ana@cliente.mx" }),
+          user({ username: "u-9", email: "otro@ajeno.mx", tenant_id: "otro-tenant" }),
+        ],
+      }),
+    );
+    renderCard();
+    const filas = screen.getAllByTestId("user-row");
+    expect(filas).toHaveLength(1);
+    expect(filas[0].textContent).toMatch(/ana@cliente\.mx/);
+    expect(screen.queryByText(/otro@ajeno\.mx/)).toBeNull();
+  });
+
+  it("si en el directorio sólo hay usuarios de OTROS clientes, esta ficha está vacía", () => {
+    seed("takab_superadmin");
+    mocks.useUsers.mockReturnValue(
+      usersData({ users: [user({ username: "u-9", tenant_id: "otro-tenant" })] }),
+    );
+    renderCard();
+    expect(screen.getByText("SIN USUARIOS EN ESTE CLIENTE")).toBeInTheDocument();
+  });
+
+  // [A-106] Si el directorio se cortó por el tope de páginas, la lista no puede
+  // presentarse como completa: «SIN USUARIOS» con usuarios existentes es el cero
+  // tranquilizador de siempre.
+  it("una lista cortada por el tope de páginas se declara incompleta", () => {
+    mocks.useUsers.mockReturnValue(usersData({ truncated: true }));
+    renderCard();
+    expect(screen.getByTestId("users-truncated").textContent).toMatch(/INCOMPLETA/);
+  });
+
+  it("una lista completa no inventa el aviso", () => {
+    renderCard();
+    expect(screen.queryByTestId("users-truncated")).toBeNull();
+  });
+});
+
+// [A-107 · T-8.09] DAR DE BAJA (irreversible) y el cambio de rol se ejecutaban
+// con un solo clic, sin confirmación.
+describe("UsersCard · lo irreversible pide confirmación", () => {
+  it("DAR DE BAJA arma en el primer clic y sólo borra en el segundo", () => {
+    const remove = mutation();
+    mocks.useDeleteUser.mockReturnValue(remove);
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR" }));
+    fireEvent.click(screen.getByRole("button", { name: "DAR DE BAJA" }));
+    expect(remove.mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(remove.mutate).toHaveBeenCalledWith("u-1");
+  });
+
+  it("elegir otro rol NO lo aplica: hay que confirmarlo", () => {
+    const update = mutation();
+    mocks.useUpdateUser.mockReturnValue(update);
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR" }));
+    fireEvent.change(screen.getByLabelText("Rol"), { target: { value: "inspector" } });
+    expect(update.mutate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /CAMBIAR ROL A inspector/ }));
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(update.mutate).toHaveBeenCalledWith({ username: "u-1", body: { role: "inspector" } });
+  });
+});
+
+// [A-108 · T-8.09] Un admin podía deshabilitarse o quitarse su propio rol desde
+// su propia fila, y quedarse fuera de la consola a mitad de una demostración.
+describe("UsersCard · la propia cuenta no se desarma desde aquí", () => {
+  it("en MI fila no se ofrece deshabilitar, cambiar rol ni dar de baja", () => {
+    // `sub` de la fixture de tenant_admin: la cuenta en sesión.
+    mocks.useUsers.mockReturnValue(
+      usersData({
+        users: [user({ username: ME_FIXTURES.tenant_admin.sub, role: "tenant_admin" })],
+      }),
+    );
+    renderCard();
+    expect(screen.getByRole("button", { name: "DESHABILITAR" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR" }));
+    expect(screen.getByLabelText("Rol")).toBeDisabled();
+    expect(screen.getByLabelText("Superficie")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "DAR DE BAJA" })).toBeDisabled();
+    expect(screen.getByTestId("user-row").textContent).toMatch(/TU CUENTA/);
+  });
+
+  it("NO-VACUIDAD: en la fila de otro sí se ofrece", () => {
+    renderCard();
+    expect(screen.getByRole("button", { name: "DESHABILITAR" })).toBeEnabled();
   });
 });

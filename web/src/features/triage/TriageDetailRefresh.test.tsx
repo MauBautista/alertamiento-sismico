@@ -251,7 +251,10 @@ function arrange(hint: IncidentRefreshHint | null, socket: LiveSocketLike | null
         estaciones={ESTACIONES_VACIAS}
         canSign
         canExport={false}
+        canReadCctv
         canDownloadClip={false}
+        clipDownload={{ download: vi.fn(), pendingClipId: null, failure: null }}
+        canVerifyDictamen={false}
         canGenerateReport={false}
         canOpenFleet={false}
         canOpenBuilding={false}
@@ -290,7 +293,13 @@ describe("C-3 · el detalle abierto ANTES del dictamen se entera solo", () => {
     arrange(HINT);
 
     await waitFor(() => expect(screen.getByText("SIN DICTAMEN")).toBeInTheDocument());
-    expect(screen.queryByText(/FIRMAR DICTAMEN/)).toBeNull();
+    // [T-8.08 · A-015] Hasta esta ficha aquí se afirmaba que FIRMAR NO estaba, y
+    // esa ausencia ERA el defecto: la API firma sin cabeza de cadena y la
+    // pantalla escondía la tarjeta hasta que hubiera un preliminar. Ahora la
+    // firma está desde el principio, rotulada como la PRIMERA versión; lo que
+    // tiene que llegar solo con la emisión es el VEREDICTO de la cadena.
+    expect(screen.getByText(/PRIMERA VERSIÓN DE LA CADENA/)).toBeInTheDocument();
+    expect(screen.queryByText("VEREDICTO")).toBeNull();
 
     // El worker emite a los 61 s. La pantalla no se toca: ni un clic.
     await act(async () => {
@@ -307,7 +316,10 @@ describe("C-3 · el detalle abierto ANTES del dictamen se entera solo", () => {
     await waitFor(() =>
       expect(screen.getByText("DICTAMEN AUTOMÁTICO PRELIMINAR")).toBeInTheDocument(),
     );
+    expect(screen.getByText("VEREDICTO")).toBeInTheDocument();
     expect(screen.getByText(/FIRMAR DICTAMEN/)).toBeInTheDocument();
+    // Ya no es la primera versión: hay un preliminar que la firma sustituye.
+    expect(screen.queryByText(/PRIMERA VERSIÓN DE LA CADENA/)).toBeNull();
   });
 
   it("el frame del canal live lo trae SIN esperar al intervalo", async () => {

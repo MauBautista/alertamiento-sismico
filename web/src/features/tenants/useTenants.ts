@@ -26,6 +26,16 @@ export const SYNC_POLL_MS = 10_000;
 /** Sin dato nuevo tras este umbral el panel pasa a DATOS RETENIDOS. */
 export const TENANTS_STALE_MS = 120_000;
 
+/**
+ * [A-112 bis · T-8.09] Relectura del catálogo. Sin cadencia (y con
+ * `refetchOnWindowFocus: false` en `lib/queryClient`) `['tenants']` se pedía UNA
+ * vez: a los 2 min el marco MULTI-TENANT —que envuelve la rejilla entera— decía
+ * «DATOS RETENIDOS» con el sistema sano. Un tercio del umbral: aguanta una
+ * relectura fallida sin rotular, y a la segunda seguida el marco dice la verdad.
+ * Umbral y cadencia viven juntos para que nadie mueva uno sin ver el otro.
+ */
+export const TENANTS_REFRESH_MS = 40_000;
+
 class TenantsRequestError extends Error {
   constructor(resource: string, status: number) {
     super(`GET ${resource} falló (${status})`);
@@ -97,6 +107,7 @@ export function useTenants(): TenantsData {
     queryKey: ["tenants"],
     queryFn: fetchTenants,
     staleTime: TENANTS_STALE_MS,
+    refetchInterval: TENANTS_REFRESH_MS,
   });
   const ruleSets = useQuery({ queryKey: ["rule-sets"], queryFn: fetchRuleSets, staleTime: 30_000 });
   const sites = useQuery({ queryKey: ["sites"], queryFn: fetchSites, staleTime: 300_000 });
@@ -224,9 +235,18 @@ export function useCreateTenant(): CreateTenantState {
   const qc = useQueryClient();
   const mutation = useMutation({
     mutationFn: async (body: TenantCreate): Promise<TenantOut> => {
-      const { data, response } = await createTenantTenantsPost({ body });
+      const { data, error, response } = await createTenantTenantsPost({ body });
       if (data === undefined) {
-        throw new TenantsRequestError("/tenants", response.status);
+        // [A-225 · T-8.09] Era `TenantsRequestError`, que dice «GET /tenants
+        // falló (409)»: el verbo de OTRA petición y ningún porqué. El 409 del
+        // alta es «ese código ya existe», y el servidor dice cuál.
+        const raw = (error as { detail?: unknown } | undefined)?.detail;
+        const detail = typeof raw === "string" && raw.trim() !== "" ? ` · ${raw}` : "";
+        throw new Error(
+          response.status === 409
+            ? `YA EXISTE · ya hay un cliente con ese código${detail}`
+            : `POST /tenants falló (${response.status})${detail}`,
+        );
       }
       return data;
     },

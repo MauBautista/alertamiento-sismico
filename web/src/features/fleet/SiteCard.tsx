@@ -48,6 +48,8 @@ export interface SiteCardProps {
   onRetire?: () => void;
   onRestore?: () => void;
   restoring?: boolean;
+  /** [A-100] Por qué falló el último RESTAURAR de ESTE gabinete; `null` = no falló. */
+  restoreError?: string | null;
   /**
    * [T-6.10] Reloj de la página, para decidir si el latido del enlace puede
    * seguir afirmando «esto llega ahora». Viene de fuera —`FleetPage` ya tiene
@@ -67,6 +69,7 @@ export default function SiteCard({
   onRetire,
   onRestore,
   restoring = false,
+  restoreError = null,
   nowMs,
 }: SiteCardProps) {
   const gw = cabinet.gateway;
@@ -117,8 +120,18 @@ export default function SiteCard({
   //
   // `null` en `evidence_pending` es «el gabinete no pudo preguntar», que NO es
   // cero: por eso tiene su propio texto en vez de caer en el caso sano.
-  const evidenciaValue =
-    gw.evidence_pending == null
+  //
+  // [T-8.09 · verificador] SIN ENLACE, lo que se sabe es del ÚLTIMO latido: se
+  // fecha, como MQTT y SeedLink ya decían «— sin enlace —». Los pendientes que
+  // quedaban se conservan (un gabinete que cayó con evidencia dentro es justo lo
+  // que hay que ver), pero la edad de la más vieja se CALLA: ha crecido desde
+  // entonces y no se sabe cuánto. Y un 0 de un gabinete mudo no es «sin
+  // pendientes»: quizá grabó algo después.
+  const evidenciaValue = offline
+    ? gw.evidence_pending != null && gw.evidence_pending > 0
+      ? `— sin enlace — · ${gw.evidence_pending} sin subir al último latido`
+      : "— sin enlace —"
+    : gw.evidence_pending == null
       ? "s/d · el gabinete no pudo mirar"
       : gw.evidence_pending === 0
         ? "sin pendientes"
@@ -127,6 +140,19 @@ export default function SiteCard({
               ? ` · la más vieja ${Math.round(gw.evidence_oldest_age_s / 60)} min`
               : ""
           }`;
+  // [A-056 · T-8.09] El disco del Pi. Aterriza en la base desde T-7.53 y la API
+  // lo descartaba al construir la respuesta, así que ninguna superficie web lo
+  // había enseñado nunca. `null` = el gabinete no lo midió ⇒ s/d, jamás un 0 %
+  // (que diría «disco vacío»). Sin semáforo propio, por la misma razón que la
+  // pérdida de paquetes: el servidor no tiene umbral de disco y la consola no se
+  // inventa uno.
+  const discoValue = offline
+    ? gw.disk_used_pct != null
+      ? `— sin enlace — · ${Math.round(gw.disk_used_pct)} % al último latido`
+      : "— sin enlace —"
+    : gw.disk_used_pct != null
+      ? `${Math.round(gw.disk_used_pct)} % usado`
+      : "s/d";
   const seedlinkValue = offline
     ? "— sin enlace —"
     : `${gw.seedlink_lag_s != null ? `lag ${gw.seedlink_lag_s.toFixed(2)} s` : "lag s/d"} · pérdida ${perdida}`;
@@ -142,8 +168,13 @@ export default function SiteCard({
           {cabinet.siteStatus === "retired" ? " · LA ESTACIÓN TAMBIÉN" : ""}
           {onRestore && (
             <Button variant="secondary" disabled={restoring} onClick={onRestore}>
-              RESTAURAR
+              {restoring ? "RESTAURANDO…" : "RESTAURAR"}
             </Button>
+          )}
+          {restoreError !== null && (
+            <p className="retire__error" role="alert" data-testid="restore-error">
+              NO SE RESTAURÓ · {restoreError}
+            </p>
           )}
         </div>
       )}
@@ -187,7 +218,9 @@ export default function SiteCard({
               {maintenanceLabel(maintenance)}
             </span>
           )}
-          {maintenance === undefined && onOpenWindow !== undefined && (
+          {/* [A-223] Sobre hardware dado de baja no se silencia nada: sus avisos ya
+              no los vigila nadie, y ofrecer la ventana lo trataría como vivo. */}
+          {maintenance === undefined && onOpenWindow !== undefined && !retired && (
             <button
               className="fleet-card__maint-open"
               data-testid="open-window"
@@ -247,6 +280,9 @@ export default function SiteCard({
           value={evidenciaValue}
           frameAgeMs={frameAgeMs}
         />
+      </div>
+      <div className="fleet-card__derived" data-testid="card-disk">
+        DISCO DEL GABINETE · {discoValue}
       </div>
 
       <UpsGauge powerStatus={gw.power_status} batteryPct={gw.battery_pct} />
@@ -311,13 +347,17 @@ export default function SiteCard({
         <button
           type="button"
           className="fleet-card__diag"
-          disabled={!canSelfTest || offline || selfTest.pending || selfTest.phase === "issued"}
+          disabled={
+            !canSelfTest || offline || retired || selfTest.pending || selfTest.phase === "issued"
+          }
           title={
             !canSelfTest
               ? "Tu rol no tiene la acción self_test (dueño del sitio)"
-              : offline
-                ? "Gabinete sin enlace: el comando expiraría por TTL"
-                : "Pulsa los relés NO audibles con verificación; la sirena no suena"
+              : retired
+                ? "Gabinete dado de baja: no se le mandan comandos"
+                : offline
+                  ? "Gabinete sin enlace: el comando expiraría por TTL"
+                  : "Pulsa los relés NO audibles con verificación; la sirena no suena"
           }
           onClick={selfTest.run}
         >
@@ -362,7 +402,12 @@ export default function SiteCard({
               ? `SIN ACUSE (TTL)${selfTest.detail ? ` · ${selfTest.detail}` : ""}`
               : selfTest.phase === "rejected"
                 ? `RECHAZADO${selfTest.detail ? ` · ${selfTest.detail}` : ""}`
-                : null
+                : // [A-102 · T-8.09] El POST ni siquiera salió (409 por alerta viva,
+                  // 403, 502…). Antes esta fase caía al cuerpo del marco y se
+                  // pintaba un LIMPIAR suelto sin decir qué había pasado.
+                  selfTest.phase === "failed"
+                  ? `NO SALIÓ${selfTest.detail ? ` · ${selfTest.detail}` : ""}`
+                  : null
           }
           onRetry={selfTest.run}
           // Acusó y no trajo un solo relé: raro, y no es lo mismo que no acusar.

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetSessionStoreForTests } from "../../auth/session.store";
@@ -22,6 +22,8 @@ vi.mock("../telemetry/useSiteMetrics", () => ({
   useSiteMetrics: mocks.useSiteMetrics,
   bucketFor: (p: string) => (p === "7d" ? "1h" : "1m"),
   HISTORY_PRESETS: ["1h", "6h", "24h", "7d"],
+  // [A-112] El umbral vive ahora junto a su consulta (y su cadencia).
+  METRICS_STALE_MS: 180_000,
 }));
 vi.mock("./useSiteIncidents", () => ({
   useSiteIncidents: mocks.useSiteIncidents,
@@ -273,6 +275,38 @@ describe("BuildingPage", () => {
     renderRoutesAt("/building/s-1");
     expect(screen.getByText("boom")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "REINTENTAR" })).toBeInTheDocument();
+  });
+
+  // [A-111 · T-8.09] Los botones de rango vivían DENTRO del gráfico, y el gráfico
+  // dentro del marco: con el rango vacío el marco pintaba «SIN MÉTRICAS EN EL
+  // RANGO» y los botones desaparecían con él. Quien eligió 1H en un sitio
+  // tranquilo se quedaba sin forma de volver a 24H o 7D.
+  it("con el rango vacío los botones de rango SIGUEN ahí y cambian el rango", () => {
+    seedAuthenticated(ME_FIXTURES.building_admin);
+    mocks.useSiteMetrics.mockReturnValue({ ...METRICS, points: [] });
+    renderRoutesAt("/building/s-1");
+    expect(screen.getByText("SIN MÉTRICAS EN EL RANGO")).toBeInTheDocument();
+    const grupo = screen.getByRole("group", { name: "Rango del historial" });
+    fireEvent.click(within(grupo).getByRole("button", { name: "7D" }));
+    expect(mocks.useSiteMetrics).toHaveBeenLastCalledWith("s-1", "7d");
+  });
+
+  it("con datos, los botones de rango no se duplican", () => {
+    seedAuthenticated(ME_FIXTURES.building_admin);
+    renderRoutesAt("/building/s-1");
+    expect(screen.getAllByRole("group", { name: "Rango del historial" })).toHaveLength(1);
+  });
+
+  // [A-228 · T-8.09] La tabla listaba los incidentes del edificio y no llevaba a
+  // ninguno: para abrir el que se estaba mirando había que ir a Triage y buscarlo.
+  it("cada incidente del sitio lleva a SU ficha de triage", () => {
+    seedAuthenticated(ME_FIXTURES.building_admin);
+    renderRoutesAt("/building/s-1");
+    const card = screen.getByTestId("incidents-card");
+    expect(within(card).getByRole("link", { name: /2026-07-08 10:41:00/ })).toHaveAttribute(
+      "href",
+      "/triage?incident=i-1",
+    );
   });
 
   it("lista los incidentes del sitio con su severidad", () => {

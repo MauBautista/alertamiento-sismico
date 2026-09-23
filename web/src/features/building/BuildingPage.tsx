@@ -11,10 +11,7 @@
 // contexto (la salud del gabinete llega por frames `site_state`, no por poll).
 
 import { useState } from "react";
-import { useParams } from "react-router";
-
-import { getSiteSitesSiteIdGet } from "@takab/sdk";
-import { useQuery } from "@tanstack/react-query";
+import { Link, useParams } from "react-router";
 
 import Table from "../../components/Table";
 import StateFrame from "../../components/StateFrame";
@@ -22,14 +19,15 @@ import SevTag from "../../components/SevTag";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import { useSiteSoh } from "../console/useSiteSoh";
-import HistoryChart from "../telemetry/HistoryChart";
+import HistoryChart, { HistoryPresetPicker } from "../telemetry/HistoryChart";
 import MultiChannelStrip from "../telemetry/MultiChannelStrip";
 import { CHANNELS_STALE_MS, useSiteChannels } from "../telemetry/useSiteChannels";
-import { useSiteMetrics } from "../telemetry/useSiteMetrics";
+import { METRICS_STALE_MS, useSiteMetrics } from "../telemetry/useSiteMetrics";
 import type { HistoryPreset } from "../telemetry/useSiteMetrics";
 import SirenTestPanel from "./SirenTestPanel";
 import { SITE_INCIDENTS_STALE_MS, useSiteIncidents } from "./useSiteIncidents";
 import { useSirenTest } from "./useSirenTest";
+import { SITE_STALE_MS, useBuildingSite } from "./useBuildingSite";
 import SiteLabel from "../../components/SiteLabel";
 
 /**
@@ -39,24 +37,22 @@ import SiteLabel from "../../components/SiteLabel";
  * despacio; el sitio (nombre, código, coordenadas) casi no cambia, y su edad
  * importa sólo para no afirmar identidad sobre una lectura vieja; la salud llega
  * por latido del gabinete y ahí un minuto ya es mucho.
+ *
+ * [A-112 · T-8.09] Los dos primeros se mudaron JUNTO a su consulta
+ * (`METRICS_STALE_MS` en `useSiteMetrics`, `SITE_STALE_MS` en `useBuildingSite`),
+ * cada uno con su cadencia de relectura: aquí eran umbrales de consultas que
+ * nunca se releían, y el rótulo de RETENIDO saltaba con el sistema sano.
  */
-const METRICS_STALE_MS = 180_000;
-const SITE_STALE_MS = 300_000;
 const SOH_STALE_MS = 90_000;
 
 function BuildingDashboard({ siteId }: { siteId: string }) {
   const me = useSessionStore((s) => s.me);
+  // [A-228] Se enlaza a Triage sólo si el rol ENTRA a Triage (lo dice `/me`).
+  const canTriage = me?.allowed_routes.includes("/triage") === true;
   const now = useNow(1000);
   const [preset, setPreset] = useState<HistoryPreset>("24h");
 
-  const site = useQuery({
-    queryKey: ["site", siteId],
-    queryFn: async () => {
-      const { data, response } = await getSiteSitesSiteIdGet({ path: { site_id: siteId } });
-      if (data === undefined) throw new Error(`GET /sites/${siteId} falló (${response.status})`);
-      return data;
-    },
-  });
+  const site = useBuildingSite(siteId);
 
   const channels = useSiteChannels(siteId);
   const metrics = useSiteMetrics(siteId, preset);
@@ -154,6 +150,12 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
         </div>
 
         <div className="bld__card" data-testid="history-card">
+          {/* [A-111 · T-8.09] El rango va FUERA del marco: dentro, un rango vacío
+              se llevaba los botones con el gráfico y no había forma de cambiarlo. */}
+          <header className="bld__cardhd">
+            <h2>HISTORIAL DEL SITIO</h2>
+            <HistoryPresetPicker preset={preset} onPreset={setPreset} />
+          </header>
           <StateFrame
             label="HISTORIAL DEL SITIO"
             loading={metrics.loading}
@@ -167,8 +169,6 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
               points={metrics.points}
               bucket={metrics.bucket}
               calibrated={metrics.calibrated}
-              preset={preset}
-              onPreset={setPreset}
             />
           </StateFrame>
         </div>
@@ -243,7 +243,18 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
               <tbody>
                 {incidents.incidents.map((i) => (
                   <tr key={i.incident_id}>
-                    <td className="soc-mono">{i.opened_at.slice(0, 19).replace("T", " ")}</td>
+                    <td className="soc-mono">
+                      {/* [A-228 · T-8.09] La fila no llevaba a ninguna parte: para
+                          abrir el incidente que se estaba mirando había que ir a
+                          Triage y buscarlo a mano. */}
+                      {canTriage ? (
+                        <Link className="soc-link" to={`/triage?incident=${i.incident_id}`}>
+                          {i.opened_at.slice(0, 19).replace("T", " ")}
+                        </Link>
+                      ) : (
+                        i.opened_at.slice(0, 19).replace("T", " ")
+                      )}
+                    </td>
                     <td>
                       <SevTag severity={i.severity} />
                     </td>

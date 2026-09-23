@@ -16,10 +16,16 @@
 // aviso instrumental —«SOLO AVISO, SIN ACTUACIÓN»— salía vestido con el rojo
 // crítico y la sombra de la alerta. `data-authorizes` lo deriva de la tabla de
 // escena (`authorizes`: SASMEX o cuórum) y la hoja viste el aviso de ámbar.
+//
+// [T-8.10 · A-063] Y `authorizes` es ahora la MISMA regla que aplica el
+// teléfono: también autoriza un aviso cuyo evento corroboró la red
+// (`node_count ≥ quorum_min_nodes`). Para saberlo la tarjeta necesita los
+// epicentros del snapshot del mapa, que la página ya tiene cargados.
 
 import { Activity, AlertOctagon } from "lucide-react";
 
 import { alertKind, authorizes } from "../scene/scene";
+import type { Corroboracion } from "../scene/scene";
 import { edadDelSismo, tituloRevision, transcurrido } from "../scene/revision";
 import { alertaViva } from "./alertaViva";
 import { alertHeadline } from "./alertHeadline";
@@ -37,13 +43,28 @@ export interface AlertBannerProps {
    * `ReviewLine`— para que el reloj de la prueba no sea el del navegador.
    */
   now?: number;
+  /**
+   * [T-8.10 · A-063] Los epicentros del snapshot del mapa (`map.epicenters`):
+   * llevan el `node_count` con el que la red corrobora un evento, que es lo
+   * que hace que un umbral local AUTORICE en el teléfono.
+   *
+   * OBLIGATORIA: con un `= []` por defecto, un montaje que no la pasara se
+   * llevaba la regla del disparo sin que nada se pusiera rojo — que es justo
+   * como siguió abierto A-063 en el muro (tarjeta ámbar «SOLO AVISO» con el
+   * teléfono diciendo EVACÚE y la franja del shell diciendo alerta).
+   */
+  epicentros: readonly Corroboracion[];
 }
+
+/** Lo que la tarjeta sabría si la red no hubiera dicho nada. */
+const SIN_RED: readonly Corroboracion[] = [];
 
 export default function AlertBanner({
   incident,
   siteName,
   siteCode = null,
   now = Date.now(),
+  epicentros,
 }: AlertBannerProps) {
   if (incident === null) return null;
   // [T-7.20] EL MURO TAMBIÉN TIENE QUE DEJAR DE GRITAR.
@@ -58,10 +79,17 @@ export default function AlertBanner({
   //
   // La clase la decide `alertKind`, que es el ÚNICO sitio donde se decide, y las
   // palabras salen de `revision.ts`, que es el único sitio donde se escriben.
-  const kind = alertKind(incident);
+  const kind = alertKind(incident, epicentros);
   const revision = kind === "review";
   const edad = edadDelSismo(incident.opened_at, now);
-  const fuente = alertHeadline(incident.trigger);
+  const autoriza = authorizes(incident, epicentros);
+  // [A-063] Autoriza con la red y NO sin ella: la autorizó el cuórum. Se
+  // titula como tal —«SISMO CONFIRMADO POR LA RED · COMANDO FIRMADO»—, porque
+  // el titular del umbral local diría «SOLO AVISO, SIN ACTUACIÓN» mientras la
+  // nube comanda la actuación firmada a este gabinete. `data-trigger` sigue
+  // diciendo el disparo real: el dato no se reescribe.
+  const porLaRed = autoriza && !authorizes(incident, SIN_RED);
+  const fuente = alertHeadline(porLaRed ? "quorum" : incident.trigger);
   return (
     <div
       className="soc-alert"
@@ -70,7 +98,8 @@ export default function AlertBanner({
       data-testid="alert-banner"
       data-trigger={incident.trigger ?? "desconocido"}
       data-seismic={String(fuente.seismic)}
-      data-authorizes={String(authorizes(incident.trigger))}
+      data-authorizes={String(autoriza)}
+      data-corroborado={String(porLaRed)}
       // La carcasa deja de ser la de la alerta: la hoja la viste de revisión.
       data-kind={kind ?? "none"}
       // [T-7.19 · D-30] La carcasa respira mientras el SERVIDOR sostiene la

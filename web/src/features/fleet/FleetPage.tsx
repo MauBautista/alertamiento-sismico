@@ -21,6 +21,7 @@ import { DEGRADADO, OPERATIVO, RETIRADO, SD, SIN_ENLACE } from "./estadoGlosario
 import {
   useFleetHealth,
   useFleetSyncStates,
+  useOpenMaintenanceWindow,
   useRestoreGateway,
   useRetireCodeConfigured,
   useRetireGateway,
@@ -61,7 +62,18 @@ function Kpi({ label, value, kind }: { label: string; value: number | null; kind
  * acción humana en una de las dos direcciones —desmontarlo de verdad o
  * restaurarlo—, y hasta entonces hay un edificio cuya supervisión nadie mira.
  */
-function GhostCard({ cabinet }: { cabinet: FleetCabinet }) {
+function GhostCard({
+  cabinet,
+  onRestore,
+  restoring,
+  restoreError,
+}: {
+  cabinet: FleetCabinet;
+  /** [A-101] Ausente para quien no tiene `manage_fleet`. */
+  onRestore?: () => void;
+  restoring: boolean;
+  restoreError: string | null;
+}) {
   const gw = cabinet.gateway;
   const cuando = gw.retired_at !== null && gw.retired_at !== undefined ? gw.retired_at : null;
   return (
@@ -85,6 +97,19 @@ function GhostCard({ cabinet }: { cabinet: FleetCabinet }) {
         Decida: <strong>restaurarlo</strong> si el edificio sigue protegido, o retirar el hardware
         si de verdad está fuera de servicio.
       </p>
+      {/* [A-101 · T-8.09] La frase de arriba mandaba restaurar y no había con qué:
+          el fantasma no entra en la reja (T-2.35), así que su RESTAURAR no existía
+          en ninguna parte de la web. */}
+      {onRestore && (
+        <Button variant="secondary" disabled={restoring} onClick={onRestore}>
+          {restoring ? "RESTAURANDO…" : "RESTAURAR"}
+        </Button>
+      )}
+      {restoreError !== null && (
+        <p className="retire__error" role="alert" data-testid="ghost-restore-error">
+          NO SE RESTAURÓ · {restoreError}
+        </p>
+      )}
     </li>
   );
 }
@@ -169,6 +194,7 @@ export default function FleetPage() {
   const updateGateway = useUpdateGateway();
   const retireGateway = useRetireGateway();
   const restoreGateway = useRestoreGateway();
+  const openWindow = useOpenMaintenanceWindow();
   const staleSince =
     !fleet.loading &&
     !fleet.error &&
@@ -242,7 +268,21 @@ export default function FleetPage() {
           </header>
           <ul className="fleet-ghosts__list">
             {ghosts.map((c) => (
-              <GhostCard key={c.gateway.gateway_id} cabinet={c} />
+              <GhostCard
+                key={c.gateway.gateway_id}
+                cabinet={c}
+                onRestore={
+                  canManage ? () => restoreGateway.mutate(c.gateway.gateway_id) : undefined
+                }
+                restoring={
+                  restoreGateway.isPending && restoreGateway.variables === c.gateway.gateway_id
+                }
+                restoreError={
+                  restoreGateway.variables === c.gateway.gateway_id
+                    ? (restoreGateway.error?.message ?? null)
+                    : null
+                }
+              />
             ))}
           </ul>
         </section>
@@ -253,8 +293,13 @@ export default function FleetPage() {
           StateFrame de la flota— porque describe a TODAS las tarjetas de abajo:
           la flota puede haber cargado perfectamente y aun así ninguna tarjeta
           sabe si su gabinete está mudo. Y lleva su propio botón: el REINTENTAR
-          del StateFrame reintenta la flota, que no es lo que ha fallado. */}
-      {maintenance.readError !== null && (
+          del StateFrame reintenta la flota, que no es lo que ha fallado.
+
+          [A-017 · T-8.09] …salvo que el "fallo" sea un 403: eso es el ALCANCE del
+          rol (`gov_operator` entra a /fleet y no lee ventanas), no una lectura
+          rota. Pintarlo era una alarma roja permanente con un REINTENTAR que
+          devolvería 403 para siempre. Misma regla que la franja de escena. */}
+      {maintenance.readError !== null && !maintenance.forbidden && (
         <div className="fleet__maintfail" data-testid="fleet-maint-error" role="alert">
           <span>
             VENTANAS DE MANTENIMIENTO SIN LECTURA ·{" "}
@@ -313,7 +358,17 @@ export default function FleetPage() {
               }
               onRetire={canManage ? () => setAction({ kind: "retire", cabinet: c }) : undefined}
               onRestore={canManage ? () => restoreGateway.mutate(c.gateway.gateway_id) : undefined}
-              restoring={restoreGateway.isPending}
+              // [A-100] El fallo —y el «RESTAURANDO…»— se dicen en la tarjeta que
+              // lo PIDIÓ: la mutación es una para toda la reja y pintarlo en todas
+              // señalaría a gabinetes que nadie intentó restaurar.
+              restoring={
+                restoreGateway.isPending && restoreGateway.variables === c.gateway.gateway_id
+              }
+              restoreError={
+                restoreGateway.variables === c.gateway.gateway_id
+                  ? (restoreGateway.error?.message ?? null)
+                  : null
+              }
               nowMs={now}
             />
           ))}
@@ -384,16 +439,22 @@ export default function FleetPage() {
       )}
 
       {action.kind === "open-window" && (
+        // [A-098 · T-8.09] El diálogo se cerraba en el MISMO clic, antes de la
+        // respuesta: un rechazo del servidor no lo veía nadie y el operador se
+        // iba creyendo que el edificio estaba en mantenimiento. Ahora se cierra
+        // cuando el servidor confirma, como EDITAR y RETIRAR en esta página.
         <OpenWindowDialog
-          error={maintenance.openError}
+          error={openWindow.error?.message ?? null}
           gatewayId={action.cabinet.gateway.gateway_id}
           label={siteLabelText(action.cabinet.siteName, action.cabinet.siteCode)}
-          onCancel={() => setAction({ kind: "none" })}
-          onConfirm={(input) => {
-            maintenance.open(input);
+          onCancel={() => {
+            openWindow.reset();
             setAction({ kind: "none" });
           }}
-          pending={maintenance.openPending}
+          onConfirm={(input) =>
+            openWindow.mutate(input, { onSuccess: () => setAction({ kind: "none" }) })
+          }
+          pending={openWindow.isPending}
         />
       )}
     </section>

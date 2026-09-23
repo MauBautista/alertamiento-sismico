@@ -1945,4 +1945,4 @@ prórroga para el SOC. Las demás siguen abiertas y cada una vive en la ficha qu
 | `auth_time` al refrescar en Cognito real | fragmento de DevTools | ❔ NO MEDIDO | — |
 | Consola abierta más de 70 min sin logout | consola desplegada | ❔ NO MEDIDO | — |
 | App 70 min sin pedir login | Pixel | ❔ NO MEDIDO | — |
-| PDF: 10 variantes rasterizadas y revisadas | `auditoria/render-pdfs.sh` | ❔ NO MEDIDO | — |
+| PDF: 10 variantes rasterizadas y revisadas | `auditoria/render-pdfs.sh` | ✅ sin solapes de texto (0 en las 10 variantes, medido con `cajas_de_texto.py`), clasificación en portada y ejecutivo, hora local, FIRMÓ con rol y nombre, sin inglés crudo. Revisado a ojo por el verificador y por el integrador. Pendiente: el informe de un incidente REAL de la nube con fotos y onda (ensayo 2) | 2026-09-23 |

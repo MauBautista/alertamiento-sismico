@@ -104,7 +104,13 @@ function FleetAdminPanel() {
     fleet.cabinets.filter((c) => c.gateway.site_id === siteId).map((c) => c.gateway);
 
   const tenantId = useSessionStore((s) => s.me?.tenant_id ?? null);
-  const codeConfigured = useRetireCodeConfigured(tenantId);
+  // [A-103 · T-8.09] El código de retiro es DEL CLIENTE DE LA ESTACIÓN. Con el de la
+  // sesión, un superadmin (cliente TAKAB) retirando la estación de un hospital
+  // preguntaba por el código equivocado: bloqueaba un retiro legítimo o anunciaba
+  // un código que ese cliente no tiene.
+  const codeConfigured = useRetireCodeConfigured(
+    editing.kind === "retire" ? editing.site.tenant_id : tenantId,
+  );
   // [T-6.03] Lo dice el SERVIDOR (`/me.is_internal`), no el nombre del rol: un rol
   // interno debe NOMBRAR el cliente al crear un sitio (la API responde 400 si no);
   // un rol de cliente escribe siempre en el suyo y sólo se le rotula.
@@ -194,16 +200,21 @@ function FleetAdminPanel() {
     );
   }
 
-  function createSensor(siteId: string, values: SensorValues) {
-    addSensor.mutate({
-      site_id: siteId,
-      kind: values.kind,
-      model: values.model,
-      serial: values.serial === "" ? null : values.serial,
-      mount: values.mount === "" ? null : values.mount,
-      // Vacío ⇒ null ⇒ el sitio queda SIN CALIBRAR, que es la verdad (T-1.33).
-      calibration_source: values.calibration_source === "" ? null : values.calibration_source,
-    });
+  function createSensor(siteId: string, values: SensorValues, onCreated: () => void) {
+    addSensor.mutate(
+      {
+        site_id: siteId,
+        kind: values.kind,
+        model: values.model,
+        serial: values.serial === "" ? null : values.serial,
+        mount: values.mount === "" ? null : values.mount,
+        // Vacío ⇒ null ⇒ el sitio queda SIN CALIBRAR, que es la verdad (T-1.33).
+        calibration_source: values.calibration_source === "" ? null : values.calibration_source,
+      },
+      // [A-104] Acusar SOLO lo que el servidor confirmó: con un fallo, lo tecleado
+      // se conserva para corregirlo y el error ya se pinta en el formulario.
+      { onSuccess: () => onCreated() },
+    );
   }
 
   return (
@@ -230,7 +241,9 @@ function FleetAdminPanel() {
           submitting={hardwareBusy}
           error={hardwareError}
           onCreateGateway={(values) => createGateway(editing.site, values)}
-          onCreateSensor={(values) => createSensor(editing.site.site_id, values)}
+          onCreateSensor={(values, onCreated) =>
+            createSensor(editing.site.site_id, values, onCreated)
+          }
           onDone={() => setEditing({ kind: "none" })}
         />
       ) : editing.kind !== "none" ? (

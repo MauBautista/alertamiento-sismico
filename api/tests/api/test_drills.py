@@ -8,6 +8,7 @@ fake, claves HMAC inline): el drill emite comandos firmados REALES por sitio.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -199,3 +200,275 @@ async def test_el_aborto_del_gabinete_se_expone_por_sitio_y_cierra_el_simulacro(
     assert row["sites"][0]["aborted_at"] is not None
     assert row["sites"][0]["abort_reason"] == "SASMEX real"
     assert row["executing"] == 0
+
+
+# --- [A-016 · T-8.07] un rol interno NOMBRA al cliente ---------------------------
+#
+# La consola decía «SIN SELECCIÓN ⇒ TODOS LOS SITIOS … DEL TENANT», pero para un
+# rol interno TAKAB la RLS abre los gabinetes de TODOS los clientes: el superadmin
+# que no marcaba ningún sitio mandaba el simulacro a cada edificio de la
+# plataforma. Y la fila del simulacro se escribía en el tenant DEL TOKEN (TAKAB),
+# así que el cliente dueño de los edificios ni siquiera la veía en su registro.
+# Mismo contrato que `resolve_write_tenant`: el interno no escribe por omisión.
+
+#: El superadmin vive en SU tenant, que no es el del cliente al que apunta.
+_TENANT_DEL_INTERNO = au.DB_TENANT_GOV
+
+
+def _superadmin() -> dict[str, str]:
+    return _token("takab_superadmin", tenant=_TENANT_DEL_INTERNO)
+
+
+async def _escalar(sql: str, **params) -> object:
+    async with get_engine().begin() as conn:
+        return (await conn.execute(text(sql), params)).scalar_one()
+
+
+def _dentro_de_dos_dias() -> str:
+    return (datetime.now(tz=UTC) + timedelta(days=2)).isoformat()
+
+
+async def test_superadmin_sin_seleccion_NO_lanza_a_todos_los_clientes(client, gateway, publisher):
+    r = await client.post("/drills", json={"duration_s": 60}, headers=_superadmin())
+    assert r.status_code == 400, r.text
+    assert "cliente" in r.json()["detail"]
+    # Ni un comando firmado, ni una fila: nada salió hacia ningún edificio.
+    assert publisher.published == []
+    assert await _count("SELECT count(*) FROM drills") == 0
+
+
+async def test_superadmin_escribe_el_simulacro_en_el_cliente_de_los_sitios(
+    client, gateway, publisher
+):
+    r = await client.post(
+        "/drills",
+        json={"site_ids": [au.DB_SITE_PRIV], "duration_s": 60},
+        headers=_superadmin(),
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["tenant_id"] == au.DB_TENANT_PRIV
+    assert len(publisher.published) == 1
+    # La fila por sitio también es del cliente, no de TAKAB.
+    assert (
+        await _escalar(
+            "SELECT count(*) FROM drill_sites WHERE drill_id = CAST(:d AS uuid) "
+            "AND tenant_id = CAST(:t AS uuid)",
+            d=body["drill_id"],
+            t=au.DB_TENANT_PRIV,
+        )
+        == 1
+    )
+    # Y el cliente dueño de los edificios lo ve en SU registro (evidencia).
+    suyo = await client.get("/drills", headers=_token())
+    assert any(d["drill_id"] == body["drill_id"] for d in suyo.json()["items"])
+
+
+async def test_superadmin_con_plantilla_lanza_solo_en_el_cliente_de_la_plantilla(
+    client, gateway, publisher
+):
+    # Plantilla del tenant A SIN sitios = «todos los comandables». Para un interno
+    # eso tiene que ser todos los DE ESE CLIENTE, no de la plataforma.
+    creada = await client.post(
+        "/drill-templates", json={"name": "T-8.07 todos", "duration_s": 60}, headers=_token()
+    )
+    assert creada.status_code == 201, creada.text
+    plantilla = creada.json()["template_id"]
+    try:
+        r = await client.post("/drills", json={"from_template": plantilla}, headers=_superadmin())
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["tenant_id"] == au.DB_TENANT_PRIV
+        assert body["sites"], "la plantilla «todos» no apuntó a nada"
+        assert (
+            await _escalar(
+                "SELECT count(*) FROM drill_sites ds JOIN sites s USING (site_id) "
+                "WHERE ds.drill_id = CAST(:d AS uuid) AND s.tenant_id <> CAST(:t AS uuid)",
+                d=body["drill_id"],
+                t=au.DB_TENANT_PRIV,
+            )
+            == 0
+        )
+    finally:
+        await client.delete(f"/drill-templates/{plantilla}", headers=_token())
+
+
+async def test_superadmin_no_mezcla_clientes_en_un_simulacro(client, gateway):
+    # La agenda puede apuntar a sitios sin gabinete, así que aquí dos clientes
+    # distintos entran en la misma lista sin montar un segundo gabinete.
+    r = await client.post(
+        "/drills",
+        json={
+            "site_ids": [au.DB_SITE_PRIV, au.DB_SITE_PRIV2],
+            "scheduled_at": _dentro_de_dos_dias(),
+        },
+        headers=_superadmin(),
+    )
+    assert r.status_code == 422, r.text
+    assert "cliente" in r.json()["detail"]
+    assert await _count("SELECT count(*) FROM drills") == 0
+
+
+async def test_superadmin_agenda_sin_seleccion_tambien_exige_cliente(client, gateway):
+    r = await client.post(
+        "/drills", json={"scheduled_at": _dentro_de_dos_dias()}, headers=_superadmin()
+    )
+    assert r.status_code == 400, r.text
+    assert await _count("SELECT count(*) FROM drills") == 0
+
+
+async def test_superadmin_agenda_con_sitios_queda_en_el_cliente(client, gateway):
+    r = await client.post(
+        "/drills",
+        json={"site_ids": [au.DB_SITE_PRIV2], "scheduled_at": _dentro_de_dos_dias()},
+        headers=_superadmin(),
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["tenant_id"] == au.DB_TENANT_PRIV2
+
+
+async def test_el_rol_de_cliente_sigue_igual_sin_seleccion(client, gateway, publisher):
+    # El contrato del tenant_admin NO cambia: sin selección, los comandables DE SU
+    # cliente (la RLS ya lo acota) y la fila en su tenant.
+    r = await client.post("/drills", json={"duration_s": 60}, headers=_token())
+    assert r.status_code == 201, r.text
+    assert r.json()["tenant_id"] == au.DB_TENANT_PRIV
+
+
+# --- [A-016 · T-8.07] lo que un interno guardó ANTES: el cliente lo dicen los SITIOS
+#
+# Antes de A-016 un rol interno escribía agendas y plantillas en el tenant DEL
+# TOKEN (el de TAKAB) aunque apuntaran a edificios de un cliente, y
+# `POST /drill-templates` lo sigue haciendo. Si el cliente del simulacro sale de
+# la FILA y no de sus sitios, los gabinetes del cliente real pasan por
+# «inalcanzables» y el 409 manda a arreglar un inventario que no está roto —el
+# mismo error que el comentario de T-5.13 prohíbe—. Se siembran a mano porque la
+# API de simulacros ya no las crea así.
+
+_USUARIO_INTERNO = "7e000000-0000-0000-0000-00000000e0e1"
+
+
+async def _agenda_en_el_tenant_de_takab(site_ids: list[str]) -> str:
+    async with get_engine().begin() as conn:
+        drill_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO drills (tenant_id, initiated_by, duration_s, note, scheduled_at) "
+                    "VALUES (CAST(:t AS uuid), CAST(:u AS uuid), 120, 'agenda antigua', "
+                    "now() + interval '2 days') RETURNING drill_id"
+                ),
+                {"t": _TENANT_DEL_INTERNO, "u": _USUARIO_INTERNO},
+            )
+        ).scalar_one()
+        for site_id in site_ids:
+            await conn.execute(
+                text(
+                    "INSERT INTO drill_sites (drill_id, site_id, tenant_id) "
+                    "VALUES (CAST(:d AS uuid), CAST(:s AS uuid), CAST(:t AS uuid))"
+                ),
+                {"d": str(drill_id), "s": site_id, "t": _TENANT_DEL_INTERNO},
+            )
+    return str(drill_id)
+
+
+async def _plantilla_en_el_tenant_de_takab(nombre: str, site_ids: list[str]) -> str:
+    async with get_engine().begin() as conn:
+        template_id = (
+            await conn.execute(
+                text(
+                    "INSERT INTO drill_templates (tenant_id, name, duration_s, created_by) "
+                    "VALUES (CAST(:t AS uuid), :n, 90, CAST(:u AS uuid)) RETURNING template_id"
+                ),
+                {"t": _TENANT_DEL_INTERNO, "n": nombre, "u": _USUARIO_INTERNO},
+            )
+        ).scalar_one()
+        for site_id in site_ids:
+            await conn.execute(
+                text(
+                    "INSERT INTO drill_template_sites (template_id, site_id, tenant_id) "
+                    "VALUES (CAST(:p AS uuid), CAST(:s AS uuid), CAST(:t AS uuid))"
+                ),
+                {"p": str(template_id), "s": site_id, "t": _TENANT_DEL_INTERNO},
+            )
+    return str(template_id)
+
+
+async def _borrar_plantilla(template_id: str) -> None:
+    await _sql("DELETE FROM drill_templates WHERE template_id = CAST(:p AS uuid)", p=template_id)
+
+
+async def test_superadmin_ejecuta_su_agenda_antigua_en_el_cliente_de_sus_sitios(
+    client, gateway, publisher
+):
+    agenda = await _agenda_en_el_tenant_de_takab([au.DB_SITE_PRIV])
+    r = await client.post("/drills", json={"from_scheduled": agenda}, headers=_superadmin())
+    assert r.status_code == 201, r.text
+    body = r.json()
+    # Sonó donde estaba programado, y quedó en el registro del cliente dueño.
+    assert body["tenant_id"] == au.DB_TENANT_PRIV
+    assert [s["commandable"] for s in body["sites"]] == [True]
+    assert len(publisher.published) == 1
+    # Y la agenda quedó consumida: el banner armado se apaga.
+    assert (
+        await _escalar("SELECT stop_reason FROM drills WHERE drill_id = CAST(:d AS uuid)", d=agenda)
+        == "executed"
+    )
+
+
+async def test_superadmin_con_agenda_antigua_de_dos_clientes_no_mezcla(client, gateway, publisher):
+    # DB_SITE_PRIV2 no tiene gabinete: aun así es de OTRO cliente, y registrarlo
+    # bajo el simulacro del primero le enseñaría a ése un edificio ajeno.
+    agenda = await _agenda_en_el_tenant_de_takab([au.DB_SITE_PRIV, au.DB_SITE_PRIV2])
+    r = await client.post("/drills", json={"from_scheduled": agenda}, headers=_superadmin())
+    assert r.status_code == 422, r.text
+    assert "cliente" in r.json()["detail"]
+    assert publisher.published == []
+
+
+async def test_superadmin_con_plantilla_antigua_lanza_en_el_cliente_de_sus_sitios(
+    client, gateway, publisher
+):
+    plantilla = await _plantilla_en_el_tenant_de_takab("T-8.07 antigua", [au.DB_SITE_PRIV])
+    try:
+        r = await client.post("/drills", json={"from_template": plantilla}, headers=_superadmin())
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["tenant_id"] == au.DB_TENANT_PRIV
+        assert [s["commandable"] for s in body["sites"]] == [True]
+        assert body["duration_s"] == 90
+        assert len(publisher.published) == 1
+    finally:
+        await _borrar_plantilla(plantilla)
+
+
+async def test_superadmin_programa_desde_plantilla_antigua_en_el_cliente_de_sus_sitios(
+    client, gateway
+):
+    plantilla = await _plantilla_en_el_tenant_de_takab("T-8.07 agenda", [au.DB_SITE_PRIV])
+    try:
+        r = await client.post(
+            "/drills",
+            json={"from_template": plantilla, "scheduled_at": _dentro_de_dos_dias()},
+            headers=_superadmin(),
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        # Antes: agenda con CERO sitios en el tenant de TAKAB, que nadie veía.
+        assert body["tenant_id"] == au.DB_TENANT_PRIV
+        assert [s["site_id"] for s in body["sites"]] == [au.DB_SITE_PRIV]
+    finally:
+        await _borrar_plantilla(plantilla)
+
+
+async def test_superadmin_con_plantilla_todos_de_takab_dice_la_verdad(client, gateway, publisher):
+    # «Todos los comandables» de una plantilla guardada en el tenant de TAKAB no
+    # tiene cliente del que sacarlos: se rechaza, pero sin culpar al inventario.
+    plantilla = await _plantilla_en_el_tenant_de_takab("T-8.07 todos antigua", [])
+    try:
+        r = await client.post("/drills", json={"from_template": plantilla}, headers=_superadmin())
+        assert r.status_code == 409, r.text
+        detail = r.json()["detail"]
+        assert "plantilla" in detail and "cliente" in detail
+        assert publisher.published == []
+    finally:
+        await _borrar_plantilla(plantilla)

@@ -20,6 +20,22 @@ const SPAN_MS: Record<HistoryPreset, number> = {
   "7d": 7 * 24 * 3_600_000,
 };
 
+/**
+ * [T-6.06] A partir de esta edad el HISTORIAL se declara retenido.
+ *
+ * [A-112 · T-8.09] Vivía en `BuildingPage` y la consulta NO tenía cadencia: nunca
+ * se releía, así que a los 3 minutos el marco decía «DATOS RETENIDOS» con el
+ * sistema perfectamente sano. Umbral y cadencia viven juntos para que nadie
+ * pueda mover uno sin ver el otro.
+ */
+export const METRICS_STALE_MS = 180_000;
+
+/**
+ * Cadencia de relectura. Un tercio del umbral: aguanta una relectura fallida
+ * sin rotular, y a la segunda seguida el marco ya dice la verdad.
+ */
+export const METRICS_REFRESH_MS = 60_000;
+
 /** El bucket es función del preset, no del gusto del usuario. */
 export function bucketFor(preset: HistoryPreset): "1m" | "1h" {
   return preset === "7d" ? "1h" : "1m";
@@ -61,6 +77,7 @@ export function useSiteMetrics(siteId: string | null, preset: HistoryPreset): Si
       return data;
     },
     enabled: siteId !== null,
+    refetchInterval: METRICS_REFRESH_MS,
   });
 
   const points = useMemo<HistoryPoint[]>(

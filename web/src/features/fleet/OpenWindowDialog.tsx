@@ -19,6 +19,7 @@
 
 import { useId, useState } from "react";
 
+import Button from "../../components/Button";
 import Modal from "../../components/Modal";
 
 /** Duraciones ofrecidas. Se eligen de una lista y no se teclean: un campo libre de
@@ -54,6 +55,10 @@ export default function OpenWindowDialog({
   const [durationS, setDurationS] = useState(DURACIONES[0].s);
   const reasonId = useId();
   const durationId = useId();
+  // [A-099] El id REAL del párrafo que describe el campo. Antes el
+  // `aria-describedby` apuntaba a "open-window-keeps", que era un `data-testid`,
+  // no un id: el lector de pantalla no leía lo que la ventana NO apaga.
+  const keepsId = useId();
 
   const motivo = reason.trim();
   // La validación local solo HABILITA el botón; quien decide es el servidor.
@@ -61,59 +66,68 @@ export default function OpenWindowDialog({
 
   return (
     <Modal onClose={onCancel} title="ABRIR VENTANA DE MANTENIMIENTO">
-      <p data-testid="open-window-target">
-        Se van a silenciar los avisos de <strong>{label}</strong> mientras dure la ventana.
-      </p>
-      <p data-testid="open-window-keeps">
-        La protección del edificio NO se toca: el reflejo SASMEX→sirena es local y esta pantalla no
-        puede apagarlo. Lo que se silencia son las alarmas de OPERACIÓN.
-      </p>
-
-      <label htmlFor={reasonId}>Motivo (obligatorio)</label>
-      <input
-        aria-describedby="open-window-keeps"
-        data-testid="open-window-reason"
-        id={reasonId}
-        maxLength={500}
-        onChange={(e) => setReason(e.target.value)}
-        placeholder="Por qué se silencia, y quién lo pidió"
-        value={reason}
-      />
-
-      <label htmlFor={durationId}>Duración</label>
-      <select
-        data-testid="open-window-duration"
-        id={durationId}
-        onChange={(e) => setDurationS(Number(e.target.value))}
-        value={durationS}
-      >
-        {DURACIONES.map((d) => (
-          <option key={d.s} value={d.s}>
-            {d.label}
-          </option>
-        ))}
-      </select>
-
-      {error !== null ? (
-        <p data-testid="open-window-error" role="alert">
-          {error}
+      {/* [A-099] Mismo vestido que el resto de formularios de la flota
+          (`fleet__form` + `retire__*` + `Button`): sin clases, el diálogo salía
+          con los controles nativos del navegador en mitad del SOC. */}
+      <div className="fleet__form">
+        <p className="retire__target" data-testid="open-window-target">
+          Se van a silenciar los avisos de <strong>{label}</strong> mientras dure la ventana.
         </p>
-      ) : null}
+        <p className="retire__keeps" data-testid="open-window-keeps" id={keepsId}>
+          La protección del edificio NO se toca: el reflejo SASMEX→sirena es local y esta pantalla
+          no puede apagarlo. Lo que se silencia son las alarmas de OPERACIÓN.
+        </p>
 
-      <div>
-        <button data-testid="open-window-cancel" onClick={onCancel} type="button">
-          CANCELAR
-        </button>
-        <button
-          data-testid="open-window-confirm"
-          disabled={!listo}
-          onClick={() =>
-            onConfirm({ gateway_id: gatewayId, reason: motivo, duration_s: durationS })
-          }
-          type="button"
-        >
-          {pending ? "ABRIENDO…" : "ABRIR VENTANA"}
-        </button>
+        <label htmlFor={reasonId}>
+          <span>Motivo (obligatorio)</span>
+          <input
+            aria-describedby={keepsId}
+            data-testid="open-window-reason"
+            id={reasonId}
+            maxLength={500}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Por qué se silencia, y quién lo pidió"
+            value={reason}
+          />
+        </label>
+
+        <label htmlFor={durationId}>
+          <span>Duración</span>
+          <select
+            data-testid="open-window-duration"
+            id={durationId}
+            onChange={(e) => setDurationS(Number(e.target.value))}
+            value={durationS}
+          >
+            {DURACIONES.map((d) => (
+              <option key={d.s} value={d.s}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {error !== null ? (
+          <p className="retire__error" data-testid="open-window-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="retire__actions">
+          <Button data-testid="open-window-cancel" disabled={pending} onClick={onCancel}>
+            CANCELAR
+          </Button>
+          <Button
+            data-testid="open-window-confirm"
+            disabled={!listo}
+            onClick={() =>
+              onConfirm({ gateway_id: gatewayId, reason: motivo, duration_s: durationS })
+            }
+            variant="primary"
+          >
+            {pending ? "ABRIENDO…" : "ABRIR VENTANA"}
+          </Button>
+        </div>
       </div>
     </Modal>
   );

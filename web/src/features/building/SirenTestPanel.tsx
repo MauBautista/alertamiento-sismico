@@ -16,13 +16,42 @@ import type { SirenPhase, SirenTestData } from "./useSirenTest";
 
 /** Lo que el operador puede creer en cada fase. Nada de esto es decorativo. */
 const PHASE_COPY: Record<SirenPhase, { text: string; kind: string }> = {
-  idle: { text: "SIRENA EN REPOSO", kind: "soc-pill--edge" },
+  // [A-019] Era «SIRENA EN REPOSO». Esta pantalla NO lee el relé: sólo sabe de las
+  // órdenes que ella misma emitió, y al recargar las olvida. Afirmar el reposo de
+  // un actuador de vida sin haberlo comprobado es la regla de oro 7 al revés.
+  idle: { text: "SIN ORDEN DE PRUEBA EN CURSO", kind: "soc-pill--edge" },
   issued: { text: "COMANDO EMITIDO · ESPERANDO ACUSE DEL GABINETE", kind: "soc-pill--warn" },
   acked: { text: "SIRENA SONANDO · ACUSADA POR EL EDGE", kind: "soc-pill--crit" },
   rejected: { text: "COMANDO RECHAZADO POR EL GABINETE", kind: "soc-pill--warn" },
   expired: { text: "SIN RESPUESTA DEL GABINETE · LA SIRENA NO SE ACTIVÓ", kind: "soc-pill--warn" },
   failed: { text: "EL COMANDO NO SALIÓ", kind: "soc-pill--warn" },
+  // [A-019 · T-8.09] El silencio con sus propias frases (ver `useSirenTest`).
+  silence_issued: {
+    text: "ORDEN DE SILENCIO EMITIDA · ESPERANDO ACUSE DEL GABINETE",
+    kind: "soc-pill--warn",
+  },
+  silenced: { text: "SIRENA SILENCIADA · ACUSADA POR EL EDGE", kind: "soc-pill--ok" },
+  silence_unconfirmed: {
+    text: "EL GABINETE NO CONFIRMÓ EL SILENCIO · LA SIRENA PUEDE SEGUIR SONANDO",
+    kind: "soc-pill--crit",
+  },
+  silence_failed: {
+    text: "LA ORDEN DE SILENCIO NO SALIÓ · LA SIRENA PUEDE SEGUIR SONANDO",
+    kind: "soc-pill--crit",
+  },
 };
+
+/**
+ * Fases en las que la sirena SONÓ y nadie ha confirmado que calló: lo que se
+ * ofrece es SILENCIAR, nunca PROBAR. Un PROBAR aquí invitaría a mandar otra
+ * activación sobre una sirena que puede estar sonando.
+ */
+const PUEDE_SONAR: ReadonlySet<SirenPhase> = new Set<SirenPhase>([
+  "acked",
+  "silence_issued",
+  "silence_unconfirmed",
+  "silence_failed",
+]);
 
 export interface SirenTestPanelProps {
   siren: SirenTestData;
@@ -33,7 +62,7 @@ export interface SirenTestPanelProps {
 export default function SirenTestPanel({ siren, canTest }: SirenTestPanelProps) {
   if (!canTest) return null;
   const copy = PHASE_COPY[siren.phase];
-  const acked = siren.phase === "acked";
+  const puedeSonar = PUEDE_SONAR.has(siren.phase);
 
   return (
     <section className="bld__card" data-testid="siren-panel">
@@ -60,11 +89,11 @@ export default function SirenTestPanel({ siren, canTest }: SirenTestPanelProps) 
       )}
 
       <div className="bld__actions">
-        {acked ? (
+        {puedeSonar ? (
           <ConfirmButton
             label="SILENCIAR SIRENA"
             variant="secondary"
-            disabled={siren.pending}
+            disabled={siren.pending || siren.phase === "silence_issued"}
             onConfirm={siren.deactivate}
           />
         ) : (

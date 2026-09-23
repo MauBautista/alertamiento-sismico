@@ -353,8 +353,13 @@ describe("session.store", () => {
 //   · el tope de la sesión (24 h / 30 días desde el login, `sesion_expirada`)
 //     NO se renueva: Cognito seguiría refrescando y la API rechazaría en bucle.
 describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
-  const T0 = Date.parse("2026-09-22T08:00:00Z");
   const H = 3_600_000;
+  // El «login» es de hace una hora, contado desde el reloj de la corrida. Era una
+  // fecha fija (2026-09-22T08:00Z) y dos pruebas corren con el reloj REAL: con un
+  // tope de 24 h, la sesión del fixture caducó sola al día siguiente y las dos se
+  // pusieron rojas sin que el código cambiara (medido el 2026-09-23). Redondeado al
+  // segundo porque `auth_time` viaja en segundos.
+  const T0 = Math.floor(Date.now() / 1000) * 1000 - H;
 
   function fakeJwt(payload: Record<string, unknown>): string {
     const b64 = (o: unknown) =>

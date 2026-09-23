@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactElement } from "react";
 import { MemoryRouter, RouterProvider, createMemoryRouter } from "react-router";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MapSiteState } from "@takab/sdk";
 
 import { resetSessionStoreForTests, useSessionStore } from "../../auth/session.store";
+import { ME_FIXTURES } from "../../test-utils/meFixtures";
 import { expectFourStates, type UiState } from "../../test-utils/states";
 import type { IncidentActionsData } from "./useIncidentActions";
 import type { LiveIncident, LiveIncidentsData } from "./useLiveIncidents";
@@ -70,6 +71,10 @@ vi.mock("./useActiveDrill", () => ({
   }),
 }));
 vi.mock("./MapPanel", () => ({ default: mocks.MapPanel }));
+// [T-8.07] El picker real es MapLibre: el modal de REUBICAR se monta con un stub.
+vi.mock("../fleet/MapPointPicker", () => ({
+  default: () => <div data-testid="picker-stub" />,
+}));
 // T-1.49: el socket vive en AppShell — la página ya no toca lib/ws. El perfil
 // del operador se mockea (la etiqueta cae al rol+sub sin display_name).
 vi.mock("../../auth/useProfile", () => ({
@@ -302,6 +307,30 @@ describe("ConsolePage", () => {
     expect(screen.getByTestId("operator-label")).toHaveTextContent("TENANT_ADMIN · abcdef12");
   });
 
+  it("[A-063] un umbral local que la RED corroboró es alerta en el muro, como en el teléfono", () => {
+    mocks.useMapState.mockReturnValue(
+      mapData({
+        epicenters: [
+          {
+            event_id: "EVT-1041",
+            source: "quorum",
+            detected_at: "2026-07-08T10:41:30Z",
+            lat: 19.06,
+            lon: -98.3,
+            depth_km: null,
+            magnitude: null,
+            node_count: 3,
+          },
+        ],
+      }),
+    );
+    render(page());
+    const tarjeta = screen.getByTestId("alert-banner");
+    expect(tarjeta).toHaveAttribute("data-kind", "alert");
+    expect(tarjeta).toHaveAttribute("data-authorizes", "true");
+    expect(tarjeta).not.toHaveTextContent("SOLO AVISO, SIN ACTUACIÓN");
+  });
+
   it("seleccionar un sitio (mapa) abre el DetailPanel y cerrar lo quita", () => {
     render(page());
     expect(screen.queryByTestId("detail-panel")).toBeNull();
@@ -319,9 +348,58 @@ describe("ConsolePage", () => {
     render(page());
     fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
     fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ }));
-    expect(mocks.ackIncidentIncidentsIncidentIdAckPost).toHaveBeenCalledWith({
-      path: { incident_id: "i-1" },
+    // [T-8.07] Es una mutación de verdad: la petición sale en el siguiente tic,
+    // no dentro del clic.
+    await waitFor(() =>
+      expect(mocks.ackIncidentIncidentsIncidentIdAckPost).toHaveBeenCalledWith({
+        path: { incident_id: "i-1" },
+      }),
+    );
+  });
+
+  // [A-011 · T-8.07] El acuse se lanzaba SIN esperar respuesta: el cliente
+  // hey-api no lanza con un 4xx, así que un 409 «ya no está abierto» o un 403 se
+  // tragaban, y el botón pintaba «EJECUTADO» igual.
+  it("[A-011] un acuse que el servidor RECHAZA no se pinta como hecho: dice qué pasó", async () => {
+    mocks.ackIncidentIncidentsIncidentIdAckPost.mockResolvedValue({
+      data: undefined,
+      error: { detail: "el incidente ya no está abierto" },
+      response: { status: 409 },
     });
+    render(page());
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ }));
+    const error = await screen.findByTestId("ack-error");
+    expect(error).toHaveAttribute("role", "alert");
+    expect(error).toHaveTextContent("409");
+    expect(error).toHaveTextContent("el incidente ya no está abierto");
+    expect(screen.queryByText("ACUSADO", { selector: "button *" })).toBeNull();
+    expect(screen.queryByText("EJECUTADO")).toBeNull();
+    // Y el botón vuelve a reposo: se puede reintentar.
+    expect(await screen.findByRole("button", { name: /CONFIRMAR ACUSE/ })).toBeEnabled();
+  });
+
+  it("[A-011] ACUSADO solo tras la respuesta 2xx; en vuelo, ENVIANDO… y sin doble envío", async () => {
+    let responder!: (v: unknown) => void;
+    mocks.ackIncidentIncidentsIncidentIdAckPost.mockReturnValue(
+      new Promise((resolve) => {
+        responder = resolve;
+      }),
+    );
+    render(page());
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ }));
+    const enVuelo = await screen.findByRole("button", { name: /ENVIANDO/ });
+    expect(enVuelo).toBeDisabled();
+    fireEvent.click(enVuelo);
+    expect(mocks.ackIncidentIncidentsIncidentIdAckPost).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("ACUSADO", { selector: "button *" })).toBeNull();
+    await act(async () => {
+      responder({ data: { incident_id: "i-1", state: "acked" }, response: { status: 200 } });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("ACUSADO", { selector: "button *" })).toBeInTheDocument();
+    expect(screen.queryByTestId("ack-error")).toBeNull();
   });
 
   it("[T-6.06] el vacío culpa al ALCANCE cuando el servidor lo está imponiendo", () => {
@@ -738,5 +816,134 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
     mocks.useIncidentActions.mockReturnValue(actionsData());
     render(page());
     expect(screen.queryByTestId("detail-panel")).not.toBeInTheDocument();
+  });
+});
+
+// [A-012 · T-8.07] La selección de la cola era por SITIO: el clic en una fila
+// guardaba el `site_id` y el incidente enfocado salía de `find` por sitio — el
+// PRIMERO. Con dos abiertos en el mismo edificio (pánico + sísmico) la segunda
+// fila no se podía elegir y el acuse, la reubicación y el dictamen caían en la
+// primera.
+describe("[A-012 · T-8.07] la selección de la cola es por INCIDENTE", () => {
+  const SEGUNDO: LiveIncident = {
+    ...INCIDENT,
+    incident_id: "i-2",
+    severity: "warning",
+    trigger: "panic",
+    event_id: null,
+    max_pga_g: 0.05,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // El rol principal de la consola, con la /me DERIVADA de la matriz: acusa,
+    // reubica y pide dictamen.
+    resetSessionStoreForTests();
+    useSessionStore.setState({
+      status: "authenticated",
+      idToken: "tok",
+      me: ME_FIXTURES.soc_operator,
+    });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [INCIDENT, SEGUNDO] }));
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+    mocks.useShakemap.mockReturnValue(shakemapData());
+    mocks.ackIncidentIncidentsIncidentIdAckPost.mockResolvedValue({
+      data: { incident_id: "i-2", state: "acked" },
+      response: { status: 200 },
+    });
+    mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost.mockResolvedValue({
+      data: { action_id: "a-9", incident_id: "i-2", kind: "dictamen_request" },
+      response: { status: 201 },
+    });
+  });
+
+  function elegirSegundo(): HTMLElement {
+    const fila = screen.getByText("0.050g").closest("tr") as HTMLElement;
+    fireEvent.click(fila);
+    return fila;
+  }
+
+  it("la segunda fila del MISMO sitio se puede elegir", () => {
+    render(page());
+    const fila = elegirSegundo();
+    expect(fila).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("0.150g").closest("tr")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("el acuse cae en el incidente ELEGIDO, no en el primero del sitio", async () => {
+    render(page());
+    elegirSegundo();
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR ACUSE/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA ACUSAR/ }));
+    await waitFor(() =>
+      expect(mocks.ackIncidentIncidentsIncidentIdAckPost).toHaveBeenCalledWith({
+        path: { incident_id: "i-2" },
+      }),
+    );
+  });
+
+  it("REUBICAR abre el modal del incidente ELEGIDO", () => {
+    render(page());
+    elegirSegundo();
+    fireEvent.click(screen.getByRole("button", { name: /REUBICAR EPICENTRO/ }));
+    const dialogo = screen.getByRole("dialog", { name: "REUBICAR EPICENTRO" });
+    expect(dialogo).toHaveTextContent("i-2");
+    expect(dialogo).not.toHaveTextContent("i-1");
+  });
+
+  it("SOLICITAR DICTAMEN va por el incidente ELEGIDO", async () => {
+    render(page());
+    elegirSegundo();
+    fireEvent.click(screen.getByRole("button", { name: /SOLICITAR DICTAMEN TÉCNICO/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /CLIC DE NUEVO PARA SOLICITAR/ }));
+    await waitFor(() =>
+      expect(mocks.requestDictamenIncidentsIncidentIdDictamenRequestPost).toHaveBeenCalledWith(
+        expect.objectContaining({ path: { incident_id: "i-2" } }),
+      ),
+    );
+  });
+
+  it("el panel de detalle habla del incidente ELEGIDO", () => {
+    render(page());
+    elegirSegundo();
+    expect(mocks.useIncidentActions).toHaveBeenLastCalledWith("i-2");
+  });
+});
+
+// [A-013 · T-8.07] El Modal le robaba el foco al campo CADA SEGUNDO en /console:
+// el wall se redibuja con `useNow(1000)` y le pasa al modal un `onClose` nuevo en
+// cada tic. Se mide sobre la página de verdad, con su reloj.
+describe("[A-013 · T-8.07] se puede teclear en un modal de la consola", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSessionStoreForTests();
+    useSessionStore.setState({
+      status: "authenticated",
+      idToken: "tok",
+      me: ME_FIXTURES.soc_operator,
+    });
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    mocks.useLiveIncidents.mockReturnValue(incidentsData());
+    mocks.useMapState.mockReturnValue(mapData());
+    mocks.useSiteFeatures.mockReturnValue(featuresData());
+    mocks.useIncidentActions.mockReturnValue(actionsData());
+    mocks.useShakemap.mockReturnValue(shakemapData());
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("la NOTA de REUBICAR conserva el foco aunque el wall se redibuje", () => {
+    render(page());
+    fireEvent.click(screen.getByRole("button", { name: /REUBICAR EPICENTRO/ }));
+    const nota = screen.getByLabelText(/NOTA \(OPCIONAL/);
+    nota.focus();
+    expect(nota).toHaveFocus();
+    act(() => {
+      vi.advanceTimersByTime(3_000);
+    });
+    expect(nota).toHaveFocus();
   });
 });

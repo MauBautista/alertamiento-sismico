@@ -226,7 +226,9 @@ export default function TenantsPage() {
    * rótulo estático era verdad hoy y mentira —al revés— el día que T-2.76.a /
    * T-2.77.a carguen credenciales. Sin dato ⇒ la tarjeta pinta `S/D`.
    */
-  const notifyChannels = useNotifyChannels();
+  // [A-226] Sólo quien puede leerla (`edit_thresholds`): antes, 403 en cada carga
+  // de `takab_support`.
+  const notifyChannels = useNotifyChannels(hasEditAction);
 
   /**
    * Instantánea del servidor de la que se sembró el borrador. `dirty` se mide contra

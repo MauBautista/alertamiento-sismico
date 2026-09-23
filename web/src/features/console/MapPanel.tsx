@@ -130,6 +130,28 @@ export function pulseAt(deltaMs: number): { radius: number; strokeOpacity: numbe
   return { radius: 15 + phase * 45, strokeOpacity: 1 - phase };
 }
 
+/**
+ * [A-060 · T-8.09] El faro con `prefers-reduced-motion`: QUIETO y PUESTO.
+ *
+ * El interruptor apaga el MOVIMIENTO, no la información — la misma regla que el
+ * anillo de arribo (T-7.18): el edificio sigue diciendo «disparé», con un anillo
+ * fijo a medio camino del recorrido del pulso y visible de sobra. Hasta esta
+ * ficha el loop ignoraba la preferencia y la leyenda decía «ANILLOS ESTÁTICOS»
+ * mientras el faro seguía expandiéndose cada 1.6 s.
+ */
+export const PULSE_STILL: { radius: number; strokeOpacity: number } = {
+  radius: 22,
+  strokeOpacity: 0.6,
+};
+
+/** El fotograma del faro, con la preferencia de movimiento DENTRO de la decisión. */
+export function pulseFrame(
+  deltaMs: number,
+  reducedMotion: boolean,
+): { radius: number; strokeOpacity: number } {
+  return reducedMotion ? PULSE_STILL : pulseAt(deltaMs);
+}
+
 /** Color por SACUDIDA MEDIDA en el inmueble (`felt`), no por severidad de la
  * alerta. Un aviso SASMEX abre el incidente en `critical` sin haber medido nada
  * de lo que pasa AQUÍ (el WR-1 es un booleano): pintar el edificio de rojo por
@@ -1062,9 +1084,19 @@ export default function MapPanel({
           lastTick = t;
           // Entre setStyle(FALLBACK) y su style.load la capa no existe: guard.
           if (map.getLayer("pulse") !== undefined) {
-            const { radius, strokeOpacity } = pulseAt(t - start);
+            // [A-060] `reducedMotionRef` existía y NUNCA se leía. Se lee aquí, en
+            // cada tick, para que el cambio del ajuste en caliente y la recarga
+            // del estilo (fallback) queden cubiertos sin otra vía. Repetir el
+            // mismo valor es gratis: MapLibre descarta un paint idéntico.
+            const { radius, strokeOpacity } = pulseFrame(t - start, reducedMotionRef.current);
             map.setPaintProperty("pulse", "circle-radius", radius);
             map.setPaintProperty("pulse", "circle-stroke-opacity", strokeOpacity);
+            // [A-060] Lo que el loop PINTA, legible desde un e2e. Comparar dos
+            // capturas del canvas entero no aísla al faro: el frente de onda y el
+            // anillo de arribo se mueven en la misma imagen, y bastaba con que una
+            // tesela llegara tarde. El radio es el hecho que A-060 afirma; no
+            // depende de que haya un edificio disparado, así que se mide siempre.
+            containerRef.current?.setAttribute("data-faro-radio", radius.toFixed(2));
           }
           const wave = waveRef.current;
           if (wave !== null && map.getLayer("wave-p") !== undefined) {

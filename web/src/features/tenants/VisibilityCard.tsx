@@ -3,6 +3,7 @@ import { useState } from "react";
 import type { TenantOut } from "@takab/sdk";
 
 import Card from "../../components/Card";
+import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
 import { useVisibilityGrants, useVisibilityMutations } from "./useVisibility";
 
@@ -31,19 +32,41 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
     all ? "TODOS los clientes" : (others.find((t) => t.tenant_id === id)?.name ?? id ?? "—");
 
   const invalid = target === "" || (!meta && !live);
+  // [A-110 · T-8.09] Lo que abre el aislamiento de verdad —a TODOS los clientes, o
+  // sus datos EN VIVO— se confirma en dos pasos. Ver que existen las estaciones de
+  // UN cliente sigue siendo un clic: no cada casilla merece la misma fricción.
+  const sensible = target === "ALL" || live;
+
+  function conceder(): void {
+    if (invalid) return;
+    mut.grant(
+      {
+        grantee_tenant_id: grantee.tenant_id,
+        target_all: target === "ALL",
+        target_tenant_id: target === "ALL" ? null : target,
+        can_view_metadata: meta,
+        can_view_data: live,
+      },
+      // [A-110] Se vacía cuando el servidor lo CONCEDIÓ; con un rechazo, lo
+      // elegido se queda para corregirlo junto al error.
+      { onSuccess: () => setTarget("") },
+    );
+  }
 
   function submit(e: React.FormEvent): void {
     e.preventDefault();
-    if (invalid) return;
-    mut.grant({
-      grantee_tenant_id: grantee.tenant_id,
-      target_all: target === "ALL",
-      target_tenant_id: target === "ALL" ? null : target,
-      can_view_metadata: meta,
-      can_view_data: live,
-    });
-    setTarget("");
+    // Con confirmación, un Enter en el formulario no puede saltársela.
+    if (sensible) return;
+    conceder();
   }
+
+  const motivoApagado = mut.pending
+    ? "Concediendo…"
+    : target === ""
+      ? "Elige primero a qué cliente se le concede la vista"
+      : !meta && !live
+        ? "Marca al menos un permiso: metadatos o datos en vivo"
+        : undefined;
 
   return (
     <Card
@@ -115,22 +138,28 @@ export default function VisibilityCard({ grantee, allTenants }: VisibilityCardPr
             las dos con el mismo gris. Conceder visibilidad entre clientes es una
             operación de aislamiento multi-tenant: quien la ejecuta tiene que
             saber exactamente qué le falta antes de pulsar. */}
-        <button
-          type="submit"
-          className="vis-form__submit"
-          disabled={mut.pending || invalid}
-          title={
-            mut.pending
-              ? "Concediendo…"
-              : target === ""
-                ? "Elige primero a qué cliente se le concede la vista"
-                : !meta && !live
-                  ? "Marca al menos un permiso: metadatos o datos en vivo"
-                  : undefined
-          }
-        >
-          Conceder
-        </button>
+        {sensible ? (
+          <ConfirmButton
+            label="Conceder"
+            disabled={mut.pending || invalid}
+            title={
+              motivoApagado ??
+              (target === "ALL"
+                ? "Abre la vista a TODOS los clientes: se confirma en dos pasos"
+                : "Datos EN VIVO de otro cliente: se confirma en dos pasos")
+            }
+            onConfirm={conceder}
+          />
+        ) : (
+          <button
+            type="submit"
+            className="vis-form__submit"
+            disabled={mut.pending || invalid}
+            title={motivoApagado}
+          >
+            Conceder
+          </button>
+        )}
       </form>
     </Card>
   );

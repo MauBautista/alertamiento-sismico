@@ -268,6 +268,31 @@ describe("FleetAdmin", () => {
     expect(error).toHaveTextContent(/Recarga y reintenta/);
   });
 
+  // [A-103 · T-8.09] El aviso de «código de retiro configurado» consultaba el
+  // cliente de la SESIÓN. Para un superadmin (cuyo cliente es TAKAB) retirando la
+  // estación de un hospital, preguntaba por el código equivocado: podía bloquear
+  // un retiro legítimo o anunciar un código que el hospital no tiene.
+  it("el código de retiro se pregunta al cliente DE LA ESTACIÓN, no al de la sesión", async () => {
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.takab_superadmin });
+    mocks.listSitesSitesGet.mockResolvedValue({
+      data: [{ ...SITE, tenant_id: "t-hosp" }],
+      response: { status: 200 },
+    });
+    mocks.listTenantsTenantsGet.mockResolvedValue({
+      data: [TENANT_OWN, TENANT_OTHER],
+      response: { status: 200 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+    fireEvent.click(screen.getByRole("button", { name: /^RETIRAR$/ }));
+    await screen.findByTestId("retire-dialog");
+    await waitFor(() =>
+      expect(mocks.getRetireCodeStateTenantsTenantIdRetireCodeGet).toHaveBeenCalledWith({
+        path: { tenant_id: "t-hosp" },
+      }),
+    );
+  });
+
   // [T-2.36] El retiro dejó de ser un doble clic armado: exige teclear el `code` de
   // la estación Y el código de retiro del cliente. Retirar apaga la protección de un
   // edificio; la fricción es deliberada.
@@ -459,6 +484,55 @@ describe("FleetAdmin", () => {
     const body = mocks.createSensorSensorsPost.mock.calls[0][0].body;
     expect(body.calibration_source).toBeNull();
     expect(body).toMatchObject({ site_id: "s-1", kind: "structural", model: "RS4D" });
+  });
+
+  // [A-104 · T-8.09] AÑADIR SENSOR no acusaba el alta ni limpiaba el formulario:
+  // la pantalla no cambiaba al pulsar, y el segundo clic creaba un duplicado.
+  // Es el mismo camino que ya se cerró para el gabinete (GatewayAcuse).
+  it("un sensor creado se ACUSA y el formulario se limpia para no duplicarlo", async () => {
+    mocks.createSensorSensorsPost.mockResolvedValue({
+      data: {
+        sensor_id: "sn-1",
+        site_id: "s-1",
+        kind: "structural",
+        model: "RS4D",
+        serial: "AM.R4F74",
+      },
+      response: { status: 201 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+
+    fireEvent.click(screen.getByRole("button", { name: "HARDWARE" }));
+    fireEvent.change(screen.getByLabelText("SERIAL DEL SENSOR"), {
+      target: { value: "AM.R4F74" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "AÑADIR SENSOR" }));
+
+    const acuse = await screen.findByTestId("sensor-ack");
+    expect(acuse).toHaveTextContent("SENSOR AÑADIDO");
+    expect(acuse).toHaveTextContent("AM.R4F74");
+    expect(screen.getByLabelText("SERIAL DEL SENSOR")).toHaveValue("");
+  });
+
+  it("si el alta del sensor FALLA, lo tecleado se conserva y no se acusa nada", async () => {
+    mocks.createSensorSensorsPost.mockResolvedValue({
+      data: undefined,
+      error: { detail: "serial repetido" },
+      response: { status: 409 },
+    });
+    renderAdmin();
+    await screen.findByTestId("site-row-CHL-A");
+
+    fireEvent.click(screen.getByRole("button", { name: "HARDWARE" }));
+    fireEvent.change(screen.getByLabelText("SERIAL DEL SENSOR"), {
+      target: { value: "AM.R4F74" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "AÑADIR SENSOR" }));
+
+    expect(await screen.findByTestId("hardware-form-error")).toHaveTextContent("serial repetido");
+    expect(screen.queryByTestId("sensor-ack")).toBeNull();
+    expect(screen.getByLabelText("SERIAL DEL SENSOR")).toHaveValue("AM.R4F74");
   });
 
   it("declarar la procedencia la envía tal cual", async () => {

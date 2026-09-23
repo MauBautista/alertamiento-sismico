@@ -28,9 +28,21 @@ que no esté en ninguna de las dos cae aquí, que es justo lo que no pasó con
 
 from __future__ import annotations
 
+import os
 import re
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+
+import psycopg
+import pytest
+
+import auth_utils as au
+from takab_api.auth import deps
+from takab_api.db.engine import get_engine
+from takab_api.main import create_app
+from takab_api.routers.fleet import router as fleet_router
+from takab_api.schemas.fleet import GatewayOut
 
 _RAIZ = Path(__file__).resolve().parents[3]
 _SCHEMA = _RAIZ / "db" / "schema.sql"
@@ -148,4 +160,131 @@ def test_lo_no_persistido_lleva_su_RAZON_escrita() -> None:
     assert not flojas, (
         f"campo(s) declarados no persistidos sin una razón que se pueda revocar: {flojas}. "
         "La razón es lo único que permite decidir, dentro de un año, si sigue valiendo"
+    )
+
+
+# --------------------------------------------------------------------------
+# [A-056 · T-8.09] …y de la COLUMNA a la SALIDA de la API.
+# --------------------------------------------------------------------------
+#
+# El censo de arriba cerró el hueco «campo del contrato → columna». Quedaba el
+# siguiente tramo del mismo cable, y se rompió igual: `GET /fleet/gateways`
+# SELECCIONABA `evidence_pending`, `evidence_oldest_age_s` y `disk_used_pct`, el
+# schema `GatewayOut` los DECLARABA, y el constructor del router no los pasaba.
+# La API respondía `null` siempre, y la consola pintaba en TODAS las tarjetas
+# «EVIDENCIA · s/d · el gabinete no pudo mirar» — culpando al gabinete de un
+# fallo de la API (regla de oro 7). Este censo sólo miraba la columna, así que
+# no lo vio.
+#
+# La población se DERIVA: toda columna destino de `DESTINO` que `GatewayOut`
+# declare con el mismo nombre tiene que llegar a la respuesta con el valor del
+# último latido. Lo único escrito a mano es un valor de MUESTRA por columna, y
+# una columna nueva sin muestra FALLA pidiéndola — no se salta en silencio.
+
+#: Un valor NO NULO y distinguible por columna. `gateway_id` no lleva muestra:
+#: es la llave de la fila y siempre viaja.
+MUESTRA: dict[str, object] = {
+    "ntp_offset_ms": 7.25,
+    "seedlink_lag_s": 0.75,
+    "packet_loss_pct": 1.5,
+    "mqtt_rtt_ms": 42.5,
+    "power_status": "line",
+    "battery_pct": 88.0,
+    "cert_days_remaining": 123,
+    "relays_state": "reported",
+    "disk_used_pct": 71.5,
+    "evidence_pending": 2,
+    "evidence_oldest_age_s": 2940.0,
+}
+
+_T = "e7c00000-0000-0000-0000-000000000001"
+_S = "e7c10000-0000-0000-0000-000000000001"
+_GW = "e7c20000-0000-0000-0000-000000000001"
+
+
+def _columnas_en_la_salida() -> list[str]:
+    return sorted(c for c in DESTINO.values() if c in GatewayOut.model_fields and c != "gateway_id")
+
+
+def _dsn() -> str:
+    url = os.environ.get(
+        "DATABASE_URL", "postgresql+psycopg://takab:takab_dev@127.0.0.1:5433/takab"
+    )
+    return url.replace("postgresql+psycopg://", "postgresql://")
+
+
+def test_cada_columna_que_la_API_declara_tiene_MUESTRA() -> None:
+    """El censo no puede saltarse una columna nueva por no saber qué sembrar."""
+    sin_muestra = sorted(set(_columnas_en_la_salida()) - set(MUESTRA))
+    assert not sin_muestra, (
+        f"columna(s) del latido que `GatewayOut` declara y este censo no sabe sembrar: "
+        f"{sin_muestra}. Añade un valor NO NULO en `MUESTRA`"
+    )
+    assert len(_columnas_en_la_salida()) >= 10, "el cruce DESTINO × GatewayOut salió casi vacío"
+
+
+@pytest.fixture
+def _latido_completo(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TAKAB_API_AUTH_ISSUER", au.ISSUER)
+    monkeypatch.setenv("TAKAB_API_AUTH_AUDIENCE", au.AUDIENCE)
+    monkeypatch.setenv("TAKAB_API_AUTH_JWKS_JSON", au.jwks_json())
+    if os.environ.get("DATABASE_URL"):
+        monkeypatch.setenv("TAKAB_API_DATABASE_URL", os.environ["DATABASE_URL"])
+    deps._reset_caches()
+    get_engine.cache_clear()
+    columnas = _columnas_en_la_salida()
+    with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO tenants (tenant_id, code, name, visibility) "
+            "VALUES (%s, 'T809C', 'T-8.09 censo', 'private') ON CONFLICT DO NOTHING",
+            (_T,),
+        )
+        cur.execute(
+            "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES (%s, %s, 'S809C', "
+            "'Censo', ST_SetSRID(ST_MakePoint(-98.2, 19.0), 4326)::geography) "
+            "ON CONFLICT DO NOTHING",
+            (_S, _T),
+        )
+        cur.execute(
+            "INSERT INTO gateways (gateway_id, tenant_id, site_id, serial) "
+            "VALUES (%s, %s, %s, 'GW-CENSO-809') ON CONFLICT DO NOTHING",
+            (_GW, _T, _S),
+        )
+        cur.execute(
+            f"INSERT INTO device_health (ts, tenant_id, gateway_id, reason, {', '.join(columnas)}) "
+            f"VALUES (%s, %s, %s, 'heartbeat', {', '.join(['%s'] * len(columnas))})",
+            (datetime.now(tz=UTC), _T, _GW, *[MUESTRA[c] for c in columnas]),
+        )
+    yield columnas
+    with psycopg.connect(_dsn(), autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("DELETE FROM device_health WHERE tenant_id = %s", (_T,))
+        cur.execute("DELETE FROM gateways WHERE tenant_id = %s", (_T,))
+        cur.execute("DELETE FROM sites WHERE tenant_id = %s", (_T,))
+        cur.execute("DELETE FROM tenants WHERE tenant_id = %s", (_T,))
+    deps._reset_caches()
+
+
+async def test_cada_campo_del_latido_que_la_API_declara_LLEGA_a_la_respuesta(
+    _latido_completo: list[str],
+) -> None:
+    """⚠️ El censo que habría cazado la evidencia y el disco en `null` para siempre."""
+    app = create_app()
+    app.include_router(fleet_router)
+    try:
+        async with au.client_for(app) as c:
+            r = await c.get(
+                "/fleet/gateways",
+                headers=au.bearer(au.make_token("soc_operator", tenant=_T, surface="web")),
+            )
+    finally:
+        await get_engine().dispose()
+        get_engine.cache_clear()
+    assert r.status_code == 200, r.text
+    fila = {g["gateway_id"]: g for g in r.json()}[_GW]
+    perdidas = sorted(c for c in _latido_completo if fila.get(c) != MUESTRA[c])
+    assert not perdidas, (
+        f"`GET /fleet/gateways` declara {perdidas} y NO los entrega (salen "
+        f"{ {c: fila.get(c) for c in perdidas} }): la columna existe y el schema la "
+        "declara, pero el constructor del router no la pasa. Es lo que dejó a la consola "
+        "diciendo «el gabinete no pudo mirar» de TODOS los gabinetes"
     )

@@ -48,7 +48,12 @@ export function useVisibilityGrants(grantee: string | null, enabled: boolean): V
 }
 
 export interface VisibilityMutations {
-  grant: (body: VisibilityGrantCreate) => void;
+  /**
+   * [A-110] `onSuccess` para que quien pide sepa si el servidor lo concedió: el
+   * formulario se vaciaba en el mismo clic y, con un rechazo, el operador se
+   * quedaba sin saber qué había pedido.
+   */
+  grant: (body: VisibilityGrantCreate, opts?: { onSuccess?: () => void }) => void;
   revoke: (grantId: string) => void;
   pending: boolean;
   error: string | null;
@@ -82,7 +87,7 @@ export function useVisibilityMutations(grantee: string | null): VisibilityMutati
     onSuccess: invalidate,
   });
   return {
-    grant: (body) => upsert.mutate(body),
+    grant: (body, opts) => upsert.mutate(body, { onSuccess: () => opts?.onSuccess?.() }),
     revoke: (grantId) => del.mutate(grantId),
     pending: upsert.isPending || del.isPending,
     error: upsert.error?.message ?? del.error?.message ?? null,
