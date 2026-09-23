@@ -64,6 +64,10 @@ const SOLO_MOVIL: ReadonlySet<string> = new Set(["brigadista", "security_guard",
 const MUTANTE =
   /ACUS|FIRM|EJECUT|INICIAR|BORR|ELIMIN|SILENCI|PROBAR|DAR DE BAJA|BAJA|DESHABILIT|HABILIT|PUBLICAR|VOLVER A V|RESTAUR|RETIR|GUARDAR|CREAR|AÑADIR|APLICAR|ENVIAR|SALIR|CERRAR SESI|CONFIRMAR|CLASIFIC|REGISTRAR|ROTAR|ABRIR VENTANA|CERRAR VENTANA|AUTODIAGN|GENERAR|DESCARGAR|EXPORTAR|INVITAR|RESET|CONCEDER|REVOCAR|ARMAR|DESARMAR|ACTIVAR|CANCELAR SIMUL|ABORTAR|RENOVAR|ENTRAR|SOLICITAR|DICTAMEN PDF|EJECUTIVO/i;
 
+/** Cuántos controles no mutantes se pulsan como mucho por ruta (los repetidos por
+ *  fila ya se cuentan una sola vez). Lo que quede fuera se declara en el informe. */
+const MAX_CONTROLES_POR_RUTA = 80;
+
 /** Respuestas ≥ 400 que se aceptan, SIEMPRE con su razón. Vacío a propósito. */
 const ESPERADOS: ReadonlyArray<{ rol: string | "*"; metodo: string; ruta: RegExp; razon: string }> =
   [];
@@ -78,7 +82,10 @@ interface Hallazgo {
     | "select_vacio_sin_estado"
     | "dialogo_no_cierra"
     | "ruta_no_monta"
-    | "solo_movil_con_superficie";
+    | "solo_movil_con_superficie"
+    // No es un defecto de la consola: el entorno no permite medir (p.ej. local
+    // sin pool de ocupantes ⇒ /dev/token 503). Se DECLARA, no cuenta como fallo.
+    | "no_medido";
   rol: string;
   ruta: string;
   detalle: string;
@@ -209,6 +216,11 @@ async function mutacionesNuevas(page: Page): Promise<number> {
 }
 
 // ------------------------------------------------------------ el barrido
+//
+// ⚠️ Toda lectura sobre un control lleva `timeout`: `locator.evaluate()` sobre un
+// elemento que YA NO EXISTE espera hasta el timeout del test. Pasó con «ACEPTO ESTE
+// AVISO» (el aviso desaparece al aceptarlo): el superadmin se quedó 25 minutos
+// esperando a un botón que ya no estaba (medido el 2026-09-23).
 
 const SELECTOR_CONTROLES = [
   "button",
@@ -226,25 +238,62 @@ async function barrerRuta(
   ruta: string,
   informe: InformeRol,
 ): Promise<void> {
-  const controles = page.locator(SELECTOR_CONTROLES);
-  const total = await controles.count();
-  const vistos = new Set<string>();
+  // UNA sola ida al navegador: enumerar, filtrar visibles, deduplicar por
+  // etiqueta+rótulo y marcar cada control con `data-recorrido`. Hacerlo control a
+  // control (4 viajes por elemento) dejó al superadmin sin tiempo en /fleet, con
+  // 21 gabinetes y decenas de botones por tarjeta (medido el 2026-09-23).
+  const unicos = await page.evaluate((sel) => {
+    const vistos = new Set<string>();
+    const out: { n: number; tag: string; rotulo: string }[] = [];
+    let n = 0;
+    for (const el of Array.from(document.querySelectorAll<HTMLElement>(sel))) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0 || getComputedStyle(el).visibility === "hidden") continue;
+      const rotulo = (el.getAttribute("aria-label") ?? el.innerText ?? "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 80);
+      const clave = `${el.tagName.toLowerCase()}:${rotulo}`;
+      if (vistos.has(clave)) continue;
+      vistos.add(clave);
+      el.setAttribute("data-recorrido", String(n));
+      out.push({ n, tag: el.tagName.toLowerCase(), rotulo });
+      n += 1;
+    }
+    return out;
+  }, SELECTOR_CONTROLES);
+  // El ruido de fondo (reloj, edades, latidos) se mide UNA vez por ruta: medirlo
+  // antes de cada control costaba 1.2 s por control (medido el 2026-09-23).
+  await nodosQueMutanSolos(page, 1_500);
+  let pulsados = 0;
 
-  for (let i = 0; i < total; i++) {
-    const c = controles.nth(i);
-    if (!(await c.isVisible().catch(() => false))) continue;
-    const tag = await c.evaluate((el) => el.tagName.toLowerCase()).catch(() => "?");
-    const rotulo = (
-      (await c.getAttribute("aria-label")) ??
-      (await c.innerText().catch(() => "")) ??
-      ""
-    )
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 80);
-    const clave = `${tag}:${rotulo}`;
-    if (vistos.has(clave)) continue; // filas repetidas de una tabla: basta una
-    vistos.add(clave);
+  for (let i = 0; i < unicos.length; i++) {
+    if (pulsados >= MAX_CONTROLES_POR_RUTA) {
+      // Sin tope silencioso: lo que no se recorrió queda DICHO en el informe.
+      informe.controles.push({
+        ruta,
+        tipo: "tope",
+        rotulo: `${unicos.length - i} controles sin recorrer`,
+        resultado: "no_visible",
+        detalle: `tope de ${MAX_CONTROLES_POR_RUTA} controles pulsados por ruta`,
+      });
+      break;
+    }
+    const { n, tag, rotulo } = unicos[i];
+    if (process.env.RECORRIDO_DEBUG)
+      console.log(`[recorrido] ${rol} ${ruta} #${n} ${tag} «${rotulo}»`);
+    const c = page.locator(`[data-recorrido="${n}"]`).first();
+    if ((await c.count()) === 0) {
+      // Tras un clic anterior el árbol se re-renderizó y la marca se perdió.
+      informe.controles.push({
+        ruta,
+        tipo: tag,
+        rotulo,
+        resultado: "no_visible",
+        detalle: "re-renderizado",
+      });
+      continue;
+    }
 
     if (tag === "select") {
       const opciones = await c.locator("option").count();
@@ -266,9 +315,23 @@ async function barrerRuta(
       continue;
     }
 
-    const deshabilitado = await c.isDisabled().catch(() => false);
+    const deshabilitado = await c.isDisabled({ timeout: 3_000 }).catch(() => false);
     if (deshabilitado) {
-      const causa = (await c.getAttribute("title")) ?? (await c.getAttribute("aria-describedby"));
+      // La causa puede vivir en el propio control o en el envoltorio que lo gatea
+      // (`<span title={gateTitle(…)}>` de la consola: un botón deshabilitado no
+      // recibe eventos, así que el `title` va en el padre — es el patrón que ya
+      // acepta `screens.spec.ts`).
+      const causa = await c
+        .evaluate(
+          (el) =>
+            el.getAttribute("title") ??
+            el.getAttribute("aria-describedby") ??
+            el.parentElement?.closest("[title]")?.getAttribute("title") ??
+            null,
+          undefined,
+          { timeout: 3_000 },
+        )
+        .catch(() => null);
       informe.controles.push({
         ruta,
         tipo: tag,
@@ -285,15 +348,19 @@ async function barrerRuta(
     const url0 = page.url();
     const dialogos0 = await page.locator("[role=dialog], dialog[open]").count();
     const aria0 = await c
-      .evaluate((el) =>
-        ["aria-expanded", "aria-selected", "aria-pressed"].map((a) => el.getAttribute(a)).join("|"),
+      .evaluate(
+        (el) =>
+          ["aria-expanded", "aria-selected", "aria-pressed"]
+            .map((a) => el.getAttribute(a))
+            .join("|"),
+        undefined,
+        { timeout: 3_000 },
       )
       .catch(() => "");
     let peticiones = 0;
     const contar = () => {
       peticiones += 1;
     };
-    await nodosQueMutanSolos(page, 1_200);
     page.on("request", contar);
     try {
       await c.click({ timeout: 2_000 });
@@ -308,14 +375,20 @@ async function barrerRuta(
       });
       continue;
     }
-    await page.waitForTimeout(700);
+    pulsados += 1;
+    await page.waitForTimeout(500);
     page.off("request", contar);
     const mutaciones = await mutacionesNuevas(page);
     const url1 = page.url();
     const dialogos1 = await page.locator("[role=dialog], dialog[open]").count();
     const aria1 = await c
-      .evaluate((el) =>
-        ["aria-expanded", "aria-selected", "aria-pressed"].map((a) => el.getAttribute(a)).join("|"),
+      .evaluate(
+        (el) =>
+          ["aria-expanded", "aria-selected", "aria-pressed"]
+            .map((a) => el.getAttribute(a))
+            .join("|"),
+        undefined,
+        { timeout: 3_000 },
       )
       .catch(() => aria0);
 
@@ -330,6 +403,7 @@ async function barrerRuta(
       await page.goto(ruta);
       await asentar(page);
       await armarObservador(page);
+      await nodosQueMutanSolos(page, 1_500);
       continue;
     }
     if (dialogos1 > dialogos0) {
@@ -352,16 +426,22 @@ async function barrerRuta(
         await page.goto(ruta);
         await asentar(page);
         await armarObservador(page);
+        await nodosQueMutanSolos(page, 1_500);
       }
       continue;
     }
-    const efecto = aria1 !== aria0 || peticiones > 0 || mutaciones > 0;
+    // Un control que YA estaba activo (pestaña elegida, tarjeta seleccionada) no
+    // cambia nada al volver a pulsarlo, y es lo correcto: no es un control muerto.
+    const yaActivo = aria0.split("|").includes("true") && aria1 === aria0;
+    const efecto = yaActivo || aria1 !== aria0 || peticiones > 0 || mutaciones > 0;
     informe.controles.push({
       ruta,
       tipo: tag,
       rotulo,
       resultado: efecto ? "efecto" : "sin_efecto",
-      detalle: `aria ${aria0}→${aria1} · ${peticiones} peticiones · ${mutaciones} mutaciones`,
+      detalle: yaActivo
+        ? "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
+        : `aria ${aria0}→${aria1} · ${peticiones} peticiones · ${mutaciones} mutaciones`,
     });
     if (!efecto) {
       informe.hallazgos.push({
@@ -388,8 +468,6 @@ function esperado(rol: string, metodo: string, url: string): string | null {
 
 // ------------------------------------------------------------------ tests
 
-test.describe.configure({ mode: "serial" });
-
 const rolesDelRecorrido: Rol[] = EN_NUBE
   ? ROLES.filter((r) =>
       existsSync(path.join(process.env.RECORRIDO_SESIONES ?? "/nonexistent", `${r}.json`)),
@@ -409,7 +487,7 @@ for (const rol of rolesDelRecorrido) {
         testInfo.project.name !== "laptop-1440x900",
         "el recorrido corre en un solo viewport",
       );
-      test.setTimeout(12 * 60_000);
+      test.setTimeout(25 * 60_000);
 
       const informe: InformeRol = { rol, rutas: [], controles: [], hallazgos: [] };
       let rutaActual = "/";
@@ -457,6 +535,30 @@ for (const rol of rolesDelRecorrido) {
       const me = await entrar(page, rol);
       mkdirSync(path.join(CAPTURAS, rol), { recursive: true });
 
+      if (
+        SOLO_MOVIL.has(rol) &&
+        me === null &&
+        (await page.getByText("LOGIN DEV", { exact: false }).count()) > 0
+      ) {
+        // El login dev no llegó a emitir el token: en local, sin pool de ocupantes,
+        // `/dev/token` responde 503 (A-230). No se mide lo que el entorno no deja.
+        // Lo que produjo el propio intento de login (el 503 de /dev/token y su eco en
+        // la consola) es del ENTORNO, no de la consola: se retira al declararlo.
+        informe.hallazgos = informe.hallazgos.filter(
+          (h) => !/\/dev\/token|status of 503/.test(h.detalle),
+        );
+        informe.hallazgos.push({
+          tipo: "no_medido",
+          rol,
+          ruta: "/",
+          detalle:
+            "el login dev no emitió token para este rol en este entorno (¿pool de ocupantes sin configurar?)",
+        });
+        informe.rutas.push("/");
+        mkdirSync(PARCIALES, { recursive: true });
+        writeFileSync(path.join(PARCIALES, `${rol}.json`), JSON.stringify(informe, null, 2));
+        return;
+      }
       if (SOLO_MOVIL.has(rol)) {
         await expect(page.getByText("SIN SUPERFICIE WEB")).toBeVisible();
         if ((await page.locator("[data-screen-label]").count()) > 0) {
@@ -505,6 +607,9 @@ for (const rol of rolesDelRecorrido) {
           });
           await armarObservador(page);
           await barrerRuta(page, rol, ruta, informe);
+          // Parcial tras cada ruta: si el rol se queda sin tiempo, lo medido no se pierde.
+          mkdirSync(PARCIALES, { recursive: true });
+          writeFileSync(path.join(PARCIALES, `${rol}.json`), JSON.stringify(informe, null, 2));
         }
       }
 

@@ -838,3 +838,25 @@ async def test_al_releer_la_ventana_los_nombres_que_faltaron_son_los_REALES(clie
     assert fila["missing_names"] == [_OFFLINE], (
         "al releer se devolvió un nombre distinto del que de verdad no se silenció"
     )
+
+
+def test_READ_ROLES_es_la_regla_de_la_consola() -> None:
+    """[T-8.09] La consola decide si pide `GET /maintenance-windows` con ESTA regla
+    (`web/src/features/console/useMaintenanceWindows.ts::puedeLeerVentanas`):
+    tener `maintenance_window` o `platform_maintenance_window`, o ser `soc_operator`
+    o `takab_support`. Si el servidor cambia quién lee y la consola no, vuelve el
+    403 en cada página (o, al revés, un rol que sí puede leer deja de ver las
+    ventanas). Cambia los dos lados en el mismo commit."""
+    from takab_api.auth.matrix import ROLE_ACTION_MATRIX
+    from takab_api.routers.maintenance import READ_ROLES
+
+    regla_de_la_consola = {
+        rol
+        for rol, acciones in ROLE_ACTION_MATRIX.items()
+        if acciones.get("maintenance_window")
+        or acciones.get("platform_maintenance_window")
+        or rol in ("soc_operator", "takab_support")
+    }
+    assert set(READ_ROLES) == regla_de_la_consola
+    # Y lo que el recorrido midió: estos tres NO leen hoy, así que la consola no pide.
+    assert not {"gov_operator", "inspector", "building_admin"} & set(READ_ROLES)

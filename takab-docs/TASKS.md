@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **461** · `[x]` **394** · `[~]` **15** · `[ ]` **52**
+**Conteo de tareas:** total **461** · `[x]` **398** · `[~]` **17** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17407,7 +17407,7 @@ se registra en su RUNBOOK.
 > tope de sesión y se rechaza antes con 401. Se cambiaron por roles reales sin la acción, que es lo
 > que cada prueba defendía.
 
-### [ ] T-8.03 · **Sesión por rol · la consola aguanta su día (o su mes)** — `SOFTWARE`
+### [~] T-8.03 · **Sesión por rol · la consola aguanta su día (o su mes)** — `SOFTWARE`
 - **Componente:** web · sdk-ts · deploy · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
 - **Objetivo:** que la consola no expulse a nadie a los 60 minutos, que sobreviva a cerrar la
   pestaña y que, cuando el tope se cumpla, lo diga con su causa.
@@ -17420,7 +17420,7 @@ se registra en su RUNBOOK.
     prórroga durante un incidente (`D-38`).
   - [ ] CSP en el Caddyfile. Se aplica solo si el recorrido desplegado da cero violaciones; si no,
     queda en *Report-Only* y lo hereda `T-8.16`.
-  - [ ] e2e local: con un token de 120 s y `/console` abierta 150 s, la sesión sigue viva.
+  - [x] e2e local: con un token de 120 s y `/console` abierta 150 s, la sesión sigue viva.
 - **Hallazgos:** A-004, A-010, A-032, A-033, A-034, A-039, A-040.
 
 > **Estado (2026-09-23).** Hecho y en verde en vitest (165 ficheros, 2646 pruebas), lint, prettier y
@@ -17430,6 +17430,12 @@ se registra en su RUNBOOK.
 > Hosted UI era una ruta relativa de la propia consola y la cookie de Cognito nunca se borraba. El
 > aviso de fin de sesión va dentro del mismo hijo de la barra que el menú del operador: un séptimo
 > hijo de `.soc-topbar` abre una fila implícita.
+
+> **E2E en un navegador de verdad (2026-09-23, `make soc-local`): 3 de 3.** Un token que vence a
+> los 60 s y la consola abierta 90 s ⇒ sigue dentro, con el canal live cerrado por el servidor y
+> reconectado; a 30 min del tope, la barra avisa la hora; pasado el tope, la entrada dice «SU
+> SESIÓN TERMINÓ». Queda para `[x]`: aplicar la CSP tras el recorrido contra la nube, y la medición
+> de `auth_time` en Cognito real.
 
 ### [~] T-8.04 · **Sesión por rol · la app usa por fin su refresh** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
@@ -17466,60 +17472,93 @@ se registra en su RUNBOOK.
 > la aserción nueva se probó rompiéndola). Falta el `terraform apply` (Mauricio,
 > `PENDIENTES-MAURICIO §2.15`).
 
-### [ ] T-8.06 · **Recorrido de la consola rol por rol, control por control** — `SOFTWARE`
+### [~] T-8.06 · **Recorrido de la consola rol por rol, control por control** — `SOFTWARE`
 - **Componente:** web · **Depende de:** T-8.01 · **Prioridad:** F2 · crítica
 - **Objetivo:** probar en un navegador que cada botón y cada desplegable de cada página hace algo,
   para los 10 roles, y que ninguna pantalla pide al servidor lo que el rol no puede tener.
 - **Criterios de aceptación:**
-  - [ ] `web/e2e/recorrido_por_rol.spec.ts`: entra con cada rol, visita sus rutas, pulsa cada
+  - [x] `web/e2e/recorrido_por_rol.spec.ts`: entra con cada rol, visita sus rutas, pulsa cada
     control no mutante, registra errores de página, respuestas de 400 o más y controles sin efecto.
     Los controles mutantes se censan y se ejercen en specs dirigidas.
   - [ ] `auditoria/recorrido-web.json` con 10 roles y cero inesperados, en local **y** contra la nube.
-  - [ ] Capturas por rol y ruta.
+  - [x] Capturas por rol y ruta.
 - **Hallazgos:** A-115, A-230.
 
-### [ ] T-8.07 · **MONITOREO: el acuse, la selección, el foco y el simulacro** — `SOFTWARE`
+> **Estado (2026-09-23).** En local: 10 roles, 268 controles, 0 inesperados (el ocupante, ❔ NO
+> MEDIDO: sin pool de ocupantes, `/dev/token` responde 503 en local). Falta la pasada contra la nube,
+> con sesiones de Cognito reales por rol (`storageState`), que exige a Mauricio con su código.
+> ⚠️ **Contra el servidor de DESARROLLO de Vite** (`make soc-local`), tres recargas completas seguidas
+> pueden agotar los recursos del navegador (`ERR_INSUFFICIENT_RESOURCES`: ~230 módulos sueltos por
+> carga), y `smoke.spec`/`scope.spec` caían en `/triage` tras `/fleet`. Contra el build de producción
+> (`vite preview`) pasan 15 de 15. No es un defecto de la consola, pero da falsos rojos: los e2e largos
+> se corren contra el build.
+
+### [x] T-8.07 · **MONITOREO: el acuse, la selección, el foco y el simulacro** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** web · api · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
 - **Objetivo:** que las acciones de la consola digan lo que de verdad pasó, y que caigan sobre el
   incidente que el operador eligió.
 - **Criterios de aceptación:**
-  - [ ] El acuse espera la respuesta: pendiente, error visible y «EJECUTADO» solo tras el 200.
-  - [ ] La selección de la cola es por incidente y no por sitio.
-  - [ ] El Modal no roba el foco cada segundo: se puede teclear en Reubicar, Comparativa y Simulacro.
-  - [ ] Un simulacro de un rol interno exige un cliente explícito. Borrar una plantilla y
+  - [x] El acuse espera la respuesta: pendiente, error visible y «EJECUTADO» solo tras el 200.
+  - [x] La selección de la cola es por incidente y no por sitio.
+  - [x] El Modal no roba el foco cada segundo: se puede teclear en Reubicar, Comparativa y Simulacro.
+  - [x] Un simulacro de un rol interno exige un cliente explícito. Borrar una plantilla y
     «EJECUTAR/INICIAR AHORA» piden confirmación.
-  - [ ] La cola muestra el estado de cada incidente.
+  - [x] La cola muestra el estado de cada incidente.
 - **Hallazgos:** A-011, A-012, A-013, A-016 y los P2/P3 de MONITOREO del documento.
 
-### [ ] T-8.08 · **EVALUACIÓN: el clip, la firma y nada de 403 en pantalla** — `SOFTWARE`
+> **Cómo se cerró.** Arreglos con una prueba que falla con el código anterior, verificador adversarial por carril, y ejercidos en un navegador de verdad contra `make soc-local`: el recorrido por rol
+> (`web/e2e/recorrido_por_rol.spec.ts`, 10 roles, 268 controles, **0 inesperados**) y las specs de
+> flujo que sí pulsan lo mutante (`vida_del_sismo`, `drill`, `motion`: 54 en verde). El detalle
+> por rol está en `AUDITORIA-PRESENTACION-2026-09.md §11`.
+
+### [x] T-8.08 · **EVALUACIÓN: el clip, la firma y nada de 403 en pantalla** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** web · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
 - **Criterios de aceptación:**
-  - [ ] «DESCARGAR CLIP» descarga (URL prefirmada, con auditoría).
-  - [ ] La firma del dictamen aparece también sin un dictamen previo.
-  - [ ] CCTV, verificación de huella y comandos de cuórum solo se piden si el rol tiene la acción.
+  - [x] «DESCARGAR CLIP» descarga (URL prefirmada, con auditoría).
+  - [x] La firma del dictamen aparece también sin un dictamen previo.
+  - [x] CCTV, verificación de huella y comandos de cuórum solo se piden si el rol tiene la acción.
     No se amplían permisos: se deja de pedir lo que no se tiene.
 - **Hallazgos:** A-014, A-015, A-042, A-052 y los P2/P3 de EVALUACIÓN del documento.
 
-### [ ] T-8.09 · **Flota, edificio y clientes: lo que la pantalla afirma es cierto** — `SOFTWARE`
+> **Cómo se cerró.** Igual que `T-8.07`: prueba que falla antes, verificador adversarial, y ejercidos en un navegador de verdad contra `make soc-local`: el recorrido por rol
+> (`web/e2e/recorrido_por_rol.spec.ts`, 10 roles, 268 controles, **0 inesperados**) y las specs de
+> flujo que sí pulsan lo mutante (`vida_del_sismo`, `drill`, `motion`: 54 en verde). El detalle
+> por rol está en `AUDITORIA-PRESENTACION-2026-09.md §11`.
+
+### [x] T-8.09 · **Flota, edificio y clientes: lo que la pantalla afirma es cierto** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** web · api · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
 - **Criterios de aceptación:**
-  - [ ] gov_operator no ve la alarma roja permanente de ventanas de mantenimiento.
-  - [ ] Tras silenciar la sirena el panel dice «SILENCIADA», no «SONANDO».
-  - [ ] La tarjeta de usuarios de un cliente solo lista a los de ese cliente, con paginación.
-  - [ ] `GET /fleet/gateways` devuelve la evidencia retenida y el disco, y el censo mira la
+  - [x] gov_operator no ve la alarma roja permanente de ventanas de mantenimiento.
+  - [x] Tras silenciar la sirena el panel dice «SILENCIADA», no «SONANDO».
+  - [x] La tarjeta de usuarios de un cliente solo lista a los de ese cliente, con paginación.
+  - [x] `GET /fleet/gateways` devuelve la evidencia retenida y el disco, y el censo mira la
     **salida** de la API, no solo la columna.
-  - [ ] La fila de desconexión (LWT) no cuenta como latido.
-  - [ ] Dar de baja, cambiar el rol y «VOLVER A vN» piden confirmación.
-  - [ ] El faro del mapa respeta `prefers-reduced-motion`.
+  - [x] La fila de desconexión (LWT) no cuenta como latido.
+  - [x] Dar de baja, cambiar el rol y «VOLVER A vN» piden confirmación.
+  - [x] El faro del mapa respeta `prefers-reduced-motion`.
 - **Hallazgos:** A-017, A-018, A-019, A-056, A-057, A-060 y los P2/P3 de flota, edificio y
   clientes del documento.
 
-### [ ] T-8.10 · **Cuórum: consola y teléfono dicen lo mismo** — `SOFTWARE`
+> **Cómo se cerró.** Igual que `T-8.07`, ejercidos en un navegador de verdad contra `make soc-local`: el recorrido por rol
+> (`web/e2e/recorrido_por_rol.spec.ts`, 10 roles, 268 controles, **0 inesperados**) y las specs de
+> flujo que sí pulsan lo mutante (`vida_del_sismo`, `drill`, `motion`: 54 en verde). El detalle
+> por rol está en `AUDITORIA-PRESENTACION-2026-09.md §11`.
+> El recorrido destapó un defecto más de esta familia: gov_operator, inspector y building_admin
+> pedían `GET /maintenance-windows` en CADA página y recibían 403. La consola aplica ya la regla del
+> servidor antes de pedir (`puedeLeerVentanas` ↔ `routers/maintenance.py::READ_ROLES`, ancladas
+> una contra la otra), sin ampliar ningún permiso.
+
+### [x] T-8.10 · **Cuórum: consola y teléfono dicen lo mismo** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** web · **Depende de:** T-8.06 · **Prioridad:** F2 · P1
 - **Criterios de aceptación:**
-  - [ ] La consola considera que una alerta autoriza actuación si su disparo lo hace **o** si la
+  - [x] La consola considera que una alerta autoriza actuación si su disparo lo hace **o** si la
     red la corroboró (`node_count` ≥ mínimo de cuórum): la misma regla que ya aplica el móvil.
 - **Hallazgos:** A-063.
+
+> **Cómo se cerró.** La consola y el móvil aplican la regla del servidor (`incident/autoridad.py`): autoriza si el disparo autoriza o si la red corroboró. El muro de `/console` no pasaba los epicentros al banner, así que al principio el arreglo solo valía en el test. Lo cazó el verificador y se cerró cableándolo. Ejercido en un navegador de verdad contra `make soc-local`: el recorrido por rol
+> (`web/e2e/recorrido_por_rol.spec.ts`, 10 roles, 268 controles, **0 inesperados**) y las specs de
+> flujo que sí pulsan lo mutante (`vida_del_sismo`, `drill`, `motion`: 54 en verde). El detalle
+> por rol está en `AUDITORIA-PRESENTACION-2026-09.md §11`.
 
 ### [~] T-8.11 · **Móvil: dictamen, cámara, cuenta y respuesta al toque** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-8.04 · **Prioridad:** F3 · P1

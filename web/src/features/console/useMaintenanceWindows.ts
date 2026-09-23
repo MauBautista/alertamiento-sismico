@@ -17,7 +17,9 @@ import {
   listWindowsMaintenanceWindowsGet,
   openWindowMaintenanceWindowsPost,
 } from "@takab/sdk";
-import type { MaintenanceWindowIn, MaintenanceWindowOut } from "@takab/sdk";
+import type { MaintenanceWindowIn, MaintenanceWindowOut, MeResponse } from "@takab/sdk";
+
+import { useSessionStore } from "../../auth/session.store";
 
 export const MAINTENANCE_POLL_MS = 30_000;
 export const MAINTENANCE_KEY = ["maintenance-windows", "active"] as const;
@@ -65,8 +67,34 @@ export interface MaintenanceData {
   openError: string | null;
 }
 
+/**
+ * [T-8.09] ¿Este rol puede LEER las ventanas? La misma regla que el servidor
+ * (`routers/maintenance.py::READ_ROLES`, anclada por
+ * `tests/api/test_maintenance_windows.py::test_READ_ROLES_es_la_regla_de_la_consola`):
+ * quien puede abrir alguna ventana, más `soc_operator` y `takab_support`. `null`
+ * mientras no hay /me: ni sí ni no.
+ *
+ * Existe porque la franja de escena pide las ventanas en CADA página, y para
+ * gov_operator, inspector y building_admin cada petición era un 403 condenado
+ * (medido en el recorrido por rol del 2026-09-23).
+ */
+export function puedeLeerVentanas(me: MeResponse | null): boolean | null {
+  if (me === null) {
+    return null;
+  }
+  return (
+    me.allowed_actions.maintenance_window === true ||
+    me.allowed_actions.platform_maintenance_window === true ||
+    me.role === "soc_operator" ||
+    me.role === "takab_support"
+  );
+}
+
 export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData {
   const queryClient = useQueryClient();
+  const puede = puedeLeerVentanas(useSessionStore((s) => s.me));
+  // Sin lectura no se pide: se declara igual que un 403, sin la petición condenada.
+  const consulta = enabled && puede === true;
 
   const active = useQuery({
     queryKey: MAINTENANCE_KEY,
@@ -80,7 +108,7 @@ export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData 
       }
       return data;
     },
-    enabled,
+    enabled: consulta,
     // Un 403 no se reintenta ni se vuelve a sondear: el alcance de un rol no
     // cambia entre dos ticks. El resto conserva el sondeo de siempre.
     retry: (count, err) => !(err instanceof MaintenanceReadForbidden) && count < 3,
@@ -119,11 +147,11 @@ export function useMaintenanceWindows(enabled: boolean = true): MaintenanceData 
 
   return {
     items: active.data?.items ?? [],
-    loading: enabled && active.isPending,
+    loading: consulta && active.isPending,
     // Se reporta AUNQUE haya datos en caché: en react-query `data` y `error`
     // conviven cuando falla un refetch de fondo.
     readError: active.error?.message ?? null,
-    forbidden: active.error instanceof MaintenanceReadForbidden,
+    forbidden: puede === false || active.error instanceof MaintenanceReadForbidden,
     updatedAt: active.dataUpdatedAt,
     refetch: () => void active.refetch(),
     close: (windowId) => close.mutate(windowId),
