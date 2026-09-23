@@ -1053,8 +1053,14 @@ pieza_apk() {
     return
   fi
   ts_apk="$(date -d "$upd" +%s 2>/dev/null || echo 0)"
-  ts_mob="$(git log -1 --format=%ct -- mobile)"
-  ultimo="$(git log -1 --format='%h %cI' -- mobile)"
+  # [T-8.13] Solo lo que ENTRA en el APK. Los flujos de Maestro, los tests y los .md
+  # viven en mobile/ pero no se empaquetan: un arreglo a un flujo (8a20709) pintaba
+  # AMARILLO un APK idéntico y mandaba a reconstruir por nada.
+  local fuera=(':(exclude)mobile/.maestro' ':(exclude)mobile/tests'
+    ':(exclude,glob)mobile/**/*.test.ts' ':(exclude,glob)mobile/**/*.test.tsx'
+    ':(exclude,glob)mobile/**/*.md')
+  ts_mob="$(git log -1 --format=%ct -- mobile "${fuera[@]}")"
+  ultimo="$(git log -1 --format='%h %cI' -- mobile "${fuera[@]}")"
   # No hay sha embebido en el APK: la fecha de instalación frente al último commit de
   # mobile/ es el único proxy honesto. La hora del teléfono se lee como hora local.
   if [ "$ts_apk" -ge "$ts_mob" ]; then
