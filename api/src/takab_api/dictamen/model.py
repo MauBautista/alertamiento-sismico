@@ -176,6 +176,27 @@ REPRODUCCION_NOTE = (
     "aquel evento; la sacudida de este inmueble NO ocurrió."
 )
 
+#: [T-8.12 · A-053] Lo que dicen la portada y el ejecutivo cuando NADIE clasificó
+#: el incidente. «Sin clasificar» no es ni «real» ni «falso positivo»: es que
+#: ninguna persona lo ha revisado todavía, y el papel no lo decide por ella. Es un
+#: aviso y vive aquí, con los demás, para que el censo de avisos impresos lo vea.
+SIN_CLASIFICAR = "SIN CLASIFICAR · ninguna persona lo ha clasificado todavía"
+
+#: [T-8.12 · A-053] Y cuando quien exporta NO PUEDE LEERLA. `incident_classifications`
+#: filtra por el tenant de la sesión SIN rama interna (migración `0055`): el
+#: superadmin que exporta el incidente de un cliente no ve la clasificación que sí
+#: existe —y con el tenant vacío la consulta ni siquiera se puede hacer: medido el
+#: 2026-09-22, `invalid input syntax for type uuid: ""`, que abortaría la
+#: exportación entera—. Imprimir «sin clasificar» ahí afirmaría algo que no se midió.
+CLASIFICACION_NO_LEGIBLE = (
+    "NO CONSTA para quien exportó este documento · su sesión no puede leer la "
+    "clasificación de este cliente"
+)
+
+#: [T-8.12 · A-150] La zona de un inmueble cuando el modelo no trae otra: la misma
+#: que el DDL pone por defecto a `sites.timezone`.
+ZONA_POR_DEFECTO = "America/Mexico_City"
+
 #: [T-7.22] Cuando la bitácora del incidente está vacía. No es lo mismo que
 #: «no pasó nada»: `incident_actions` recoge lo que hicieron el gabinete, la nube
 #: y las personas, y que no haya ni una fila es un hecho sobre el incidente que
@@ -606,9 +627,15 @@ class DictamenRow:
     dictamen_id: str
     status: str
     created_at: datetime
+    #: El `sub` de Cognito de quien firmó. Decide si el dictamen está FIRMADO y
+    #: NUNCA se imprime (`T-8.12 · A-145`): el papel dice el rol y el nombre.
     signed_by: str | None
     rule_set_version: str
     supersedes: str | None
+    #: [T-8.12 · A-145] `user_profiles.display_name` de quien firmó, si lo hay.
+    #: `None` ⇒ el FIRMÓ imprime sólo el rol: un nombre inventado sería peor que
+    #: ninguno, y el identificador de Cognito no es un nombre.
+    firmante_nombre: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1011,6 +1038,18 @@ class ReportModel:
     #: elige la del evento porque es la misma que lee la consola, y papel y
     #: pantalla no pueden discrepar sobre si lo que se enseña ocurrió.
     reproduccion: bool = False
+    #: [T-8.12 · A-053] La clasificación HUMANA vigente del incidente
+    #: (`incident_classifications`: la última que nadie sustituye). Es ADITIVA a
+    #: `reproduccion` y no la sustituye: aquélla la deriva el evento, ésta la pone
+    #: una persona, y el papel imprime las dos. `None` ⇒ nadie lo ha clasificado.
+    clasificacion: str | None = None
+    clasificacion_en: datetime | None = None
+    #: `False` ⇒ la sesión que exportó NO PUEDE leer la clasificación (ver
+    #: `CLASIFICACION_NO_LEGIBLE`). No es lo mismo que «sin clasificar».
+    clasificacion_legible: bool = True
+    #: [T-8.12 · A-150] La zona del inmueble (`sites.timezone`), para imprimir la
+    #: hora local JUNTO a la UTC. La UTC sigue siendo la de referencia.
+    zona_horaria: str = ZONA_POR_DEFECTO
     #: Prosa opcional (T-2.42). El veredicto NO sale de aquí.
     narrative: list[tuple[str, str]] = field(default_factory=list)
     narrative_provider: str | None = None

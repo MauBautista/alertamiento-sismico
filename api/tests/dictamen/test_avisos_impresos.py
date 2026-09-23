@@ -242,11 +242,26 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         frozenset({"technical"}),
     ),
     # [T-7.22] La leyenda que un papel firmado no puede callarse: el epicentro y
-    # la magnitud son los de un sismo HISTÓRICO. Solo en el pericial, que es el
-    # que lleva la §7; el ejecutivo no tiene tabla de red que rotular.
+    # la magnitud son los de un sismo HISTÓRICO.
+    #
+    # ⚠️ [T-8.12 · A-139] Iba SOLO en el pericial, con esta razón: «el ejecutivo
+    # no tiene tabla de red que rotular». La razón hablaba de la tabla y no de lo
+    # que se AFIRMA: el ejecutivo dice en su segunda frase «el sensor del inmueble
+    # midió un pico de…» y clasifica la sacudida en QUÉ SIGNIFICA — sobre un sismo
+    # que en ese inmueble no ocurrió. Va en los DOS documentos.
     "REPRODUCCION_NOTE": (
         lambda: model(reproduccion=True),
-        frozenset({"technical"}),
+        frozenset(_VARIANTES),
+    ),
+    # [T-8.12 · A-053] La clasificación HUMANA, en la portada y en el ejecutivo.
+    # «Sin clasificar» es lo que sale de un modelo sin clasificación —nadie lo ha
+    # revisado—, y no es ni «real» ni «falso positivo».
+    "SIN_CLASIFICAR": (model, frozenset(_VARIANTES)),
+    # Y la tercera cara: quien exporta NO PUEDE leerla (la RLS de la tabla filtra
+    # por el tenant de la sesión, sin rama interna). No es «sin clasificar».
+    "CLASIFICACION_NO_LEGIBLE": (
+        lambda: model(clasificacion_legible=False),
+        frozenset(_VARIANTES),
     ),
     # [T-7.22] Y la ausencia del mapa de la red, declarada en vez de dejar el
     # hueco: sin coordenadas en ninguna parte no se puede situar nada, y una caja
@@ -583,9 +598,11 @@ def test_el_espia_NO_esta_ciego() -> None:
     # no dibujar un solo anillo —todos los niveles bajo la superficie— y eso NO es
     # el caso degradado: aquel aviso dice «ni se calcula el residuo» sobre un
     # documento que imprime el residuo ocho líneas más abajo.
-    assert len(ESCENARIOS) == 47, "cambió el número de avisos declarados"
+    # 47 → 49 en `T-8.12`: las dos caras de la clasificación humana que no son
+    # una clasificación —nadie la ha puesto, y quien exporta no puede leerla—.
+    assert len(ESCENARIOS) == 49, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 46, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 48, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

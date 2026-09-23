@@ -408,3 +408,98 @@ def test_el_SVG_parte_una_PALABRA_que_no_cabe_entera() -> None:
     for renglon in renglones:
         ancho = _hoja._ancho(renglon, _hoja._MONO, _hoja._FS_VALOR, _hoja._AVANCE_MONO)
         assert ancho <= _hoja._ANCHO_VALOR
+
+
+# ───────────────── [T-8.12 · A-245] el filete del recuadro cubre TODO su texto
+
+
+def _recuadro(y0: float, renglones: int):  # noqa: ANN202
+    """Un `callout` de `renglones` renglones que entra en `y0`, con su filete y su texto."""
+    from fpdf import FPDF
+
+    from tests.documentos.cajas_de_texto import cajas_impresas
+
+    filetes: list[tuple[int, float, float]] = []
+    original = FPDF.line
+
+    def espia(self, x1, y1, x2, y2):  # noqa: ANN001, ANN202
+        if x1 == x2 == membrete.MARGIN:
+            filetes.append((self.page, min(y1, y2), max(y1, y2)))
+        return original(self, x1, y1, x2, y2)
+
+    FPDF.line = espia  # type: ignore[method-assign]
+    try:
+        with cajas_impresas() as cap:
+            pdf = membrete.MembretePDF("TKB-RECUADRO", "recuadro")
+            pdf.add_page()
+            pdf.set_y(y0)
+            pdf.callout(" ".join(f"renglón{i:03d}" for i in range(renglones * 12)))
+            pdf.output()
+    finally:
+        FPDF.line = original  # type: ignore[method-assign]
+    textos = [c for c in cap.textos if "renglón" in c.texto]
+    return filetes, textos
+
+
+def test_el_filete_del_recuadro_cubre_TODO_su_texto() -> None:
+    """Medía 8 mm fijos: con tres renglones o más la barra se quedaba a media altura."""
+    filetes, textos = _recuadro(100.0, 5)
+    assert len(textos) >= 4, "el recuadro de prueba no salió de varios renglones"
+    [(pagina, arriba, abajo)] = filetes
+    assert all(c.pagina == pagina for c in textos)
+    assert arriba <= min(c.y0 for c in textos) + 0.5
+    assert abajo >= max(c.y1 for c in textos) - 0.5, (
+        f"el filete acaba en {abajo:.1f} mm y el texto baja hasta "
+        f"{max(c.y1 for c in textos):.1f} mm"
+    )
+
+
+def test_un_recuadro_que_NO_cabe_salta_ENTERO_de_pagina() -> None:
+    """Partido, la barra se quedaba en una página y el texto seguía en la otra."""
+    tope = membrete.PAGE_H - membrete.PIE_MM
+    filetes, textos = _recuadro(tope - 10.0, 5)
+    paginas = {c.pagina for c in textos}
+    assert len(paginas) == 1, f"el texto del recuadro quedó partido en las páginas {paginas}"
+    [(pagina, _arriba, abajo)] = filetes
+    assert pagina in paginas, "el filete quedó en otra página que su texto"
+    assert abajo <= tope + 0.05
+
+
+# ───────────── [T-8.12 · 2ª vuelta] el subtítulo de la cabecera cabe en la hoja
+
+
+def _renglones_de_cabecera(subtitulo: str):  # noqa: ANN202
+    from tests.documentos.cajas_de_texto import cajas_impresas
+
+    with cajas_impresas() as cap:
+        pdf = membrete.MembretePDF("TKB-CABECERA", subtitulo)
+        pdf.add_page()
+        pdf.para("cuerpo")
+        pdf.add_page()
+        pdf.output()
+    # La cabecera es lo que queda por ENCIMA del filete, en cada página.
+    return [c for c in cap.textos if c.y1 <= membrete.CUERPO_Y - 4]
+
+
+@pytest.mark.parametrize("largo", [110, 400])
+def test_un_SUBTITULO_largo_no_se_sale_del_canto_de_la_hoja(largo: int) -> None:
+    """`cell(0, …)` no envuelve ni recorta. Medido por el verificador: con un
+    inmueble de 110 caracteres el subtítulo acababa en x = 219.8 mm, sobre una hoja
+    de 215.9, en TODAS las páginas del técnico. Primero baja el cuerpo lo justo;
+    si ni así cabe, se recorta con «…» —el nombre entero está en la portada—."""
+    nombre = ("Torre Corporativa Reforma 222 · Edificio B Norte · " * 10)[:largo]
+    subtitulo = f"DICTAMEN OPERATIVO PRELIMINAR · {nombre} (CDMX-REF-222)"
+    renglones = _renglones_de_cabecera(subtitulo)
+    assert len(renglones) >= 2, "la cabecera no se imprimió en las dos páginas"
+    borde = membrete.PAGE_W - membrete.MARGIN
+    for c in renglones:
+        assert c.x1 <= borde + 0.05, f"la cabecera acaba en x = {c.x1:.1f} mm (borde {borde})"
+        assert c.texto.startswith("DICTAMEN OPERATIVO PRELIMINAR · Torre"), c.texto
+    if largo == 400:
+        assert all(c.texto.endswith("…") for c in renglones), "recortó sin decirlo"
+
+
+def test_un_SUBTITULO_que_ya_cabia_sale_IDENTICO() -> None:
+    corto = "DICTAMEN OPERATIVO PRELIMINAR · Planta Cholula (CHL-A)"
+    [primero, *_] = _renglones_de_cabecera(corto)
+    assert primero.texto == corto

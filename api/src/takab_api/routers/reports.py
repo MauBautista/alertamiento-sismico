@@ -14,10 +14,13 @@ que la consola no le pinte un botón condenado al 403 (regla de oro 7).
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from datetime import UTC, datetime, timedelta
+from typing import Annotated
 from uuid import UUID
 
+import anyio
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -46,6 +49,22 @@ router = APIRouter()
 #: Variantes del dictamen. `technical` es pericial; `executive` es para quien decide.
 VARIANTS = ("technical", "executive")
 
+#: [T-8.12] El `origen` que el certificado del móvil estampa en `export_pdf`.
+ORIGEN_CERTIFICADO_MOVIL = "certificado_movil"
+
+
+def _origen_desde_la_red() -> None:
+    """[T-8.12 · 2ª vuelta] Desde la red, el origen es SIEMPRE la consola.
+
+    Es una dependencia y no un parámetro de consulta a propósito: quien llama por
+    HTTP no puede declararse «certificado del móvil» (`?origen=` se ignora y no
+    aparece en el OpenAPI). Sólo quien llama a `generate_report` como FUNCIÓN
+    —`mobile_incident._certificado`— lo pasa, explícito. Se DEDUCÍA del rol
+    (`None` si el rol podía exportar), y un inspector que disparaba el
+    certificado desde el móvil quedaba auditado como una exportación de consola.
+    """
+    return None
+
 
 @router.post("/incidents/{incident_id}/report", response_model=ReportOut, status_code=201)
 async def generate_report(
@@ -53,6 +72,7 @@ async def generate_report(
     variant: str = Query("technical", description="technical | executive"),
     claims: Claims = Depends(_require_report),
     conn: AsyncConnection = Depends(get_session),
+    origen: Annotated[str | None, Depends(_origen_desde_la_red)] = None,
 ) -> ReportOut:
     """Genera el PDF del incidente y lo registra como evidencia inmutable.
 
@@ -63,6 +83,21 @@ async def generate_report(
     El gate de "sin dictamen no hay PDF" se retiró: un incidente sin dictamen YA tiene
     hechos que reportar —lo que midió el sensor, quién acusó, qué estaciones
     corroboraron— y el documento lo rotula como preliminar.
+
+    [T-8.12 · A-054] Es TAMBIÉN la función que llama el certificado del móvil
+    (`routers/mobile_incident._certificado`) cuando no hay un informe posterior a
+    la firma: una sola tubería para el mismo documento, y un solo escritor de
+    `export_pdf` —lo que hace contables los dos techos del freno
+    (`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`)—. Desde allí
+    se llama como función, sin la puerta de rol del decorador: el certificado es
+    un derivado de un dictamen YA firmado y lo pide un rol con `dictamen_read`.
+    El freno sí se aplica, aquí dentro, igual que desde la consola.
+
+    [T-8.12 · A-080] Lo SÍNCRONO va a un hilo: el render de fpdf2 es CPU pura y
+    `put_object`/`presign_get` son boto3 bloqueante. La API corre con UN solo
+    worker (`deploy/cloud/docker-compose.yml`), así que en el loop congelaban el
+    WebSocket de la consola, `/health` y el sondeo que la app hace cada 5 s en
+    crisis mientras duraba el render. Es el patrón de `commands/service.py`.
     """
     settings = Settings()
     if not settings.evidence_bucket:
@@ -83,6 +118,7 @@ async def generate_report(
     # comandos: el del usuario y el del EDIFICIO (dos operadores coordinados
     # agotan el segundo sin rebasar ninguno el suyo — `RO-8.e`).
     await _freno_de_exportacion(conn, claims, str(incident["site_id"]), settings)
+    actor = f"user:{claims.sub}"
 
     model = await build_model(
         conn,
@@ -90,8 +126,9 @@ async def generate_report(
         variant=variant,
         generated_at=datetime.now(tz=UTC),
         # La lectura del miniSEED es best-effort dentro del builder: un fallo de S3
-        # degrada la sección, nunca tumba la exportación.
-        fetch_object=lambda key: get_object(settings, key),
+        # degrada la sección, nunca tumba la exportación. El builder la llama en
+        # un hilo (`_leer_objeto`, `_onda_de`).
+        fetch_object=functools.partial(get_object, settings),
         settings=settings,
     )
     if model is None:  # pragma: no cover - el SELECT de arriba ya lo cubre
@@ -123,17 +160,27 @@ async def generate_report(
         # [T-5.18] El actor va para que la fila de CRUCE de la cuota tenga
         # autor. Sin él la transición se sella igual —no se audita dos
         # veces— pero nadie sabría quién estaba exportando al agotarse.
-        actor=f"user:{claims.sub}",
+        actor=actor,
     )
     apply_narrative(model, narrative)
 
-    pdf = render(model, variant)
+    pdf = await anyio.to_thread.run_sync(render, model, variant)
     sha256 = hashlib.sha256(pdf).hexdigest()
+    # [T-8.12] La clave lleva además la HUELLA del archivo. Con sólo el sello al
+    # SEGUNDO, dos exportaciones de la misma variante en el mismo segundo —dos
+    # operadores, o el certificado del móvil que se genera justo tras la firma—
+    # caían en la MISMA clave: la segunda sobrescribía el objeto de la primera y
+    # la fila de evidencia de aquélla quedaba citando un sha256 que ya no casaba
+    # (medido: el test del certificado servía el PDF firmado bajo la clave del
+    # preliminar). Es la clase de defecto de `A-142`. El nombre sigue empezando
+    # por `report-`, que es la marca con que el backfill lo reconoce.
     key = (
         f"evidence/{incident['tenant_id']}/{incident_id}/"
-        f"report-{variant}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}.pdf"
+        f"report-{variant}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}-{sha256}.pdf"
     )
-    put_object(settings, key, pdf, content_type="application/pdf")
+    await anyio.to_thread.run_sync(
+        functools.partial(put_object, settings, key, pdf, content_type="application/pdf")
+    )
 
     ev_stmt, ev_params = q.insert_evidence(
         tenant_id=str(incident["tenant_id"]),
@@ -156,7 +203,7 @@ async def generate_report(
     await audit_async(
         conn,
         tenant_id=incident["tenant_id"],
-        actor=f"user:{claims.sub}",
+        actor=actor,
         verb="narrative_generated",
         obj=f"evidence:{evidence_id}",
         meta=narrative.provenance(),
@@ -164,9 +211,12 @@ async def generate_report(
     await audit_async(
         conn,
         tenant_id=incident["tenant_id"],
-        actor=f"user:{claims.sub}",
+        actor=actor,
         verb="export_pdf",
         obj=f"evidence:{evidence_id}",
+        # ⚠️ Un dict LITERAL y no una variable: el censo del freno
+        # (`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`) lee del
+        # árbol de sintaxis que TODO escritor de `export_pdf` lleva `site_id`.
         meta={
             "variant": variant,
             "folio": model.folio,
@@ -174,12 +224,20 @@ async def generate_report(
             # [T-5.18] El sitio, para que el techo por EDIFICIO se pueda contar
             # desde aquí sin un join. El de usuario ya salía del `actor`.
             "site_id": str(incident["site_id"]),
+            # [T-8.12 · 2ª vuelta] La cabeza de la cadena de dictámenes con que SE
+            # RENDERIZÓ este papel. El certificado del móvil la exige igual a la
+            # firma vigente (`queries/mobile.REPORT_PDF_TRAS_LA_FIRMA`): la fecha
+            # sola comparaba el `now()` de dos transacciones, y una exportación
+            # que leyó la cadena justo antes del commit de la firma quedaba
+            # fechada después con el PRELIMINAR dentro.
+            "dictamen_vigente": model.dictamens[0].dictamen_id if model.dictamens else None,
+            **({"origen": origen} if origen else {}),
         },
     )
     return ReportOut(
         evidence_id=evidence_id,
         sha256=sha256,
-        url=presign_get(settings, key),
+        url=await anyio.to_thread.run_sync(presign_get, settings, key),
         expires_in=PRESIGN_TTL_S,
     )
 
@@ -195,7 +253,8 @@ _VENTANA_S = 60.0
 #: del `site_id` que el `meta` empezó a llevar en esta misma ficha.
 #:
 #: ⚠️ [T-7.45] EL INVARIANTE QUE HACE CONTABLES ESTOS DOS NÚMEROS: `export_pdf`
-#: tiene **un solo escritor**, `generate_report`, unas líneas más arriba. Mientras
+#: tiene **un solo escritor**, `generate_report`, unas líneas más arriba —y desde
+#: `T-8.12` el certificado del móvil lo LLAMA en vez de copiarlo—. Mientras
 #: eso se cumpla, las dos consultas cuentan la misma población —las GENERACIONES—
 #: y el techo estrecho no puede rebasarse por actos que el ancho no ve.
 #:

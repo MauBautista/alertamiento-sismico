@@ -71,9 +71,11 @@ from takab_api.dictamen.model import (
     NO_CALIBRATION,
     NO_CCTV,
     NO_SPECTRUM,
+    ONDA_NO_LEIDA,
     STATUS_ACTIONS,
     lead_time_text,
 )
+from takab_api.dictamen.rotulos import FUENTE_DEL_EVENTO, SEVERIDAD, instante, rotulo
 from takab_api.documentos import fotos as fotos_mod
 from takab_api.felt import ORIGEN_INMUEBLE
 from takab_api.narrative.base import (
@@ -185,7 +187,11 @@ def absences_of(m: ReportModel) -> tuple[str, ...]:
     if m.catalog_line is None:
         gaps.append("No hay sismo de catálogo (SSN) asociable a este incidente.")
     if not m.raw_waveform:
-        gaps.append(m.raw_unavailable_reason or NO_SPECTRUM)
+        # [T-8.12 · 2ª vuelta] La MISMA derivación que la §3 (`pdf._raw_section`,
+        # T-7.38·L): con un miniSEED en la custodia que no se pudo leer, «no tiene
+        # miniSEED archivado» lo desmiente el propio papel en la §12.
+        consta = any(e.kind == "miniseed" for e in m.evidence)
+        gaps.append(m.raw_unavailable_reason or (ONDA_NO_LEIDA if consta else NO_SPECTRUM))
     if m.epicenter_lat is None or m.epicenter_lon is None:
         gaps.append("El evento no tiene epicentro localizado.")
     if not m.dictamens:
@@ -456,12 +462,21 @@ def facts_from(m: ReportModel, *, imagenes: tuple[ImagenAdjunta, ...] = ()) -> N
     counts = tuple(sorted(Counter(a.kind for a in m.actions).items()))
     return NarrativeFacts(
         folio=m.folio,
-        opened_at=m.opened_at.isoformat(),
-        severity=m.severity,
+        # [T-8.12 · 2ª vuelta] La apertura, la severidad y la fuente del epicentro
+        # viajan como las IMPRIME el papel, no como las guarda la base: la prosa
+        # —la de la IA y la determinista— las repetía tal cual, y el §16 salía con
+        # «severidad warning», «fuente: local_quorum» y un instante ISO sólo en
+        # UTC. La apertura lleva la hora local del inmueble junto a la UTC
+        # (`rotulos.instante`): lo que sale con ella es el NOMBRE de la zona
+        # («hora del centro»; su identificador IANA si no tiene nombre), que abarca
+        # estados enteros —ni coordenadas ni dirección—.
+        opened_at=instante(m.opened_at, m.zona_horaria),
+        severity=rotulo(SEVERIDAD, m.severity),
         trigger=m.trigger,
         opened_trigger=m.opened_trigger,
         state=m.state,
-        event_source=m.event_source,
+        # Sin fuente, el hecho es la AUSENCIA (`None`), no la cadena «SIN DATO».
+        event_source=rotulo(FUENTE_DEL_EVENTO, m.event_source) if m.event_source else None,
         verdict_label=m.verdict_label,
         verdict_status=m.verdict_status,
         verdict_signed=m.verdict_signed,

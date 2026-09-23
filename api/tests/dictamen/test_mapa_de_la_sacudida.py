@@ -1255,8 +1255,15 @@ def test_un_mapa_SIN_ANILLOS_pero_CON_MODELO_no_es_un_mapa_DEGRADADO() -> None:
         "no se dice POR QUÉ no hay anillos, que es lo único que evita leer el hueco "
         "como «esos umbrales no existían»"
     )
+    # [T-8.12 · A-144] Por su rótulo en castellano: el identificador `pga_trip_g`
+    # salía crudo en el papel. Lo que se vigila sigue siendo lo mismo —que el
+    # nivel suprimido se NOMBRE— y ahora además que se nombre en la lengua del papel.
+    # (Import local: uno arriba correría las líneas que cita la matriz RO-7.f.)
+    from takab_api.dictamen import rotulos
+
     for umbral in (shk.UMBRAL_TRIP, shk.UMBRAL_WATCH):
-        assert umbral in seccion, "un nivel suprimido desapareció en silencio"
+        assert rotulos.UMBRAL[umbral] in seccion, "un nivel suprimido desapareció en silencio"
+        assert umbral not in seccion, f"el nivel sale con su identificador crudo `{umbral}`"
     assert "0.0038" in seccion and "+1.35" in seccion, (
         "el modelo y el residuo que la sección negaba dejaron de imprimirse"
     )

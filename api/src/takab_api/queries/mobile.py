@@ -192,14 +192,46 @@ LATEST_SIGNED_DICTAMEN = text(
     "ORDER BY created_at DESC LIMIT 1"
 )
 
-# [T-2.12] Último PDF de reporte (evidence kind=report_pdf) del incidente — el
-# certificado que el táctico DESCARGA (dictamen_read); jamás se genera aquí un
-# PDF paralelo (el artefacto lo crea la consola en /incidents/{id}/report).
-LATEST_REPORT_PDF = text(
-    "SELECT s3_key FROM evidence_objects "
-    "WHERE incident_id = CAST(:incident AS uuid) AND kind = 'report_pdf' "
-    "ORDER BY created_at DESC LIMIT 1"
+# [T-8.12 · A-054] El dictamen VIGENTE —la cabeza de la cadena, firmada o no—.
+# El certificado sólo se puede servir si ESTA fila está firmada: una corrección
+# posterior sin firmar hace que cualquier PDF de hoy diga PRELIMINAR.
+DICTAMEN_VIGENTE = text(
+    "SELECT dictamen_id, signed_by, created_at FROM dictamens "
+    "WHERE incident_id = CAST(:incident AS uuid) ORDER BY created_at DESC LIMIT 1"
 )
+
+# [T-2.12 · reescrito en T-8.12 · A-054] El PDF que el táctico DESCARGA como
+# certificado (dictamen_read). Era «el report_pdf más reciente», sin mirar
+# cuándo: firmar no regenera el PDF, así que servía el PRELIMINAR generado antes
+# de la firma. Ahora sólo cuenta uno generado DESPUÉS de la firma vigente, y el
+# técnico antes que el ejecutivo (el certificado es el dictamen pericial). Si no
+# hay ninguno, el router lo genera con la MISMA función que la consola
+# (`routers/reports.generate_report`): jamás un PDF paralelo.
+#
+# [T-8.12 · 2ª vuelta] Y RENDERIZADO con esa firma: `created_at >= firma` comparaba
+# el `now()` de dos transacciones, y una exportación que empezó después que la de
+# la firma pero leyó la cadena antes de su commit quedaba fechada DESPUÉS con el
+# PRELIMINAR dentro. Lo que ata el papel a la firma es la cabeza de la cadena con
+# que se renderizó, que `generate_report` estampa en su `export_pdf`. La fecha se
+# queda como cota (`a.ts` usa `idx_audit_log_ts_id`: la bitácora no se recorre
+# entera por cada lectura del certificado). Un informe anterior a este campo no
+# lo lleva y no se sirve: se regenera uno, una sola vez por firma.
+REPORT_PDF_TRAS_LA_FIRMA = text(
+    "SELECT e.s3_key FROM evidence_objects e "
+    "JOIN audit_log a ON a.verb = 'export_pdf' "
+    "  AND a.object = 'evidence:' || e.evidence_id::text "
+    "  AND a.ts >= :firmado AND a.meta->>'dictamen_vigente' = :dictamen "
+    "WHERE e.incident_id = CAST(:incident AS uuid) AND e.kind = 'report_pdf' "
+    "  AND e.created_at >= :firmado "
+    "ORDER BY (e.s3_key LIKE '%/report-technical-%') DESC, e.created_at DESC LIMIT 1"
+)
+
+# [T-8.12 · A-054] Dos lecturas simultáneas del certificado no generan dos PDF:
+# candado CONSULTIVO de la transacción, por incidente. `try` y no espera: la
+# generación puede tardar más que el `lock_timeout` del request, y quien no lo
+# consigue devuelve `pdf_url=null`, y la siguiente lectura sirve el que generó la
+# otra (el móvil no sondea: vuelve a pedirlo al abrir o enfocar la pantalla).
+CANDADO_DEL_CERTIFICADO = text("SELECT pg_try_advisory_xact_lock(hashtext(:clave))")
 
 # [T-2.12] Timeline: dictamen HABITABLE firmado ⇒ el orchestrator empuja el push
 # OPS de cambio de fase que libera las pantallas 1.5.

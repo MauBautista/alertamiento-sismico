@@ -456,3 +456,126 @@ async def test_el_documento_lleva_el_NOMBRE_del_cliente_y_del_sitio(
     # Y el estado crudo del comando viaja: sin él no se puede decir POR QUÉ.
     assert rep.sitios[0].command_status == "pending"
     assert rep.stop_reason is None
+
+
+# ── [T-8.12 · A-142] La clave S3 ya no es fija: cada fila apunta a SUS bytes ──
+#
+# Cada exportación hacía `put_object` sobre `…/drills/<id>/reporte.pdf` e
+# INSERTABA una fila nueva con el sha256 del archivo. Sólo era inocuo mientras
+# los bytes no cambiaran, y cambian: la API deja exportar un simulacro EN CURSO,
+# y el cierre, un acuse tardío o un cambio de nombre mueven el contenido. La fila
+# vieja quedaba citando un sha que ya no casaba con nada, y por la regla de oro 11
+# esas filas no se podan nunca.
+
+
+async def test_DOS_exportaciones_de_contenido_distinto_NO_se_pisan(client, gateway, publisher):
+    import boto3
+
+    with mock_aws():
+        _bucket()
+        did = await _simulacro(client, publisher)
+        primera = await client.post(f"/drills/{did}/report", headers=_token())
+        assert primera.status_code == 201, primera.text
+        # Cambia el CONTENIDO: el simulacro se cierra.
+        parada = await client.post(f"/drills/{did}/stop", headers=_token())
+        assert parada.status_code == 200, parada.text
+        segunda = await client.post(f"/drills/{did}/report", headers=_token())
+        assert segunda.status_code == 201, segunda.text
+        assert primera.json()["sha256"] != segunda.json()["sha256"], (
+            "el escenario dejó de cambiar el contenido: esta prueba no mediría nada"
+        )
+
+        filas = await _sql(
+            "SELECT s3_key, sha256 FROM evidence_objects WHERE drill_id = CAST(:d AS uuid)",
+            d=did,
+        )
+        assert len(filas) == 2
+        assert filas[0].s3_key != filas[1].s3_key, "las dos exportaciones van a la MISMA clave"
+        s3 = boto3.client("s3", region_name=_REGION)
+        for fila in filas:
+            datos = s3.get_object(Bucket=BUCKET, Key=fila.s3_key)["Body"].read()
+            assert hashlib.sha256(datos).hexdigest() == fila.sha256, (
+                f"la fila de evidencia {fila.s3_key} cita un sha256 que ya no casa con su objeto"
+            )
+
+
+async def test_la_clave_S3_del_reporte_lleva_su_HUELLA(client, gateway, publisher):
+    with mock_aws():
+        _bucket()
+        did = await _simulacro(client, publisher)
+        body = (await client.post(f"/drills/{did}/report", headers=_token())).json()
+        filas = await _sql(
+            "SELECT s3_key FROM evidence_objects WHERE drill_id = CAST(:d AS uuid)", d=did
+        )
+        assert body["sha256"] in filas[0].s3_key
+
+
+# ── [T-8.12 · A-143] Con nombres largos, nada se sale del margen derecho ──────
+
+
+def test_con_nombres_LARGOS_ninguna_linea_pasa_del_MARGEN() -> None:
+    from takab_api.documentos.membrete import MARGIN, PAGE_W
+    from tests.documentos.cajas_de_texto import cajas_impresas
+
+    largo = "Torre Corporativa Reforma 222 · Edificio B Norte · Estacionamiento"
+    rep = _rep(
+        SitioReporte("Planta Cholula", commandable=True, acked=True, latency_s=4.2),
+        SitioReporte(
+            largo,
+            commandable=True,
+            acked=True,
+            latency_s=12.0,
+            aborted_at=BASE + timedelta(minutes=1),
+            abort_reason="SASMEX real · alerta sísmica recibida por el receptor WR-1 del gabinete",
+        ),
+        SitioReporte(
+            largo, commandable=True, acked=False, latency_s=None, command_status="expired"
+        ),
+        SitioReporte(
+            largo,
+            commandable=True,
+            acked=False,
+            latency_s=None,
+            command_status="rejected",
+            ack_detail="command_enabled=false · el gabinete tiene los comandos apagados",
+        ),
+        SitioReporte(largo, commandable=False, acked=False, latency_s=None),
+    )
+    with cajas_impresas() as cap:
+        render(rep)
+    tope = PAGE_W - MARGIN
+    lineas = [c for c in cap.textos if largo[:20] in c.texto or "RECHAZADO" in c.texto]
+    assert len(lineas) >= 4, "el barrido no vio las líneas por sitio"
+    fuera = [f"{c.x1:.1f} mm «{c.texto[:40]}»" for c in cap.textos if c.x1 > tope + 0.05]
+    assert not fuera, f"texto más allá del margen derecho ({tope:.1f} mm): " + " · ".join(fuera)
+    # Y el nombre llega ENTERO: envolver no puede ser recortar.
+    todo = " ".join(c.texto for c in cap.textos)
+    assert "Estacionamiento" in todo
+
+
+def test_con_un_nombre_LARGO_la_latencia_y_el_motivo_NO_se_pegan_al_nombre() -> None:
+    """[T-8.12 · 2ª vuelta] El relleno `:<34` sólo alinea lo que cabe en 34
+    caracteres: con un nombre más largo, la latencia salía pegada a él
+    («…Estacionamiento 12 s») y el motivo seguía en la misma línea («…Estacionamiento
+    EXPIRADO — …»), leyéndose como parte del nombre. Con nombre largo, el dato va en
+    su propio renglón, con la sangría del detalle; con nombre corto, como siempre."""
+    from tests.documentos.cajas_de_texto import cajas_impresas
+
+    largo = "Torre Corporativa Reforma 222 · Edificio B Norte · Estacionamiento"
+    rep = _rep(
+        SitioReporte("Planta Cholula", commandable=True, acked=True, latency_s=4.2),
+        SitioReporte(largo, commandable=True, acked=True, latency_s=12.0),
+        SitioReporte(
+            largo, commandable=True, acked=False, latency_s=None, command_status="expired"
+        ),
+    )
+    with cajas_impresas() as cap:
+        render(rep)
+    renglones = [c.texto for c in cap.textos]
+    pegados = ("Estacionamiento 12 s", "Estacionamiento EXPIRADO")
+    assert not [t for t in renglones if any(p in t for p in pegados)], renglones
+    assert "↳ 12 s" in renglones, "la latencia del nombre largo no salió en su renglón"
+    assert any(t.startswith("↳ EXPIRADO") for t in renglones), renglones
+    assert any(t.startswith("Planta Cholula") and t.endswith(" 4 s") for t in renglones), (
+        "el nombre CORTO dejó de llevar su latencia en la misma línea"
+    )

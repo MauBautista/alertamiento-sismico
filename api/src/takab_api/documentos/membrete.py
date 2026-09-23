@@ -83,7 +83,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fpdf import FPDF
-from fpdf.enums import XPos, YPos
+from fpdf.enums import MethodReturnValue, XPos, YPos
 from fpdf.fpdf import PAGE_FORMATS
 
 from takab_api.documentos.identidad import TAKAB
@@ -137,6 +137,25 @@ _PIE_TRAS_FILETE = 1.0
 PIE_MM = round(_PIE_TRAS_FILETE + sum(_PIE_RENGLONES) + _PIE_DEGRADADA + _PIE_AIRE, 4)
 #: La y donde el cuerpo empieza en cada página, bajo el filete de cabecera.
 CUERPO_Y = 32.0
+
+#: [T-8.12 · A-146] La columna de rótulos de `field()`: su ancho, el aire mínimo
+#: que deja hasta el valor, y el cuerpo con que se escribe —y hasta dónde puede
+#: bajar para que un rótulo largo quepa sin montarse sobre el valor—.
+_ROTULO_W = 52.0
+_ROTULO_AIRE = 1.5
+_ROTULO_PT = 8.0
+_ROTULO_PT_MIN = 6.5
+_ROTULO_RENGLON = 3.4
+#: [T-8.12 · 2ª vuelta] El cuerpo del subtítulo de la cabecera, y hasta dónde
+#: baja para que un nombre de inmueble largo quepa antes de recortarlo.
+_SUBTITULO_PT = 7.5
+_SUBTITULO_PT_MIN = 6.0
+#: [T-8.12 · 2ª vuelta] Lo que ocupa el título de una sección (aire, renglón y
+#: el aire tras el filete: `section()`) y lo que, como mínimo, viaja con él: la
+#: cabecera de una tabla y su primera fila de dos renglones, o tres renglones de
+#: texto. Un título sin nada debajo en su página no titula nada.
+_TITULO_SECCION_MM = 3.0 + 6.0 + 2.0
+PRIMER_BLOQUE_MM = 14.0
 #: La y del filete de la cabecera.
 _FILETE_Y = 26.0
 
@@ -248,13 +267,40 @@ class MembretePDF(FPDF):
             # vez y lo reutiliza, así que repetirlo no engorda el documento.
             self.image(str(LOGOTIPO), x=MARGIN, y=10, w=_LOGO_MM)
             self.set_y(20)
-        self.set_font(self.body_font, "", 7.5)
+        subtitulo = self._subtitulo_que_cabe()  # fija el cuerpo, como antes, ANTES del color
         self.set_text_color(*MUTED)
-        self.cell(0, 4, self.text_of(self.subtitle), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, 4, subtitulo, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(*RULE)
         self.line(MARGIN, _FILETE_Y, PAGE_W - MARGIN, _FILETE_Y)
         self.set_y(CUERPO_Y)
         self.set_text_color(*INK)
+
+    def _subtitulo_que_cabe(self) -> str:
+        """[T-8.12 · 2ª vuelta] El subtítulo DENTRO del ancho útil, y fijado su cuerpo.
+
+        `cell(0, …)` no envuelve ni recorta: con un inmueble de 110 caracteres el
+        subtítulo acababa a 219.8 mm, sobre una hoja de 215.9, en todas las
+        páginas. Mismo criterio que los rótulos de `field()`: primero se baja el
+        cuerpo lo justo; si ni al mínimo cabe, se recorta con «…» —declarado, no
+        mudo—, porque el nombre entero ya está en la portada y la cabecera es un
+        recordatorio de a qué papel pertenece la hoja. Un subtítulo que ya cabía
+        sale idéntico, byte a byte.
+        """
+        self.set_font(self.body_font, "", _SUBTITULO_PT)
+        texto = self.text_of(self.subtitle)
+        disponible = CONTENT_W - 2 * self.c_margin
+        ancho = self.get_string_width(texto)
+        if ancho <= disponible:
+            return texto
+        cuerpo = max(_SUBTITULO_PT_MIN, _SUBTITULO_PT * disponible / ancho)
+        self.set_font(self.body_font, "", cuerpo)
+        if self.get_string_width(texto) <= disponible:
+            return texto
+        # Con las fuentes core no hay «…» en latin-1: se escribe con tres puntos.
+        elipsis = "..." if self.degraded else "…"
+        while texto and self.get_string_width(texto + elipsis) > disponible:
+            texto = texto[:-1]
+        return texto.rstrip(" ·(") + elipsis
 
     #: [T-7.21] ¿El pie lleva el emisor legal? La hoja membretada en blanco lo
     #: apaga: ya imprime los CUATRO datos en el cuerpo, que es su razón de ser,
@@ -397,11 +443,30 @@ class MembretePDF(FPDF):
         if self.get_y() + alto > PAGE_H - PIE_MM:
             self.add_page()
 
-    def section(self, number: str, title: str) -> None:
+    def section(self, number: str, title: str, *, con: float = PRIMER_BLOQUE_MM) -> None:
+        """Título de sección con su filete.
+
+        [T-8.12 · A-140] Sin número, el título va SOLO. Componía `f"{number}. "`
+        siempre, y el resumen ejecutivo —que titula sin numerar— imprimía
+        «. QUÉ PASÓ», «. QUÉ SIGNIFICA»… en el papel que lee quien decide. El
+        helper de pruebas lo tenía anotado como hecho medido; nadie lo corrigió.
+
+        [T-8.12 · 2ª vuelta] El título VIAJA con su primer bloque (`con`, en mm):
+        se reserva el título y lo que le sigue ANTES de pintarlo. Se pintaba donde
+        estuviera el cursor y lo de detrás decidía solo si saltaba, así que salían
+        títulos huérfanos al pie —«7. RED DE ESTACIONES» con su mapa en la página
+        siguiente y el 40 % de la hoja en blanco; «13. CRONOLOGÍA» con toda su
+        tabla en la otra—. Quien abre con una FIGURA pasa su alto; el resto se
+        queda con `PRIMER_BLOQUE_MM`. Lo vigila
+        `tests/documentos/test_titulos_huerfanos.py`.
+        """
+        # Nunca más de lo que cabe en una página vacía: pedir más saltaría en vano.
+        self.reserva(min(_TITULO_SECCION_MM + con, PAGE_H - PIE_MM - CUERPO_Y))
         self.ln(3)
         self.set_font(self.body_font, "B", 10)
         self.set_text_color(*INK)
-        self.cell(0, 6, self.text_of(f"{number}. {title}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        rotulo = f"{number}. {title}" if number else title
+        self.cell(0, 6, self.text_of(rotulo), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_draw_color(*RULE)
         self.line(MARGIN, self.get_y(), PAGE_W - MARGIN, self.get_y())
         self.ln(2)
@@ -413,9 +478,31 @@ class MembretePDF(FPDF):
         self.set_text_color(*INK)
 
     def field(self, label: str, value: str) -> None:
-        self.set_font(self.body_font, "", 8)
         self.set_text_color(*MUTED)
-        self.cell(52, 4.8, self.text_of(label))
+        rotulo = self.text_of(label)
+        # [T-8.12 · A-146] El rótulo CABE en su columna, siempre. `cell(52, …)` no
+        # envuelve ni recorta: «CAPTURA DEL INICIO DEL REINGRESO» medía 54.4 mm y
+        # se montaba sobre el valor; «ESTACIONES QUE CONTRIBUYERON» —la palabra de
+        # la consola, que no se cambia— quedaba a 1.6 mm de él, y los rótulos del
+        # marco normativo («MARCO AL QUE EL CLIENTE DECLARA ESTAR SUJETO») medían
+        # el doble de la columna. Primero se baja el cuerpo lo justo; si ni al
+        # mínimo cabe, el rótulo ENVUELVE dentro de su columna. Un rótulo que ya
+        # cabía sale idéntico, byte a byte.
+        self.set_font(self.body_font, "", _ROTULO_PT)
+        disponible = _ROTULO_W - self.c_margin - _ROTULO_AIRE
+        ancho = self.get_string_width(rotulo)
+        cuerpo = _ROTULO_PT
+        if ancho > disponible:
+            cuerpo = max(_ROTULO_PT_MIN, _ROTULO_PT * disponible / ancho)
+            self.set_font(self.body_font, "", cuerpo)
+        # Con holgura de redondeo: el cuerpo se calculó para que el rótulo mida
+        # EXACTAMENTE lo disponible, y la vuelta por los avances de la fuente
+        # puede dar una centésima de más —medido: «CAPTURA DEL INICIO DEL
+        # REINGRESO» caía al camino envuelto cabiendo en un renglón—.
+        if self.get_string_width(rotulo) > disponible + 0.05:
+            self._field_con_rotulo_largo(rotulo, self.text_of(value), cuerpo)
+            return
+        self.cell(_ROTULO_W, 4.8, rotulo)
         self.set_font(self.mono_font, "", 8)
         self.set_text_color(*INK)
         # ⚠️ [T-7.21] `align="L"` EXPLÍCITO: `multi_cell` justifica por defecto
@@ -427,17 +514,70 @@ class MembretePDF(FPDF):
         # un dato así. Una tipografía mono justificada no es mono.
         self.multi_cell(0, 4.8, self.text_of(value), align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
+    def _field_con_rotulo_largo(self, rotulo: str, valor: str, cuerpo: float) -> None:
+        """El rótulo en varios renglones DENTRO de su columna, el valor a su lado.
+
+        Se reserva el más alto de los dos antes de escribir nada: partidos entre
+        dos páginas, el rótulo quedaría en una y su valor en la otra.
+        """
+        ancho_rotulo = _ROTULO_W - _ROTULO_AIRE
+        self.set_font(self.body_font, "", cuerpo)
+        alto_r = self.multi_cell(
+            ancho_rotulo,
+            _ROTULO_RENGLON,
+            rotulo,
+            align="L",
+            dry_run=True,
+            output=MethodReturnValue.HEIGHT,
+        )
+        self.set_font(self.mono_font, "", 8)
+        alto_v = self.multi_cell(
+            PAGE_W - 2 * MARGIN - _ROTULO_W,
+            4.8,
+            valor,
+            align="L",
+            dry_run=True,
+            output=MethodReturnValue.HEIGHT,
+        )
+        self.reserva(max(alto_r, alto_v))
+        y0 = self.get_y()
+        self.set_font(self.body_font, "", cuerpo)
+        self.set_text_color(*MUTED)
+        self.multi_cell(
+            ancho_rotulo, _ROTULO_RENGLON, rotulo, align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT
+        )
+        fondo = self.get_y()
+        self.set_xy(MARGIN + _ROTULO_W, y0)
+        self.set_font(self.mono_font, "", 8)
+        self.set_text_color(*INK)
+        self.multi_cell(0, 4.8, valor, align="L", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.set_y(max(fondo, self.get_y()))
+
     def callout(self, text: str, color: tuple[int, int, int] = MUTED) -> None:
-        """Recuadro de AUSENCIA: por qué un dato no está, en vez de un hueco mudo."""
+        """Recuadro de AUSENCIA: por qué un dato no está, en vez de un hueco mudo.
+
+        [T-8.12 · A-245] El filete medía 8 mm FIJOS, así que un aviso de tres
+        renglones o más quedaba con la barra a media altura, y si el texto saltaba
+        de página la barra se quedaba sola en la anterior. Ahora se MIDE el texto
+        (`dry_run`) y el recuadro entero se reserva: filete y texto van juntos.
+        """
         self.ln(1)
+        self.set_font(self.body_font, "", 7.5)
+        texto = self.text_of(text)
+        alto = self.multi_cell(
+            CONTENT_W - 3, 4, texto, dry_run=True, output=MethodReturnValue.HEIGHT
+        )
+        # Un aviso más alto que una página entera no cabe en ninguna: se deja
+        # partir antes que saltar en vano.
+        if alto < PAGE_H - PIE_MM - CUERPO_Y:
+            self.reserva(alto)
         y = self.get_y()
         self.set_draw_color(*color)
         self.set_line_width(0.4)
-        self.line(MARGIN, y, MARGIN, y + 8)
+        self.line(MARGIN, y, MARGIN, min(y + alto, PAGE_H - PIE_MM))
         self.set_line_width(0.2)
         self.set_x(MARGIN + 3)
-        self.set_font(self.body_font, "", 7.5)
         self.set_text_color(*color)
-        self.multi_cell(CONTENT_W - 3, 4, self.text_of(text), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.multi_cell(CONTENT_W - 3, 4, texto, new_x=XPos.LMARGIN, new_y=YPos.NEXT)
         self.set_text_color(*INK)
         self.ln(1)

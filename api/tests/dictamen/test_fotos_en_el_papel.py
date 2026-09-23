@@ -29,14 +29,17 @@ from __future__ import annotations
 import hashlib
 import io
 
+import pytest
 from PIL import Image
 from pypdf import PdfReader
 
 from takab_api.dictamen import layout
+from takab_api.dictamen import pdf as pdf_mod
 from takab_api.dictamen.model import DanoFila, FotoFila
 from takab_api.dictamen.pdf import render
 from takab_api.documentos.fotos import SIN_BLOB, preparar
 from tests.dictamen.test_pdf import _OPENED, model
+from tests.documentos.cajas_de_texto import Capturadas, cajas_impresas
 from tests.documentos.espia import espia_del_render
 from tests.documentos.test_geometria import cajas_dibujadas
 
@@ -265,3 +268,122 @@ def test_la_huella_de_CONTENIDO_no_arrastra_los_bytes() -> None:
     # Y la huella de cada derivada SÍ está: es lo que hace que el hash cambie.
     for foto in m.danos[0].fotos:
         assert foto.sha256_impreso in payload
+
+
+# ─────────────────── [T-8.12 · A-050 · A-051] nada se imprime ENCIMA de otra cosa
+#
+# Hasta aquí todo se probaba con CUATRO fotos APAISADAS: número par y proporción
+# 4:3. Los dos defectos vivían justo fuera de ese caso:
+#
+# * **A-050** — con UNA foto (o con la última de un número impar) el pie de foto
+#   se escribía con `new_y=TOP` y el cursor volvía ARRIBA del pie: el reporte
+#   siguiente, o el título «15. EVACUACIÓN OBSERVADA (CCTV)», se imprimía encima
+#   de las huellas. Es el 100 % de los incidentes reales con una foto.
+# * **A-051** — una foto de teléfono en VERTICAL (3:4) sale a 768×1024 y se
+#   imprimía a 88×117 mm con una reserva de 98. `pdf.image()` no salta de
+#   página, así que según dónde empezara la fila la foto bajaba sobre el pie.
+#
+# Ninguna guarda podía verlo: la de geometría mide operadores de DIBUJO y es
+# ciega al texto a propósito. `tests/documentos/cajas_de_texto.py` mide cada
+# renglón en el punto por el que pasa todo el texto de fpdf2.
+
+
+def _retrato(semilla: int) -> FotoFila:
+    """Una foto de teléfono en VERTICAL, 1200×1600: la que desbordaba (A-051)."""
+    crudo = _jpeg(semilla, w=1200, h=1600)
+    d = preparar(crudo)
+    medido = hashlib.sha256(crudo).hexdigest()
+    return FotoFila(
+        evidence_id=f"{semilla:08d}-aaaa-bbbb-cccc-dddddddddddd",
+        sha256_declarado=medido,
+        sha256_medido=medido,
+        sha256_impreso=d.sha256,
+        ancho=d.ancho,
+        alto=d.alto,
+        jpeg=d.jpeg,
+    )
+
+
+def test_la_guarda_de_SOLAPES_de_texto_caza_uno_plantado() -> None:
+    """No-vacuidad: dos renglones en el mismo sitio TIENEN que verse.
+
+    Sin esto, un espía que dejara de capturar —otra versión de fpdf2, otro
+    nombre del método— dejaría en verde todas las pruebas de abajo.
+    """
+    with cajas_impresas() as cap:
+        pdf = layout.TakabPDF("TKB-SOLAPE", "solape deliberado")
+        pdf.add_page()
+        pdf.set_font(pdf.body_font, "", 10)
+        pdf.set_xy(layout.MARGIN, 120)
+        pdf.cell(80, 5, pdf.text_of("15. EVACUACIÓN OBSERVADA (CCTV)"))
+        pdf.set_xy(layout.MARGIN, 121)
+        pdf.cell(80, 5, pdf.text_of("IMPRESA 0123456789abcdef"))
+        pdf.output()
+    assert Capturadas.solapes(cap.desde("15. EVACUACIÓN")), "la guarda no ve un solape plantado"
+
+
+@pytest.mark.parametrize(
+    ("fotos", "caso"),
+    [
+        (lambda: [_foto(3)], "una foto apaisada"),
+        (lambda: [_foto(3), _foto(5), _foto(7)], "tres apaisadas (impar)"),
+        (lambda: [_foto(i) for i in (3, 5, 7, 11)], "cuatro apaisadas (par)"),
+        (lambda: [_retrato(3)], "una en vertical"),
+        (lambda: [_retrato(3), _retrato(5), _retrato(7)], "tres en vertical"),
+    ],
+)
+def test_NADA_se_imprime_encima_de_otra_cosa_desde_los_DANOS(fotos, caso: str) -> None:  # noqa: ANN001
+    """Texto contra texto y texto contra foto, desde el título de la §14 al final."""
+    with cajas_impresas() as cap:
+        render(model(danos=[_dano(fotos()), _dano([_foto(13)], report_id="d-2")]))
+    desde = cap.desde("DAÑOS REPORTADOS EN CAMPO")
+    assert sum(1 for c in desde if c.clase == "imagen") >= 2, "el barrido no vio las fotos"
+    solapes = Capturadas.solapes(desde)
+    assert not solapes, f"con {caso}, se imprime encima de otra cosa: " + " · ".join(
+        f"pág. {a.pagina} «{a.texto[:30] or a.clase}» ↔ «{b.texto[:30] or b.clase}»"
+        for a, b in solapes[:4]
+    )
+
+
+def test_una_foto_en_VERTICAL_cabe_en_la_misma_caja_que_una_apaisada() -> None:
+    """Encajada en 88×88 mm conservando la proporción: nunca 117 mm de alto."""
+    with cajas_impresas() as cap:
+        render(model(danos=[_dano([_retrato(3), _foto(5)])]))
+    fotos = [c for c in cap.imagenes if c.x1 - c.x0 > 40]
+    assert len(fotos) == 2
+    for c in fotos:
+        assert c.y1 - c.y0 <= pdf_mod._FOTO_W + 0.05, f"una foto mide {c.y1 - c.y0:.1f} mm de alto"
+        assert c.x1 - c.x0 <= pdf_mod._FOTO_W + 0.05
+    retrato = fotos[0]
+    proporcion = (retrato.y1 - retrato.y0) / (retrato.x1 - retrato.x0)
+    assert proporcion == pytest.approx(1024 / 768, rel=0.01), "la foto se deformó al encajarla"
+
+
+def test_las_fotos_respetan_el_PIE_ENTRE_DONDE_ENTREN() -> None:
+    """El barrido de `test_geometria` para las figuras, hecho aquí con fotos reales.
+
+    Se hace entrar la fila de fotos —en vertical, que es la más alta, y con un
+    desajuste de huella, que alarga el pie de foto a cinco renglones— en cada
+    tramo de la mitad baja de la página. Ni la foto ni su pie pueden quedar por
+    debajo del filete del pie de página.
+    """
+    tope = layout.PAGE_H - layout.PIE_MM
+    dano = _dano([_retrato(3), _foto(5, declarada_mal=True), _retrato(7)])
+    peores: list[str] = []
+    vistas = 0
+    for y0 in range(110, int(tope) + 1, 6):
+        with cajas_impresas() as cap:
+            pdf = layout.TakabPDF("TKB-FOTOS", f"fotos entrando en y={y0}")
+            pdf.add_page()
+            pdf.set_y(float(y0))
+            pdf_mod._fotos_del_reporte(pdf, dano)
+            pdf.output()
+        for c in cap.cajas:
+            # El membrete (cabecera y pie) se imprime FUERA del cuerpo a propósito.
+            if c.clase == "texto" and (c.y0 < layout.CUERPO_Y - 0.5 or c.y0 >= tope):
+                continue
+            vistas += c.clase == "imagen"
+            if c.y1 > tope + 0.05:
+                peores.append(f"y={y0}: {c.clase} «{c.texto[:20]}» baja hasta {c.y1:.1f} mm")
+    assert vistas >= 3, "el barrido no vio las fotos"
+    assert not peores, "las fotos o su pie pisan el pie de página: " + " · ".join(peores[:4])

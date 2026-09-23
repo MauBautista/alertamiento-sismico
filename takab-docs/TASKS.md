@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **461** · `[x]` **393** · `[~]` **14** · `[ ]` **54**
+**Conteo de tareas:** total **461** · `[x]` **394** · `[~]` **14** · `[ ]` **53**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17532,18 +17532,30 @@ se registra en su RUNBOOK.
   - [ ] Flujos Maestro de recorrido para el ocupante y el táctico, en verde en el Pixel.
 - **Hallazgos:** A-021, A-022, A-023, A-024, A-062, A-234.
 
-### [ ] T-8.12 · **El PDF que se entrega** — `SOFTWARE`
+### [x] T-8.12 · **El PDF que se entrega** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** api · **Depende de:** T-8.01 · **Prioridad:** F4 · P1
 - **Criterios de aceptación:**
-  - [ ] Con una foto, con un número impar de fotos y con fotos en vertical, nada se imprime
+  - [x] Con una foto, con un número impar de fotos y con fotos en vertical, nada se imprime
     encima de otra cosa. Guardas de geometría para los tres casos.
-  - [ ] La portada y el ejecutivo imprimen la clasificación humana del incidente.
-  - [ ] Los títulos del ejecutivo salen sin el punto suelto, y ningún valor crudo sale en inglés.
-  - [ ] FIRMÓ lleva el rol y el nombre, no el identificador de Cognito. La hora local va junto a la UTC.
-  - [ ] El certificado del móvil solo sirve un informe posterior a la firma.
-  - [ ] El render no bloquea el event loop. El reporte de simulacro no sobrescribe su objeto.
-  - [ ] Diez variantes rasterizadas y revisadas a ojo, registradas en la auditoría.
+  - [x] La portada y el ejecutivo imprimen la clasificación humana del incidente.
+  - [x] Los títulos del ejecutivo salen sin el punto suelto, y ningún valor crudo sale en inglés.
+  - [x] FIRMÓ lleva el rol y el nombre, no el identificador de Cognito. La hora local va junto a la UTC.
+  - [x] El certificado del móvil solo sirve un informe posterior a la firma.
+  - [x] El render no bloquea el event loop. El reporte de simulacro no sobrescribe su objeto.
+  - [x] Diez variantes rasterizadas y revisadas a ojo, registradas en la auditoría.
 - **Hallazgos:** A-050, A-051, A-053, A-054, A-055, A-065, A-080 y los P2/P3 del PDF del documento.
+
+> **Cómo se cerró.** Cada punto con una guarda que falla con el código anterior y pasa con el
+> nuevo, y la revisión a ojo de las diez variantes rasterizadas (`auditoria/render-pdfs.sh`),
+> hecha dos veces: por el verificador del carril y por el integrador. Tres cosas que la ficha no
+> preveía: (1) ninguna guarda del repositorio podía ver un TEXTO impreso sobre otro —solo
+> figuras—, y hubo que construirla (`tests/documentos/cajas_de_texto.py`); con ella, 42 títulos
+> huérfanos al pie que nadie había visto. (2) El inglés crudo seguía en la §16 aunque la guarda de
+> rótulos pasaba: la guarda renderizaba sin narrativa, y la prosa determinista —la que sale siempre
+> que la IA está apagada o degrada— interpolaba `warning`, `local_quorum` y `gas_closed`. (3) El
+> formulario de daños de la app ofrecía la severidad «Alta» (`high`) y la API la rechazaba con 422:
+> el reporte que alimenta el dictamen no entraba. Lo cruza ahora
+> `tests/contracts/test_formulario_de_danos_movil.py`.
 
 ### [ ] T-8.13 · **Lista para presentar** — `SOFTWARE` + `GATE-AWS` + `FÍSICO`
 - **Componente:** deploy · docs · **Depende de:** T-8.02, T-8.03, T-8.04, T-8.05, T-7.28 ·

@@ -246,15 +246,17 @@ def test_el_membrete_NO_ACEPTA_un_build_que_nadie_le_pasa() -> None:
 def test_DOS_exportaciones_del_MISMO_simulacro_dan_los_MISMOS_bytes() -> None:
     """Lo que sostiene la segunda razón de la decisión 4, medido.
 
-    El reporte de simulacro se guarda bajo una clave FIJA —
+    El reporte de simulacro se guardaba bajo una clave FIJA —
     `evidence/<tenant>/drills/<id>/reporte.pdf`, en `routers/drills.py`— y cada
-    exportación **sobrescribe ese objeto** e inserta una fila de evidencia nueva
-    con el sha256 del archivo. Mientras los bytes no se muevan, las filas
-    anteriores siguen verificando contra lo que hay en esa clave. En cuanto algo
-    del pie dependa del despliegue —un `build`, la hora de generación—, la
-    primera exportación posterior a un despliegue deja a todas las filas
-    anteriores citando un sha256 que ya no casa con nada. Y por la regla de oro
-    11 esas filas no se podan nunca: se quedan ahí, inverificables.
+    exportación **sobrescribía ese objeto** e insertaba una fila de evidencia
+    nueva con el sha256 del archivo. [T-8.12 · A-142] Desde entonces la clave
+    lleva ese sha256 (`…/<sha256>/reporte.pdf`), así que una exportación de bytes
+    distintos ya no pisa a nadie; el determinismo sigue haciendo falta para que
+    dos exportaciones del MISMO contenido caigan en la MISMA clave —y no dejen
+    una fila de evidencia por cada despliegue—. Si algo del pie dependiera del
+    despliegue —un `build`, la hora de generación—, cada exportación posterior
+    produciría otro objeto del mismo simulacro sin que el contenido cambiara, y
+    por la regla de oro 11 ninguno se poda nunca.
     """
     from takab_api.drill_report import render as render_simulacro
     from tests.api.test_drill_report import _rep

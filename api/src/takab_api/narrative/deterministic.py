@@ -9,7 +9,11 @@ Si el proveedor remoto falla, degrada aquí — por eso la prosa nunca falta.
 
 from __future__ import annotations
 
+from collections import Counter
+
+from takab_api.dictamen import bitacora
 from takab_api.dictamen.model import ABSENT, num
+from takab_api.dictamen.rotulos import SEVERIDAD, rotulo
 from takab_api.narrative.base import Narrative, NarrativeFacts, NarrativeRequest
 from takab_api.narrative.prompts import SECTION_TITLES
 
@@ -28,6 +32,16 @@ _SOURCE_TEXT = {
     "incident": "el pico ya registrado en el incidente",
     "none": "ninguna medición instrumental",
 }
+
+
+# [T-8.12 · 2ª vuelta] Esta prosa ES el §16 del papel que se entrega siempre que la
+# IA está apagada o degrada, y se imprimía con los valores CRUDOS de la base:
+# «severidad warning», «fuente: local_quorum», «gas_closed ×1» y la apertura en
+# ISO y sólo en UTC. La severidad, la fuente y la apertura llegan ya en castellano
+# desde `redact.facts_from` —la IA recibe los mismos hechos y lo que recibe crudo
+# lo repite—; lo que llega con identificador (`action_counts`, el `basis` literal
+# del motor) se rotula AQUÍ, con los mismos registros que el resto del papel. Lo
+# fija `tests/dictamen/test_rotulos.py` renderizando la prosa REAL.
 
 
 def _resumen(f: NarrativeFacts) -> str:
@@ -49,7 +63,7 @@ def _resumen(f: NarrativeFacts) -> str:
     )
     return (
         f"Folio {f.folio}. El dictamen vigente es «{f.verdict_label}», {firmado}. "
-        f"El incidente se abrió con severidad {f.severity} {pico}, "
+        f"El incidente se abrió con severidad «{f.severity}» {pico}, "
         f"clasificado como {f.felt_label.lower()}. "
         f"{cierre}"
     )
@@ -78,17 +92,30 @@ def _que_paso(f: NarrativeFacts) -> str:
     else:
         partes.append("Ninguna otra estación de la red corroboró el evento.")
     if f.has_epicenter:
-        origen = f.event_source or "origen no declarado"
-        partes.append(f"El evento tiene epicentro localizado (fuente: {origen}).")
+        origen = f.event_source or "no declarado"
+        partes.append(f"El evento tiene epicentro localizado (origen del epicentro: {origen}).")
     else:
         partes.append("El evento no tiene epicentro localizado.")
     partes.append(f"Tiempo de aviso ganado: {f.lead_time}.")
     if f.catalog_line:
         partes.append(f"Correlación con catálogo: {f.catalog_line}.")
     if f.action_counts:
-        detalle = ", ".join(f"{kind} ×{n}" for kind, n in f.action_counts)
-        partes.append(f"Acciones registradas en la bitácora del incidente: {detalle}.")
+        partes.append(f"Acciones registradas en la bitácora del incidente: {_acciones(f)}.")
     return " ".join(partes)
+
+
+def _acciones(f: NarrativeFacts) -> str:
+    """`SIRENA ACTIVADA ×2, VÁLVULAS DE GAS CERRADAS ×1`, con el rótulo de la §13.
+
+    Se agrupa por RÓTULO y no por `kind`: los verbos heredados (`door_release` y
+    `door_released`) dicen lo mismo, y contarlos por separado imprimiría la misma
+    frase dos veces. Un verbo sin rótulo sale con su identificador DECLARADO, como
+    en la cronología.
+    """
+    por_rotulo: Counter[str] = Counter()
+    for kind, n in f.action_counts:
+        por_rotulo[bitacora.rotulo(kind)[0]] += n
+    return ", ".join(f"{texto} ×{n}" for texto, n in por_rotulo.items())
 
 
 def _que_se_midio(f: NarrativeFacts) -> str:
@@ -204,7 +231,12 @@ def _por_que(f: NarrativeFacts) -> str:
 
     severidad = evidencia.get("severity")
     if severidad:
-        partes.append(f"La severidad del incidente en el momento de dictaminar era {severidad}.")
+        # El `basis` viaja LITERAL —es la traza del motor—, así que aquí llega el
+        # identificador y se rotula al imprimirlo.
+        partes.append(
+            "La severidad del incidente en el momento de dictaminar era "
+            f"«{rotulo(SEVERIDAD, str(severidad))}»."
+        )
     nodos = evidencia.get("node_count")
     if nodos is not None:
         corroborado = evidencia.get("corroborated")
@@ -215,7 +247,8 @@ def _por_que(f: NarrativeFacts) -> str:
         )
     fuente = evidencia.get("pga_source")
     if fuente:
-        partes.append(f"El pico evaluado provino de {_SOURCE_TEXT.get(fuente, fuente)}.")
+        texto = _SOURCE_TEXT.get(fuente, f"«{fuente} · {bitacora.SIN_ROTULO}»")
+        partes.append(f"El pico evaluado provino de {texto}.")
     if evidencia.get("insufficient_data"):
         partes.append(
             "Sin medición instrumental ni corroboración de red, el veredicto se sostiene "

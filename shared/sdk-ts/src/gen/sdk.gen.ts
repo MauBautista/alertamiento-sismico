@@ -854,7 +854,10 @@ export const submitDamageReportIncidentsIncidentIdDamageReportsPost = <ThrowOnEr
 /**
  * Read Dictamen
  * [T-2.12 · 2.7] Certificado de reingreso (R7 ``dictamen_read``): metadatos
- * del dictamen FIRMADO + PDF presignado del reporte EXISTENTE. No genera PDF.
+ * del dictamen FIRMADO + PDF presignado del informe FIRMADO.
+ *
+ * [T-8.12 · A-054] El PDF es uno generado DESPUÉS de la firma vigente; si no lo
+ * hay, se genera aquí con la MISMA función que la consola (ver `_certificado`).
  */
 export const readDictamenIncidentsIncidentIdDictamenGet = <ThrowOnError extends boolean = false>(options: Options<ReadDictamenIncidentsIncidentIdDictamenGetData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).get<ReadDictamenIncidentsIncidentIdDictamenGetResponse, ReadDictamenIncidentsIncidentIdDictamenGetError, ThrowOnError>({
@@ -1040,6 +1043,21 @@ export const incidentNotificationsIncidentsIncidentIdNotificationsGet = <ThrowOn
  * El gate de "sin dictamen no hay PDF" se retiró: un incidente sin dictamen YA tiene
  * hechos que reportar —lo que midió el sensor, quién acusó, qué estaciones
  * corroboraron— y el documento lo rotula como preliminar.
+ *
+ * [T-8.12 · A-054] Es TAMBIÉN la función que llama el certificado del móvil
+ * (`routers/mobile_incident._certificado`) cuando no hay un informe posterior a
+ * la firma: una sola tubería para el mismo documento, y un solo escritor de
+ * `export_pdf` —lo que hace contables los dos techos del freno
+ * (`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`)—. Desde allí
+ * se llama como función, sin la puerta de rol del decorador: el certificado es
+ * un derivado de un dictamen YA firmado y lo pide un rol con `dictamen_read`.
+ * El freno sí se aplica, aquí dentro, igual que desde la consola.
+ *
+ * [T-8.12 · A-080] Lo SÍNCRONO va a un hilo: el render de fpdf2 es CPU pura y
+ * `put_object`/`presign_get` son boto3 bloqueante. La API corre con UN solo
+ * worker (`deploy/cloud/docker-compose.yml`), así que en el loop congelaban el
+ * WebSocket de la consola, `/health` y el sondeo que la app hace cada 5 s en
+ * crisis mientras duraba el render. Es el patrón de `commands/service.py`.
  */
 export const generateReportIncidentsIncidentIdReportPost = <ThrowOnError extends boolean = false>(options: Options<GenerateReportIncidentsIncidentIdReportPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<GenerateReportIncidentsIncidentIdReportPostResponse, GenerateReportIncidentsIncidentIdReportPostError, ThrowOnError>({

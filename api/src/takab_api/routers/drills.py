@@ -11,11 +11,13 @@ registra el fin (`stop`) o se deja vencer la ventana (estado derivado).
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
 
+import anyio
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import TextClause, text
 from sqlalchemy.ext.asyncio import AsyncConnection
@@ -849,10 +851,29 @@ async def drill_report(
         ],
     )
 
-    pdf = render_drill_report(rep)
+    # [T-8.12 · A-080] El render (fpdf, CPU pura) y la subida (boto3 síncrono)
+    # van a un hilo: la API corre con UN solo worker, y en el loop congelaban el
+    # WebSocket de la consola y el sondeo del móvil mientras duraban.
+    pdf = await anyio.to_thread.run_sync(render_drill_report, rep)
     sha256 = hashlib.sha256(pdf).hexdigest()
-    key = f"evidence/{row['tenant_id']}/drills/{drill_id}/reporte.pdf"
-    put_object(settings, key, pdf, content_type="application/pdf")
+    # [T-8.12 · A-142] La clave lleva la HUELLA del archivo. Era FIJA
+    # (`…/reporte.pdf`) y cada exportación la sobrescribía insertando una fila
+    # nueva: en cuanto el contenido cambiaba —la API deja exportar un simulacro
+    # en curso, y un acuse tardío o el cierre lo mueven— las filas anteriores
+    # quedaban citando un sha256 que ya no casaba con nada, y por la regla de oro
+    # 11 no se podan nunca. Direccionada por contenido, la misma huella cae en la
+    # misma clave con los mismos bytes, y una distinta no pisa a nadie.
+    #
+    # ⚠️ La huella va como CARPETA y el objeto se sigue llamando `reporte.pdf`:
+    # el worker de backfill reconoce lo que la API escribe bajo `evidence/` por el
+    # NOMBRE del objeto (`backfill/objects.py::_AJENOS_CONOCIDOS`, marca
+    # `reporte.pdf`). Con `reporte-<sha>.pdf` cada exportación habría acabado en la
+    # cola de mensajes muertos —medido: `test_el_censo_de_ajenos_se_DERIVA_del_
+    # codigo_que_escribe` en rojo—.
+    key = f"evidence/{row['tenant_id']}/drills/{drill_id}/{sha256}/reporte.pdf"
+    await anyio.to_thread.run_sync(
+        functools.partial(put_object, settings, key, pdf, content_type="application/pdf")
+    )
 
     evidence_id = (
         await conn.execute(
@@ -874,10 +895,11 @@ async def drill_report(
             "sin_gabinete": len(rep.sin_gabinete),
         },
     )
+    url = await anyio.to_thread.run_sync(presign_get, settings, key)
     return DrillReportOut(
         evidence_id=evidence_id,
         sha256=sha256,
-        url=presign_get(settings, key),
+        url=url,
         expires_in=PRESIGN_TTL_S,
         acked=len(rep.acusaron),
         not_acked=len(rep.no_acusaron),
