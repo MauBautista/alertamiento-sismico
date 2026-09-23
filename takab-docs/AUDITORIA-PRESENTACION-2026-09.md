@@ -1942,7 +1942,7 @@ prórroga para el SOC. Las demás siguen abiertas y cada una vive en la ficha qu
 | Recorrido web por rol, local | `web/e2e/recorrido_por_rol.spec.ts` | ✅ 10 roles · 268 controles · **0 inesperados** (ver §11). Occupant ❔ NO MEDIDO en local: sin pool de ocupantes, `/dev/token` responde 503 | 2026-09-23 |
 | Recorrido web por rol, nube | el mismo con `PW_BASE_URL` | ❔ NO MEDIDO | — |
 | Recorridos móviles en el Pixel | Maestro `recorrido-ocupante` / `recorrido-tactico` | ❔ NO MEDIDO | — |
-| `auth_time` al refrescar en Cognito real | fragmento de DevTools | ❔ NO MEDIDO | — |
+| `auth_time` al refrescar en Cognito real | fragmento de DevTools | ✅ se CONSERVA (1790184184 antes y después; `iat` cambia; mismo `origin_jti`) | 2026-09-23 |
 | Consola abierta más de 70 min sin logout | consola desplegada | ❔ NO MEDIDO en la nube. En local ✅: `web/e2e/sesion.spec.ts` 3/3 (token de 60 s y consola abierta 90 s ⇒ sigue dentro; aviso a 30 min del tope; tope ⇒ la entrada dice por qué) | 2026-09-23 |
 | App 70 min sin pedir login | Pixel | ❔ NO MEDIDO | — |
 | PDF: 10 variantes rasterizadas y revisadas | `auditoria/render-pdfs.sh` | ✅ sin solapes de texto (0 en las 10 variantes, medido con `cajas_de_texto.py`), clasificación en portada y ejecutivo, hora local, FIRMÓ con rol y nombre, sin inglés crudo. Revisado a ojo por el verificador y por el integrador. Pendiente: el informe de un incidente REAL de la nube con fotos y onda (ensayo 2) | 2026-09-23 |

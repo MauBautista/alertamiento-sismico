@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **461** · `[x]` **398** · `[~]` **17** · `[ ]` **46**
+**Conteo de tareas:** total **461** · `[x]` **400** · `[~]` **15** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17380,13 +17380,13 @@ se registra en su RUNBOOK.
 > `A-nnn` y su ficha de este bloque. La PR #274 entró en `main` con squash (`c5968b4`), así que el
 > hash `b804039` que citaba el plan ya no existe en `main`: el objetivo de F0 busca `(#274)`.
 
-### [~] T-8.02 · **Sesión por rol · la API impone el tope** — `SOFTWARE`
+### [x] T-8.02 · **Sesión por rol · la API impone el tope** — `SOFTWARE` · **CERRADA 2026-09-23**
 - **Componente:** api · **Depende de:** T-8.01 · **Prioridad:** F1 · P0
 - **Objetivo:** la API rechaza un token cuya sesión superó la edad máxima de su rol, contada desde
   el login real y no desde el último refresco. Brigadista e inspector 30 días, ocupante 90 días y
   el resto 24 h (`D-38`).
 - **Criterios de aceptación:**
-  - [ ] Medido antes de escribir el tope: ¿Cognito conserva `auth_time` al refrescar? Si no, el
+  - [x] Medido antes de escribir el tope: ¿Cognito conserva `auth_time` al refrescar? Si no, el
     tope se cuenta desde la primera vez que la API ve el `origin_jti` de la sesión.
   - [x] `SESSION_MAX_AGE_S` en `auth/matrix.py`, con un censo que exija exactamente los 10 roles.
     Un rol desconocido cuenta como caducado.
@@ -17406,6 +17406,11 @@ se registra en su RUNBOOK.
 > `client_admin`) para probar un 403, y un rol fuera de la matriz ya no llega a la guarda — no tiene
 > tope de sesión y se rechaza antes con 401. Se cambiaron por roles reales sin la acción, que es lo
 > que cada prueba defendía.
+
+> **Medido contra Cognito real (2026-09-23, consola desplegada, fragmento del plan F1 · Paso 0).**
+> Tras un refresco con el refresh token: `auth_time` 1790184184 → 1790184184 (el MISMO), `iat`
+> 1790187728 → 1790190004 (nuevo) y el mismo `origin_jti`. Cognito conserva la hora del login al
+> refrescar: el tope por rol se dispara como se diseñó y la alternativa por `origin_jti` no hace falta.
 
 ### [~] T-8.03 · **Sesión por rol · la consola aguanta su día (o su mes)** — `SOFTWARE`
 - **Componente:** web · sdk-ts · deploy · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
@@ -17455,7 +17460,7 @@ se registra en su RUNBOOK.
 > el Pixel: 70 minutos sin que pida login, en el perfil táctico y en el de ocupante. El botón CERRAR
 > SESIÓN de la Cuenta todavía llama al cierre local: cablearlo a `auth/logout.ts` es de `T-8.11`.
 
-### [~] T-8.05 · **Sesión por rol · Cognito, `D-38` y los documentos** — `SOFTWARE` + `GATE-AWS`
+### [x] T-8.05 · **Sesión por rol · Cognito, `D-38` y los documentos** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-23**
 - **Componente:** infra · docs · **Depende de:** T-8.02 · **Prioridad:** F1 · P0
 - **Objetivo:** que Cognito emita refresh tokens tan largos como el rol más largo de cada cliente,
   y que la decisión y su precio estén escritos.
@@ -17471,6 +17476,11 @@ se registra en su RUNBOOK.
 > **Estado (2026-09-23).** Hecho en el repositorio: `terraform test` del módulo `identity` (12 en verde;
 > la aserción nueva se probó rompiéndola). Falta el `terraform apply` (Mauricio,
 > `PENDIENTES-MAURICIO §2.15`).
+
+> **Aplicado el 2026-09-23** desde `main` (`e039802`, CI en verde tras relanzar dos jobs cancelados:
+> la guarda de rama se negó a aplicar con el último CI de `main` en «cancelled»). Plan: 0 creados,
+> 2 cambiados in-place, 0 destruidos. Verificado en Cognito: `takab-web` 30 d, `takab-mobile-tactical`
+> 30 d, `takab-mobile-occupants` 90 d; ID token 60 min en los tres. Nube desplegada en `e039802`.
 
 ### [~] T-8.06 · **Recorrido de la consola rol por rol, control por control** — `SOFTWARE`
 - **Componente:** web · **Depende de:** T-8.01 · **Prioridad:** F2 · crítica

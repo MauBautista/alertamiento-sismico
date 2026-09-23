@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-22 · **32 puntos abiertos** (§2: 13 · §3: 9 · §4: 7 · §5: 3),
+> **Última actualización:** 2026-09-22 · **31 puntos abiertos** (§2: 12 · §3: 9 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -539,7 +539,11 @@ el gasto entre clientes; no protege a la cuenta de una clave filtrada ni de un b
 coste medido —**US$ 0.0004 por informe**— el riesgo no es el uso normal, y por eso el tope es
 barato de poner y caro de no tener.
 
-### 2.15 · [`T-8.02`…`T-8.05`](TASKS.md) · La sesión por rol (`D-38`): medir, aplicar y desplegar — **antes del jueves 24**
+### 2.15 · ~~[`T-8.02`…`T-8.05`](TASKS.md) · La sesión por rol (`D-38`): medir, aplicar y desplegar~~ — ✅ **HECHO el 2026-09-23**
+
+> Medido `auth_time` (se conserva al refrescar), `terraform apply` (2 clientes in-place) y nube
+> desplegada en `e039802`, el mismo día, en ese orden. Queda la APK en el Pixel, que es del §3.8.
+
 
 Tres cosas, en este orden, el **miércoles 23 por la mañana** (la congelación es a las 18:00):
 
