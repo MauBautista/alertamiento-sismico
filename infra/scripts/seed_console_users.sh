@@ -18,6 +18,12 @@
 #
 # Uso:  AWS_PROFILE=takab-dev infra/scripts/seed_console_users.sh [rol ...]
 #       (sin args: los 6 roles de consola web)
+#
+# ⚠️ [T-8.13] Cada rol que se pasa (o los 6, sin args) se RE-SIEMBRA: contraseña
+# nueva, tenant de la flota, site_scope '*' y surface=web. Eso DESHACE los ajustes
+# de la demo: gov_operator en su tenant «Protección Civil» e inspector/
+# building_admin con surface=both (ficha T-8.13 en TASKS.md). Para dar de alta
+# un rol nuevo, pásalo SOLO a él.
 set -euo pipefail
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)"
@@ -90,11 +96,18 @@ for ROLE in "${ROLES[@]}"; do
   echo "  ✓ $ROLE  →  $EMAIL"
 done
 
+# [T-8.13] Se FUSIONA con lo guardado: el secreto es la única copia de las
+# contraseñas, y escribir solo las de esta corrida (p. ej. `… takab_support`)
+# borraba las de los demás usuarios, que siguen vivos en Cognito con la suya.
+PREV="$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region "$REGION" \
+  --query SecretString --output text 2>/dev/null || echo '{}')"
+MERGED="$(jq -c --argjson nuevos "$CREDS" '. + $nuevos' <<<"$PREV")"
+
 aws secretsmanager put-secret-value --secret-id "$SECRET_ID" --region "$REGION" \
-  --secret-string "$CREDS" >/dev/null 2>&1 ||
+  --secret-string "$MERGED" >/dev/null 2>&1 ||
   aws secretsmanager create-secret --name "$SECRET_ID" --region "$REGION" \
     --description "Usuarios de consola sembrados (T-1.62)" \
-    --secret-string "$CREDS" >/dev/null
+    --secret-string "$MERGED" >/dev/null
 
 echo
 echo "Credenciales guardadas en Secrets Manager ($SECRET_ID). Se imprimen UNA vez:"
