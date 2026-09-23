@@ -169,9 +169,14 @@ registrar() {
 # --- Credenciales AWS: se comprueban UNA vez; sin ellas, las piezas de AWS son NO MEDIDO
 AWS_OK=0
 AWS_MOTIVO=""
-if aws_cli sts get-caller-identity --query Account --output text >/dev/null 2>&1; then
+AWS_CUENTA=""
+# La cuenta ya no se tira: es lo que hace comprobable un respaldo por etiqueta («¿la
+# instancia que encontré es de ESTE entorno o de otra cuenta?»), y se pregunta igual.
+if AWS_CUENTA="$(aws_cli sts get-caller-identity --query Account --output text 2>/dev/null)" &&
+  [ -n "$AWS_CUENTA" ]; then
   AWS_OK=1
 else
+  AWS_CUENTA=""
   AWS_MOTIVO="sin credenciales AWS válidas para el perfil $AWS_PROFILE (aws sso logout && aws sso login --profile $AWS_PROFILE)"
 fi
 
@@ -187,6 +192,94 @@ if [ -z "$CONSOLA_URL" ]; then
   CONSOLA_ORIGEN="valor por defecto del plan (terraform no contestó)"
 fi
 CONSOLA_URL="${CONSOLA_URL%/}"
+
+# --- La instancia de la nube: se resuelve UNA vez y se dice POR QUÉ CAMINO ----------
+# Dos piezas necesitan saber qué máquina mirar —`pieza_compose` y, para dar con el rol,
+# `pieza_secreto_ia`— y las dos se lo preguntaban solo a terraform. Medido el
+# 2026-09-22 en la máquina del operador: con la caché de SSO rancia, `terraform
+# -chdir=… output -raw db_instance_id` muere con «InvalidGrantException» mientras
+# `aws sts get-caller-identity` y `aws ec2 describe-instances` contestan en segundos
+# con las MISMAS credenciales. Un único token caducado del proveedor de terraform
+# dejaba sin medir la instancia entera y con ella las banderas: el censo pasaba de
+# «18 VERDE · 1 NO MEDIDO» a «6 VERDE · 8 AMARILLO · 5 NO MEDIDO», y un instrumento
+# ciego se lee como un sistema enfermo.
+#
+# Terraform SIGUE siendo la fuente preferente, y no por costumbre: es la única que
+# sabe cuál es la instancia de ESTE entorno. El respaldo por etiqueta entra solo
+# cuando terraform no contesta, y con dos condiciones que son las que impiden que
+# «cómo se encuentra» cambie «qué se mide»:
+#   · la etiqueta NO se teclea aquí: se lee del propio terraform que crea la instancia
+#     (`tags = { Name = … }` de modules/database). Un literal en este fichero
+#     divergiría el día que el módulo la renombre, y entonces mediríamos otra máquina
+#     —o ninguna— sin enterarnos.
+#   · si la etiqueta la llevan DOS instancias RUNNING, eso no es una elección: es un
+#     NO MEDIDO con su evidencia. Quedarse con la primera sería inventar.
+# Y el camino se DECLARA en la evidencia de la pieza: sin eso, quien lea el informe la
+# próxima vez no puede saber si el censo midió la instancia correcta.
+INSTANCIA_ID=""     # la instancia de la nube, o vacío si no se pudo resolver
+INSTANCIA_ORIGEN="" # por qué camino se encontró; va en la evidencia
+INSTANCIA_MOTIVO="" # por qué NO hay instancia, cuando no la hay
+TF_VIVO=1           # ¿terraform llega siquiera a contestar en esta máquina? (0 = no)
+TF_MOTIVO=""        # y con qué error se quedó fuera
+
+# El nombre que terraform le pone a la instancia, leído de terraform. Vacío si el
+# módulo deja de declararlo con esa forma: entonces el respaldo no adivina, se calla.
+etiqueta_de_la_instancia() {
+  sed -n 's/^[[:space:]]*Name[[:space:]]*=[[:space:]]*"\(takab-[a-z0-9-]*-db\)"[[:space:]]*$/\1/p' \
+    infra/terraform/modules/database/main.tf 2>/dev/null | head -1
+}
+
+resolver_instancia() {
+  local tag ids n razon
+  if tf_medido db_instance_id; then
+    if [ -n "$TF_SALIDA" ]; then
+      INSTANCIA_ID="$TF_SALIDA"
+      INSTANCIA_ORIGEN="terraform output db_instance_id"
+      return 0
+    fi
+    razon="terraform publica db_instance_id VACÍO"
+  elif tf_falta_la_salida; then
+    razon="el terraform no publica la salida db_instance_id"
+  else
+    # Terraform no llegó ni a mirar la salida: init, backend, lock o credenciales. Se
+    # anota UNA vez aquí para que las piezas que vienen detrás no acusen al terraform
+    # de lo que no han comprobado (ver `pieza_bandera`, clase tf).
+    TF_VIVO=0
+    TF_MOTIVO="$(printf '%s' "${TF_ERROR:-sin detalle}" | tr -s '\n\t' '  ' | head -c 160)"
+    razon="terraform no contesta en esta máquina ($TF_MOTIVO)"
+  fi
+  tag="$(etiqueta_de_la_instancia)"
+  if [ -z "$tag" ]; then
+    INSTANCIA_MOTIVO="$razon, y el respaldo por etiqueta no sabe qué buscar: infra/terraform/modules/database/main.tf ya no declara un tag Name «takab-…-db»"
+    return 1
+  fi
+  if ! aws_medido ec2 describe-instances \
+    --filters "Name=tag:Name,Values=$tag" "Name=instance-state-name,Values=running" \
+    --query 'Reservations[].Instances[].InstanceId' --output text; then
+    INSTANCIA_MOTIVO="$razon, y $(sin_medir "ec2 describe-instances --filters Name=tag:Name,Values=$tag" "$AWS_ERROR")"
+    return 1
+  fi
+  ids="$(tr -s '\t\n ' ' ' <<<"$AWS_SALIDA" | sed 's/^ //; s/ $//')"
+  [ "$ids" = None ] && ids=""
+  n="$(wc -w <<<"$ids")"
+  if [ "$n" -eq 1 ]; then
+    INSTANCIA_ID="$ids"
+    INSTANCIA_ORIGEN="la etiqueta Name=$tag en la cuenta ${AWS_CUENTA:-?} ($AWS_REGION), porque $razon"
+    return 0
+  fi
+  if [ "$n" -eq 0 ]; then
+    INSTANCIA_MOTIVO="$razon, y NINGUNA instancia RUNNING lleva la etiqueta Name=$tag en la cuenta ${AWS_CUENTA:-?} ($AWS_REGION)"
+  else
+    INSTANCIA_MOTIVO="$razon, y la etiqueta Name=$tag la llevan $n instancias RUNNING ($ids) en la cuenta ${AWS_CUENTA:-?}: elegir una sería inventar, no medir"
+  fi
+  return 1
+}
+
+if [ "$AWS_OK" = 1 ]; then
+  resolver_instancia || true
+else
+  INSTANCIA_MOTIVO="$AWS_MOTIVO"
+fi
 
 # --- Estado compartido entre piezas ------------------------------------------------
 SALUD=""            # /api/health de la nube (pieza 1 lo llena, pieza 2 lo lee)
@@ -223,12 +316,29 @@ pieza_build() {
     return
   fi
   n="$(git rev-list --count "${build}..HEAD")"
+  # Estos dos casos eran AMARILLO —y un AMARILLO devuelve SALIDA 1— hasta el
+  # 2026-09-22. Decían lo contrario que el otro instrumento que hace ESTA MISMA
+  # pregunta con ESTA MISMA lista de rutas: `deploy/demo/goal-presentacion.sh` (A2)
+  # sourcea `rutas_que_llegan_a_la_nube` de aquí y, con el diff vacío, escribe en verde
+  # «TODO lo del repositorio está en la nube». Medido con f63b38b..db6684c (la nube
+  # contra HEAD): el diff sobre las rutas que viajan da rc=0, o sea A2 ✓ y esta pieza
+  # 🟡 sobre el mismo hecho. No divergían las listas —se comparten a propósito—, sino
+  # los VEREDICTOS, que es peor porque no hay nada que lo vigile.
+  #
+  # Se alinea con A2 y no al revés porque A2 contesta la pregunta que este censo se
+  # hace en su primera línea: ¿lo que está en código está en el sistema? Si nada de lo
+  # que la nube ejecuta cambió, la respuesta es sí. Además el amarillo era ESTRUCTURAL:
+  # con un solo commit de documentos por delante de la etiqueta ya no había forma de
+  # que `make cloud-conformidad` devolviera 0, y un color que nunca se puede apagar es
+  # exactamente lo que enseña al operador a ignorarlo. La evidencia no se toca: sigue
+  # diciendo cuántos commits de retraso hay y qué cambió. El tercer caso —cambió código
+  # que la nube ejecuta— sigue ROJO.
   # shellcheck disable=SC2046  # la lista va sin comillas a propósito: son rutas
   if git diff --quiet "${build}..HEAD" -- . ':!takab-docs'; then
-    registrar AMARILLO "$pieza" "nube $build, HEAD $head: $n commits por detrás, solo documentos (nada que la nube ejecute cambió)"
+    registrar VERDE "$pieza" "nube $build, HEAD $head: $n commits por detrás, solo documentos (nada que la nube ejecute cambió)"
   elif git diff --quiet "${build}..HEAD" -- $(rutas_que_llegan_a_la_nube); then
     tocados="$(git diff --name-only "${build}..HEAD" -- . ':!takab-docs' | cut -d/ -f1 | sort -u | tr '\n' ' ')"
-    registrar AMARILLO "$pieza" "nube $build, HEAD $head: $n commits por detrás; cambió ${tocados}— nada de lo que llega a la nube (ver rutas_que_llegan_a_la_nube)"
+    registrar VERDE "$pieza" "nube $build, HEAD $head: $n commits por detrás; cambió ${tocados}— nada de lo que llega a la nube (ver rutas_que_llegan_a_la_nube)"
   else
     tocados="$(git diff --name-only "${build}..HEAD" -- $(rutas_que_llegan_a_la_nube) | cut -d/ -f1-2 | sort -u | head -6 | tr '\n' ' ')"
     registrar ROJO "$pieza" "nube $build, HEAD $head: $n commits por detrás y cambió código que la nube ejecuta (${tocados}) → make cloud-images && make cloud-deploy (T-7.02 despliega)"
@@ -320,10 +430,11 @@ pieza_compose() {
   local id ping cmd params cmd_id status="" salida ps_json corriendo estado faltan="" mal="" sobran n_decl svc
   n_decl="$(wc -w <<<"$SERVICIOS_DECLARADOS")"
   if [ "$AWS_OK" != 1 ]; then registrar "NO MEDIDO" "$pieza" "$AWS_MOTIVO"; return; fi
-  if ! id="$(tf_out db_instance_id 2>/dev/null)" || [ -z "$id" ]; then
-    registrar "NO MEDIDO" "$pieza" "terraform output db_instance_id no contestó"
+  if [ -z "$INSTANCIA_ID" ]; then
+    registrar "NO MEDIDO" "$pieza" "$INSTANCIA_MOTIVO"
     return
   fi
+  id="$INSTANCIA_ID"
   ping="$(aws_cli ssm describe-instance-information --filters "Key=InstanceIds,Values=$id" \
     --query 'InstanceInformationList[0].PingStatus' --output text 2>/dev/null || true)"
   if [ "$ping" != "Online" ]; then
@@ -409,9 +520,9 @@ REMOTO
     case " $SERVICIOS_DECLARADOS" in *" $svc "*) ;; *) sobran="$sobran $svc" ;; esac
   done <<<"$corriendo"
   if [ -z "$faltan" ] && [ -z "$mal" ]; then
-    registrar VERDE "$pieza" "$n_decl/$n_decl declarados corriendo (imagen :${TAG_INSTANCIA:-?})${sobran:+; en la instancia sobran:$sobran}"
+    registrar VERDE "$pieza" "$n_decl/$n_decl declarados corriendo en $id (imagen :${TAG_INSTANCIA:-?})${sobran:+; en la instancia sobran:$sobran} · instancia hallada por $INSTANCIA_ORIGEN"
   else
-    registrar ROJO "$pieza" "declarados en deploy/cloud/docker-compose.yml y${faltan:+ SIN CONTENEDOR en la instancia:$faltan}${mal:+ con estado distinto de running:$mal} (imagen :${TAG_INSTANCIA:-?}) → make cloud-images && make cloud-deploy (T-7.02)"
+    registrar ROJO "$pieza" "declarados en deploy/cloud/docker-compose.yml y${faltan:+ SIN CONTENEDOR en $id:$faltan}${mal:+ con estado distinto de running:$mal} (imagen :${TAG_INSTANCIA:-?}; instancia hallada por $INSTANCIA_ORIGEN) → make cloud-images && make cloud-deploy (T-7.02)"
   fi
 }
 
@@ -434,15 +545,26 @@ pieza_test() {
 
 # --- 5 · entorno requerido y banderas ---------------------------------------------------
 pieza_env() {
-  local pieza="entorno que la nube exige" requeridos origen faltan="" n
+  local pieza="entorno que la nube exige" requeridos origen faltan="" n err detalle
+  err="$(mktemp)"
   requeridos="$(cd api && uv run python -c \
     'from takab_api.settings import REQUERIDOS_EN_PRODUCCION as R; print(" ".join(sorted(c.upper() for c in R)))' \
-    2>/dev/null || true)"
-  if [ -n "$requeridos" ]; then
-    origen="Settings.REQUERIDOS_EN_PRODUCCION ($(wc -w <<<"$requeridos") nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL"
-  else
-    origen="solo QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL (no se pudo importar takab_api.settings)"
+    2>"$err")"
+  detalle="$(tr -s '\n\t' '  ' <"$err" | tail -c 160)"
+  rm -f "$err"
+  # Sin esa lista esta pieza NO mide lo que dice medir: se quedaba en los dos nombres
+  # que trae escritos —QUEUE_URL_BACKFILL y DLQ_URL_BACKFILL— de los diez que exige la
+  # nube, y aun así registraba VERDE «todo en el heredoc». Era el fallback vestido de
+  # «ok» que este mismo fichero cita dos veces como su razón de existir (T-2.152), y el
+  # escenario no es teórico: `uv` no existe en el runner de CI y el venv de api/ no
+  # siempre está sincronizado en la máquina del operador. `pieza_test`, justo arriba,
+  # ya lo hacía bien. La evidencia dice qué no se pudo leer y con qué error.
+  if [ -z "$requeridos" ]; then
+    registrar "NO MEDIDO" "$pieza" \
+      "no se pudo LEER Settings.REQUERIDOS_EN_PRODUCCION$(command -v uv >/dev/null 2>&1 || printf ' (falta uv en el PATH)')${detalle:+: $detalle} · sin esa lista solo se habrían mirado 2 de los nombres que la nube exige, y un censo corto no falla: se calla"
+    return
   fi
+  origen="Settings.REQUERIDOS_EN_PRODUCCION ($(wc -w <<<"$requeridos") nombres) + QUEUE_URL_BACKFILL/DLQ_URL_BACKFILL"
   # La MISMA regla que api/tests/test_settings_produccion.py::_vars_del_despliegue —
   # sin anclar al inicio de línea—: takab-secrets.sh escribe sus nombres dentro de
   # un printf, no a columna cero. Anclado, DATABASE_URL salía en falso ROJO.
@@ -501,8 +623,24 @@ pieza_bandera() {
   tf)
     # Que la salida no exista no es «no sé»: es el caso que deja el despliegue
     # escribiendo un valor vacío (ver tf_obligatorio en deploy.sh). Se dice en ROJO.
+    #
+    # Pero `tf_out` devuelve EL MISMO fallo cuando terraform no ha podido ni arrancar
+    # —init, backend, lock o unas credenciales caducadas—, y eso no acusa a nadie: es
+    # la falsa alarma que este fichero ya cerró para IAM y para el secreto. Hasta hoy
+    # quedaba tapada porque sin instancia no había SSM_OK y la pieza salía antes; desde
+    # que la instancia se resuelve también por etiqueta, esta rama SÍ se alcanza con
+    # terraform muerto, y sin esto el censo saldría acusando al terraform y recetando
+    # un `make cloud-apply` que no arregla una sesión de SSO caducada.
+    #
+    # No se interpreta aquí el stderr: manda lo ya MEDIDO al resolver la instancia
+    # (`TF_VIVO`). Con la pieza corriendo suelta —el arnés— no hay medición y el valor
+    # por defecto deja el veredicto de siempre.
     if ! esperado="$(tf_out "$dato" 2>/dev/null)"; then
-      registrar ROJO "$pieza" "deploy.sh la resuelve con \$(tf $dato) y el terraform NO publica esa salida → make cloud-apply antes de desplegar"
+      if [ "${TF_VIVO:-1}" = 0 ]; then
+        registrar "NO MEDIDO" "$pieza" "deploy.sh la resuelve con \$(tf $dato) y terraform no contesta en esta máquina (${TF_MOTIVO:-sin detalle}): esto NO dice que falte la salida, dice que no se midió → refresca las credenciales (aws sso logout && aws sso login) ($ficha)"
+      else
+        registrar ROJO "$pieza" "deploy.sh la resuelve con \$(tf $dato) y el terraform NO publica esa salida → make cloud-apply antes de desplegar"
+      fi
       return
     fi
     # El valor de una salida del terraform no se imprime: `push_fcm_application_arn`
@@ -656,8 +794,13 @@ pieza_secreto_ia() {
 
   # El rol se DERIVA de la instancia, no se teclea: un literal «takab-dev-db» aquí
   # divergiría el día que el módulo lo renombre y esta pieza mediría un rol que no es.
-  if ! inst="$(tf_out db_instance_id 2>/dev/null)" || [ -z "$inst" ]; then
-    registrar "NO MEDIDO" "$pieza" "el secreto $id existe, pero terraform output db_instance_id no contestó: no sé qué rol mirar"
+  inst="${INSTANCIA_ID:-}"
+  if [ -z "$inst" ] && [ -z "${INSTANCIA_MOTIVO:-}" ]; then
+    # Nadie la resolvió antes —la pieza corre suelta, como en el arnés—: se pregunta.
+    inst="$(tf_out db_instance_id 2>/dev/null || true)"
+  fi
+  if [ -z "$inst" ]; then
+    registrar "NO MEDIDO" "$pieza" "el secreto $id existe, pero ${INSTANCIA_MOTIVO:-terraform output db_instance_id no contestó}: no sé qué rol mirar"
     return
   fi
   perfil=""
@@ -740,9 +883,9 @@ pieza_secreto_ia() {
     esac
   done
   if [ "$casa" = 1 ]; then
-    registrar VERDE "$pieza" "el secreto $id existe ($arn) y la política inline del rol $rol le concede GetSecretValue"
+    registrar VERDE "$pieza" "el secreto $id existe ($arn) y la política inline del rol $rol le concede GetSecretValue${INSTANCIA_ORIGEN:+ · rol derivado de la instancia $inst, hallada por $INSTANCIA_ORIGEN}"
   else
-    registrar ROJO "$pieza" "el secreto $id existe ($arn) pero el rol $rol NO lo alcanza: concede $(tr -s " " <<<"$concedidos") → make cloud-apply (README §4.2)"
+    registrar ROJO "$pieza" "el secreto $id existe ($arn) pero el rol $rol NO lo alcanza: concede $(tr -s " " <<<"$concedidos") → make cloud-apply (README §4.2)${INSTANCIA_ORIGEN:+ · rol derivado de la instancia $inst, hallada por $INSTANCIA_ORIGEN}"
   fi
 }
 
@@ -759,7 +902,15 @@ pieza_cola() {
   q="$(tf_json queue_urls 2>/dev/null | jq -r '.backfill // empty')"
   dlq="$(tf_json dlq_urls 2>/dev/null | jq -r '.backfill // empty')"
   if [ -z "$q" ] || [ -z "$dlq" ]; then
-    registrar "NO MEDIDO" "$pieza" "terraform output queue_urls/dlq_urls sin la clave backfill"
+    # La evidencia decía SIEMPRE «sin la clave backfill», que es una acusación concreta
+    # —y falsa— cuando lo que pasa es que terraform no arrancó. El veredicto no cambia
+    # (los dos casos son NO MEDIDO); lo que cambia es que ahora nombra la causa que se
+    # midió al resolver la instancia, en vez de inventarse una.
+    if [ "${TF_VIVO:-1}" = 0 ]; then
+      registrar "NO MEDIDO" "$pieza" "terraform no contesta en esta máquina (${TF_MOTIVO:-sin detalle}): no se pudieron leer queue_urls/dlq_urls · esto NO dice que falte la clave backfill, dice que no se midió"
+    else
+      registrar "NO MEDIDO" "$pieza" "terraform output queue_urls/dlq_urls sin la clave backfill"
+    fi
     return
   fi
   a="$(atributos_sqs "$q")"

@@ -81,14 +81,48 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
    hasta esta ficha); sin el secreto, `make cloud-conformidad` lo dice en ROJO en la
    pieza «secreto de la capa narrativa».
 
+   **4.1 son DOS órdenes distintas y confundirlas es lo que costó un día entero.**
+   Crear el secreto la primera vez y cambiarle el valor después NO se hacen con el
+   mismo comando, y el que falla lo hace **sin que se vea**:
+
+   - **Crear, una sola vez por entorno** (dev ya está creado desde el 2026-09-21):
+     `create-secret`, abajo. Con `--secret-string` puesto a un valor cualquiera: lo
+     que importa de este paso es el NOMBRE y la forma del JSON, no la clave.
+   - **Poner la clave de verdad, y rotarla siempre que toque:**
+     `bash infra/scripts/poner-clave-openrouter.sh`. Es `put-secret-value` con las
+     comprobaciones alrededor; **no crea el secreto**, así que si aún no existe hay
+     que hacer antes el `create-secret`.
+
    ```bash
-   # 4.1 · crear el secreto (una vez; el valor jamás entra en git ni en el estado
-   #       de terraform, por eso lo crea una persona y no el IaC)
+   # 4.1.a · crear el secreto (UNA VEZ por entorno; el valor definitivo no se pone
+   #         aquí, lo pone 4.1.b. Por eso lo crea una persona y no el IaC: ni el
+   #         valor ni su rotación pueden vivir en el estado de terraform)
    aws secretsmanager create-secret --profile takab-dev --region us-east-2 \
      --name takab/dev/openrouter \
      --description 'Clave de OpenRouter para la capa narrativa del dictamen (T-7.26)' \
      --secret-string '{"api_key":"sk-or-v1-..."}'
 
+   # 4.1.b · poner la clave, y el MISMO comando para rotarla. Se lee por /dev/tty:
+   #         no entra en git, ni en los argumentos, ni en el historial de la shell.
+   #         Comprueba la sesión antes de pedirla, se niega si no hay terminal, y
+   #         verifica después que LastChangedDate se movió de verdad.
+   bash infra/scripts/poner-clave-openrouter.sh
+   ```
+
+   ⚠️ **Las dos trampas que este párrafo enseñaba hasta el 2026-09-22**, medidas el
+   día que se cobraron —cada dictamen salió con prosa determinista durante 24 h y
+   nadie tenía dónde enterarse—:
+
+   1. **`create-secret` NO actualiza un secreto que ya existe.** Devuelve
+      `ResourceExistsException` y **no escribe nada**. O sea que rotar la clave con
+      4.1.a es creerla puesta y dejar la vieja corriendo. Para eso está 4.1.b.
+   2. **El marcador de posición de este README acabó DENTRO del secreto**,
+      haciéndose pasar por clave: `sk-or-v1-...` está ahí arriba como ejemplo y se
+      tecleó tal cual. Hoy lo caza `_tiene_forma_de_clave` antes de abrir el socket,
+      con un código propio (`ClaveSinForma`) distinto del 401 — pero el camino que lo
+      provocó seguía escrito aquí, y por eso 4.1.a ya no pretende poner la clave.
+
+   ```bash
    # 4.2 · conceder la LECTURA a la instancia. Sin este apply el despliegue
    #       "enciende" la IA y la nube sigue escribiendo prosa determinista:
    #       GetSecretValue responde AccessDenied y resolve_api_key degrada.
@@ -111,7 +145,7 @@ son dos `env_file` distintos en `docker-compose.yml` y no uno con override.
    del segundo (`make cloud-apply`, que no arregla unas credenciales caducadas): un
    censo que acusa de lo que no comprobó enseña al operador a ignorar el rojo.
 
-   El nombre `takab/dev/openrouter` del paso 4.1 tiene que ser el de
+   El nombre `takab/dev/openrouter` del paso 4.1.a tiene que ser el de
    `local.openrouter_secret_id` (`infra/terraform/envs/dev/main.tf`): es el que
    construye el ARN del permiso y el que `deploy.sh` exporta. Y el campo del JSON es
    `api_key` y no otro: es el que lee `resolve_api_key`
@@ -187,9 +221,17 @@ una estación.
 
 ### 5. Medir la latencia de la capa narrativa (T-7.26)
 
-`openrouter_timeout_s` vale **8.0 s** y ese número no se inventa: se mide contra el
+`openrouter_timeout_s` vale **30.0 s** y ese número no se inventa: se mide contra el
 proveedor real, con el modelo que el despliegue tiene puesto y desde la instancia, que
 es la que paga la red. Hay una medición tras cada cambio de modelo.
+
+**Valía 8.0 s hasta el 2026-09-22, y esa cifra era falsa desde el primer dictamen con
+fotografías.** Lo subió `D-37` con lo que esta herramienta midió sobre
+`google/gemini-2.5-flash-lite`: sin fotografías p50 2 595 ms, pero **con seis
+fotografías p50 13 686 ms y máximo 20 604 ms**, o sea que 8 s sobraba para el dictamen
+corriente y **cortaba siempre** el que lleva daños — el único en el que alguien lee la
+prosa. Los 8.0 estuvieron puestos desde `T-2.42` sin que nadie los midiera nunca: es
+exactamente el número que esta sección existe para no volver a inventar.
 
 ```bash
 make cloud-medir-latencia-ia                                   # 5 rondas × 2 brazos
@@ -206,10 +248,14 @@ Tres cosas que el script hace a propósito y conviene no deshacer:
 
 1. **Mide con un tope ALTO propio** (`--tope-medicion`, 90 s), que vive sólo dentro del
    proceso de medición. No se puede medir a través del guardia que se está validando:
-   con el tope de producción puesto, toda llamada más lenta que 8 s deja de ser una
+   con el tope de producción puesto, toda llamada más lenta que los 30 s deja de ser una
    latencia y pasa a ser una degradación con `latency_ms = None`, o sea que se borra
-   exactamente la cola que se quiere ver. La conclusión sería «nunca pasa de 8 s»:
-   cierta por construcción y falsa en el mundo.
+   exactamente la cola que se quiere ver. La conclusión sería «nunca pasa de 30 s»:
+   cierta por construcción y falsa en el mundo. Los 90 s **siguen valiendo con el tope
+   en 30** —dan 3× de margen sobre él y 4,4× sobre el peor viaje medido (20 604 ms), que
+   es de sobra para ver la cola—; lo que hay que recordar es que ese margen era 11× y ya
+   no lo es, así que un modelo mucho más lento pide subir `--tope-medicion` antes de
+   creerse el veredicto.
 2. **Cuenta el catálogo aparte.** `build_narrative` pregunta SIEMPRE si el modelo admite
    imágenes (`D-32`), también en un incidente sin fotos, y eso es un `GET /models` que
    se recuerda por proceso: la primera exportación después de cada despliegue lo paga
