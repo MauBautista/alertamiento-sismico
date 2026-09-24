@@ -255,6 +255,11 @@ curl -s http://<ip-del-gabinete>:8080/api/status | jq '{tier: .last_tier, relés
 
 **Qué se hace.** Activar el radio WR-1. El contacto seco cierra el GPIO del gabinete.
 
+> ⚠️ **Con 2 minutos de calma después del acto 2** (desde que el panel volvió a `normal`). El
+> gabinete cierra el episodio tras 90 s sin movimiento (`T-7.49`); antes de eso, el WR-1 hereda
+> la identidad del golpe y la nube ESCALA el incidente del acto 2 en vez de abrir uno SASMEX.
+> Pasó en el ensayo 2, con 81 s: ver el Registro. `guion.sh` lo avisa y, si pasa, lo diagnostica.
+
 **Qué tiene que pasar, y en qué orden:**
 
 1. **La sirena suena** — reflejo local, sin pasar por la nube ni por la red.
@@ -567,25 +572,69 @@ los dos como `reproduccion` por Mauricio desde la consola** (lo confirmó el 202
 
 ---
 
-### Ensayo **2 de 2** · PENDIENTE
+### Ensayo **2 de 2** · 2026-09-24 · acto 3 en ✗ **por el orden de los actos, no por una avería**
 
-**Sin datos: no se ha corrido.** Es lo que le falta a `T-7.28` para poder cerrarse, junto con las
-capturas, el vídeo y el veredicto de los flujos. La tabla se pega **tal como la saca el guion**
-(`REGISTRO · pega esto en …`); no se rellena a mano ni se anticipa.
+**Ensayo del 2026-09-24T20:07:28Z · corrida `20260924T195548Z`.**
 
-Lo que esta segunda corrida tiene que resolver, sacado de lo que enseñó la primera:
+| Acto | Duración | Veredicto | Qué midió la máquina |
+|---|---|---|---|
+| 0 · Preflight | 0:08 | ✓ | 13 ✓ |
+| 1 · El SOC operando normal | 1:52 | ✓ | nivel normal · relés en reposo · 451244 paquetes/310 huecos |
+| 2 · Movimiento aislado, SIN señal del WR-1 | 0:34 | ✓ | incidente 431c6fc9 · 0 actuaciones |
+| 3 · El pulso del WR-1 | 2:06 | ✗ | 0 ✓ · 1 ✗ |
+| 4 · Después de la sacudida | 7:00 | ✓ | 3 ✓ · 0 ✗ |
 
-- [ ] **El acto 4 no puede durar 47 minutos.** Pre-cargar el reporte de daños y dejar el incidente
-      listo para firmar; en vivo, sólo la firma y el PDF.
-- [ ] **El golpe del acto 2 tiene que pasar de `watch`.** La franja exige **dos canales** sobre el
-      disparo, no el pico de uno: comprueba `tier` en el panel ANTES de ir a la consola.
-- [ ] **La limpieza va dentro del guion**, y clasificando **los dos** incidentes. La de la primera
-      corrida se hizo cuatro horas tarde y dejó uno sin nombrar.
-- [ ] **Segunda medición del acta del reflejo.** Los 0,22 ms son 22× más rápidos que los 4,96 ms
-      del 2026-09-12 sin un cambio que lo explique: hasta repetirlo, no se cita ante un cliente.
-- [ ] **Anotar si el PDF salió con prosa redactada o con `NARRATIVA DEGRADADA`.** De la primera
-      corrida no quedó registrado, y es lo único que acreditaría que la capa narrativa recién
-      arreglada produjo algo.
+**Por qué el acto 3 salió en ✗** (del registro de transiciones del panel, `GET /api/status`):
+
+| UTC | Transición | `event_id` |
+|---|---|---|
+| 19:58:00 | acto 2 · `normal → watch` (`local_threshold`, PGA 0,029 en `ENN`) | `39d73508…` |
+| 19:58:02 | `watch → normal` | — |
+| 19:59:23 | acto 3 · `normal → evacuate_or_hold` (**`sasmex`**) | **`39d73508…`, el MISMO** |
+
+El WR-1 se pulsó **81 s** después de que el golpe volviera a `normal`, y el gabinete cierra el
+episodio tras **90 s** de calma (`episode_quiet_s`, `T-7.49`): le puso al pulso la identidad del
+golpe. La nube hace UPSERT por esa identidad y **escaló** el incidente del acto 2 (`431c6fc9`) a
+SASMEX —severidad y disparador—, sin abrir otro ni cambiar su apertura. `--check` busca un
+incidente `sasmex` ABIERTO después de empezar el acto, no lo encontró y cortó ahí: no llegó a medir
+la fase de la app ni el push. **El Pixel sí mostró la crisis** (lo vio Mauricio).
+Consecuencia: esta corrida dejó **un solo incidente**, `431c6fc9`, no dos.
+
+**Lo que ese orden arrastra, y que un cliente vería** (del PDF
+`evidencia/report-technical-20260924T200614Z-…pdf`, 7 páginas):
+
+- **Sin push nuevo al escalar.** La cronología (§13) trae las notificaciones del golpe (19:58:00,
+  correo y push) y ninguna a las 19:59:23. Con el teléfono bloqueado, el SASMEX no lo despierta.
+- **La prosa de la IA atribuye la sirena al umbral local** y no nombra SASMEX; y afirma que el
+  veredicto fue «operación normal porque el evento no fue originado por SASMEX» — una causa que no
+  existe y que desmiente la portada («escaló a SASMEX»). Un lector concluiría que una estación sola
+  acciona la sirena, que es justo lo que `T-2.32` prohíbe.
+- Menores, del papel: el arribo «−2,6 s» (negativo, sin explicar), `pue-pruebas-01` encima de
+  `site-dev` en el mapa de la red, la escala «0.0152355 km» del croquis, y fragmentos de UUID en
+  QUIÉN (`OPERADOR a1ebe580`, `push:parallel:<uuid>`).
+
+**Arreglado el mismo día, en el guion:** avisa de los 2 minutos antes del acto 3 y, si el pulso se
+suma al incidente anterior, lo dice con esas palabras en vez de «el pulso no viajó (¿modo prueba
+armado? ¿gabinete sin nube?)», que eran dos causas falsas (`test_guion_demo.py`). Lo demás es
+producto y va a fichas después de la presentación.
+
+Lo que esta segunda corrida tenía que resolver, sacado de lo que enseñó la primera — y qué dio:
+
+- [x] **El acto 4 no puede durar 47 minutos.** **7:00** en esta corrida, con el reporte de daños
+      desde el Pixel, la firma del inspector y el PDF.
+- [ ] **El golpe del acto 2 tiene que pasar de `watch`.** Sigue en `watch`: el panel registró
+      PGA 0,029 en UN canal (`ENN`, «cautela en 1 sensor(es)»). La franja exige **dos canales**
+      sobre el disparo: hay que golpear más seco y mirar `tier` en el panel antes de seguir.
+- [~] **La limpieza va dentro del guion.** CERRAR ALERTA llegó entre 15 y 35 min después del pulso
+      (a las 20:14 UTC seguía enclavada con la sirena energizada; a las 20:34, ya no), y el incidente que hay que clasificar es UNO,
+      `431c6fc9`, por la escalada del acto 3.
+- [x] **Segunda medición del acta del reflejo:** **0,18 ms** (`latencies.reflex_s` del panel tras
+      el pulso, presupuesto 100 ms). Cuadra con los 0,22 ms de la corrida 1: el valor raro era el
+      de 4,96 ms. Aun así se cita como «muy por debajo de 100 ms», no con decimales.
+- [x] **Prosa redactada, no `NARRATIVA DEGRADADA`:** el PDF lleva `Narrativa: openrouter` y las
+      seis secciones «REDACTADO CON ASISTENCIA DE IA». ⚠️ Pero en ESTA corrida la prosa atribuye
+      la sirena al umbral local (ver arriba): la capa redacta, y redacta sobre un incidente mal
+      formado por el orden de los actos.
 
 ---
 
