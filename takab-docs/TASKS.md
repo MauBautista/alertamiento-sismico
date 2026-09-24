@@ -17626,7 +17626,9 @@ se registra en su RUNBOOK.
     Civil (demo)» (`eb71a49f-…`), inspector y building_admin con el sitio `site-dev`
     (`d1000000-…`). `seed_console_users.sh` borraba del secreto las contraseñas de los demás
     usuarios al sembrar uno solo; ahora las fusiona.*
-  - [ ] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+  - [x] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+    *`d5af54e5` y `b420daaa` como `reproduccion`, desde la consola (confirmado el 2026-09-24).*
+  - [x] La APK release en el Pixel y sus seis flujos Maestro en verde (2026-09-23; auditoría §10).
   - [x] La guía de la demostración explica la sesión del día (`GUIA-DEMOSTRACION-POR-ROLES` §0·bis).
   - [ ] Pase final por rol en la nube y en el Pixel; ensayo 2 registrado.
   - [ ] `goal-presentacion.sh` devuelve 0 y hay un tag de congelación.

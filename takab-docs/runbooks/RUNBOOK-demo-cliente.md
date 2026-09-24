@@ -553,7 +553,8 @@ porque su *platform application* sólo se crea con la clave de firma de APNs.
 
 **Pendiente de esta corrida — son DOS incidentes, no uno.** Esta línea decía «el incidente
 `b420daaa`» y se quedaba corta: la corrida abrió también el del **acto 2**, que está en la tabla
-de aquí arriba. Los dos siguen **`in_review` y SIN CLASIFICAR** (comprobado el 2026-09-22):
+de aquí arriba. Los dos seguían **`in_review` y SIN CLASIFICAR** el 2026-09-22. ✅ **Clasificados
+los dos como `reproduccion` por Mauricio desde la consola** (lo confirmó el 2026-09-24):
 
 | Incidente | De dónde salió | Cómo se clasifica |
 |---|---|---|
