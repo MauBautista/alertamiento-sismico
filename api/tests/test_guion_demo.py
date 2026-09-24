@@ -364,6 +364,30 @@ def test_un_incidente_VIEJO_no_cuenta_como_el_pulso_de_hoy(sitio_demo, panel, ad
     assert "no llegó ningún incidente 'sasmex'" in r.stdout
 
 
+def test_un_pulso_SUMADO_al_incidente_del_acto_2_se_diagnostica_y_no_se_da_por_bueno(
+    sitio_demo, panel, adb_falso
+) -> None:
+    """[T-8.13] Ensayo 2 (2026-09-24): el WR-1 se pulsó 81 s después de que el
+    golpe del acto 2 volviera a `normal`. El gabinete cierra el episodio tras 90 s
+    de calma (T-7.49), así que le puso al pulso la identidad del golpe y la nube
+    ESCALÓ el incidente del acto 2 a SASMEX en vez de abrir uno. El guion decía
+    «el pulso no viajó (¿modo prueba armado? ¿gabinete sin nube?)» — dos causas
+    falsas — y quien conducía no sabía qué repetir."""
+    url, _ = panel
+    sitio_demo.execute(
+        "INSERT INTO incidents "
+        "(tenant_id, site_id, event_uuid, trigger, severity, state, opened_at) "
+        "VALUES (%s, %s, gen_random_uuid(), 'sasmex', 'critical', 'in_review', "
+        "now() - interval '3 minutes')",
+        (TENANT_D, SITIO_D),
+    )
+    r = correr("--check", url, adb_falso)
+    assert r.returncode != 0, "un pulso que no abrió incidente propio NO es un acto 3 en verde"
+    assert "se SUMÓ al incidente" in r.stdout, r.stdout
+    assert "2 min de calma" in r.stdout
+    assert "el pulso no viajó" not in r.stdout, "la causa que imprimía era falsa"
+
+
 def test_un_argumento_desconocido_no_hace_nada_y_lo_dice(panel, adb_falso) -> None:
     url, _ = panel
     r = correr("--despliega-todo", url, adb_falso)

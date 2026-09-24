@@ -15368,7 +15368,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 >
 > api 4166 · mobile 728 · 23 mutaciones dirigidas, 23 rojas.
 
-### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · CORRIDA 1 DE 2 HECHA el 2026-09-22 (29 ✓ · 0 ✗) · falta la SEGUNDA, más capturas, vídeo y veredicto de flujos — todo ello exige persona y gabinete**
+### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · CORRIDA 1 DE 2 HECHA el 2026-09-22 (29 ✓ · 0 ✗) · CORRIDA 2 DE 2 HECHA el 2026-09-24 (acto 3 en ✗ por el ORDEN de los actos: el WR-1 a 81 s del golpe se sumó a su episodio) · faltan capturas y vídeo**
 - **Componente:** todas · **Depende de:** T-7.20, T-7.22 · **Prioridad:** F7 · alta
 - **Objetivo:** que la presentación se haya ejecutado dos veces entera antes de tener un
   cliente delante, con tiempos, capturas y un plan para cada cosa que puede fallar.
@@ -15377,7 +15377,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     clasifica `reproduccion` y queda como historial honesto.
     **CORRIDA 1 DE 2 HECHA** el 2026-09-22 (`20260922T180248Z`): **29 ✓ · 0 ✗**, con el WR-1
     real, el gabinete y el Pixel. Tiempos y hallazgos en `RUNBOOK-demo-cliente.md § Registro`.
-    Falta la segunda, y clasificar `b420daaa` como `reproduccion`.
+    **CORRIDA 2 DE 2 HECHA** el 2026-09-24 (`20260924T195548Z`): acto 3 en ✗ porque el WR-1 se
+    pulsó 81 s después de que el golpe del acto 2 volviera a `normal` y el gabinete lo juntó a su
+    episodio (90 s, `T-7.49`); la nube ESCALÓ el incidente del acto 2 en vez de abrir uno SASMEX.
+    Acto 4 en 7:00 (contra 47). Registro, PDF y hallazgos en `RUNBOOK-demo-cliente.md § Registro`.
+    Los dos incidentes de la corrida 1 y el único de la corrida 2 (`431c6fc9`) están clasificados
+    `reproduccion`.
     ⚠️ **Tres cosas que la primera corrida enseñó y que la segunda tiene que tener delante:**
       · **Dura una hora, y eso no cabe en una demostración.** 59 min, de los que **47 son el
         acto 4**. Hay que pre-cargar el reporte de daños y enseñar en vivo sólo la firma y el
@@ -17626,7 +17631,9 @@ se registra en su RUNBOOK.
     Civil (demo)» (`eb71a49f-…`), inspector y building_admin con el sitio `site-dev`
     (`d1000000-…`). `seed_console_users.sh` borraba del secreto las contraseñas de los demás
     usuarios al sembrar uno solo; ahora las fusiona.*
-  - [ ] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+  - [x] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+    *`d5af54e5` y `b420daaa` como `reproduccion`, desde la consola (confirmado el 2026-09-24).*
+  - [x] La APK release en el Pixel y sus seis flujos Maestro en verde (2026-09-23; auditoría §10).
   - [x] La guía de la demostración explica la sesión del día (`GUIA-DEMOSTRACION-POR-ROLES` §0·bis).
   - [ ] Pase final por rol en la nube y en el Pixel; ensayo 2 registrado.
   - [ ] `goal-presentacion.sh` devuelve 0 y hay un tag de congelación.
