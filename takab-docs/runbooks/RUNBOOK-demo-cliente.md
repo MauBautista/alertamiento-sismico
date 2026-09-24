@@ -52,22 +52,11 @@ que resetear el gabinete y volver a empezar el acto, con el cliente delante. De 
 > [`T-7.28`] El origen es la auditoría [`INFORME-V1-COMERCIAL §3`](../INFORME-V1-COMERCIAL.md),
 > que **congela a propósito lo que encontró el 2026-09-02** y por eso no se edita. Ésta es su
 > versión operativa: se lee antes de cada demostración y **sí se actualiza**, porque entre aquella
-> fecha y hoy se cerraron las fases F1 a F6 enteras y **varias de sus trece filas razonan sobre
+> fecha y hoy se cerraron las fases F1 a F6 enteras y **cinco de sus trece filas razonan sobre
 > cosas que ya no son verdad**. Una lista de advertencias que envejece hace el daño al revés: te
 > deja pidiendo perdón por lo que ya funciona, delante del cliente.
->
-> **Aquí ya no se teclea CUÁNTAS son, y ésa es la corrección del 2026-09-22.** Hasta hoy el
-> preámbulo decía «**cinco** de sus trece filas» y el cierre «las **ocho** restantes». Cerraba en
-> trece, así que la resta no delataba nada — pero el reparto estaba mal por los dos lados: la
-> tabla de abajo tenía ya SEIS filas (y una de ellas, la del mini-ShakeMap, **ni siquiera sale
-> del §3**), y entre «las ocho que siguen vivas **tal cual**» iba la de la IA, cuyo recambio
-> —«la IA está construida y apagada»— este mismo documento acababa de declarar falso **cinco
-> líneas más arriba**.
-> Un censo que se lleva con un número acaba divergiendo de lo que cuenta. Desde hoy **las trece
-> filas están enumeradas una por una** entre las dos listas de esta sección: si una no aparece en
-> ninguna, es que nadie la ha mirado, y eso sí se ve.
 
-### Lo que la auditoría prohibía y **ya se puede decir** (verificado el 2026-09-22)
+### Lo que la auditoría prohibía y **ya se puede decir** (verificado el 2026-09-21)
 
 | Antes se prohibía porque… | Qué cambió | Qué se puede decir hoy |
 |---|---|---|
@@ -75,9 +64,7 @@ que resetear el gabinete y volver a empezar el acto, con el cliente delante. De 
 | los sitios simulados eran **visualmente idénticos** a los reales | `T-6.04` **cerrada** el 2026-09-10: `SiteLabel` es la única forma de pintar un nombre de sitio y la marca DEMO llega a todo | se puede enseñar el mapa poblado. La marca la pone el componente, no la memoria de quien enseña. |
 | la sección de espectro **salía vacía siempre** porque el worker que archiva la onda no estaba desplegado | `T-7.02` **cerrada** el 2026-09-12 (el worker corre en la nube) y `T-7.38/39` construyeron el espectrograma | el dictamen técnico trae el espectro cuando hay registro archivado. **Sigue sin llamarse «el espectrograma del sismo» a la ligera:** es del registro de ESTE edificio. |
 | la magnitud y el epicentro **no se contrastaban** con ninguna fuente | `T-7.25` **cerrada** el 2026-09-21: consulta a USGS con procedencia y hora | se puede decir que el sistema consulta la fuente oficial tras el evento **y que registra qué preguntó y cuándo**. Lo que el sistema afirma sigue siendo lo que midió en el edificio. |
-| no había mapa de sacudida — ⚠️ **esta fila NO sale del §3**: allí el mini-ShakeMap sólo aparece en el §5, y se anota para que no entre en el reparto de las trece | `T-7.24` **cerrada** el 2026-09-21 (mini-ShakeMap, `D-08`) | se puede enseñar el mapa por evento. **Y con él llega una prohibición nueva: la de abajo.** |
-| «le llega una **notificación** al teléfono» estaba en simulado | **medido en el ensayo del 2026-09-22**: el aviso salió `sent`, no `simulated`; el ARN de FCM sale del terraform y la instancia lo trae | se puede decir que **la notificación a Android es real y se entrega con la pantalla bloqueada**. ⚠️ **iOS sigue en cero**: su *platform application* sólo se crea con la clave de firma de APNs. Y **SMS y WhatsApp siguen simulados** — esa mitad de la fila original no ha cambiado |
-| *«La IA nos ayuda a decidir»* iba con el recambio **«la IA está construida y apagada»** | `T-7.26` **cerrada** el 2026-09-22 (`D-37`): encendida en la nube de desarrollo con `google/gemini-2.5-flash-lite`, y redactando prosa de verdad desde esa misma mañana | **del ❌ no se mueve nada: la IA jamás decide.** Lo que ya no se puede decir es el ✅: «está apagada» era prudente el 2026-09-02 y hoy es **falso dos veces** —está encendida y además redacta—. La frase buena es la de la tabla de abajo. **Esta fila estaba hasta hoy entre «las que siguen vivas tal cual»**, que es el daño al revés que esta sección existe para evitar |
+| no había mapa de sacudida | `T-7.24` **cerrada** el 2026-09-21 (mini-ShakeMap, `D-08`) | se puede enseñar el mapa por evento. **Y con él llega una prohibición nueva: la de abajo.** |
 
 ### Las filas NUEVAS que F5 y F6 trajeron
 
@@ -90,35 +77,14 @@ que resetear el gabinete y volver a empezar el acto, con el cliente delante. De 
 
 ### Lo que la auditoría prohibía y **sigue prohibido** (no se ha movido)
 
-Éstas son las filas del [`INFORME-V1-COMERCIAL §3`](../INFORME-V1-COMERCIAL.md) **que no ha
-tocado nadie**, enumeradas por su ❌ para poder contarlas de un vistazo contra las trece del
-informe (las otras seis están en la tabla de «ya se puede decir»; la del mini-ShakeMap no cuenta
-porque no sale del §3):
-
-1. *«El sistema cierra la válvula de gas, retorna los ascensores y libera las puertas.»*
-2. *«Si el gabinete se apaga, la sirena suena igual por hardware.»*
-3. *«En cuánto tiempo le tardan en acusar sus brigadistas: aquí está el número.»*
-4. *«Restauramos la base en menos de una hora, está medido.»*
-5. *«El sistema cumple con la norma X.»*
-6. *«Sus datos no salen de México / no los comparte con nadie.»*
-7. *«Le programo el simulacro y suena solo a las 11:00.»*
-
-Las dos que más cerca están de colarse en esta demostración, con su razón:
+Las ocho filas restantes de [`INFORME-V1-COMERCIAL §3`](../INFORME-V1-COMERCIAL.md) siguen vivas
+tal cual. Las dos que más cerca están de colarse en esta demostración:
 
 - *«Si el gabinete se apaga, la sirena suena igual por hardware.»* — **`G-04` sigue abierto desde
   el hito de la Fase 1.** La ruta eléctrica está diseñada y decidida; no está construida.
 - *«El sistema cierra la válvula de gas, retorna los ascensores y libera las puertas.»* — en la
   unidad de referencia están cableados **sirena y estrobo**. Lo demás se acredita canal por canal
   en la puesta en marcha de cada inmueble.
-
-**Y las dos MITADES que siguen prohibidas de filas que la tabla de arriba da por superadas.** Se
-apuntan aquí porque son justo lo que se pierde al mover una fila entera de cubo:
-
-- De *«Le llega un SMS / un WhatsApp / una notificación al teléfono»* sólo se ha caído la
-  notificación, **y sólo en Android**: **SMS y WhatsApp siguen simulados**, e **iOS sigue en
-  cero** hasta que exista la clave de firma de APNs.
-- De *«La IA nos ayuda a decidir»* sólo se ha caído el ✅: **la IA sigue sin decidir nada**, por
-  diseño, y hay una prueba que se pone roja el día que alguien le añada un campo de veredicto.
 
 ---
 
@@ -128,28 +94,21 @@ apuntan aquí porque son justo lo que se pierde al mover una fila entera de cubo
 AWS_PROFILE=takab-dev bash deploy/demo/guion.sh --preflight
 ```
 
-Sale `0` cuando **no hay ningún ✗**. Cada ✗ es algo que hace que la demostración falle **sin dar
-un error a la vista**, que es justo lo que no se puede permitir delante de un cliente — y por eso
-un ✗ **aborta** el ensayo de `--full` antes de que nadie toque el radio.
+Sale `0` solo si **todo** está en orden. Cada ✗ es algo que hace que la demostración falle **sin
+dar un error a la vista**, que es justo lo que no se puede permitir delante de un cliente:
 
-> ⚠️ **Aquí ponía «sale `0` solo si TODO está en orden», y era falso.** No todo lo que mira es un
-> ✗: hay comprobaciones que salen en **ámbar (`•`)**, y el ámbar **no cambia el código de salida
-> ni detiene nada** — en `deploy/demo/guion.sh`, `aviso()` incrementa `AVISOS` y no `ROJOS`, y
-> `full()` sólo aborta con `[ "$ROJOS" -gt "$ACTO_R0" ]`. La columna del medio dice cuál es cuál,
-> porque la diferencia es exactamente lo que se ve o no se ve con el cliente delante.
-
-| Lo que mira | Si está mal | Por qué, si está mal, no se nota |
-|---|---|---|
-| modo prueba del WR-1 **desarmado** | ✗ | armado, el pulso se queda en el gabinete: suena la sirena y **no publica a la nube**. La consola sigue en reposo y parece que el radio no llegó |
-| sin **enclavado** vivo | ✗ | enganchado de la prueba anterior, el acto 3 no se distingue del acto 2 |
-| **relés en reposo** y cadena sana | ✗ | con un relé ya accionado, el acto 2 no puede enseñar «nada se movió» |
-| **sin simulacro** en curso | ✗ | la consola pintaría la franja de simulacro encima de la demostración |
-| el gabinete **ve la nube** | ✗ | habría sirena y **ningún incidente** en la consola |
-| algo que **suene** (relé de sirena o voceo) | ✗ | el acto 3 no se oiría. El `•` de esta fila no es un fallo: **declara** que el voceo por el jack está encendido y que va a sonar por el altavoz del gabinete |
-| **modo demostración apagado** ([`D-27`](../DECISIONES-MAURICIO.md)) | ✗ | suprime comandos firmados y avisos, y todo contesta `201` igual |
-| **destinatarios propios** | ✗ · pero **`•`** si el sitio no tiene cascada | con terceros, la cascada le escribiría a alguien de fuera un correo que dice ALERTA SÍSMICA. **Sin cascada ninguna sale ámbar y no detiene**, y entonces el acto 3 no le escribe a nadie: si la cascada es parte de lo que se enseña, este `•` hay que tratarlo como un ✗ |
-| **Pixel por USB, app instalada y token vivo** | ✗ | el teléfono no recibe nada aunque todo lo demás esté perfecto |
-| **sin incidentes abiertos** en el sitio | **`•`** — avisa y **sigue** | el acto 4 trabajaría sobre el incidente viejo… **y el preflight sale `0` igual**. Junto con el de la cascada, es el ámbar que puede arruinar un acto entero, así que **léelo tú**: el guion no te va a parar por él |
+| Lo que mira | Por qué, si está mal, no se nota |
+|---|---|
+| modo prueba del WR-1 **desarmado** | armado, el pulso se queda en el gabinete: suena la sirena y **no publica a la nube**. La consola sigue en reposo y parece que el radio no llegó |
+| sin **enclavado** vivo | enganchado de la prueba anterior, el acto 3 no se distingue del acto 2 |
+| **relés en reposo** y cadena sana | con un relé ya accionado, el acto 2 no puede enseñar «nada se movió» |
+| **sin simulacro** en curso | la consola pintaría la franja de simulacro encima de la demostración |
+| el gabinete **ve la nube** | habría sirena y **ningún incidente** en la consola |
+| algo que **suene** (relé de sirena o voceo) | el acto 3 no se oiría |
+| **modo demostración apagado** ([`D-27`](../DECISIONES-MAURICIO.md)) | suprime comandos firmados y avisos, y todo contesta `201` igual |
+| **destinatarios propios** | la cascada le escribiría a un tercero un correo que dice ALERTA SÍSMICA |
+| **Pixel por USB, app instalada y token vivo** | el teléfono no recibe nada aunque todo lo demás esté perfecto |
+| **sin incidentes abiertos** en el sitio | el acto 4 trabajaría sobre el incidente viejo |
 
 > **La red.** El guion busca el gabinete en `192.168.1.0/24`, que es la red donde se va a
 > **instalar** — y donde los dos dispositivos están desde el 2026-09-21: el cerebro en
@@ -255,11 +214,6 @@ curl -s http://<ip-del-gabinete>:8080/api/status | jq '{tier: .last_tier, relés
 
 **Qué se hace.** Activar el radio WR-1. El contacto seco cierra el GPIO del gabinete.
 
-> ⚠️ **Con 2 minutos de calma después del acto 2** (desde que el panel volvió a `normal`). El
-> gabinete cierra el episodio tras 90 s sin movimiento (`T-7.49`); antes de eso, el WR-1 hereda
-> la identidad del golpe y la nube ESCALA el incidente del acto 2 en vez de abrir uno SASMEX.
-> Pasó en el ensayo 2, con 81 s: ver el Registro. `guion.sh` lo avisa y, si pasa, lo diagnostica.
-
 **Qué tiene que pasar, y en qué orden:**
 
 1. **La sirena suena** — reflejo local, sin pasar por la nube ni por la red.
@@ -333,21 +287,6 @@ botón para salir de esa pantalla, con una franja roja que le recuerda que la al
 3. **El inspector firma** el dictamen en la consola.
 4. **El reporte** se genera con los datos y las imágenes recogidas.
 
-> ⚠️ **El paso 4 puede quedarse callado casi medio minuto, y desde hoy más que antes.** El tope
-> de la redacción asistida subió de **8 s a 30 s** el 2026-09-22
-> ([`D-37`](../DECISIONES-MAURICIO.md)) porque con 8 s el dictamen **con fotografías se cortaba
-> siempre** —y es el único en el que alguien lee la prosa—. Con seis fotografías se midieron
-> **13,7 s** de mediana y **20,6 s** el peor viaje (cinco muestras: el p95 y el máximo son el
-> mismo dato, así que la cola no está caracterizada). Y **son DOS viajes bajo el mismo tope**, no
-> uno: el catálogo de modelos, que se pide en **toda** exportación, y la generación; el catálogo
-> se recuerda por proceso, así que **la primera exportación después de cada despliegue lo paga
-> entero**.
->
-> Dilo antes de que lo pregunten —*«está redactando el informe; tarda unos segundos»*—, porque
-> treinta segundos de pantalla quieta con un cliente delante se leen como que se colgó. Si se
-> pasa del tope, el papel **sale igual** con el texto determinista y **lo declara en su pie**:
-> eso es el `Plan B · B3`, no un fallo.
-
 **Cómo se acredita el reporte:**
 
 ```bash
@@ -369,27 +308,13 @@ mobile/.maestro/run.sh 03-dictamen-liberacion.yaml
 ## Limpieza — **parte del guion, no del después**
 
 ```bash
-curl -X POST -H "X-Takab-Pin: <PIN>" http://<ip-del-gabinete>:8080/api/reset   # suelta el enclavado (sin el PIN: 401; mejor el botón CERRAR ALERTA del panel)
+curl -X POST http://<ip-del-gabinete>:8080/api/reset          # suelta el enclavado
 ```
 
-Y en la consola: **clasificar como `reproduccion` TODOS los incidentes que abrió la corrida** (ver
-el aviso de la cabecera: `prueba` también cierra, pero dice otra cosa). Eso es lo que los cierra, y
-es la vía correcta: deja `closed_at`, escribe la acción y audita el verbo. Sin esto quedan contando
-como sismos reales en las métricas del sitio, que es exactamente la clase de dato sucio que el
-sistema promete no tener.
-
-⚠️ **Son al menos DOS, y hasta hoy aquí ponía «el incidente», en singular.** Una corrida completa
-abre el aviso instrumental del **acto 2** (`local_threshold`) **y** el pulso del **acto 3**
-(`sasmex`): el ensayo del 2026-09-22 abrió exactamente esos dos y el § Registro sólo nombró el del
-acto 3, así que el del acto 2 se quedó sin clasificar, contando como un evento instrumental real.
-No se ve —nadie echa de menos un incidente que el guion nunca nombró— y `deploy/demo/guion.sh`
-también lo dice en singular en su limpieza («clasifica el incidente»). **La lista no te la da el
-guion: sácala de la cola del sitio en la consola** antes de dar la sesión por terminada.
-
-> Si se te pasan, el TTL de revisión (`incident_review_ttl_s`, 6 h de fábrica) los cierra solos con
-> causa `review_ttl`. La tabla es append-only, así que clasificarlos después sigue funcionando; lo
-> que se pierde es la traza de que los cerró **una persona**, que es justo lo que se enseña cuando
-> alguien audita el historial del sitio.
+Y en la consola: **clasificar el incidente como `reproduccion`** (ver el aviso de la cabecera:
+`prueba` también cierra, pero dice otra cosa). Eso es lo que lo cierra, y es la vía correcta: deja
+`closed_at`, escribe la acción y audita el verbo. Sin esto queda contando como un sismo real en
+las métricas del sitio, que es exactamente la clase de dato sucio que el sistema promete no tener.
 
 ⚠️ **Aquí había un `seed_staging_incident.sh reset` y se quitó** (`T-7.52`). Ese arnés es de los
 E2E móviles, no de la demostración, y cerraba **todos** los incidentes abiertos del sitio sin hora
@@ -443,29 +368,8 @@ que no ocurrió es la entrega con la pantalla apagada, que es la mitad buena del
 clasifica, no firma, no cambia una alerta— así que sin ella el dictamen sale completo, con su
 veredicto y todos sus números, sólo que con la prosa determinista.
 
-**Y no hay que explicarlo: el papel lo dice.** Imprime `NARRATIVA DEGRADADA · <razón>`, y la
-razón manda a mirar **TRES** sitios distintos — no dos, como decía este runbook hasta el
-2026-09-22:
-
-| Lo que imprime el pie del dictamen | Qué pasó | Dónde se mira |
-|---|---|---|
-| «el proveedor de redacción **no respondió** (`<excepción>`)» | no hubo respuesta: no llegó a contestar | la red, el cable |
-| «el proveedor de redacción **no aceptó la clave** (`HTTP 401`)» | contestó, y lo que contestó es que la credencial no vale | permisos y cuota **en OpenRouter** |
-| «redacción asistida encendida pero **la clave no se pudo leer** (`<código>`)» | **ni siquiera se salió a la red** | **dentro del secreto**, no en el proveedor |
-
-La tercera es la que faltaba, y es justo la que mordió. Su código es **`ClaveSinForma`**: el
-secreto trae `api_key`, pero su valor no tiene forma de clave — el marcador de posición
-`sk-or-...` de la documentación, pegado tal cual. Por la misma rama salen **`SecretoSinApiKey`**
-(el secreto se leyó y no trae `api_key`) y el código de AWS, p. ej. **`AccessDeniedException`**
-(el rol no puede leer el secreto).
-
-⚠️ **Por qué importa la distinción, con el hecho que la pagó.** Hasta `T-7.26` (2026-09-22) el
-tercer caso salía **disfrazado del segundo**: el marcador de posición provocaba un 401 real de
-OpenRouter y el papel decía «no aceptó la clave» — cierto, y apuntando al sitio equivocado. La
-capa narrativa llevaba **desde el 2026-09-21 sin redactar un solo párrafo** y este runbook
-mandaba a revisar permisos y cuotas del proveedor mientras el problema estaba dentro del secreto.
-Y no lo delataban las dos superficies que deberían: el censo comprueba que el secreto **exista** y
-que el rol pueda **leerlo**, no lo que hay dentro.
+**Y no hay que explicarlo: el papel lo dice.** Imprime `NARRATIVA DEGRADADA · <razón>`, y la razón
+distingue «el proveedor no respondió» de «no aceptó la clave», que mandan a mirar sitios distintos.
 
 > «La redacción asistida no contestó, y el informe lo dice en su pie. Fíjense en lo que no cambió:
 > el veredicto, la clasificación y las cifras son los mismos. La IA aquí redacta; no decide. Hay
@@ -488,166 +392,8 @@ como está; si la abres sin red, cae al respaldo solo.
 
 ## Registro
 
-### Ensayo **1 de 2** · 2026-09-22 · corrida `20260922T180248Z` — `29 ✓ · 0 ✗`
-
-**Primera corrida cronometrada de `guion.sh --full`** (`T-7.28`), con el WR-1 real, el gabinete
-de Puebla y el Pixel. Preflight: **13 ✓**.
-
-| Acto | Duración | Veredicto | Qué midió la máquina |
-|---|---|---|---|
-| 0 · Preflight | 0:07 | ✓ | 13 ✓ |
-| 1 · El SOC operando normal | 0:59 | ✓ | nivel `normal` · relés en reposo · **135 910 paquetes / 0 huecos** |
-| 2 · Movimiento aislado, SIN señal del WR-1 | 1:45 | ✓ | incidente `d5af54e5` · **0 actuaciones** |
-| 3 · El pulso del WR-1 | 9:44 | ✓ | 6 ✓ · 0 ✗ |
-| 4 · Después de la sacudida | 46:57 | ✓ | 3 ✓ · 0 ✗ |
-
-> **De qué reloj son estas duraciones.** De la máquina que corrió `guion.sh --full`, y son
-> tiempos de **representación**: cuánto se tardó en ejecutar cada acto delante de quien miraba.
-> **No son latencias del sistema** — ésas las mide el propio sistema y están en las filas de
-> abajo.
-
-**Lo que el sistema midió de sí mismo:**
-
-- **Acta del reflejo: 0,22 ms** (presupuesto 100 ms). ⚠️ El 2026-09-12 fueron **4,96 ms**, así
-  que son **22× más rápido de un día para otro**. Pasa de sobra en los dos casos, pero una
-  mejora de ese orden sin un cambio que la explique **merece una segunda medición antes de
-  citarse ante un cliente**: si resultara un artefacto, es justo el número que luego nadie
-  puede defender.
-- **Relés `siren` y `strobe` accionados**, acusados por el propio gabinete.
-- **La app derivó `phase=alert_active`** — la pantalla de crisis es lo que tocaba.
-- **El aviso al teléfono salió `sent`, no `simulated`.** Ver abajo: esto cambia lo que se puede
-  prometer.
-- **PDF de 7 páginas con 2 imágenes distintas**, sobre un incidente con **1 fotografía** de
-  brigada (`report-technical-20260922T185707Z.pdf`).
-
-**Cronología que el panel conserva:**
-
-```
-18:04:53  normal → watch              (local_threshold)  ┐ acto 2
-18:05:02  watch  → normal                                 │ dos golpes
-18:05:03  normal → watch                                  │
-18:05:08  watch  → normal                                 ┘
-18:14:13  normal → evacuate_or_hold   (sasmex)            ← acto 3 · el pulso
-18:14:13  evacuate_or_hold → normal   (local_threshold)
-22:24:00  ACCIÓN reset (vía lan)
-```
-
-#### Lo que esta corrida enseñó, y hay que tener delante en la segunda
-
-**⚠️ Dura una hora, y eso no cabe en una demostración.** 59 minutos en total, y **47 de ellos
-son el acto 4** — la foto en el Pixel, el dictamen firmado en la consola y la generación del
-PDF. Ningún cliente espera cuarenta y siete minutos. Para la presentación real hay que
-**pre-cargar** parte del acto 4 (tener el reporte de daños ya subido y el incidente listo para
-firmar) y enseñar en vivo sólo la firma y el PDF. El acto 3, que es el que vende, tardó **9:44**.
-
-**⚠️ El acto 2 sólo llegó a `watch`, dos veces.** No a `restricted` ni a `evacuate_or_hold`. El
-acto funcionó y abrió su incidente, pero el escalón es el más bajo: el ensayo del 2026-09-12
-llegó a `evacuate_or_hold` con **0,357 g**. Si la demostración busca impacto, **el golpe tiene
-que ser más seco** — y conviene ensayarlo antes, no descubrirlo con el cliente delante.
-
-**⚠️ La limpieza se hizo a las 22:24**, más de cuatro horas después del pulso. El runbook dice
-que es **parte del guion, no del después**. No rompió nada —el estado quedó correcto— pero un
-enclavado vivo durante horas es exactamente lo que el preflight del día siguiente habría
-cazado en rojo.
-
-**✅ Y una buena que cambia la lista de «lo que NO debe decirse»:** el push llegó **`sent`**, no
-`simulated`. El ARN de FCM sale del terraform y la instancia lo trae, así que **la notificación
-a Android es real**. La fila de la lista que dice «le llega una notificación al teléfono» era
-cierta como advertencia en septiembre y ha dejado de serlo para Android — iOS sigue en cero,
-porque su *platform application* sólo se crea con la clave de firma de APNs.
-
-**Pendiente de esta corrida — son DOS incidentes, no uno.** Esta línea decía «el incidente
-`b420daaa`» y se quedaba corta: la corrida abrió también el del **acto 2**, que está en la tabla
-de aquí arriba. Los dos seguían **`in_review` y SIN CLASIFICAR** el 2026-09-22. ✅ **Clasificados
-los dos como `reproduccion` por Mauricio desde la consola** (lo confirmó el 2026-09-24):
-
-| Incidente | De dónde salió | Cómo se clasifica |
-|---|---|---|
-| `d5af54e5-b01b-44b8-81e4-3851c71eb9f6` | acto 2 · `local_threshold` · `watch` | `reproduccion` |
-| `b420daaa-84d1-4bf2-95d4-e328fc0ead92` | acto 3 · `sasmex` · `critical` | `reproduccion` |
-
-> El TTL de revisión (6 h) los cierra solos con causa `review_ttl` si nadie llega antes.
-> Clasificarlos después sigue funcionando —la tabla es append-only—, pero se pierde la traza de
-> que los cerró una persona.
-
----
-
-### Ensayo **2 de 2** · 2026-09-24 · acto 3 en ✗ **por el orden de los actos, no por una avería**
-
-**Ensayo del 2026-09-24T20:07:28Z · corrida `20260924T195548Z`.**
-
-| Acto | Duración | Veredicto | Qué midió la máquina |
-|---|---|---|---|
-| 0 · Preflight | 0:08 | ✓ | 13 ✓ |
-| 1 · El SOC operando normal | 1:52 | ✓ | nivel normal · relés en reposo · 451244 paquetes/310 huecos |
-| 2 · Movimiento aislado, SIN señal del WR-1 | 0:34 | ✓ | incidente 431c6fc9 · 0 actuaciones |
-| 3 · El pulso del WR-1 | 2:06 | ✗ | 0 ✓ · 1 ✗ |
-| 4 · Después de la sacudida | 7:00 | ✓ | 3 ✓ · 0 ✗ |
-
-**Por qué el acto 3 salió en ✗** (del registro de transiciones del panel, `GET /api/status`):
-
-| UTC | Transición | `event_id` |
-|---|---|---|
-| 19:58:00 | acto 2 · `normal → watch` (`local_threshold`, PGA 0,029 en `ENN`) | `39d73508…` |
-| 19:58:02 | `watch → normal` | — |
-| 19:59:23 | acto 3 · `normal → evacuate_or_hold` (**`sasmex`**) | **`39d73508…`, el MISMO** |
-
-El WR-1 se pulsó **81 s** después de que el golpe volviera a `normal`, y el gabinete cierra el
-episodio tras **90 s** de calma (`episode_quiet_s`, `T-7.49`): le puso al pulso la identidad del
-golpe. La nube hace UPSERT por esa identidad y **escaló** el incidente del acto 2 (`431c6fc9`) a
-SASMEX —severidad y disparador—, sin abrir otro ni cambiar su apertura. `--check` busca un
-incidente `sasmex` ABIERTO después de empezar el acto, no lo encontró y cortó ahí: no llegó a medir
-la fase de la app ni el push. **El Pixel sí mostró la crisis** (lo vio Mauricio).
-Consecuencia: esta corrida dejó **un solo incidente**, `431c6fc9`, no dos.
-
-**Lo que ese orden arrastra, y que un cliente vería** (del PDF
-`evidencia/report-technical-20260924T200614Z-…pdf`, 7 páginas):
-
-- **Sin push nuevo al escalar.** La cronología (§13) trae las notificaciones del golpe (19:58:00,
-  correo y push) y ninguna a las 19:59:23. Con el teléfono bloqueado, el SASMEX no lo despierta.
-- **La prosa de la IA atribuye la sirena al umbral local** y no nombra SASMEX; y afirma que el
-  veredicto fue «operación normal porque el evento no fue originado por SASMEX» — una causa que no
-  existe y que desmiente la portada («escaló a SASMEX»). Un lector concluiría que una estación sola
-  acciona la sirena, que es justo lo que `T-2.32` prohíbe.
-- Menores, del papel: el arribo «−2,6 s» (negativo, sin explicar), `pue-pruebas-01` encima de
-  `site-dev` en el mapa de la red, la escala «0.0152355 km» del croquis, y fragmentos de UUID en
-  QUIÉN (`OPERADOR a1ebe580`, `push:parallel:<uuid>`).
-
-**Arreglado el mismo día, en el guion:** avisa de los 2 minutos antes del acto 3 y, si el pulso se
-suma al incidente anterior, lo dice con esas palabras en vez de «el pulso no viajó (¿modo prueba
-armado? ¿gabinete sin nube?)», que eran dos causas falsas (`test_guion_demo.py`). Lo demás es
-producto y va a fichas después de la presentación.
-
-Lo que esta segunda corrida tenía que resolver, sacado de lo que enseñó la primera — y qué dio:
-
-- [x] **El acto 4 no puede durar 47 minutos.** **7:00** en esta corrida, con el reporte de daños
-      desde el Pixel, la firma del inspector y el PDF.
-- [ ] **El golpe del acto 2 tiene que pasar de `watch`.** Sigue en `watch`: el panel registró
-      PGA 0,029 en UN canal (`ENN`, «cautela en 1 sensor(es)»). La franja exige **dos canales**
-      sobre el disparo: hay que golpear más seco y mirar `tier` en el panel antes de seguir.
-- [~] **La limpieza va dentro del guion.** CERRAR ALERTA llegó entre 15 y 35 min después del pulso
-      (a las 20:14 UTC seguía enclavada con la sirena energizada; a las 20:34, ya no), y el incidente que hay que clasificar es UNO,
-      `431c6fc9`, por la escalada del acto 3.
-- [x] **Segunda medición del acta del reflejo:** **0,18 ms** (`latencies.reflex_s` del panel tras
-      el pulso, presupuesto 100 ms). Cuadra con los 0,22 ms de la corrida 1: el valor raro era el
-      de 4,96 ms. Aun así se cita como «muy por debajo de 100 ms», no con decimales.
-- [x] **Prosa redactada, no `NARRATIVA DEGRADADA`:** el PDF lleva `Narrativa: openrouter` y las
-      seis secciones «REDACTADO CON ASISTENCIA DE IA». ⚠️ Pero en ESTA corrida la prosa atribuye
-      la sirena al umbral local (ver arriba): la capa redacta, y redacta sobre un incidente mal
-      formado por el orden de los actos.
-
----
-
-### Ensayo completo · 2026-09-12/13
-
-**Con el WR-1 real, el gabinete de Puebla y el Pixel 8 Pro.** Preflight previo:
-**13 ✓ · 0 • · 0 ✗**.
-
-> Esto era un párrafo en negrita y no un encabezado, porque hasta el 2026-09-22 era lo único que
-> había en el § Registro y no hacía falta titularlo. Al insertarse encima la corrida 1, sus dos
-> acreditaciones del 14 de septiembre quedaron colgando del ensayo de **hoy** —ocho días
-> después— para quien navegue por encabezados. De ahí el título, y de ahí que lo que le sigue
-> baje un nivel.
+**Ensayo completo del 2026-09-12/13 · con el WR-1 real, el gabinete de Puebla y el Pixel 8 Pro.**
+Preflight previo: **13 ✓ · 0 • · 0 ✗**.
 
 | Acto | Qué se midió | Resultado |
 |---|---|---|
@@ -659,7 +405,20 @@ Lo que esta segunda corrida tenía que resolver, sacado de lo que enseñó la pr
 | **4 · Inspector** | consola, con MFA | dictamen firmado a las 04:28:52Z: `normal_operation`, **sucediendo** al preliminar · push OPS entregado **en el mismo segundo** por el canal `ops` · fase `reentry_approved` · el teléfono leyó el dictamen **35 s después**, solo |
 | **4 · Reporte** | `guion.sh --reporte` + render | PDF de 4 páginas · **el SHA-256 del fichero coincide con el que el sistema registró** en su cadena de custodia |
 
-#### Acreditación posterior · **el acto 2 en la CONSOLA** (2026-09-14) — con esto cierra `F1`
+
+
+**Ensayo del 2026-09-24T20:07:28Z · corrida `20260924T195548Z`.**
+
+| Acto | Duración | Veredicto | Qué midió la máquina |
+|---|---|---|---|
+| 0 · Preflight | 0:08 | ✓ | 13 ✓ |
+| 1 · El SOC operando normal | 1:52 | ✓ | nivel normal · relés en reposo · 451244 paquetes/310 huecos |
+| 2 · Movimiento aislado, SIN señal del WR-1 | 0:34 | ✓ | incidente 431c6fc9 · 0 actuaciones |
+| 3 · El pulso del WR-1 | 2:06 | ✗ | 0 ✓ · 1 ✗ |
+| 4 · Después de la sacudida | 7:00 | ✓ | 3 ✓ · 0 ✗ |
+
+
+### Acreditación posterior · **el acto 2 en la CONSOLA** (2026-09-14) — con esto cierra `F1`
 
 Lo único que le faltaba al acto 2: el 12-sep el ensayo se llevó desde el panel, la nube y el
 teléfono, y nadie miró la consola. Se repitió con la consola delante, y **hicieron falta tres
@@ -678,7 +437,7 @@ más reciente de la cola. **La bitácora de actuación quedó vacía: ningún re
 Y el mismo episodio acreditó `T-7.30` sobre un evento **instrumental**, no solo sobre el WR-1:
 `rule_evaluations` recogió la escalada y publicó el cierre a las **19:58:12**, 92 s después.
 
-#### Acreditación posterior · **la sacudida se concluye sola** (2026-09-14)
+### Acreditación posterior · **la sacudida se concluye sola** (2026-09-14)
 
 Lo que el 12-sep hubo que forzar por SQL. Con `T-7.30` desplegada (nube `41ccc36`, gabinete
 `20260914T070224Z-41ccc36`) y un **segundo pulso real del WR-1**:
@@ -701,7 +460,7 @@ asimetría del seguidor de episodio impide.
 **`03-dictamen-liberacion` acreditado por primera vez desde que se escribió** (no cargaba: llevaba un
 `timeout:` dentro de un `assertVisible` y Maestro rechazaba el fichero entero).
 
-#### Lo que este ensayo NO midió, y hay que decirlo
+### Lo que este ensayo NO midió, y hay que decirlo
 
 - **El tiempo pulso → pantalla de crisis.** Se midió pulso → **aviso** (≈ 2,3 s). Cuando llegó el
   push el teléfono estaba **sin sesión**, así que la pantalla de crisis se comprobó después de
@@ -721,22 +480,9 @@ asimetría del seguidor de episodio impide.
 
 ### Evidencia
 
-En [`evidencia/`](evidencia/) hay **TRES** PDF del acto 4, y son éstos:
-
-| Fichero | Qué es |
-|---|---|
-| `report-technical-20260913T050713Z.pdf` | el dictamen firmado del acto 4, tal como salió |
-| `report-technical-20260913T140829Z.pdf` | el mismo, ya con la firma y el encabezado corregidos |
-| `report-technical-20260914T033755Z.pdf` | el que se barrió entero buscando la misma clase de defecto — de ahí salieron las 19 contradicciones de `T-7.34` |
-
-⚠️ **Aquí ponía «los cuatro PDF» y enumeraba uno que no existe.** La enumeración empezaba por «el
-primero sin firma», y ese fichero **nunca se comiteó**: sobre la carpeta, `git log --diff-filter=A`
-da tres altas y `--diff-filter=D` no da ninguna baja. O sea que la §Evidencia prometía un rastro
-que no se podía enseñar, que es el mismo defecto que el resto de este documento persigue: un censo
-tecleado a mano que diverge de lo que hay.
-
-**Y falta uno.** El PDF de la corrida 1 —`report-technical-20260922T185707Z.pdf`, el de 7 páginas
-con 2 imágenes que cita el § Registro— **no está en el repositorio**. Hasta que se comitee, de esa
-corrida sólo queda su fila en la tabla, y con ella no se puede afirmar si la prosa salió redactada
-o degradada.
+Los cuatro PDF generados durante el acto 4 están versionados en
+[`evidencia/`](evidencia/) — cada uno es el «antes» de una corrección: el primero sin firma, el
+segundo con la firma y el encabezado aún diciendo PRELIMINAR, el tercero ya coherente, y el cuarto
+(`20260914T033755Z`) el que se barrió entero buscando la misma clase de defecto — de ahí salieron
+las 19 contradicciones de `T-7.34`.
 
