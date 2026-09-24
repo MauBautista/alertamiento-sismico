@@ -618,6 +618,36 @@ suma al incidente anterior, lo dice con esas palabras en vez de «el pulso no vi
 armado? ¿gabinete sin nube?)», que eran dos causas falsas (`test_guion_demo.py`). Lo demás es
 producto y va a fichas después de la presentación.
 
+#### Latencia del aviso, medida el mismo día · pulso → teléfono
+
+«Cuando activo el WR-1 tarda en aparecer la alarma». Tres pulsos más (incidentes `12d89fef`,
+`fae5691b` y el de las 23:46 UTC, **los tres clasificados `prueba`**), con el panel del gabinete, la
+base y el log de Android del Pixel (reloj corregido: el Pixel iba +1,6 s):
+
+| Tramo | Medido |
+|---|---|
+| pulso → incidente abierto en la nube | **0,23 s** |
+| pulso → push y correos `sent` | **0,40 s** (las tres veces, 0,13–0,17 s tras abrir) |
+| pulso → push **en el Pixel bloqueado** (canal `seismic_alert_v2`) | **1,4 s** |
+| pulso → **suena** | **1,6 s** (`buzz=0`: sonido sí, vibración NO) |
+| pulso → correo en Gmail | 4,4–6,3 s |
+
+**Lo que hacía «tardar»: el Pixel no tenía push.** Sólo UN teléfono de Puebla tenía token (el Galaxy),
+y la app, sin push, se entera por su poll: **5 s con incidente vivo, 30 s en reposo**. La causa es de
+producto: el token FCM es del APARATO y la RLS `pt_self` (por `user_sub`) impide que el SIGUIENTE
+usuario del mismo teléfono lo registre (`ON CONFLICT` → «new row violates row-level security
+policy»); la app, best-effort, calla. Cambiar de rol en el Pixel lo dejaba sin push. Para hoy se
+borró la fila vieja y el Pixel quedó registrado como el ocupante de Puebla: **no cambiar de usuario en
+el Pixel antes del acto 3**. El arreglo de producto va después de la presentación.
+
+**Y lo que el acto 3 NO hace hoy:** con la pantalla apagada, el teléfono suena y deja la notificación,
+pero **no enciende la pantalla ni abre la crisis solo** (la pantalla se encendió a los 27 s porque se
+tocó). La instrucción aparece al abrir la app. Dilo así: «suena y avisa en segundo y medio».
+
+**CERRAR ALERTA perdía el segundo clic** (0 de 10 en Chromium): el panel recreaba sus botones en cada
+fotograma mientras la orden estaba armada. Arreglado (PR #282, 10 de 10) y desplegado al gabinete el
+mismo día; el cierre de las 23:48:37 UTC entró a la primera.
+
 Lo que esta segunda corrida tenía que resolver, sacado de lo que enseñó la primera — y qué dio:
 
 - [x] **El acto 4 no puede durar 47 minutos.** **7:00** en esta corrida, con el reporte de daños
