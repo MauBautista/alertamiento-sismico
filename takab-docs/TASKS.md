@@ -15381,7 +15381,8 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     pulsó 81 s después de que el golpe del acto 2 volviera a `normal` y el gabinete lo juntó a su
     episodio (90 s, `T-7.49`); la nube ESCALÓ el incidente del acto 2 en vez de abrir uno SASMEX.
     Acto 4 en 7:00 (contra 47). Registro, PDF y hallazgos en `RUNBOOK-demo-cliente.md § Registro`.
-    Los dos incidentes de la corrida 1 ya están clasificados `reproduccion`.
+    Los dos incidentes de la corrida 1 y el único de la corrida 2 (`431c6fc9`) están clasificados
+    `reproduccion`.
     ⚠️ **Tres cosas que la primera corrida enseñó y que la segunda tiene que tener delante:**
       · **Dura una hora, y eso no cabe en una demostración.** 59 min, de los que **47 son el
         acto 4**. Hay que pre-cargar el reporte de daños y enseñar en vivo sólo la firma y el

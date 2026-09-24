@@ -626,8 +626,8 @@ Lo que esta segunda corrida tenía que resolver, sacado de lo que enseñó la pr
       PGA 0,029 en UN canal (`ENN`, «cautela en 1 sensor(es)»). La franja exige **dos canales**
       sobre el disparo: hay que golpear más seco y mirar `tier` en el panel antes de seguir.
 - [~] **La limpieza va dentro del guion.** CERRAR ALERTA llegó entre 15 y 35 min después del pulso
-      (a las 20:14 UTC seguía enclavada con la sirena energizada; a las 20:34, ya no), y el incidente que hay que clasificar es UNO,
-      `431c6fc9`, por la escalada del acto 3.
+      (a las 20:14 UTC seguía enclavada con la sirena energizada; a las 20:34, ya no), y el incidente de la corrida es UNO, `431c6fc9`
+      (por la escalada del acto 3): ✅ **clasificado `reproduccion`** por Mauricio el mismo día.
 - [x] **Segunda medición del acta del reflejo:** **0,18 ms** (`latencies.reflex_s` del panel tras
       el pulso, presupuesto 100 ms). Cuadra con los 0,22 ms de la corrida 1: el valor raro era el
       de 4,96 ms. Aun así se cita como «muy por debajo de 100 ms», no con decimales.
