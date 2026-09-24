@@ -2408,8 +2408,17 @@ async function doAction(label, endpoint, twoStep){
   render(); /* [T-2.26] repinta TODO con el status fresco (banners incluidos) */
 }
 function renderActions(st){
-  const box = $('action-btns'); if (!box) return; box.textContent = '';
-  if (!st) return;
+  /* [T-8.13] Los botones se REUTILIZAN, uno por orden (`endpoint`), y solo se les
+     cambia el texto y la clase. Medido en el gabinete el 2026-09-24: esta función
+     vaciaba la caja y creaba botones nuevos en cada llamada, y `frame()` la llama en
+     CADA fotograma mientras una orden de dos clics está armada (la cuenta de 5 s).
+     Un clic del navegador exige soltar sobre el MISMO elemento que se apretó: el
+     segundo clic de CERRAR ALERTA se perdía casi siempre y el armado caducaba. En
+     reposo pasaba a 1 Hz con el primero. El clic lee la orden VIGENTE del botón
+     (`_orden`), no la del repintado en que se creó. */
+  const box = $('action-btns'); if (!box) return;
+  const vivos = S.actionBtns || (S.actionBtns = {});
+  if (!st){ box.textContent = ''; S.actionBtns = {}; return; }
   const defs = [];
   if (st.siren_sounding) defs.push(['SILENCIAR AUDIBLES', st.audible_silenced ? 'ya silenciado' : 'no calla la rama de hardware', 'api/silence', false, 'primary']);
   if (st.alert_latched || st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
@@ -2424,22 +2433,43 @@ function renderActions(st){
   const wr1 = st.test_mode && st.test_mode.active;
   defs.push([wr1 ? 'SALIR DE PRUEBA WR-1' : 'MODO PRUEBA WR-1', wr1 ? 'la nube vuelve a recibir' : 'ventana de 120 s · la nube no recibe', 'api/test-mode', false, '']);
   if (st.audio && st.audio.enabled) defs.push(['SIMULACRO DE VOCEO', 'voceo de drill · sin tocar relés', 'api/drill-audio', false, '']);
+  const orden = [];
   defs.forEach(([label, sub, endpoint, twoStep, kind]) => {
     const armed = S.armed === endpoint;
-    const b = document.createElement('button');
+    let b = vivos[endpoint];
+    if (!b){
+      b = document.createElement('button');
+      const t0 = document.createElement('span');
+      const s0 = document.createElement('span'); s0.className = 'sub';
+      b.append(t0, s0);
+      b.addEventListener('click', () => { const o = b._orden; doAction(o.label, o.endpoint, o.twoStep); });
+      vivos[endpoint] = b;
+    }
+    b._orden = {label, endpoint, twoStep};
     /* [T-5.01] En demo el botón se PINTA y se declara inerte. La otra opción
        —no pintarlo— haría que el panel de la demo no se pareciera al real, que
        es justo lo que ?demo= existe para enseñar. Esto es la mitad visible; la
        que impone es la guarda de `doAction`. */
-    b.className = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : '')) + (DEMO ? ' inert' : '');
-    const t = document.createElement('span'); t.textContent = armed ? 'CLIC NUEVAMENTE PARA CONFIRMAR' : label;
-    const s = document.createElement('span'); s.className = 'sub';
-    s.textContent = DEMO ? 'INERTE EN DEMO · no se manda ninguna orden al gabinete'
+    const cls = 'btn' + (armed ? ' danger' : (kind ? ' '+kind : '')) + (DEMO ? ' inert' : '');
+    if (b.className !== cls) b.className = cls;
+    const t = b.children[0], s = b.children[1];
+    const titulo = armed ? 'CLIC NUEVAMENTE PARA CONFIRMAR' : label;
+    const bajada = DEMO ? 'INERTE EN DEMO · no se manda ninguna orden al gabinete'
       : (armed ? ('Orden bajo verificación humana · ' + Math.max(0, 5 - Math.floor((performance.now()-S.armedAt)/1000)) + ' s para cancelar') : sub);
-    b.append(t, s);
-    b.addEventListener('click', () => doAction(label, endpoint, twoStep));
-    box.appendChild(b);
+    if (t.textContent !== titulo) t.textContent = titulo;
+    if (s.textContent !== bajada) s.textContent = bajada;
+    orden.push(b);
   });
+  /* Las órdenes que ya no se ofrecen (p. ej. SILENCIAR al callar la sirena) se
+     sueltan. La caja solo se re-ordena cuando cambia QUÉ botones hay: eso sí saca
+     y vuelve a meter nodos, y es raro; repintar el mismo juego no los toca. */
+  const vigentes = new Set(orden.map((b) => b._orden.endpoint));
+  Object.keys(vivos).forEach((ep) => { if (!vigentes.has(ep)) delete vivos[ep]; });
+  const actuales = Array.from(box.children);
+  if (actuales.length !== orden.length || actuales.some((n, i) => n !== orden[i])){
+    box.textContent = '';
+    orden.forEach((b) => box.appendChild(b));
+  }
 }
 
 /* ============================== dibujo (portado del prototipo) ============================== */
