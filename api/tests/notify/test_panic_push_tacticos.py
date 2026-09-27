@@ -31,6 +31,7 @@ import uuid
 import pytest
 
 from takab_api.auth.matrix import roles_with_action
+from takab_api.notify.circulo import ROLES_DE_TODO_EL_CLIENTE
 from takab_api.notify.orchestrator import _PUSH_DEVICES_BY_ROLE_SQL, run_notify_pass
 from takab_api.notify.push import PUSH_CLASS_CRISIS, PUSH_CLASS_PANIC
 from takab_api.settings import Settings
@@ -157,6 +158,7 @@ def test_el_occupant_del_mismo_sitio_queda_FUERA(scenario: _Scenario) -> None:  
         {
             "site": site,
             "tenant": scenario.tenant,
+            "roles_cliente": list(ROLES_DE_TODO_EL_CLIENTE),
             "roles": list(roles_with_action("manual_activate")),
         },
     ).fetchall()
@@ -191,7 +193,12 @@ def test_sin_filtro_de_rol_los_dos_entran(scenario: _Scenario) -> None:  # noqa:
 
     filas = scenario.conn.execute(
         _PUSH_DEVICES_BY_ROLE_SQL,
-        {"site": site, "tenant": scenario.tenant, "roles": ["occupant", TACTICO]},
+        {
+            "site": site,
+            "tenant": scenario.tenant,
+            "roles": ["occupant", TACTICO],
+            "roles_cliente": list(ROLES_DE_TODO_EL_CLIENTE),
+        },
     ).fetchall()
     assert len(filas) == 2, (
         f"con los dos roles en el círculo se esperaban 2 dispositivos, hay {len(filas)}: "
@@ -219,6 +226,7 @@ def test_un_tactico_de_OTRO_sitio_no_entra(scenario: _Scenario) -> None:  # noqa
         {
             "site": site,
             "tenant": scenario.tenant,
+            "roles_cliente": list(ROLES_DE_TODO_EL_CLIENTE),
             "roles": list(roles_with_action("manual_activate")),
         },
     ).fetchall()

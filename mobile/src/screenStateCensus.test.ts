@@ -371,6 +371,8 @@ describe("censo móvil · las rutas con dato tienen la PRUEBA de los cuatro esta
       "app/(occupant)/rutas.tsx",
       "app/camera.tsx",
       "app/dictamen.tsx",
+      // T-9.11 · movimiento en el inmueble: nació con su prueba de cuatro estados.
+      "app/movimiento.tsx",
     ];
     const desprotegidas = cerradas.filter((v) => !CON_PRUEBA.has(v));
     exigirIgual(

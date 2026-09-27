@@ -37,7 +37,8 @@
         {
           "color": "#0E2336",
           "sounds": [
-            "./assets/sounds/alerta_sismica.wav"
+            "./assets/sounds/alerta_sismica.wav",
+            "./assets/sounds/movimiento_inmueble.wav"
           ]
         }
       ],

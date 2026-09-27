@@ -14,12 +14,16 @@ export type GateResult =
   | { allowed: false; reason: GateDenyReason };
 
 /** Roles con superficie móvil táctica (RBAC-TAKAB.md §3; D4d incluye
- * inspector/building_admin reutilizando el perfil táctico). */
+ * inspector/building_admin reutilizando el perfil táctico). [T-9.11 · D-42] el
+ * administrador del tenant (`tenant_admin`) usa también la app táctica completa:
+ * recibe el aviso de movimiento y tiene las acciones de campo del brigadista. Las
+ * pestañas siguen gobernadas por sus `allowed_actions` (`pestanasTacticas`). */
 export const TACTICAL_ROLES: ReadonlySet<string> = new Set([
   "brigadista",
   "security_guard",
   "inspector",
   "building_admin",
+  "tenant_admin",
 ]);
 
 /** Deriva el grupo de rutas de lo que respondió /me. Default-deny. */

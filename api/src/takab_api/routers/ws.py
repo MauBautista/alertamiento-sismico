@@ -39,7 +39,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from takab_api.auth import deps
 from takab_api.auth.claims import Claims, scope_filter
-from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX
+from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX, roles_with_action
 from takab_api.auth.session_age import SessionExpired, enforce_session_age, session_deadline
 from takab_api.auth.tokens import AuthError, decode_verify
 from takab_api.ws import protocol as p
@@ -61,7 +61,13 @@ _CONSOLE_ROLES = frozenset(r for r, routes in ROLE_ROUTE_MATRIX.items() if CONSO
 # (hub) y con surface móvil verificada. El ``occupant`` queda FUERA del WS por
 # construcción (push despertador + REST verdad): su token se cierra en el
 # handshake — no hay sockets ociosos esperando topics que jamás tendrán.
-_TACTICAL_WS_ROLES = frozenset({"brigadista", "security_guard"})
+#
+# [T-9.11] Se DERIVA de la matriz: quien lee el panel táctico (`panel_read`) y no
+# tiene consola. Escrita a mano, la lista se quedaría atrás en la fusión de roles
+# (F2, D-42) sin que nada se quejara.
+_TACTICAL_WS_ROLES = frozenset(
+    r for r in roles_with_action("panel_read") if CONSOLE not in ROLE_ROUTE_MATRIX[r]
+)
 _LIVE_ROLES = _CONSOLE_ROLES | _TACTICAL_WS_ROLES
 _TOPIC_ALLOWLIST: dict[str, frozenset[str]] = {
     p.TOPIC_INCIDENTS: _LIVE_ROLES,

@@ -241,19 +241,26 @@ def suena_la_alarma(
 #:   a una evacuación ni sugiere que el reingreso aprobado se revocó.
 #: · La alarma gana al bloqueo: el hecho del bloqueo sigue viajando en
 #:   ``reentry``, pero la pantalla tiene que explicar la sirena que está sonando.
+#: · [T-9.11 · D-39] ``building_movement`` (solo para la BRIGADA: el ocupante nunca
+#:   la recibe) va tras lo sísmico que ordenó evacuar y ANTES del reingreso
+#:   autorizado y de la alarma del inmueble. Es un movimiento EN VIVO: la brigada
+#:   que leyera «reingreso autorizado» mientras el edificio vuelve a moverse
+#:   entraría sin revisar. La sirena de pánico sigue explicada en su campo
+#:   (``building_alarm``); lo que se disputa aquí es la pantalla.
 PRECEDENCIA: tuple[Phase, ...] = (
     "alert_active",
     "shaking_concluded",
+    "building_movement",
     "reentry_approved",
     "building_alarm",
-    # "building_movement" — HUECO RESERVADO: llega en F1 (movimiento del edificio
-    # sin orden de evacuar) y va AQUÍ, entre la alarma del inmueble y el bloqueo.
     "reentry_blocked",
     "idle",
 )
 
 
-def fase_del_sitio(fase_sismica: Phase, alarma: AlarmaDelInmueble | None) -> Phase:
+def fase_del_sitio(
+    fase_sismica: Phase, alarma: AlarmaDelInmueble | None, *, movimiento: bool = False
+) -> Phase:
     """Precedencia por TABLA (``PRECEDENCIA``): **lo sísmico vivo manda siempre.**
 
     ``alert_active`` > ``shaking_concluded`` > ``reentry_approved`` >
@@ -268,4 +275,7 @@ def fase_del_sitio(fase_sismica: Phase, alarma: AlarmaDelInmueble | None) -> Pha
     candidatas: list[Phase] = [fase_sismica]
     if alarma is not None:
         candidatas.append("building_alarm")
+    # [T-9.11] El llamante sólo lo pone en True para quien tiene `movement_alert`.
+    if movimiento:
+        candidatas.append("building_movement")
     return min(candidatas, key=PRECEDENCIA.index)

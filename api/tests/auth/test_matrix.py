@@ -100,6 +100,8 @@ DENY_ALL = {
     "panic_vote": False,
     "dictamen_read": False,
     "panel_read": False,
+    # [T-9.11] Un rol desconocido tampoco recibe el aviso de movimiento.
+    "movement_alert": False,
     "maintenance_window": False,
     "platform_maintenance_window": False,
     # [T-2.79.e] Publicar el aviso de privacidad del cliente y registrar el
@@ -129,6 +131,8 @@ MOBILE_ACTIONS = (
     "dictamen_read",
     # [T-2.08] Dashboard táctico 2.1 (RBAC §3: salud gabinete + actuadores).
     "panel_read",
+    # [T-9.11 · D-39] El aviso con voz del movimiento de UN inmueble: de campo.
+    "movement_alert",
 )
 
 
@@ -300,12 +304,12 @@ def test_occupant_field_actions_are_minimal() -> None:
 # desde T-2.08: ``panel_read`` espeja la fila "Dashboard táctico (salud
 # gabinete + actuadores)" — occupant "—", inspector "Lectura".)
 RBAC_SECTION_3 = {
-    #                 checkin roster  damage  evid.  silence activate dict_read panel
-    "occupant": (True, False, False, False, False, False, False, False),
-    "brigadista": (True, True, True, True, True, True, True, True),
-    "security_guard": (True, True, True, True, True, True, True, True),
-    "inspector": (True, False, True, True, False, True, True, True),
-    "building_admin": (True, True, False, False, True, True, True, True),
+    #                 checkin roster  damage  evid.  silence activate dict_read panel movement
+    "occupant": (True, False, False, False, False, False, False, False, False),
+    "brigadista": (True, True, True, True, True, True, True, True, True),
+    "security_guard": (True, True, True, True, True, True, True, True, True),
+    "inspector": (True, False, True, True, False, True, True, True, True),
+    "building_admin": (True, True, False, False, True, True, True, True, True),
 }
 _S3_COLS = (
     "checkin_submit",
@@ -316,6 +320,8 @@ _S3_COLS = (
     "manual_activate",
     "dictamen_read",
     "panel_read",
+    # [T-9.11] La fila «Aviso con voz de movimiento del inmueble» (D-39).
+    "movement_alert",
 )
 
 
@@ -337,9 +343,12 @@ def test_panic_vote_is_occupant_only() -> None:
 
 def test_siren_silence_excludes_inspector() -> None:
     """[T-2.03] RBAC §4: silenciar = brigadista/security_guard/building_admin.
-    El inspector evalúa la estructura; no opera la sirena."""
+    El inspector evalúa la estructura; no opera la sirena.
+
+    [T-9.11 · D-42] Y el ADMINISTRADOR (`tenant_admin`), que desde F1 tiene la app
+    táctica completa: las acciones de campo del brigadista."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["siren_silence"]}
-    assert can == {"brigadista", "security_guard", "building_admin"}
+    assert can == {"brigadista", "security_guard", "building_admin", "tenant_admin"}
 
 
 def test_enrollment_manage_is_admin_circle() -> None:

@@ -34,7 +34,8 @@ export type AlertState =
   | "checkin_pending"
   | "reentry_blocked"
   | "reentry_approved"
-  | "building_alarm";
+  | "building_alarm"
+  | "building_movement";
 
 /** §2.1-A: el WR-1 entrega un BOOLEANO — no hay dato de magnitud/ETA que
  * mostrar. Si una fuente futura transporta ETA POR DATO, este flag activa el
@@ -60,6 +61,13 @@ export function deriveAlertState(phase: ServerPhase, hasOwnCheckin: boolean): Al
     // decide las fases (§4.1) — aquí no se recalcula nada.
     case "building_alarm":
       return "building_alarm";
+    // [T-9.11 · D-39] MOVIMIENTO EN EL INMUEBLE: el sensor PROPIO detectó
+    // movimiento y la nube lo sirve SOLO a los roles con `movement_alert`. No es
+    // una alerta sísmica oficial (una estación sola no ordena evacuar), así que
+    // el check-in de vida no aplica: pasa TAL CUAL. Quién la ve lo decide el
+    // servidor; el `CrisisWatcher` además no la enruta nunca para el ocupante.
+    case "building_movement":
+      return "building_movement";
     // [T-9.04] Bloqueo PERSISTENTE: el incidente ya cerró (desde `D-33` firmar
     // lo cierra en tres segundos) y lo que sobrevive es el VEREDICTO —un NO
     // HABITAR firmado, o un dictamen que no llega—. Se reutiliza el estado de la
@@ -103,6 +111,7 @@ const FASES_CONOCIDAS: Record<ServerPhase, true> = {
   reentry_approved: true,
   building_alarm: true,
   reentry_blocked: true,
+  building_movement: true,
 };
 
 /** ¿La app sabe qué significa esta fase? Si no, `deriveAlertState` cae a `idle`

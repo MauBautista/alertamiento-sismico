@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **500** · `[x]` **405** · `[~]` **17** · `[ ]` **78**
+**Conteo de tareas:** total **500** · `[x]` **407** · `[~]` **17** · `[ ]` **76**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17750,13 +17750,13 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] `PLAN-REQUERIMIENTOS-CLIENTE-2026-09.md` con el objetivo ejecutable de cada fase.
   - [x] `D-39`…`D-48` con sección, fila del índice y cabecera de la bitácora recontada.
 
-### [~] T-9.01 · **Los tres PR pendientes, mergeados y desplegados** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.01 · **Los tres PR pendientes, mergeados y desplegados** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-27**
 - **Componente:** api · edge · docs · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** empezar el bloque sobre un `main` que es lo que corre en la nube y en el gabinete.
 - **Criterios de aceptación:**
   - [x] #281 (SQLAlchemy con `asyncio`), #282 (doble clic de CERRAR ALERTA) y #280 (ensayo 2) en `main`.
-  - [ ] La nube redesplegada desde `main` (`/api/health` da su etiqueta).
-  - [ ] El gabinete en una release limpia desde `main` (sin `-dirty`).
+  - [x] La nube redesplegada desde `main` (`/api/health` da su etiqueta): `5d15ed2`.
+  - [x] El gabinete en una release limpia desde `main` (sin `-dirty`): `presentacion-2026-09-24-5-g5d15ed2`.
 
 ### [x] T-9.02 · **Una escalada a SASMEX reescribe el disparador** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F0 · crítica · **Decisión:** `D-39`
@@ -17811,28 +17811,38 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.1 · Antipánico y voz de la brigada
 
-### [ ] T-9.10 · **Un canal de audio auditable** — `SOFTWARE`
+### [x] T-9.10 · **Un canal de audio auditable** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** tools · shared · **Depende de:** — · **Prioridad:** F1 · alta · **Decisión:** `D-40`
 - **Objetivo:** que cada audio que suena en el edificio o en el teléfono tenga origen, licencia y
   huella comprobables.
 - **Criterios de aceptación:**
-  - [ ] `tools/audio/` genera tonos y voces de forma reproducible; la herramienta de voz no entra
+  - [x] `tools/audio/` genera tonos y voces de forma reproducible; la herramienta de voz no entra
     en ningún proyecto con licencias revisadas.
-  - [ ] `shared/audio/MANIFEST.json` y su test de censo.
-  - [ ] Primer audio: la voz del aviso de movimiento, de 4 s o menos.
+  - [x] `shared/audio/MANIFEST.json` y su test de censo.
+  - [x] Primer audio: la voz del aviso de movimiento, de 4 s o menos.
+- **Cierre:** Piper 1.3.0 aislado con `uv run --no-project` (GPL fuera del árbol) y semilla fija, así que
+  dos corridas dan el mismo WAV. Voz `es_MX-claude-high` (apache-2.0) con sha256 fijado en
+  `tools/audio/voces.json`. El aviso dura 3,13 s, a −16 LUFS y −1,9 dBTP. `shared/audio/MANIFEST.json`
+  censa los 4 audios del edificio y del teléfono; lo vigilan `verifica_manifiesto.py` y
+  `api/tests/test_censo_audio.py`. Falta que Mauricio escuche la voz (F7 la aprueba junto con el resto).
 
-### [ ] T-9.11 · **Un movimiento del inmueble despierta solo a su brigada** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.11 · **Un movimiento del inmueble despierta solo a su brigada** — `SOFTWARE` + `FÍSICO`
 - **Componente:** api · mobile · web · **Depende de:** T-9.05, T-9.10 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
 - **Objetivo:** el pedido del cliente: sin pánico para el ocupante.
 - **Criterios de aceptación:**
-  - [ ] Clase de push MOVEMENT con su canal y su voz; acción `movement_alert` para brigadista,
+  - [x] Clase de push MOVEMENT con su canal y su voz; acción `movement_alert` para brigadista,
     inspector y administrador.
-  - [ ] Local en DISPARO ⇒ push solo a esos roles; en CAUTELA ⇒ ninguno; SASMEX o cuórum ⇒ a todos.
-  - [ ] `mobile-state` por rol: el táctico ve `building_movement`, el ocupante nunca.
-  - [ ] El administrador entra en la app táctica.
+  - [x] Local en DISPARO ⇒ push solo a esos roles; en CAUTELA ⇒ ninguno; SASMEX o cuórum ⇒ a todos.
+  - [x] `mobile-state` por rol: el táctico ve `building_movement`, el ocupante nunca.
+  - [x] El administrador entra en la app táctica.
   - [ ] Probado en el Pixel con el gabinete real.
 
 ## Fase 9.2 · Roles de 10 a 7
+- **Lo que añadió la revisión de F1:** el movimiento solo es «vivo» mientras el incidente sigue
+  `open`/`acked`; con él viaja la alarma de pánico, para que la brigada la vea y la acuse. El teléfono
+  del administrador (alcance `*`) va sin inmueble y lo alcanza cualquier aviso de su cliente. Las
+  subidas y escaladas miran 24 h, no 1 h. Y un pánico manual con teléfonos salía como «ALERTA
+  SÍSMICA» a todo el edificio: ya sale una sola vez como PANIC.
 
 ### [ ] T-9.20 · **Siete roles con alias para los viejos** — `SOFTWARE`
 - **Componente:** api · web · mobile · infra · docs · **Depende de:** T-9.11 · **Prioridad:** F2 · alta · **Decisión:** `D-42`

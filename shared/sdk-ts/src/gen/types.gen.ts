@@ -1723,6 +1723,7 @@ export type MeActions = {
     manage_users: boolean;
     manage_visibility: boolean;
     manual_activate: boolean;
+    movement_alert: boolean;
     panel_read: boolean;
     panic_vote: boolean;
     platform_maintenance_window: boolean;
@@ -1801,6 +1802,11 @@ export type MetricSeries = {
  * Viaja SOLO cuando ``phase == "building_alarm"``, por la misma disciplina con
  * la que T-2.105 esconde el incidente que no autoriza: exponer los dos hechos
  * a la vez sería pedirle al cliente que decida cuál pinta.
+ *
+ * [T-9.11] Única excepción: ``phase == "building_movement"``, que sólo recibe la
+ * brigada. Ahí la pantalla del movimiento tiene que decir además que suena una
+ * activación de pánico —y dejar acusarla—, porque la brigada es justo quien la
+ * atiende. Al ocupante no le cambia nada.
  */
 export type MobileBuildingAlarmOut = {
     since: string;
@@ -1933,6 +1939,13 @@ export type MobileSiteHealthOut = {
  * · lo demás → ``idle``. ``incident`` sigue en ``null``: lo que persiste es
  * el HECHO del veredicto, no el incidente, y ``reentry.incident_id`` dice
  * de qué incidente es.
+ * - **[T-9.11 · D-39] Movimiento de UN inmueble → ``building_movement``, SOLO
+ * para quien tiene ``movement_alert``** (brigada, inspector, administración;
+ * el ocupante nunca). Un umbral local en DISPARO que no autoriza evacuar y
+ * sigue ``open``/``acked`` (la sacudida no ha concluido). ``incident`` es ESE
+ * incidente, para acusarlo y reportar daños; ``reentry`` sigue hablando del
+ * que autorizó evacuar, si lo hay, y ``reentry.blocked`` no cambia por el
+ * movimiento. Va tras ``shaking_concluded`` y antes de ``reentry_approved``.
  * - **[T-2.106] sin fase sísmica + sirena del edificio ordenada por una
  * persona → ``building_alarm``.** Es ALARMA DEL INMUEBLE, no evacuación
  * sísmica (decisión de producto del 2026-08-09): la sirena suena —que es su
@@ -1986,7 +1999,7 @@ export type MobileStateOut = {
     incident: MobileIncidentOut | null;
     latest_tier: string | null;
     my_zone: MobileZoneOut | null;
-    phase: 'idle' | 'alert_active' | 'shaking_concluded' | 'reentry_approved' | 'building_alarm' | 'reentry_blocked';
+    phase: 'idle' | 'alert_active' | 'shaking_concluded' | 'reentry_approved' | 'building_alarm' | 'reentry_blocked' | 'building_movement';
     reentry: MobileReentryOut;
     server_ts: string;
     site_health: MobileSiteHealthOut;

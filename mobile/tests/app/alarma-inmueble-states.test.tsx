@@ -104,6 +104,35 @@ async function asentar(): Promise<void> {
 
 // ------------------------------------------------------------------ tests
 
+// [T-9.11 · D-39] Durante un MOVIMIENTO la nube manda también `building_alarm`
+// (solo a la brigada). La pantalla redirigía a INICIO porque la fase no era
+// `building_alarm`, así que el botón del bloque de alarma de /movimiento llevaba
+// a ninguna parte y la alarma de pánico quedaba oculta.
+describe("[T-9.11] alarma del inmueble durante un movimiento", () => {
+  it("fase building_movement CON alarma presente ⇒ se pinta la alarma, no redirige", async () => {
+    mockSnapshot = instantanea({
+      state: "building_movement",
+      data: estado({ phase: "building_movement" } as never),
+    });
+    const v = await render(<AlarmaInmueble />);
+    await asentar();
+
+    expect(v.queryByTestId("redirect")).toBeNull();
+    expect(v.getByText("ALARMA DEL INMUEBLE")).toBeTruthy();
+  });
+
+  it("fase building_movement SIN alarma ⇒ vuelve a INICIO", async () => {
+    mockSnapshot = instantanea({
+      state: "building_movement",
+      data: estado({ phase: "building_movement", building_alarm: null } as never),
+    });
+    const v = await render(<AlarmaInmueble />);
+    await asentar();
+
+    expect(v.getByTestId("redirect")).toHaveTextContent("/");
+  });
+});
+
 describe("2.6 · alarma del inmueble · sin sitio vigilado DECLARA, no gira", () => {
   it("dice que no hay edificio vinculado y qué hacer — jamás un spinner eterno", async () => {
     mockSitio = null;

@@ -20,7 +20,8 @@ import { ACTIONS_NONE, ALL_ROUTES, ME_FIXTURES, MOBILE_ONLY_ROLES, WEB_ROLES } f
 describe("[T-5.28] fixtures de /me derivadas de la matriz", () => {
   it("declara CUÁNTOS roles, acciones y rutas trae", () => {
     expect(Object.keys(ME_FIXTURES)).toHaveLength(10);
-    expect(Object.keys(ACTIONS_NONE)).toHaveLength(36);
+    // [T-9.11] 37: `movement_alert` (D-39).
+    expect(Object.keys(ACTIONS_NONE)).toHaveLength(37);
     expect(ALL_ROUTES).toHaveLength(6);
     // 7 con superficie web + 3 solo móvil. El reparto también se deriva.
     expect(WEB_ROLES).toHaveLength(7);
@@ -29,7 +30,7 @@ describe("[T-5.28] fixtures de /me derivadas de la matriz", () => {
 
   it("ningún rol sale con el mapa de acciones vacío", () => {
     for (const [rol, me] of Object.entries(ME_FIXTURES)) {
-      expect(Object.keys(me.allowed_actions), `${rol} sin acciones`).toHaveLength(36);
+      expect(Object.keys(me.allowed_actions), `${rol} sin acciones`).toHaveLength(37);
       for (const [accion, valor] of Object.entries(me.allowed_actions)) {
         expect(typeof valor, `${rol}.${accion} no es booleano`).toBe("boolean");
       }

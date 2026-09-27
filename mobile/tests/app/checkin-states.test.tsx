@@ -203,3 +203,18 @@ describe("1.4 · check-in · contrato de 4 estados (regla de oro 7)", () => {
     );
   });
 });
+
+// [T-9.11 · D-39] El movimiento del inmueble trae un incidente ABIERTO pero no es
+// un sismo oficial: aquí no hay check-in de vida que pedir. Sin esta salida, la
+// pantalla pintaba el formulario de check-in para ese incidente.
+describe("[T-9.11] check-in · el movimiento del inmueble no pide check-in", () => {
+  it("con estado building_movement se va a /movimiento", async () => {
+    mockSnapshot = instantanea({
+      state: "building_movement",
+      data: estado({ phase: "building_movement" } as never),
+    });
+    const v = await render(<Checkin />);
+    await asentar();
+    expect(v.getByTestId("redirect")).toHaveTextContent("/movimiento");
+  });
+});

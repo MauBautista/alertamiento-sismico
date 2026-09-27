@@ -243,10 +243,17 @@ def test_los_roles_de_MONITOREO_no_entran_por_esta_puerta() -> None:
     Guarda sobre la MATRIZ: el día que un rol de monitoreo ganara
     `manual_activate`, su acuse contaría como respuesta de la brigada y
     `T-2.147.c` quedaría derogada por un cambio de permisos.
+
+    [T-9.11 · D-42] Con UNA excepción declarada: el administrador (`tenant_admin`)
+    tiene la app táctica completa y acusa por las dos puertas. Lo que la guarda
+    protegía se sostiene de otra forma: su acuse NO apaga el aviso al SOC
+    (`notify/orchestrator.py::_PANIC_ACK_TIMEOUT_SQL`, probado en
+    `tests/notify/test_panic_escala_al_soc.py`). Cualquier OTRO rol de monitoreo
+    que entre aquí sigue poniendo esto en rojo.
     """
     monitoreo = {r for r, acts in ROLE_ACTION_MATRIX.items() if acts.get("ack_incident")}
     solapan = monitoreo & set(TACTICAL_ACK_ROLES)
-    assert not solapan, (
-        f"{solapan} pueden acusar por las DOS puertas: su acuse de monitoreo "
-        "apagaría el escalado al SOC sin que nadie bajara a mirar"
+    assert solapan <= {"tenant_admin"}, (
+        f"{solapan - {'tenant_admin'}} pueden acusar por las DOS puertas: su acuse de "
+        "monitoreo apagaría el escalado al SOC sin que nadie bajara a mirar"
     )

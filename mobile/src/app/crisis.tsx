@@ -74,6 +74,11 @@ export default function Crisis() {
   if (state === "building_alarm") {
     return <Redirect href="/alarma-inmueble" />;
   }
+  // [T-9.11 · D-39] Movimiento del inmueble: no es una crisis sísmica oficial.
+  // Se entrega su pantalla, que rechaza al ocupante por sí misma.
+  if (state === "building_movement") {
+    return <Redirect href="/movimiento" />;
+  }
   if (state !== null && state !== "alert_active") {
     return <Redirect href="/" />;
   }

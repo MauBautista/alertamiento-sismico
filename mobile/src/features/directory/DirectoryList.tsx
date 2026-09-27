@@ -20,6 +20,9 @@ const ROLE_LABEL: Record<string, string> = {
   brigadista: "BRIGADISTA",
   security_guard: "SEGURIDAD",
   building_admin: "ADMINISTRACIÓN",
+  // [T-9.11 · D-42] El administrador entra en la app táctica.
+  tenant_admin: "ADMINISTRADOR",
+  inspector: "INSPECTOR",
 };
 
 export function groupByZone(entries: DirectoryEntryOut[]): [string, DirectoryEntryOut[]][] {

@@ -616,23 +616,24 @@ describe("TriagePage · VERIFICAR la huella del dictamen solo con `dictamen_read
     sha256: "f".repeat(64),
   } as EvidenceObject;
 
-  it.each([
-    "takab_superadmin",
-    "takab_support",
-    "tenant_admin",
-    "soc_operator",
-    "gov_operator",
-  ] as const)("%s: sin botón que respondería 404; la causa se declara", (role) => {
-    seedRole(role);
-    mocks.useTriage.mockReturnValue(triageData());
-    mocks.useIncidentDetail.mockReturnValue(detailData({ evidence: res<EvidenceObject[]>([PDF]) }));
-    render(pageAt());
-    expect(screen.queryByTestId("verify-ev-pdf")).toBeNull();
-    expect(screen.getByTestId("verify-dictamen-denied")).toBeInTheDocument();
-  });
+  // [T-9.11 · D-42] `tenant_admin` salió de esta lista: el administrador tiene ahora
+  // las acciones de campo del brigadista, `dictamen_read` incluida.
+  it.each(["takab_superadmin", "takab_support", "soc_operator", "gov_operator"] as const)(
+    "%s: sin botón que respondería 404; la causa se declara",
+    (role) => {
+      seedRole(role);
+      mocks.useTriage.mockReturnValue(triageData());
+      mocks.useIncidentDetail.mockReturnValue(
+        detailData({ evidence: res<EvidenceObject[]>([PDF]) }),
+      );
+      render(pageAt());
+      expect(screen.queryByTestId("verify-ev-pdf")).toBeNull();
+      expect(screen.getByTestId("verify-dictamen-denied")).toBeInTheDocument();
+    },
+  );
 
-  it("inspector (lee dictámenes): el botón está", () => {
-    seedRole("inspector");
+  it.each(["inspector", "tenant_admin"] as const)("%s (lee dictámenes): el botón está", (role) => {
+    seedRole(role);
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ evidence: res<EvidenceObject[]>([PDF]) }));
     render(pageAt());

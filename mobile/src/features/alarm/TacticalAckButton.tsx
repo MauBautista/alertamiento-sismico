@@ -39,13 +39,24 @@ export type TacticalAckButtonProps = {
   /** Hora de reloj del acuse, ya formateada. */
   acusadoALas: string | null;
   onPress: () => void;
+  /** [T-9.11] Pie bajo el botón. Por defecto el de la alarma del inmueble (hay
+   *  sirena); el aviso de MOVIMIENTO no la tiene y no puede hablar de ella. */
+  pie?: string;
+  /** [T-9.11] Detalle tras acusar; mismo motivo que `pie`. */
+  detalleAcusado?: string;
 };
+
+const PIE_SIRENA =
+  "Avisa al centro de monitoreo de que la brigada respondió. No silencia la sirena.";
+const DETALLE_SIRENA = "La sirena sigue sonando: acusar no la apaga.";
 
 export function TacticalAckButton({
   visible,
   estado,
   acusadoALas,
   onPress,
+  pie = PIE_SIRENA,
+  detalleAcusado = DETALLE_SIRENA,
 }: TacticalAckButtonProps) {
   if (!visible) {
     return null;
@@ -57,7 +68,7 @@ export function TacticalAckButton({
         <Text style={styles.acusadoTitulo}>ACUSE REGISTRADO</Text>
         <Text style={styles.acusadoDetalle}>
           {acusadoALas ? `Respondió a las ${acusadoALas}. ` : ""}
-          La sirena sigue sonando: acusar no la apaga.
+          {detalleAcusado}
         </Text>
       </View>
     );
@@ -80,9 +91,7 @@ export function TacticalAckButton({
           <Text style={styles.botonTexto}>ESTOY ATENDIENDO</Text>
         )}
       </Pulsable>
-      <Text style={styles.pie}>
-        Avisa al centro de monitoreo de que la brigada respondió. No silencia la sirena.
-      </Text>
+      <Text style={styles.pie}>{pie}</Text>
       {estado === "error" ? (
         // Se declara y se deja reintentar: un acuse perdido en silencio haría
         // creer a quien lo pulsó que ya avisó, y el SOC escalaría igual.

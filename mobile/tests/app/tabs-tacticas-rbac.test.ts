@@ -29,8 +29,15 @@ const MATRIZ: Matriz = JSON.parse(
 const TACTICOS = [...TACTICAL_ROLES].sort();
 
 describe("[T-6.22] las pestañas del táctico cuadran con la matriz de RBAC", () => {
-  it("el fixture trae los cuatro roles tácticos (si no, esto no mira nada)", () => {
-    expect(TACTICOS).toEqual(["brigadista", "building_admin", "inspector", "security_guard"]);
+  // [T-9.11 · D-42] el administrador del tenant usa también la app táctica.
+  it("el fixture trae los cinco roles tácticos (si no, esto no mira nada)", () => {
+    expect(TACTICOS).toEqual([
+      "brigadista",
+      "building_admin",
+      "inspector",
+      "security_guard",
+      "tenant_admin",
+    ]);
     for (const rol of TACTICOS) {
       expect(MATRIZ.roles[rol]).toBeDefined();
     }
