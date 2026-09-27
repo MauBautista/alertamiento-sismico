@@ -24,7 +24,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.USE_BIOMETRIC"
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.ACCESS_NOTIFICATION_POLICY"
       ]
     },
     "web": {

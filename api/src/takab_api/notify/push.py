@@ -7,7 +7,7 @@ alguien crea que ya las ha revisado todas:
 - ``CRISIS`` — alerta activa / cambio de fase. iOS: sonido *critical* con
   ``interruption-level: time-sensitive`` como base — cuando Apple apruebe el
   entitlement (GATE-STORE) se sube a ``critical``; sin él, iOS degrada el flag
-  en silencio y el sonido llega normal. Android: canal ``seismic_alert_v2``
+  en silencio y el sonido llega normal. Android: canal ``seismic_alert_v3``
   (IMPORTANCE_MAX + bypass DND, lo crea la app en onboarding).
 - ``PANIC`` — activación manual del inmueble por quórum de pánico (`D-05`/`D-11`).
   Canal propio ``building_alarm`` (IMPORTANCE_MAX + bypass DND: despierta como una
@@ -95,7 +95,11 @@ _DELIVERY_STYLE = {
         # El `_v2` viaja con el de la app y NO es cosmético: el sonido de un canal
         # Android es inmutable tras crearlo, así que estrenar tono exige id nuevo.
         # Ver el comentario largo en `mobile/src/services/push.ts`.
-        "channel_id": "seismic_alert_v2",
+        # [T-9.12] `_v3`: el MISMO tono con uso de audio ALARMA. Medido en el Pixel el
+        # 2026-09-27: con «No molestar» en prioridad, la CRISIS por `_v2` llegó y no
+        # sonó ni vibró hasta encender la pantalla; `bypassDnd` no hace nada sin el
+        # acceso que el usuario concede a mano. El uso ALARMA sí pasa ese modo.
+        "channel_id": "seismic_alert_v3",
     },
     PUSH_CLASS_OPS: {
         "interruption_level": "active",
@@ -110,7 +114,9 @@ _DELIVERY_STYLE = {
         # …y NO suena como una: canal propio y el sonido del sistema, nunca el
         # tono del SASMEX ni el sonido crítico.
         "sound": "default",
-        "channel_id": "building_alarm",
+        # [T-9.12] `_v2`: uso de audio ALARMA, que pasa «No molestar» (ver
+        # `mobile/src/services/push.ts::audioDeAlarma`).
+        "channel_id": "building_alarm_v2",
     },
     PUSH_CLASS_MOVEMENT: {
         # Despierta a la brigada de madrugada: alta prioridad y time-sensitive…
@@ -118,9 +124,9 @@ _DELIVERY_STYLE = {
         "android_priority": "high",
         # …con SU voz, nunca el tono del SASMEX ni el sonido crítico de Apple (que se
         # pidió para alertamiento sísmico). El canal lleva versión por la misma razón
-        # que `seismic_alert_v2`: el sonido de un canal Android es inmutable.
+        # que `seismic_alert_v3`: el sonido de un canal Android es inmutable.
         "sound": "movimiento_inmueble.wav",
-        "channel_id": "building_movement_v1",
+        "channel_id": "building_movement_v2",
     },
 }
 
@@ -171,14 +177,14 @@ def build_push_payload(
     # mandando `{"notification":…, "android":…, "data":…}` —la forma heredada—
     # SNS la convierte a FCM v1 y por el camino DESCARTA el bloque `android`
     # entero, que es donde viven las dos cosas que hacen de esto una alerta y no
-    # un aviso: el canal (`seismic_alert_v2`, el único que salta el No Molestar y
+    # un aviso: el canal (`seismic_alert_v3`, el único que salta el No Molestar y
     # suena con el tono de TAKAB) y la prioridad alta (la que entrega en Doze).
     # El aviso llegó, se pintó… en `fcm_fallback_notification_channel` y en
     # prioridad normal. Verde en el servidor, verde en el teléfono, y sin alerta.
     #
     # Envolverlo en `fcmV1Message` le entrega a FCM el mensaje v1 tal cual, sin
     # conversión. Comprobado en el mismo teléfono: con esta forma el aviso cae en
-    # `seismic_alert_v2`; con la heredada, en el canal de reserva.
+    # `seismic_alert_v3`; con la heredada, en el canal de reserva.
     gcm = json.dumps(
         {FCM_V1_KEY: {"message": {"notification": dict(text), "android": android, "data": data}}}
     )

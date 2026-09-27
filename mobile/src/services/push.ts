@@ -40,9 +40,45 @@ export const SEISMIC_SOUND = "alerta_sismica.wav";
  * justo el teléfono donde se comprobaría.
  *
  * Si algún día cambia otra vez la importancia o el sonido, toca `_v3` y mover el
- * legacy — no editar en sitio. */
-export const SEISMIC_CHANNEL_ID = "seismic_alert_v2";
-const SEISMIC_CHANNEL_ID_LEGACY = "seismic_alert";
+ * legacy — no editar en sitio.
+ *
+ * [T-9.12] Y tocó `_v3`: el audio pasa a uso ALARMA (ver `audioDeAlarma`). */
+export const SEISMIC_CHANNEL_ID = "seismic_alert_v3";
+
+/** [T-9.12] ⚠️ POR QUÉ LOS CANALES QUE DESPIERTAN SUENAN COMO ALARMA.
+ *
+ * Medido en el Pixel el 2026-09-27, con «No molestar» en modo prioridad (el «Hora de
+ * dormir» de fábrica de Android): la push de CRISIS llegó con la pantalla apagada y
+ * NO sonó ni vibró hasta que se encendió la pantalla, y la voz del MOVIMIENTO no se
+ * oyó. `bypassDnd: true` no hacía nada: Android sólo lo respeta si el usuario le da
+ * a la app el acceso de «No molestar» a mano, y lo apaga en silencio
+ * (`dumpsys notification` ⇒ `mBypassDnd=false`). Lo que el modo prioridad deja pasar
+ * por defecto es el audio de uso ALARMA — el mismo que usa el despertador —, y ese
+ * es el uso honesto para un aviso que tiene que sacar a alguien de la cama.
+ *
+ * El uso del audio es INMUTABLE en un canal ya creado, igual que el sonido: por eso
+ * cambian los tres ids y los viejos se retiran. `bypassDnd` se queda (con el acceso
+ * concedido, además pasa el modo «silencio total»). */
+function audioDeAlarma(): Notifications.AudioAttributesInput {
+  // Función y no constante de módulo: así importar este fichero no toca los enums
+  // nativos (los tests que mockean `expo-notifications` a medias no los traen).
+  return {
+    usage: Notifications.AndroidAudioUsage.ALARM,
+    contentType: Notifications.AndroidAudioContentType.SONIFICATION,
+    flags: {
+      enforceAudibility: false,
+      requestHardwareAudioVideoSynchronization: false,
+    },
+  };
+}
+
+/** Canales cuyo audio ya no se puede cambiar: se borran DESPUÉS de crear los vigentes. */
+const CANALES_RETIRADOS = [
+  "seismic_alert",
+  "seismic_alert_v2",
+  "building_alarm",
+  "building_movement_v1",
+] as const;
 
 /** [T-2.147.a · D-05] Activación manual del inmueble (quórum de pánico).
  *
@@ -52,7 +88,7 @@ const SEISMIC_CHANNEL_ID_LEGACY = "seismic_alert";
  * que tiene que sacar a una brigada de la cama a las 3 a.m. llegaba como una
  * notificación cualquiera. `android.priority: "high"` no lo salvaba: en Android 8+
  * el heads-up y el DND los gobierna la importancia del CANAL. */
-export const PANIC_CHANNEL_ID = "building_alarm";
+export const PANIC_CHANNEL_ID = "building_alarm_v2";
 export const OPS_CHANNEL_ID = "ops";
 
 /** [T-9.11 · D-39] Movimiento detectado por el sensor PROPIO del inmueble.
@@ -65,8 +101,9 @@ export const OPS_CHANNEL_ID = "ops";
  *
  * Solo lo reciben los roles con `movement_alert` (la nube filtra); el ocupante no.
  * Como todo canal Android, su importancia y su sonido son inmutables tras
- * crearlo: si cambian, `_v2` — nunca editar en sitio. */
-export const MOVEMENT_CHANNEL_ID = "building_movement_v1";
+ * crearlo: si cambian, `_v2` — nunca editar en sitio. [T-9.12] Y cambió: `_v2`
+ * suena con uso ALARMA. */
+export const MOVEMENT_CHANNEL_ID = "building_movement_v2";
 export const MOVEMENT_SOUND = "movimiento_inmueble.wav";
 
 /** Canales Android (idempotente). */
@@ -79,6 +116,7 @@ export async function configureAndroidChannels(): Promise<void> {
     importance: Notifications.AndroidImportance.MAX,
     bypassDnd: true,
     sound: SEISMIC_SOUND,
+    audioAttributes: audioDeAlarma(),
     vibrationPattern: [0, 500, 500, 500, 500, 500],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
@@ -90,6 +128,7 @@ export async function configureAndroidChannels(): Promise<void> {
     importance: Notifications.AndroidImportance.MAX,
     bypassDnd: true,
     sound: "default",
+    audioAttributes: audioDeAlarma(),
     vibrationPattern: [0, 200, 200, 200, 200, 200, 200, 200],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
@@ -100,6 +139,7 @@ export async function configureAndroidChannels(): Promise<void> {
     importance: Notifications.AndroidImportance.MAX,
     bypassDnd: true,
     sound: MOVEMENT_SOUND,
+    audioAttributes: audioDeAlarma(),
     vibrationPattern: [0, 800, 300, 200, 300, 800],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
@@ -107,21 +147,26 @@ export async function configureAndroidChannels(): Promise<void> {
     name: "Operación TAKAB",
     importance: Notifications.AndroidImportance.DEFAULT,
   });
-  // El v1 se retira DESPUÉS de crear el v2: si el borrado fuera primero y la
-  // creación fallara, el teléfono se quedaría sin canal sísmico ninguno.
-  // Best-effort — en una instalación limpia no existe y borrarlo no es un error.
-  try {
-    await Notifications.deleteNotificationChannelAsync(SEISMIC_CHANNEL_ID_LEGACY);
-  } catch {
-    // un canal que no existe no hay que borrarlo; jamás bloquea el registro
+  // Los viejos se retiran DESPUÉS de crear los vigentes: si el borrado fuera primero
+  // y la creación fallara, el teléfono se quedaría sin canal ninguno. Best-effort —
+  // en una instalación limpia no existen y borrarlos no es un error.
+  for (const viejo of CANALES_RETIRADOS) {
+    try {
+      await Notifications.deleteNotificationChannelAsync(viejo);
+    } catch {
+      // un canal que no existe no hay que borrarlo; jamás bloquea el registro
+    }
   }
 }
 
-function toSnapshot(p: Notifications.NotificationPermissionsStatus): PermissionSnapshot {
+function toSnapshot(
+  p: Notifications.NotificationPermissionsStatus,
+): PermissionSnapshot {
   return {
     granted: p.status === "granted",
     canAskAgain: p.canAskAgain,
-    iosCriticalAllowed: Platform.OS === "ios" ? (p.ios?.allowsCriticalAlerts ?? false) : null,
+    iosCriticalAllowed:
+      Platform.OS === "ios" ? (p.ios?.allowsCriticalAlerts ?? false) : null,
   };
 }
 
@@ -144,7 +189,8 @@ export async function requestPermissions(): Promise<PermissionSnapshot> {
   );
 }
 
-export type PushRegistration = "registered" | "no-permission" | "no-site" | "error";
+export type PushRegistration =
+  "registered" | "no-permission" | "no-site" | "error";
 
 /** Registra el token NATIVO del dispositivo en el backend (upsert idempotente).
  * Best-effort deliberado: un fallo aquí jamás bloquea el uso de la app.
@@ -161,7 +207,9 @@ export type PushRegistration = "registered" | "no-permission" | "no-site" | "err
  * canal real sigue detrás de GATE-STORE (T-2.97). Es una MINA — el día que
  * APNs/FCM aterricen, la acreditación saldría verde sin que sonara un teléfono.
  */
-export async function registerDeviceForPush(siteId: string | null): Promise<PushRegistration> {
+export async function registerDeviceForPush(
+  siteId: string | null,
+): Promise<PushRegistration> {
   const snapshot = await getPermissionSnapshot();
   if (!snapshot.granted) {
     return "no-permission";
@@ -190,7 +238,10 @@ export async function registerDeviceForPush(siteId: string | null): Promise<Push
   }
   try {
     const device = await Notifications.getDevicePushTokenAsync();
-    const token = typeof device.data === "string" ? device.data : JSON.stringify(device.data);
+    const token =
+      typeof device.data === "string"
+        ? device.data
+        : JSON.stringify(device.data);
     const res = await registerPushTokenMePushTokensPost({
       body: {
         platform: Platform.OS === "ios" ? "ios" : "android",
@@ -204,7 +255,10 @@ export async function registerDeviceForPush(siteId: string | null): Promise<Push
     }
     return "registered";
   } catch (err) {
-    console.warn("push: registro fallido (best-effort, se reintenta al reabrir)", err);
+    console.warn(
+      "push: registro fallido (best-effort, se reintenta al reabrir)",
+      err,
+    );
     return "error";
   }
 }
@@ -238,7 +292,10 @@ export async function unregisterOwnPushToken(): Promise<PushUnregistration> {
         );
       }),
     ]);
-    token = typeof device.data === "string" ? device.data : JSON.stringify(device.data);
+    token =
+      typeof device.data === "string"
+        ? device.data
+        : JSON.stringify(device.data);
   } catch {
     // Sin token nativo este aparato no pudo registrarse nunca: nada que dar de baja.
     return "none";

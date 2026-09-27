@@ -24,6 +24,8 @@ import { useSessionStore } from "@/auth/session.store";
 
 jest.mock("expo-notifications", () => ({
   AndroidImportance: { MAX: 5, DEFAULT: 3 },
+  AndroidAudioUsage: { ALARM: 4, NOTIFICATION: 5 },
+  AndroidAudioContentType: { SONIFICATION: 4 },
   AndroidNotificationVisibility: { PUBLIC: 1 },
   setNotificationChannelAsync: jest.fn(async () => null),
   deleteNotificationChannelAsync: jest.fn(async () => true),
@@ -106,7 +108,7 @@ describe("configureAndroidChannels", () => {
     const mov = calls.find(([id]) => id === MOVEMENT_CHANNEL_ID);
     const sis = calls.find(([id]) => id === SEISMIC_CHANNEL_ID);
     const pan = calls.find(([id]) => id === PANIC_CHANNEL_ID);
-    expect(MOVEMENT_CHANNEL_ID).toBe("building_movement_v1");
+    expect(MOVEMENT_CHANNEL_ID).toBe("building_movement_v2"); // [T-9.12] uso ALARMA
     expect(mov?.[1]).toEqual(
       expect.objectContaining({
         name: "Movimiento en el inmueble",
@@ -125,7 +127,12 @@ describe("configureAndroidChannels", () => {
     await configureAndroidChannels();
     const ids = mocked.setNotificationChannelAsync.mock.calls.map(([id]) => id);
     expect(new Set(ids)).toEqual(
-      new Set([SEISMIC_CHANNEL_ID, PANIC_CHANNEL_ID, MOVEMENT_CHANNEL_ID, OPS_CHANNEL_ID]),
+      new Set([
+        SEISMIC_CHANNEL_ID,
+        PANIC_CHANNEL_ID,
+        MOVEMENT_CHANNEL_ID,
+        OPS_CHANNEL_ID,
+      ]),
     );
   });
 
@@ -135,18 +142,79 @@ describe("configureAndroidChannels", () => {
   it("android: retira el canal sísmico v1, y DESPUÉS de crear el vigente", async () => {
     setPlatform("android");
     await configureAndroidChannels();
-    expect(mocked.deleteNotificationChannelAsync).toHaveBeenCalledWith("seismic_alert");
+    expect(mocked.deleteNotificationChannelAsync).toHaveBeenCalledWith(
+      "seismic_alert",
+    );
     expect(mocked.deleteNotificationChannelAsync).not.toHaveBeenCalledWith(
       SEISMIC_CHANNEL_ID,
     );
-    const borrado = mocked.deleteNotificationChannelAsync.mock.invocationCallOrder[0];
+    const borrado =
+      mocked.deleteNotificationChannelAsync.mock.invocationCallOrder[0];
     const creado = mocked.setNotificationChannelAsync.mock.invocationCallOrder;
     expect(Math.max(...creado)).toBeLessThan(borrado);
   });
 
+  // [T-9.12] MEDIDO en el Pixel el 2026-09-27 con «No molestar» en modo prioridad (el
+  // «Hora de dormir» de fábrica): la push de CRISIS y la voz del MOVIMIENTO llegaron y
+  // NO sonaron ni vibraron. `bypassDnd: true` no sirve sin el acceso de «No molestar»
+  // que el usuario concede a mano (Android lo apaga en silencio: `mBypassDnd=false`).
+  // Lo que SÍ pasa el modo prioridad por defecto es el audio de uso ALARMA.
+  it.each([
+    ["sísmico", () => SEISMIC_CHANNEL_ID],
+    ["pánico", () => PANIC_CHANNEL_ID],
+    ["movimiento", () => MOVEMENT_CHANNEL_ID],
+  ])(
+    "android: el canal %s suena con uso ALARMA (pasa «No molestar»)",
+    async (_n, id) => {
+      setPlatform("android");
+      await configureAndroidChannels();
+      const canal = mocked.setNotificationChannelAsync.mock.calls.find(
+        ([c]) => c === id(),
+      );
+      expect(canal?.[1].audioAttributes?.usage).toBe(
+        Notifications.AndroidAudioUsage.ALARM,
+      );
+    },
+  );
+
+  it("android: el canal de operación NO usa ALARMA (no despierta a nadie)", async () => {
+    setPlatform("android");
+    await configureAndroidChannels();
+    const ops = mocked.setNotificationChannelAsync.mock.calls.find(
+      ([c]) => c === OPS_CHANNEL_ID,
+    );
+    expect(ops?.[1].audioAttributes?.usage).not.toBe(
+      Notifications.AndroidAudioUsage.ALARM,
+    );
+  });
+
+  it("android: retira TODOS los canales viejos, cuyo audio ya no se puede cambiar", async () => {
+    setPlatform("android");
+    await configureAndroidChannels();
+    for (const viejo of [
+      "seismic_alert",
+      "seismic_alert_v2",
+      "building_alarm",
+      "building_movement_v1",
+    ]) {
+      expect(mocked.deleteNotificationChannelAsync).toHaveBeenCalledWith(viejo);
+    }
+    for (const vigente of [
+      SEISMIC_CHANNEL_ID,
+      PANIC_CHANNEL_ID,
+      MOVEMENT_CHANNEL_ID,
+    ]) {
+      expect(mocked.deleteNotificationChannelAsync).not.toHaveBeenCalledWith(
+        vigente,
+      );
+    }
+  });
+
   it("android: si el borrado del canal viejo falla, el registro NO se cae", async () => {
     setPlatform("android");
-    mocked.deleteNotificationChannelAsync.mockRejectedValueOnce(new Error("boom"));
+    mocked.deleteNotificationChannelAsync.mockRejectedValueOnce(
+      new Error("boom"),
+    );
     await expect(configureAndroidChannels()).resolves.toBeUndefined();
   });
 
@@ -164,7 +232,9 @@ describe("registerDeviceForPush", () => {
       status: "denied",
       canAskAgain: true,
     } as never);
-    await expect(registerDeviceForPush("site-1")).resolves.toBe("no-permission");
+    await expect(registerDeviceForPush("site-1")).resolves.toBe(
+      "no-permission",
+    );
     expect(mocked.getDevicePushTokenAsync).not.toHaveBeenCalled();
   });
 
@@ -211,7 +281,10 @@ describe("registerDeviceForPush", () => {
       canAskAgain: true,
       ios: { allowsCriticalAlerts: false },
     } as never);
-    mocked.getDevicePushTokenAsync.mockResolvedValue({ type: "ios", data: "apns" } as never);
+    mocked.getDevicePushTokenAsync.mockResolvedValue({
+      type: "ios",
+      data: "apns",
+    } as never);
     mockedRegister.mockResolvedValue({ error: { detail: "boom" } });
     await expect(registerDeviceForPush("site-1")).resolves.toBe("error");
   });
@@ -258,7 +331,9 @@ describe("registerDeviceForPush · roles de todo el cliente (D-42)", () => {
 
   it("tenant_admin con un sitio ADOPTADO de una push ⇒ sigue registrando null (no se estrecha)", async () => {
     sesion("tenant_admin", "*");
-    await expect(registerDeviceForPush("sitio-adoptado")).resolves.toBe("registered");
+    await expect(registerDeviceForPush("sitio-adoptado")).resolves.toBe(
+      "registered",
+    );
     expect(mockedRegister).toHaveBeenCalledWith({
       body: { platform: "android", token: "fcm-admin", site_id: null },
     });
@@ -296,17 +371,24 @@ describe("unregisterOwnPushToken", () => {
   });
 
   beforeEach(() => {
-    mocked.getDevicePushTokenAsync.mockResolvedValue({ type: "android", data: "fcm-mio" } as never);
+    mocked.getDevicePushTokenAsync.mockResolvedValue({
+      type: "android",
+      data: "fcm-mio",
+    } as never);
   });
 
   it("da de baja la fila del token de ESTE aparato, y sólo ésa", async () => {
-    mockedList.mockResolvedValue({ data: [fila("otro-tel", "fcm-ajeno"), fila("este", "fcm-mio")] });
+    mockedList.mockResolvedValue({
+      data: [fila("otro-tel", "fcm-ajeno"), fila("este", "fcm-mio")],
+    });
     mockedRevoke.mockResolvedValue({ data: {} });
 
     await expect(unregisterOwnPushToken()).resolves.toBe("revoked");
 
     expect(mockedRevoke).toHaveBeenCalledTimes(1);
-    expect(mockedRevoke).toHaveBeenCalledWith({ path: { push_token_id: "este" } });
+    expect(mockedRevoke).toHaveBeenCalledWith({
+      path: { push_token_id: "este" },
+    });
   });
 
   it("si este aparato nunca se registró ⇒ 'none' y no borra nada", async () => {
