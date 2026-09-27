@@ -224,6 +224,13 @@ incidente `local_threshold`… **y ningún relé se mueve**. La sirena no suena.
 
 **Qué haces:** pulsas el WR-1. Nada más.
 
+> ⚠️ **Antes de pulsarlo: 2 minutos de calma** desde que el panel volvió a `normal` tras el
+> golpe del acto 2, sin tocar la losa. Lo midió el ensayo 2 (2026-09-24): con 81 s el gabinete
+> juntó el WR-1 al episodio del golpe (cierra el episodio tras **90 s** de calma, `T-7.49`), la
+> nube **escaló** el incidente del acto 2 en vez de abrir uno SASMEX, **no hubo push nuevo**, y
+> el PDF acabó contando que la sirena la disparó el umbral local. Llena esos 2 minutos con el
+> discurso del acto 2 («nada se movió»).
+
 **El orden importa y hay que anunciarlo antes**, porque se ve en un segundo y si no lo
 anticipas el cliente no sabe dónde mirar:
 
