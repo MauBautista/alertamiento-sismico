@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **500** · `[x]` **401** · `[~]` **15** · `[ ]` **84**
+**Conteo de tareas:** total **500** · `[x]` **405** · `[~]` **17** · `[ ]` **78**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17750,63 +17750,63 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] `PLAN-REQUERIMIENTOS-CLIENTE-2026-09.md` con el objetivo ejecutable de cada fase.
   - [x] `D-39`…`D-48` con sección, fila del índice y cabecera de la bitácora recontada.
 
-### [ ] T-9.01 · **Los tres PR pendientes, mergeados y desplegados** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.01 · **Los tres PR pendientes, mergeados y desplegados** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · edge · docs · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** empezar el bloque sobre un `main` que es lo que corre en la nube y en el gabinete.
 - **Criterios de aceptación:**
-  - [ ] #281 (SQLAlchemy con `asyncio`), #282 (doble clic de CERRAR ALERTA) y #280 (ensayo 2) en `main`.
+  - [x] #281 (SQLAlchemy con `asyncio`), #282 (doble clic de CERRAR ALERTA) y #280 (ensayo 2) en `main`.
   - [ ] La nube redesplegada desde `main` (`/api/health` da su etiqueta).
   - [ ] El gabinete en una release limpia desde `main` (sin `-dirty`).
 
-### [ ] T-9.02 · **Una escalada a SASMEX reescribe el disparador** — `SOFTWARE`
+### [x] T-9.02 · **Una escalada a SASMEX reescribe el disparador** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F0 · crítica · **Decisión:** `D-39`
 - **Objetivo:** que un umbral local seguido de SASMEX en el mismo episodio quede como SASMEX, y que
   el ocupante vea la alerta.
 - **Criterios de aceptación:**
-  - [ ] `TRIGGER_RANK` en `settings.py`; `_EVENT_SQL` sube el disparador y nunca degrada severidad,
+  - [x] `TRIGGER_RANK` en `settings.py`; `_EVENT_SQL` sube el disparador y nunca degrada severidad,
     nivel ni disparador.
-  - [ ] Local a `evacuate_or_hold` y luego SASMEX al mismo nivel ⇒ `trigger='sasmex'`,
+  - [x] Local a `evacuate_or_hold` y luego SASMEX al mismo nivel ⇒ `trigger='sasmex'`,
     `opened_trigger='local_threshold'`; el ocupante recibe `alert_active`.
-  - [ ] La narrativa asistida recibe los dos disparadores y no atribuye la sirena al umbral local.
+  - [x] La narrativa asistida recibe los dos disparadores y no atribuye la sirena al umbral local.
 
-### [ ] T-9.03 · **La escalada vuelve a avisar a todo el edificio** — `SOFTWARE`
+### [x] T-9.03 · **La escalada vuelve a avisar a todo el edificio** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** api · web · **Depende de:** T-9.02 · **Prioridad:** F0 · crítica · **Decisión:** `D-39`
 - **Objetivo:** que un incidente que empieza sin autorizar evacuar y luego autoriza despierte a todos
   los teléfonos en ese momento.
 - **Criterios de aceptación:**
-  - [ ] Acción `alert_escalated` con push anclado a ella; idempotente (migración 0070).
-  - [ ] Los casos de disparador, de cuórum, de segunda pasada, de incidente cerrado y de incidente
+  - [x] Acción `alert_escalated` con push anclado a ella; idempotente (migración 0070).
+  - [x] Los casos de disparador, de cuórum, de segunda pasada, de incidente cerrado y de incidente
     que autorizaba desde el principio, con test.
-  - [ ] La acción en el censo de la consola.
+  - [x] La acción en el censo de la consola.
 
-### [ ] T-9.04 · **Un NO HABITAR no caduca y el reingreso solo se declara si hubo evacuación** — `SOFTWARE`
+### [x] T-9.04 · **Un NO HABITAR no caduca y el reingreso solo se declara si hubo evacuación** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** api · mobile · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** que la app del ocupante nunca diga «en calma» sobre un edificio con NO HABITAR
   firmado, ni «reingreso autorizado» cuando nunca se le mandó salir.
 - **Criterios de aceptación:**
-  - [ ] Fase `reentry_blocked` con motivo `no_habitable`, `pendiente_dictamen` o `pendiente_confirmacion`.
-  - [ ] Un NO HABITAR firmado sigue bloqueando a las 9 h y a los 3 días; una firma habitable
+  - [x] Fase `reentry_blocked` con motivo `no_habitable`, `pendiente_dictamen` o `pendiente_confirmacion`.
+  - [x] Un NO HABITAR firmado sigue bloqueando a las 9 h y a los 3 días; una firma habitable
     posterior lo levanta.
-  - [ ] Un incidente solo local con dictamen habitable ⇒ el ocupante sigue en calma.
-  - [ ] Un incidente local nuevo no tapa a uno autorizante más viejo.
-  - [ ] Precedencia explícita en `fase_del_sitio`.
+  - [x] Un incidente solo local con dictamen habitable ⇒ el ocupante sigue en calma.
+  - [x] Un incidente local nuevo no tapa a uno autorizante más viejo.
+  - [x] Precedencia explícita en `fase_del_sitio`.
 
-### [ ] T-9.05 · **El token de push es del aparato, no de la persona** — `SOFTWARE`
+### [x] T-9.05 · **El token de push es del aparato, no de la persona** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F0 · crítica
 - **Objetivo:** que el siguiente usuario de un teléfono reciba los avisos.
 - **Criterios de aceptación:**
-  - [ ] `app_claim_push_token()` con dueño `takab_ingest`, identidad solo de la sesión y auditoría
+  - [x] `app_claim_push_token()` con dueño `takab_ingest`, identidad solo de la sesión y auditoría
     del cambio de dueño en los dos clientes (migración 0071).
-  - [ ] `push_tokens.role` guardado al registrar.
-  - [ ] El test que se guardó el 24-sep pasa.
+  - [x] `push_tokens.role` guardado al registrar.
+  - [x] El test que se guardó el 24-sep pasa.
 
-### [ ] T-9.06 · **El teléfono vibra en crisis y la app no se queda muda ante una fase nueva** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.06 · **El teléfono vibra en crisis y la app no se queda muda ante una fase nueva** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · **Depende de:** T-9.04 · **Prioridad:** F0 · alta
 - **Objetivo:** que la crisis vibre (medido: solo sonó) y que una APK vieja no se rompa.
 - **Criterios de aceptación:**
-  - [ ] Vibración en bucle mientras dura la crisis; se cancela al salir.
-  - [ ] `deriveAlertState` con caso por defecto.
-  - [ ] Cartel rojo para `no_habitable` y franja ámbar para los pendientes.
+  - [x] Vibración en bucle mientras dura la crisis; se cancela al salir.
+  - [x] `deriveAlertState` con caso por defecto.
+  - [x] Cartel rojo para `no_habitable` y franja ámbar para los pendientes.
   - [ ] Verificado en el Pixel.
 
 ## Fase 9.1 · Antipánico y voz de la brigada
