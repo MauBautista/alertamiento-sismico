@@ -2382,6 +2382,62 @@ def test_cerrar_alerta_aparece_con_el_enclave_y_exige_dos_clics(tmp_path):
     assert _posts(dos, "api/reset")
 
 
+# [T-8.13] Medido en el gabinete el 2026-09-24: «le doy doble clic a CERRAR ALERTA y a
+# veces no responde o tarda». Armado el primer clic, `frame()` llamaba
+# `renderActions()` en CADA fotograma para bajar la cuenta de 5 s, y `renderActions`
+# vaciaba la caja (`textContent = ''`) y creaba botones NUEVOS. Un clic del navegador
+# exige soltar sobre el MISMO elemento que se apretó; a 60 repintados por segundo el
+# botón ya era otro al soltar y el clic se perdía, hasta que el armado caducaba. En
+# reposo pasaba lo mismo a 1 Hz con el primer clic. El test de arriba no lo veía: el
+# arnés dispara `click` directo, sin apretar-y-soltar. Lo que se afirma aquí es la
+# causa: el botón sobrevive al repintado.
+_MISMO_BOTON = """(() => {
+  const caja = $('action-btns');
+  const buscar = (p) => Array.from(caja.children).find((b) => b.textContent.startsWith(p));
+  const antes = buscar(%(prefijo)s);
+  if (!antes) return 'no hay botón ' + %(prefijo)s;
+  antes.__marca = 'el-mismo';
+  %(repinta)s
+  const despues = buscar(%(prefijo)s);
+  return despues && despues.__marca === 'el-mismo' ? 'mismo' : 'OTRO';
+})()"""
+
+
+def test_cerrar_alerta_armado_sobrevive_a_cada_fotograma(tmp_path):
+    st = _base()
+    st["alert_latched"] = True
+    out = _render(
+        tmp_path,
+        status=st,
+        clicks=["action:CERRAR ALERTA"],
+        evals=[
+            _MISMO_BOTON % {"prefijo": "'CLIC NUEVAMENTE'", "repinta": "frame(); frame();"},
+            _MISMO_BOTON % {"prefijo": "'CLIC NUEVAMENTE'", "repinta": "render();"},
+        ],
+    )
+    assert out["evals"] == ["mismo", "mismo"], out["evals"]
+
+
+def test_los_botones_en_reposo_sobreviven_al_poll(tmp_path):
+    st = _base()
+    st["alert_latched"] = True
+    out = _render(
+        tmp_path,
+        status=st,
+        evals=[_MISMO_BOTON % {"prefijo": "'CERRAR ALERTA'", "repinta": "render(); render();"}],
+    )
+    assert out["evals"] == ["mismo"], out["evals"]
+
+
+def test_el_boton_reutilizado_sigue_mandando_su_orden(tmp_path):
+    """Reutilizar el botón no puede dejarle el `endpoint` del repintado anterior."""
+    st = _base()
+    st["alert_latched"] = True
+    out = _render(tmp_path, status=st, clicks=["action:CERRAR ALERTA", "frame", "frame", "confirm"])
+    assert _posts(out, "api/reset")
+    assert len([f for f in out["fetches"] if f["method"] == "POST"]) == 1
+
+
 # --------------------------------------------------- [T-5.01] modo demo INERTE
 #
 # El defecto que estos tests vienen a cerrar, medido en la auditoría V1-COMERCIAL

@@ -300,7 +300,18 @@ check() {
   done
 
   if [ -z "$iid" ]; then
-    rojo "no llegó ningún incidente 'sasmex' en ${ESPERA_S}s: el pulso no viajó (¿modo prueba armado? ¿gabinete sin nube?)"
+    # [T-8.13] Ensayo 2 (2026-09-24): el WR-1 se pulsó 81 s después de que el golpe
+    # del acto 2 volviera a `normal`. El gabinete cierra el episodio tras 90 s de
+    # calma (T-7.49), le puso al pulso la identidad del golpe, y la nube ESCALÓ el
+    # incidente del acto 2 a SASMEX en vez de abrir otro. Esa es una causa distinta
+    # de «el pulso no viajó», y la única que se arregla esperando: se nombra.
+    local sumado
+    sumado="$(consulta "SELECT incident_id FROM incidents WHERE site_id='$SITIO' AND trigger='sasmex' AND opened_at < '$DESDE' AND opened_at >= '$DESDE'::timestamptz - interval '15 minutes' ORDER BY opened_at DESC LIMIT 1")"
+    if [ -n "$sumado" ]; then
+      rojo "el pulso NO abrió incidente propio: se SUMÓ al incidente ${sumado:0:8}, abierto antes por el acto anterior (mismo episodio del gabinete: menos de 90 s de calma entre el golpe y el WR-1). No es una avería: deja 2 min de calma y repite el acto 3"
+    else
+      rojo "no llegó ningún incidente 'sasmex' en ${ESPERA_S}s: el pulso no viajó (¿modo prueba armado? ¿gabinete sin nube?)"
+    fi
     return 1
   fi
   verde "incidente sasmex $iid abierto ($(( $(date +%s) - t0 ))s tras empezar a mirar)"
@@ -690,6 +701,11 @@ full() {
 
   # ── acto 3 ──────────────────────────────────────────────────────────────
   abre_acto "3 · El pulso del WR-1"
+  # [T-8.13] Lo que costó el acto 3 del ensayo 2: con menos de 90 s de calma tras el
+  # golpe, el gabinete junta el WR-1 al mismo episodio y no hay incidente SASMEX propio.
+  echo "  ⚠️ antes de tocar el WR-1: 2 min de calma desde que el panel volvió a 'normal'"
+  echo "     tras el golpe del acto 2. Con menos de 90 s el gabinete lo junta al mismo"
+  echo "     episodio: no abre incidente SASMEX propio y el PDF lo cuenta como umbral local."
   DESDE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   if pausa "pulsa el WR-1 AHORA (el check empieza a contar desde este instante)"; then
     check

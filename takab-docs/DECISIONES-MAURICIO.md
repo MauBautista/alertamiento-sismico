@@ -12,10 +12,11 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-22 · **38 decisiones** · 32 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-27 · **48 decisiones** · 42 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
 > 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
-> 2026-09-19, 2 el 2026-09-22), 6 delegadas (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
+> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 2 el 2026-09-27), 6 delegadas (3 el 2026-08-12,
+> 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
 > tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
@@ -94,6 +95,16 @@
 | [D-36](#d-36) | El papel de TAKAB **no lleva firmante nominal**: emite y responde la persona moral, y el renglón de la firma lo dice en vez de quedarse en blanco | 2026-09-19 | Mauricio |
 | [D-37](#d-37) | El tope de la redacción asistida sube de 8 s a **30 s** y la generación sigue dentro de la petición: con fotografías se midió p50 13 686 ms y máximo 20 604 ms, así que 8 s **cortaba siempre** el dictamen que las lleva | 2026-09-22 | Mauricio |
 | [D-38](#d-38) | La sesión dura **según el rol**, contada desde el login y no desde el último refresco: brigadista e inspector **30 días**, ocupante **90**, el resto **24 h**; la impone la API con `auth_time` porque Cognito solo sabe duraciones por cliente | 2026-09-22 | Mauricio |
+| [D-39](#d-39) | Un movimiento de **un solo inmueble** avisa a su brigada (brigadista, inspector, administrador) desde el escalón de DISPARO; **el ocupante no recibe nada**, y si escala a SASMEX o cuórum se vuelve a avisar a todos | 2026-09-27 | Mauricio |
+| [D-40](#d-40) | Audio v2: **tono propio parecido al oficial** (el del CIRES sigue reservado), voz corta para la brigada y música de prueba con licencia de la grabación, todo con manifiesto de huellas | 2026-09-26 | Mauricio |
+| [D-41](#d-41) | El simulacro **habla**: «Esto es un simulacro» sola al principio y repetida encima del tono atenuado | 2026-09-26 | Mauricio |
+| [D-42](#d-42) | Los roles bajan de **10 a 7**: ADMINISTRADOR (con la app táctica), INSPECTOR, BRIGADISTA, OCUPANTE y GOBIERNO, más los dos internos; ventana de alias para no romper sesiones | 2026-09-27 | Mauricio |
+| [D-43](#d-43) | El dictamen de reingreso se decide **solo en tres bandas** por la aceleración medida: VERDE lo firma el sistema, AMARILLO lo confirma un brigadista o el inspector, ROJO lo firma el inspector; sin calibración nunca es automático | 2026-09-26 | Mauricio |
+| [D-44](#d-44) | El mapa de la sacudida pasa a **mapa de calor ESTIMADO** con MMI estimada (Wald 1999), rotulado y con cartografía embebida en el PDF *(enmienda `D-08`)* | 2026-09-26 | Mauricio |
+| [D-45](#d-45) | Relieve y **zonas por tipo de suelo** (CDMX e INEGI) con su atribución; el tipo de suelo no es zonificación sísmica | 2026-09-26 | Mauricio |
+| [D-46](#d-46) | Los sismos de México en la app del ocupante **desde USGS y M 4.0**, con intensidad estimada en su inmueble; el SSN cuando cierre su atribución | 2026-09-26 | Mauricio |
+| [D-47](#d-47) | Animaciones más vistosas con sismo confirmado **sin que el texto se mueva** *(enmienda `D-30`)* | 2026-09-26 | Mauricio |
+| [D-48](#d-48) | De SeismicAI se toma el **reporte automático**, los **contactos de emergencia** y el **historial por inmueble**; no la cuenta regresiva ni la MMI observada | 2026-09-26 | Mauricio |
 
 ---
 
@@ -1936,5 +1947,257 @@ de su cliente, el cliente en el Terraform: el `.tftest.hcl` exige que cada clien
 exactamente el máximo de los roles que lo usan, así que los dos cambios van juntos o el plan se
 pone rojo. Volver a `sessionStorage` en la consola es una línea, y devuelve el «el día dura
 mientras la pestaña esté abierta».
+
+---
+
+## D-39 · El movimiento de **un solo inmueble** avisa a su brigada, no a sus ocupantes
+
+**Fecha:** 2026-09-27 · **Ficha:** `T-9.02`, `T-9.03`, `T-9.11` · **Toca:** `notify/orchestrator.py`,
+`notify/push.py`, `routers/mobile_site.py`, los canales Android de `mobile/src/services/push.ts`
+
+**Lo que se decidió.** Cuando un incidente lo abre el umbral instrumental de **una sola estación**
+(`local_threshold`, sin SASMEX y sin cuórum de red) y ese umbral llega al escalón de **DISPARO**
+(`restricted` o `evacuate_or_hold`, dos canales), el sistema manda un aviso corto **con voz** («Se
+detectó un movimiento en el inmueble…») **solo** a brigadistas, inspector y administrador del sitio.
+El **ocupante no recibe nada**: ni push, ni pantalla, ni sonido. El escalón de **CAUTELA** (`watch`,
+un canal) no despierta ningún teléfono: se queda en la consola y en el panel del gabinete. La consola
+ve todo, como hoy. SASMEX y el cuórum de red siguen avisando a **todos**, y si un incidente local
+**escala** a SASMEX o a cuórum, la nube vuelve a avisar a todo el edificio en ese momento.
+
+**El problema que la hizo urgente.** Pedido por el cliente tras la presentación del 24-sep («para no
+difundir el pánico»). Al revisarlo se midió que era peor de lo que parecía: el orquestador **nunca
+miraba el disparador**, así que un golpe cerca del sensor mandaba «ALERTA SÍSMICA» por el canal que
+ignora el No Molestar a **todos** los teléfonos del sitio, y luego `mobile-state` ocultaba ese
+incidente a todos (T-2.105) — también a los brigadistas, que eran los únicos que podían revisar.
+Ocupantes asustados sin instrucción y brigada sin nada que atender.
+
+**Por qué desde DISPARO y no desde CAUTELA.** El golpe del ensayo del 24-sep llegó solo a `watch`
+con un canal. Despertar a la brigada con cada camión que pasa enseña a ignorar el aviso. DISPARO exige
+dos canales sobre el umbral, que es la misma vara con la que el gabinete ya distingue movimiento de
+ruido.
+
+**El precio, declarado.** Un sismo real que solo sienta un inmueble (sismo local muy cercano sin
+SASMEX) no avisa a sus ocupantes hasta que lo corrobore la red o SASMEX. Es la regla que ya estaba
+escrita (T-2.105, «una estación sola no ordena evacuar»); lo nuevo es que la brigada sí se entera.
+
+**Cómo se revocaría.** La elección vive en una función pura (`push_target_for`) y en la acción
+`movement_alert` de la matriz: quitar roles de esa acción o cambiar el escalón mínimo es una línea
+cada una, con su test.
+
+---
+
+## D-40 · Catálogo de audio v2: **tono propio parecido al oficial**, voz de brigada y música de prueba
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.10`, `T-9.70`, `T-9.72` · **Toca:** `tools/audio/`,
+`shared/audio/MANIFEST.json`, `edge/takab_edge/audio/catalog.py`, `mobile/assets/sounds/`
+
+**Lo que se decidió.** Cuatro audios. (1) Un **tono de alerta sísmica propio**, reconocible como
+alarma y **parecido pero no idéntico** al oficial: el oficial del SASMEX es del CIRES y sigue
+reservado (`D-19`). (2) Un **aviso corto con voz para la brigada** («Se detectó un movimiento en el
+inmueble. Verifique.»), generado con síntesis de voz en español de México, local y sin costo. (3) El
+**simulacro hablado** (lo gobierna `D-41`). (4) **Música clásica para probar los parlantes** en
+continuo, que entrega Mauricio con licencia de la **grabación**, no solo de la partitura. Todo audio
+entra con un manifiesto (sha256, duración, sonoridad, fuente y licencia) que un test compara contra
+lo que el edge y la app empaquetan.
+
+**Por qué parecido y no el oficial.** `D-19` ya decidió no pedir licencia al CIRES. Un tono
+«parecido» da al ocupante el reflejo aprendido sin usar un sonido ajeno. Se revisa contra el marco
+legal pendiente (GATE-LEGAL) antes de desplegarlo.
+
+**El precio, declarado.** Un tono demasiado parecido puede leerse como imitación del oficial; uno
+demasiado distinto no dispara el reflejo. Se decide escuchándolo, y el cambio al oficial queda
+preparado para el día que haya permiso escrito.
+
+**Cómo se revocaría.** Cada audio es una entrada del catálogo con id versionado (`takab-siren-v2`,
+canal `seismic_alert_v3`): volver al anterior es cambiar el id en la configuración firmada.
+
+---
+
+## D-41 · El simulacro **habla**: «Esto es un simulacro» antes y durante el tono
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.71` · **Toca:** `takab-simulacro-v2`,
+`edge/tests/test_audio_simulacro.py`, RUNBOOK §C.2
+
+**Lo que se decidió.** El audio del simulacro abre con **2,5 s de voz sola** («Esto es un
+simulacro»), y después la voz se repite **al menos cuatro veces** encima del tono de alerta
+**atenuado 15 dB**. Sustituye a la regla de T-5.17, que exigía que un simulacro **nunca** sonara a
+sismo (hoy es un carillón de tres notas).
+
+**Por qué.** El cliente pidió ensayar con el sonido que la gente va a oír de verdad. El riesgo de la
+regla vieja era el contrario: un simulacro que no suena a alerta no entrena el reflejo. La voz
+primero y encima es lo que impide confundirlo con uno real.
+
+**El precio, declarado.** Quien llegue tarde al simulacro oye un tono de alerta; la voz repetida es
+la única barrera. Por eso el invariante nuevo mide energía y no solo duración.
+
+**Cómo se revocaría.** Volver a `takab-simulacro-v1` en la configuración firmada; el invariante viejo
+queda en el historial del test.
+
+---
+
+## D-42 · Los roles bajan de **10 a 7**
+
+**Fecha:** 2026-09-27 · **Ficha:** `T-9.20`…`T-9.22`, `T-9.81` · **Toca:** `auth/matrix.py`,
+`auth/roles.py`, Cognito, `RBAC-TAKAB.md`, la tabla de `D-38`
+
+**Lo que se decidió.** Para el cliente quedan **ADMINISTRADOR** (`tenant_admin`, que absorbe al
+operador SOC y al administrador de inmueble, ve **todo** el cliente sin alcance por inmueble y tiene
+**además la app táctica completa**), **INSPECTOR**, **BRIGADISTA** (absorbe al guardia de seguridad),
+**OCUPANTE** y **GOBIERNO** (`gov_operator`). TAKAB conserva `takab_superadmin` y `takab_support`. Los
+identificadores técnicos no cambian, así que la RLS no se toca. Los ex-guardias pasan a la sesión de
+**30 días** del brigadista. Los usuarios existentes se migran con un script que corre Mauricio; el
+administrador de inmueble de la demostración pasa a ADMINISTRADOR.
+
+**El problema.** El cliente dijo que hay muchos roles y poco personal para validar la información.
+Medido en la matriz: el guardia y el brigadista tenían **exactamente** los mismos permisos, y el
+operador SOC era un subconjunto estricto del administrador.
+
+**Cómo se hace sin romper sesiones.** Hay una ventana de alias: un token con un rol viejo sigue
+entrando, canonizado al nuevo, hasta que el script de migración diga que no queda nadie con rol
+viejo. Las filas históricas no se reescriben (el PDF de un reporte viejo sigue diciendo quién lo
+firmó con el rol que tenía).
+
+**El precio, declarado.** Un ex-operador SOC gana permisos de administración y visibilidad de todo
+el cliente. Un guardia con teléfono compartido en caseta queda con sesión de un mes; lo compensa que
+deshabilitar al usuario cierra sus sesiones al instante (`D-38`).
+
+**Cómo se revocaría.** Mientras dure la ventana de alias, basta con quitar el alias y reasignar
+usuarios. Después, crear de nuevo el rol en la matriz, el grupo en Cognito y los censos.
+
+---
+
+## D-43 · El dictamen de reingreso se decide **solo en tres bandas**, con firma del sistema
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.30`…`T-9.35` · **Toca:** `dictamen/rules.py`
+(`dictamen-v2`), `dictamen/service.py`, `incident/lifecycle.py`, la app táctica
+
+**Lo que se decidió.** Con la aceleración máxima medida en el inmueble (todos sus sensores activos):
+**VERDE**, menos de 0,04 g (MMI estimada IV o menos) y sin reportes de daño ⇒ el sistema emite y
+**firma** «operación normal» y el reingreso se libera solo. **AMARILLO**, de 0,04 a 0,10 g o daño no
+estructural ⇒ el sistema emite el dictamen y **pide confirmarlo** a un brigadista (en la app) o al
+inspector. **ROJO**, 0,10 g o más, o daño estructural, personas atrapadas o fuga de gas ⇒ **firma
+obligatoria del inspector**. Sin calibración declarada en los sensores activos **nunca** es
+automático: cae en AMARILLO. Una alerta SASMEX **deja de forzar** «NO HABITAR» por sí sola: lo que
+decide es cuánto se movió **este** edificio. El cierre del incidente pasa a exigir dictamen firmado
+de cualquier tipo **y** clasificación, además de las vías que ya existían (clasificación terminal,
+cierre explícito, vencimiento).
+
+**El problema.** El cliente pidió que el sistema dictamine solo los sismos pequeños. Hoy cualquier
+alerta SASMEX producía NO HABITAR aunque el edificio casi no se moviera, y el reingreso solo lo
+liberaba la firma del inspector: con poco personal, el edificio quedaba cerrado por nada.
+
+**Por qué es determinista y no IA.** Son umbrales fijos con su procedencia escrita en el dictamen
+(regla de oro 1: la IA asesora, jamás decide). El firmante del sistema es una identidad fija y el
+papel lo dice («EMITIDO POR EL SISTEMA · regla dictamen-v2 · banda VERDE»).
+
+**El precio, declarado.** Un VERDE automático libera un reingreso sin que una persona mire. Lo
+acotan: la puerta de calibración, 300 s de gracia tras volver a normal, la re-evaluación por
+cualquier reporte de daño durante 72 h, y la regla de que **la prudencia sube sola y solo baja con
+firma**. No sustituye la evaluación estructural formal, y el papel lo sigue diciendo.
+
+**Cómo se revocaría.** Los umbrales viven en `rule_sets.config.dictamen_v2`, por cliente o sitio;
+desactivar el automático es subir el umbral VERDE a 0.
+
+---
+
+## D-44 · El mapa de la sacudida pasa a ser un **mapa de calor ESTIMADO**, con MMI estimada
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.50`…`T-9.53`, `T-9.65` · **Toca:** `shakemap/`,
+`dictamen/model.py` (`NO_MMI`), §8 del PDF, la consola y la app · **Enmienda:** `D-08`
+
+**Lo que se decidió.** Además de los puntos medidos, se dibuja una **superficie estimada** en rojo,
+amarillo y verde, con la **intensidad MMI estimada** a partir de la PGA (Wald et al., 1999). Se rotula
+siempre «ESTIMADO a partir de N sensores (M calibrados)» y distingue la zona ajustada a estaciones de
+la zona solo modelada por la ley de atenuación. Sale en la consola, la app y el PDF, donde además se
+embebe una cartografía base (estados y zonas de suelo) empaquetada con la API, sin depender de un
+servidor de mapas.
+
+**El problema.** El cliente pidió ver cómo se sintió el sismo en distintos lugares. Además, el mapa
+**nunca** se calculaba en la nube: solo se hacía tras la revisión y dentro de 6 h, y cero incidentes
+lo tenían.
+
+**Por qué enmienda y no contradice.** `D-08` y T-7.24 prohibían interpolar para no afirmar «así se
+sacudió su colonia» con pocas estaciones. La salida honesta no es negarse a dibujar: es rotularlo
+como estimación, separar lo ajustado de lo modelado y dejar los puntos medidos encima. Los PDF ya
+firmados que dicen que TAKAB no reporta MMI siguen siendo ciertos para su fecha.
+
+**El precio, declarado.** Con tres o cuatro estaciones la superficie es sobre todo modelo. Lo dice el
+rótulo; no hay forma de que lo diga el color.
+
+**Cómo se revocaría.** Apagar la capa en la consola y la app, y que el PDF vuelva a imprimir `NO_MMI`
+cuando no hay superficie (ya lo hace).
+
+---
+
+## D-45 · Relieve y **zonas por tipo de suelo**, con su atribución
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.54` · **Toca:** `tools/geodatos/`, `web/public/geodatos/`,
+`shared/geodatos/atribuciones.json`, la CSP de `deploy/cloud/Caddyfile`
+
+**Lo que se decidió.** El mapa gana **relieve** (AWS Terrain Tiles, abierto) y dos capas de suelo:
+la **zonificación geotécnica de la CDMX** (lomas, transición, lago) y la **edafología del INEGI** para
+el resto del país. Las dos son de uso libre con atribución, y la atribución sale de un solo fichero.
+La capa del INEGI se rotula «tipo de suelo»: **no es** zonificación sísmica, salvo la de la CDMX.
+
+**El precio, declarado.** La edafología del INEGI es tipo de suelo agrícola, no respuesta sísmica.
+Se enseña como contexto, nunca como dato para dictaminar.
+
+**Cómo se revocaría.** Cada capa es un fichero con sha256 y un interruptor en el mapa.
+
+---
+
+## D-46 · Los sismos de México en la app del ocupante, **desde USGS y M 4.0**
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.60`…`T-9.64` · **Toca:** worker `catalog-sync`,
+`/mobile/catalog/earthquakes`, la app
+
+**Lo que se decidió.** La app lista los sismos registrados en México con magnitud, lugar, hora e
+**intensidad estimada en el inmueble del usuario**, desde el catálogo de USGS (dominio público) y
+desde magnitud 4.0. El Sismológico Nacional se agrega cuando se cierre su atribución (`D-06`). Los
+marcadores cambian de tamaño con la magnitud y de color con la intensidad estimada, con una sola
+escala compartida entre consola y app. **No hay cuenta regresiva ni magnitud preliminar**: el
+catálogo es posterior al evento por naturaleza.
+
+**El precio, declarado.** USGS cubre mal los sismos pequeños de México: la lista queda incompleta
+hasta tener el SSN.
+
+**Cómo se revocaría.** Apagar el worker y la pestaña; los datos no se mezclan con los incidentes.
+
+---
+
+## D-47 · Animaciones más vistosas con sismo confirmado, **sin que el texto se mueva**
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.73` · **Toca:** consola, app, panel del gabinete ·
+**Enmienda:** `D-30`
+
+**Lo que se decidió.** Con una alerta que **autoriza evacuar** (SASMEX o cuórum): toma de pantalla
+en la consola, ondas P y S saliendo del epicentro en el mapa (en kilómetros reales), borde de
+pantalla pulsante y entrada del cartel; en la app, anillos y vibración. Se conservan los tres límites
+de `D-30`: **el texto nunca se mueve**, la animación **se apaga por el estado del servidor** y se
+respeta **«reducir movimiento»**. Nada de esto para un movimiento de un solo inmueble (`D-39`). De
+paso se arregla el panel del gabinete, que hacía parpadear el propio texto de la alerta.
+
+**Cómo se revocaría.** Cada efecto vive en un selector censado por `motionInvariants.test.ts`.
+
+---
+
+## D-48 · Lo que se toma de SeismicAI: **reporte automático, contactos de emergencia e historial**
+
+**Fecha:** 2026-09-26 · **Ficha:** `T-9.42`, `T-9.66`, `T-9.80` · **Toca:** worker `informes`,
+`GET /sites/{id}/historial-sismico`, tabla `emergency_contacts`
+
+**Lo que se decidió.** Tres ideas del producto de SeismicAI: (1) el **reporte posterior al evento se
+genera solo** en 30 minutos como máximo, al firmarse el dictamen o al cerrarse el evento, y se avisa
+al cliente; (2) **contactos de emergencia** del ocupante (hasta tres, con consentimiento, derechos
+ARCO y aviso de privacidad actualizado) que reciben un correo cuando pulsa NECESITO AYUDA, y SMS el
+día que se contrate el proveedor; (3) el **historial sísmico por inmueble** en la consola y la app.
+No se toma: la cuenta regresiva (el WR-1 solo da un booleano), la MMI como dato observado (solo
+estimada, `D-44`) ni las tres ubicaciones por ocupante.
+
+**El precio, declarado.** Los contactos son datos personales de terceros: van con consentimiento
+versionado y se borran con el ejercicio de derechos del ocupante.
+
+**Cómo se revocaría.** Cada pieza es un worker o una tabla propia que se puede apagar sin tocar el
+resto.
 
 ---

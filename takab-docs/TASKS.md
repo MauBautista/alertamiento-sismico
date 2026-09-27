@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **461** · `[x]` **400** · `[~]` **15** · `[ ]` **46**
+**Conteo de tareas:** total **500** · `[x]` **401** · `[~]` **15** · `[ ]` **84**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -15368,7 +15368,7 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
 >
 > api 4166 · mobile 728 · 23 mutaciones dirigidas, 23 rojas.
 
-### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · CORRIDA 1 DE 2 HECHA el 2026-09-22 (29 ✓ · 0 ✗) · falta la SEGUNDA, más capturas, vídeo y veredicto de flujos — todo ello exige persona y gabinete**
+### [~] T-7.28 · **Ensayo general: dos corridas cronometradas y plan B** — `SOFTWARE` + `FÍSICO` · **software HECHO 2026-09-21 · CORRIDA 1 DE 2 HECHA el 2026-09-22 (29 ✓ · 0 ✗) · CORRIDA 2 DE 2 HECHA el 2026-09-24 (acto 3 en ✗ por el ORDEN de los actos: el WR-1 a 81 s del golpe se sumó a su episodio) · faltan capturas y vídeo**
 - **Componente:** todas · **Depende de:** T-7.20, T-7.22 · **Prioridad:** F7 · alta
 - **Objetivo:** que la presentación se haya ejecutado dos veces entera antes de tener un
   cliente delante, con tiempos, capturas y un plan para cada cosa que puede fallar.
@@ -15377,7 +15377,12 @@ la ruta de disparo, tocar el Shake OS) son prohibiciones y no se tocan.
     clasifica `reproduccion` y queda como historial honesto.
     **CORRIDA 1 DE 2 HECHA** el 2026-09-22 (`20260922T180248Z`): **29 ✓ · 0 ✗**, con el WR-1
     real, el gabinete y el Pixel. Tiempos y hallazgos en `RUNBOOK-demo-cliente.md § Registro`.
-    Falta la segunda, y clasificar `b420daaa` como `reproduccion`.
+    **CORRIDA 2 DE 2 HECHA** el 2026-09-24 (`20260924T195548Z`): acto 3 en ✗ porque el WR-1 se
+    pulsó 81 s después de que el golpe del acto 2 volviera a `normal` y el gabinete lo juntó a su
+    episodio (90 s, `T-7.49`); la nube ESCALÓ el incidente del acto 2 en vez de abrir uno SASMEX.
+    Acto 4 en 7:00 (contra 47). Registro, PDF y hallazgos en `RUNBOOK-demo-cliente.md § Registro`.
+    Los dos incidentes de la corrida 1 y el único de la corrida 2 (`431c6fc9`) están clasificados
+    `reproduccion`.
     ⚠️ **Tres cosas que la primera corrida enseñó y que la segunda tiene que tener delante:**
       · **Dura una hora, y eso no cabe en una demostración.** 59 min, de los que **47 son el
         acto 4**. Hay que pre-cargar el reporte de daños y enseñar en vivo sólo la firma y el
@@ -17626,7 +17631,9 @@ se registra en su RUNBOOK.
     Civil (demo)» (`eb71a49f-…`), inspector y building_admin con el sitio `site-dev`
     (`d1000000-…`). `seed_console_users.sh` borraba del secreto las contraseñas de los demás
     usuarios al sembrar uno solo; ahora las fusiona.*
-  - [ ] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+  - [x] Los dos incidentes del ensayo 1 clasificados; el guion y el RUNBOOK cierran la alerta con el PIN.
+    *`d5af54e5` y `b420daaa` como `reproduccion`, desde la consola (confirmado el 2026-09-24).*
+  - [x] La APK release en el Pixel y sus seis flujos Maestro en verde (2026-09-23; auditoría §10).
   - [x] La guía de la demostración explica la sesión del día (`GUIA-DEMOSTRACION-POR-ROLES` §0·bis).
   - [ ] Pase final por rol en la nube y en el Pixel; ensayo 2 registrado.
   - [ ] `goal-presentacion.sh` devuelve 0 y hay un tag de congelación.
@@ -17702,6 +17709,353 @@ se registra en su RUNBOOK.
   - [ ] Planos de evacuación; números externos en el directorio; interruptor del modo demostración.
   - [ ] Derechos ARCO y aviso de privacidad con pantalla; gestión de usuarios real en la nube.
 - **Hallazgos:** A-046, A-048, A-064, A-068…A-075 y los P2/P3 de funciones del documento.
+
+## BLOQUE X · LO QUE PIDIÓ EL CLIENTE — anti-pánico, dictamen automático, cierre guiado y mapas
+
+**Por qué existe este bloque.** La presentación del **jueves 24-sep-2026** salió bien y el cliente
+dejó observaciones: que un movimiento del propio edificio no asuste a los ocupantes, audios
+distintos para cada situación, menos roles, que el sistema dictamine solo los sismos pequeños, un
+cierre del evento guiado paso a paso, un mapa de calor de la sacudida (también en el PDF), un mapa
+con relieve y zonas por tipo de suelo, los sismos de México en la app del ocupante, animaciones más
+vistosas y lo útil de SeismicAI. El plan, con el objetivo ejecutable de cada fase, está en
+[`PLAN-REQUERIMIENTOS-CLIENTE-2026-09.md`](PLAN-REQUERIMIENTOS-CLIENTE-2026-09.md). Las decisiones
+que lo gobiernan son `D-39` a `D-48` de [`DECISIONES-MAURICIO.md`](DECISIONES-MAURICIO.md).
+
+**Lo que ordena el bloque: primero la seguridad.** Al explorar se midieron cinco defectos que ponen
+en riesgo a personas y que van antes que cualquier función nueva (fase 9.0): el umbral de una sola
+estación despertaba a todos los teléfonos con «ALERTA SÍSMICA»; un empate en la escalada dejaba
+oculta una alerta SASMEX real; un NO HABITAR firmado caducaba solo al cerrar el incidente; el
+cartel de reingreso autorizado aparecía en reposo; y el token de push de un teléfono no se podía
+registrar para su siguiente usuario.
+
+**Absorbe criterios del Bloque IX, sin depender de él.** `T-9.73` cumple el criterio de parpadeo del
+panel de `T-8.15`, y `T-9.05`/`T-9.06` cumplen la parte de teléfono compartido de `T-8.18`. Cuando
+cierren, aquellas fichas lo anotan.
+
+**Cada fase se despliega al cerrar**, con la APK antes que la nube cuando hay fases o canales
+nuevos. Las escrituras en Cognito, terraform y la base de producción las corre Mauricio.
+
+## Fase 9.0 · Pendientes y seguridad
+
+> **El criterio de cierre de cada ficha es el del Bloque VII:** implementada, con test, **y
+> ejercida al menos una vez fuera de los tests** — navegador real, Pixel real, nube real. Cada
+> fase tiene un objetivo ejecutable (un bloque de comandos que devuelve 0) que se corre en `/loop`
+> hasta que pasa.
+
+### [x] T-9.00 · **El bloque, el plan y las diez decisiones escritas** — `SOFTWARE` · **CERRADA 2026-09-27**
+- **Componente:** docs · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** que lo que pidió el cliente viva en el repositorio con ficha, plan y decisión.
+- **Criterios de aceptación:**
+  - [x] Este bloque, con la cabecera de `TASKS.md` recontada.
+  - [x] `PLAN-REQUERIMIENTOS-CLIENTE-2026-09.md` con el objetivo ejecutable de cada fase.
+  - [x] `D-39`…`D-48` con sección, fila del índice y cabecera de la bitácora recontada.
+
+### [ ] T-9.01 · **Los tres PR pendientes, mergeados y desplegados** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · edge · docs · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** empezar el bloque sobre un `main` que es lo que corre en la nube y en el gabinete.
+- **Criterios de aceptación:**
+  - [ ] #281 (SQLAlchemy con `asyncio`), #282 (doble clic de CERRAR ALERTA) y #280 (ensayo 2) en `main`.
+  - [ ] La nube redesplegada desde `main` (`/api/health` da su etiqueta).
+  - [ ] El gabinete en una release limpia desde `main` (sin `-dirty`).
+
+### [ ] T-9.02 · **Una escalada a SASMEX reescribe el disparador** — `SOFTWARE`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F0 · crítica · **Decisión:** `D-39`
+- **Objetivo:** que un umbral local seguido de SASMEX en el mismo episodio quede como SASMEX, y que
+  el ocupante vea la alerta.
+- **Criterios de aceptación:**
+  - [ ] `TRIGGER_RANK` en `settings.py`; `_EVENT_SQL` sube el disparador y nunca degrada severidad,
+    nivel ni disparador.
+  - [ ] Local a `evacuate_or_hold` y luego SASMEX al mismo nivel ⇒ `trigger='sasmex'`,
+    `opened_trigger='local_threshold'`; el ocupante recibe `alert_active`.
+  - [ ] La narrativa asistida recibe los dos disparadores y no atribuye la sirena al umbral local.
+
+### [ ] T-9.03 · **La escalada vuelve a avisar a todo el edificio** — `SOFTWARE`
+- **Componente:** api · web · **Depende de:** T-9.02 · **Prioridad:** F0 · crítica · **Decisión:** `D-39`
+- **Objetivo:** que un incidente que empieza sin autorizar evacuar y luego autoriza despierte a todos
+  los teléfonos en ese momento.
+- **Criterios de aceptación:**
+  - [ ] Acción `alert_escalated` con push anclado a ella; idempotente (migración 0070).
+  - [ ] Los casos de disparador, de cuórum, de segunda pasada, de incidente cerrado y de incidente
+    que autorizaba desde el principio, con test.
+  - [ ] La acción en el censo de la consola.
+
+### [ ] T-9.04 · **Un NO HABITAR no caduca y el reingreso solo se declara si hubo evacuación** — `SOFTWARE`
+- **Componente:** api · mobile · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** que la app del ocupante nunca diga «en calma» sobre un edificio con NO HABITAR
+  firmado, ni «reingreso autorizado» cuando nunca se le mandó salir.
+- **Criterios de aceptación:**
+  - [ ] Fase `reentry_blocked` con motivo `no_habitable`, `pendiente_dictamen` o `pendiente_confirmacion`.
+  - [ ] Un NO HABITAR firmado sigue bloqueando a las 9 h y a los 3 días; una firma habitable
+    posterior lo levanta.
+  - [ ] Un incidente solo local con dictamen habitable ⇒ el ocupante sigue en calma.
+  - [ ] Un incidente local nuevo no tapa a uno autorizante más viejo.
+  - [ ] Precedencia explícita en `fase_del_sitio`.
+
+### [ ] T-9.05 · **El token de push es del aparato, no de la persona** — `SOFTWARE`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F0 · crítica
+- **Objetivo:** que el siguiente usuario de un teléfono reciba los avisos.
+- **Criterios de aceptación:**
+  - [ ] `app_claim_push_token()` con dueño `takab_ingest`, identidad solo de la sesión y auditoría
+    del cambio de dueño en los dos clientes (migración 0071).
+  - [ ] `push_tokens.role` guardado al registrar.
+  - [ ] El test que se guardó el 24-sep pasa.
+
+### [ ] T-9.06 · **El teléfono vibra en crisis y la app no se queda muda ante una fase nueva** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · **Depende de:** T-9.04 · **Prioridad:** F0 · alta
+- **Objetivo:** que la crisis vibre (medido: solo sonó) y que una APK vieja no se rompa.
+- **Criterios de aceptación:**
+  - [ ] Vibración en bucle mientras dura la crisis; se cancela al salir.
+  - [ ] `deriveAlertState` con caso por defecto.
+  - [ ] Cartel rojo para `no_habitable` y franja ámbar para los pendientes.
+  - [ ] Verificado en el Pixel.
+
+## Fase 9.1 · Antipánico y voz de la brigada
+
+### [ ] T-9.10 · **Un canal de audio auditable** — `SOFTWARE`
+- **Componente:** tools · shared · **Depende de:** — · **Prioridad:** F1 · alta · **Decisión:** `D-40`
+- **Objetivo:** que cada audio que suena en el edificio o en el teléfono tenga origen, licencia y
+  huella comprobables.
+- **Criterios de aceptación:**
+  - [ ] `tools/audio/` genera tonos y voces de forma reproducible; la herramienta de voz no entra
+    en ningún proyecto con licencias revisadas.
+  - [ ] `shared/audio/MANIFEST.json` y su test de censo.
+  - [ ] Primer audio: la voz del aviso de movimiento, de 4 s o menos.
+
+### [ ] T-9.11 · **Un movimiento del inmueble despierta solo a su brigada** — `SOFTWARE` + `FÍSICO`
+- **Componente:** api · mobile · web · **Depende de:** T-9.05, T-9.10 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
+- **Objetivo:** el pedido del cliente: sin pánico para el ocupante.
+- **Criterios de aceptación:**
+  - [ ] Clase de push MOVEMENT con su canal y su voz; acción `movement_alert` para brigadista,
+    inspector y administrador.
+  - [ ] Local en DISPARO ⇒ push solo a esos roles; en CAUTELA ⇒ ninguno; SASMEX o cuórum ⇒ a todos.
+  - [ ] `mobile-state` por rol: el táctico ve `building_movement`, el ocupante nunca.
+  - [ ] El administrador entra en la app táctica.
+  - [ ] Probado en el Pixel con el gabinete real.
+
+## Fase 9.2 · Roles de 10 a 7
+
+### [ ] T-9.20 · **Siete roles con alias para los viejos** — `SOFTWARE`
+- **Componente:** api · web · mobile · infra · docs · **Depende de:** T-9.11 · **Prioridad:** F2 · alta · **Decisión:** `D-42`
+- **Objetivo:** menos roles sin romper ninguna sesión abierta.
+- **Criterios de aceptación:**
+  - [ ] `auth/roles.py` con roles canónicos, etiquetas y alias; la comprobación contra grupos se
+    hace sobre el rol crudo.
+  - [ ] La matriz, sus fixtures, la web, la app, las semillas y los documentos con 7 roles.
+  - [ ] Un token viejo entra canonizado; uno falsificado no; tras la baja, «rol retirado».
+
+### [ ] T-9.21 · **La migración de usuarios de Cognito** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · **Depende de:** T-9.20 · **Prioridad:** F2 · alta · **Decisión:** `D-42`
+- **Objetivo:** pasar los usuarios existentes a los roles nuevos sin tocar la base.
+- **Criterios de aceptación:**
+  - [ ] Script con simulación, aplicación y verificación; se niega a aplicar sin el mapeo de cada
+    administrador de inmueble.
+  - [ ] Mauricio lo corre y la verificación da cero miembros en los grupos viejos.
+
+### [ ] T-9.22 · **Los censos cuentan siete** — `SOFTWARE`
+- **Componente:** api · web · mobile · **Depende de:** T-9.20 · **Prioridad:** F2 · alta
+- **Objetivo:** que ningún test siga afirmando diez.
+- **Criterios de aceptación:**
+  - [ ] Todos los censos de roles actualizados; las etiquetas históricas en un solo sitio.
+  - [ ] El recorrido web por rol pasa con los siete.
+
+## Fase 9.3 · Dictamen automático
+
+### [ ] T-9.30 · **`dictamen-v2` en tres bandas** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.04 · **Prioridad:** F3 · crítica · **Decisión:** `D-43`
+- **Objetivo:** que el sistema decida por la aceleración medida en el edificio.
+- **Criterios de aceptación:**
+  - [ ] VERDE, AMARILLO y ROJO con los umbrales de `D-43` desde `rule_sets`.
+  - [ ] La aceleración es el máximo de todos los sensores activos; un sensor retirado no cuenta.
+  - [ ] Una alerta SASMEX ya no fuerza NO HABITAR por sí sola.
+
+### [ ] T-9.31 · **La firma del sistema y la confirmación** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.30 · **Prioridad:** F3 · crítica · **Decisión:** `D-43`
+- **Objetivo:** que VERDE se firme solo y AMARILLO lo confirme una persona.
+- **Criterios de aceptación:**
+  - [ ] `signature_kind` y `band` en los dictámenes (migración 0072).
+  - [ ] Endpoint de confirmación para brigadista e inspector, con sus 409 y 403.
+  - [ ] La prudencia sube sola y solo baja con firma; un reporte de daño re-evalúa durante 72 h.
+
+### [ ] T-9.32 · **El cierre del incidente, versión 2** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.31 · **Prioridad:** F3 · alta · **Decisión:** `D-43`
+- **Objetivo:** que un incidente se cierre con dictamen y clasificación, o por una vía declarada.
+- **Criterios de aceptación:**
+  - [ ] Dictamen firmado de cualquier tipo y clasificación ⇒ cierre; las otras vías se conservan.
+  - [ ] El cierre por vencimiento declara lo que faltaba.
+
+### [ ] T-9.33 · **El brigadista confirma desde la app** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · api · **Depende de:** T-9.31 · **Prioridad:** F3 · alta · **Decisión:** `D-43`
+- **Objetivo:** que un AMARILLO no espere a que alguien se siente en la consola.
+- **Criterios de aceptación:**
+  - [ ] Aviso a los tácticos al salir un AMARILLO; pantalla con lista de revisión, CONFIRMAR o
+    ESCALAR AL INSPECTOR.
+  - [ ] Probado en el Pixel.
+
+### [ ] T-9.34 · **El papel dice quién firmó** — `SOFTWARE`
+- **Componente:** api · web · **Depende de:** T-9.31 · **Prioridad:** F3 · alta
+- **Objetivo:** que el PDF distinga la firma del sistema, la confirmación y la firma del inspector.
+- **Criterios de aceptación:**
+  - [ ] Rótulo del firmante por tipo de firma, nunca un identificador interno.
+  - [ ] El desplegable de firma arranca en el estado vigente.
+
+### [ ] T-9.35 · **Los sensores fantasma de Puebla** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** infra · **Depende de:** T-9.30 · **Prioridad:** F3 · alta
+- **Objetivo:** que el sitio de la demostración mida con su sensor real, que ya tiene la
+  calibración del fabricante declarada.
+- **Criterios de aceptación:**
+  - [ ] Diagnóstico de solo lectura de los sensores por sitio.
+  - [ ] Los dos sensores sin datos ni calibración, retirados.
+  - [ ] El PDF de un evento nuevo ya no dice «sin fuente de calibración».
+
+## Fase 9.4 · El cierre del evento, paso a paso
+
+### [ ] T-9.40 · **Cerrar un evento a propósito** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.32 · **Prioridad:** F4 · alta
+- **Objetivo:** un botón CERRAR EVENTO con requisitos claros.
+- **Criterios de aceptación:**
+  - [ ] Endpoint con sus requisitos (estado, clasificación, dictamen o motivo auditado).
+
+### [ ] T-9.41 · **El asistente «Cierre del evento»** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-9.40 · **Prioridad:** F4 · crítica
+- **Objetivo:** que cerrar un evento deje de ser confuso: seis pasos explicados, con botones grandes.
+- **Criterios de aceptación:**
+  - [ ] Acusar, revisar la sacudida, reportes de campo, dictamen, clasificar, informe y cierre.
+  - [ ] Cada paso marcado como hecho sale de un hecho del servidor.
+  - [ ] Recorrido de punta a punta en el navegador por el administrador.
+
+### [ ] T-9.42 · **El reporte posterior al evento, solo** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · **Depende de:** T-9.40 · **Prioridad:** F4 · alta · **Decisión:** `D-48`
+- **Objetivo:** el reporte llega en 30 minutos o menos sin que nadie pulse «generar».
+- **Criterios de aceptación:**
+  - [ ] Worker `informes` idempotente; un fallo queda declarado, nunca como éxito (migración 0073).
+  - [ ] Correo al cliente y aviso al administrador y a los tácticos.
+
+## Fase 9.5 · Mapa de calor, relieve y suelos
+
+### [ ] T-9.50 · **El mapa de la sacudida siempre se calcula** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F5 · alta · **Decisión:** `D-44`
+- **Objetivo:** que ningún incidente se quede sin mapa.
+- **Criterios de aceptación:**
+  - [ ] Se calcula a los 120 s de abrir y no se declara completo antes de cerrar la ventana del pico.
+  - [ ] El PDF lo calcula si falta; relleno del histórico corrido en la nube.
+
+### [ ] T-9.51 · **La superficie estimada** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.50 · **Prioridad:** F5 · alta · **Decisión:** `D-44`
+- **Objetivo:** rojo, amarillo y verde con la intensidad estimada, sin dependencias nuevas.
+- **Criterios de aceptación:**
+  - [ ] Ley de atenuación ajustada con los sensores activos y calibrados; zonas ajustada y modelada.
+  - [ ] MMI estimada con Wald 1999; imagen servida por la API (migración 0074).
+
+### [ ] T-9.52 · **La superficie en la consola** — `SOFTWARE`
+- **Componente:** web · **Depende de:** T-9.51 · **Prioridad:** F5 · alta
+- **Objetivo:** verla sobre el mapa con los puntos medidos encima y su leyenda de estimación.
+- **Criterios de aceptación:**
+  - [ ] Capa censada; leyenda «ESTIMADO a partir de N sensores».
+
+### [ ] T-9.53 · **La superficie en el PDF, sobre cartografía embebida** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.51 · **Prioridad:** F5 · alta · **Decisión:** `D-44`
+- **Objetivo:** que el §8 del reporte deje de decir «no calculado todavía».
+- **Criterios de aceptación:**
+  - [ ] Estados y zonas embebidos en el paquete de la API.
+  - [ ] La leyenda de MMI según haya o no superficie; revisado con la imagen del PDF.
+
+### [ ] T-9.54 · **Relieve y zonas de suelo** — `SOFTWARE`
+- **Componente:** web · tools · infra · **Depende de:** — · **Prioridad:** F5 · media · **Decisión:** `D-45`
+- **Objetivo:** el mapa con relieve y los tipos de suelo, con su atribución.
+- **Criterios de aceptación:**
+  - [ ] Relieve de AWS Terrain Tiles; zonificación de la CDMX; edafología del INEGI.
+  - [ ] Atribuciones desde un solo fichero; sha256 de cada capa comprobado.
+
+## Fase 9.6 · Sismos de México en la app
+
+### [ ] T-9.60 · **El catálogo de México se sincroniza** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · **Depende de:** — · **Prioridad:** F6 · alta · **Decisión:** `D-46`
+- **Objetivo:** tener los sismos de México desde magnitud 4.0 al día.
+- **Criterios de aceptación:**
+  - [ ] Worker `catalog-sync` cada 10 minutos; no pisa el catálogo sembrado; un fallo se declara
+    (migración 0075).
+
+### [ ] T-9.61 · **Los endpoints del catálogo** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.60 · **Prioridad:** F6 · alta
+- **Objetivo:** que la app lo pueda leer, con la intensidad estimada en el inmueble del usuario.
+- **Criterios de aceptación:**
+  - [ ] Endpoint móvil con atribución a USGS; el web, paginado.
+
+### [ ] T-9.62 · **La pestaña SISMOS en la app** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · alta
+- **Objetivo:** lo que pidió el cliente para el ocupante.
+- **Criterios de aceptación:**
+  - [ ] Lista con magnitud, lugar, hora e intensidad estimada; probada en el Pixel.
+
+### [ ] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media
+- **Objetivo:** ver los sismos y el último mapa de calor en el teléfono.
+- **Criterios de aceptación:**
+  - [ ] Prueba medida en el Pixel entre las dos opciones y la elegida implementada.
+
+### [ ] T-9.64 · **Una sola escala de tamaño y color** — `SOFTWARE`
+- **Componente:** shared · web · mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · media · **Decisión:** `D-46`
+- **Objetivo:** marcadores por magnitud y color por intensidad, iguales en consola y app.
+- **Criterios de aceptación:**
+  - [ ] `shared/fixtures/escala-sismos.json` y su test cruzado; la leyenda dice qué es el tamaño.
+
+### [ ] T-9.65 · **El mapa de calor en la app** — `SOFTWARE`
+- **Componente:** mobile · **Depende de:** T-9.51, T-9.63 · **Prioridad:** F6 · media
+- **Objetivo:** que el ocupante vea cómo se sintió el último sismo.
+- **Criterios de aceptación:**
+  - [ ] La superficie estimada del último evento, rotulada como estimación.
+
+### [ ] T-9.66 · **El historial sísmico de cada inmueble** — `SOFTWARE`
+- **Componente:** api · web · mobile · **Depende de:** T-9.60 · **Prioridad:** F6 · media · **Decisión:** `D-48`
+- **Objetivo:** ver todo lo que afectó a un edificio.
+- **Criterios de aceptación:**
+  - [ ] Endpoint con los incidentes del sitio y los sismos del catálogo que lo sintieron.
+  - [ ] En la página del inmueble y en la app.
+
+## Fase 9.7 · Audios y animaciones
+
+### [ ] T-9.70 · **El tono propio v2** — `SOFTWARE` + `FÍSICO`
+- **Componente:** edge · mobile · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
+- **Objetivo:** un tono de alerta parecido al oficial, sin serlo.
+- **Criterios de aceptación:**
+  - [ ] Nuevo id en el gabinete conservando el anterior; canal nuevo en la app con vibración.
+  - [ ] Aprobado por Mauricio al escucharlo.
+
+### [ ] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
+- **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-41`
+- **Objetivo:** que un simulacro suene a alerta sin que nadie lo confunda.
+- **Criterios de aceptación:**
+  - [ ] Voz sola al principio y repetida encima del tono atenuado; invariante medido por energía.
+  - [ ] Probado por el altavoz del gabinete.
+
+### [ ] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
+- **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
+- **Objetivo:** una prueba de audio continua desde el panel.
+- **Criterios de aceptación:**
+  - [ ] Iniciar y detener con PIN; tope de 30 minutos; cualquier alerta la interrumpe.
+  - [ ] Licencia de la grabación en el manifiesto; cota de tamaño de los audios.
+
+### [ ] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
+- **Componente:** web · mobile · edge · **Depende de:** T-9.11 · **Prioridad:** F7 · media · **Decisión:** `D-47`
+- **Objetivo:** que la alerta confirmada se vea, sin mover el texto.
+- **Criterios de aceptación:**
+  - [ ] Toma de pantalla, ondas desde el epicentro, borde pulsante y anillos en la app.
+  - [ ] Todo con «reducir movimiento» y censado; el panel deja de hacer parpadear el texto.
+
+## Fase 9.8 · Contactos de emergencia y baja de los alias
+
+### [ ] T-9.80 · **Contactos de emergencia del ocupante** — `SOFTWARE` + `DECISIÓN`
+- **Componente:** api · mobile · **Depende de:** — · **Prioridad:** F8 · media · **Decisión:** `D-48`
+- **Objetivo:** que al pedir ayuda se avise a las personas de confianza del ocupante.
+- **Criterios de aceptación:**
+  - [ ] Hasta tres contactos con consentimiento, borrables por derechos ARCO (migración 0076).
+  - [ ] Correo al pulsar NECESITO AYUDA; SMS cuando haya proveedor.
+
+### [ ] T-9.81 · **La baja de los roles viejos** — `SOFTWARE` + `GATE-AWS`
+- **Componente:** api · infra · **Depende de:** T-9.21 · **Prioridad:** F8 · baja · **Decisión:** `D-42`
+- **Objetivo:** cerrar la ventana de alias cuando nadie use un rol viejo.
+- **Criterios de aceptación:**
+  - [ ] Sin alias en la API; sin grupos viejos en Cognito; la verificación espera siete.
 
 ## RUTA CRÍTICA
 
