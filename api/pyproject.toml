@@ -7,7 +7,11 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "pydantic>=2.9",
-    "sqlalchemy>=2.0",
+    # [T-8.13] `[asyncio]` y techo en 2.1: SQLAlchemy 2.1.0 salió el 2026-09-24 y ya no
+    # instala `greenlet` por defecto. El CI y `api/Dockerfile` instalan con pip (no leen
+    # uv.lock), así que la siguiente imagen habría arrancado sin motor asíncrono. Subir a
+    # 2.1 es una decisión con su propia prueba, no algo que ocurra al construir.
+    "sqlalchemy[asyncio]>=2.0,<2.1",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
     "boto3>=1.43.41",
