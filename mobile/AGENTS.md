@@ -9,7 +9,7 @@
   (sin coautoría de IA) y método.
 - **No rompas:** nada de cuenta regresiva/magnitud preliminar en crisis
   (§2.1-A); el teléfono jamás habla directo con el gabinete; roles canónicos
-  (`occupant`/`brigadista`/`security_guard`); colores/espaciados SOLO desde
+  (`occupant`/`brigadista`/`inspector`/`tenant_admin`, D-42); colores/espaciados SOLO desde
   `@takab/design-tokens`; tokens de sesión SOLO en `expo-secure-store`;
   placeholders siempre declaran su tarea (sin stubs silenciosos).
 - **Antes de cerrar cualquier cambio:** `npm test` + `npm run typecheck` +

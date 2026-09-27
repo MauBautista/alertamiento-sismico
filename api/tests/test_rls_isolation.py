@@ -23,7 +23,7 @@ from conftest import (
 
 
 def test_app_only_sees_own_tenant_incidents(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     rows = seeded.execute("SELECT tenant_id FROM incidents").fetchall()
     assert rows, "el tenant A debe ver su propio incidente"
     assert {str(r[0]) for r in rows} == {TENANT_A}
@@ -31,13 +31,13 @@ def test_app_only_sees_own_tenant_incidents(seeded: psycopg.Connection) -> None:
 
 def test_owner_force_rls_isolates(seeded: psycopg.Connection) -> None:
     # takab_migrator es DUEÑO de incidents; FORCE lo sujeta igual a RLS.
-    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="tenant_admin")
     rows = seeded.execute("SELECT tenant_id FROM incidents").fetchall()
     assert {str(r[0]) for r in rows} == {TENANT_A}, "FORCE RLS debe aislar al owner"
 
 
 def test_app_cannot_read_other_tenant(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin")
     rows = seeded.execute(
         "SELECT count(*) FROM incidents WHERE tenant_id = %s", (TENANT_A,)
     ).fetchone()
@@ -46,13 +46,13 @@ def test_app_cannot_read_other_tenant(seeded: psycopg.Connection) -> None:
 
 def test_device_health_rls_isolates(seeded: psycopg.Connection) -> None:
     # device_health conserva RLS (no tiene caggs) — se lee directo con RLS.
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     rows = seeded.execute("SELECT tenant_id FROM device_health").fetchall()
     assert {str(r[0]) for r in rows} == {TENANT_A}
 
 
 def test_app_cannot_write_other_tenant(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     # Insertar una acción etiquetada con el tenant B viola el WITH CHECK de RLS.
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         seeded.execute(
@@ -64,14 +64,14 @@ def test_app_cannot_write_other_tenant(seeded: psycopg.Connection) -> None:
 
 def test_waveform_view_isolates_by_tenant(seeded: psycopg.Connection) -> None:
     # El crudo se lee por la vista security_barrier (JOIN a sites con RLS+FORCE).
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     rows = seeded.execute("SELECT DISTINCT tenant_id FROM waveform_features_1s_secure").fetchall()
     assert {str(r[0]) for r in rows} == {TENANT_A}
 
 
 def test_waveform_base_table_denied_to_app(seeded: psycopg.Connection) -> None:
     # takab_app NO tiene acceso a la tabla base: solo puede leer por la vista.
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         seeded.execute("SELECT count(*) FROM waveform_features_1s").fetchone()
 
@@ -81,7 +81,7 @@ def test_cagg_base_denied_to_app(seeded: psycopg.Connection, cagg: str) -> None:
     # Los caggs no llevan RLS: sin el REVOKE, un tenant leería las métricas de
     # TODOS (hallazgo CRÍTICO de la auditoría pre-frontend). takab_app solo puede
     # leerlos por la vista *_secure (JOIN sites con RLS).
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         seeded.execute(f"SELECT count(*) FROM {cagg}").fetchone()  # noqa: S608
 
@@ -109,12 +109,12 @@ def test_fw_releases_lo_lee_cualquier_rol_autenticado(seeded: psycopg.Connection
     # …y lo lee un rol de cliente cualquiera, de OTRO tenant: el registro no es
     # de nadie en particular. (El dueño de la tabla queda sujeto igual por FORCE
     # RLS: ni takab_migrator publica sin ser superadmin de aplicación.)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin")
     n = seeded.execute("SELECT count(*) FROM fw_releases WHERE version = 'rls0001'").fetchone()
     assert n[0] == 1
 
 
-@pytest.mark.parametrize("app_role", ["tenant_admin", "soc_operator", "takab_support"])
+@pytest.mark.parametrize("app_role", ["tenant_admin", "inspector", "takab_support"])
 def test_fw_releases_solo_las_publica_el_dueno_de_la_plataforma(
     seeded: psycopg.Connection, app_role: str
 ) -> None:
@@ -153,12 +153,12 @@ def test_site_ground_refs_aisla_por_la_columna_y_no_por_el_EXISTS(
     del censo. Ahora la tenencia está en la fila, así que se puede exigir lo
     literal — que es lo que dice la regla de oro 5.
     """
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     filas = seeded.execute("SELECT tenant_id FROM site_ground_refs").fetchall()
     assert filas, "el tenant A debe ver SU referencia de suelo (si no, el test es vacío)"
     assert {str(f[0]) for f in filas} == {TENANT_A}
 
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin")
     ajenas = seeded.execute(
         "SELECT count(*) FROM site_ground_refs WHERE tenant_id = %s", (TENANT_A,)
     ).fetchone()
@@ -172,7 +172,7 @@ def test_site_ground_refs_aisla_TAMBIEN_al_dueno_de_la_tabla(
     otras tablas: es exactamente lo que hizo que el backfill de la migración
     0050 no viera nada y hubiera que levantarlo a propósito para una sentencia.
     Si alguien lo dejara levantado, este test es el que lo caza."""
-    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="tenant_admin")
     filas = seeded.execute("SELECT tenant_id FROM site_ground_refs").fetchall()
     assert {str(f[0]) for f in filas} == {TENANT_A}, "FORCE RLS debe aislar al owner"
 
@@ -230,12 +230,12 @@ def test_incident_shakemap_aisla_por_la_columna(seeded: psycopg.Connection) -> N
     """
     _siembra_mapas(seeded)
 
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     filas = seeded.execute("SELECT tenant_id FROM incident_shakemap").fetchall()
     assert filas, "el tenant A debe ver SU mapa (si no, el test es vacío)"
     assert {str(f[0]) for f in filas} == {TENANT_A}
 
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin")
     ajenos = seeded.execute(
         "SELECT count(*) FROM incident_shakemap WHERE tenant_id = %s", (TENANT_A,)
     ).fetchone()
@@ -247,6 +247,6 @@ def test_incident_shakemap_aisla_TAMBIEN_al_dueno_de_la_tabla(
 ) -> None:
     """`FORCE ROW LEVEL SECURITY`: sin él, el dueño se saltaría su propia política."""
     _siembra_mapas(seeded)
-    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_migrator", tenant=TENANT_A, app_role="tenant_admin")
     filas = seeded.execute("SELECT tenant_id FROM incident_shakemap").fetchall()
     assert {str(f[0]) for f in filas} == {TENANT_A}, "FORCE RLS debe aislar al owner"

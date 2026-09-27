@@ -48,7 +48,7 @@ def _n(conn: psycopg.Connection, sql: str, *params: object) -> int:
 
 def test_default_deny_without_grant(seeded: psycopg.Connection) -> None:
     """Sin grant, B no ve NADA de A (regresión del aislamiento base)."""
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     assert _n(seeded, "SELECT count(*) FROM sites WHERE tenant_id=%s", TENANT_A) == 0
     assert _n(seeded, "SELECT count(*) FROM incidents WHERE tenant_id=%s", TENANT_A) == 0
     assert _n(seeded, "SELECT count(*) FROM device_health WHERE tenant_id=%s", TENANT_A) == 0
@@ -62,7 +62,7 @@ def test_metadata_grant_reveals_existence_not_data(seeded: psycopg.Connection) -
     """CRUX: un grant de SOLO-metadatos deja ver que EXISTEN las estaciones de A,
     pero NUNCA sus datos (formas de onda, salud, incidentes)."""
     _grant(seeded, TENANT_B, target=TENANT_A, metadata=True, data=False)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     # ve que existen
     assert _n(seeded, "SELECT count(*) FROM sites WHERE tenant_id=%s", TENANT_A) == 1
     assert _n(seeded, "SELECT count(*) FROM sensors WHERE tenant_id=%s", TENANT_A) == 1
@@ -79,7 +79,7 @@ def test_data_grant_reveals_data_and_existence(seeded: psycopg.Connection) -> No
     """Un grant de DATOS (sin metadatos) deja ver los datos de A y, como datos⊇existencia,
     también su sitio (el JOIN de la vista resuelve por app_can_view_meta ⊇ data)."""
     _grant(seeded, TENANT_B, target=TENANT_A, metadata=False, data=True)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     assert _n(seeded, "SELECT count(*) FROM sites WHERE tenant_id=%s", TENANT_A) == 1
     assert (
         _n(seeded, "SELECT count(*) FROM waveform_features_1s_secure WHERE tenant_id=%s", TENANT_A)
@@ -93,7 +93,7 @@ def test_data_grant_reveals_data_and_existence(seeded: psycopg.Connection) -> No
 def test_grant_never_allows_cross_tenant_write(seeded: psycopg.Connection) -> None:
     """Un grant AÑADE lectura, jamás escritura: B con datos de A no puede tocar su timeline."""
     _grant(seeded, TENANT_B, target=TENANT_A, metadata=True, data=True)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         seeded.execute(
             "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor) "
@@ -105,12 +105,12 @@ def test_grant_never_allows_cross_tenant_write(seeded: psycopg.Connection) -> No
 def test_revoke_restores_default_deny(seeded: psycopg.Connection) -> None:
     """El revoke es dinámico: borrar el grant devuelve a cero en la siguiente consulta."""
     _grant(seeded, TENANT_B, target=TENANT_A, metadata=True, data=True)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     assert _n(seeded, "SELECT count(*) FROM sites WHERE tenant_id=%s", TENANT_A) == 1
 
     reset(seeded)
     seeded.execute("DELETE FROM visibility_grants WHERE grantee_tenant_id=%s", (TENANT_B,))
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     assert _n(seeded, "SELECT count(*) FROM sites WHERE tenant_id=%s", TENANT_A) == 0
     assert (
         _n(seeded, "SELECT count(*) FROM waveform_features_1s_secure WHERE tenant_id=%s", TENANT_A)
@@ -122,7 +122,7 @@ def test_target_all_grant_reveals_every_tenant_metadata(seeded: psycopg.Connecti
     """target_all (TODOS los clientes) con metadatos: B ve que existen las estaciones de
     todos, pero sigue sin ver datos ajenos."""
     _grant(seeded, TENANT_B, target_all=True, metadata=True)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     seen = {str(r[0]) for r in seeded.execute("SELECT DISTINCT tenant_id FROM sites").fetchall()}
     assert {TENANT_A, TENANT_B, TENANT_G} <= seen
     assert (
@@ -152,7 +152,7 @@ def test_grantee_reads_only_its_own_grants(seeded: psycopg.Connection) -> None:
     """La RLS de la tabla de grants: el grantee ve SOLO los suyos; nadie fisgonea los ajenos."""
     _grant(seeded, TENANT_B, target=TENANT_A, metadata=True)
     _grant(seeded, TENANT_A, target=TENANT_G, metadata=True)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     rows = seeded.execute("SELECT grantee_tenant_id FROM visibility_grants").fetchall()
     assert {str(r[0]) for r in rows} == {TENANT_B}
 

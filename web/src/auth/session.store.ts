@@ -30,8 +30,11 @@ import { buildLogoutUrl, cognitoConfigured, getUserManager } from "./userManager
  *   (expiró o fue revocado; desde aquí no se distinguen).
  * - `max_age`: [T-8.03 · D-38] la sesión cumplió la edad máxima de su rol
  *   (24 h / 30 días desde el login). Renovar no sirve: hay que volver a entrar.
+ * - `rol_retirado`: [F2 · D-42] el token trae un rol cuya baja ya pasó. Renovar
+ *   tampoco sirve (Cognito devuelve el mismo rol): hace falta que un
+ *   administrador asigne un rol vigente.
  */
-export type SessionEndReason = "expired" | "max_age";
+export type SessionEndReason = "expired" | "max_age" | "rol_retirado";
 
 /**
  * `degraded` [T-2.123]: hay token, pero `GET /me` no contesta por algo que no es
@@ -275,6 +278,10 @@ export const useSessionStore = create<SessionState>()((set, get) => {
         // [T-8.03] El tope NO se renueva; el token vencido sí, UNA vez.
         if (err.sessionExpired) {
           get().handleUnauthorized("max_age");
+          return;
+        }
+        if (err.roleRetired) {
+          get().handleUnauthorized("rol_retirado");
           return;
         }
         const recovered = await get().recoverFromUnauthorized(sent);
@@ -567,7 +574,12 @@ export const useSessionStore = create<SessionState>()((set, get) => {
       // [T-8.03] Un «expirada» que llega DESPUÉS del tope (el canal live que cae
       // tras el 401 del REST) no puede rebajar la causa: el operador tiene que
       // leer que la sesión cumplió su tope, no que «se cerró».
-      if (reason === "expired" && idToken === null && endedReason === "max_age") {
+      // [F2] Lo mismo con el rol retirado: la causa precisa gana a la genérica.
+      if (
+        reason === "expired" &&
+        idToken === null &&
+        (endedReason === "max_age" || endedReason === "rol_retirado")
+      ) {
         return;
       }
       const maxAgeS =

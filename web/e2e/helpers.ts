@@ -7,8 +7,9 @@ import { expect, type Locator, type Page } from "@playwright/test";
 /** Sitio real del seed (`db/seeds/prod_fleet.sql`): site-dev · Puebla. */
 export const SITE_DEV = "d1000000-0000-0000-0000-000000000000";
 
-/** Roles del panel de login dev (`/dev/token`, solo con VITE_DEV_TOKEN_ENABLED). */
-export type DevRole = "takab_superadmin" | "soc_operator" | "tenant_admin";
+/** Roles del panel de login dev (`/dev/token`, solo con VITE_DEV_TOKEN_ENABLED).
+ * [T-9.20 · D-42] Solo canónicos: el operador SOC ya no es un rol del panel. */
+export type DevRole = "takab_superadmin" | "tenant_admin" | "inspector";
 
 /**
  * Entra con el login dev y espera a que la primera pantalla monte.

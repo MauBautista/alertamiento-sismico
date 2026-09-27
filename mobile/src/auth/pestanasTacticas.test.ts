@@ -23,7 +23,7 @@ const nombres = (as: Record<string, boolean> | null | undefined): string[] =>
   pestanasVisibles(as).map((p) => p.name);
 
 describe("[T-6.22] la pestaña cuelga de la acción, no del rol", () => {
-  it("brigadista y security_guard: las dos acciones ⇒ TRIAGE y LISTA", () => {
+  it("brigadista y tenant_admin: las dos acciones ⇒ TRIAGE y LISTA", () => {
     const as = acciones({ roster_read: true, damage_report_submit: true });
     expect(nombres(as)).toContain("triage");
     expect(nombres(as)).toContain("lista");
@@ -35,13 +35,15 @@ describe("[T-6.22] la pestaña cuelga de la acción, no del rol", () => {
     expect(nombres(as)).toContain("triage");
   });
 
-  it("building_admin NO ve TRIAGE: no tiene `damage_report_submit`", () => {
+  it("un rol con `roster_read` y sin `damage_report_submit` NO ve TRIAGE", () => {
+    // Era el caso del `building_admin`, que D-42 retiró (T-9.20). La REGLA sigue:
+    // la pestaña cuelga de la acción, sea cual sea el rol que la traiga.
     const as = acciones({ roster_read: true, damage_report_submit: false });
     expect(nombres(as)).not.toContain("triage");
     expect(nombres(as)).toContain("lista");
   });
 
-  it("los CUATRO ven RUTAS y DIRECTORIO: RBAC §3 se los da a los cinco roles", () => {
+  it("todos ven RUTAS y DIRECTORIO: RBAC §3 se los da a los tres roles tácticos", () => {
     for (const as of [
       acciones({ roster_read: true, damage_report_submit: true }),
       acciones({ roster_read: false, damage_report_submit: true }),

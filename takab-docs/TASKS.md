@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **501** · `[x]` **407** · `[~]` **18** · `[ ]` **76**
+**Conteo de tareas:** total **501** · `[x]` **408** · `[~]` **20** · `[ ]` **73**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17836,7 +17836,11 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] `mobile-state` por rol: el táctico ve `building_movement`, el ocupante nunca.
   - [x] El administrador entra en la app táctica.
   - [ ] Probado en el Pixel con el gabinete real.
-
+- **Lo que añadió la revisión de F1:** el movimiento solo es «vivo» mientras el incidente sigue
+  `open`/`acked`; con él viaja la alarma de pánico, para que la brigada la vea y la acuse. El teléfono
+  del administrador (alcance `*`) va sin inmueble y lo alcanza cualquier aviso de su cliente. Las
+  subidas y escaladas miran 24 h, no 1 h. Y un pánico manual con teléfonos salía como «ALERTA
+  SÍSMICA» a todo el edificio: ya sale una sola vez como PANIC.
 
 ### [~] T-9.12 · **Los canales que despiertan suenan también con «No molestar»** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · api · **Depende de:** T-9.11 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
@@ -17859,34 +17863,36 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   esta ficha.
 
 ## Fase 9.2 · Roles de 10 a 7
-- **Lo que añadió la revisión de F1:** el movimiento solo es «vivo» mientras el incidente sigue
-  `open`/`acked`; con él viaja la alarma de pánico, para que la brigada la vea y la acuse. El teléfono
-  del administrador (alcance `*`) va sin inmueble y lo alcanza cualquier aviso de su cliente. Las
-  subidas y escaladas miran 24 h, no 1 h. Y un pánico manual con teléfonos salía como «ALERTA
-  SÍSMICA» a todo el edificio: ya sale una sola vez como PANIC.
 
-### [ ] T-9.20 · **Siete roles con alias para los viejos** — `SOFTWARE`
+### [x] T-9.20 · **Siete roles con alias para los viejos** — `SOFTWARE` · **CERRADA 2026-09-27**
 - **Componente:** api · web · mobile · infra · docs · **Depende de:** T-9.11 · **Prioridad:** F2 · alta · **Decisión:** `D-42`
 - **Objetivo:** menos roles sin romper ninguna sesión abierta.
 - **Criterios de aceptación:**
-  - [ ] `auth/roles.py` con roles canónicos, etiquetas y alias; la comprobación contra grupos se
+  - [x] `auth/roles.py` con roles canónicos, etiquetas y alias; la comprobación contra grupos se
     hace sobre el rol crudo.
-  - [ ] La matriz, sus fixtures, la web, la app, las semillas y los documentos con 7 roles.
-  - [ ] Un token viejo entra canonizado; uno falsificado no; tras la baja, «rol retirado».
+  - [x] La matriz, sus fixtures, la web, la app, las semillas y los documentos con 7 roles.
+  - [x] Un token viejo entra canonizado; uno falsificado no; tras la baja, «rol retirado».
+- **Cierre:** `auth/roles.py` canoniza DESPUÉS de comprobar el rol crudo contra los grupos, y guarda
+  `role_raw`. La ventana de alias se cierra con `TAKAB_API_ROLES_HEREDADOS_HASTA` (fecha de la Ciudad
+  de México; pasada, 401 y cierre WS con motivo `rol_retirado`, que la web y la app tratan como fin de
+  sesión sin renovar). La 0072 canoniza `push_tokens.role` y `user_zone_assignments.role` (la historia
+  no se toca) y el círculo de push acepta los alias mientras tanto. Dos consecuencias declaradas:
+  `tenant_admin` genera el reporte sin `export` (la descarga va en su propia respuesta firmada), y los
+  rótulos canónicos del PDF cambian a los de D-42 (GOBIERNO, ADMINISTRADOR, SUPERADMIN TAKAB).
 
-### [ ] T-9.21 · **La migración de usuarios de Cognito** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.21 · **La migración de usuarios de Cognito** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · **Depende de:** T-9.20 · **Prioridad:** F2 · alta · **Decisión:** `D-42`
 - **Objetivo:** pasar los usuarios existentes a los roles nuevos sin tocar la base.
 - **Criterios de aceptación:**
-  - [ ] Script con simulación, aplicación y verificación; se niega a aplicar sin el mapeo de cada
+  - [x] Script con simulación, aplicación y verificación; se niega a aplicar sin el mapeo de cada
     administrador de inmueble.
   - [ ] Mauricio lo corre y la verificación da cero miembros en los grupos viejos.
 
-### [ ] T-9.22 · **Los censos cuentan siete** — `SOFTWARE`
+### [~] T-9.22 · **Los censos cuentan siete** — `SOFTWARE`
 - **Componente:** api · web · mobile · **Depende de:** T-9.20 · **Prioridad:** F2 · alta
 - **Objetivo:** que ningún test siga afirmando diez.
 - **Criterios de aceptación:**
-  - [ ] Todos los censos de roles actualizados; las etiquetas históricas en un solo sitio.
+  - [x] Todos los censos de roles actualizados; las etiquetas históricas en un solo sitio.
   - [ ] El recorrido web por rol pasa con los siete.
 
 ## Fase 9.3 · Dictamen automático

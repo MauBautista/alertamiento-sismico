@@ -1,9 +1,10 @@
-"""Matriz 10 roles × {/me, ack} → status, copiada a mano de RBAC §2.
+"""Matriz 7 roles (D-42) × {/me, ack} → status, copiada a mano de RBAC §2.
 
 Si el código diverge de esta tabla (p. ej. otro rol gana acuse), el test FALLA.
 ``/me`` es identidad genérica → 200 con token válido para todo rol.
 ``ack`` (Consola C4I ∈ {Total, "Lectura + ack"}) solo lo tienen superadmin,
-tenant_admin, soc_operator y gov_operator; el resto → 403.
+tenant_admin y gov_operator; el resto → 403. Los roles viejos
+(soc_operator/building_admin/security_guard) se prueban en test_roles_heredados.py.
 """
 
 from __future__ import annotations
@@ -17,12 +18,9 @@ EXPECTED = {
     "takab_superadmin": {"me": 200, "ack": 200},
     "takab_support": {"me": 200, "ack": 403},
     "tenant_admin": {"me": 200, "ack": 200},
-    "soc_operator": {"me": 200, "ack": 200},
     "gov_operator": {"me": 200, "ack": 200},
     "inspector": {"me": 200, "ack": 403},
-    "building_admin": {"me": 200, "ack": 403},
     "brigadista": {"me": 200, "ack": 403},
-    "security_guard": {"me": 200, "ack": 403},
     "occupant": {"me": 200, "ack": 403},
 }
 

@@ -126,9 +126,10 @@ describe("FleetAdmin", () => {
   });
 
   it("sin manage_fleet la superficie de escritura no existe", async () => {
-    // soc_operator ve la flota pero no la administra. Pintarle un botón que siempre
+    // gov_operator ve la flota pero no la administra (antes era el ejemplo del
+    // operador SOC, hoy tenant_admin, que SÍ la administra). Pintarle un botón que siempre
     // daría 403 es exactamente lo que prohíbe la regla de oro 7.
-    useSessionStore.setState({ me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ me: ME_FIXTURES.gov_operator });
     renderAdmin();
     expect(screen.queryByTestId("fleet-admin")).toBeNull();
   });

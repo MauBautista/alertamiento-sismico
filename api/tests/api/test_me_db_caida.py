@@ -68,7 +68,7 @@ async def test_me_con_postgres_caido_no_finge_un_alcance_vacio(sin_base) -> None
     afirmaría que el portador no tiene inmueble cuando lo que pasa es que no se
     pudo consultar.
     """
-    token = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*")
+    token = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*")
     async with _cliente(create_app()) as client:
         resp = await client.get("/me", headers=au.bearer(token))
 
@@ -86,7 +86,7 @@ async def test_me_con_postgres_caido_no_parece_un_problema_de_credenciales(sin_b
     de base llegara como 401, el operador perdería la sesión —y la consola— por
     algo que no tiene que ver con su token.
     """
-    token = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*")
+    token = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*")
     async with _cliente(create_app()) as client:
         resp = await client.get("/me", headers=au.bearer(token))
 

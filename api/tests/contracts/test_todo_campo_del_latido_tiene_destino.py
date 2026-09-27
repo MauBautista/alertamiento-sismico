@@ -274,7 +274,7 @@ async def test_cada_campo_del_latido_que_la_API_declara_LLEGA_a_la_respuesta(
         async with au.client_for(app) as c:
             r = await c.get(
                 "/fleet/gateways",
-                headers=au.bearer(au.make_token("soc_operator", tenant=_T, surface="web")),
+                headers=au.bearer(au.make_token("tenant_admin", tenant=_T, surface="web")),
             )
     finally:
         await get_engine().dispose()

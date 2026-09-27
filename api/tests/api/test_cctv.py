@@ -20,7 +20,7 @@ from takab_api.schemas.cctv import ANALISIS_PENDIENTE, NO_CCTV
 _T0 = datetime(2026, 8, 30, 10, 0, 0, tzinfo=UTC)
 
 
-def _token(role: str = "soc_operator", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
+def _token(role: str = "tenant_admin", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*"))
 
 

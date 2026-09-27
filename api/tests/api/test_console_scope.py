@@ -19,7 +19,7 @@ from takab_api.db.engine import get_engine
 pytestmark = pytest.mark.asyncio
 
 #: Rol de consola NO exento, que es donde vive el problema.
-ROL = "soc_operator"
+ROL = "inspector"
 
 #: Los dos lados de `console_scope_enforced`, con nombre en vez de `True/False`.
 #:
@@ -35,7 +35,7 @@ ROL = "soc_operator"
 #: Invertirlos los dejaría rojos HOY: el valor por defecto sigue —y debe seguir— en
 #: `False`, porque la secuencia obligada de `T-2.89` es *recorrer los `scope_gap` →
 #: asignar alcance → encender*, y adelantar el encendido en código dejaría a cada
-#: `soc_operator` con cero estaciones. Fijando LOS DOS lados, encender la bandera en
+#: `inspector` con cero estaciones. Fijando LOS DOS lados, encender la bandera en
 #: la ventana A es un cambio de variable de entorno con la suite verde antes y
 #: después — que es el espíritu entero de `D-18`, y cubre además el estado del que
 #: se sale.
@@ -154,10 +154,14 @@ async def test_el_mapa_solo_pinta_los_del_alcance(client) -> None:
     assert {s["site_id"] for s in r.json()["sites"]} <= {au.DB_SITE_PRIV}
 
 
-async def test_la_flota_solo_lista_los_gabinetes_del_alcance(client) -> None:
+async def test_el_rol_acotado_no_llega_a_la_flota(client) -> None:
+    """[T-9.20 · D-42] Hasta F2 esto probaba que la flota se acotaba al alcance del
+    ``soc_operator``. Con siete roles NO queda ningún rol acotable que tenga
+    ``/fleet``: los que la tienen (superadmin, support, tenant_admin, gov_operator)
+    están en ``SCOPE_EXEMPT_ROLES``, y el único rol de consola acotable (inspector) no
+    tiene la ruta. Lo que se fija es ese hecho: el acotado recibe 403, no una flota."""
     r = await client.get("/fleet/gateways", headers=acotado(au.DB_SITE_PRIV))
-    assert r.status_code == 200
-    assert all(g["site_id"] == au.DB_SITE_PRIV for g in r.json())
+    assert r.status_code == 403, r.text
 
 
 async def test_los_incidentes_se_acotan(client, make_incident) -> None:

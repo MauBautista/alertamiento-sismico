@@ -93,7 +93,7 @@ EDAD_LWT = timedelta(seconds=5)
 
 
 def _auth() -> dict[str, str]:
-    return au.bearer(au.make_token("soc_operator", tenant=T_PRIV_A, site_scope="*", surface="web"))
+    return au.bearer(au.make_token("tenant_admin", tenant=T_PRIV_A, site_scope="*", surface="web"))
 
 
 def _latido(cur, gid: str, ts: datetime, *, power: str = "line", battery: float = 95.0) -> None:

@@ -151,23 +151,23 @@ def occupants_env(monkeypatch: Any) -> None:
     monkeypatch.setenv("TAKAB_API_AUTH_OCCUPANTS_AUDIENCE", OCC_AUDIENCE)
 
 
-def expired_token(role: str = "soc_operator", **over: Any) -> str:
+def expired_token(role: str = "tenant_admin", **over: Any) -> str:
     return make_token(role, iat_delta=-7200, nbf_delta=-7200, exp_delta=-3600, **over)
 
 
-def badsig_token(role: str = "soc_operator", **over: Any) -> str:
+def badsig_token(role: str = "tenant_admin", **over: Any) -> str:
     return make_token(role, key=_WRONG_KEY, **over)
 
 
-def wrongiss_token(role: str = "soc_operator", **over: Any) -> str:
+def wrongiss_token(role: str = "tenant_admin", **over: Any) -> str:
     return make_token(role, issuer="https://wrong.example/pool", **over)
 
 
-def wrongaud_token(role: str = "soc_operator", **over: Any) -> str:
+def wrongaud_token(role: str = "tenant_admin", **over: Any) -> str:
     return make_token(role, audience="wrong-client-id", **over)
 
 
-def access_token(role: str = "soc_operator", **over: Any) -> str:
+def access_token(role: str = "tenant_admin", **over: Any) -> str:
     return make_token(role, token_use="access", **over)
 
 
@@ -176,7 +176,7 @@ def _b64(data: dict[str, Any]) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-def none_token(role: str = "soc_operator", **over: Any) -> str:
+def none_token(role: str = "tenant_admin", **over: Any) -> str:
     """Token sin firma (alg=none) — debe rechazarse antes de decodificar."""
     header = {"alg": "none", "typ": "JWT", "kid": KID}
     return f"{_b64(header)}.{_b64(_base_claims(role, **over))}."

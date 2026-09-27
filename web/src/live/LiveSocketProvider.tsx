@@ -9,7 +9,7 @@ import { useContext, useEffect, useMemo, type ReactNode } from "react";
 import { TOPIC_SITE_STATE } from "@takab/sdk";
 
 import { getEnv } from "../app/env";
-import { useSessionStore } from "../auth/session.store";
+import { useSessionStore, type SessionEndReason } from "../auth/session.store";
 import { LiveSocket, liveWsUrl } from "../lib/ws";
 import { useLiveHealthStore } from "./liveHealth.store";
 import { LiveSocketContext, LiveSocketFactoryContext, type ConnectableLiveSocket } from "./socket";
@@ -37,8 +37,16 @@ export default function LiveSocketProvider({ children }: { children: ReactNode }
       // `logout()`, que borraba la causa y mandaba al /logout del Hosted UI, así
       // que el operador aparecía en un login mudo (el silencio que T-6.07 cerró
       // para el REST seguía abierto aquí).
-      onUnauthorized: (reason) => {
-        useSessionStore.getState().handleUnauthorized(reason === "max_age" ? "max_age" : "expired");
+      // [F2] `rol_retirado` ⇒ fin con esa causa (no renovable). El socket del
+      // SDK hoy no reenvía el MOTIVO del cierre 4401: se acepta aquí para cuando
+      // lo haga, y mientras tanto el 401 del REST fija la causa (el store no la
+      // deja rebajar a `expired`).
+      onUnauthorized: (reason?: SessionEndReason) => {
+        useSessionStore
+          .getState()
+          .handleUnauthorized(
+            reason === "max_age" || reason === "rol_retirado" ? reason : "expired",
+          );
       },
     });
   }, [factory]);

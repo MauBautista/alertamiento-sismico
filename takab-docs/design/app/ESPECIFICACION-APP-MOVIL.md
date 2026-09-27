@@ -17,7 +17,7 @@
 | D1 | Forma del documento | Nueva spec canónica (este archivo); el PROMPT original queda como histórico con banner |
 | D2 | Estructura del monorepo | `mobile/` en la raíz + `shared/design-tokens/` (patrón `file:` ya probado con el SDK) |
 | D3 | Canvas de diseño | Corregido Y ampliado con artboards nuevos; shots regenerados de forma reproducible |
-| D4 | Alcance extra | Entran las 4: pánico quórum-de-2, banner de simulacro, próximo simulacro programado (agenda informativa), superficie móvil para inspector/building_admin |
+| D4 | Alcance extra | Entran las 4: pánico quórum-de-2, banner de simulacro, próximo simulacro programado (agenda informativa), superficie móvil para inspector/building_admin (desde D-42: inspector/tenant_admin) |
 
 ---
 
@@ -76,7 +76,7 @@ de la nube. La reactivación de T-1.31 es esta Fase 2.
 
 **Incluye:**
 - App móvil iOS + Android, dos perfiles de UI: **Ocupante** (`occupant`) y **Táctico**
-  (`brigadista`, `security_guard`; `inspector` y `building_admin` entran al perfil táctico
+  (`brigadista`; `inspector` y `tenant_admin` —D-42; antes `security_guard`/`building_admin`— entran al perfil táctico
   server-driven por `/me.allowed_actions` — D4d, sin pantallas dedicadas en v2.0).
 - **21 pantallas**: las 12 del blueprint original corregidas + 4 de acceso/onboarding (0.1–0.4)
   + 3 de tabs del ocupante que el diseño original dejó sin pantalla (1.6 rutas, 1.7 directorio,
@@ -195,8 +195,8 @@ entitlements requieren aprobación de Apple (Critical Alerts = solicitud explíc
 mobile/
 ├── app/                        # rutas (expo-router o react-navigation)
 │   ├── (occupant)/             # Perfil 1 · rol occupant
-│   └── (brigadista)/           # Perfil 2 · roles brigadista/security_guard
-│                               #   (+ inspector/building_admin server-driven, D4d)
+│   └── (brigadista)/           # Perfil 2 · rol brigadista (D-42 absorbe security_guard)
+│                               #   (+ inspector/tenant_admin server-driven, D4d · D-42)
 ├── src/
 │   ├── features/
 │   │   ├── alert/              # máquina de estados de crisis (§4.1)
@@ -275,16 +275,16 @@ endpoints existentes de incidentes, sitios, dictámenes, comandos, drills, evide
 | Método y endpoint | Propósito | Respaldo DDL | Roles (acción `matrix.py`) | audit_log |
 |---|---|---|---|---|
 | `POST/GET/DELETE /me/push-tokens` | registro/rotación de token FCM/APNs ligado a usuario+dispositivo+sitio | **NUEVA** `push_tokens` | superficie móvil (self-service, sin acción de matriz) | sí |
-| `POST /me/device-keys` | registro de llave pública respaldada por hardware (§2.1-B) | **NUEVA** `device_keys` | `brigadista`, `security_guard`, `inspector`, `building_admin` | sí |
+| `POST /me/device-keys` | registro de llave pública respaldada por hardware (§2.1-B) | **NUEVA** `device_keys` | `brigadista`, `inspector`, `tenant_admin` (D-42) | sí |
 | `POST /me/enrollment` `{code}` | occupant se enrola a sitio/zona por código | **LATENTE** `site_enrollment_codes` (consume `uses/max_uses/expires_at/active`) + inserta `user_zone_assignments` | autenticado móvil (ver R2) | sí |
-| `POST/GET/DELETE /sites/{site_id}/enrollment-codes` | administrar códigos de alta | **LATENTE** `site_enrollment_codes` | acción **nueva `enrollment_manage`**: `building_admin`, `tenant_admin`, `takab_superadmin` | sí |
+| `POST/GET/DELETE /sites/{site_id}/enrollment-codes` | administrar códigos de alta | **LATENTE** `site_enrollment_codes` | acción **nueva `enrollment_manage`**: `tenant_admin`, `takab_superadmin` (D-42 retiró `building_admin`) | sí |
 | `GET /sites/{site_id}/mobile-state` | estado consolidado: `phase`, incidente activo, instrucción por zona, punto de reunión, bloqueo de reingreso, `compliance_labels`, drill activo/próximo, enlaces de salud del sitio | `incidents` + `zones` (+`evac_policy` nueva) + **NUEVAS** `compliance_labels`, `site_assets` + `drills` | superficie móvil con `site_scope` (lectura) | no |
-| `POST /incidents/{incident_id}/checkins` | check-in de vida `{status: safe\|need_help, zone_id?, geom?, ts_device}` | **LATENTE** `life_checkins` (append-only) + deltas §5.1 | acción **nueva `checkin_submit`**: `occupant`, `brigadista`, `security_guard`, `building_admin`, `inspector` | delegado sí; propio: la tabla ES la evidencia |
+| `POST /incidents/{incident_id}/checkins` | check-in de vida `{status: safe\|need_help, zone_id?, geom?, ts_device}` | **LATENTE** `life_checkins` (append-only) + deltas §5.1 | acción **nueva `checkin_submit`**: `occupant`, `brigadista`, `inspector`, `tenant_admin` (D-42) | delegado sí; propio: la tabla ES la evidencia |
 | `GET /incidents/{incident_id}/checkins?scope=me` | reconstruir estado propio al abrir | `life_checkins` | mismos roles (lectura propia) | no |
-| `GET /incidents/{incident_id}/roster` | roster asignado + estado de check-in por persona | **LATENTES** `user_zone_assignments` + `user_profiles` (+teléfono, R4) JOIN `life_checkins` | acción **nueva `roster_read`**: `brigadista`, `security_guard`, `building_admin`, `inspector` | sí (lectura de PII) |
-| `POST /incidents/{incident_id}/damage-reports` (+`GET` para Triage web) | formulario de daños ligado a evidencias | **NUEVA** `damage_reports` | acción **nueva `damage_report_submit`**: `brigadista`, `security_guard`, `inspector`, `building_admin` | sí |
+| `GET /incidents/{incident_id}/roster` | roster asignado + estado de check-in por persona | **LATENTES** `user_zone_assignments` + `user_profiles` (+teléfono, R4) JOIN `life_checkins` | acción **nueva `roster_read`**: `brigadista`, `tenant_admin` (D-42; `inspector` no la tiene en `matrix.py`) | sí (lectura de PII) |
+| `POST /incidents/{incident_id}/damage-reports` (+`GET` para Triage web) | formulario de daños ligado a evidencias | **NUEVA** `damage_reports` | acción **nueva `damage_report_submit`**: `brigadista`, `inspector`, `tenant_admin` (D-42) | sí |
 | `GET /incidents/{incident_id}/evidence` + `POST /evidence/{evidence_id}/download` | **EXISTENTES** — presigned S3; se extienden a roles móviles tácticos + verificación del sha256 declarado en captura | `evidence_objects` | acción **nueva `evidence_upload`** (tácticos) | ya existente |
-| `POST /sites/{site_id}/commands` | **EXISTENTE** — se agrega capa de intención: body opcional `intent {key_id, signature, nonce}` validado contra `device_keys`; el pipeline HMAC/nonce/TTL/rate-limit/ack queda INTACTO | `commands` + `device_keys` | acciones **nuevas** según RBAC §4: `siren_silence` (`brigadista`, `security_guard`, `building_admin`), `manual_activate` (`brigadista`, `security_guard`, `inspector`, `building_admin`) | ya existente + hash de intención |
+| `POST /sites/{site_id}/commands` | **EXISTENTE** — se agrega capa de intención: body opcional `intent {key_id, signature, nonce}` validado contra `device_keys`; el pipeline HMAC/nonce/TTL/rate-limit/ack queda INTACTO | `commands` + `device_keys` | acciones **nuevas** según RBAC §4: `siren_silence` (`brigadista`, `tenant_admin`), `manual_activate` (`brigadista`, `inspector`, `tenant_admin`) — D-42 | ya existente + hash de intención |
 | `POST /sites/{site_id}/manual-activation-votes` (D4a) | pánico occupant: quórum de 2 votos en 30 s → sirena NO-sísmica | **LATENTE** `manual_activation_votes` (índice `site_id+created_at DESC` listo; `consumed` al cumplirse) | acción **nueva `panic_vote`**: `occupant` | sí |
 | `GET /sites/{site_id}/drills` | último simulacro + **próximo programado** (D4c) | `drills`/`drill_sites` existentes + columna **nueva `drills.scheduled_at`** (agenda informativa; sin auto-arranque) | superficie móvil (lectura) | no |
 | `GET /sites/{site_id}/assets` | rutas de evacuación (PDF/imagen por zona) + punto de reunión + manual, S3 presigned, cacheable offline | **NUEVA** `site_assets` | lectura móvil; gestión reutiliza `manage_fleet` | gestión sí |
@@ -326,7 +326,7 @@ hoy tienen rutas y acciones VACÍAS (default-deny) — estas acciones son su pri
 
 ### 5.3 Estrategia live: WS para tácticos, REST + push para occupant
 
-- **Roles tácticos** (`brigadista`, `security_guard`, `building_admin`, `inspector`) entran al
+- **Roles tácticos** (`brigadista`, `tenant_admin`, `inspector` — D-42) entran al
   WS único `/ws` con **allowlist topic×rol default-deny** (hoy el handshake solo autoriza roles
   de consola C4I): topics mínimos `site_state` (device_health + rule_evaluation),
   `features:<site_id>` (features 1 s) e `incidents`, siempre acotados a `custom:site_scope` y
@@ -415,8 +415,8 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
   ocupante de larga vida (refresh en Keychain/Keystore): la app debe alertar sin pedir login en
   plena crisis. Acciones tácticas siempre re-verifican token vigente.
 - **Duración (`D-38`, 2026-09-22):** contada desde el login, no desde el último refresco —
-  ocupante **90 días**, brigadista e inspector **30 días**, `security_guard` y `building_admin`
-  **24 h**—. La impone la API con `auth_time` (401 `sesion_expirada`, WS 4440); la app renueva el
+  ocupante **90 días**, brigadista e inspector **30 días**, `tenant_admin` **24 h** (D-42: los ex
+  `security_guard`/`building_admin` entran como brigadista, 30 días)—. La impone la API con `auth_time` (401 `sesion_expirada`, WS 4440); la app renueva el
   ID token con el refresh al arrancar, al volver a primer plano, antes del WS y ante un 401
   (`T-8.04`). Hasta `T-8.04` la app guardaba el refresh y no lo usaba: la sesión real duraba 60 min.
 - **Aceptación:** expiración del refresh NO bloquea la pantalla de crisis si hay incidente
@@ -562,7 +562,7 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
 > y **el escalado al SOC saltaba en todos los pánicos**: los dos apagadores que `D-05` diseñó
 > —acuse de la brigada, o que el SOC ya haya acusado— eran uno solo.
 
-### PERFIL 2 · TÁCTICO (`brigadista`, `security_guard`; + `inspector`/`building_admin` D4d)
+### PERFIL 2 · TÁCTICO (`brigadista`; + `inspector`/`tenant_admin` D4d · D-42)
 
 #### 2.1 Dashboard táctico local
 - Salud del gabinete en tiempo real (WS `site_state`, frames `device_health`): batería/UPS
@@ -675,10 +675,10 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
   issuers** y **ancla pool→rol** (T-2.03): un token del pool de ocupantes solo puede portar
   `custom:role=occupant`; uno del pool táctico jamás `occupant` en superficie móvil ⇒ 401.
 - **AuthZ — roles canónicos (RBAC-TAKAB.md §1/§3, `matrix.py`):** superficie móvil =
-  **`occupant`** (móvil-only), **`brigadista`**, **`security_guard`** (móvil), más
-  **`inspector`** y **`building_admin`** (web+móvil, D4d).
+  **`occupant`** (móvil-only), **`brigadista`** (móvil; absorbe a `security_guard`, D-42), más
+  **`inspector`** y **`tenant_admin`** (web+móvil, D4d · D-42; antes `building_admin`).
   **SE CAMBIA vs PROMPT:** los identificadores `brigade` y `security_lead` que proponía NO
-  existen — usar siempre los canónicos (`brigadista`, `security_guard`); romperían `matrix.py`
+  existen — usar siempre los canónicos (`brigadista`; desde D-42 `security_guard` es solo alias); romperían `matrix.py`
   y los grupos Cognito.
 - **Claims reales:** `custom:role` (DEBE pertenecer a `cognito:groups`), `custom:tenant_id`,
   `custom:site_scope` (CSV o `*`; **default-deny si vacío**), `custom:zone_id`,
@@ -686,7 +686,7 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
   cada acción vía la matriz (nunca confíes en la UI) y `/me` sirve `allowed_actions`.
 - **Actuadores por rol (RBAC §4):** `occupant` solo puede iniciar la sirena NO-sísmica por
   **quórum de 2 en 30 s** (1.9); los tácticos usan deslizar-para-activar individual; silenciar =
-  `brigadista`/`security_guard`/`building_admin`. **MFA del occupant: decisión #7 RESUELTA
+  `brigadista`/`tenant_admin` (D-42). **MFA del occupant: decisión #7 RESUELTA
   (T-2.00)** — sin MFA obligatorio, MFA opcional; compensaciones: quórum + rate-limit +
   auditoría + enrolamiento acotado al sitio; **geofence best-effort** (voto con GPS claramente
   fuera del radio del sitio se descarta; sin GPS cuenta — la ubicación es opcional por LFPDPPP).
@@ -782,7 +782,7 @@ cada commit; sin stubs silenciosos (todo placeholder falla ruidosamente o se rep
 7. No guardar fotos forenses en la galería ni perder la cadena de custodia (hash en captura).
 8. PROHIBIDO enviar SMS desde la app o prometerlo en UI: el canal no existe (stub simulado).
 9. No subir ni mostrar miniSEED en el teléfono — **SE ELIMINA** todo rastro del mockup 2.5.
-10. No usar identificadores de rol no canónicos — **SE CAMBIA:** `brigade`→`brigadista` y `security_lead`→`security_guard`.
+10. No usar identificadores de rol no canónicos — **SE CAMBIA:** `brigade`→`brigadista` y `security_lead`→`security_guard` (que D-42 canoniza a su vez a `brigadista`).
 11. No inventar rutas con prefijo de versión — **SE CAMBIA:** el PROMPT usaba `/v1/...`; el API
     real monta en raíz (§5).
 12. No dejar stubs silenciosos: todo placeholder falla ruidosamente o se reporta como hallazgo.
@@ -862,7 +862,7 @@ Los términos de esta tabla solo pueden aparecer en este documento en líneas qu
 | SE ELIMINA — "SMS" masivo | mockup 2.6 | Push clase OPS a no reportados (no existe canal de mensajes de texto) |
 | SE ELIMINA — miniSEED en el teléfono | mockup 2.5 | Sube edge→S3 en eventos confirmados; jamás pasa por el móvil |
 | SE CAMBIA — prefijo "/v1/" | §5 del PROMPT | API real monta en raíz; paths §5 de este doc |
-| SE CAMBIA — roles "brigade" / "security_lead" | §4/§8 del PROMPT | Canónicos: `brigadista` / `security_guard` |
+| SE CAMBIA — roles "brigade" / "security_lead" | §4/§8 del PROMPT | Canónicos: `brigadista` / `security_guard` → desde D-42, ambos `brigadista` |
 | SE CAMBIA — "Pi 5" | §0 del PROMPT (y blueprint desactualizado) | Raspberry Pi 4 Model B Rev 1.5 (T-1.68) |
 
 ### 14.5 Riesgos y decisiones — RATIFICADOS EN T-2.00 (2026-07-15)
@@ -891,14 +891,14 @@ Los términos de esta tabla solo pueden aparecer en este documento en líneas qu
   pseudonimización post-retención vía proceso de migración. La revisión legal del aviso sigue
   abierta en `GATE-LEGAL`.
 - **R4 · teléfonos del roster — RATIFICADO:** columna nueva `user_profiles.phone` (PII, con
-  consentimiento registrado); la carga/curaduría del directorio la administra `building_admin`.
+  consentimiento registrado); la carga/curaduría del directorio la administra `tenant_admin` (D-42; era `building_admin`).
   Implementa T-2.03.
 - **R5 · push best-effort — RATIFICADO:** la push jamás se presenta como garantía; la vida la
   protege la sirena del edge. El onboarding (0.2) lo dice textualmente.
 - **R6 · WS móvil — RATIFICADO:** allowlist topic×rol default-deny + `custom:surface` +
   `site_scope`; `occupant` fuera del WS. Implementa T-2.08.
 - **R7 · lectura del dictamen por el táctico — RATIFICADO:** acción nueva **`dictamen_read`**
-  (tácticos: `brigadista`, `security_guard`, `building_admin`, `inspector`) para leer/descargar
+  (tácticos: `brigadista`, `inspector`, `tenant_admin` — D-42) para leer/descargar
   el PDF existente vía presigned; la entrega llega además por push OPS. `generate_report` no se
   amplía (generar sigue siendo de `inspector`/superadmin). Implementa T-2.03/T-2.12.
 - **R8 · spec-doc*.html — RATIFICADO:** corregidos y con banner "derivado — no editar a mano";

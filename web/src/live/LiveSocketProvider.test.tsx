@@ -153,6 +153,16 @@ describe("[T-8.03] el canal live renueva el token en vez de cerrar la sesión", 
     expect(logout).not.toHaveBeenCalled();
   });
 
+  it("[F2] cierre por rol retirado ⇒ fin con causa 'rol_retirado' (no renovable)", () => {
+    const handleUnauthorized = vi.fn();
+    useSessionStore.setState({ handleUnauthorized });
+
+    const onUnauthorized = opcionesDelSocketReal().onUnauthorized as (r?: string) => void;
+    onUnauthorized("rol_retirado");
+
+    expect(handleUnauthorized).toHaveBeenCalledWith("rol_retirado");
+  });
+
   it("4401 sin renovación posible ⇒ fin 'expired' CON causa (antes era un logout mudo)", () => {
     // Antes: `logout()` — borraba la causa (`endedReason: null`) y mandaba al
     // /logout del Hosted UI, así que el operador aparecía en un login idéntico

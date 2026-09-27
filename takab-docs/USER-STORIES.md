@@ -3,6 +3,10 @@
 > Formato: **Como** [rol] · **quiero** [acción] · **para** [valor]. Cada historia lista sus
 > criterios de aceptación. Roles definidos en `RBAC-TAKAB.md`. No se implementa T-MINUS ni
 > magnitud preliminar en MVP (ver pendientes RBAC §8).
+>
+> **[D-42 · 2026-09-27] Roles de 10 a 7.** Las historias conservan el rol con que se escribieron.
+> Léase `soc_operator` y `building_admin` (consola) como `tenant_admin`, y `security_guard` como
+> `brigadista`: son alias heredados que la API canoniza así durante la ventana (`RBAC-TAKAB.md §1`).
 
 ---
 

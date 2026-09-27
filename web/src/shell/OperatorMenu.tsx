@@ -8,6 +8,7 @@ import { ChevronDown, LogOut } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import Button from "../components/Button";
+import { etiquetaDeRol } from "../auth/rolesHistoricos";
 import { useSessionStore } from "../auth/session.store";
 import { useProfile, useProfileMutation } from "../auth/useProfile";
 
@@ -21,7 +22,8 @@ export default function OperatorMenu() {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const displayName = profile.data?.display_name ?? null;
-  const label = displayName ?? me?.role ?? "";
+  const rol = me ? etiquetaDeRol(me.role) : "";
+  const label = displayName ?? rol;
 
   useEffect(() => {
     if (!open) {
@@ -83,7 +85,7 @@ export default function OperatorMenu() {
             className="soc-user__input"
             value={draft}
             maxLength={80}
-            placeholder={me.role}
+            placeholder={rol}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") {
@@ -109,7 +111,7 @@ export default function OperatorMenu() {
             </p>
           )}
           <p className="soc-user__caption">
-            {me.role} · {me.sub.slice(0, 8)}
+            {rol} · {me.sub.slice(0, 8)}
           </p>
         </div>
       )}

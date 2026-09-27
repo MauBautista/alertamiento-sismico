@@ -371,7 +371,7 @@ def test_la_baja_de_un_titular_ajeno_es_INEXPRESABLE(seeded: psycopg.Connection)
         _baja(seeded, tenant=TENANT_B, user=USER_A, dias=1)
 
 
-@pytest.mark.parametrize("rol", ["occupant", "soc_operator", "building_admin", "inspector"])
+@pytest.mark.parametrize("rol", ["occupant", "gov_operator", "brigadista", "inspector"])
 def test_solo_quien_administra_usuarios_puede_dar_de_baja(
     seeded: psycopg.Connection, rol: str
 ) -> None:

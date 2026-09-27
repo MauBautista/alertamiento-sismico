@@ -51,8 +51,8 @@ eso cambia en la preparación:
 - **Cerrar la pestaña ya no cierra la sesión**: la consola la guarda en el navegador y la retoma.
   Recargar tampoco la cierra.
 - **En el Pixel**, entra con brigadista e inspector el día anterior o antes: su sesión dura un
-  mes y no vuelve a pedir el código. `security_guard` y `building_admin` duran 24 h: si se
-  enseñan, entra con ellos la misma mañana.
+  mes y no vuelve a pedir el código. (Desde `D-42` ya no hay `security_guard` ni
+  `building_admin` que enseñar: sus tokens entran como `brigadista`, con los 30 días de éste.)
 - **Si la sesión termina por tope**, la pantalla lo dice («SU SESIÓN DE 24 H TERMINÓ»), no un
   error genérico. Hay que volver a entrar con contraseña y código. No hay prórroga, ni siquiera
   con un incidente abierto: es la decisión de `D-38`.
@@ -117,7 +117,7 @@ Los usuarios de consola y los de la app **no son los mismos ni viven en el mismo
 
 | Usuario | Pool | MFA | Entra en | Si lo creas en el pool equivocado |
 |---|---|---|---|---|
-| `takab_superadmin`, `tenant_admin`, `soc_operator`, `inspector`, `gov_operator`, `building_admin` | **principal** (`surface=web`) | **ON** — TOTP obligatorio | consola web | no entra **nunca** en la app |
+| `takab_superadmin`, `tenant_admin`, `inspector`, `gov_operator` | **principal** (`surface=web`) | **ON** — TOTP obligatorio | consola web | no entra **nunca** en la app |
 | `brigadista` | **principal** | **ON** — TOTP obligatorio | app móvil | — |
 | `occupant` | **de ocupantes** | opcional | app móvil | no entra **nunca** |
 
@@ -161,22 +161,22 @@ La lectura rápida el día de la demostración. Cada fila es «dónde estoy, qui
 | Acto | Superficie | Tú eres | Qué haces | Qué tiene que verse |
 |---|---|---|---|---|
 | **0** | terminal | — | `guion.sh --preflight` | **0 ✗** (los ✓ que sean) |
-| **1** | **A** consola | `soc_operator` | nada: enseñar | mapa con estaciones vivas, cola vacía, **el pulso de vida latiendo** |
+| **1** | **A** consola | `tenant_admin` | nada: enseñar | mapa con estaciones vivas, cola vacía, **el pulso de vida latiendo** |
 | **1** | **C** panel | — | nada: enseñar | nivel `normal`, relés en reposo, nube en línea, SeedLink sin huecos |
 | **2** | **D** gabinete | tú, con la mano | **un golpe seco** junto al Raspberry Shake | — |
 | **2** | **C** panel | — | mirar | el nivel **sube** a `watch` / `restricted` |
-| **2** | **A** consola | `soc_operator` | mirar y **no tocar** | escena de aviso, **«SOLO AVISO, SIN ACTUACIÓN»** · incidente `local_threshold` |
+| **2** | **A** consola | `tenant_admin` | mirar y **no tocar** | escena de aviso, **«SOLO AVISO, SIN ACTUACIÓN»** · incidente `local_threshold` |
 | **3** | **D** gabinete | tú | **pulsar el WR-1** | la **sirena suena** (reflejo local) |
 | **3** | **B** teléfono | `occupant` | **nada: el teléfono está bloqueado en la mesa** | se enciende solo y abre la pantalla de crisis |
-| **3** | **A** consola | `soc_operator` | **acusar** el incidente | incidente con origen `sasmex` |
+| **3** | **A** consola | `tenant_admin` | **acusar** el incidente | incidente con origen `sasmex` |
 | **3** | **C** panel | — | mirar | **el acta del reflejo**, con su latencia y su presupuesto |
 | **4** | **B** teléfono | `brigadista` | foto forense → **reporte de daños** | la marca horneada en la foto; las fotos suben con su SHA-256 |
 | **4** | **A** consola | **`inspector`** | abrir EVALUACIÓN y **firmar el dictamen** | el dictamen sucede al preliminar; la fase pasa a `reentry_approved` |
 | **4** | **B** teléfono | `occupant` | mirar | le llega **«reingreso permitido»** (el ocupante NO recibe el PDF) |
-| **4** | **A** consola | `inspector` | **generar** el PDF del dictamen | (`generate_report` sólo lo tienen `inspector` y `takab_superadmin` — el `soc_operator` **no**) |
+| **4** | **A** consola | `inspector` | **generar** el PDF del dictamen | (`generate_report` lo tienen `inspector`, `tenant_admin` y `takab_superadmin`; se genera como `inspector` porque ya está en su perfil) |
 | **4** | terminal | — | `guion.sh --reporte` | el PDF existe, lleva imágenes dentro y **su SHA-256 coincide** con el registrado |
 | **cierre** | **C** panel | — | botón **CERRAR ALERTA** del panel (2 clics + **PIN**) | se suelta el enclavado |
-| **cierre** | **A** consola | `soc_operator` | clasificar el incidente como **`reproduccion`** | el incidente cierra y **no** cuenta como sismo real |
+| **cierre** | **A** consola | `tenant_admin` | clasificar el incidente como **`reproduccion`** | el incidente cierra y **no** cuenta como sismo real |
 
 > **Cronometrado y en orden, de un tirón:**
 > ```bash
@@ -189,7 +189,7 @@ La lectura rápida el día de la demostración. Cada fila es «dónde estoy, qui
 
 ## 4 · El recorrido, rol por rol · **qué tocas y qué dices**
 
-### Acto 1 · Eres `soc_operator` — «así se ve un día en que no pasa nada»
+### Acto 1 · Eres `tenant_admin` — «así se ve un día en que no pasa nada»
 
 **Abres:** consola → MONITOREO. Y la segunda pestaña con el panel del gabinete.
 
@@ -204,7 +204,7 @@ La lectura rápida el día de la demostración. Cada fila es «dónde estoy, qui
 
 > *«Así se ve el 99,9 % del tiempo, y esto es lo que queremos que vean casi siempre.»*
 
-### Acto 2 · Sigues siendo `soc_operator` — **el acto que más vende, y es el de no hacer nada**
+### Acto 2 · Sigues siendo `tenant_admin` — **el acto que más vende, y es el de no hacer nada**
 
 **Qué haces:** vas al gabinete y **das un golpe seco** junto al sensor. Vuelves a la consola.
 
@@ -238,7 +238,7 @@ anticipas el cliente no sabe dónde mirar:
 2. **La consola abre el incidente** con origen `sasmex`.
 3. **El teléfono se enciende solo**, con la pantalla bloqueada, y abre la pantalla de crisis.
 
-**Como `soc_operator`, acusas el incidente** en MONITOREO.
+**Como `tenant_admin`, acusas el incidente** en MONITOREO.
 
 **Después, en el panel (superficie C): el acta del reflejo.** Es el número que ningún
 competidor enseña: cuánto tardó el sistema desde que entró la señal hasta que cerró el relé,
@@ -281,7 +281,7 @@ operador, y sube con su **SHA-256** a la cadena de custodia. Es evidencia, no un
 **Qué haces:** revisas y **firmas el dictamen**. Te pedirá el segundo factor.
 
 **Por qué este rol y no otro:** el `inspector` es el único con **Total** en EVALUACIÓN. Ni el
-`soc_operator` ni el `tenant_admin` firman, y **el `takab_superadmin` tampoco** — no es un
+`tenant_admin` (el ADMINISTRADOR) ni el `gov_operator` firman, y **el `takab_superadmin` tampoco** — no es un
 descuido, es que firmar un dictamen estructural es un acto profesional con nombre y cédula
 detrás, no un privilegio administrativo.
 
@@ -352,17 +352,17 @@ enseña** y qué pierde si abres el equivocado.
 | Si preguntan… | Entra como | Dónde | Cuidado |
 |---|---|---|---|
 | «¿quién ve qué?» | `takab_superadmin` | Multi-Tenant | pide MFA; **ningún proceso automático puede usarlo** |
-| «¿y si tengo 40 edificios?» | `soc_operator` | MONITOREO | su alcance es **su tenant**, no la plataforma |
-| «¿quién administra mi organización?» | `tenant_admin` | Dash Edificio · umbrales · Flota Edge | «lectura + ack» en MONITOREO es la celda de `RBAC-TAKAB.md §2`; **el código le da además `classify_incident` y `request_dictamen`** (ver §5·bis), así que va a ver esos botones. Lo que NO tiene son las acciones **de campo** —`manual_activate`, `siren_silence`, `roster_read`—: no opera la crisis desde dentro del edificio |
+| «¿y si tengo 40 edificios?» | `tenant_admin` | MONITOREO | su alcance es **todo su tenant** (`site_scope='*'`), no la plataforma |
+| «¿quién administra mi organización?» | `tenant_admin` | Dash Edificio · umbrales · Flota Edge | desde `D-42` es el ADMINISTRADOR: opera MONITOREO completo (acuse, dictamen, clasificar) **y** tiene la app táctica completa —`manual_activate`, `siren_silence`, `roster_read`—, así que también opera la crisis desde dentro del edificio |
 | «¿y Protección Civil?» | `gov_operator` | MONITOREO (lectura) | ve **sólo** los tenants marcados `gov_shared`, y **no puede silenciar ni probar actuadores ajenos** — decisión cerrada |
-| «¿el responsable de mi edificio?» | `building_admin` | Dash Edificio | **Total** en su edificio, nada fuera |
+| «¿el responsable de mi edificio?» | `tenant_admin` (consola) o `brigadista` (app) | Dash Edificio / app táctica | `D-42` retiró `building_admin`: quien necesita consola es ADMINISTRADOR (ve todo el cliente); quien opera en campo, BRIGADISTA con su inmueble |
 | «¿queda rastro de todo?» | `takab_superadmin` | Auditoría | es **lectura**: el registro es append-only y no se poda |
 | «¿y el técnico que da soporte?» | `takab_superadmin` (ver el ⚠️ de abajo) | Flota Edge | `takab_support` **LEE** la flota, no la escribe. Aquí decía «**Total** en flota» copiando la celda de `RBAC-TAKAB.md §2`, y **el código la desmiente**: `manage_fleet` (alta/edición/retiro de sitios, gabinetes y sensores) es de `takab_superadmin` y `tenant_admin` y de nadie más — `matrix.py` da a `takab_support` **una sola acción, `read_audit`** |
 | «¿de qué magnitud fue?» | `inspector` | EVALUACIÓN → el dictamen | **no la calculamos.** Ver el punto **4** del §8: la magnitud, si aparece en el papel, es de **catálogo externo** con su fuente y su hora |
 
-> ⚠️ **Y no hay credencial de `takab_support` que meter.** `seed_console_users.sh:32` siembra
-> **seis** roles —`takab_superadmin`, `tenant_admin`, `soc_operator`, `inspector`,
-> `gov_operator`, `building_admin`— y ése **no está**. Delante del proyector eso es un minuto
+> ⚠️ **Y no hay credencial de `takab_support` que meter.** `seed_console_users.sh` siembra
+> **cuatro** roles —`takab_superadmin`, `tenant_admin`, `inspector`, `gov_operator`— (eran seis
+> hasta `D-42`) y ése **no está**. Delante del proyector eso es un minuto
 > muerto con el pool pidiendo TOTP. Dos salidas: enseñar la Flota Edge como
 > `takab_superadmin` (que sí se siembra y sí tiene `manage_fleet`) y **contar** que soporte la
 > ve pero no la mueve; o sembrarlo **días antes**, con su MFA enrolado, porque el script acepta
@@ -396,26 +396,27 @@ Sale de `api/src/takab_api/auth/matrix.py`, que es la **fuente única** de la qu
 > `RBAC-TAKAB.md §2`, **no contra esta hoja**. Y la divergencia que la frase juraba imposible
 > ya había ocurrido once líneas más arriba, en la fila de `takab_support`.
 >
-> Lo cierto es esto: **copiada de `matrix.py` y verificada acción por acción el 2026-09-22** —
-> las trece filas coinciden hoy—. Si el código cambia, **esta hoja hay que re-derivarla a
+> Lo cierto es esto: **copiada de `matrix.py` y verificada acción por acción el 2026-09-22**, y
+> **re-derivada el 2026-09-27 para los siete roles de `D-42`** (sin `soc_operator`,
+> `building_admin` ni `security_guard`) —las trece filas coinciden hoy—. Si el código cambia, **esta hoja hay que re-derivarla a
 > mano**: es el «censo que enumera a mano acaba divergiendo» de `TRASPASO-SESION.md`, y saberlo
 > es lo que obliga a revisarla antes de cada demostración.
 
 | Acción | Quién la tiene |
 |---|---|
 | **`sign_dictamen`** — firmar el dictamen | **`inspector`, y nadie más** |
-| `generate_report` — generar el PDF | `inspector`, `takab_superadmin` |
-| `request_dictamen` — pedir el dictamen técnico | `soc_operator`, `takab_superadmin`, `tenant_admin` |
-| `ack_incident` — acusar | `gov_operator`, `soc_operator`, `takab_superadmin`, `tenant_admin` |
-| `classify_incident` — clasificar (el cierre) | `building_admin`, `soc_operator`, `takab_superadmin`, `tenant_admin` |
-| `damage_report_submit` · `evidence_upload` | `brigadista`, `inspector`, `security_guard` |
+| `generate_report` — generar el PDF | `inspector`, `takab_superadmin`, `tenant_admin` |
+| `request_dictamen` — pedir el dictamen técnico | `takab_superadmin`, `tenant_admin` |
+| `ack_incident` — acusar | `gov_operator`, `takab_superadmin`, `tenant_admin` |
+| `classify_incident` — clasificar (el cierre) | `takab_superadmin`, `tenant_admin` |
+| `damage_report_submit` · `evidence_upload` | `brigadista`, `inspector`, `tenant_admin` |
 | `panic_vote` — el voto del ocupante | **`occupant`, y nadie más** |
-| `manual_activate` — sirena manual individual | `brigadista`, `building_admin`, `inspector`, `security_guard` |
-| `siren_silence` — silenciar | `brigadista`, `building_admin`, `security_guard` |
-| `checkin_submit` — «estoy a salvo» | `brigadista`, `building_admin`, `inspector`, `occupant`, `security_guard` |
-| `roster_read` — pase de lista | `brigadista`, `building_admin`, `security_guard` |
-| `dictamen_read` — leer el PDF en el móvil | `brigadista`, `building_admin`, `inspector`, `security_guard` |
-| `panel_read` — el táctico del gabinete | `brigadista`, `building_admin`, `inspector`, `security_guard` |
+| `manual_activate` — sirena manual individual | `brigadista`, `inspector`, `tenant_admin` |
+| `siren_silence` — silenciar | `brigadista`, `tenant_admin` |
+| `checkin_submit` — «estoy a salvo» | `brigadista`, `inspector`, `occupant`, `tenant_admin` |
+| `roster_read` — pase de lista | `brigadista`, `tenant_admin` |
+| `dictamen_read` — leer el PDF en el móvil | `brigadista`, `inspector`, `tenant_admin` |
+| `panel_read` — el táctico del gabinete | `brigadista`, `inspector`, `tenant_admin` |
 
 **Tres cosas que esta tabla dice y la prosa no dejaba claras:**
 

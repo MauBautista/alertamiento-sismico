@@ -26,8 +26,7 @@ export const MAINTENANCE_KEY = ["maintenance-windows", "active"] as const;
 
 /**
  * [T-6.01] El servidor dijo 403: este rol NO puede leer qué está silenciado
- * (`maintenance.py`: lo leen quien puede abrir ventanas, `soc_operator` y
- * `takab_support`). Es una respuesta sobre el ALCANCE, no un fallo, y con la
+ * (`maintenance.py`: lo leen quien puede abrir ventanas y `takab_support`). Es una respuesta sobre el ALCANCE, no un fallo, y con la
  * franja de escena en las seis rutas hay que distinguirlos: a un `inspector`
  * no se le pinta REINTENTAR en cada pantalla por algo que no va a cambiar. Se
  * modela como error propio para no duplicar la regla de roles en el cliente —
@@ -71,12 +70,13 @@ export interface MaintenanceData {
  * [T-8.09] ¿Este rol puede LEER las ventanas? La misma regla que el servidor
  * (`routers/maintenance.py::READ_ROLES`, anclada por
  * `tests/api/test_maintenance_windows.py::test_READ_ROLES_es_la_regla_de_la_consola`):
- * quien puede abrir alguna ventana, más `soc_operator` y `takab_support`. `null`
- * mientras no hay /me: ni sí ni no.
+ * quien puede abrir alguna ventana, más `takab_support`. `null` mientras no hay
+ * /me: ni sí ni no. [T-9.20 · D-42] El operador SOC ya no es un rol: su token
+ * entra como `tenant_admin`, que abre ventanas.
  *
  * Existe porque la franja de escena pide las ventanas en CADA página, y para
- * gov_operator, inspector y building_admin cada petición era un 403 condenado
- * (medido en el recorrido por rol del 2026-09-23).
+ * gov_operator, inspector y el antiguo administrador de inmueble cada petición
+ * era un 403 condenado (medido en el recorrido por rol del 2026-09-23).
  */
 export function puedeLeerVentanas(me: MeResponse | null): boolean | null {
   if (me === null) {
@@ -85,7 +85,6 @@ export function puedeLeerVentanas(me: MeResponse | null): boolean | null {
   return (
     me.allowed_actions.maintenance_window === true ||
     me.allowed_actions.platform_maintenance_window === true ||
-    me.role === "soc_operator" ||
     me.role === "takab_support"
   );
 }

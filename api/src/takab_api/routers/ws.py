@@ -24,6 +24,10 @@ re-consulta RLS por suscriptor).
 En el handshake, una sesión ya caducada cierra con ``4440``. Mientras el socket
 vive, su plazo es ``min(exp, plazo_de_sesión)``: si llega antes (o a la vez) el de
 la sesión, ``4440``; si llega antes el ``exp`` del token, ``4401`` como en REST.
+
+[T-9.20 · D-42] Pasada ``roles_heredados_hasta``, un token con rol viejo cierra
+``4401`` con MOTIVO ``rol_retirado`` (el mismo detalle que el 401 de REST), y se
+comprueba ANTES que el tope de sesión, como en ``auth/deps.get_claims``.
 """
 
 from __future__ import annotations
@@ -40,6 +44,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 from takab_api.auth import deps
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX, roles_with_action
+from takab_api.auth.roles import ROL_RETIRADO, RolRetirado, enforce_rol_vigente
 from takab_api.auth.session_age import SessionExpired, enforce_session_age, session_deadline
 from takab_api.auth.tokens import AuthError, decode_verify
 from takab_api.ws import protocol as p
@@ -94,6 +99,9 @@ async def ws_endpoint(websocket: WebSocket) -> None:
     if isinstance(authed, int):
         await _close(websocket, authed)
         return
+    if isinstance(authed, str):  # motivo con 4401 (rol retirado)
+        await _close(websocket, _WS_AUTH_FAILED, reason=authed)
+        return
     claims, exp, deadline = authed
     # El plazo del socket: el primero que llegue. Empate ⇒ manda la sesión, porque
     # renovar el token no la resucitaría.
@@ -137,11 +145,12 @@ async def ws_endpoint(websocket: WebSocket) -> None:
         await hub.unregister(sub)
 
 
-def _authenticate(raw: str, settings: Any) -> tuple[Claims, float, float] | int:
+def _authenticate(raw: str, settings: Any) -> tuple[Claims, float, float] | int | str:
     """Valida el frame ``auth`` → ``(Claims, exp, plazo_de_sesión)``.
 
     Ante un fallo devuelve el CÓDIGO de cierre: ``4440`` si la sesión ya llegó a
-    su tope (``auth/session_age.py``), ``4401`` ante cualquier otro.
+    su tope (``auth/session_age.py``), ``4401`` ante cualquier otro. [T-9.20 · D-42]
+    Un rol retirado devuelve el MOTIVO (``rol_retirado``), que se cierra con 4401.
     """
     try:
         data = json.loads(raw)
@@ -155,7 +164,10 @@ def _authenticate(raw: str, settings: Any) -> tuple[Claims, float, float] | int:
     try:
         verified = decode_verify(token.strip(), settings, deps._jwks())
         claims = Claims.from_verified(verified)
+        enforce_rol_vigente(claims, settings.roles_heredados_hasta)
         enforce_session_age(claims, time.time())
+    except RolRetirado:
+        return ROL_RETIRADO
     except SessionExpired:
         return WS_SESSION_EXPIRED
     except AuthError:
@@ -228,9 +240,9 @@ def _valid_topic(topic: Any) -> bool:
     return False
 
 
-async def _close(websocket: WebSocket, code: int) -> None:
+async def _close(websocket: WebSocket, code: int, *, reason: str | None = None) -> None:
     if websocket.application_state != WebSocketState.DISCONNECTED:
         try:
-            await websocket.close(code=code)
+            await websocket.close(code=code, reason=reason)
         except RuntimeError:
             pass

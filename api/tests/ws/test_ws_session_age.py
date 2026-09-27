@@ -48,7 +48,7 @@ async def test_el_codigo_es_el_del_contrato() -> None:
 
 
 async def test_sesion_ya_caducada_en_el_handshake_cierra_4440(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, auth_age=DAY + 1)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, auth_age=DAY + 1)
     assert await _close_code(ws_server, tok) == 4440
 
 
@@ -58,7 +58,7 @@ async def test_brigadista_caducado_en_el_handshake_cierra_4440(ws_server: str) -
 
 
 async def test_sesion_vigente_recibe_ready(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, auth_age=DAY - 60)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, auth_age=DAY - 60)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})
@@ -69,7 +69,7 @@ async def test_sesion_vigente_recibe_ready(ws_server: str) -> None:
 
 async def test_la_sesion_que_termina_con_el_socket_abierto_cierra_4440(ws_server: str) -> None:
     """El tope llega ANTES que el exp del token ⇒ 4440 (no renovable)."""
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, auth_age=DAY - 2, exp_delta=3600)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, auth_age=DAY - 2, exp_delta=3600)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})
@@ -85,7 +85,7 @@ async def test_el_token_que_vence_antes_que_la_sesion_sigue_cerrando_4401(
     ws_server: str,
 ) -> None:
     """El exp del token llega ANTES que el tope ⇒ 4401 como siempre (renovable)."""
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, exp_delta=2)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, exp_delta=2)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})
@@ -99,5 +99,5 @@ async def test_el_token_que_vence_antes_que_la_sesion_sigue_cerrando_4401(
 
 async def test_token_sin_auth_time_cierra_4401(ws_server: str) -> None:
     """Sin ``auth_time`` el token es inválido (no «sesión caducada»)."""
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, drop=("auth_time",))
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, drop=("auth_time",))
     assert await _close_code(ws_server, tok) == 4401

@@ -11,6 +11,7 @@
 //   · renovación `offline` ⇒ la sesión SE QUEDA y el canal se APARCA: se reanuda
 //     solo en cuanto el store tenga un token nuevo (REST, primer plano…);
 //   · 4440 (D-38) ⇒ fuera con motivo `max_age`, sin renovar;
+//   · [F2] `rol_retirado` ⇒ fuera con ese motivo, sin renovar;
 //   · la sesión se cierra ⇒ el socket se cierra (no reintenta con un token que
 //     ya no existe).
 import { LiveSocket, type SessionEndReason } from "@takab/sdk";
@@ -81,9 +82,12 @@ async function renovarParaSocket(): Promise<string | null> {
   return ultimaRenovacion === "ok" ? useSessionStore.getState().idToken : null;
 }
 
-function alTerminarSesion(reason?: SessionEndReason): void {
-  if (reason === "max_age") {
-    useSessionStore.getState().signOut("max_age");
+/** [F2 · D-42] `rol_retirado` ⇒ fin con esa causa, sin renovar. El socket del
+ * SDK hoy no reenvía el MOTIVO del cierre 4401: se acepta aquí para cuando lo
+ * haga; mientras tanto el 401 del REST fija la causa. */
+function alTerminarSesion(reason?: SessionEndReason | "rol_retirado"): void {
+  if (reason === "max_age" || reason === "rol_retirado") {
+    useSessionStore.getState().signOut(reason);
     return;
   }
   const renovacion = ultimaRenovacion;

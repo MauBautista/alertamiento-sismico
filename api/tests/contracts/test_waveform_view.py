@@ -70,7 +70,7 @@ async def test_features_isolated_by_tenant(seed) -> None:
         return select_features(site_id=site_id, from_ts=frm, to_ts=to, channel=None)
 
     async with get_tenant_conn(
-        SessionCtx(tenant_id=seed.priv_a, role="soc_operator", user_id="u")
+        SessionCtx(tenant_id=seed.priv_a, role="tenant_admin", user_id="u")
     ) as conn:
         own = (await conn.execute(*_q(seed.site_a))).all()
         other = (await conn.execute(*_q(seed.site_b))).all()
@@ -85,7 +85,7 @@ async def test_features_isolated_reverse(seed) -> None:
         return select_features(site_id=site_id, from_ts=frm, to_ts=to, channel=None)
 
     async with get_tenant_conn(
-        SessionCtx(tenant_id=seed.priv_b, role="soc_operator", user_id="u")
+        SessionCtx(tenant_id=seed.priv_b, role="tenant_admin", user_id="u")
     ) as conn:
         own = (await conn.execute(*_q(seed.site_b))).all()
         other = (await conn.execute(*_q(seed.site_a))).all()

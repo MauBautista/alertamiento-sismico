@@ -95,7 +95,7 @@ async def test_el_dueno_de_la_plataforma_lo_enciende(client, gateway):
 
 
 @pytest.mark.parametrize(
-    "role", ["tenant_admin", "soc_operator", "gov_operator", "inspector", "building_admin"]
+    "role", ["tenant_admin", "takab_support", "gov_operator", "inspector", "brigadista"]
 )
 async def test_nadie_mas_lo_enciende(client, gateway, role):
     """Encender es acto de PLATAFORMA: la demostración la hace TAKAB."""

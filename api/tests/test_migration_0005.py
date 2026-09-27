@@ -34,14 +34,14 @@ def test_unique_incident_channel_mode(seeded: psycopg.Connection) -> None:
 
 def test_rls_tenant_reads_only_its_jobs(seeded: psycopg.Connection) -> None:
     _seed_jobs(seeded)
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="inspector")
     rows = seeded.execute("SELECT tenant_id::text FROM notification_jobs").fetchall()
     assert [r[0] for r in rows] == [TENANT_A]
 
 
 def test_rls_other_tenant_sees_nothing(seeded: psycopg.Connection) -> None:
     _seed_jobs(seeded)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="inspector")
     assert seeded.execute("SELECT count(*) FROM notification_jobs").fetchone()[0] == 0
 
 
@@ -55,7 +55,7 @@ def test_rls_gov_sees_gov_shared_only(seeded: psycopg.Connection) -> None:
 def test_rls_tenant_cannot_insert(seeded: psycopg.Connection) -> None:
     """Sin policy de escritura de tenant: los jobs los crea SOLO el worker."""
     _seed_jobs(seeded)
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="inspector")
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         seeded.execute(INSERT_JOB, (TENANT_A, INC_A, "sms", "cascade"))
 

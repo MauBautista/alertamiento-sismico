@@ -226,9 +226,11 @@ async def test_takab_support_cannot_manage_fleet(seed: None) -> None:
     assert read.status_code == 200
 
 
-async def test_soc_operator_cannot_write_but_can_read(seed: None) -> None:
-    assert (await _post("/sites", _site_body(), _tok("soc_operator"))).status_code == 403
-    assert (await _get("/sites", _tok("soc_operator"))).status_code == 200
+async def test_rol_de_consola_sin_manage_fleet_lee_pero_no_escribe(seed: None) -> None:
+    """[T-9.20 · D-42] Antes ``soc_operator`` (que ahora canoniza a ``tenant_admin``,
+    con ``manage_fleet``); gov_operator conserva la intención: lee, no escribe."""
+    assert (await _post("/sites", _site_body(), _tok("gov_operator"))).status_code == 403
+    assert (await _get("/sites", _tok("gov_operator"))).status_code == 200
 
 
 async def test_duplicate_code_within_tenant_is_409(seed: None) -> None:

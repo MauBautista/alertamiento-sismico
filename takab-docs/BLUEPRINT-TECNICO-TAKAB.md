@@ -514,7 +514,7 @@ Móvil (**construida y mergeada en la Fase 2**, T-2.00…T-2.14): acuse, escalam
 `RBAC-TAKAB.md` es la **fuente de verdad**: **10 roles** sobre tres superficies (SOC web, app móvil, interno TAKAB). Las **identidades máquina** (X.509 por gateway, M2M `client_credentials`, rol de DB `takab_ingest`) son identidades de servicio, no roles RBAC. Restricciones no negociables a implementar:
 
 - **`gov_operator` (Protección Civil): solo lectura + acuse.** No opera actuadores.
-- **Activación manual de sirena:** para el rol `occupant` requiere **quórum de dos ocupantes** dentro de **30 s**; los roles operativos (`brigadista`/`security_guard`/`inspector`/`building_admin`) activan **individual** con deslizar-para-activar ([ANALISIS-00]: la redacción anterior generalizaba el quórum a todos — `RBAC-TAKAB.md §4.1` es la fuente de verdad).
+- **Activación manual de sirena:** para el rol `occupant` requiere **quórum de dos ocupantes** dentro de **30 s**; los roles operativos (`brigadista`/`inspector`/`tenant_admin`; antes de D-42 también `security_guard`/`building_admin`) activan **individual** con deslizar-para-activar ([ANALISIS-00]: la redacción anterior generalizaba el quórum a todos — `RBAC-TAKAB.md §4.1` es la fuente de verdad).
 - **Control remoto de actuadores:** comandos **firmados** + **MFA** + **rate limiting** + **nonce** + **ACK de ejecución**.
 - IAM: usuarios web/móvil vía **Cognito/OIDC + MFA**; máquinas vía `client_credentials`; dispositivos vía **mTLS + X.509 por gateway**.
 - Propagar `tenant_id` + scope a PostgreSQL; **RLS default-deny**.

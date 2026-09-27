@@ -1,7 +1,12 @@
 import { meMeGet } from "@takab/sdk";
 import type { MeActions, MeResponse } from "@takab/sdk";
 
-import { isSessionExpiredBody, isSessionExpiredHeader } from "./sessionLimit";
+import {
+  isRoleRetiredBody,
+  isRoleRetiredHeader,
+  isSessionExpiredBody,
+  isSessionExpiredHeader,
+} from "./sessionLimit";
 
 export type { MeActions, MeResponse };
 
@@ -15,6 +20,8 @@ export class MeRequestError extends Error {
      * Cognito seguiría refrescando y la API rechazaría en bucle.
      */
     public readonly sessionExpired = false,
+    /** [F2] El 401 es el del ROL RETIRADO: tampoco se renueva. */
+    public readonly roleRetired = false,
   ) {
     super(`GET /me falló (${status})`);
     this.name = "MeRequestError";
@@ -29,7 +36,10 @@ export async function getMe(): Promise<MeResponse> {
       response.status === 401 &&
       (isSessionExpiredHeader(response.headers.get("WWW-Authenticate")) ||
         isSessionExpiredBody(error));
-    throw new MeRequestError(response.status, expired);
+    const retired =
+      response.status === 401 &&
+      (isRoleRetiredHeader(response.headers.get("WWW-Authenticate")) || isRoleRetiredBody(error));
+    throw new MeRequestError(response.status, expired, retired);
   }
   return data;
 }

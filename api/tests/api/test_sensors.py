@@ -97,7 +97,7 @@ async def _get(path: str, token: str):
 
 
 async def test_list_sensors_by_site(seed: None) -> None:
-    resp = await _get(f"/sensors?site_id={S_A}", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(f"/sensors?site_id={S_A}", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     body = resp.json()
     assert [s["sensor_id"] for s in body] == [SEN_A]
@@ -110,13 +110,13 @@ async def test_list_sensors_by_site(seed: None) -> None:
 
 async def test_rls_other_tenant_site_returns_empty(seed: None) -> None:
     # Tenant A pide el sitio de B: RLS tapa sus sensores -> lista vacía (no fuga).
-    resp = await _get(f"/sensors?site_id={S_B}", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(f"/sensors?site_id={S_B}", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     assert resp.json() == []
 
 
 async def test_missing_site_id_is_422(seed: None) -> None:
-    resp = await _get("/sensors", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/sensors", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 422
 
 

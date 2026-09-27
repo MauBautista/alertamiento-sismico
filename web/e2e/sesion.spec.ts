@@ -22,7 +22,8 @@ async function entrarConToken(
   opts: { expires_in?: number; auth_age_s?: number; role?: string },
 ): Promise<void> {
   const request = {
-    role: opts.role ?? "soc_operator",
+    // [T-9.20 · D-42] El operador SOC entra como `tenant_admin`: el mismo tope de 24 h.
+    role: opts.role ?? "tenant_admin",
     tenant_id: TENANT_DEV,
     sub: SUB_FIJO,
     ...(opts.expires_in !== undefined ? { expires_in: opts.expires_in } : {}),

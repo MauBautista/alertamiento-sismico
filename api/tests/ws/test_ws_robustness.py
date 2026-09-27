@@ -21,7 +21,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_expired_token_mid_socket_closes_4401(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, exp_delta=2)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, exp_delta=2)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})
@@ -46,7 +46,7 @@ async def test_binary_frame_in_auth_closes_4401(ws_server: str) -> None:
 
 
 async def test_binary_frame_after_auth_gets_error_and_survives(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})

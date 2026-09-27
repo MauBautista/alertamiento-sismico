@@ -425,7 +425,7 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
   });
 
   it("sin manage_fleet no hay acciones de administración ni toggle", () => {
-    seedAuthenticated(ME_FIXTURES.soc_operator);
+    seedAuthenticated(ME_FIXTURES.gov_operator);
     render(<FleetPage />);
     expect(screen.queryByTestId("card-admin")).not.toBeInTheDocument();
     expect(screen.queryByTestId("fleet-include-retired")).not.toBeInTheDocument();
@@ -441,7 +441,7 @@ describe("FleetPage · administración del gabinete [T-2.37]", () => {
   // [T-2.71] Abrir ventana cuelga de su PROPIA acción, no de `manage_fleet`:
   // silenciar avisos y administrar inventario son permisos distintos.
   it("sin maintenance_window no se ofrece abrir ventana", () => {
-    seedAuthenticated(ME_FIXTURES.soc_operator);
+    seedAuthenticated(ME_FIXTURES.gov_operator);
     render(<FleetPage />);
     expect(screen.queryByTestId("open-window")).not.toBeInTheDocument();
   });
@@ -774,7 +774,7 @@ describe("FleetPage · fantasmas vivos", () => {
   });
 
   it("sin manage_fleet el fantasma se delata igual, pero no se ofrece restaurarlo", () => {
-    seedAuthenticated(ME_FIXTURES.soc_operator);
+    seedAuthenticated(ME_FIXTURES.gov_operator);
     mocks.useFleet.mockReturnValue(fleetData({ cabinets: [fantasma("1")] }));
     render(<FleetPage />);
     const seccion = screen.getByTestId("fleet-ghosts");

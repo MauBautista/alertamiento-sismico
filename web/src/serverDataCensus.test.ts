@@ -251,7 +251,7 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "doc",
     "unreadable",
   ],
-  "features/tenants/UsersCard.tsx::UsersCard": ["data"],
+  "features/tenants/UsersCard.tsx::UsersCard": ["asignables", "assignable", "data"],
   "features/triage/TriagePage.tsx::TriagePage": [
     "cctv",
     "current",
@@ -369,7 +369,12 @@ const RAZONES: Record<string, string> = {
     "(a) RÓTULO DE PROCEDENCIA. La pastilla DIRECTORIO COGNITO / DIRECTORIO SIMULADO va en la " +
     "cabecera de la tarjeta, fuera del marco y con la puerta `data.backend !== null`: dice " +
     "con qué directorio se está hablando, así que tiene que leerse TAMBIÉN mientras la lista " +
-    "carga — es el rótulo que avisa de que nada de lo de abajo se escribe de verdad.",
+    "carga — es el rótulo que avisa de que nada de lo de abajo se escribe de verdad. " +
+    "[T-9.20 · D-42] `asignables`/`assignable` son el catálogo de roles que el SERVIDOR deja " +
+    "otorgar (`GET /users/assignable-roles`): llenan los <select> del alta y del cambio de rol, " +
+    "que viven en el formulario y no en el marco de la lista. Sus estados van en la propia " +
+    "opción vacía (CARGANDO ROLES… / SIN ROLES QUE PUEDAS ASIGNAR / ELIGE UN ROL) y en el aviso " +
+    "`assignable-roles-error`; no envejece (el catálogo no cambia en una sesión).",
   "features/triage/TriagePage.tsx::TriagePage":
     "(b) MISMO PATRÓN QUE T-2.59, ya arreglado a mano. El rótulo `N INCIDENTES CARGADOS` está " +
     "fuera del marco y su guarda explícita (`triage.loading || triage.error !== null` ⇒ " +

@@ -5,6 +5,7 @@
 import { Redirect } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
+import { MENSAJE_ROL_RETIRADO } from "@/auth/rolRetirado";
 import { useSessionStore } from "@/auth/session.store";
 import { useLogin } from "@/auth/useAuth";
 import { Pulsable } from "@/ui/Pulsable";
@@ -12,6 +13,7 @@ import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 export default function Login() {
   const status = useSessionStore((s) => s.status);
+  const signOutReason = useSessionStore((s) => s.signOutReason);
   const occupant = useLogin("occupant");
   const tactical = useLogin("tactical");
 
@@ -25,6 +27,13 @@ export default function Login() {
         <Text style={styles.brandName}>TAKAB AILERT</Text>
         <Text style={styles.brandSub}>ALERTAMIENTO SÍSMICO · CONTINUIDAD OPERATIVA</Text>
       </View>
+
+      {/* [F2 · D-42] Volver a entrar no lo arregla: lo dice y dice qué hacer. */}
+      {signOutReason === "rol_retirado" ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {MENSAJE_ROL_RETIRADO}
+        </Text>
+      ) : null}
 
       <View style={styles.actions}>
         <Pulsable

@@ -37,19 +37,19 @@ async def _audit_count(iid: str) -> int:
         ).scalar_one()
 
 
-async def test_soc_operator_only_sees_own_tenant(client, make_incident) -> None:
-    """soc_operator del tenant A: /me refleja su identidad y solo acusa lo suyo."""
+async def test_tenant_admin_only_sees_own_tenant(client, make_incident) -> None:
+    """tenant_admin del tenant A: /me refleja su identidad y solo acusa lo suyo."""
     own = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     foreign = await make_incident(au.DB_TENANT_PRIV2, au.DB_SITE_PRIV2)
     token = au.make_token(
-        "soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id=_SOC_USER
+        "tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id=_SOC_USER
     )
 
     me = await client.get("/me", headers=au.bearer(token))
     assert me.status_code == 200, me.text
     body = me.json()
     assert body["tenant_id"] == au.DB_TENANT_PRIV
-    assert body["role"] == "soc_operator"
+    assert body["role"] == "tenant_admin"
     assert "/console" in body["allowed_routes"]
 
     # Su propio incidente: acuse ok end-to-end (RLS lo deja pasar).
@@ -66,7 +66,7 @@ async def test_soc_operator_only_sees_own_tenant(client, make_incident) -> None:
 
 async def test_foreign_key_signature_is_401(client, make_incident) -> None:
     """Token firmado con una llave que NO está en el JWKS → 401 (firma inválida)."""
-    forged = au.badsig_token("soc_operator", tenant=au.DB_TENANT_PRIV, user_id=_SOC_USER)
+    forged = au.badsig_token("tenant_admin", tenant=au.DB_TENANT_PRIV, user_id=_SOC_USER)
     resp = await client.get("/me", headers=au.bearer(forged))
     assert resp.status_code == 401
     assert resp.headers.get("WWW-Authenticate") == "Bearer"

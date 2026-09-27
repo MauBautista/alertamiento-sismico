@@ -25,7 +25,7 @@ from _telemetry_fixtures import (  # noqa: F401  (fixtures cargadas por nombre)
 )
 
 
-def _auth(role: str = "soc_operator", tenant: str = T_PRIV_A) -> dict[str, str]:
+def _auth(role: str = "tenant_admin", tenant: str = T_PRIV_A) -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*", surface="web"))
 
 

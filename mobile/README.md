@@ -54,7 +54,7 @@ con aviso); jamás se finge. Las lecturas de env son expresiones estáticas
 | Perfil | Pool | MFA | Sesión |
 |---|---|---|---|
 | `occupant` | `takab-*-occupants` | **OPCIONAL** (opt-in TOTP desde Cuenta) | refresh 90 días — alerta sin login en crisis |
-| táctico (`brigadista`, `security_guard`, `inspector`, `building_admin`) | pool principal | **ON** (no negociable, RBAC §4.3) | refresh 24 h — las acciones re-verifican |
+| táctico (`brigadista`, `inspector`, `tenant_admin` — D-42; los viejos `security_guard`/`building_admin` canonizan a `brigadista`) | pool principal | **ON** (no negociable, RBAC §4.3) | refresh 24 h — las acciones re-verifican |
 
 Hosted UI + código + PKCE (`expo-auth-session`); tokens SOLO en
 Keychain/Keystore (`expo-secure-store`). El deep link `takab://auth/callback`

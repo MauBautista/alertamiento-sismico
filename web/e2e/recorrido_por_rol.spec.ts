@@ -6,7 +6,7 @@
 // avisos rojos permanentes para un rol concreto. Ninguno lo veía un test, porque
 // los e2e existentes entran con tres roles y ejercen flujos, no controles.
 //
-// Este spec entra con CADA UNO de los 10 roles, visita cada ruta que el SERVIDOR
+// Este spec entra con CADA UNO de los 7 roles (D-42; eran 10), visita cada ruta que el SERVIDOR
 // le concede (`/me.allowed_routes`, más la ficha del edificio) y, en cada una:
 //   - recoge errores de página, `console.error` y TODA respuesta HTTP ≥ 400. No hay
 //     lista de «esperados» por defecto: un 403 significa que la pantalla pidió algo
@@ -23,7 +23,8 @@
 //
 // Salida: `takab-docs/auditoria/recorrido-web.json` (local) o
 // `recorrido-web-nube.json` (con `PW_BASE_URL`), más capturas por rol y ruta en
-// `test-results/recorrido/`. El Goal de F2 exige 10 roles y cero inesperados.
+// `test-results/recorrido/`. El Goal de F2 exigía los 10 roles de entonces; desde D-42
+// (T-9.20) son 7, y cero inesperados.
 //
 // NUBE: sin login dev. Cada rol entra con un `storageState` guardado a mano
 // (Mauricio entra una vez con contraseña y código):
@@ -42,18 +43,15 @@ const ROLES = [
   "takab_superadmin",
   "takab_support",
   "tenant_admin",
-  "soc_operator",
   "gov_operator",
   "inspector",
-  "building_admin",
   "brigadista",
-  "security_guard",
   "occupant",
 ] as const;
 type Rol = (typeof ROLES)[number];
 
 /** Roles sin superficie web: deben ver «SIN SUPERFICIE WEB» y nada más (RBAC §2). */
-const SOLO_MOVIL: ReadonlySet<string> = new Set(["brigadista", "security_guard", "occupant"]);
+const SOLO_MOVIL: ReadonlySet<string> = new Set(["brigadista", "occupant"]);
 
 /**
  * Rótulos de acciones que CAMBIAN el sistema. No se pulsan en el barrido genérico.

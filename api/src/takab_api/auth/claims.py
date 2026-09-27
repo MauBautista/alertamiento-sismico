@@ -3,6 +3,10 @@
 ``site_scope`` es **default-deny** ([ANALISIS-00], RBAC §5.2): ausente/vacío =
 cero sitios; ``"*"`` = todo el tenant (sentinel ``ALL_SITES``); CSV = conjunto.
 ``role`` debe pertenecer a ``cognito:groups`` o es un token forjado.
+
+[T-9.20 · D-42] La comprobación rol∈grupos se hace sobre lo CRUDO del token y SOLO
+DESPUÉS se canoniza el alias viejo (``auth/roles.py``): ``role`` es el canónico
+(matriz, sesión, RLS) y ``role_raw`` lo que traía el token (bitácora y baja).
 """
 
 from __future__ import annotations
@@ -10,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from takab_api.auth.roles import canonizar
 from takab_api.auth.tokens import POOL_PRINCIPAL, AuthError
 
 _SURFACES = frozenset({"web", "mobile", "both"})
@@ -68,13 +73,25 @@ class Claims:
     #: para alargar la sesión. El default ``0`` (1970) es fail-closed: un ``Claims``
     #: construido sin él tiene la sesión caducada.
     auth_time: int = 0
+    #: [T-9.20 · D-42] El ``custom:role`` TAL COMO VINO en el token, antes de
+    #: canonizar el alias viejo. ``role`` decide; ``role_raw`` solo se lee para la
+    #: bitácora y para la baja de los alias (``auth/roles.enforce_rol_vigente``).
+    #: Vacío ⇒ igual a ``role`` (un ``Claims`` construido a mano).
+    role_raw: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.role_raw:
+            object.__setattr__(self, "role_raw", self.role)
 
     @classmethod
     def from_verified(cls, claims: dict[str, Any], *, pool: str = POOL_PRINCIPAL) -> Claims:
         groups = tuple(claims.get("cognito:groups") or ())
-        role = claims.get("custom:role") or ""
-        if role not in groups:
+        role_raw = claims.get("custom:role") or ""
+        # Antifalsificación sobre lo CRUDO, EXACTAMENTE como antes de D-42. Canonizar
+        # antes dejaría entrar un `custom:role` viejo con el grupo de su heredero.
+        if role_raw not in groups:
             raise AuthError("role not in groups")
+        role = canonizar(role_raw)
 
         surface = claims.get("custom:surface") or ""
         if surface not in _SURFACES:
@@ -92,6 +109,7 @@ class Claims:
             groups=groups,
             tenant_id=claims.get("custom:tenant_id") or "",
             role=role,
+            role_raw=role_raw,
             site_scope=_parse_site_scope(claims.get("custom:site_scope")),
             zone_id=claims.get("custom:zone_id") or "",
             surface=surface,

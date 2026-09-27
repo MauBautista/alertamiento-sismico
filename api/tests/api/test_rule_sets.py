@@ -79,18 +79,19 @@ async def test_authz_edit_thresholds_only(client, base_data) -> None:
     created = await _put(client)
     rid = created.json()["rule_set_id"]
 
-    # soc_operator no administra umbrales.
+    # gov_operator no administra umbrales ([T-9.20 · D-42] antes soc_operator,
+    # que ahora canoniza a tenant_admin y SÍ los administra).
     put_forbidden = await client.put(
         "/rule-sets",
         json={"scope_type": "site", "scope_id": au.DB_SITE_PRIV, "config": {}},
-        headers=_tok("soc_operator"),
+        headers=_tok("gov_operator"),
     )
     assert put_forbidden.status_code == 403
-    pub_forbidden = await client.post(f"/rule-sets/{rid}/publish", headers=_tok("soc_operator"))
+    pub_forbidden = await client.post(f"/rule-sets/{rid}/publish", headers=_tok("gov_operator"))
     assert pub_forbidden.status_code == 403
 
     # pero sí puede leer el catálogo (superficie web).
-    read = await client.get("/rule-sets", headers=_tok("soc_operator"))
+    read = await client.get("/rule-sets", headers=_tok("gov_operator"))
     assert read.status_code == 200
 
 

@@ -30,14 +30,9 @@ const TACTICOS = [...TACTICAL_ROLES].sort();
 
 describe("[T-6.22] las pestañas del táctico cuadran con la matriz de RBAC", () => {
   // [T-9.11 · D-42] el administrador del tenant usa también la app táctica.
-  it("el fixture trae los cinco roles tácticos (si no, esto no mira nada)", () => {
-    expect(TACTICOS).toEqual([
-      "brigadista",
-      "building_admin",
-      "inspector",
-      "security_guard",
-      "tenant_admin",
-    ]);
+  // [T-9.20 · D-42] roles de 10 a 7: los tácticos son tres.
+  it("el fixture trae los tres roles tácticos (si no, esto no mira nada)", () => {
+    expect(TACTICOS).toEqual(["brigadista", "inspector", "tenant_admin"]);
     for (const rol of TACTICOS) {
       expect(MATRIZ.roles[rol]).toBeDefined();
     }
@@ -74,19 +69,21 @@ describe("[T-6.22] las pestañas del táctico cuadran con la matriz de RBAC", ()
     expect(desajustes).toEqual([]);
   });
 
-  it("los dos defectos que cerró esta ficha, nombrados", () => {
+  it("el defecto que cerró esta ficha, nombrado (el otro era de `building_admin`, retirado en D-42)", () => {
     // Escritos en positivo: si un cambio de matriz los reabriera, el mensaje
     // dice cuál de los dos es y no hay que deducirlo del `it.each`.
     const inspector = pestanasVisibles(MATRIZ.roles.inspector.actions).map((p) => p.name);
     expect(MATRIZ.roles.inspector.actions.roster_read).toBe(false);
     expect(inspector).not.toContain("lista");
-
-    const admin = pestanasVisibles(MATRIZ.roles.building_admin.actions).map((p) => p.name);
-    expect(MATRIZ.roles.building_admin.actions.damage_report_submit).toBe(false);
-    expect(admin).not.toContain("triage");
   });
 
-  it("y los CUATRO llegan a RUTAS y DIRECTORIO (RBAC §3, los cinco roles)", () => {
+  it("los roles viejos YA NO están en la matriz: el servidor canoniza (D-42)", () => {
+    for (const viejo of ["soc_operator", "security_guard", "building_admin"]) {
+      expect(MATRIZ.roles[viejo]).toBeUndefined();
+    }
+  });
+
+  it("y los tres llegan a RUTAS y DIRECTORIO (RBAC §3)", () => {
     for (const rol of TACTICOS) {
       const visibles = pestanasVisibles(MATRIZ.roles[rol].actions).map((p) => p.name);
       expect(visibles).toContain("rutas");

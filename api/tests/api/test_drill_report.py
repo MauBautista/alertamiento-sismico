@@ -226,7 +226,7 @@ async def test_una_AGENDA_no_tiene_acuses_que_reportar(client, gateway, publishe
         assert rep.status_code == 409, rep.text
 
 
-@pytest.mark.parametrize("role", ["soc_operator", "inspector", "gov_operator"])
+@pytest.mark.parametrize("role", ["takab_support", "inspector", "gov_operator"])
 async def test_roles_sin_drill_start_no_exportan(client, gateway, publisher, role):
     with mock_aws():
         _bucket()

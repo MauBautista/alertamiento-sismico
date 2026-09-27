@@ -39,9 +39,9 @@ def test_nonce_unique(seeded: psycopg.Connection) -> None:
 
 def test_rls_tenant_reads_only_its_commands(seeded: psycopg.Connection) -> None:
     _seed_command(seeded)
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin")
     assert seeded.execute("SELECT count(*) FROM commands").fetchone()[0] == 0
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
     assert seeded.execute("SELECT count(*) FROM commands").fetchone()[0] == 1
 
 

@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+import { etiquetaRol } from "@/auth/roles";
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -90,7 +91,7 @@ export function AccountView(props: {
   );
   return (
     <View style={styles.wrap}>
-      <Text style={styles.eyebrow}>CUENTA · {props.role.toUpperCase()}</Text>
+      <Text style={styles.eyebrow}>CUENTA · {etiquetaRol(props.role)}</Text>
 
       {props.renderProfile ? props.renderProfile(perfil) : perfil}
 

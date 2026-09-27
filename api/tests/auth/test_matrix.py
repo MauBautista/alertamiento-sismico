@@ -29,21 +29,20 @@ from takab_api.routers import privacy as privacy_router
 COLS = (CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING)
 
 # Copiado A MANO de RBAC-TAKAB.md §2 (matriz web), celda por celda.
+# [T-9.20 · D-42] Siete filas: soc_operator, building_admin y security_guard salieron
+# (sus tokens entran canonizados; ver tests/auth/test_roles_heredados.py).
 RBAC_SECTION_2 = {
     #                    console fleet triage tenants audit building
     "takab_superadmin": (True, True, True, True, True, True),
     "takab_support": (True, True, True, True, True, True),
     "tenant_admin": (True, True, True, True, True, True),
-    "soc_operator": (True, True, True, False, False, True),
     "gov_operator": (True, True, True, False, True, True),
     "inspector": (True, False, True, False, False, True),
-    "building_admin": (True, False, True, False, False, True),
     "brigadista": (False, False, False, False, False, False),
-    "security_guard": (False, False, False, False, False, False),
     "occupant": (False, False, False, False, False, False),
 }
 
-MOBILE_ONLY = ("brigadista", "security_guard", "occupant")
+MOBILE_ONLY = ("brigadista", "occupant")
 
 
 def _expected_routes(role: str) -> list[str]:
@@ -148,7 +147,7 @@ def test_action_anchors_from_rbac() -> None:
     assert gov["ack_incident"] is True
     assert gov["edit_thresholds"] is False
     assert gov["siren_test"] is False
-    assert allowed_actions("building_admin")["siren_test"] is True
+    assert allowed_actions("tenant_admin")["siren_test"] is True
 
 
 def test_sign_dictamen_is_inspector_only() -> None:
@@ -163,12 +162,17 @@ def test_generate_report_is_distinct_from_export() -> None:
     = CREAR evidencia nueva (PDF) en el tenant. gov_operator lee y descarga
     evidencia ajena (gov_shared) pero no escribe filas en un tenant que no es suyo,
     así que tiene export sin generate_report. Un solo flag para ambos haría que la
-    consola le pintara un botón que siempre da 403 (regla de oro 7)."""
+    consola le pintara un botón que siempre da 403 (regla de oro 7).
+
+    [T-9.20 · D-42] ``tenant_admin`` GENERA el reporte de su cliente (absorbe al SOC y
+    a la administración del inmueble) sin recibir ``export``: el PDF recién generado
+    llega con su propia descarga firmada. Por eso ``generate_report`` ya no es un
+    subconjunto de ``export``; lo que se conserva es que gov descarga sin generar."""
     can_export = {r for r in RBAC_SECTION_2 if allowed_actions(r)["export"]}
     can_report = {r for r in RBAC_SECTION_2 if allowed_actions(r)["generate_report"]}
     assert can_export == {"takab_superadmin", "gov_operator", "inspector"}
-    assert can_report == {"takab_superadmin", "inspector"}
-    assert can_report < can_export
+    assert can_report == {"takab_superadmin", "inspector", "tenant_admin"}
+    assert "gov_operator" in can_export - can_report
 
 
 def test_manage_fleet_excludes_takab_support() -> None:
@@ -187,7 +191,7 @@ def test_manage_fleet_excludes_takab_support() -> None:
 
 def test_ack_incident_roles() -> None:
     can_ack = {r for r in RBAC_SECTION_2 if allowed_actions(r)["ack_incident"]}
-    assert can_ack == {"takab_superadmin", "tenant_admin", "soc_operator", "gov_operator"}
+    assert can_ack == {"takab_superadmin", "tenant_admin", "gov_operator"}
 
 
 def test_relocate_epicenter_is_tenant_operator_action() -> None:
@@ -195,7 +199,7 @@ def test_relocate_epicenter_is_tenant_operator_action() -> None:
     (seismic_events): acto de operador del tenant + dueño de plataforma. Ni gov
     (solo lectura+acuse) ni inspector (juzga, no edita la física del evento)."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["relocate_epicenter"]}
-    assert can == {"takab_superadmin", "tenant_admin", "soc_operator"}
+    assert can == {"takab_superadmin", "tenant_admin"}
 
 
 def test_request_dictamen_excludes_gov() -> None:
@@ -204,7 +208,7 @@ def test_request_dictamen_excludes_gov() -> None:
     un botón que siempre da 403 (regla de oro 7). Divergencia anotada en
     RBAC-TAKAB.md §2."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["request_dictamen"]}
-    assert can == {"takab_superadmin", "tenant_admin", "soc_operator"}
+    assert can == {"takab_superadmin", "tenant_admin"}
 
 
 def test_read_audit_is_read_only_oversight() -> None:
@@ -231,7 +235,7 @@ def test_self_test_is_owner_maintenance_action() -> None:
     dueño del sitio): pulsa gas/puertas con readback. soc_operator DENEGADO —
     opera incidentes, no mantenimiento (divergencia anotada en RBAC §2)."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["self_test"]}
-    assert can == {"takab_superadmin", "tenant_admin", "building_admin"}
+    assert can == {"takab_superadmin", "tenant_admin"}
     siren = {r for r in RBAC_SECTION_2 if allowed_actions(r)["siren_test"]}
     assert can == siren  # mismo círculo de confianza que la prueba de sirena
 
@@ -307,9 +311,9 @@ RBAC_SECTION_3 = {
     #                 checkin roster  damage  evid.  silence activate dict_read panel movement
     "occupant": (True, False, False, False, False, False, False, False, False),
     "brigadista": (True, True, True, True, True, True, True, True, True),
-    "security_guard": (True, True, True, True, True, True, True, True, True),
     "inspector": (True, False, True, True, False, True, True, True, True),
-    "building_admin": (True, True, False, False, True, True, True, True, True),
+    # [T-9.11 · D-42] El ADMINISTRADOR tiene la app táctica completa.
+    "tenant_admin": (True, True, True, True, True, True, True, True, True),
 }
 _S3_COLS = (
     "checkin_submit",
@@ -348,14 +352,14 @@ def test_siren_silence_excludes_inspector() -> None:
     [T-9.11 · D-42] Y el ADMINISTRADOR (`tenant_admin`), que desde F1 tiene la app
     táctica completa: las acciones de campo del brigadista."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["siren_silence"]}
-    assert can == {"brigadista", "security_guard", "building_admin", "tenant_admin"}
+    assert can == {"brigadista", "tenant_admin"}
 
 
 def test_enrollment_manage_is_admin_circle() -> None:
     """[T-2.03] Administrar códigos de alta = dueño del sitio/tenant/plataforma;
     jamás un rol de campo ni gov."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["enrollment_manage"]}
-    assert can == {"takab_superadmin", "tenant_admin", "building_admin"}
+    assert can == {"takab_superadmin", "tenant_admin"}
 
 
 def test_platform_roles_have_no_field_actions() -> None:
@@ -363,7 +367,7 @@ def test_platform_roles_have_no_field_actions() -> None:
     superadmin/support/soc/gov NO las reciben (un "Total" de plataforma no pasa
     lista ni silencia sirenas desde un escritorio)."""
     field_only = set(MOBILE_ACTIONS) - {"enrollment_manage"}
-    for role in ("takab_superadmin", "takab_support", "soc_operator", "gov_operator"):
+    for role in ("takab_superadmin", "takab_support", "gov_operator"):
         granted = {a for a, ok in allowed_actions(role).items() if ok}
         assert granted.isdisjoint(field_only), (role, granted & field_only)
 
@@ -382,8 +386,10 @@ def test_maintenance_window_is_tenant_admin_action_not_a_field_role() -> None:
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["maintenance_window"]}
     assert can == {"takab_superadmin", "tenant_admin"}
     assert can == {r for r in RBAC_SECTION_2 if allowed_actions(r)["drill_start"]}
-    # …y NO es el círculo de self_test: building_admin queda fuera a propósito.
-    assert can != {r for r in RBAC_SECTION_2 if allowed_actions(r)["self_test"]}
+    # [T-9.20 · D-42] Con building_admin fuera de la matriz, los círculos de self_test y
+    # de la ventana COINCIDEN hoy; siguen siendo acciones distintas a propósito (el
+    # día que un rol de campo pruebe relés, no heredará apagar la vigilancia).
+    assert "brigadista" not in can
 
 
 def test_toda_ventana_de_mantenimiento_se_abre_desde_una_ruta_que_el_rol_tiene() -> None:
@@ -613,7 +619,7 @@ def test_ningun_rol_de_gobierno_ni_de_soporte_mira_el_video_de_un_cliente() -> N
 
 def test_el_clip_lo_ve_quien_responde_por_el_inmueble_o_por_el_incidente() -> None:
     lee = {r for r in RBAC_SECTION_2 if allowed_actions(r)["cctv_video"]}
-    assert lee == {"takab_superadmin", "tenant_admin", "soc_operator", "building_admin"}
+    assert lee == {"takab_superadmin", "tenant_admin"}
 
 
 def test_las_dos_acciones_de_video_estan_declaradas() -> None:

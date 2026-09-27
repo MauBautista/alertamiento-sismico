@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  assignableRolesUsersAssignableRolesGet,
   createUserUsersPost,
   deleteUserUsersUsernameDelete,
   listUsersUsersGet,
@@ -8,7 +9,7 @@ import {
   resetPasswordUsersUsernameResetPasswordPost,
   updateUserUsersUsernamePatch,
 } from "@takab/sdk";
-import type { UserCreate, UserOut, UserPage, UserUpdate } from "@takab/sdk";
+import type { AssignableRole, UserCreate, UserOut, UserPage, UserUpdate } from "@takab/sdk";
 
 /** Lo que se escribe desde ESTA consola se ve al instante: se invalida al escribir. */
 const USERS_FRESH_MS = 60_000;
@@ -160,6 +161,34 @@ export function useUsers(enabled: boolean): UsersData {
     error: query.error ? query.error.message : null,
     dataUpdatedAt: query.dataUpdatedAt,
     refetch: () => void query.refetch(),
+  };
+}
+
+export interface AssignableRolesData {
+  /** Roles que QUIEN PREGUNTA puede dar, con su rótulo; `[]` mientras carga o si falló. */
+  roles: AssignableRole[];
+  loading: boolean;
+  error: string | null;
+}
+
+/**
+ * [T-9.20 · D-42] Qué roles puede asignar la sesión, según el SERVIDOR
+ * (`GET /users/assignable-roles`, gate `manage_users`). Sustituye la lista que
+ * `UsersCard` escribía a mano como «espejo» de `ASSIGNABLE_ROLES`: al bajar de 10
+ * a 7 roles, esa copia habría seguido ofreciendo tres roles que el servidor
+ * rechaza con 422. El catálogo no cambia en una sesión: se lee una vez.
+ */
+export function useAssignableRoles(enabled: boolean): AssignableRolesData {
+  const query = useQuery({
+    queryKey: ["assignable-roles"],
+    queryFn: async () => (await unwrap(assignableRolesUsersAssignableRolesGet(), "list")).items,
+    enabled,
+    staleTime: Infinity,
+  });
+  return {
+    roles: query.data ?? [],
+    loading: enabled && query.isPending,
+    error: query.error ? query.error.message : null,
   };
 }
 

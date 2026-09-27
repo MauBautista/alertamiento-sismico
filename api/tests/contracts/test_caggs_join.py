@@ -51,7 +51,7 @@ def _q(site_id: str):
 
 async def test_metrics_isolated_by_tenant(seed) -> None:
     async with get_tenant_conn(
-        SessionCtx(tenant_id=seed.priv_a, role="soc_operator", user_id="u")
+        SessionCtx(tenant_id=seed.priv_a, role="tenant_admin", user_id="u")
     ) as conn:
         own = (await conn.execute(*_q(seed.site_a))).all()
         other = (await conn.execute(*_q(seed.site_b))).all()

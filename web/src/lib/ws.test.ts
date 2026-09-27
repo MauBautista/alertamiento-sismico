@@ -16,7 +16,7 @@ class FakeWebSocket {
   sent: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
-  onclose: ((ev: { code: number }) => void) | null = null;
+  onclose: ((ev: { code: number; reason?: string }) => void) | null = null;
   onerror: (() => void) | null = null;
 
   constructor(url: string) {
@@ -43,9 +43,9 @@ class FakeWebSocket {
     this.onmessage?.({ data: typeof frame === "string" ? frame : JSON.stringify(frame) });
   }
 
-  serverClose(code: number): void {
+  serverClose(code: number, reason = ""): void {
     this.readyState = FakeWebSocket.CLOSED;
-    this.onclose?.({ code });
+    this.onclose?.({ code, reason });
   }
 }
 
@@ -70,12 +70,18 @@ const INCIDENT_FRAME = {
   trigger: "local_threshold",
 };
 
-function makeSocket(overrides: { onUnauthorized?: () => void } = {}) {
+function makeSocket(
+  overrides: {
+    onUnauthorized?: (reason?: string) => void;
+    renewToken?: () => Promise<string | null>;
+  } = {},
+) {
   const onUnauthorized = overrides.onUnauthorized ?? vi.fn();
   const socket = new LiveSocket({
     url: "ws://localhost/api/ws",
     getToken: () => "tok-1",
     onUnauthorized,
+    ...(overrides.renewToken ? { renewToken: overrides.renewToken } : {}),
   });
   return { socket, onUnauthorized };
 }
@@ -211,6 +217,23 @@ describe("LiveSocket", () => {
     lastSocket().open();
     lastSocket().serverClose(4401);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
+    expect(socket.status).toBe("closed");
+    vi.advanceTimersByTime(120_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
+
+  // [T-9.20 · D-42] Pasada la fecha de baja de los alias, la API cierra con 4401 y
+  // motivo `rol_retirado`. Renovar el token no lo arregla (el rol de Cognito sigue
+  // siendo el viejo): fin de sesión SIN intentar renovar, con su causa.
+  it("close 4401 con motivo rol_retirado ⇒ fin 'rol_retirado' y NO renueva", () => {
+    const onUnauthorized = vi.fn();
+    const renewToken = vi.fn(async () => "token-nuevo");
+    const { socket } = makeSocket({ onUnauthorized, renewToken });
+    socket.connect();
+    lastSocket().open();
+    lastSocket().serverClose(4401, "rol_retirado");
+    expect(renewToken).not.toHaveBeenCalled();
+    expect(onUnauthorized).toHaveBeenCalledWith("rol_retirado");
     expect(socket.status).toBe("closed");
     vi.advanceTimersByTime(120_000);
     expect(FakeWebSocket.instances).toHaveLength(1);

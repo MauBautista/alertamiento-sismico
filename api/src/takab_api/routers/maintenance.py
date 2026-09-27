@@ -117,8 +117,10 @@ _require_window = require_roles(*sorted({*WINDOW_ROLES, *PLATFORM_WINDOW_ROLES})
 #: recorrido por rol de 2026-09-23 midió un 403 de esta ruta en CADA página para
 #: gov_operator, inspector y building_admin, que la franja de escena pide siempre.
 #: Lo ancla `tests/api/test_maintenance_windows.py::test_READ_ROLES_es_la_regla_de_la_consola`.
+#: [T-9.20 · D-42] Sin ``soc_operator``: su token entra canonizado a ``tenant_admin``,
+#: que ya está en ``WINDOW_ROLES``. El literal habría quedado muerto.
 READ_ROLES: tuple[str, ...] = tuple(
-    sorted({*WINDOW_ROLES, *PLATFORM_WINDOW_ROLES, "soc_operator", "takab_support"})
+    sorted({*WINDOW_ROLES, *PLATFORM_WINDOW_ROLES, "takab_support"})
 )
 _require_read = require_roles(*READ_ROLES)
 

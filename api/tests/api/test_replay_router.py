@@ -140,7 +140,7 @@ async def test_con_un_sitio_DEMO_se_arma_y_se_lee(client, base_data):
         assert cuerpo["catalog_key"] == CATALOGO
         assert 0 < cuerpo["remaining_s"] <= 1800
 
-        leido = await client.get("/demo-mode/replay", headers=_token("soc_operator"))
+        leido = await client.get("/demo-mode/replay", headers=_token("tenant_admin"))
         assert leido.status_code == 200
         assert leido.json()["armed"] is True, "quien va a mirar la consola tiene derecho a saberlo"
     finally:
@@ -179,7 +179,7 @@ async def test_la_ventana_se_RECORTA_al_techo(client, base_data):
 async def test_solo_el_SUPERADMIN_arma(client, base_data):
     sid = await _sitio_demo()
     try:
-        for rol in ("tenant_admin", "soc_operator"):
+        for rol in ("tenant_admin", "gov_operator"):
             r = await client.post(
                 "/demo-mode/replay",
                 json={"catalog_key": CATALOGO},
@@ -237,7 +237,7 @@ async def test_el_plan_de_arribos_SALE_de_un_incidente_vestido(client, base_data
             e=event_id,
         )
 
-        r = await client.get(f"/incidents/{inc}/reproduccion", headers=_token("soc_operator"))
+        r = await client.get(f"/incidents/{inc}/reproduccion", headers=_token("tenant_admin"))
         assert r.status_code == 200, r.text
         cuerpo = r.json()
         assert cuerpo["catalog_key"] == CATALOGO
@@ -279,7 +279,7 @@ async def test_un_incidente_que_NO_es_reproduccion_da_404(client, base_data):
         e=event_id,
     )
 
-    r = await client.get(f"/incidents/{inc}/reproduccion", headers=_token("soc_operator"))
+    r = await client.get(f"/incidents/{inc}/reproduccion", headers=_token("tenant_admin"))
 
     assert r.status_code == 404
     assert "no es una reproducción" in r.json()["detail"]

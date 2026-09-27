@@ -46,6 +46,9 @@ export interface LiveSocketOptions {
    * - `'expired'`: 4401 (token inválido o vencido) y no hubo forma de renovarlo;
    * - `'max_age'`: 4440 — la sesión cumplió la edad máxima de su rol (D-38,
    *   `matrix.SESSION_MAX_AGE_S`). Renovar no sirve: hace falta volver a entrar.
+   * - `'rol_retirado'`: 4401 con motivo `rol_retirado` — el token trae un rol viejo y
+   *   ya pasó la fecha de baja de los alias (D-42). Renovar tampoco sirve: el rol de
+   *   Cognito sigue siendo el viejo hasta que un administrador lo cambie.
    */
   onUnauthorized: (reason?: SessionEndReason) => void;
   /**
@@ -81,7 +84,10 @@ export interface LiveSocketOptions {
 }
 
 /** Por qué terminó una sesión, visto desde el canal live. */
-export type SessionEndReason = 'expired' | 'max_age';
+export type SessionEndReason = 'expired' | 'max_age' | 'rol_retirado';
+
+/** [T-9.20] Motivo del cierre 4401 cuando el rol del token ya no existe (D-42). */
+const MOTIVO_ROL_RETIRADO = 'rol_retirado';
 
 const WS_AUTH_FAILED = 4401;
 /** [T-8.02] La sesión cumplió la edad máxima de su rol (D-38). No se reintenta. */
@@ -192,7 +198,8 @@ export class LiveSocket {
       ws.send(serializeFrame(authFrame(token)));
     };
     ws.onmessage = (event: { data: string }) => this.handleMessage(event.data);
-    ws.onclose = (event: { code: number }) => this.handleClose(ws, event.code);
+    ws.onclose = (event: { code: number; reason?: string }) =>
+      this.handleClose(ws, event.code, event.reason ?? '');
   }
 
   private handleMessage(data: string): void {
@@ -238,13 +245,19 @@ export class LiveSocket {
     }
   }
 
-  private handleClose(ws: WebSocket, code: number): void {
+  private handleClose(ws: WebSocket, code: number, reason: string): void {
     if (this.ws !== ws) return; // cierre de un socket ya reemplazado
     this.ws = null;
     if (this.closedByUser) return; // close() ya fijó el estado
     if (code === WS_SESSION_EXPIRED) {
       this.setStatus('closed');
       this.options.onUnauthorized('max_age');
+      return;
+    }
+    // [T-9.20] Un rol retirado no se arregla renovando el token: fin, con su causa.
+    if (code === WS_AUTH_FAILED && reason === MOTIVO_ROL_RETIRADO) {
+      this.setStatus('closed');
+      this.options.onUnauthorized('rol_retirado');
       return;
     }
     if (code === WS_AUTH_FAILED) {

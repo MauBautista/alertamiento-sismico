@@ -179,7 +179,7 @@ describe("useFleet", () => {
     });
   });
 
-  // El rol sin /fleet en su matriz (inspector, building_admin) SÍ entra a la
+  // El rol sin /fleet en su matriz (inspector) SÍ entra a la
   // consola, y ahí useSiteRelays monta este hook: sin gate, cada carga de
   // /console le disparaba un 403 contra /fleet/gateways.
   it("rol sin /fleet: no pide el inventario y no se queda cargando", async () => {

@@ -101,7 +101,7 @@ describe("DemoModeBanner", () => {
   it("quien NO puede apagarlo lo ve igual, pero sin botón", () => {
     // Ver el estado no es un privilegio: quien no lo encendió es justo quien se
     // va a preguntar por qué no le llegó un aviso.
-    useSessionStore.setState({ me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ me: ME_FIXTURES.gov_operator });
     render(<DemoModeBanner data={datos({ demo: ACTIVO })} />);
     expect(screen.getByTestId("demo-mode-banner")).toBeInTheDocument();
     expect(screen.queryByTestId("demo-mode-off")).toBeNull();

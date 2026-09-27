@@ -127,7 +127,7 @@ describe("T-2.123 · arranque con la base de datos caída", () => {
     await screen.findByRole("heading", { name: DEGRADED_TITLE });
 
     mocks.getMe.mockReset();
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     // [T-2.134] El botón pasó a llamarse «REINTENTAR AHORA»: desde que la
     // pantalla reintenta sola, «REINTENTAR» a secas sugería que sin pulsarlo no
     // pasa nada.
@@ -199,7 +199,7 @@ describe("T-2.123 · el degradado NO es una puerta trasera (regla de oro 5)", ()
   });
 
   it("el alcance ya cargado se BORRA cuando /me deja de contestar", async () => {
-    seedAuthenticated(ME_FIXTURES.soc_operator);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     expect(useSessionStore.getState().me).not.toBeNull();
 
     mocks.getMe.mockRejectedValue(new MeRequestError(503));
@@ -213,7 +213,7 @@ describe("T-2.123 · el degradado NO es una puerta trasera (regla de oro 5)", ()
     renderRoutesAt("/console");
     expect(screen.getByRole("heading", { name: DEGRADED_TITLE })).toBeInTheDocument();
     expect(screen.queryByText(TENANT_ID)).not.toBeInTheDocument();
-    expect(screen.queryByText(/soc_operator/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tenant_admin/)).not.toBeInTheDocument();
   });
 
   it("la pantalla degradada no nombra tenant, rol ni estaciones", () => {
@@ -304,7 +304,7 @@ describe("T-2.134 · el degradado reintenta solo, con backoff y sin parpadear", 
     await arrancarDegradada();
 
     mocks.getMe.mockReset();
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await avanzar(TOPE_MS + 1_000);
 
     expect(useSessionStore.getState().status).toBe("authenticated");
@@ -322,7 +322,7 @@ describe("T-2.134 · el degradado reintenta solo, con backoff y sin parpadear", 
     await arrancarDegradada();
 
     mocks.getMe.mockReset();
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await avanzar(TOPE_MS + 1_000);
     const trasEntrar = mocks.getMe.mock.calls.length;
 

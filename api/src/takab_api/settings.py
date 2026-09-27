@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from pydantic import model_validator
+from datetime import date
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Orden total de tiers del motor de reglas edge (blueprint §4.5).
@@ -718,6 +720,24 @@ class Settings(BaseSettings):
     # (1) desplegar, (2) recorrer la lista de `scope_gap` del audit_log y fijar el
     # alcance de cada usuario desde la consola, (3) poner esto en True.
     console_scope_enforced: bool = False
+
+    # --- Baja de los roles heredados (T-9.20 · D-42) ---
+    # Ventana de alias: `soc_operator`/`security_guard`/`building_admin` entran
+    # canonizados (`auth/roles.py`). `None` = ventana ABIERTA. Con fecha, a partir
+    # del día SIGUIENTE un token con rol viejo es 401 `rol_retirado` (WS: cierre 4401
+    # con ese motivo), antes que la edad de sesión. Se fija cuando el script de
+    # migración de Cognito (T-9.21) verifique cero miembros en los grupos viejos;
+    # T-9.81 quita después los alias del código. Formato `AAAA-MM-DD`.
+    roles_heredados_hasta: date | None = None
+
+    @field_validator("roles_heredados_hasta", mode="before")
+    @classmethod
+    def _hasta_vacio_es_ventana_abierta(cls, v: object) -> object:
+        """Una variable presente pero vacía (plantilla .env, terraform) = ventana
+        abierta, no un error que tumbe la API al arrancar."""
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     # --- Cascada de notificación (T-1.21 · B6, blueprint §5.6) ---
     # step: escalonamiento de la cascada (10 s ⇒ SMS a t0+20, SLA ≤30 s).

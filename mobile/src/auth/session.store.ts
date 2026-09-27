@@ -20,13 +20,16 @@ export type SessionStatus =
  * - `expired`: el token ya no vale y no hubo forma de renovarlo (refresh
  *   revocado/vencido, o 4401 sin renovación posible);
  * - `max_age`: la sesión cumplió la edad máxima de su rol (D-38) — renovar no
- *   sirve, hay que volver a entrar con contraseña. */
-export type SignOutReason = "user" | "expired" | "max_age";
+ *   sirve, hay que volver a entrar con contraseña;
+ * - `rol_retirado`: [F2 · D-42] el token trae un rol cuya baja ya pasó. Renovar
+ *   tampoco sirve: hace falta que un administrador asigne un rol vigente. */
+export type SignOutReason = "user" | "expired" | "max_age" | "rol_retirado";
 
 const MOTIVOS: ReadonlySet<string> = new Set<SignOutReason>([
   "user",
   "expired",
   "max_age",
+  "rol_retirado",
 ]);
 
 interface SessionState {
@@ -124,8 +127,11 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     // después (getToken ⇒ null ⇒ `expired`) y no debe reescribir el motivo. Y
     // quien ya era anónimo (p.ej. un login cuyo /me falló) no «pierde» una
     // sesión que nunca tuvo: no se le inventa motivo.
+    // [F2] Única excepción: el `rol_retirado` del REST PRECISA un `expired`
+    // genérico que el canal live dio antes (su 4401 no trae el motivo).
+    const precisa = prev.signOutReason === "expired" && reason === "rol_retirado";
     const motivo: SignOutReason | null =
-      prev.status === "anonymous"
+      prev.status === "anonymous" && !precisa
         ? prev.signOutReason
         : typeof reason === "string" && MOTIVOS.has(reason)
           ? (reason as SignOutReason)

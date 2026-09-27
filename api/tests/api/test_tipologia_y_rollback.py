@@ -235,6 +235,6 @@ async def test_quien_no_edita_umbrales_no_puede_volver_atras(client, base_data):
     r = await client.post(
         f"/rule-sets/{v1['rule_set_id']}/rollback",
         json={"base_version": 1},
-        headers=_tok("soc_operator"),
+        headers=_tok("gov_operator"),
     )
     assert r.status_code == 403, r.text

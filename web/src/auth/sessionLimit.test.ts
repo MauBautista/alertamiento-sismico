@@ -7,6 +7,8 @@ import {
   isSessionExpiredBody,
   isSessionExpiredHeader,
   isSessionExpiredResponse,
+  isRoleRetiredResponse,
+  MENSAJE_ROL_RETIRADO,
   jwtPayload,
   maxAgeLabel,
   MAX_TIMER_MS,
@@ -176,5 +178,37 @@ describe("sessionLimit · el rótulo de la duración", () => {
     expect(maxAgeLabel(null)).toBeNull();
     expect(maxAgeLabel(0)).toBeNull();
     expect(maxAgeLabel(1_234)).toBeNull();
+  });
+});
+
+describe("[T-9.2x · F2] sessionLimit · el 401 del rol retirado es FIN, no un token vencido", () => {
+  it("cabecera o cuerpo `rol_retirado` ⇒ sí; `sesion_expirada` y genéricos ⇒ no", async () => {
+    const porCabecera = new Response(JSON.stringify({ detail: "x" }), {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Bearer error="invalid_token", error_description="rol_retirado"',
+      },
+    });
+    expect(await isRoleRetiredResponse(porCabecera)).toBe(true);
+
+    const porCuerpo = new Response(JSON.stringify({ detail: "rol_retirado" }), { status: 401 });
+    expect(await isRoleRetiredResponse(porCuerpo)).toBe(true);
+    await expect(porCuerpo.json()).resolves.toEqual({ detail: "rol_retirado" });
+
+    const tope = new Response(JSON.stringify({ detail: "sesion_expirada" }), { status: 401 });
+    expect(await isRoleRetiredResponse(tope)).toBe(false);
+    expect(await isSessionExpiredResponse(porCabecera)).toBe(false);
+    expect(await isRoleRetiredResponse(new Response("no json", { status: 401 }))).toBe(false);
+    expect(
+      await isRoleRetiredResponse(
+        new Response(JSON.stringify({ detail: "rol_retirado" }), { status: 403 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("el mensaje dice qué hacer", () => {
+    expect(MENSAJE_ROL_RETIRADO).toBe(
+      "Tu rol fue retirado. Pide a tu administrador que te asigne uno de los roles vigentes.",
+    );
   });
 });

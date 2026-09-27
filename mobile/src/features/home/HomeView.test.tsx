@@ -112,6 +112,28 @@ describe("HomeView (1.1)", () => {
     expect(v.getByText("sin registro")).toBeTruthy();
   });
 
+  it("[F2] el directorio pinta RÓTULOS: vigente, e histórico para una fila vieja", async () => {
+    const fila = (user_id: string, role: string) => ({
+      user_id,
+      display_name: user_id,
+      role,
+      zone_id: "z-1",
+      zone_name: "P10-A",
+      phone: null,
+    });
+    const v = await render(
+      <HomeView
+        brigadistas={[fila("b-1", "brigadista"), fila("b-2", "security_guard")]}
+        data={state()}
+        nowMs={NOW}
+        {...NOOP}
+      />,
+    );
+    expect(v.getByText("BRIGADISTA")).toBeTruthy();
+    expect(v.getByText("SEGURIDAD")).toBeTruthy();
+    expect(v.queryByText("SECURITY_GUARD")).toBeNull();
+  });
+
   it("brigadista con teléfono: LLAMAR dispara tel: (un toque)", async () => {
     const spy = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
     const v = await render(

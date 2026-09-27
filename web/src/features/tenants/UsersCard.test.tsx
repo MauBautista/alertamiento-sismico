@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   useUpdateUser: vi.fn(),
   useDeleteUser: vi.fn(),
   useUserAction: vi.fn(),
+  useAssignableRoles: vi.fn(),
 }));
 
 vi.mock("./useUsers", () => ({ ...mocks, USERS_STALE_MS: 300_000 }));
@@ -46,7 +47,7 @@ function user(over: Partial<UserOut> = {}): UserOut {
     username: "u-1",
     email: "ana@cliente.mx",
     tenant_id: TENANT_ID,
-    role: "soc_operator",
+    role: "gov_operator",
     site_scope: "*",
     zone_id: "",
     surface: "web",
@@ -82,7 +83,31 @@ function mutation(over: Record<string, unknown> = {}) {
   };
 }
 
+/**
+ * [T-9.20 · D-42] Lo que responde `GET /users/assignable-roles`: los canónicos con
+ * su rótulo, SIN los internos para un rol de cliente. La tarjeta pinta esto; ya no
+ * tiene lista propia.
+ */
+const ASIGNABLES_CLIENTE = [
+  { role: "tenant_admin", label: "ADMINISTRADOR" },
+  { role: "gov_operator", label: "GOBIERNO" },
+  { role: "inspector", label: "INSPECTOR" },
+  { role: "brigadista", label: "BRIGADISTA" },
+];
+const ASIGNABLES_INTERNO = [
+  { role: "takab_superadmin", label: "SUPERADMIN TAKAB" },
+  { role: "takab_support", label: "SOPORTE TAKAB" },
+  ...ASIGNABLES_CLIENTE,
+];
+
+function asignables(roles = ASIGNABLES_CLIENTE, over: Record<string, unknown> = {}) {
+  return { roles, loading: false, error: null, ...over };
+}
+
 function seed(role: keyof typeof ME_FIXTURES): void {
+  mocks.useAssignableRoles.mockReturnValue(
+    asignables(ME_FIXTURES[role].is_internal ? ASIGNABLES_INTERNO : ASIGNABLES_CLIENTE),
+  );
   useSessionStore.setState({
     status: "authenticated",
     origin: "dev",
@@ -164,7 +189,7 @@ describe("UsersCard · escalada de privilegios", () => {
       .map((o) => (o as HTMLOptionElement).value);
     expect(options).not.toContain("takab_superadmin");
     expect(options).not.toContain("takab_support");
-    expect(options).toContain("soc_operator");
+    expect(options).toContain("gov_operator");
   });
 
   it("un superadmin sí puede otorgarlos", () => {
@@ -188,6 +213,93 @@ describe("UsersCard · escalada de privilegios", () => {
   });
 });
 
+// [T-9.20 · D-42] Los roles salen del servidor, con su rótulo; un rol viejo
+// guardado en Cognito se pinta con SU rótulo histórico y no rompe el <select>.
+describe("UsersCard · roles del servidor (D-42)", () => {
+  function opcionesDelAlta(): { value: string; text: string }[] {
+    const rol = within(screen.getByTestId("user-create-form")).getByLabelText("Rol");
+    return within(rol)
+      .getAllByRole("option")
+      .map((o) => ({ value: (o as HTMLOptionElement).value, text: o.textContent ?? "" }));
+  }
+
+  it("el alta ofrece EXACTAMENTE lo que dice GET /users/assignable-roles, con su rótulo", () => {
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
+    const elegibles = opcionesDelAlta().filter((o) => o.value !== "");
+    expect(elegibles).toEqual(ASIGNABLES_CLIENTE.map((r) => ({ value: r.role, text: r.label })));
+  });
+
+  it("ningún rol retirado se ofrece para asignar aunque el servidor no lo filtrara", () => {
+    mocks.useAssignableRoles.mockReturnValue(
+      asignables([...ASIGNABLES_CLIENTE, { role: "soc_operator", label: "OPERACIÓN SOC" }]),
+    );
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
+    expect(opcionesDelAlta().map((o) => o.value)).not.toContain("soc_operator");
+  });
+
+  it("el alta NO arranca con un rol elegido: no se crea nadie hasta escoger", () => {
+    const create = mutation();
+    mocks.useCreateUser.mockReturnValue(create);
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
+    fireEvent.change(screen.getByLabelText("Correo"), { target: { value: "a@b.mx" } });
+    expect(screen.getByRole("button", { name: "CREAR E INVITAR" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "CREAR E INVITAR" }));
+    expect(create.mutate).not.toHaveBeenCalled();
+  });
+
+  it("si no se pudieron leer los roles, el alta lo DICE y no deja crear", () => {
+    mocks.useAssignableRoles.mockReturnValue(
+      asignables([], { error: "ROLES NO DISPONIBLES (HTTP 503)" }),
+    );
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
+    expect(screen.getByTestId("assignable-roles-error").textContent).toMatch(/503/);
+    expect(screen.getByRole("button", { name: "CREAR E INVITAR" })).toBeDisabled();
+  });
+
+  it("con el catálogo leído y VACÍO lo dice, en vez de pedir que elijas de la nada", () => {
+    mocks.useAssignableRoles.mockReturnValue(asignables([]));
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
+    const opciones = opcionesDelAlta();
+    expect(opciones).toEqual([{ value: "", text: "SIN ROLES QUE PUEDAS ASIGNAR" }]);
+  });
+
+  it("la fila de un usuario con rol viejo lleva su rótulo histórico, no el id ni el del heredero", () => {
+    mocks.useUsers.mockReturnValue(usersData({ users: [user({ role: "soc_operator" })] }));
+    renderCard();
+    const fila = screen.getByTestId("user-row");
+    expect(fila.textContent).toMatch(/OPERACIÓN SOC \(ROL RETIRADO\)/);
+    expect(fila.textContent).not.toMatch(/soc_operator/);
+    expect(fila.textContent).not.toMatch(/ADMINISTRADOR/);
+  });
+
+  it("editar a ese usuario no rompe el <select>: su rol viejo está, marcado y no elegible", () => {
+    const update = mutation();
+    mocks.useUpdateUser.mockReturnValue(update);
+    mocks.useUsers.mockReturnValue(usersData({ users: [user({ role: "building_admin" })] }));
+    renderCard();
+    fireEvent.click(screen.getByRole("button", { name: "EDITAR" }));
+    const select = screen.getByLabelText("Rol") as HTMLSelectElement;
+    // Muestra lo que TIENE, no la primera opción de la lista (eso sería mentir).
+    expect(select.value).toBe("building_admin");
+    const actual = [...select.options].find((o) => o.value === "building_admin");
+    expect(actual?.textContent).toBe("ADMINISTRACIÓN DEL INMUEBLE (ROL RETIRADO)");
+    expect(actual?.disabled).toBe(true);
+    // Y migrarlo a un canónico es el camino normal, con su confirmación.
+    fireEvent.change(select, { target: { value: "tenant_admin" } });
+    fireEvent.click(screen.getByRole("button", { name: /CAMBIAR ROL A ADMINISTRADOR/ }));
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(update.mutate).toHaveBeenCalledWith({
+      username: "u-1",
+      body: { role: "tenant_admin" },
+    });
+  });
+});
+
 describe("UsersCard · alta", () => {
   it("un rol de tenant NO manda tenant_id: el servidor lo toma de su token", () => {
     const create = mutation();
@@ -195,9 +307,17 @@ describe("UsersCard · alta", () => {
     renderCard();
     fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
     fireEvent.change(screen.getByLabelText("Correo"), { target: { value: "nuevo@cliente.mx" } });
+    fireEvent.change(within(screen.getByTestId("user-create-form")).getByLabelText("Rol"), {
+      target: { value: "gov_operator" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "CREAR E INVITAR" }));
     expect(create.mutate).toHaveBeenCalledWith(
-      expect.objectContaining({ email: "nuevo@cliente.mx", tenant_id: null, site_scope: "*" }),
+      expect.objectContaining({
+        email: "nuevo@cliente.mx",
+        role: "gov_operator",
+        tenant_id: null,
+        site_scope: "*",
+      }),
       expect.anything(),
     );
   });
@@ -209,6 +329,9 @@ describe("UsersCard · alta", () => {
     renderCard();
     fireEvent.click(screen.getByRole("button", { name: "+ NUEVO USUARIO" }));
     fireEvent.change(screen.getByLabelText("Correo"), { target: { value: "x@y.mx" } });
+    fireEvent.change(within(screen.getByTestId("user-create-form")).getByLabelText("Rol"), {
+      target: { value: "takab_support" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "CREAR E INVITAR" }));
     expect(create.mutate).toHaveBeenCalledWith(
       expect.objectContaining({ tenant_id: TENANT_ID }),
@@ -363,7 +486,7 @@ describe("UsersCard · lo irreversible pide confirmación", () => {
     fireEvent.click(screen.getByRole("button", { name: "EDITAR" }));
     fireEvent.change(screen.getByLabelText("Rol"), { target: { value: "inspector" } });
     expect(update.mutate).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: /CAMBIAR ROL A inspector/ }));
+    fireEvent.click(screen.getByRole("button", { name: /CAMBIAR ROL A INSPECTOR/ }));
     fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
     expect(update.mutate).toHaveBeenCalledWith({ username: "u-1", body: { role: "inspector" } });
   });

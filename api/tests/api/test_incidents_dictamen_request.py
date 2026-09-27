@@ -13,7 +13,7 @@ import auth_utils as au
 pytestmark = pytest.mark.usefixtures("base_data")
 
 
-def _hdr(role: str = "soc_operator", *, tenant: str = au.DB_TENANT_PRIV):
+def _hdr(role: str = "tenant_admin", *, tenant: str = au.DB_TENANT_PRIV):
     return au.bearer(au.make_token(role, tenant=tenant, user_id=str(uuid.uuid4())))
 
 

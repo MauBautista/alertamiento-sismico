@@ -9,7 +9,7 @@ vi.mock("@takab/sdk", () => ({ meMeGet: mocks.meMeGet }));
 const ME = {
   sub: "u-1",
   tenant_id: "t-1",
-  role: "soc_operator",
+  role: "tenant_admin",
   site_scope: "*" as const,
   surface: "web",
   allowed_routes: ["/console", "/fleet", "/triage", "/building"],

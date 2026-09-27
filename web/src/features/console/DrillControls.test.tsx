@@ -74,7 +74,7 @@ beforeEach(() => {
 
 describe("DrillControls", () => {
   it("sin drill: solo quien tiene drill_start ve el control de inicio", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     const { unmount } = render(<DrillControls />);
     expect(screen.queryByRole("button", { name: /INICIAR SIMULACRO/ })).toBeNull();
     unmount();
@@ -129,7 +129,7 @@ describe("DrillControls", () => {
   it("la tira NO pasa por un marco: `drill-idle` tiene que existir en todo estado", () => {
     // El e2e de T-1.62 mide `drill-idle` (< 60 px); dentro de un StateFrame
     // desaparecería en `loading` y el operador se quedaría sin HISTORIAL.
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     mocks.useActiveDrill.mockReturnValue(drillData({ loading: true }));
     render(<DrillControls />);
     expect(screen.getByTestId("drill-idle")).toBeInTheDocument();

@@ -286,7 +286,7 @@ La acción se llama **`manage_fleet`** y la tienen **solo**:
 | `takab_superadmin` | ✅ (en cualquier tenant; debe nombrar el `tenant_id`) |
 | `tenant_admin` | ✅ (solo en **su** tenant) |
 | `takab_support` | ❌ (lee la flota, no la mueve) |
-| `soc_operator`, `gov_operator`, resto | ❌ (solo lectura) |
+| `gov_operator`, `inspector`, resto | ❌ (solo lectura) |
 
 Fuente: `api/src/takab_api/auth/matrix.py` (`ROLE_ACTION_MATRIX[...]["manage_fleet"]`), reforzado
 por RLS en `db/schema.sql`.
@@ -420,7 +420,7 @@ estación **no se puede mover** a otro tenant (los routers bloquean el cruce con
 | Quién | Ve qué (metadatos **y** datos) | ¿Configurable? |
 |---|---|---|
 | `takab_superadmin` / `takab_support` | **Todo** (todos los clientes), siempre. | No (fijo por rol). |
-| `tenant_admin`, `soc_operator`, … | **Solo lo de su propio cliente**, siempre. | No. |
+| `tenant_admin`, `inspector`, `brigadista`, … | **Solo lo de su propio cliente**, siempre. | No. |
 | `gov_operator` (Protección Civil) | Lo suyo **+** clientes marcados `visibility='gov_shared'` (solo lectura). | Sí, pero es un flag por-tenant en la DB, solo gov. |
 
 Mecanismo: **Row-Level Security** default-deny + `FORCE` en toda tabla de negocio

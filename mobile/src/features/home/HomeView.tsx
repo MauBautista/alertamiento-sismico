@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 
+import { etiquetaRol } from "@/auth/roles";
 import { esFaseConocida } from "@/features/alert/machine";
 import { avisoDeReingreso, estadoDelInmueble } from "@/features/reentry/avisoReingreso";
 import { Pulsable } from "@/ui/Pulsable";
@@ -245,7 +246,7 @@ export function HomeView(props: {
             <View key={b.user_id} style={styles.dirRow}>
               <View style={styles.dirInfo}>
                 <Text style={styles.rowStrong}>{b.display_name}</Text>
-                <Text style={styles.muted}>{b.role.toUpperCase()}</Text>
+                <Text style={styles.muted}>{etiquetaRol(b.role)}</Text>
               </View>
               {b.phone ? (
                 <Pulsable

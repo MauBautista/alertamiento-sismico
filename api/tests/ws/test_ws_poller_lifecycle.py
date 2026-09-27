@@ -41,9 +41,9 @@ class _DeadWS:
 def _claims_a() -> Claims:
     return Claims(
         sub="u1",
-        groups=("soc_operator",),
+        groups=("tenant_admin",),
         tenant_id=WS_TENANT_A,
-        role="soc_operator",
+        role="tenant_admin",
         site_scope=ALL_SITES,
         zone_id="",
         surface="web",

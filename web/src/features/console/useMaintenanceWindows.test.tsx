@@ -2,7 +2,7 @@
 //
 // El recorrido por rol del 2026-09-23 (`e2e/recorrido_por_rol.spec.ts`) midió un
 // `GET /maintenance-windows → 403` en CADA página para gov_operator, inspector y
-// building_admin: la franja de escena lo pide siempre, y el servidor solo deja leer
+// el entonces administrador de inmueble (retirado por D-42): la franja de escena lo pide siempre, y el servidor solo deja leer
 // a `routers/maintenance.py::READ_ROLES`. La pantalla ya lo toleraba (`forbidden`),
 // pero una petición condenada en cada página es ruido en la consola del navegador y
 // tráfico al servidor. Ahora se decide ANTES de pedir, con la misma regla que el
@@ -24,12 +24,7 @@ vi.mock("@takab/sdk", async (importOriginal) => ({
 }));
 
 /** Lo que `routers/maintenance.py::READ_ROLES` concede hoy (y lo que el test de la API ancla). */
-const LEEN: ReadonlySet<RoleName> = new Set([
-  "takab_superadmin",
-  "takab_support",
-  "tenant_admin",
-  "soc_operator",
-]);
+const LEEN: ReadonlySet<RoleName> = new Set(["takab_superadmin", "takab_support", "tenant_admin"]);
 
 function envoltorio() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -60,7 +55,7 @@ describe("puedeLeerVentanas", () => {
 });
 
 describe("useMaintenanceWindows", () => {
-  it.each(["gov_operator", "inspector", "building_admin"] as const)(
+  it.each(["gov_operator", "inspector"] as const)(
     "%s: NO pide la ruta que le daría 403, y se declara sin lectura",
     async (rol) => {
       useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES[rol] });
@@ -71,8 +66,12 @@ describe("useMaintenanceWindows", () => {
     },
   );
 
-  it("soc_operator sí la pide", async () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+  // [T-9.20] Era «soc_operator sí la pide». Ese rol ya no existe (entra como
+  // tenant_admin); `takab_support` es ahora el único que la lee SIN poder abrir
+  // ventanas, o sea el que ejercita el literal de `READ_ROLES`.
+  it("takab_support sí la pide aunque no abre ventanas", async () => {
+    expect(ME_FIXTURES.takab_support.allowed_actions.maintenance_window).toBe(false);
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.takab_support });
     const { result } = renderHook(() => useMaintenanceWindows(), { wrapper: envoltorio() });
     await waitFor(() => expect(sdk.listWindowsMaintenanceWindowsGet).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(result.current.loading).toBe(false));

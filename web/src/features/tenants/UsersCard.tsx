@@ -6,10 +6,12 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
+import { esRolHeredado, etiquetaDeRol } from "../../auth/rolesHistoricos";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import {
   USERS_STALE_MS,
+  useAssignableRoles,
   useCreateUser,
   useDeleteUser,
   useUpdateUser,
@@ -18,23 +20,12 @@ import {
 } from "./useUsers";
 import { siteLabelText } from "../fleet/datosDeDemostracion";
 
-/** Roles asignables desde la consola — espejo de `schemas/users.ASSIGNABLE_ROLES`.
- * `occupant` NO está: vive en el pool de ocupantes (ancla pool→rol) y se da de
- * alta con un código de enrolamiento, no aquí. */
-const ROLES = [
-  "takab_superadmin",
-  "takab_support",
-  "tenant_admin",
-  "soc_operator",
-  "gov_operator",
-  "inspector",
-  "building_admin",
-  "brigadista",
-  "security_guard",
-] as const;
-
-/** Los que solo TAKAB otorga (espejo de `schemas/users.PLATFORM_ROLES`). */
-const PLATFORM_ROLES = new Set(["takab_superadmin", "takab_support"]);
+// [T-9.20 · D-42] Aquí vivía la lista de roles asignables, escrita a mano como
+// «espejo» de `schemas/users.ASSIGNABLE_ROLES` (y otra de los de plataforma). Al
+// bajar de 10 a 7 roles esa copia habría seguido ofreciendo tres que el servidor
+// rechaza con 422. Ahora la da el servidor (`useAssignableRoles`), con su rótulo
+// y ya recortada a lo que QUIEN PREGUNTA puede otorgar; los rótulos de los roles
+// retirados, para pintar a quien todavía los tiene, están en `rolesHistoricos`.
 
 const SURFACES = ["web", "mobile", "both"] as const;
 
@@ -97,7 +88,9 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
   const action = useUserAction();
 
   const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState({ email: "", role: "soc_operator", surface: "web" });
+  // [T-9.20] Sin rol preelegido: el primero de la lista del servidor sería el
+  // más alto que se puede dar, y un alta no debe otorgarlo por no haber mirado.
+  const [draft, setDraft] = useState({ email: "", role: "", surface: "web" });
   const [editing, setEditing] = useState<string | null>(null);
   const [scopeDraft, setScopeDraft] = useState<string[]>([]);
   // [A-107] El rol ELEGIDO todavía no es el rol aplicado: cambiarlo reparte o
@@ -105,7 +98,11 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
   const [roleDraft, setRoleDraft] = useState<{ username: string; role: string } | null>(null);
 
   const tenantSites = (sites ?? []).filter((s) => s.tenant_id === tenant.tenant_id);
-  const assignable = ROLES.filter((r) => isInternal || !PLATFORM_ROLES.has(r));
+  const asignables = useAssignableRoles(true);
+  // Un rol retirado no se ofrece aunque llegara: asignarlo es un 422 seguro.
+  const assignable = asignables.roles.filter((r) => !esRolHeredado(r.role));
+  const etiquetaAsignable = (role: string): string =>
+    assignable.find((r) => r.role === role)?.label ?? etiquetaDeRol(role);
   const busy = create.isPending || update.isPending || remove.isPending || action.isPending;
   const staleSince =
     !data.loading &&
@@ -173,8 +170,8 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                 <div className="users__id">
                   <span className="users__email">{user.email}</span>
                   <span className="soc-meta">
-                    {user.role} · {user.surface.toUpperCase()} · {scopeLabel(user, sites)} ·{" "}
-                    {user.enabled ? user.status : "DESHABILITADO"}
+                    {etiquetaDeRol(user.role)} · {user.surface.toUpperCase()} ·{" "}
+                    {scopeLabel(user, sites)} · {user.enabled ? user.status : "DESHABILITADO"}
                     {mine ? " · TU CUENTA" : ""}
                   </span>
                 </div>
@@ -230,9 +227,18 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                           setRoleDraft({ username: user.username, role: e.target.value })
                         }
                       >
+                        {/* [T-9.20] El rol que TIENE, si no es uno que se pueda
+                            dar (retirado por D-42, o interno visto por un cliente):
+                            sin esta opción el <select> enseñaría la primera de la
+                            lista como si fuera la suya. Se ve, no se elige. */}
+                        {!assignable.some((r) => r.role === user.role) && (
+                          <option value={user.role} disabled>
+                            {etiquetaDeRol(user.role)}
+                          </option>
+                        )}
                         {assignable.map((r) => (
-                          <option key={r} value={r}>
-                            {r}
+                          <option key={r.role} value={r.role}>
+                            {r.label}
                           </option>
                         ))}
                       </select>
@@ -240,7 +246,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                     {rolElegido !== null && rolElegido !== user.role && (
                       <div className="users__rowactions">
                         <ConfirmButton
-                          label={`CAMBIAR ROL A ${rolElegido}`}
+                          label={`CAMBIAR ROL A ${etiquetaAsignable(rolElegido)}`}
                           disabled={busy}
                           title="Cambia qué datos ve y qué puede hacer esta persona"
                           onConfirm={() => {
@@ -249,7 +255,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
                           }}
                         />
                         <Button variant="secondary" onClick={() => setRoleDraft(null)}>
-                          DEJAR {user.role}
+                          DEJAR {etiquetaDeRol(user.role)}
                         </Button>
                       </div>
                     )}
@@ -385,6 +391,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
           data-testid="user-create-form"
           onSubmit={(e) => {
             e.preventDefault();
+            if (draft.role === "") return;
             create.mutate(
               {
                 email: draft.email.trim(),
@@ -398,7 +405,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
               {
                 onSuccess: () => {
                   setCreating(false);
-                  setDraft({ email: "", role: "soc_operator", surface: "web" });
+                  setDraft({ email: "", role: "", surface: "web" });
                 },
               },
             );
@@ -419,13 +426,25 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
               value={draft.role}
               onChange={(e) => setDraft((d) => ({ ...d, role: e.target.value }))}
             >
+              <option value="" disabled>
+                {asignables.loading
+                  ? "CARGANDO ROLES…"
+                  : asignables.error === null && assignable.length === 0
+                    ? "SIN ROLES QUE PUEDAS ASIGNAR"
+                    : "ELIGE UN ROL"}
+              </option>
               {assignable.map((r) => (
-                <option key={r} value={r}>
-                  {r}
+                <option key={r.role} value={r.role}>
+                  {r.label}
                 </option>
               ))}
             </select>
           </label>
+          {asignables.error !== null && (
+            <p className="users__error" role="alert" data-testid="assignable-roles-error">
+              NO SE PUDIERON LEER LOS ROLES ASIGNABLES · {asignables.error}
+            </p>
+          )}
           <label className="users__field">
             <span>Superficie</span>
             <select
@@ -442,13 +461,15 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
           <div className="users__rowactions">
             <Button
               type="submit"
-              disabled={create.isPending || draft.email.trim() === ""}
+              disabled={create.isPending || draft.email.trim() === "" || draft.role === ""}
               title={
                 create.isPending
                   ? "Creando…"
                   : draft.email.trim() === ""
                     ? "Escribe el correo del usuario"
-                    : undefined
+                    : draft.role === ""
+                      ? "Elige el rol del usuario"
+                      : undefined
               }
             >
               {create.isPending ? "CREANDO…" : "CREAR E INVITAR"}

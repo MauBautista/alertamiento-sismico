@@ -11,16 +11,13 @@ ALL_ROLES = [
     "takab_superadmin",
     "takab_support",
     "tenant_admin",
-    "soc_operator",
     "gov_operator",
     "inspector",
-    "building_admin",
     "brigadista",
-    "security_guard",
     "occupant",
 ]
 
-MOBILE_ONLY = {"brigadista", "security_guard", "occupant"}
+MOBILE_ONLY = {"brigadista", "occupant"}
 
 
 @pytest.mark.parametrize("role", ALL_ROLES)
@@ -113,5 +110,5 @@ async def test_me_without_token_is_401(client) -> None:
 
 
 async def test_me_with_invalid_token_is_401(client) -> None:
-    resp = await client.get("/me", headers=au.bearer(au.expired_token("soc_operator")))
+    resp = await client.get("/me", headers=au.bearer(au.expired_token("tenant_admin")))
     assert resp.status_code == 401

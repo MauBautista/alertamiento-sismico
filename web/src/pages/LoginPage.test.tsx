@@ -2,6 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resetSessionStoreForTests, useSessionStore } from "../auth/session.store";
+import matriz from "../../../shared/fixtures/rbac-matrix.json";
 import { ME_FIXTURES } from "../test-utils/meFixtures";
 import { renderRoutesAt, seedAuthenticated } from "../test-utils/renderRoutes";
 import { DEV_TENANT_DEFAULT } from "./LoginPage";
@@ -30,6 +31,15 @@ describe("LoginPage", () => {
       role: "gov_operator",
       tenant_id: DEV_TENANT_DEFAULT,
     });
+  });
+
+  it("[T-9.20 · D-42] el <select> dev ofrece los 7 roles de la matriz y arranca en uno de consola", () => {
+    vi.stubEnv("VITE_DEV_TOKEN_ENABLED", "true");
+    renderRoutesAt("/");
+    const select = screen.getByLabelText("ROL") as HTMLSelectElement;
+    const ofrecidos = [...select.options].map((o) => o.value).sort();
+    expect(ofrecidos).toEqual(Object.keys(matriz.roles).sort());
+    expect(select.value).toBe("tenant_admin");
   });
 
   it("el tenant dev por defecto es el de la flota sembrada", () => {
@@ -107,6 +117,20 @@ describe("LoginPage", () => {
     expect(screen.queryByTestId("login-sesion-cerrada")).not.toBeInTheDocument();
   });
 
+  it("[F2] fin por rol retirado ⇒ dice que el rol fue retirado y qué hacer", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.getState().handleUnauthorized("rol_retirado");
+    renderRoutesAt("/");
+
+    const aviso = screen.getByTestId("login-rol-retirado");
+    expect(aviso).toHaveTextContent(
+      "Tu rol fue retirado. Pide a tu administrador que te asigne uno de los roles vigentes.",
+    );
+    expect(aviso).toHaveAttribute("role", "status");
+    expect(screen.queryByTestId("login-sesion-cerrada")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("login-sesion-tope")).not.toBeInTheDocument();
+  });
+
   it("fin por tope de 30 días ⇒ «SU SESIÓN DE 30 DÍAS TERMINÓ»", () => {
     useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
     useSessionStore.setState({ sessionMaxAgeS: 2_592_000 });
@@ -138,14 +162,14 @@ describe("LoginPage", () => {
   });
 
   it("autenticado en / redirige al landing del rol (primera allowed_route)", () => {
-    seedAuthenticated(ME_FIXTURES.soc_operator);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     const router = renderRoutesAt("/");
     expect(router.state.location.pathname).toBe("/console");
     expect(screen.getByRole("heading", { name: "Monitoreo en Vivo" })).toBeInTheDocument();
   });
 
   it("autenticado con returnTo honra el deep-link original", () => {
-    seedAuthenticated(ME_FIXTURES.soc_operator);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     const router = renderRoutesAt("/", { returnTo: "/fleet" });
     expect(router.state.location.pathname).toBe("/fleet");
     expect(

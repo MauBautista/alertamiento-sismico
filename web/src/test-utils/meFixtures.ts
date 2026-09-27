@@ -14,8 +14,8 @@ import matriz from "../../../shared/fixtures/rbac-matrix.json";
  * una aserción — hace que el componente que lo gatea **no se monte**, y el test
  * pasa en verde sobre una población vacía. Esta vez no llegó a costar nada (esas
  * trece acciones casi no tienen consumidor aquí), y se descubrió de casualidad:
- * `soc_operator` —el rol principal de la consola— no tenía el permiso que
- * `T-5.12` necesitaba.
+ * el operador SOC —entonces el rol principal de la consola— no tenía el permiso
+ * que `T-5.12` necesitaba.
  *
  * Ahora no hay tabla: `shared/fixtures/rbac-matrix.json` lo genera
  * `api/scripts/export_rbac_matrix.py`, `api/tests/auth/test_rbac_fixture_es_la_
@@ -45,17 +45,12 @@ export const TENANT_ID = "11111111-1111-1111-1111-111111111111";
  */
 const ROLES = Object.keys(matriz.roles).sort() as RoleName[];
 
-export type RoleName =
-  | "takab_superadmin"
-  | "takab_support"
-  | "tenant_admin"
-  | "soc_operator"
-  | "gov_operator"
-  | "inspector"
-  | "building_admin"
-  | "brigadista"
-  | "security_guard"
-  | "occupant";
+/**
+ * [T-9.20 · D-42] Los 7 roles, DERIVADOS del fichero (eran 10 escritos a mano).
+ * Un test que pida un rol retirado no compila (`tsc`), y
+ * `meFixtures.test.ts` lo caza también al correr.
+ */
+export type RoleName = keyof typeof matriz.roles;
 
 const rolDe = (r: string): MatrizRol => (matriz.roles as Record<string, MatrizRol>)[r];
 

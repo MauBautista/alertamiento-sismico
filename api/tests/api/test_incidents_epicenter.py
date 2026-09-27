@@ -18,7 +18,7 @@ from takab_api.db.engine import get_engine
 pytestmark = pytest.mark.usefixtures("base_data")
 
 
-def _hdr(role: str = "soc_operator", *, tenant: str = au.DB_TENANT_PRIV):
+def _hdr(role: str = "tenant_admin", *, tenant: str = au.DB_TENANT_PRIV):
     return au.bearer(au.make_token(role, tenant=tenant, user_id=str(uuid.uuid4())))
 
 
@@ -81,7 +81,7 @@ async def test_relocate_lands_in_timeline_and_audit(client, make_incident) -> No
     assert n == 1
 
 
-@pytest.mark.parametrize("role", ["inspector", "gov_operator", "building_admin", "takab_support"])
+@pytest.mark.parametrize("role", ["inspector", "gov_operator", "brigadista", "takab_support"])
 async def test_relocate_forbidden_roles(client, make_incident, role: str) -> None:
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     r = await client.post(

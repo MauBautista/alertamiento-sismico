@@ -70,6 +70,51 @@ export async function isSessionExpiredResponse(response: Response): Promise<bool
   }
 }
 
+/**
+ * [T-9.2x · F2 · D-42] Pasada la fecha de baja de los alias, un token que aún
+ * trae un rol retirado recibe 401 `rol_retirado` (cabecera y cuerpo, como el
+ * tope) y el canal live cierra con 4401 y ese motivo. Es FIN de sesión: renovar
+ * con Cognito devolvería el mismo rol y la API rechazaría en bucle.
+ */
+export const ROL_RETIRADO = "rol_retirado";
+
+/** Lo que lee el operador en la landing cuando su rol fue retirado. */
+export const MENSAJE_ROL_RETIRADO =
+  "Tu rol fue retirado. Pide a tu administrador que te asigne uno de los roles vigentes.";
+
+/** ¿La cabecera `WWW-Authenticate` es la del rol retirado? */
+export function isRoleRetiredHeader(value: string | null): boolean {
+  if (value === null) {
+    return false;
+  }
+  return /error_description\s*=\s*"?rol_retirado"?/i.test(value);
+}
+
+/** ¿El cuerpo del 401 es el del rol retirado (`{"detail": "rol_retirado"}`)? */
+export function isRoleRetiredBody(body: unknown): boolean {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    (body as { detail?: unknown }).detail === ROL_RETIRADO
+  );
+}
+
+/** ¿Esta respuesta es el 401 del rol retirado? Igual que el tope: cabecera y,
+ * si falta, el cuerpo de un CLON. */
+export async function isRoleRetiredResponse(response: Response): Promise<boolean> {
+  if (response.status !== 401) {
+    return false;
+  }
+  if (isRoleRetiredHeader(response.headers.get("WWW-Authenticate"))) {
+    return true;
+  }
+  try {
+    return isRoleRetiredBody(await response.clone().json());
+  } catch {
+    return false;
+  }
+}
+
 /** Claims de un JWT SIN verificar: solo para leer datos del propio portador. */
 export function jwtPayload(token: string): Record<string, unknown> | null {
   const part = token.split(".")[1];

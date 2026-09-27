@@ -17,13 +17,20 @@
 # cada usuario enrola su authenticator en el primer login por la Hosted UI.
 #
 # Uso:  AWS_PROFILE=takab-dev infra/scripts/seed_console_users.sh [rol ...]
-#       (sin args: los 6 roles de consola web)
+#       (sin args: los 4 roles de consola web del cliente y TAKAB — D-42)
 #
-# ⚠️ [T-8.13] Cada rol que se pasa (o los 6, sin args) se RE-SIEMBRA: contraseña
+# ⚠️ [T-8.13] Cada rol que se pasa (o los 4, sin args) se RE-SIEMBRA: contraseña
 # nueva, tenant de la flota, site_scope '*' y surface=web. Eso DESHACE los ajustes
-# de la demo: gov_operator en su tenant «Protección Civil» e inspector/
-# building_admin con surface=both (ficha T-8.13 en TASKS.md). Para dar de alta
-# un rol nuevo, pásalo SOLO a él.
+# de la demo: gov_operator en su tenant «Protección Civil» e inspector con
+# surface=both (ficha T-8.13 en TASKS.md). Para dar de alta un rol nuevo, pásalo
+# SOLO a él.
+#
+# [D-42 · T-9.21] soc_operator y building_admin YA NO se siembran: son alias
+# heredados que la API canoniza (soc_operator → tenant_admin, building_admin →
+# brigadista) y, pasada `roles_heredados_hasta`, dan 401 «rol_retirado». Los
+# usuarios que ya existen con esos roles —incluido el de la demo,
+# `…+building_admin@…`— NO se resiembran aquí: los migra
+# `api/scripts/migrar_roles_7.py` (--dry-run / --apply --map / --verify).
 set -euo pipefail
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)"
@@ -33,9 +40,10 @@ SECRET_ID="takab/dev/console/users"
 # consola entra pero el mapa sale vacío (RLS no ve ningún sitio).
 TENANT_ID="d0000000-0000-0000-0000-000000000001"
 
-# Los 6 roles con superficie WEB (RBAC-TAKAB.md §2). brigadista/security_guard/
-# occupant son móviles: en la consola solo verían rutas vacías.
-DEFAULT_ROLES=(takab_superadmin tenant_admin soc_operator inspector gov_operator building_admin)
+# Los roles con superficie WEB que se siembran (RBAC-TAKAB.md §2). takab_support
+# se da de alta a mano (es personal TAKAB); brigadista/occupant son móviles: en
+# la consola solo verían rutas vacías (`seed_mobile_users.sh`).
+DEFAULT_ROLES=(takab_superadmin tenant_admin inspector gov_operator)
 ROLES=("${@:-${DEFAULT_ROLES[@]}}")
 
 POOL_ID="$(terraform -chdir="$TF_DIR" output -raw user_pool_id)"

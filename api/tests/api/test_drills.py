@@ -84,7 +84,7 @@ async def test_un_drill_jamas_crea_incidentes(client, gateway, publisher):
     assert await _count("SELECT count(*) FROM dictamens") == 0
 
 
-@pytest.mark.parametrize("role", ["soc_operator", "gov_operator", "inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["gov_operator", "inspector", "brigadista", "takab_support"])
 async def test_roles_sin_drill_start_403(client, gateway, role):
     r = await client.post("/drills", json={"duration_s": 60}, headers=_token(role))
     assert r.status_code == 403
@@ -117,7 +117,7 @@ async def test_registro_visible_para_gov_y_active_para_consola(client, gateway, 
     assert row["sites"][0]["command_status"] == "pending"  # aún sin ack del edge
 
     # El banner de la consola: cualquier rol del SOC ve el drill activo.
-    active = await client.get("/drills/active", headers=_token("soc_operator"))
+    active = await client.get("/drills/active", headers=_token("gov_operator"))
     assert active.status_code == 200
     assert active.json()["drill"]["drill_id"] == drill_id
 
@@ -142,7 +142,7 @@ async def test_stop_marca_fin_y_publica_drill_stop(client, gateway, publisher):
     assert len(publisher.published) == 1
 
     # Y el banner se apaga.
-    active = await client.get("/drills/active", headers=_token("soc_operator"))
+    active = await client.get("/drills/active", headers=_token("gov_operator"))
     assert active.json()["drill"] is None
 
 

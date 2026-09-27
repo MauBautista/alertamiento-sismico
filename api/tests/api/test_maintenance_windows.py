@@ -420,7 +420,7 @@ async def test_el_grant_de_metadatos_de_verdad_deja_VER_el_gabinete_ajeno(
 # --- 3. Rol: quién puede apagar qué vigilancia ---------------------------------
 
 
-@pytest.mark.parametrize("role", ["soc_operator", "gov_operator", "inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["takab_support", "gov_operator", "inspector", "brigadista"])
 async def test_roles_sin_la_accion_reciben_403(client, gateways, role, cw):
     r = await client.post("/maintenance-windows", json=_body(), headers=_token(role))
     assert r.status_code == 403
@@ -843,8 +843,9 @@ async def test_al_releer_la_ventana_los_nombres_que_faltaron_son_los_REALES(clie
 def test_READ_ROLES_es_la_regla_de_la_consola() -> None:
     """[T-8.09] La consola decide si pide `GET /maintenance-windows` con ESTA regla
     (`web/src/features/console/useMaintenanceWindows.ts::puedeLeerVentanas`):
-    tener `maintenance_window` o `platform_maintenance_window`, o ser `soc_operator`
-    o `takab_support`. Si el servidor cambia quién lee y la consola no, vuelve el
+    tener `maintenance_window` o `platform_maintenance_window`, o ser `takab_support`
+    ([T-9.20 · D-42] `soc_operator` salió: canoniza a `tenant_admin`, que ya lee).
+    Si el servidor cambia quién lee y la consola no, vuelve el
     403 en cada página (o, al revés, un rol que sí puede leer deja de ver las
     ventanas). Cambia los dos lados en el mismo commit."""
     from takab_api.auth.matrix import ROLE_ACTION_MATRIX
@@ -855,8 +856,8 @@ def test_READ_ROLES_es_la_regla_de_la_consola() -> None:
         for rol, acciones in ROLE_ACTION_MATRIX.items()
         if acciones.get("maintenance_window")
         or acciones.get("platform_maintenance_window")
-        or rol in ("soc_operator", "takab_support")
+        or rol == "takab_support"
     }
     assert set(READ_ROLES) == regla_de_la_consola
     # Y lo que el recorrido midió: estos tres NO leen hoy, así que la consola no pide.
-    assert not {"gov_operator", "inspector", "building_admin"} & set(READ_ROLES)
+    assert not {"gov_operator", "inspector", "brigadista", "occupant"} & set(READ_ROLES)

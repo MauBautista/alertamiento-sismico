@@ -204,7 +204,7 @@ async def _get(gateway_id: str, token: str):
 
 async def test_synced_gateway_reports_in_sync(seed: None) -> None:
     """Payload publicado == config.edge del rule_set activo ⇒ SINCRONIZADO."""
-    resp = await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(GW_SYNCED, au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["in_sync"] is True
@@ -216,14 +216,14 @@ async def test_synced_gateway_reports_in_sync(seed: None) -> None:
 
 async def test_stale_gateway_is_not_in_sync(seed: None) -> None:
     """El rule_set cambió y el gabinete sigue con el payload viejo ⇒ PENDIENTE."""
-    body = (await _get(GW_STALE, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_STALE, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["in_sync"] is False
     assert body["version"] == 3  # la versión vieja se muestra tal cual
 
 
 async def test_never_published_is_200_not_404(seed: None) -> None:
     """Sin fila en gateway_config_state la consola pinta PENDIENTE, no un error."""
-    resp = await _get(GW_NEVER, au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(GW_NEVER, au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     body = resp.json()
     assert body["version"] is None
@@ -236,7 +236,7 @@ async def test_never_published_is_200_not_404(seed: None) -> None:
 async def test_gateway_without_edge_config_never_syncs(seed: None) -> None:
     """El rule_set de sitio (preferente) no trae 'edge': el worker jamás lo publica.
     Mostrar PENDIENTE eternamente sería mentir; has_edge_config lo explica."""
-    body = (await _get(GW_NOEDGE, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_NOEDGE, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["has_edge_config"] is False
     assert body["in_sync"] is False
 
@@ -255,7 +255,7 @@ async def test_gateway_without_any_active_rule_set_is_200_not_500(seed: None) ->
         )
 
     # Con estado publicado (in_sync sería TRUE AND NULL AND … = NULL sin COALESCE).
-    resp = await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(GW_SYNCED, au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200, resp.text
     body = resp.json()
     # [B3] …y aquí `has_edge_config` es TRUE, no false. Sin rule_set activo el
@@ -273,7 +273,7 @@ async def test_gateway_without_any_active_rule_set_is_200_not_500(seed: None) ->
 
     # Y sin estado publicado tampoco explota: ahí sí no hay NADA que publicar
     # (ni rule_set del que sacar la base ni doc anterior) y el badge acierta.
-    never = await _get(GW_NEVER, au.make_token("soc_operator", tenant=T_A))
+    never = await _get(GW_NEVER, au.make_token("tenant_admin", tenant=T_A))
     assert never.status_code == 200
     assert never.json()["has_edge_config"] is False
     assert never.json()["in_sync"] is False
@@ -329,7 +329,7 @@ async def test_has_edge_config_no_dice_que_NO_HAY_NADA_QUE_PUBLICAR_mientras_el_
         "el montaje del test no reproduce el caso: el worker no considera candidato a este gabinete"
     )
 
-    body = (await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_SYNCED, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["has_edge_config"] is True, (
         "la consola pinta SIN CONFIG EDGE ('no hay nada que publicar') sobre un "
         "gabinete que el worker tiene EN COLA de publicación ahora mismo"
@@ -345,7 +345,7 @@ async def test_has_edge_config_sigue_siendo_falso_cuando_no_hay_NADA_de_donde_pa
     Es el caso para el que se inventó el rótulo, y tiene que seguir distinguiéndose
     de un PENDIENTE que sí se va a resolver solo.
     """
-    body = (await _get(GW_NOEDGE, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_NOEDGE, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["has_edge_config"] is False
     assert GW_NOEDGE not in await _candidatos_del_worker()
 
@@ -371,7 +371,7 @@ async def test_has_edge_config_es_el_espejo_del_gate_de_publicacion_del_worker(
         )
 
     candidatos = await _candidatos_del_worker()
-    lote = (await _get_all(au.make_token("soc_operator", tenant=T_A))).json()
+    lote = (await _get_all(au.make_token("tenant_admin", tenant=T_A))).json()
     assert lote, "el lote vino vacío: el test no está midiendo nada"
 
     sin_nada_que_publicar = {r["gateway_id"] for r in lote if r["has_edge_config"] is False}
@@ -388,7 +388,7 @@ async def test_gateway_sin_identidad_iot_nunca_es_sincronizable(seed: None) -> N
     afirmaba las DOS cosas a la vez sobre un gabinete que además no tenía
     ``iot_thing``, así que la mitad del retiro nunca se probó de verdad.
     """
-    body = (await _get(GW_RETIRED, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_RETIRED, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["is_syncable"] is False
 
 
@@ -399,7 +399,7 @@ async def test_el_retirado_que_aun_no_recibio_su_baja_sigue_siendo_sincronizable
     de inmediato: primero hay que AVISARLE. Mientras el aviso no salga, la consola
     debe decir PENDIENTE, no ``NO SINCRONIZABLE`` — que es justo lo que dejaba al
     gabinete latiendo invisible (víctima real: `gw-dev-0001`, 2026-08-04)."""
-    body = (await _get(GW_RETIRED_PENDING, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_RETIRED_PENDING, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["is_syncable"] is True
     assert body["in_sync"] is False  # el sobre de baja está pendiente
 
@@ -407,7 +407,7 @@ async def test_el_retirado_que_aun_no_recibio_su_baja_sigue_siendo_sincronizable
 async def test_el_retirado_ya_avisado_deja_el_flujo_de_config(seed: None) -> None:
     """[T-2.65] Recibido el sobre de baja, el gabinete sale de la lista: el aviso
     sale EXACTAMENTE UNA VEZ y la consola deja de prometer más config."""
-    body = (await _get(GW_RETIRED_TOLD, au.make_token("soc_operator", tenant=T_A))).json()
+    body = (await _get(GW_RETIRED_TOLD, au.make_token("tenant_admin", tenant=T_A))).json()
     assert body["is_syncable"] is False
     assert body["in_sync"] is True  # su doc publicado ya declara la baja
     assert body["version"] == 9
@@ -419,7 +419,7 @@ async def test_el_retirado_ya_avisado_deja_el_flujo_de_config(seed: None) -> Non
 async def test_raw_hmac_signature_never_leaves_the_server(seed: None) -> None:
     """La firma cruda junto al payload es material de ataque offline contra la
     clave HMAC. Solo sale su huella sha256 truncada."""
-    resp = await _get(GW_SYNCED, au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(GW_SYNCED, au.make_token("tenant_admin", tenant=T_A))
     raw = resp.text
     assert RAW_SIG not in raw
     body = resp.json()
@@ -431,18 +431,18 @@ async def test_raw_hmac_signature_never_leaves_the_server(seed: None) -> None:
 async def test_rls_blocks_other_tenant_gateway(seed: None) -> None:
     """Tenant A no ve el config-state de un gateway de B: 404, no 403 (no revela
     que exista)."""
-    resp = await _get(GW_B, au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(GW_B, au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 404
 
 
 async def test_unknown_gateway_is_404(seed: None) -> None:
     resp = await _get(
-        "9f000000-0000-0000-0000-0000000000ff", au.make_token("soc_operator", tenant=T_A)
+        "9f000000-0000-0000-0000-0000000000ff", au.make_token("tenant_admin", tenant=T_A)
     )
     assert resp.status_code == 404
 
 
-@pytest.mark.parametrize("role", ["inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["inspector", "brigadista"])
 async def test_role_without_fleet_forbidden(seed: None, role: str) -> None:
     resp = await _get(GW_SYNCED, au.make_token(role, tenant=T_A))
     assert resp.status_code == 403
@@ -467,7 +467,7 @@ async def _get_all(token: str):
 
 
 async def test_el_lote_devuelve_lo_mismo_que_el_endpoint_por_gabinete(seed: None) -> None:
-    token = au.make_token("soc_operator", tenant=T_A)
+    token = au.make_token("tenant_admin", tenant=T_A)
     batch = await _get_all(token)
     assert batch.status_code == 200, batch.text
     by_id = {row["gateway_id"]: row for row in batch.json()}
@@ -478,7 +478,7 @@ async def test_el_lote_devuelve_lo_mismo_que_el_endpoint_por_gabinete(seed: None
 
 
 async def test_el_lote_respeta_la_rls_por_tenant(seed: None) -> None:
-    rows = (await _get_all(au.make_token("soc_operator", tenant=T_A))).json()
+    rows = (await _get_all(au.make_token("tenant_admin", tenant=T_A))).json()
     assert GW_B not in {r["gateway_id"] for r in rows}
 
 

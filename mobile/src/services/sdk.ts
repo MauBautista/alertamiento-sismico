@@ -9,6 +9,8 @@
 //     `exp`; sólo ESPERA si ya no sirve);
 //   · 401 `sesion_expirada` (D-38: la sesión cumplió la edad de su rol) ⇒ fuera
 //     con motivo `max_age`, sin intentar renovar — renovar no la revive;
+//   · [F2 · D-42] 401 `rol_retirado` ⇒ fuera con ese motivo, tampoco se renueva:
+//     Cognito devolvería el mismo rol;
 //   · cualquier otro 401 ⇒ UNA renovación; sólo `dead` expulsa, `offline`
 //     conserva la sesión y con `ok` una LECTURA se repite con el token nuevo.
 import { client } from "@takab/sdk";
@@ -22,6 +24,7 @@ import {
   secondsLeft,
   signOutDead,
 } from "../auth/refresh";
+import { esRolRetirado } from "../auth/rolRetirado";
 import { useSessionStore } from "../auth/session.store";
 
 /** Rutas cuyo 401 NO cierra la sesión.
@@ -121,6 +124,10 @@ export function configureApiClient(): void {
       useSessionStore.getState().signOut("max_age");
       return response;
     }
+    if (await esRolRetirado(response)) {
+      useSessionStore.getState().signOut("rol_retirado");
+      return response;
+    }
     // ¿Otro camino ya renovó después de que esta petición saliera? Entonces el
     // 401 es del token viejo y no hace falta gastar otro refresh.
     const usado = bearerDe(request);
@@ -150,6 +157,8 @@ export function configureApiClient(): void {
         // Un token RECIÉN renovado y aun así rechazado: la sesión no sirve.
         if (await esSesionExpirada(repetida)) {
           useSessionStore.getState().signOut("max_age");
+        } else if (await esRolRetirado(repetida)) {
+          useSessionStore.getState().signOut("rol_retirado");
         } else {
           signOutDead();
         }

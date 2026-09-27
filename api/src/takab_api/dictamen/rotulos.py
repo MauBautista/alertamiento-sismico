@@ -39,6 +39,7 @@ from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from takab_api.auth.roles import ETIQUETA, ROL_HISTORICO
 from takab_api.dictamen.bitacora import SIN_ROTULO
 
 # Los AVISOS viven en `model.py` y se importan: el censo de avisos impresos
@@ -113,19 +114,11 @@ SEVERIDAD_DE_DANO: dict[str, str] = {
     "critical": "Crítica",
 }
 
-#: Los roles de la matriz RBAC (`auth.matrix.ROLE_ACTION_MATRIX`).
-ROL: dict[str, str] = {
-    "takab_superadmin": "SUPERADMINISTRACIÓN TAKAB",
-    "takab_support": "SOPORTE TAKAB",
-    "tenant_admin": "ADMINISTRACIÓN DEL CLIENTE",
-    "soc_operator": "OPERACIÓN SOC",
-    "gov_operator": "PROTECCIÓN CIVIL",
-    "building_admin": "ADMINISTRACIÓN DEL INMUEBLE",
-    "inspector": "INSPECTOR",
-    "brigadista": "BRIGADISTA",
-    "security_guard": "SEGURIDAD",
-    "occupant": "OCUPANTE",
-}
+#: Los roles de la matriz RBAC (`auth.matrix.ROLE_ACTION_MATRIX`) y los VIEJOS.
+#: [T-9.20 · D-42] Fuente ÚNICA en `auth/roles.py`: los siete canónicos con su
+#: etiqueta, más `ROL_HISTORICO` para las filas que no se reescriben (un reporte de
+#: daños de un `security_guard` sigue diciendo SEGURIDAD en el papel).
+ROL: dict[str, str] = {**ETIQUETA, **ROL_HISTORICO}
 
 #: El papel de cada captura del CCTV (`cctv.PAPELES`), con el sentido de
 #: `cctv._SIN_FOTO`.

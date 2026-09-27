@@ -20,9 +20,9 @@ def jwks(settings: object) -> object:
 
 
 def test_valid_token_returns_claims(settings: object, jwks: object) -> None:
-    token = au.make_token("soc_operator", tenant=au.TENANT_A, site_scope="*")
+    token = au.make_token("tenant_admin", tenant=au.TENANT_A, site_scope="*")
     claims = decode_verify(token, settings, jwks)
-    assert claims["custom:role"] == "soc_operator"
+    assert claims["custom:role"] == "tenant_admin"
     assert claims["custom:tenant_id"] == au.TENANT_A
     assert claims["token_use"] == "id"
 
@@ -59,7 +59,7 @@ def test_none_alg_rejected(settings: object, jwks: object) -> None:
 
 
 def test_unknown_kid_rejected(settings: object, jwks: object) -> None:
-    token = au.make_token("soc_operator", kid="other-kid")
+    token = au.make_token("tenant_admin", kid="other-kid")
     with pytest.raises(AuthError):
         decode_verify(token, settings, jwks)
 
@@ -74,22 +74,22 @@ _MOBILE_AUD = "test-mobile-tactical-client"
 
 def test_multi_audience_accepts_each_listed_client(jwks: object) -> None:
     s = au.test_settings(auth_audience=f"{au.AUDIENCE},{_MOBILE_AUD}")
-    web = au.make_token("soc_operator", audience=au.AUDIENCE)
+    web = au.make_token("tenant_admin", audience=au.AUDIENCE)
     mobile = au.make_token("brigadista", surface="mobile", audience=_MOBILE_AUD)
-    assert decode_verify(web, s, jwks)["custom:role"] == "soc_operator"
+    assert decode_verify(web, s, jwks)["custom:role"] == "tenant_admin"
     assert decode_verify(mobile, s, jwks)["custom:role"] == "brigadista"
 
 
 def test_multi_audience_still_rejects_unlisted_client(jwks: object) -> None:
     s = au.test_settings(auth_audience=f"{au.AUDIENCE},{_MOBILE_AUD}")
     with pytest.raises(AuthError) as excinfo:
-        decode_verify(au.make_token("soc_operator", audience="otro-client"), s, jwks)
+        decode_verify(au.make_token("tenant_admin", audience="otro-client"), s, jwks)
     assert "audience" in excinfo.value.reason
 
 
 def test_single_audience_unchanged(jwks: object) -> None:
     # Un valor único sigue comportándose EXACTO (compatibilidad hacia atrás).
     s = au.test_settings(auth_audience=au.AUDIENCE)
-    assert decode_verify(au.make_token("soc_operator"), s, jwks)["custom:role"] == "soc_operator"
+    assert decode_verify(au.make_token("tenant_admin"), s, jwks)["custom:role"] == "tenant_admin"
     with pytest.raises(AuthError):
-        decode_verify(au.make_token("soc_operator", audience=_MOBILE_AUD), s, jwks)
+        decode_verify(au.make_token("tenant_admin", audience=_MOBILE_AUD), s, jwks)

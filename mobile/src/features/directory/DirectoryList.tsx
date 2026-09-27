@@ -4,6 +4,7 @@
 import type { DirectoryEntryOut } from "@takab/sdk";
 import { Linking, StyleSheet, Text, View } from "react-native";
 
+import { etiquetaRol } from "@/auth/roles";
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space } from "@/ui/theme";
 /**
@@ -14,16 +15,6 @@ import { fontSize, palette, radius, slopHasta, space } from "@/ui/theme";
  * siendo cierta si alguien cambia el chip.
  */
 const CHIP_ALTO = 24;
-
-
-const ROLE_LABEL: Record<string, string> = {
-  brigadista: "BRIGADISTA",
-  security_guard: "SEGURIDAD",
-  building_admin: "ADMINISTRACIÓN",
-  // [T-9.11 · D-42] El administrador entra en la app táctica.
-  tenant_admin: "ADMINISTRADOR",
-  inspector: "INSPECTOR",
-};
 
 export function groupByZone(entries: DirectoryEntryOut[]): [string, DirectoryEntryOut[]][] {
   const groups = new Map<string, DirectoryEntryOut[]>();
@@ -46,7 +37,7 @@ export function DirectoryList(props: { entries: DirectoryEntryOut[] }) {
             <View key={e.user_id} style={styles.row} testID={`dir-${e.user_id}`}>
               <View style={styles.info}>
                 <Text style={styles.name}>{e.display_name}</Text>
-                <Text style={styles.role}>{ROLE_LABEL[e.role] ?? e.role.toUpperCase()}</Text>
+                <Text style={styles.role}>{etiquetaRol(e.role)}</Text>
               </View>
               {e.phone ? (
                 <Pulsable

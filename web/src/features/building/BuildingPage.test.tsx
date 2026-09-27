@@ -176,7 +176,7 @@ describe("BuildingPage", () => {
   });
 
   it("ya no es un placeholder: monta canales, historial, salud e incidentes", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
 
     expect(screen.queryByText(/EN CONSTRUCCIÓN/)).toBeNull();
@@ -192,7 +192,7 @@ describe("BuildingPage", () => {
     // [T-6.06] Las tres ramas siguen ahí, pero ya no escritas a mano: las pinta
     // el `StateFrame` de SITIO, que además declara la edad de la lectura. El
     // reintento es el mismo y sigue llamando al servidor.
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     mocks.getSite.mockResolvedValue({ data: undefined, response: { status: 500 } });
     renderRoutesAt("/building/s-1");
     expect(await screen.findByText(/GET \/sites\/s-1 falló/)).toBeInTheDocument();
@@ -203,7 +203,7 @@ describe("BuildingPage", () => {
   });
 
   it("B-4: con el sitio cargado pinta su nombre (no el placeholder)", async () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     mocks.getSite.mockResolvedValue({
       data: { site_id: "s-1", name: "Planta Cholula", code: "CHO", lat: 19.06, lon: -98.3 },
       response: { status: 200 },
@@ -213,7 +213,7 @@ describe("BuildingPage", () => {
   });
 
   it("[T-6.04] un sitio simulado lleva la cinta DEMO en la cabecera; uno real, no", async () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     mocks.getSite.mockResolvedValue({
       data: {
         site_id: "s-1",
@@ -234,14 +234,14 @@ describe("BuildingPage", () => {
     // decía por qué. «No ha llegado el latido» es una afirmación sobre nuestro
     // conocimiento, y es la que el operador puede usar: le manda a mirar el
     // enlace, no a concluir que el gabinete está sano.
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
     expect(screen.getByText("SIN LATIDO DEL GABINETE EN ESTA SESIÓN")).toBeInTheDocument();
     expect(screen.queryAllByText("S/D")).toHaveLength(0);
   });
 
-  it("building_admin ve la prueba de sirena; inspector no", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+  it("tenant_admin ve la prueba de sirena; inspector no", () => {
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
     expect(screen.getByTestId("siren-panel")).toBeInTheDocument();
   });
@@ -254,7 +254,7 @@ describe("BuildingPage", () => {
   });
 
   it("propaga el flag de calibración a las dos vistas sísmicas", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
     // Uno en el strip (por traza) y otro en el historial.
     expect(screen.getAllByTestId("not-calibrated-badge").length).toBeGreaterThan(0);
@@ -262,7 +262,7 @@ describe("BuildingPage", () => {
   });
 
   it("sin canales muestra el estado vacío, no un strip plano", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     mocks.useSiteChannels.mockReturnValue({ ...CHANNELS, channels: [] });
     renderRoutesAt("/building/s-1");
     expect(screen.getByText("SIN FEATURES EN LOS ÚLTIMOS 10 MIN")).toBeInTheDocument();
@@ -270,7 +270,7 @@ describe("BuildingPage", () => {
   });
 
   it("un error de canales se muestra y se puede reintentar", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     mocks.useSiteChannels.mockReturnValue({ ...CHANNELS, error: "boom" });
     renderRoutesAt("/building/s-1");
     expect(screen.getByText("boom")).toBeInTheDocument();
@@ -282,7 +282,7 @@ describe("BuildingPage", () => {
   // RANGO» y los botones desaparecían con él. Quien eligió 1H en un sitio
   // tranquilo se quedaba sin forma de volver a 24H o 7D.
   it("con el rango vacío los botones de rango SIGUEN ahí y cambian el rango", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     mocks.useSiteMetrics.mockReturnValue({ ...METRICS, points: [] });
     renderRoutesAt("/building/s-1");
     expect(screen.getByText("SIN MÉTRICAS EN EL RANGO")).toBeInTheDocument();
@@ -292,7 +292,7 @@ describe("BuildingPage", () => {
   });
 
   it("con datos, los botones de rango no se duplican", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
     expect(screen.getAllByRole("group", { name: "Rango del historial" })).toHaveLength(1);
   });
@@ -300,7 +300,7 @@ describe("BuildingPage", () => {
   // [A-228 · T-8.09] La tabla listaba los incidentes del edificio y no llevaba a
   // ninguno: para abrir el que se estaba mirando había que ir a Triage y buscarlo.
   it("cada incidente del sitio lleva a SU ficha de triage", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
     const card = screen.getByTestId("incidents-card");
     expect(within(card).getByRole("link", { name: /2026-07-08 10:41:00/ })).toHaveAttribute(
@@ -310,7 +310,7 @@ describe("BuildingPage", () => {
   });
 
   it("lista los incidentes del sitio con su severidad", () => {
-    seedAuthenticated(ME_FIXTURES.building_admin);
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
     renderRoutesAt("/building/s-1");
     expect(screen.getByText("CRÍTICO")).toBeInTheDocument();
     expect(screen.getByText("SASMEX")).toBeInTheDocument();

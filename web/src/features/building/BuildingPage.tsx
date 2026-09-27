@@ -1,8 +1,9 @@
 // Dashboard de edificio (T-1.35). Última página placeholder del árbol.
 //
-// ALCANCE: es la vista del **staff con sesión** — `building_admin`, `inspector` y los
-// roles SOC (RBAC §2, columna "Dash Edificio"). **No es la pantalla del ocupante**:
-// `occupant`, `brigadista` y `security_guard` tienen `allowed_routes = []` y su
+// ALCANCE: es la vista del **staff con sesión** — `tenant_admin`, `inspector`,
+// `gov_operator` y los internos (RBAC §2, columna "Dash Edificio"; D-42 fundió al
+// operador SOC y al administrador de inmueble). **No es la pantalla del ocupante**:
+// `occupant` y `brigadista` tienen `allowed_routes = []` y su
 // superficie es la app móvil (T-1.31, diferida). Según US-05, la interfaz del ocupante
 // es la SIRENA, no un navegador; y la página local del gabinete es el panel del
 // guardia, no una vista pública.

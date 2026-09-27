@@ -43,8 +43,8 @@ def _quake(tenant: str, site: str) -> dict[str, str]:
 
 
 async def test_tenant_b_never_receives_tenant_a(ws_server: str) -> None:
-    tok_a = au.make_token("soc_operator", tenant=WS_TENANT_A)
-    tok_b = au.make_token("soc_operator", tenant=WS_TENANT_B)
+    tok_a = au.make_token("tenant_admin", tenant=WS_TENANT_A)
+    tok_b = au.make_token("tenant_admin", tenant=WS_TENANT_B)
     ws_a = await w.auth_subscribe(ws_server, tok_a, "incidents")
     ws_b = await w.auth_subscribe(ws_server, tok_b, "incidents")
     try:
@@ -62,7 +62,7 @@ async def test_tenant_b_never_receives_tenant_a(ws_server: str) -> None:
 
 async def test_gov_receives_gov_shared_not_private(ws_server: str) -> None:
     tok_gov = au.make_token("gov_operator", tenant=WS_TENANT_AGENCY)
-    tok_g = au.make_token("soc_operator", tenant=WS_TENANT_G)
+    tok_g = au.make_token("tenant_admin", tenant=WS_TENANT_G)
     ws_gov = await w.auth_subscribe(ws_server, tok_gov, "incidents")
     ws_g = await w.auth_subscribe(ws_server, tok_g, "incidents")
     try:
@@ -87,7 +87,7 @@ async def test_gov_receives_gov_shared_not_private(ws_server: str) -> None:
 
 async def test_gov_isolation_uses_requery_not_payload(ws_server: str) -> None:
     """Sanity extra: dos incidentes B seguidos no cruzan a A por caché de clase."""
-    tok_a = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok_a = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     ws_a = await w.auth_subscribe(ws_server, tok_a, "incidents")
     try:
         await asyncio.to_thread(_quake, WS_TENANT_B, WS_SITE_B)

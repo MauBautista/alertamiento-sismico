@@ -137,10 +137,14 @@ async def test_report_cross_tenant_is_404(client, make_incident, monkeypatch) ->
         assert r.status_code == 404
 
 
-async def test_report_non_export_role_forbidden(client, make_incident, monkeypatch) -> None:
+async def test_report_role_sin_generate_report_forbidden(
+    client, make_incident, monkeypatch
+) -> None:
+    """[T-9.20 · D-42] Antes ``soc_operator``; su heredero ``tenant_admin`` SÍ genera
+    el reporte, así que se prueba con un rol del mismo cliente sin ``generate_report``."""
     _env_bucket(monkeypatch)
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV)
+    tok = au.make_token("brigadista", tenant=au.DB_TENANT_PRIV)
     r = await client.post(f"/incidents/{iid}/report", headers=au.bearer(tok))
     assert r.status_code == 403
 

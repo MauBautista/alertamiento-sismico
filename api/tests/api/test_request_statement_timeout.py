@@ -59,10 +59,10 @@ _TOPE_TEST_S = 25.0
 
 
 def _ctx() -> SessionCtx:
-    return SessionCtx(tenant_id=au.DB_TENANT_PRIV, role="soc_operator", user_id=_USER)
+    return SessionCtx(tenant_id=au.DB_TENANT_PRIV, role="tenant_admin", user_id=_USER)
 
 
-def _token(role: str = "soc_operator", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
+def _token(role: str = "tenant_admin", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*", user_id=_USER))
 
 

@@ -12,7 +12,7 @@ describe("AuthCallbackPage", () => {
 
   it("éxito ⇒ navega al returnTo del state OIDC", async () => {
     const completeCognitoCallback = vi.fn().mockImplementation(() => {
-      seedAuthenticated(ME_FIXTURES.soc_operator);
+      seedAuthenticated(ME_FIXTURES.tenant_admin);
       return Promise.resolve({ returnTo: "/fleet" });
     });
     useSessionStore.setState({ completeCognitoCallback });

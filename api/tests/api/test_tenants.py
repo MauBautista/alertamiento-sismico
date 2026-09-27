@@ -99,7 +99,7 @@ async def test_tenant_admin_sees_only_own_row(seed: None) -> None:
     assert ids == {T_A}  # RLS: solo su propia fila (no B, no G)
 
 
-@pytest.mark.parametrize("role", ["soc_operator", "gov_operator", "inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["gov_operator", "inspector", "brigadista", "occupant"])
 async def test_role_without_multitenant_forbidden(seed: None, role: str) -> None:
     resp = await _get(au.make_token(role, tenant=T_A))
     assert resp.status_code == 403

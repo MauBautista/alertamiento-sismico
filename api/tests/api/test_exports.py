@@ -121,7 +121,7 @@ async def test_list_evidence_scoped_to_tenant(client, make_incident) -> None:
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     await _add_evidence(iid, au.DB_TENANT_PRIV, kind="miniseed")
 
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV)
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
     r = await client.get(f"/incidents/{iid}/evidence", headers=au.bearer(tok))
     assert r.status_code == 200
     items = r.json()["items"]
@@ -133,7 +133,7 @@ async def test_list_evidence_cross_tenant_is_empty(client, make_incident) -> Non
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     await _add_evidence(iid, au.DB_TENANT_PRIV)
 
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV2)
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV2)
     r = await client.get(f"/incidents/{iid}/evidence", headers=au.bearer(tok))
     assert r.status_code == 200
     assert r.json()["items"] == []
@@ -141,7 +141,7 @@ async def test_list_evidence_cross_tenant_is_empty(client, make_incident) -> Non
 
 async def test_list_evidence_mobile_surface_forbidden(client, make_incident) -> None:
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="mobile")
+    tok = au.make_token("gov_operator", tenant=au.DB_TENANT_PRIV, surface="mobile")
     r = await client.get(f"/incidents/{iid}/evidence", headers=au.bearer(tok))
     assert r.status_code == 403
 
@@ -248,7 +248,9 @@ async def test_download_non_export_role_forbidden(client, make_incident, monkeyp
     _env_bucket(monkeypatch)
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     ev = await _add_evidence(iid, au.DB_TENANT_PRIV)
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV)
+    # [T-9.20 · D-42] tenant_admin (heredero de soc_operator) tiene Triage pero NO
+    # ``export``: es el rol exacto que esta frontera separa.
+    tok = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV)
     r = await client.post(f"/evidence/{ev}/download", headers=au.bearer(tok))
     assert r.status_code == 403
 

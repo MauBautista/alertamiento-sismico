@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const sdk = vi.hoisted(() => ({
+  assignableRolesUsersAssignableRolesGet: vi.fn(),
   createUserUsersPost: vi.fn(),
   deleteUserUsersUsernameDelete: vi.fn(),
   listUsersUsersGet: vi.fn(),
@@ -17,7 +18,7 @@ const sdk = vi.hoisted(() => ({
 }));
 vi.mock("@takab/sdk", () => sdk);
 
-import { USERS_MAX_PAGES, userErrorMessage, useUsers } from "./useUsers";
+import { USERS_MAX_PAGES, useAssignableRoles, userErrorMessage, useUsers } from "./useUsers";
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -29,7 +30,7 @@ function u(username: string) {
     username,
     email: `${username}@x.mx`,
     tenant_id: "t-1",
-    role: "soc_operator",
+    role: "tenant_admin",
     site_scope: "*",
     zone_id: "",
     surface: "web",
@@ -87,5 +88,39 @@ describe("userErrorMessage · el 409 depende de la operación", () => {
     const m = userErrorMessage(409, "delete", "no puedes darte de baja a ti mismo");
     expect(m).not.toMatch(/YA EXISTE/);
     expect(m).toMatch(/no puedes darte de baja a ti mismo/);
+  });
+});
+
+// [T-9.20 · D-42] Los roles asignables vienen del servidor, no de una lista a mano.
+describe("useAssignableRoles", () => {
+  it("devuelve los roles con su rótulo tal como llegan", async () => {
+    const items = [
+      { role: "tenant_admin", label: "ADMINISTRADOR" },
+      { role: "brigadista", label: "BRIGADISTA" },
+    ];
+    sdk.assignableRolesUsersAssignableRolesGet.mockResolvedValue({
+      data: { items },
+      response: { status: 200 },
+    });
+    const { result } = renderHook(() => useAssignableRoles(true), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    expect(result.current.roles).toEqual(items);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("un fallo se declara (no una lista vacía muda)", async () => {
+    sdk.assignableRolesUsersAssignableRolesGet.mockResolvedValue({
+      data: undefined,
+      error: { detail: "forbidden" },
+      response: { status: 403 },
+    });
+    const { result } = renderHook(() => useAssignableRoles(true), { wrapper });
+    await waitFor(() => expect(result.current.error).not.toBeNull());
+    expect(result.current.roles).toEqual([]);
+  });
+
+  it("sin `enabled` no pide nada", () => {
+    renderHook(() => useAssignableRoles(false), { wrapper });
+    expect(sdk.assignableRolesUsersAssignableRolesGet).not.toHaveBeenCalled();
   });
 });
