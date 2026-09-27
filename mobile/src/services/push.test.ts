@@ -9,6 +9,8 @@ import {
 
 import {
   configureAndroidChannels,
+  MOVEMENT_CHANNEL_ID,
+  MOVEMENT_SOUND,
   OPS_CHANNEL_ID,
   PANIC_CHANNEL_ID,
   registerDeviceForPush,
@@ -16,6 +18,9 @@ import {
   SEISMIC_SOUND,
   unregisterOwnPushToken,
 } from "./push";
+import type { MeResponse } from "@takab/sdk";
+
+import { useSessionStore } from "@/auth/session.store";
 
 jest.mock("expo-notifications", () => ({
   AndroidImportance: { MAX: 5, DEFAULT: 3 },
@@ -92,12 +97,35 @@ describe("configureAndroidChannels", () => {
     expect(panico?.[1].sound).not.toBe(SEISMIC_SOUND);
   });
 
-  it("android: crea los TRES canales que la nube nombra", async () => {
+  // [T-9.11 · D-39] El movimiento del inmueble despierta a la brigada de
+  // madrugada (MAX + bypass de DND) con voz y vibración PROPIAS: no se viste de sismo.
+  it("android: el canal de movimiento despierta, con voz propia y vibración distinta", async () => {
+    setPlatform("android");
+    await configureAndroidChannels();
+    const calls = mocked.setNotificationChannelAsync.mock.calls;
+    const mov = calls.find(([id]) => id === MOVEMENT_CHANNEL_ID);
+    const sis = calls.find(([id]) => id === SEISMIC_CHANNEL_ID);
+    const pan = calls.find(([id]) => id === PANIC_CHANNEL_ID);
+    expect(MOVEMENT_CHANNEL_ID).toBe("building_movement_v1");
+    expect(mov?.[1]).toEqual(
+      expect.objectContaining({
+        name: "Movimiento en el inmueble",
+        importance: 5,
+        bypassDnd: true,
+        sound: "movimiento_inmueble.wav",
+      }),
+    );
+    expect(MOVEMENT_SOUND).toBe("movimiento_inmueble.wav");
+    expect(mov?.[1].vibrationPattern).not.toEqual(sis?.[1].vibrationPattern);
+    expect(mov?.[1].vibrationPattern).not.toEqual(pan?.[1].vibrationPattern);
+  });
+
+  it("android: crea los CUATRO canales que la nube nombra", async () => {
     setPlatform("android");
     await configureAndroidChannels();
     const ids = mocked.setNotificationChannelAsync.mock.calls.map(([id]) => id);
     expect(new Set(ids)).toEqual(
-      new Set([SEISMIC_CHANNEL_ID, PANIC_CHANNEL_ID, OPS_CHANNEL_ID]),
+      new Set([SEISMIC_CHANNEL_ID, PANIC_CHANNEL_ID, MOVEMENT_CHANNEL_ID, OPS_CHANNEL_ID]),
     );
   });
 
@@ -186,6 +214,66 @@ describe("registerDeviceForPush", () => {
     mocked.getDevicePushTokenAsync.mockResolvedValue({ type: "ios", data: "apns" } as never);
     mockedRegister.mockResolvedValue({ error: { detail: "boom" } });
     await expect(registerDeviceForPush("site-1")).resolves.toBe("error");
+  });
+});
+
+// [D-42] El ADMINISTRADOR ve todo su cliente (`site_scope: "*"`): no tiene un
+// inmueble que vigilar y, sin esto, `registerDeviceForPush(null)` devolvía
+// 'no-site' y su teléfono no despertaba NUNCA. La nube acepta su token sin
+// inmueble (`ROLES_DE_TODO_EL_CLIENTE`) y lo alcanza en cualquier inmueble del
+// tenant. El resto de los roles sin sitio siguen como hoy: 'no-site'.
+describe("registerDeviceForPush · roles de todo el cliente (D-42)", () => {
+  function sesion(role: string, site_scope: "*" | string[]): void {
+    useSessionStore.getState().setAuthenticated({
+      profile: "tactical",
+      idToken: "tok",
+      me: { sub: "u-1", role, site_scope } as unknown as MeResponse,
+    });
+  }
+
+  beforeEach(() => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue({
+      status: "granted",
+      canAskAgain: true,
+    } as never);
+    mocked.getDevicePushTokenAsync.mockResolvedValue({
+      type: "android",
+      data: "fcm-admin",
+    } as never);
+    mockedRegister.mockResolvedValue({ data: { token: "fcm-admin" } });
+  });
+
+  afterEach(() => {
+    useSessionStore.getState().signOut("user");
+  });
+
+  it("tenant_admin con site_scope '*' ⇒ registra con site_id null", async () => {
+    sesion("tenant_admin", "*");
+    await expect(registerDeviceForPush(null)).resolves.toBe("registered");
+    expect(mockedRegister).toHaveBeenCalledWith({
+      body: { platform: "android", token: "fcm-admin", site_id: null },
+    });
+  });
+
+  it("tenant_admin con un sitio ADOPTADO de una push ⇒ sigue registrando null (no se estrecha)", async () => {
+    sesion("tenant_admin", "*");
+    await expect(registerDeviceForPush("sitio-adoptado")).resolves.toBe("registered");
+    expect(mockedRegister).toHaveBeenCalledWith({
+      body: { platform: "android", token: "fcm-admin", site_id: null },
+    });
+  });
+
+  it("brigadista sin sitio ⇒ sigue 'no-site'", async () => {
+    sesion("brigadista", []);
+    await expect(registerDeviceForPush(null)).resolves.toBe("no-site");
+    expect(mockedRegister).not.toHaveBeenCalled();
+  });
+
+  it("un rol que no es de todo el cliente con '*' ⇒ sigue 'no-site'", async () => {
+    sesion("inspector", "*");
+    await expect(registerDeviceForPush(null)).resolves.toBe("no-site");
+    expect(mockedRegister).not.toHaveBeenCalled();
   });
 });
 

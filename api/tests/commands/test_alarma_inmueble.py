@@ -170,14 +170,16 @@ def test_la_tabla_de_precedencia_cubre_TODA_fase_publicada() -> None:
 
 
 def test_el_orden_de_la_tabla_es_el_de_la_ficha() -> None:
-    """alert_active > shaking_concluded > reentry_approved > building_alarm >
-    reentry_blocked > idle. Lo sísmico VIVO manda; la alarma del inmueble le gana
-    al bloqueo porque suena AHORA y el bloqueo es un estado que dura días."""
+    """alert_active > shaking_concluded > building_movement > reentry_approved >
+    building_alarm > reentry_blocked > idle. Lo sísmico VIVO manda —también el
+    movimiento que atiende la brigada (T-9.11)—; la alarma del inmueble le gana al
+    bloqueo porque suena AHORA y el bloqueo es un estado que dura días."""
     from takab_api.commands.alarma_inmueble import PRECEDENCIA
 
     assert PRECEDENCIA == (
         "alert_active",
         "shaking_concluded",
+        "building_movement",
         "reentry_approved",
         "building_alarm",
         "reentry_blocked",
@@ -202,3 +204,13 @@ def test_con_bloqueo_un_panico_TAMPOCO_produce_alert_active() -> None:
         if sismica in ("alert_active", "building_alarm"):
             continue
         assert fase_del_sitio(sismica, ALARMA) != "alert_active", sismica
+
+
+def test_el_movimiento_de_la_brigada_en_la_tabla() -> None:
+    """[T-9.11] El movimiento le gana al reingreso autorizado y a la alarma (es en
+    vivo), y NUNCA a una alerta que ordenó evacuar."""
+    assert fase_del_sitio("reentry_approved", None, movimiento=True) == "building_movement"
+    assert fase_del_sitio("idle", ALARMA, movimiento=True) == "building_movement"
+    assert fase_del_sitio("alert_active", None, movimiento=True) == "alert_active"
+    assert fase_del_sitio("shaking_concluded", None, movimiento=True) == "shaking_concluded"
+    assert fase_del_sitio("idle", None, movimiento=False) == "idle"

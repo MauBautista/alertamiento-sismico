@@ -21,6 +21,8 @@ import { create } from "zustand";
 import { WATCHED_SITE_KEY } from "@/auth/secureTokens";
 import { useSessionStore } from "@/auth/session.store";
 
+import { esDeTodoElCliente } from "./alcanceCliente";
+
 export { WATCHED_SITE_KEY };
 
 /** Lo que se guarda en disco: el sitio Y de quién es. Sin el dueño no se puede
@@ -96,6 +98,28 @@ export async function setWatchedSite(siteId: string): Promise<void> {
   useSitioVigilado.getState().fijar(siteId);
 }
 
+/** [D-42] El rol de TODO el cliente (`tenant_admin` con `site_scope: "*"`) no
+ *  tiene inmueble propio: adopta como vigilado el `site_id` del push que lo
+ *  despertó, para que `useAlertState` consulte ESE `mobile-state` y
+ *  `CrisisWatcher` enrute según la fase del servidor.
+ *
+ *  Se niega para cualquier otra sesión: un ocupante o un táctico con alcance por
+ *  inmueble ya tiene el suyo, y dejar que un push se lo cambie haría que vigilara
+ *  un edificio que no es el suyo. Solo en MEMORIA: no se escribe al disco, para
+ *  que el próximo arranque no herede un edificio de un incidente ya pasado (y el
+ *  registro del token de este rol va siempre sin inmueble — ver `push.ts`).
+ *  Devuelve si lo adoptó. */
+export function adoptarSitioDelPush(siteId: string | null | undefined): boolean {
+  if (typeof siteId !== "string" || siteId === "") {
+    return false;
+  }
+  if (!esDeTodoElCliente(useSessionStore.getState().me as MeResponse | null)) {
+    return false;
+  }
+  useSitioVigilado.getState().fijar(siteId);
+  return true;
+}
+
 /** Sólo para tests: deja el store como recién arrancada la app. */
 export function resetWatchedSiteForTests(): void {
   useSitioVigilado.getState().fijar(null);
@@ -159,6 +183,11 @@ export function useWatchedSiteId(): string | null {
       }
       // Caché ajeno o sin dueño: se IGNORA y decide el servidor.
       const delServidor = siteFromMe(me);
+      if (delServidor === null && esDeTodoElCliente(me)) {
+        // [D-42] Un `/me` refrescado no le quita al administrador el inmueble
+        // que adoptó de un push: el servidor no le da ninguno, no uno distinto.
+        return;
+      }
       useSitioVigilado.getState().fijar(delServidor);
       if (delServidor !== null) {
         // Se re-sella con el dueño correcto: así el próximo arranque sin red lo

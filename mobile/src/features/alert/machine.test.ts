@@ -16,6 +16,7 @@ const PHASES: ServerPhase[] = [
   "reentry_approved",
   "building_alarm",
   "reentry_blocked",
+  "building_movement",
 ];
 
 describe("deriveAlertState — el servidor manda", () => {
@@ -38,6 +39,10 @@ describe("deriveAlertState — el servidor manda", () => {
     // abierto al que reportarse).
     ["reentry_blocked", false, "reentry_blocked"],
     ["reentry_blocked", true, "reentry_blocked"],
+    // [T-9.11 · D-39] Movimiento en el inmueble (sensor propio): no es un sismo
+    // oficial, así que el check-in de vida no lo modifica.
+    ["building_movement", false, "building_movement"],
+    ["building_movement", true, "building_movement"],
   ] as const)("phase=%s, checkin=%s ⇒ %s", (phase, checkin, expected) => {
     expect(deriveAlertState(phase, checkin)).toBe(expected);
   });
@@ -47,6 +52,21 @@ describe("deriveAlertState — el servidor manda", () => {
     // máquina tampoco puede ASCENDER una alarma de inmueble a crisis sísmica.
     for (const checkin of [false, true]) {
       expect(deriveAlertState("building_alarm", checkin)).not.toBe("alert_active");
+    }
+  });
+
+  it("[T-9.11] el movimiento del inmueble JAMÁS se convierte en alerta sísmica ni en alarma", () => {
+    for (const checkin of [false, true]) {
+      expect(deriveAlertState("building_movement", checkin)).not.toBe("alert_active");
+      expect(deriveAlertState("building_movement", checkin)).not.toBe("building_alarm");
+    }
+  });
+
+  it("[T-9.11] ningún camino local produce building_movement sin que el servidor lo diga", () => {
+    for (const phase of PHASES.filter((p) => p !== "building_movement")) {
+      for (const checkin of [false, true]) {
+        expect(deriveAlertState(phase, checkin)).not.toBe("building_movement");
+      }
     }
   });
 
@@ -146,6 +166,8 @@ describe("[T-9.04] faseEnReposo — el ritmo del sondeo", () => {
       "shaking_concluded",
       "reentry_approved",
       "building_alarm",
+      // [T-9.11] el movimiento es un episodio vivo: la brigada va en camino.
+      "building_movement",
     ] as const) {
       expect(faseEnReposo(phase)).toBe(false);
     }

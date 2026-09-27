@@ -103,9 +103,11 @@ def _gabinete(esc: _Escena, eventos: list[dict]) -> tuple[GatewayCtx, str]:
         (sitio, esc.sc.tenant, f"E2E-{sitio[:8]}", SRC_LON, SRC_LAT),
     )
     token = str(uuid.uuid4())
+    # [T-9.11 · D-39] El teléfono es de la BRIGADA: el umbral local solo despierta a
+    # los roles de `movement_alert`, y la escalada a SASMEX, a todo el edificio.
     conn.execute(
         "INSERT INTO push_tokens (push_token_id, tenant_id, user_sub, platform, token, "
-        "site_id) VALUES (%s,%s,%s,'android',%s,%s)",
+        "site_id, role) VALUES (%s,%s,%s,'android',%s,%s,'brigadista')",
         (token, esc.sc.tenant, str(uuid.uuid4()), f"tok-{token}", sitio),
     )
     conn.commit()

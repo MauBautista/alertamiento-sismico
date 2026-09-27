@@ -16,7 +16,7 @@ describe("gateFor — default-deny server-driven", () => {
     });
   });
 
-  it.each(["brigadista", "security_guard", "inspector", "building_admin"])(
+  it.each(["brigadista", "security_guard", "inspector", "building_admin", "tenant_admin"])(
     "%s (RBAC §3: superficie móvil o both) ⇒ grupo tactical",
     (role) => {
       expect(gateFor({ role, surface: "mobile" })).toEqual({ allowed: true, group: "tactical" });
@@ -53,12 +53,14 @@ describe("gateFor — default-deny server-driven", () => {
     });
   });
 
-  it("el set táctico es exactamente el de RBAC §3", () => {
+  // [T-9.11 · D-42] el administrador usa la app táctica completa.
+  it("el set táctico es exactamente el de RBAC §3 + tenant_admin (D-42)", () => {
     expect([...TACTICAL_ROLES].sort()).toEqual([
       "brigadista",
       "building_admin",
       "inspector",
       "security_guard",
+      "tenant_admin",
     ]);
   });
 });

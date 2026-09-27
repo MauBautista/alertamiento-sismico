@@ -71,6 +71,12 @@ import psycopg
 from takab_api import demo_mode
 from takab_api.auth.matrix import roles_with_action
 from takab_api.incident.autoridad import autoriza_evacuacion
+from takab_api.notify.circulo import (
+    ROLES_DE_TODO_EL_CLIENTE,
+    SEVERIDADES_DE_DISPARO,
+    DestinoPush,
+    push_target_for,
+)
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import (
@@ -82,6 +88,7 @@ from takab_api.notify.providers import (
 )
 from takab_api.notify.push import (
     PUSH_CLASS_CRISIS,
+    PUSH_CLASS_MOVEMENT,
     PUSH_CLASS_OPS,
     PUSH_CLASS_PANIC,
     PushDevice,
@@ -101,7 +108,18 @@ _PUSH_PHASE = {
     PUSH_CLASS_CRISIS: "alert_active",
     PUSH_CLASS_OPS: "headcount",
     PUSH_CLASS_PANIC: "building_alarm",
+    # [T-9.11] La brigada abre la pantalla del movimiento; el occupant jamás la recibe.
+    PUSH_CLASS_MOVEMENT: "building_movement",
 }
+
+#: [T-9.11] Cuánto hacia atrás, desde la APERTURA, se buscan subidas (CAUTELA ⇒ DISPARO)
+#: y escaladas (⇒ SASMEX o cuórum). Con `notify_lookback_s` (una hora) un incidente que
+#: seguía abierto más de una hora —un gabinete que escala y se queda en alerta,
+#: `incident/lifecycle.py`— subía sin despertar a nadie. Las dos consultas exigen además
+#: que el incidente siga vivo y que no se haya avisado ya, así que la ventana larga no
+#: repite avisos; la cota existe para que restaurar una base vieja no despierte a nadie
+#: por incidentes de otro día.
+_VENTANA_DE_SUBIDA_S = 24 * 3600.0
 
 # Advisory lock propio (≠ engine 0x…1119, ≠ dictamen 0x…1120).
 _NOTIFY_LOCK_KEY = 0x7A4B_1121
@@ -268,12 +286,28 @@ LEFT JOIN seismic_events e ON e.event_id = i.event_id
 WHERE i.opened_at >= %(since)s
   AND i.opened_at <= %(now)s
   AND i.state <> 'closed'
-  AND EXISTS (
-        SELECT 1 FROM notification_jobs j
-        WHERE j.incident_id = i.incident_id
-          AND j.channel = 'push'
-          AND j.action_id IS NULL
-          AND j.target->>'autoriza' = 'false'
+  AND (
+        EXISTS (
+          SELECT 1 FROM notification_jobs j
+          WHERE j.incident_id = i.incident_id
+            AND j.channel = 'push'
+            AND j.action_id IS NULL
+            AND j.target->>'autoriza' = 'false'
+        )
+        -- [T-9.11] Un local en CAUTELA no lleva push (D-39), así que no dejaba el
+        -- rastro de arriba: si escalaba a SASMEX o a cuórum, el edificio no se
+        -- enteraba nunca. Cuenta si ya pasó por `_enqueue` (tiene jobs) y no tiene
+        -- push de incidente.
+        OR (
+          i.opened_trigger = 'local_threshold'
+          AND EXISTS (SELECT 1 FROM notification_jobs j WHERE j.incident_id = i.incident_id)
+          AND NOT EXISTS (
+                SELECT 1 FROM notification_jobs j
+                WHERE j.incident_id = i.incident_id
+                  AND j.channel = 'push'
+                  AND j.action_id IS NULL
+              )
+        )
       )
   AND NOT EXISTS (
         SELECT 1 FROM incident_actions a
@@ -430,18 +464,35 @@ WHERE NOT EXISTS (
 """
 
 # --- push (T-2.04) — targeting por SITIO al despachar (lista siempre fresca).
-_PUSH_EXISTS_SQL = """
-SELECT 1 FROM push_tokens
-WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
-LIMIT 1
+# [T-9.11 · D-42] «Del sitio» incluye los teléfonos del CLIENTE ENTERO: los del
+# administrador, registrados sin inmueble (`circulo.ROLES_DE_TODO_EL_CLIENTE`). Con
+# `site_id = <sitio>` a secas, el administrador —alcance `*`— no recibía nada.
+_DEL_SITIO = """
+      tenant_id = %(tenant)s AND revoked_at IS NULL
+  AND (site_id = %(site)s
+       OR (site_id IS NULL AND role = ANY(%(roles_cliente)s::text[])))
 """
 
-_PUSH_DEVICES_SQL = """
+_PUSH_EXISTS_SQL = (
+    """
+SELECT 1 FROM push_tokens
+WHERE"""
+    + _DEL_SITIO
+    + """
+LIMIT 1
+"""
+)
+
+_PUSH_DEVICES_SQL = (
+    """
 SELECT push_token_id, token, platform, endpoint_arn
 FROM push_tokens
-WHERE site_id = %(site)s AND tenant_id = %(tenant)s AND revoked_at IS NULL
+WHERE"""
+    + _DEL_SITIO
+    + """
 ORDER BY created_at
 """
+)
 
 # [T-2.147.c · D-05] Pánicos que la BRIGADA no acusó dentro del plazo.
 #
@@ -471,9 +522,16 @@ WHERE i.trigger = 'manual'
   AND i.state = 'open'
   AND i.opened_at <= %(elegible_desde)s
   AND i.opened_at >= %(no_mas_viejo_que)s
+  -- [T-9.11 · D-42] Sólo apaga el aviso el acuse de quien NO es de monitoreo. El
+  -- administrador tiene la app táctica completa y puede acusar por la puerta de la
+  -- brigada, pero también acusa por la del SOC: si su acuse contara aquí, una
+  -- puerta de monitoreo apagaría el escalado sin que nadie bajara a mirar. Un acuse
+  -- sin rol (anterior a que el endpoint lo guardara) sigue contando: entonces esa
+  -- puerta sólo la cruzaban roles de campo.
   AND NOT EXISTS (
         SELECT 1 FROM incident_actions a
         WHERE a.incident_id = i.incident_id AND a.kind = 'tactical_ack'
+          AND COALESCE(a.payload->>'role', '') <> ALL(%(roles_monitoreo)s::text[])
       )
   AND NOT EXISTS (
         SELECT 1 FROM incident_actions a
@@ -525,17 +583,28 @@ VALUES (%(tenant)s, %(incident)s, 'push', 'parallel', 0, %(target)s, %(due_at)s)
 # `DISTINCT` porque `user_zone_assignments` tiene PK `(user_id, site_id)` pero el
 # mismo usuario puede tener varios dispositivos; sin él, un táctico con teléfono
 # y tablet contaría dos veces en el censo de entregas.
+#
+# [T-9.11] Y el rol del TELÉFONO manda cuando se conoce. Los tácticos no tienen fila en
+# `user_zone_assignments` (esa tabla es la zona del ocupante), así que con el JOIN a
+# secas el círculo del movimiento no encontraba a ningún brigadista. `push_tokens.role`
+# (T-9.05) es el rol de quien tiene el aparato AHORA; la asignación queda de respaldo
+# para las filas anteriores a la 0071, que no lo llevan.
 _PUSH_DEVICES_BY_ROLE_SQL = """
 SELECT DISTINCT p.push_token_id, p.token, p.platform, p.endpoint_arn, p.created_at
 FROM push_tokens p
-JOIN user_zone_assignments a
+LEFT JOIN user_zone_assignments a
   ON a.user_id = p.user_sub
  AND a.site_id = p.site_id
  AND a.tenant_id = p.tenant_id
-WHERE p.site_id = %(site)s
-  AND p.tenant_id = %(tenant)s
+WHERE p.tenant_id = %(tenant)s
   AND p.revoked_at IS NULL
-  AND a.role = ANY(%(roles)s::text[])
+  AND (
+        (p.site_id = %(site)s AND COALESCE(p.role, a.role) = ANY(%(roles)s::text[]))
+        -- [T-9.11 · D-42] el teléfono del administrador, sin inmueble.
+     OR (p.site_id IS NULL
+         AND p.role = ANY(%(roles)s::text[])
+         AND p.role = ANY(%(roles_cliente)s::text[]))
+      )
 ORDER BY p.created_at
 """
 
@@ -544,9 +613,13 @@ ORDER BY p.created_at
 # app registraba con `site_id: null` y los dos filtros de arriba comparan
 # `site_id = <uuid>`, que NULL no satisface jamás. Un token así existe, parece
 # un teléfono cubierto y no recibe nada.
+# [T-9.11] El teléfono del administrador va sin inmueble A PROPÓSITO: no es un huérfano.
 _TENANT_TOKENS_SQL = """
 SELECT count(*) AS total,
-       count(*) FILTER (WHERE site_id IS NULL) AS sin_sitio
+       count(*) FILTER (
+         WHERE site_id IS NULL
+           AND (role IS NULL OR role <> ALL(%(roles_cliente)s::text[]))
+       ) AS sin_sitio
 FROM push_tokens
 WHERE tenant_id = %(tenant)s AND revoked_at IS NULL
 """
@@ -598,6 +671,10 @@ def run_notify_pass(
 
     counts["enqueued"] = _enqueue(
         conn, settings, config_cache, counts, now=now, lookback_s=lookback
+    )
+    # [T-9.11] Un local que subió de CAUTELA a DISPARO despierta ahora a su brigada.
+    counts["enqueued"] += _enqueue_movement_upgrades(
+        conn, settings, counts, now=now, lookback_s=lookback
     )
     # [T-9.03] Va DESPUÉS de `_enqueue`: así un incidente que ya nace autorizando
     # recibe su push con `autoriza=true` y no se «escala» en la misma pasada.
@@ -692,7 +769,7 @@ def _enqueue(
         # FRESCA al despachar, como el secret del webhook). Un tenant sin
         # cascada pero con app instalada igual despierta teléfonos.
         has_devices = conn.execute(
-            _PUSH_EXISTS_SQL, {"site": row["site_id"], "tenant": row["tenant_id"]}
+            _PUSH_EXISTS_SQL, _params_del_sitio(row["site_id"], row["tenant_id"])
         ).fetchone()
         if has_devices is not None:
             # [T-9.03] Qué se le DIJO al edificio con este push: si autorizaba
@@ -701,10 +778,16 @@ def _enqueue(
             autoriza = autoriza_evacuacion(
                 row["trigger"], _node_count(row["node_count"]), settings.quorum_min_nodes
             )
-            destinations = {
-                **destinations,
-                "push": {"site_id": str(row["site_id"]), "autoriza": autoriza},
-            }
+            # [T-9.11 · D-39] Y A QUIÉN: la tabla pura de `notify/circulo.py`. Un local
+            # en CAUTELA o un pánico no llevan push de incidente por aquí.
+            destino = push_target_for(
+                trigger=row["trigger"], severity=row["severity"], autoriza=autoriza
+            )
+            if destino is not None:
+                destinations = {
+                    **destinations,
+                    "push": _push_target(row["site_id"], destino, autoriza=autoriza),
+                }
         else:
             # [T-2.109] Aquí estaba el silencio: sin dispositivos no se encolaba
             # push y la pasada seguía como si nada, así que un edificio entero
@@ -741,6 +824,106 @@ def _enqueue(
                 },
             )
             inserted += result.rowcount
+    return inserted
+
+
+def _params_del_sitio(site_id: object, tenant_id: object) -> dict:
+    """Parámetros de `_DEL_SITIO`: el sitio, su tenant y los roles del cliente entero."""
+    return {
+        "site": site_id,
+        "tenant": tenant_id,
+        "roles_cliente": list(ROLES_DE_TODO_EL_CLIENTE),
+    }
+
+
+def _push_target(site_id: object, destino: DestinoPush, *, autoriza: bool) -> dict:
+    """El `target` de un push de incidente. Sin `roles` = TODO el inmueble."""
+    target: dict = {
+        "site_id": str(site_id),
+        "autoriza": autoriza,
+        "push_class": destino.push_class,
+    }
+    if destino.roles is not None:
+        target["roles"] = list(destino.roles)
+    return target
+
+
+# [T-9.11] Un local que SUBE de CAUTELA a DISPARO después de su primera pasada. `_enqueue`
+# sólo mira incidentes sin jobs, así que el que nació en `watch` (sin push, D-39) y ya
+# tenía su cascada de correo no volvía a considerarse: la brigada no se enteraba
+# nunca de que el golpe pasó a dos canales. Lo que autoriza no entra aquí: eso es una
+# ESCALADA y la lleva `_enqueue_escalations`, a todo el inmueble.
+_MOVEMENT_UPGRADE_SQL = """
+SELECT i.incident_id, i.tenant_id, i.site_id, i.severity, i.trigger, i.opened_at,
+       e.meta->>'node_count' AS node_count
+FROM incidents i
+LEFT JOIN seismic_events e ON e.event_id = i.event_id
+WHERE i.opened_at >= %(since)s
+  AND i.opened_at <= %(now)s
+  AND i.state <> 'closed'
+  AND i.trigger = 'local_threshold'
+  AND i.severity = ANY(%(disparo)s::text[])
+  AND EXISTS (SELECT 1 FROM notification_jobs j WHERE j.incident_id = i.incident_id)
+  AND NOT EXISTS (
+        SELECT 1 FROM notification_jobs j
+        WHERE j.incident_id = i.incident_id AND j.channel = 'push' AND j.action_id IS NULL
+      )
+ORDER BY i.opened_at, i.incident_id
+"""
+
+
+def _enqueue_movement_upgrades(
+    conn: psycopg.Connection,
+    settings: Settings,
+    counts: dict[str, int],
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-9.11] El push MOVEMENT de un local que llegó a DISPARO tras su primera pasada.
+
+    Idempotente por `uq_notification_jobs_incident`: es el MISMO job de incidente que
+    habría encolado `_enqueue` si el incidente hubiera nacido en DISPARO.
+    """
+    rows = conn.execute(
+        _MOVEMENT_UPGRADE_SQL,
+        {
+            "since": now - timedelta(seconds=max(lookback_s, _VENTANA_DE_SUBIDA_S)),
+            "now": now,
+            "disparo": sorted(SEVERIDADES_DE_DISPARO),
+        },
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        autoriza = autoriza_evacuacion(
+            row["trigger"], _node_count(row["node_count"]), settings.quorum_min_nodes
+        )
+        destino = push_target_for(
+            trigger=row["trigger"], severity=row["severity"], autoriza=autoriza
+        )
+        if autoriza or destino is None or destino.push_class != PUSH_CLASS_MOVEMENT:
+            continue
+        if (
+            conn.execute(
+                _PUSH_EXISTS_SQL, _params_del_sitio(row["site_id"], row["tenant_id"])
+            ).fetchone()
+            is None
+        ):
+            continue  # sin teléfonos: el aviso de «nadie a quien avisar» ya lo dejó `_enqueue`
+        inserted += conn.execute(
+            _INSERT_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "channel": "push",
+                "mode": "parallel",
+                "position": 0,
+                "target": json.dumps(_push_target(row["site_id"], destino, autoriza=False)),
+                "due_at": now,  # vence YA: el golpe acaba de pasar a dos canales
+                "deadline_at": None,
+            },
+        ).rowcount
+    counts["movement_upgraded"] = counts.get("movement_upgraded", 0) + inserted
     return inserted
 
 
@@ -791,7 +974,7 @@ def _enqueue_escalations(
     params = resolve_params(settings)
     rows = conn.execute(
         _ESCALATION_CANDIDATES_SQL,
-        {"since": now - timedelta(seconds=lookback_s), "now": now},
+        {"since": now - timedelta(seconds=max(lookback_s, _VENTANA_DE_SUBIDA_S)), "now": now},
     ).fetchall()
     inserted = 0
     for row in rows:
@@ -990,6 +1173,7 @@ def _enqueue_panic_ack_timeout(
             # Con `lookback` a secas, un plazo mayor que la ventana haría que el
             # aviso no saltara nunca.
             "no_mas_viejo_que": now - timedelta(seconds=plazo + lookback_s + _MARGEN_VENTANA_S),
+            "roles_monitoreo": list(roles_with_action("ack_incident")),
         },
     ).fetchall()
     inserted = 0
@@ -1278,13 +1462,12 @@ def _dispatch_push(
         sql, params = (
             _PUSH_DEVICES_BY_ROLE_SQL,
             {
-                "site": site_id,
-                "tenant": row["tenant_id"],
+                **_params_del_sitio(site_id, row["tenant_id"]),
                 "roles": list(roles),
             },
         )
     else:
-        sql, params = _PUSH_DEVICES_SQL, {"site": site_id, "tenant": row["tenant_id"]}
+        sql, params = _PUSH_DEVICES_SQL, _params_del_sitio(site_id, row["tenant_id"])
     devices = [
         PushDevice(
             push_token_id=str(r["push_token_id"]),
@@ -1552,7 +1735,10 @@ def _record_no_recipients(
     acreditación saldría verde con todos los teléfonos huérfanos y nadie sabría
     por qué no sonó ninguno.
     """
-    census = conn.execute(_TENANT_TOKENS_SQL, {"tenant": tenant_id}).fetchone()
+    census = conn.execute(
+        _TENANT_TOKENS_SQL,
+        {"tenant": tenant_id, "roles_cliente": list(ROLES_DE_TODO_EL_CLIENTE)},
+    ).fetchone()
     total = int(census["total"]) if census else 0
     sin_sitio = int(census["sin_sitio"]) if census else 0
     huerfanos = sin_sitio > 0

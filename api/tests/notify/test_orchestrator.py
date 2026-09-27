@@ -1517,7 +1517,8 @@ def test_el_token_BIEN_registrado_si_es_destinatario(scenario: _Scenario) -> Non
     encola push y NO escribe «sin destinatarios». Sin esto, el test de la mina
     pasaría igual con el canal push roto de raíz."""
     scenario.seed_config()
-    iid = scenario.seed_incident()
+    # [T-9.11 · D-39] SASMEX: un umbral local ya no despierta a un teléfono sin rol.
+    iid = scenario.seed_incident(trigger="sasmex")
     _seed_push_token(scenario, site=_site_of(scenario, iid))
 
     providers = _providers()

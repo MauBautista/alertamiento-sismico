@@ -72,7 +72,12 @@ class _Escena:
         )
 
     def incidente(self, *, trigger: str, severity: str = "critical") -> str:
-        """Incidente con UN teléfono registrado en su inmueble (sin él no hay push)."""
+        """Incidente con UN teléfono registrado en su inmueble (sin él no hay push).
+
+        [T-9.11 · D-39] El teléfono es de un BRIGADISTA: desde F1 el umbral local en
+        DISPARO solo despierta a la brigada (MOVEMENT), así que con un teléfono sin
+        rol el «push de advertencia» no llegaba a nadie. Que el OCUPANTE quede fuera
+        y que la escalada sí le llegue lo prueba `test_movimiento_solo_brigada.py`."""
         incidente = self.sc.seed_incident(trigger=trigger, severity=severity)
         sitio = self.conn.execute(
             "SELECT site_id FROM incidents WHERE incident_id = %s", (incidente,)
@@ -80,7 +85,7 @@ class _Escena:
         token = str(uuid.uuid4())
         self.conn.execute(
             "INSERT INTO push_tokens (push_token_id, tenant_id, user_sub, platform, token, "
-            "site_id) VALUES (%s,%s,%s,'android',%s,%s)",
+            "site_id, role) VALUES (%s,%s,%s,'android',%s,%s,'brigadista')",
             (token, self.sc.tenant, str(uuid.uuid4()), f"tok-{token}", sitio),
         )
         self.conn.commit()

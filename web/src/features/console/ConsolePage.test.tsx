@@ -243,6 +243,8 @@ describe("ConsolePage", () => {
           manage_privacy_erasure: false,
           cctv_read: false,
           cctv_video: false,
+          // [T-9.11 · D-42] El administrador tiene la app táctica y el aviso de movimiento.
+          movement_alert: true,
         },
       },
     });
@@ -741,6 +743,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           manage_privacy_erasure: false,
           cctv_read: false,
           cctv_video: false,
+          movement_alert: false,
         },
       },
     });

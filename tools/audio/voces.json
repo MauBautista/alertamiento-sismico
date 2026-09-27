@@ -1,0 +1,28 @@
+{
+  "piper": {
+    "paquete": "piper-tts==1.3.0",
+    "onnxruntime": "onnxruntime==1.30.0",
+    "licencia": "GPL-3.0-or-later (metadatos de piper-tts 1.3.0; OHF-Voice/piper1-gpl; incluye espeak-ng, GPL-3.0). Se invoca aislado con uv; NO es dependencia de ningún proyecto del repo."
+  },
+  "modelo": {
+    "nombre": "es_MX-claude-high",
+    "url_base": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_MX/claude/high/",
+    "onnx_sha256": "3ef40a71ea63852cd8ab7e6fa7d2ecdcfa67a0b47c9c48e3f10e02ee02083ea0",
+    "json_sha256": "1afc81f703c0e4cb3b4d7c0dca096b8b54a98806807f0170cf5eb5557723c12d",
+    "licencia": "apache-2.0 (declarada en el MODEL_CARD de rhasspy/piper-voices; dataset HirCoir/Piper-TTS-Spanish)",
+    "alternativa": "es_MX-ald-medium (dataset con licencia Unlicense; onnx sha256 019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63, json sha256 5a71498158e04afc8099bfd019c7e87c68eb9d042505a2b1a87e5c1ac2b1a61d)"
+  },
+  "voces": [
+    {
+      "id": "takab-voz-movimiento-v1",
+      "fichero": "movimiento_inmueble.wav",
+      "texto": "Se detectó un movimiento en el inmueble. Verifique.",
+      "semilla": 40,
+      "length_scale": 1.0,
+      "noise_scale": 0.667,
+      "noise_w_scale": 0.8,
+      "rutas": ["mobile/assets/sounds/movimiento_inmueble.wav"],
+      "max_duracion_s": 4.0
+    }
+  ]
+}

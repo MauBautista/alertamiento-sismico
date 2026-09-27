@@ -62,7 +62,14 @@ export default function AlarmaInmueble() {
   }
   // La fase del SERVIDOR dejó de ser alarma del inmueble. Si lo que hay ahora es
   // un sismo, el CrisisWatcher enruta; aquí solo se suelta la pantalla.
-  if (state !== null && state !== "building_alarm") {
+  //
+  // [T-9.11 · D-39] Excepción: durante un MOVIMIENTO la nube manda también
+  // `building_alarm` (solo a la brigada) y /movimiento enlaza aquí. Con la
+  // alarma presente, esta pantalla se sostiene aunque la fase sea la del
+  // movimiento; sin ella, se suelta como siempre.
+  const alarmaDuranteMovimiento =
+    state === "building_movement" && data?.building_alarm != null;
+  if (state !== null && state !== "building_alarm" && !alarmaDuranteMovimiento) {
     return <Redirect href="/" />;
   }
 

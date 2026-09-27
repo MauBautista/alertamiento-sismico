@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_mobile_surface
+from takab_api.notify.circulo import ROLES_DE_TODO_EL_CLIENTE
 from takab_api.queries import mobile as q
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.schemas.mobile import (
@@ -53,6 +54,11 @@ async def register_push_token(
     # con el UUID del sitio de OTRO tenant y recibir sus push CRISIS/OPS.
     if body.site_id is not None:
         await q.assert_site_access(conn, claims, body.site_id)
+    elif claims.role in ROLES_DE_TODO_EL_CLIENTE:
+        # [T-9.11 · D-42] El administrador ve TODO su cliente: su teléfono no es de un
+        # inmueble y va sin él a propósito. La nube lo alcanza en cualquier sitio de
+        # su tenant (`notify/orchestrator.py::_DEL_SITIO`); no es un huérfano.
+        pass
     else:
         # [T-2.109] Se ACEPTA sin inmueble (el contrato no cambia: un dispositivo
         # puede registrarse antes de canjear su código), pero no pasa por

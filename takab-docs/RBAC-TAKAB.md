@@ -328,15 +328,22 @@
 | Formulario de triage de daños | — | ✅ | ✅ | ✅ (firma) | — |
 | Headcount / pase de lista | — | ✅ | ✅ | — | ✅ |
 | Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
+| Aviso con voz de **movimiento del inmueble** (umbral local en DISPARO, `D-39`) | — | ✅ | ✅ | ✅ | ✅ |
 
 > **[T-2.03] Esta matriz es EJECUTABLE:** las celdas con acción se materializan en
 > `api/src/takab_api/auth/matrix.py` (`checkin_submit`, `roster_read`,
 > `damage_report_submit`, `evidence_upload`, `siren_silence`, `manual_activate`,
-> `enrollment_manage`, `panic_vote`, `dictamen_read`) y el parity test
+> `enrollment_manage`, `panic_vote`, `dictamen_read`, `panel_read`, `movement_alert`) y el parity test
 > `tests/auth/test_matrix.py::test_mobile_actions_match_rbac_section_3` compara el
 > código contra esta tabla celda a celda — si divergen, CI falla (misma disciplina
 > que §2 para la web). El voto de pánico del occupant (quórum 2/30 s) es la acción
 > `panic_vote`; su endpoint llega en T-2.13.
+>
+> **[T-9.11 · D-39 · D-42]** El aviso de movimiento (`movement_alert`) es el push con voz
+> «Se detectó un movimiento en el inmueble. Verifique.» y la fase `building_movement` de
+> `mobile-state`: el ocupante **nunca** lo recibe. Y el **administrador** (`tenant_admin`)
+> tiene desde F1 la app táctica completa: todas las celdas de `brigadista` de esta tabla
+> más el aviso de movimiento, además de su consola web (§2).
 
 ---
 

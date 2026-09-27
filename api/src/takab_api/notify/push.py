@@ -40,6 +40,12 @@ PUSH_CLASS_OPS = "OPS"
 #: presta el tono del SASMEX a algo que SASMEX no dijo (el defecto de T-2.104), y
 #: `OPS` va en prioridad normal, que de madrugada no despierta a nadie.
 PUSH_CLASS_PANIC = "PANIC"
+#: [T-9.11 · D-39] Movimiento de UN SOLO inmueble en DISPARO, sin SASMEX ni cuórum.
+#: Solo a la brigada (`movement_alert` en la matriz). Despierta —prioridad alta, salta
+#: el No Molestar en Android por su canal— pero NO es la alerta sísmica: ni el tono ni
+#: el texto de CRISIS. Suena la VOZ «Se detectó un movimiento en el inmueble.
+#: Verifique.» (`shared/audio/MANIFEST.json`), para que quien la oye sepa qué hacer.
+PUSH_CLASS_MOVEMENT = "MOVEMENT"
 
 # Texto visible FIJO y genérico (lockscreen): jamás nombres de sitio ni datos.
 _ALERT_TEXT = {
@@ -54,6 +60,10 @@ _ALERT_TEXT = {
     PUSH_CLASS_PANIC: {
         "title": "ALARMA DEL INMUEBLE",
         "body": "Activación manual. Abra la app.",
+    },
+    PUSH_CLASS_MOVEMENT: {
+        "title": "MOVIMIENTO EN EL INMUEBLE",
+        "body": "Se detectó un movimiento. Verifique el inmueble.",
     },
 }
 
@@ -101,6 +111,16 @@ _DELIVERY_STYLE = {
         # tono del SASMEX ni el sonido crítico.
         "sound": "default",
         "channel_id": "building_alarm",
+    },
+    PUSH_CLASS_MOVEMENT: {
+        # Despierta a la brigada de madrugada: alta prioridad y time-sensitive…
+        "interruption_level": "time-sensitive",
+        "android_priority": "high",
+        # …con SU voz, nunca el tono del SASMEX ni el sonido crítico de Apple (que se
+        # pidió para alertamiento sísmico). El canal lleva versión por la misma razón
+        # que `seismic_alert_v2`: el sonido de un canal Android es inmutable.
+        "sound": "movimiento_inmueble.wav",
+        "channel_id": "building_movement_v1",
     },
 }
 

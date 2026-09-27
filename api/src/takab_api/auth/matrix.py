@@ -186,6 +186,13 @@ ACTIONS: tuple[str, ...] = (
     # El occupant NO lo recibe (§3 da "—"): su superficie es crisis/check-in, no la
     # operación del gabinete. Gatea GET /incidents/{id}/actions en superficie móvil.
     "panel_read",
+    # [T-9.11 · D-39] ``movement_alert`` — recibir el aviso con voz de un MOVIMIENTO de
+    # un solo inmueble en DISPARO (umbral local sin SASMEX ni cuórum) y atenderlo en la
+    # app. Es el círculo del push MOVEMENT (`notify/circulo.py`) y de la fase
+    # ``building_movement`` de `mobile-state`: brigada, inspector y administración del
+    # inmueble. El occupant NO, y la ausencia es la decisión: el cliente pidió no
+    # difundir el pánico por lo que sólo siente su edificio.
+    "movement_alert",
     # [T-2.71] Abrir una VENTANA DE MANTENIMIENTO sobre un gabinete: silencia las
     # alarmas de on-call de ESE aparato mientras dure la intervención. Es un acto
     # administrativo del tenant (superadmin/tenant_admin), el mismo círculo que
@@ -310,6 +317,7 @@ def _actions(
     panic_vote: bool = False,
     dictamen_read: bool = False,
     panel_read: bool = False,
+    movement_alert: bool = False,
     maintenance_window: bool = False,
     platform_maintenance_window: bool = False,
     deploy_firmware: bool = False,
@@ -348,6 +356,7 @@ def _actions(
         "panic_vote": panic_vote,
         "dictamen_read": dictamen_read,
         "panel_read": panel_read,
+        "movement_alert": movement_alert,
         "maintenance_window": maintenance_window,
         "platform_maintenance_window": platform_maintenance_window,
         "deploy_firmware": deploy_firmware,
@@ -431,6 +440,17 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # las personas de SU inmueble y el responsable de esos datos es él.
         cctv_read=True,
         cctv_video=True,
+        # [T-9.11 · D-42] El ADMINISTRADOR tiene la app táctica COMPLETA: las acciones
+        # de campo del brigadista, y el aviso de movimiento que tiene que atender.
+        checkin_submit=True,
+        roster_read=True,
+        damage_report_submit=True,
+        evidence_upload=True,
+        siren_silence=True,
+        manual_activate=True,
+        dictamen_read=True,
+        panel_read=True,
+        movement_alert=True,
     ),
     # [T-3.12.c] El SOC opera el incidente: necesita las métricas Y el clip, porque la
     # pregunta que el vídeo contesta —«¿están saliendo o están atrapados?»— es suya y es
@@ -458,6 +478,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manual_activate=True,
         dictamen_read=True,
         panel_read=True,
+        movement_alert=True,
         # [T-3.12.c] Métricas y las cuatro capturas, que es lo que sostiene un dictamen.
         # El CLIP no: un perito estructural no necesita once minutos de caras para decir
         # si el edificio es habitable, y `B.4` pide el acceso lo más estrecho posible.
@@ -476,6 +497,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         enrollment_manage=True,
         dictamen_read=True,
         panel_read=True,
+        movement_alert=True,
         # [T-3.12.c] Las dos: administra el inmueble y la evacuación es de su gente.
         cctv_read=True,
         cctv_video=True,
@@ -491,6 +513,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manual_activate=True,
         dictamen_read=True,
         panel_read=True,
+        movement_alert=True,
     ),
     "security_guard": _actions(
         checkin_submit=True,
@@ -501,6 +524,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         manual_activate=True,
         dictamen_read=True,
         panel_read=True,
+        movement_alert=True,
     ),
     # [T-2.03] occupant: SOLO su check-in y su voto de pánico (quórum 2/30 s).
     "occupant": _actions(checkin_submit=True, panic_vote=True),

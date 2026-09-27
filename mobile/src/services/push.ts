@@ -12,6 +12,9 @@ import {
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
+import { useSessionStore } from "@/auth/session.store";
+
+import { esDeTodoElCliente } from "./alcanceCliente";
 import { type PermissionSnapshot } from "./alertability";
 
 /** Fichero empaquetado por el plugin `expo-notifications` de `app.json`. Es el
@@ -52,6 +55,20 @@ const SEISMIC_CHANNEL_ID_LEGACY = "seismic_alert";
 export const PANIC_CHANNEL_ID = "building_alarm";
 export const OPS_CHANNEL_ID = "ops";
 
+/** [T-9.11 · D-39] Movimiento detectado por el sensor PROPIO del inmueble.
+ *
+ * NO es una alerta sísmica oficial —una estación sola no ordena evacuar— pero la
+ * brigada tiene que ir a verificar, también a las 3 a.m.: por eso despierta como
+ * el sísmico (MAX + bypass de No Molestar) y NO suena como él. Lleva su propio
+ * audio de voz (`movimiento_inmueble.wav`) y su propia vibración: vestir de
+ * sismo un aviso local es el defecto de T-2.104.
+ *
+ * Solo lo reciben los roles con `movement_alert` (la nube filtra); el ocupante no.
+ * Como todo canal Android, su importancia y su sonido son inmutables tras
+ * crearlo: si cambian, `_v2` — nunca editar en sitio. */
+export const MOVEMENT_CHANNEL_ID = "building_movement_v1";
+export const MOVEMENT_SOUND = "movimiento_inmueble.wav";
+
 /** Canales Android (idempotente). */
 export async function configureAndroidChannels(): Promise<void> {
   if (Platform.OS !== "android") {
@@ -74,6 +91,16 @@ export async function configureAndroidChannels(): Promise<void> {
     bypassDnd: true,
     sound: "default",
     vibrationPattern: [0, 200, 200, 200, 200, 200, 200, 200],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+  // Despierta a la brigada (MAX + bypass de DND) con voz propia y un patrón de
+  // vibración largo-corto que no se confunde con el sísmico ni con el de pánico.
+  await Notifications.setNotificationChannelAsync(MOVEMENT_CHANNEL_ID, {
+    name: "Movimiento en el inmueble",
+    importance: Notifications.AndroidImportance.MAX,
+    bypassDnd: true,
+    sound: MOVEMENT_SOUND,
+    vibrationPattern: [0, 800, 300, 200, 300, 800],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
   await Notifications.setNotificationChannelAsync(OPS_CHANNEL_ID, {
@@ -147,7 +174,13 @@ export async function registerDeviceForPush(siteId: string | null): Promise<Push
   } catch (err) {
     console.warn("push: no se pudieron configurar los canales de Android", err);
   }
-  if (!siteId) {
+  // [D-42] El rol de TODO el cliente (tenant_admin con `site_scope: "*"`) se
+  // registra SIN inmueble, siempre: la nube lo alcanza en cualquier inmueble de
+  // su tenant. Aunque haya ADOPTADO un sitio de una push (para ver ese
+  // incidente), registrar ese sitio lo estrecharía a un solo edificio. El rol se
+  // lee de la sesión viva —no de un parámetro— para no cambiar la firma.
+  const deTodoElCliente = esDeTodoElCliente(useSessionStore.getState().me);
+  if (!siteId && !deTodoElCliente) {
     // Sin inmueble no hay a quién pertenecer: un token con `site_id: null` no es
     // destinatario de nada. Registrarlo dejaría una fila que PARECE un teléfono
     // cubierto y no lo es (regla de oro 7). Se declara y se reintenta solo, en
@@ -162,7 +195,7 @@ export async function registerDeviceForPush(siteId: string | null): Promise<Push
       body: {
         platform: Platform.OS === "ios" ? "ios" : "android",
         token,
-        site_id: siteId,
+        site_id: deTodoElCliente ? null : siteId,
       },
     });
     if (res.error) {

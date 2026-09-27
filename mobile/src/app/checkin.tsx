@@ -76,6 +76,12 @@ export default function Checkin() {
   if (state === "idle" || state === "reentry_approved") {
     return <Redirect href="/" />;
   }
+  // [T-9.11 · D-39] Movimiento del inmueble: hay incidente abierto pero NO es un
+  // sismo oficial y no hay check-in de vida que pedir. Su pantalla rechaza a su
+  // vez al ocupante (la nube no se la sirve, y la app no se fía).
+  if (state === "building_movement") {
+    return <Redirect href="/movimiento" />;
+  }
   // [T-9.04] El bloqueo PERSISTENTE del servidor llega con el incidente ya
   // CERRADO: aquí no queda check-in que enviar, y el vacío de abajo («no reporta
   // ninguna sacudida») sería cierto y engañoso para quien acaba de leer el

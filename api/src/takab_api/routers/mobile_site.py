@@ -26,12 +26,13 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
-from takab_api.auth.matrix import roles_with_action
+from takab_api.auth.matrix import allowed_actions, roles_with_action
 from takab_api.commands.alarma_inmueble import OrdenSirena, fase_del_sitio, suena_la_alarma
 from takab_api.commands.quorum_actuation import QUORUM_ACTOR_UUID
 from takab_api.compliance import mobile_projection, parse_document
 from takab_api.demo_mode import ventana_viva as demo_mode_vivo
 from takab_api.incident.autoridad import autoriza_evacuacion, params_autoriza_evacuacion_sql
+from takab_api.notify.circulo import SEVERIDADES_DE_DISPARO
 from takab_api.queries import mobile as q
 from takab_api.reingreso import HABITABLES, IncidenteCerrado, RazonBloqueo, deriva_reingreso
 from takab_api.routers._common import http_error, integrity_error
@@ -350,7 +351,34 @@ async def mobile_state(
         vigencia_s=settings.building_alarm_max_s,
         sin_enlace_s=settings.sin_enlace_min * 60.0,
     )
-    phase = fase_del_sitio(phase, alarma)
+    # [T-9.11 · D-39] EL MOVIMIENTO, SOLO PARA LA BRIGADA. Un umbral local de una
+    # estación en DISPARO no ordena evacuar (T-2.105) y el ocupante sigue sin verlo;
+    # quien tiene `movement_alert` sí, con el incidente para atenderlo (acuse y
+    # reporte de daños). La precedencia la decide la tabla de `fase_del_sitio`.
+    movimiento_row = None
+    if allowed_actions(claims.role).get("movement_alert"):
+        movimiento_row = (
+            await conn.execute(
+                q.OPEN_MOVEMENT,
+                {
+                    "site": str(site_id),
+                    "disparo": sorted(SEVERIDADES_DE_DISPARO),
+                    **params_autoriza_evacuacion_sql(settings.quorum_min_nodes),
+                },
+            )
+        ).first()
+    fase_sismica = phase
+    phase = fase_del_sitio(phase, alarma, movimiento=movimiento_row is not None)
+    if phase == "building_movement" and movimiento_row is not None:
+        incident = MobileIncidentOut(
+            incident_id=movimiento_row.incident_id,
+            trigger=movimiento_row.trigger,
+            severity=movimiento_row.severity,
+            state=movimiento_row.state,
+            opened_at=movimiento_row.opened_at,
+            node_count=movimiento_row.node_count,
+            max_pga_g=movimiento_row.max_pga_g,
+        )
 
     my_zone: MobileZoneOut | None = None
     assignment = await q.my_assignment(conn, claims.sub, site_id)
@@ -382,7 +410,9 @@ async def mobile_state(
             # por qué). Es un hecho del edificio, no de la pantalla: si la alarma
             # del inmueble gana la precedencia, el bloqueo sigue siendo verdad y
             # sigue viajando aquí.
-            blocked=(incident is not None and phase != "reentry_approved")
+            # [T-9.11] Del incidente que AUTORIZA y de la fase sísmica, no de la
+            # pantalla: un movimiento que la brigada atiende no ordenó salir a nadie.
+            blocked=(incident_row is not None and fase_sismica != "reentry_approved")
             or reentry_reason is not None,
             dictamen_status=dictamen_status,
             dictamen_signed=dictamen_signed,
@@ -408,9 +438,13 @@ async def mobile_state(
         # redactar distinto «el gabinete midió el relé energizado» y «el gabinete
         # confirmó la orden y nadie la revirtió». `alarma` no es None cuando la
         # fase es `building_alarm` — es exactamente lo que la produjo.
+        # [T-9.11] También con `building_movement`: la brigada que atiende un
+        # movimiento tiene que saber que además suena una activación de pánico, y
+        # acusarla. Esa fase sólo la reciben los tácticos, así que el contrato del
+        # ocupante no cambia.
         building_alarm=(
             MobileBuildingAlarmOut(since=alarma.since, source=alarma.origen)
-            if phase == "building_alarm" and alarma is not None
+            if phase in ("building_alarm", "building_movement") and alarma is not None
             else None
         ),
     )

@@ -1,0 +1,100 @@
+{
+  "_doc": "GENERADO por tools/audio/manifiesto.py; lo comprueba tools/audio/verifica_manifiesto.py y api/tests/test_censo_audio.py (T-9.10 · D-40).",
+  "audios": [
+    {
+      "id": "takab-siren-v1",
+      "rutas": [
+        "edge/takab_edge/audio/assets/siren.wav",
+        "mobile/assets/sounds/alerta_sismica.wav"
+      ],
+      "sha256": "5a6b73d1aca5d9758491c4380b25767bb5ab6ecf63778b7815a670bec785932b",
+      "duracion_s": 6.0,
+      "sample_rate": 48000,
+      "canales": 1,
+      "lufs_integrado": -7.73,
+      "pico_verdadero_dbtp": -4.43,
+      "fuente": {
+        "generador": "edge/scripts/gen_siren.py (T-1.68)",
+        "parametros": "sirena hi-lo 960/770 Hz, 0.5 s por tono, 6 pares (6 s), 48 kHz mono PCM16, amplitud 0.6"
+      },
+      "licencia": {
+        "audio": "original de TAKAB (tono propio, D-19; sintetizado por gen_siren.py)",
+        "fuente": "código del repo (edge/scripts/gen_siren.py), propiedad de TAKAB"
+      },
+      "notas": "El mismo fichero, byte a byte, es la sirena del gabinete (catálogo del edge) y el sonido de alerta y de notificación de la app (sound.ts, push.ts). El tono oficial SASMEX (CIRES) está reservado y ausente (sasmex-oficial-v1). Medido 2026-09-27: gen_siren.py reproduce este sha256 byte a byte."
+    },
+    {
+      "id": "takab-prueba-v1",
+      "rutas": [
+        "edge/takab_edge/audio/assets/prueba.wav"
+      ],
+      "sha256": "fb357d31187f5999d1b5bc486c39da1c479debc4a75e9170306817b9e6ca4e12",
+      "duracion_s": 6.0,
+      "sample_rate": 48000,
+      "canales": 1,
+      "lufs_integrado": -16.49,
+      "pico_verdadero_dbtp": -9.11,
+      "fuente": {
+        "generador": "procedencia no documentada en el repo",
+        "parametros": "procedencia no documentada en el repo"
+      },
+      "licencia": {
+        "audio": "original de TAKAB según T-2.49 (commit 8583feb: «bips graves espaciados, no confundibles con el barrido de la sirena»)",
+        "fuente": "procedencia no documentada en el repo"
+      },
+      "notas": "Tono del self-test de sirena (T-2.49). No hay script generador en el repo: su procedencia técnica no se puede reproducir desde aquí."
+    },
+    {
+      "id": "takab-simulacro-v1",
+      "rutas": [
+        "edge/takab_edge/audio/assets/simulacro.wav"
+      ],
+      "sha256": "ee23173abff961ba1a406a1624c0cdf80401a65bd25f14dbb64ed4d37c6efa18",
+      "duracion_s": 11.0,
+      "sample_rate": 48000,
+      "canales": 1,
+      "lufs_integrado": -12.22,
+      "pico_verdadero_dbtp": -6.93,
+      "fuente": {
+        "generador": "edge/scripts/gen_simulacro.py (T-5.17)",
+        "parametros": "carillón de 3 pulsos 587.5/740/880 Hz de 0.25 s + 2 s de silencio, 4 ciclos (11 s), 48 kHz mono PCM16, amplitud 0.45"
+      },
+      "licencia": {
+        "audio": "original de TAKAB (sintetizado por gen_simulacro.py)",
+        "fuente": "código del repo (edge/scripts/gen_simulacro.py), propiedad de TAKAB"
+      },
+      "notas": "Es un TONO, no el mensaje hablado de simulacro (D-41 / T-9.71). Medido 2026-09-27: gen_simulacro.py reproduce este sha256 byte a byte."
+    },
+    {
+      "id": "takab-voz-movimiento-v1",
+      "rutas": [
+        "mobile/assets/sounds/movimiento_inmueble.wav"
+      ],
+      "sha256": "d739327315a7035ceaa5fb472ecf11149c19a6ad06d5a879a43d8aaf2cf4c4e9",
+      "duracion_s": 3.1347,
+      "sample_rate": 22050,
+      "canales": 1,
+      "lufs_integrado": -16.0,
+      "pico_verdadero_dbtp": -1.94,
+      "fuente": {
+        "generador": "tools/audio/gen_voces.sh → sintetiza.py (Piper) → normaliza.py",
+        "piper": "piper-tts==1.3.0",
+        "onnxruntime": "onnxruntime==1.30.0",
+        "modelo": "es_MX-claude-high",
+        "modelo_onnx_sha256": "3ef40a71ea63852cd8ab7e6fa7d2ecdcfa67a0b47c9c48e3f10e02ee02083ea0",
+        "modelo_json_sha256": "1afc81f703c0e4cb3b4d7c0dca096b8b54a98806807f0170cf5eb5557723c12d",
+        "texto": "Se detectó un movimiento en el inmueble. Verifique.",
+        "semilla": 40,
+        "length_scale": 1.0,
+        "noise_scale": 0.667,
+        "noise_w_scale": 0.8,
+        "normalizacion": "-16.0 LUFS, pico verdadero ≤ -1.0 dBTP (×4), cola ≤ 100 ms"
+      },
+      "licencia": {
+        "audio": "TAKAB; generado localmente con un modelo apache-2.0",
+        "fuente": "modelo: apache-2.0 (declarada en el MODEL_CARD de rhasspy/piper-voices; dataset HirCoir/Piper-TTS-Spanish); herramienta: GPL-3.0-or-later (metadatos de piper-tts 1.3.0; OHF-Voice/piper1-gpl; incluye espeak-ng, GPL-3.0). Se invoca aislado con uv; NO es dependencia de ningún proyecto del repo."
+      },
+      "notas": "Alternativa de voz: es_MX-ald-medium (dataset con licencia Unlicense; onnx sha256 019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63, json sha256 5a71498158e04afc8099bfd019c7e87c68eb9d042505a2b1a87e5c1ac2b1a61d). Duración máxima exigida: 4.0 s."
+    }
+  ]
+}

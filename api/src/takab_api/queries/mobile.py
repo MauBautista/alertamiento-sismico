@@ -177,6 +177,27 @@ OPEN_INCIDENTS = text(
     "ORDER BY i.opened_at DESC, i.incident_id DESC"
 )
 
+# [T-9.11 · D-39] EL MOVIMIENTO QUE ATIENDE LA BRIGADA: un umbral local abierto en
+# DISPARO que NO autoriza evacuar (una estación sola; con cuórum ya estaría en
+# `OPEN_INCIDENTS`). Sólo se consulta para quien tiene `movement_alert`: el ocupante
+# no lo ve jamás. La regla de autoridad es la MISMA copia que arriba, negada.
+#
+# Sólo `open`/`acked`: el MOVIMIENTO VIVO. El motor lo pasa a `in_review` cuando el
+# tier del sitio vuelve a `normal` y se cumple el retén (`incident/lifecycle.py`), y
+# desde ahí es un incidente que se revisa en la consola, no un aviso en la mano. Con
+# `<> 'closed'` seguía en pantalla hasta el TTL de revisión —seis horas— y tapaba a
+# la brigada lo que viniera después (revisión de F1).
+OPEN_MOVEMENT = text(
+    "SELECT i.incident_id, i.trigger, i.severity, i.state, i.opened_at, i.max_pga_g, "
+    "(e.meta->>'node_count')::int AS node_count "
+    "FROM incidents i LEFT JOIN seismic_events e ON e.event_id = i.event_id "
+    "WHERE i.site_id = CAST(:site AS uuid) AND i.state IN ('open', 'acked') "
+    "  AND i.trigger = 'local_threshold' "
+    "  AND i.severity = ANY(CAST(:disparo AS text[])) "
+    f"  AND NOT {_AUTORIZA_EVACUACION} "
+    "ORDER BY i.opened_at DESC, i.incident_id DESC LIMIT 1"
+)
+
 # [T-9.04 · sustituye a `REENTRY_STILL_DECLARED` de T-7.55] LO QUE UN INCIDENTE
 # CERRADO SIGUE DICIENDO DEL EDIFICIO. Se consulta SÓLO cuando no hay incidente
 # abierto que autorice (ver `mobile_site.py`): **un incidente abierto nunca puede

@@ -130,6 +130,9 @@ Phase = Literal[
     "reentry_approved",
     "building_alarm",
     "reentry_blocked",
+    # [T-9.11 · D-39] Movimiento de UN inmueble en DISPARO, sin SASMEX ni cuórum.
+    # Solo lo recibe quien tiene `movement_alert` (brigada, inspector, admin).
+    "building_movement",
 ]
 
 
@@ -274,6 +277,11 @@ class MobileBuildingAlarmOut(BaseModel):
     Viaja SOLO cuando ``phase == "building_alarm"``, por la misma disciplina con
     la que T-2.105 esconde el incidente que no autoriza: exponer los dos hechos
     a la vez sería pedirle al cliente que decida cuál pinta.
+
+    [T-9.11] Única excepción: ``phase == "building_movement"``, que sólo recibe la
+    brigada. Ahí la pantalla del movimiento tiene que decir además que suena una
+    activación de pánico —y dejar acusarla—, porque la brigada es justo quien la
+    atiende. Al ocupante no le cambia nada.
     """
 
     #: ``commands.issued_at`` de la orden EJECUTADA. La app lo pinta como HORA DE
@@ -345,6 +353,13 @@ class MobileStateOut(BaseModel):
       · lo demás → ``idle``. ``incident`` sigue en ``null``: lo que persiste es
         el HECHO del veredicto, no el incidente, y ``reentry.incident_id`` dice
         de qué incidente es.
+    - **[T-9.11 · D-39] Movimiento de UN inmueble → ``building_movement``, SOLO
+      para quien tiene ``movement_alert``** (brigada, inspector, administración;
+      el ocupante nunca). Un umbral local en DISPARO que no autoriza evacuar y
+      sigue ``open``/``acked`` (la sacudida no ha concluido). ``incident`` es ESE
+      incidente, para acusarlo y reportar daños; ``reentry`` sigue hablando del
+      que autorizó evacuar, si lo hay, y ``reentry.blocked`` no cambia por el
+      movimiento. Va tras ``shaking_concluded`` y antes de ``reentry_approved``.
     - **[T-2.106] sin fase sísmica + sirena del edificio ordenada por una
       persona → ``building_alarm``.** Es ALARMA DEL INMUEBLE, no evacuación
       sísmica (decisión de producto del 2026-08-09): la sirena suena —que es su
@@ -409,7 +424,8 @@ class MobileStateOut(BaseModel):
     drill: MobileDrillOut
     #: [T-2.07] Banner del edificio (1.1) — verdad única de Flota Edge.
     site_health: MobileSiteHealthOut
-    #: [T-2.106] No None SOLO cuando ``phase == "building_alarm"``.
+    #: [T-2.106] No None SOLO cuando ``phase == "building_alarm"`` (o, desde T-9.11,
+    #: ``building_movement``: la brigada ve las dos cosas).
     building_alarm: MobileBuildingAlarmOut | None = None
 
 

@@ -189,3 +189,17 @@ describe("1.2/1.3 · crisis · contrato de 4 estados (regla de oro 7)", () => {
     );
   });
 });
+
+// [T-9.11 · D-39] El movimiento del inmueble NO es una crisis sísmica: la toma
+// de crisis se suelta y entrega su pantalla (que a su vez rechaza al ocupante).
+describe("[T-9.11] crisis · el movimiento del inmueble no se pinta como crisis", () => {
+  it("con estado building_movement se va a /movimiento", async () => {
+    mockSnapshot = instantanea({
+      state: "building_movement",
+      data: { ...estado(), phase: "building_movement" } as MobileStateOut,
+    });
+    const v = await render(<Crisis />);
+    await asentar();
+    expect(v.getByTestId("redirect")).toHaveTextContent("/movimiento");
+  });
+});

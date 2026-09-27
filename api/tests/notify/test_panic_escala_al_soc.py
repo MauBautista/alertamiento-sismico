@@ -34,6 +34,7 @@ error, y sin que nadie lo supiera hasta que una brigada no contestara de verdad.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import timedelta
 
@@ -275,3 +276,40 @@ def test_el_aviso_nombra_lo_que_el_operador_necesita_decidir(scenario: _Scenario
     assert str(uuid.UUID(str(payload["site_id"]))) == payload["site_id"], (
         "el aviso no nombra el inmueble: el operador no sabe a qué edificio mirar"
     )
+
+
+def _acusa_con_rol(sc: _Scenario, incident_id: str, user: str, role: str) -> None:
+    """El acuse tal cual lo escribe `POST /incidents/{id}/tactical-ack`: con el rol."""
+    sc.conn.execute(
+        "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+        "VALUES (%s,%s,'tactical_ack',%s,%s::jsonb)",
+        (incident_id, sc.tenant, f"user:{user}", json.dumps({"role": role, "surface": "both"})),
+    )
+    sc.conn.commit()
+
+
+def test_el_acuse_del_ADMINISTRADOR_no_apaga_el_aviso_al_SOC(scenario: _Scenario) -> None:  # noqa: F811
+    """[T-9.11 · D-42] El administrador tiene la app táctica completa, así que PUEDE
+    acusar por esta puerta. Pero también es un rol de MONITOREO (acusa por la del
+    SOC): si su acuse contara como respuesta de la brigada, apagaría el escalado de
+    T-2.147.c sin que nadie bajara a mirar. Cuenta como acuse; no apaga el aviso."""
+    incident = _panico(scenario, hace_s=PLAZO_S + 30)
+    scenario.seed_config(INSPECTOR_CONFIG)
+    _acusa_con_rol(scenario, incident, "admin-1", "tenant_admin")
+
+    run_notify_pass(scenario.conn, _ajustes(), _providers(), now=BASE)
+
+    assert len(_avisos(scenario, incident)) == 1, (
+        "el acuse del administrador apagó el aviso al SOC: una puerta de monitoreo "
+        "contó como respuesta de la brigada"
+    )
+
+
+def test_el_acuse_de_un_BRIGADISTA_con_rol_sigue_apagando_el_aviso(scenario: _Scenario) -> None:  # noqa: F811
+    incident = _panico(scenario, hace_s=PLAZO_S + 30)
+    scenario.seed_config(INSPECTOR_CONFIG)
+    _acusa_con_rol(scenario, incident, "brigada-9", "brigadista")
+
+    run_notify_pass(scenario.conn, _ajustes(), _providers(), now=BASE)
+
+    assert _avisos(scenario, incident) == []

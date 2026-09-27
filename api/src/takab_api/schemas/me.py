@@ -53,6 +53,9 @@ class MeActions(BaseModel):
     dictamen_read: bool
     #: [T-2.08] Dashboard táctico 2.1 (RBAC §3): traza BMS + canal live móvil.
     panel_read: bool
+    #: [T-9.11 · D-39] Recibe y atiende el aviso con voz del MOVIMIENTO de un solo
+    #: inmueble (brigada, inspector y administración; jamás el occupant).
+    movement_alert: bool
     #: [T-2.71] Abrir una ventana de mantenimiento sobre UN gabinete: silencia sus
     #: alarmas de on-call mientras dure la intervención (superadmin/tenant_admin).
     maintenance_window: bool

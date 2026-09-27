@@ -1,0 +1,2 @@
+# Mismo estilo que api/ (líneas ≤ 100): tools/audio no tiene pyproject propio.
+extend = "../../api/ruff.toml"
