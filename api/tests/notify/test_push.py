@@ -3,7 +3,7 @@ rama del orquestador (enqueue por dispositivos + sellado de ARN + revocación).
 
 Invariantes:
 - Las clases JAMÁS se mezclan: CRISIS lleva sonido crítico/time-sensitive y el
-  canal Android ``seismic_alert_v2``; OPS va normal.
+  canal Android ``seismic_alert_v3``; OPS va normal.
 - El payload visible es GENÉRICO (lockscreen): sin nombre de sitio, sin
   severidad, sin PII — solo ids y fase (la app consulta la verdad por API).
 - Sin dispositivos registrados NO se encola job push (nada de 'sent' vacíos).
@@ -72,7 +72,7 @@ def test_payload_crisis_es_minimo_y_critico() -> None:
     gcm = json.loads(payload["GCM"])[FCM_V1_KEY]["message"]
     # `_v2` porque el sonido de un canal Android es inmutable tras crearlo: estrenar
     # tono obliga a estrenar id, o el teléfono que ya tenía el canal sigue con el viejo.
-    assert gcm["android"]["notification"]["channel_id"] == "seismic_alert_v2"
+    assert gcm["android"]["notification"]["channel_id"] == "seismic_alert_v3"
     assert gcm["android"]["priority"] == "high"
     assert gcm["data"]["incident_id"] == "I1"
     # texto visible genérico: sin sitio ni severidad
@@ -578,7 +578,7 @@ def test_el_mensaje_de_android_viaja_en_forma_v1_y_no_en_la_heredada() -> None:
     SNS entrega.
 
     El envoltorio `fcmV1Message` es lo que hace que FCM reciba el mensaje tal
-    cual. Comprobado en el mismo teléfono: con él, `seismic_alert_v2`.
+    cual. Comprobado en el mismo teléfono: con él, `seismic_alert_v3`.
     """
     gcm = json.loads(
         build_push_payload(
@@ -591,7 +591,7 @@ def test_el_mensaje_de_android_viaja_en_forma_v1_y_no_en_la_heredada() -> None:
         "  bloque `android` — canal sísmico y prioridad alta incluidos."
     )
     mensaje = gcm[FCM_V1_KEY]["message"]
-    assert mensaje["android"]["notification"]["channel_id"] == "seismic_alert_v2"
+    assert mensaje["android"]["notification"]["channel_id"] == "seismic_alert_v3"
     assert mensaje["android"]["priority"] == "high"
     # …y el resto del mensaje sigue estando donde FCM v1 lo busca.
     assert mensaje["data"]["incident_id"] == "I1"

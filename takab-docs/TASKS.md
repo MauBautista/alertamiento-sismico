@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **500** · `[x]` **407** · `[~]` **17** · `[ ]` **76**
+**Conteo de tareas:** total **501** · `[x]` **407** · `[~]` **18** · `[ ]` **76**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17836,6 +17836,27 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] `mobile-state` por rol: el táctico ve `building_movement`, el ocupante nunca.
   - [x] El administrador entra en la app táctica.
   - [ ] Probado en el Pixel con el gabinete real.
+
+
+### [~] T-9.12 · **Los canales que despiertan suenan también con «No molestar»** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · api · **Depende de:** T-9.11 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
+- **Objetivo:** que la alerta sísmica, la alarma del inmueble y la voz del movimiento suenen en un
+  teléfono con «No molestar» en modo prioridad, que es como viene el «Hora de dormir» de Android.
+- **Medido en el Pixel el 2026-09-27:** con «No molestar» en prioridad, la push de CRISIS llegó con
+  la pantalla apagada y no sonó ni vibró hasta encender la pantalla; la voz del movimiento no se
+  oyó. Los canales pedían `bypassDnd`, pero Android lo apaga en silencio sin el acceso de «No
+  molestar», que la app ni siquiera declaraba (`mBypassDnd=false` en `dumpsys notification`).
+- **Criterios de aceptación:**
+  - [x] Los canales sísmico, de pánico y de movimiento suenan con uso de audio ALARMA, que el modo
+    prioridad deja pasar por defecto; el de operación no.
+  - [x] Ids nuevos porque el audio de un canal es inmutable: `seismic_alert_v3`,
+    `building_alarm_v2` y `building_movement_v2`, y los cuatro viejos se retiran tras crearlos.
+  - [x] La app declara `ACCESS_NOTIFICATION_POLICY`, así que `bypassDnd` vale si el usuario concede
+    el acceso (y entonces pasa también el modo silencio total).
+  - [ ] Verificado en el Pixel con «No molestar» encendido: la voz del movimiento y la crisis suenan
+    con la pantalla apagada.
+- **Nota para F7:** el tono v2 de `T-9.70` estrenará `seismic_alert_v4`, porque `_v3` lo ocupa
+  esta ficha.
 
 ## Fase 9.2 · Roles de 10 a 7
 - **Lo que añadió la revisión de F1:** el movimiento solo es «vivo» mientras el incidente sigue

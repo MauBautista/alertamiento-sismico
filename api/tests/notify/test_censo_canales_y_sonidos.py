@@ -44,6 +44,10 @@ _CONST = re.compile(r"""(?:export\s+)?const\s+(\w+)\s*=\s*["'`]([^"'`]+)["'`]"""
 _CREA = re.compile(r"""setNotificationChannelAsync\(\s*(?:(\w+)|["']([^"']+)["'])""")
 #: `await Notifications.deleteNotificationChannelAsync("seismic_alert")`
 _BORRA = re.compile(r"""deleteNotificationChannelAsync\(\s*(?:(\w+)|["']([^"']+)["'])""")
+#: [T-9.12] La lista de canales retirados, que se borran en un bucle
+#: `for (const viejo of CANALES_RETIRADOS)`: sus ids son literales de esta lista.
+_RETIRADOS = re.compile(r"""const\s+CANALES_RETIRADOS\s*=\s*\[([^\]]*)\]""")
+_BUCLE = re.compile(r"""for\s*\(\s*const\s+(\w+)\s+of\s+CANALES_RETIRADOS\s*\)""")
 
 
 def _fuente() -> str:
@@ -58,12 +62,16 @@ def _fuente() -> str:
 def _resolver(fuente: str, patron: re.Pattern[str]) -> set[str]:
     """Ids de canal citados por `patron`, resolviendo las constantes del módulo."""
     consts = dict(_CONST.findall(fuente))
+    retirados = _RETIRADOS.search(fuente)
+    bucle = _BUCLE.search(fuente)
     ids: set[str] = set()
     for nombre, literal in patron.findall(fuente):
         if literal:
             ids.add(literal)
         elif nombre in consts:
             ids.add(consts[nombre])
+        elif retirados and bucle and nombre == bucle.group(1):
+            ids.update(re.findall(r"""["']([^"']+)["']""", retirados.group(1)))
         else:  # pragma: no cover - defensa: constante importada de otro módulo
             pytest.fail(
                 f"`{nombre}` se usa como id de canal en push.ts pero no se declara ahí. "
