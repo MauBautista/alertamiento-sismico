@@ -44,7 +44,7 @@
 #   reentry   dictamen firmado `inhabit_monitor`                    ⇒ reentry_approved
 #   roster    N ocupantes sintéticos NO reportados (headcount 2.6 / flujo 05)
 #   headcount acción `headcount_notify` ⇒ PUSH real a los teléfonos del sitio
-#   reset     cierra el incidente                                   ⇒ idle
+#   reset     cierra lo del sitio y lo clasifica `prueba` (T-9.04)  ⇒ idle
 #   status    solo imprime la fase derivada actual (no muta nada)
 #
 # Uso:  AWS_PROFILE=takab-dev infra/scripts/seed_staging_incident.sh [subcomando]

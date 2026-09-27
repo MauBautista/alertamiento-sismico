@@ -556,3 +556,63 @@ async def test_reset_es_idempotente_y_no_resucita_nada(
             )
         ).scalar_one()
     assert abiertos == 0, "el reset dejó (o reabrió) un incidente"
+
+
+# ═══════════════ [T-9.04] el `reset` ya no puede resetear retrodatando el cierre
+#
+# `T-9.04` cuenta las 8 h de «REINGRESO AUTORIZADO» desde la FIRMA, no desde el
+# cierre, y hace que un NO HABITAR firmado NO caduque. Las dos cosas son lo que el
+# ocupante necesita, y las dos dejan sin efecto el truco de `T-7.55`: retrodatar
+# `closed_at` ya no mueve la firma, y el dictamen es append-only. Lo que el arnés
+# quiere decir es que esos incidentes FUERON PRUEBAS, y para eso existe la
+# clasificación terminal `prueba` (`incident/classification.py`).
+
+
+async def test_reset_levanta_tambien_un_NO_HABITAR_que_firmo_el_arnes(
+    client, sitio_del_occupant, variables
+) -> None:
+    """Un NO HABITAR firmado no caduca (`T-9.04`). Sin `reset` que lo levante,
+    una corrida que lo firmara dejaría el sitio del arnés bloqueado PARA SIEMPRE
+    y todas las corridas siguientes verían el cartel rojo."""
+    v = await _crisis(variables)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by) "
+                "VALUES (:t, :i, 'no_inhabit_inspect', '{}'::jsonb, gen_random_uuid())"
+            ),
+            {"t": v["tenant"], "i": v["iid"]},
+        )
+    await _cerrar_como_lo_hace_D33(v)
+    assert await _fase(client) == "reentry_blocked"
+
+    await _correr("reset.sql", v)
+    assert await _fase(client) == "idle"
+    # Y lo dice como lo que es: una prueba, no un borrado.
+    async with engine.begin() as conn:
+        clase = (
+            await conn.execute(
+                text(
+                    "SELECT classification FROM incident_classifications "
+                    "WHERE incident_id = :i ORDER BY classified_at DESC LIMIT 1"
+                ),
+                {"i": v["iid"]},
+            )
+        ).scalar_one()
+    assert clase == "prueba"
+
+
+def test_los_terminales_de_reset_son_los_de_TERMINALES() -> None:
+    """`reset.sql` no puede importar Python: su lista de terminales es un censo a
+    mano, y un censo a mano acaba divergiendo. Aquí se lee del fichero y se
+    compara con la única copia."""
+    from takab_api.incident.classification import TERMINALES
+
+    reset = (SQL_DIR / "reset.sql").read_text("utf-8")
+    m = re.search(r"v\.classification NOT IN \(([^)]*)\)", reset)
+    assert m, "`reset.sql` dejó de saltarse los incidentes que ya son terminales"
+    en_el_sql = set(re.findall(r"'([a-z_]+)'", m.group(1)))
+    assert en_el_sql == set(TERMINALES), (
+        f"`reset.sql` salta {sorted(en_el_sql)} y `TERMINALES` es {sorted(TERMINALES)}"
+    )

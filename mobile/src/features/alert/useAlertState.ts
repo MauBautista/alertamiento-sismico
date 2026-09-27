@@ -1,7 +1,8 @@
 // Hook de la máquina de crisis: la PUSH despierta (invalidación) y el REST
 // reconstruye (spec §4.1). Poll dinámico honesto: 30 s en reposo, 5 s con
-// incidente vivo. El estado derivado NUNCA sale de datos locales — solo de
-// mobile-state + los check-ins PROPIOS.
+// incidente vivo (qué fases son «reposo» lo dice `machine.faseEnReposo`). El
+// estado derivado NUNCA sale de datos locales — solo de mobile-state + los
+// check-ins PROPIOS.
 import {
   listMyCheckinsIncidentsIncidentIdCheckinsGet,
   mobileStateSitesSiteIdMobileStateGet,
@@ -14,7 +15,7 @@ import { useStaleSince } from "@/ui/useStaleSince";
 import { hasLocalCheckin } from "@/offline/queue";
 import { useQueueStore } from "@/offline/queue.store";
 
-import { type AlertState, deriveAlertState } from "./machine";
+import { type AlertState, deriveAlertState, faseEnReposo } from "./machine";
 
 export const MOBILE_STATE_KEY = "mobile-state";
 
@@ -57,8 +58,10 @@ export function useAlertState(siteId: string | null): AlertSnapshot {
       }
       return res.data;
     },
+    // [T-9.04] El ritmo lo decide `faseEnReposo`: el bloqueo persistente de
+    // reingreso dura días y se sondea como el reposo, no como una crisis.
     refetchInterval: (query) =>
-      query.state.data && query.state.data.phase !== "idle" ? CRISIS_POLL_MS : IDLE_POLL_MS,
+      query.state.data && !faseEnReposo(query.state.data.phase) ? CRISIS_POLL_MS : IDLE_POLL_MS,
   });
 
   const incidentId = mobileState.data?.incident?.incident_id ?? null;
@@ -92,7 +95,7 @@ export function useAlertState(siteId: string | null): AlertSnapshot {
   // se mide contra el que de verdad está corriendo, o en reposo el dato saldría
   // viejo cada quince segundos y el aviso se volvería ruido que nadie mira.
   const pollVigente =
-    mobileState.data && mobileState.data.phase !== "idle" ? CRISIS_POLL_MS : IDLE_POLL_MS;
+    mobileState.data && !faseEnReposo(mobileState.data.phase) ? CRISIS_POLL_MS : IDLE_POLL_MS;
   const staleSinceMs = useStaleSince(mobileState.dataUpdatedAt, pollVigente);
 
   return {

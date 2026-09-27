@@ -330,6 +330,19 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     logLabel: 'AVISO A NO REPORTADOS · HAY PERSONAS SIN REPORTARSE',
   },
   // --- notificación (`notify/orchestrator.py` + `app_notify_delivery`) -------
+  //
+  // [T-9.03] LA ORDEN AL EDIFICIO CAMBIÓ. La escribe el orquestador cuando un
+  // incidente que se avisó SIN autorizar evacuar —una estación sola, que solo
+  // advierte— pasa a autorizar porque llegó SASMEX o la red lo corroboró, y de
+  // ella cuelga el push CRISIS que despierta otra vez a TODO el inmueble.
+  // `critical`: es la única línea que dice que la orden subió de «advertencia» a
+  // «evacuar». Y el verbo NO afirma la entrega: la acción se escribe al encolar;
+  // quién lo recibió lo dicen `notify_sent` y `notify_delivered`.
+  alert_escalated: {
+    label: 'ESCALADA DE LA ALERTA',
+    view: { state: 'SE REPITE EL AVISO A TODOS', kind: 'critical' },
+    logLabel: 'LA ALERTA ESCALÓ · SE REPITE EL AVISO A TODO EL INMUEBLE',
+  },
   notify_sent: {
     label: 'NOTIFICACIONES',
     view: { state: 'ENVIADA', kind: 'ok' },

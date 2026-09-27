@@ -46,7 +46,8 @@ async def register_push_token(
     conn: AsyncConnection = Depends(get_session),
 ) -> PushTokenOut:
     """Upsert por ``token``: re-registrar un token existente lo revive y sella
-    ``last_seen_at`` (rotación de FCM/APNs sin filas fantasma)."""
+    ``last_seen_at`` (rotación de FCM/APNs sin filas fantasma). [T-9.05] Y si el
+    token lo registró otra persona, el aparato cambió de manos: pasa a ésta."""
     # Aislamiento multi-tenant (regla oro #5): el sitio del token debe estar en
     # el alcance del portador. Sin este check, un dispositivo podría registrarse
     # con el UUID del sitio de OTRO tenant y recibir sus push CRISIS/OPS.
@@ -66,12 +67,17 @@ async def register_push_token(
             claims.sub,
             claims.tenant_id,
         )
+    # [T-9.05] El token es del APARATO: si el teléfono lo registró antes otra
+    # persona —de este tenant o de otro—, la fila pasa a quien lo tiene AHORA, con
+    # `role = claims.role`. La identidad NO se pasa: la función la lee de la sesión
+    # que esta petición ya fijó con los claims verificados (`app.user_id`,
+    # `app.tenant_id`, `app.role`), y el traspaso deja su propia bitácora
+    # (`push_token_released` / `push_token_claimed`). El `assert_site_access` de
+    # arriba sigue delante: un sitio ajeno es 404 antes de tocar nada.
     row = (
         await conn.execute(
-            q.UPSERT_PUSH_TOKEN,
+            q.CLAIM_PUSH_TOKEN,
             {
-                "tenant": claims.tenant_id,
-                "sub": claims.sub,
                 "platform": body.platform,
                 "token": body.token,
                 "site": str(body.site_id) if body.site_id else None,

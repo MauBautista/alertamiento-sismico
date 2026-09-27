@@ -1298,7 +1298,8 @@ export const listPushTokensMePushTokensGet = <ThrowOnError extends boolean = fal
 /**
  * Register Push Token
  * Upsert por ``token``: re-registrar un token existente lo revive y sella
- * ``last_seen_at`` (rotación de FCM/APNs sin filas fantasma).
+ * ``last_seen_at`` (rotación de FCM/APNs sin filas fantasma). [T-9.05] Y si el
+ * token lo registró otra persona, el aparato cambió de manos: pasa a ésta.
  */
 export const registerPushTokenMePushTokensPost = <ThrowOnError extends boolean = false>(options: Options<RegisterPushTokenMePushTokensPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<RegisterPushTokenMePushTokensPostResponse, RegisterPushTokenMePushTokensPostError, ThrowOnError>({

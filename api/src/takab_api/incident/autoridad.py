@@ -46,3 +46,30 @@ def autoriza_evacuacion(trigger: str, node_count: int | None, min_nodes: int) ->
     if trigger in ORIGENES_AUTORITATIVOS:
         return True
     return node_count is not None and node_count >= min_nodes
+
+
+def autoriza_evacuacion_sql(trigger: str, node_count: str) -> str:
+    """La MISMA regla como predicado SQL, para filtrar ANTES de ordenar o limitar.
+
+    [T-9.04] `mobile_state` la necesitaba en la consulta y no sólo en Python: con
+    un ``LIMIT`` sobre incidentes de CUALQUIER tipo y el filtro aplicado después,
+    cinco locales abiertos tapaban a un SASMEX abierto, y diez cerrados que no
+    ordenaron nada hacían caducar un NO HABITAR firmado. Un límite sólo es
+    inocuo si corta DESPUÉS de filtrar.
+
+    ``trigger`` y ``node_count`` son las expresiones SQL de las dos columnas
+    (``node_count`` ya como ``int``). Los orígenes y el umbral viajan como
+    parámetros (``params_autoriza_evacuacion_sql``), así que ni `ORIGENES_AUTORITATIVOS`
+    ni el umbral se copian a mano. Devuelve un booleano ESTRICTO —nunca ``NULL``—
+    para que se pueda comparar fila a fila con la función de Python: lo ata
+    `tests/api/test_reingreso_persistente.py::test_la_regla_de_autoridad_en_SQL_es_la_de_Python`.
+    """
+    return (
+        f"({trigger} = ANY(CAST(:origenes_autoritativos AS text[])) "
+        f"OR COALESCE({node_count} >= :min_nodes, false))"
+    )
+
+
+def params_autoriza_evacuacion_sql(min_nodes: int) -> dict[str, object]:
+    """Los parámetros que `autoriza_evacuacion_sql` espera, sacados de la única copia."""
+    return {"origenes_autoritativos": sorted(ORIGENES_AUTORITATIVOS), "min_nodes": min_nodes}

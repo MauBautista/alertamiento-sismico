@@ -17,8 +17,10 @@ import { CrisisView } from "@/features/alert/CrisisView";
 import { elapsedSeconds } from "@/features/alert/machine";
 import { sourceLabel } from "@/features/alert/source";
 import { marcarSalidaTactica } from "@/features/alert/salidaTactica";
-import { startAlertLoop, stopAlertLoop } from "@/features/alert/sound";
+import { stopAlertLoop } from "@/features/alert/sound";
+import { useAlertFeedback } from "@/features/alert/useAlertFeedback";
 import { useAlertState } from "@/features/alert/useAlertState";
+import { stopAlertVibration } from "@/features/alert/vibration";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
 import { useReduceMotion } from "@/ui/useReduceMotion";
@@ -48,16 +50,17 @@ export default function Crisis() {
     return () => clearInterval(timer);
   }, []);
 
-  // Sonido en loop SOLO durante alert_active (la push CRISIS ya sonó al llegar).
-  useEffect(() => {
-    if (state === "alert_active") {
-      void startAlertLoop();
-      return () => stopAlertLoop();
-    }
-    return undefined;
-  }, [state]);
+  // Sonido Y vibración en bucle SOLO durante alert_active (la push CRISIS ya
+  // sonó al llegar). [T-9.06] Medido el 24-sep: el Pixel sonaba y no vibraba.
+  useAlertFeedback(state === "alert_active");
 
   if (status !== "authenticated") {
+    return <Redirect href="/" />;
+  }
+  // [T-9.04] El bloqueo PERSISTENTE del servidor (incidente ya cerrado) no es
+  // el bloqueo del check-in propio: no hay check-in que enviar ni línea de
+  // tiempo que pintar. Su cartel vive en INICIO.
+  if (data?.phase === "reentry_blocked") {
     return <Redirect href="/" />;
   }
   // La fase del SERVIDOR dejó de ser alerta: la sacudida concluida pasa al
@@ -91,6 +94,7 @@ export default function Crisis() {
     profile === "tactical"
       ? () => {
           stopAlertLoop(); // el altavoz de ESTE teléfono; la sirena del edificio no se toca
+          stopAlertVibration(); // y su motor: salir de la toma es salir de las dos
           marcarSalidaTactica(incident?.incident_id ?? null);
           router.replace("/(brigadista)/panel");
         }

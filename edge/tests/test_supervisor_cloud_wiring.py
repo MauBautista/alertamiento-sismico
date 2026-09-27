@@ -7,10 +7,13 @@ conectar (contraparte del LWT offline). Todo sin AWS ni hardware.
 
 from __future__ import annotations
 
+import json
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator
 from simulators.mqtt import FakeMqttTransport
 from simulators.quake import quake_packets
 from simulators.rs4d import RS4DSimulator
@@ -92,6 +95,104 @@ def test_quake_publishes_local_event_and_acks(online_supervisor):
     acks = _payloads(transport, ACKS_TOPIC)
     assert {a["channel"] for a in acks} >= {"siren", "gas_valve"}
     assert all(a["event_id"] and a["action"] == "activate" for a in acks)
+
+
+def test_un_SASMEX_tras_el_umbral_del_MISMO_episodio_llega_a_la_nube(online_supervisor):
+    """[T-9.02] El caso que motiva la ficha, por el cableado real del gabinete.
+
+    La sacudida lleva el umbral a `evacuate_or_hold` y sale el `LocalEvent`
+    instrumental; después el WR-1 da SASMEX en el MISMO episodio —mismo
+    `event_id` (T-7.49) y mismo tier—. Antes el spool lo deduplicaba como
+    «re-publicación idéntica» y la nube nunca se enteraba de que era SASMEX.
+    """
+    sup, transport = online_supervisor
+    _feed_quake(sup)
+    assert _wait(
+        lambda: any(
+            e["tier"] == "evacuate_or_hold" and e["source"] == "local_threshold"
+            for e in _eventos(transport)
+        )
+    )
+    umbral = next(e for e in _eventos(transport) if e["tier"] == "evacuate_or_hold")
+    WR1Simulator(sup.gpio).alert()
+    assert _wait(lambda: any(e["source"] == "sasmex" for e in _eventos(transport))), (
+        f"el SASMEX no salió del edge: {[(e['source'], e['tier']) for e in _eventos(transport)]}"
+    )
+    sasmex = next(e for e in _eventos(transport) if e["source"] == "sasmex")
+    assert sasmex["event_id"] == umbral["event_id"], "el caso es el MISMO episodio"
+    assert sasmex["tier"] == "evacuate_or_hold"
+
+
+# ------------------------------------------------------------------ E2E · pata 1
+#
+# [T-9.02 · T-9.03 · revisión F0] Los tests de la nube inyectaban el SASMEX
+# directamente en `handle_local_event`: un mensaje que el gabinete real NO
+# mandaba, porque el spool lo deduplicaba. Pasaban en verde sobre un caso que no
+# podía ocurrir. La costura es este vector: lo produce AQUÍ el supervisor real y
+# lo lee `api/tests/notify/test_e2e_empate_umbral_sasmex.py`, que lo mete por la
+# ingesta y el orquestador. Los venv de `edge/` y `api/` no se ven entre sí
+# (mismo motivo que `command_ack_siren_arbitrado.json`, T-2.116): si el gabinete
+# deja de emitir el SASMEX, cae esta pata; si la nube deja de escalar, la otra.
+
+VECTOR_EMPATE = Path(__file__).resolve().parent / "vectors" / "local_events_umbral_y_sasmex.json"
+SCHEMA_LOCAL_EVENT = (
+    Path(__file__).resolve().parents[2] / "shared" / "schemas" / "local_event.schema.json"
+)
+#: El id del episodio del vector. El real es aleatorio (`new_event_id`); lo que
+#: se compara es que TODOS los mensajes compartan uno, no cuál.
+EPISODIO_DEL_VECTOR = "9e0a0000000000000000000000090020"
+
+
+def test_e2e_el_vector_del_empate_es_el_que_produce_el_gabinete(settings):
+    """Umbral instrumental y luego SASMEX, en el MISMO episodio: lo que sale del Pi.
+
+    Se normalizan sólo los dos campos volátiles —el id del episodio (aleatorio) y
+    `created_at` (reloj de pared, uno por segundo en orden de publicación)—; todo
+    lo demás, incluido el ORDEN y cuántos mensajes salen, tiene que coincidir con
+    el vector comprometido. El inquilino y el sitio se fijan explícitamente: son
+    la identidad del gabinete, y el vector no puede depender del entorno de quien
+    corre la suite.
+    """
+    transport = FakeMqttTransport()
+    sup = EdgeSupervisor(
+        settings.model_copy(
+            update={"health_heartbeat_s": 0.05, "tenant_id": "tenant-dev", "site_id": "site-dev"}
+        ),
+        seedlink_source=None,
+        mqtt_transport=transport,
+    )
+    sup.start()
+    try:
+        assert _wait(lambda: sup.cloud.online)
+        _feed_quake(sup)
+        assert _wait(lambda: any(e["tier"] == "evacuate_or_hold" for e in _eventos(transport)))
+        WR1Simulator(sup.gpio).alert()
+        assert _wait(lambda: any(e["source"] == "sasmex" for e in _eventos(transport))), (
+            "el SASMEX no salió del edge (¿se deduplicó otra vez como re-publicación?): "
+            f"{[(e['source'], e['tier']) for e in _eventos(transport)]}"
+        )
+        eventos = _eventos(transport)
+    finally:
+        sup.stop()
+
+    hasta = next(k for k, e in enumerate(eventos) if e["source"] == "sasmex")
+    episodio = eventos[: hasta + 1]
+    assert len({e["event_id"] for e in episodio}) == 1, (
+        "el umbral y el SASMEX ya no comparten episodio (T-7.49): el vector no describe el empate"
+    )
+    esquema = Draft202012Validator(json.loads(SCHEMA_LOCAL_EVENT.read_text()))
+    producido = []
+    for k, evento in enumerate(episodio):
+        # Lo que la nube acepta: `contracts/loader.py` valida contra este archivo.
+        esquema.validate(evento)
+        instante = (QUAKE_START + timedelta(seconds=k)).isoformat().replace("+00:00", "Z")
+        producido.append({**evento, "event_id": EPISODIO_DEL_VECTOR, "created_at": instante})
+
+    esperado = json.loads(VECTOR_EMPATE.read_text())
+    assert producido == esperado, (
+        "el gabinete dejó de producir el vector del empate umbral→SASMEX; si el cambio "
+        f"es deliberado, actualiza {VECTOR_EMPATE} y la pata de la nube que lo lee"
+    )
 
 
 def test_health_snapshots_transition_and_heartbeat(online_supervisor):

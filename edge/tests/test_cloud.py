@@ -10,6 +10,7 @@ from takab_edge.contracts import (
     ActuatorChannel,
     AlertSource,
     HealthSnapshot,
+    LocalEvent,
     Tier,
     TierDecision,
 )
@@ -59,6 +60,33 @@ def test_tier_escalation_is_not_deduped(settings, tmp_path):
     )
     cloud.publish("takab/events", watch)
     cloud.publish("takab/events", evacuate)  # misma id, tier mayor → escala
+    assert cloud.queued == 2
+
+
+def test_un_SASMEX_tras_un_umbral_del_MISMO_tier_sale_del_edge(settings, tmp_path):
+    """[T-9.02] La FUENTE es parte de la identidad lógica de un `LocalEvent`.
+
+    Sismo cercano: la sacudida lleva el umbral a `evacuate_or_hold` y sale el
+    `LocalEvent` instrumental; segundos después el WR-1 da SASMEX con el MISMO
+    `event_id` (T-7.49: un id por episodio) y el MISMO tier. Sin `source` en la
+    clave, el spool lo tomaba por «re-publicación idéntica» y no salía del Pi: la
+    nube se quedaba con `trigger=local_threshold`, sin escalada (T-9.03) y sin la
+    orden de evacuar de un SASMEX real. El orden inverso es inocuo: la nube ya no
+    degrada el disparador (T-9.02).
+    """
+    cloud, _ = _connector(settings, tmp_path, online=False)
+    umbral = LocalEvent(
+        tenant_id=settings.tenant_id,
+        site_id=settings.site_id,
+        source=AlertSource.THRESHOLD,
+        tier=Tier.EVACUATE_OR_HOLD,
+    )
+    sasmex = umbral.model_copy(update={"source": AlertSource.SASMEX})
+    cloud.publish("takab/events", umbral)
+    cloud.publish("takab/events", sasmex)
+    assert cloud.queued == 2, "el edge encoló 1 de 2: el SASMEX se deduplicó"
+    # La re-publicación IDÉNTICA del SASMEX se sigue deduplicando.
+    cloud.publish("takab/events", sasmex)
     assert cloud.queued == 2
 
 

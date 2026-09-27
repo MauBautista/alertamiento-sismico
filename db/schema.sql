@@ -356,6 +356,13 @@ CREATE INDEX idx_actions_incident ON incident_actions (incident_id, ts);
 CREATE TRIGGER trg_incident_actions_append_only
   BEFORE UPDATE OR DELETE ON incident_actions
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
+-- [T-9.03 · 0070] UNA escalada por incidente. El orquestador escribe
+-- 'alert_escalated' cuando un incidente que se avisó SIN autorizar evacuar pasa a
+-- autorizar (SASMEX o cuórum llegan después) y ancla a ese action_id el push CRISIS
+-- que despierta al edificio. `kind` es texto libre y la tabla es append-only: el
+-- «una sola vez» vive aquí y no en la costumbre del worker.
+CREATE UNIQUE INDEX uq_incident_actions_escalada
+  ON incident_actions (incident_id) WHERE kind = 'alert_escalated';
 
 -- [ANALISIS-00] Dictámenes INMUTABLES e versionados: firmar o corregir = INSERTAR una
 -- fila nueva que apunta a la anterior vía supersedes_dictamen_id. Nunca UPDATE/DELETE.
@@ -1917,13 +1924,17 @@ CREATE TABLE push_tokens (
   endpoint_arn  text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   last_seen_at  timestamptz NOT NULL DEFAULT now(),
-  revoked_at    timestamptz
+  revoked_at    timestamptz,
+  -- [T-9.05 · 0071] Rol de quien tiene el APARATO ahora (app_role() al reclamarlo).
+  -- NULL = fila anterior a la 0071: no se inventa un rol que nadie registró.
+  role          text
 );
 CREATE INDEX idx_push_tokens_user ON push_tokens (user_sub);
 CREATE INDEX idx_push_tokens_site ON push_tokens (site_id) WHERE revoked_at IS NULL;
 GRANT SELECT, INSERT, UPDATE, DELETE ON push_tokens TO takab_app;
--- el worker de notify resuelve destinos, sella endpoint_arn y revoca muertos
-GRANT SELECT, UPDATE ON push_tokens TO takab_ingest;
+-- el worker de notify resuelve destinos, sella endpoint_arn y revoca muertos;
+-- [T-9.05 · 0071] y el INSERT es de `app_claim_push_token`, cuyo dueño es este rol.
+GRANT SELECT, INSERT, UPDATE ON push_tokens TO takab_ingest;
 
 ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_tokens FORCE  ROW LEVEL SECURITY;
@@ -1932,6 +1943,77 @@ CREATE POLICY pt_self ON push_tokens FOR ALL
   WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
 CREATE POLICY pt_admin ON push_tokens FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- [T-9.05 · 0071] EL TOKEN DE PUSH ES DEL APARATO, NO DE LA PERSONA.
+-- `pt_self` es correcta para LEER, pero hacía imposible que el SIGUIENTE usuario
+-- del mismo teléfono registrara su token: el ON CONFLICT DO UPDATE caía sobre una
+-- fila que su RLS no le deja ver ⇒ «new row violates row-level security policy
+-- (USING expression)», y la app —best-effort— callaba. Única puerta: esta función,
+-- con la identidad tomada SOLO de la sesión, el sitio comprobado contra el tenant
+-- de la sesión, las lápidas de ARCO intocables y DOS filas de bitácora cuando el
+-- aparato cambia de dueño (la del tenant viejo, sin nombrar al nuevo). Mismo
+-- patrón que `app_notify_delivery`: SECURITY DEFINER con dueño `takab_ingest`
+-- (BYPASSRLS). Razones completas en la migración 0071.
+CREATE FUNCTION app_claim_push_token(p_token text, p_platform text, p_site uuid)
+RETURNS SETOF push_tokens
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $fn$
+DECLARE
+  v_tenant uuid := app_tenant_id();
+  v_user   uuid := app_user_id();
+  v_role   text := nullif(app_role(), '');
+  v_prev   push_tokens%ROWTYPE;
+  v_row    push_tokens%ROWTYPE;
+BEGIN
+  IF v_tenant IS NULL OR v_user IS NULL THEN
+    RAISE EXCEPTION USING ERRCODE = '42501',
+      MESSAGE = 'app_claim_push_token: sin identidad de sesion (app.tenant_id / app.user_id)';
+  END IF;
+  IF starts_with(coalesce(p_token, ''), 'arco:') THEN
+    RAISE EXCEPTION USING ERRCODE = '42501',
+      MESSAGE = 'app_claim_push_token: una lapida de ARCO no se reclama';
+  END IF;
+  IF p_site IS NOT NULL AND NOT EXISTS (
+       SELECT 1 FROM sites s WHERE s.site_id = p_site AND s.tenant_id = v_tenant) THEN
+    RAISE EXCEPTION USING ERRCODE = '42501',
+      MESSAGE = 'app_claim_push_token: el sitio no pertenece al tenant de la sesion';
+  END IF;
+
+  SELECT * INTO v_prev FROM push_tokens t WHERE t.token = p_token FOR UPDATE;
+
+  INSERT INTO push_tokens AS pt (tenant_id, user_sub, role, platform, token, site_id)
+  VALUES (v_tenant, v_user, v_role, p_platform, p_token, p_site)
+  ON CONFLICT (token) DO UPDATE SET
+    tenant_id    = EXCLUDED.tenant_id,
+    user_sub     = EXCLUDED.user_sub,
+    role         = EXCLUDED.role,
+    site_id      = EXCLUDED.site_id,
+    platform     = EXCLUDED.platform,
+    last_seen_at = now(),
+    revoked_at   = NULL,
+    endpoint_arn = CASE WHEN pt.platform = EXCLUDED.platform THEN pt.endpoint_arn END
+  RETURNING * INTO v_row;
+
+  IF v_prev.push_token_id IS NOT NULL
+     AND (v_prev.tenant_id IS DISTINCT FROM v_tenant
+          OR v_prev.user_sub IS DISTINCT FROM v_user) THEN
+    INSERT INTO audit_log (tenant_id, actor, verb, object, meta) VALUES
+      (v_prev.tenant_id, 'system:app_claim_push_token', 'push_token_released',
+       'push_token:' || v_row.push_token_id::text,
+       jsonb_build_object('push_token_id', v_row.push_token_id)),
+      (v_tenant, 'user:' || v_user::text, 'push_token_claimed',
+       'push_token:' || v_row.push_token_id::text,
+       jsonb_build_object('push_token_id', v_row.push_token_id));
+  END IF;
+
+  RETURN NEXT v_row;
+END
+$fn$;
+-- LA CESIÓN DE PROPIEDAD **NO VA AQUÍ**: este cuerpo lo ejecuta la 0001 bajo
+-- `SET ROLE takab_migrator`, que no es miembro de `takab_ingest`, y un
+-- `ALTER FUNCTION ... OWNER TO takab_ingest` en este fichero mataría la migración
+-- inicial. El dueño lo pone —y lo COMPRUEBA— la 0071.
+REVOKE ALL ON FUNCTION app_claim_push_token(text,text,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app_claim_push_token(text,text,uuid) TO takab_app;
 
 CREATE TABLE device_keys (
   key_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),

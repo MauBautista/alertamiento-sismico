@@ -87,18 +87,19 @@ describe("mergeAction — traza live idempotente", () => {
   });
 });
 
+const BASE = {
+  siteName: "Torre Reforma",
+  tier: "normal",
+  health: HEALTH,
+  live: "ready" as const,
+  latestByChannel: [],
+  featuresAtMs: null,
+  groups: [],
+  incidentOpen: false,
+  nowMs: NOW,
+};
+
 describe("PanelView (2.1)", () => {
-  const BASE = {
-    siteName: "Torre Reforma",
-    tier: "normal",
-    health: HEALTH,
-    live: "ready" as const,
-    latestByChannel: [],
-    featuresAtMs: null,
-    groups: [],
-    incidentOpen: false,
-    nowMs: NOW,
-  };
 
   it("UPS sin dato pinta S/D (jamás 0%) y las métricas reales con unidad", async () => {
     const v = await render(<PanelView {...BASE} />);
@@ -138,5 +139,38 @@ describe("PanelView (2.1)", () => {
     expect(v.getByTestId("feat-EHZ")).toHaveTextContent(/PGA 0.152 g/);
     expect(v.getByTestId("feat-EHZ")).toHaveTextContent(/STA\/LTA 3.10/);
     expect(v.getByText(/sin forma de onda/)).toBeTruthy();
+  });
+});
+
+describe("[T-9.04] el panel táctico también pinta el reingreso bloqueado", () => {
+  const NO_HABITAR = {
+    motivo: "no_habitable",
+    tono: "crit",
+    titulo: "REINGRESO NO AUTORIZADO",
+    detalle: "el dictamen indica NO HABITAR · INSPECCIÓN",
+    rotulo: "NO HABITABLE",
+  } as const;
+  const PENDIENTE = {
+    motivo: "pendiente_dictamen",
+    tono: "warn",
+    titulo: "REINGRESO PENDIENTE DE DICTAMEN",
+    detalle: "aún no hay un dictamen técnico firmado del inmueble.",
+    rotulo: "REINGRESO PENDIENTE",
+  } as const;
+
+  it("NO HABITAR ⇒ cartel rojo con el motivo", async () => {
+    const v = await render(<PanelView {...BASE} avisoReingreso={NO_HABITAR} />);
+    expect(v.getByTestId("panel-reingreso-crit")).toHaveTextContent(/REINGRESO NO AUTORIZADO/);
+  });
+
+  it("pendiente ⇒ franja ámbar", async () => {
+    const v = await render(<PanelView {...BASE} avisoReingreso={PENDIENTE} />);
+    expect(v.getByTestId("panel-reingreso-warn")).toHaveTextContent(/PENDIENTE DE DICTAMEN/);
+  });
+
+  it("sin aviso ⇒ nada", async () => {
+    const v = await render(<PanelView {...BASE} avisoReingreso={null} />);
+    expect(v.queryByTestId("panel-reingreso-crit")).toBeNull();
+    expect(v.queryByTestId("panel-reingreso-warn")).toBeNull();
   });
 });

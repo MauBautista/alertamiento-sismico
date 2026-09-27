@@ -1,0 +1,26 @@
+[
+  {
+    "event_id": "9e0a0000000000000000000000090020",
+    "tenant_id": "tenant-dev",
+    "site_id": "site-dev",
+    "source": "local_threshold",
+    "tier": "restricted",
+    "created_at": "2026-07-06T12:00:00Z"
+  },
+  {
+    "event_id": "9e0a0000000000000000000000090020",
+    "tenant_id": "tenant-dev",
+    "site_id": "site-dev",
+    "source": "local_threshold",
+    "tier": "evacuate_or_hold",
+    "created_at": "2026-07-06T12:00:01Z"
+  },
+  {
+    "event_id": "9e0a0000000000000000000000090020",
+    "tenant_id": "tenant-dev",
+    "site_id": "site-dev",
+    "source": "sasmex",
+    "tier": "evacuate_or_hold",
+    "created_at": "2026-07-06T12:00:02Z"
+  }
+]

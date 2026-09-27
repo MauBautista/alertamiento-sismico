@@ -35,7 +35,7 @@ from psycopg.types.json import Jsonb
 
 from takab_api.audit import audit
 from takab_api.contracts.meta import Meta
-from takab_api.settings import RANK, SEVERITY_RANK, TIER_SEVERITY
+from takab_api.settings import RANK, SEVERITY_RANK, TIER_SEVERITY, TRIGGER_RANK
 
 # --------------------------------------------------------------------------
 # Resultado tipado y contexto de gateway (los construye/consume registry.py)
@@ -259,20 +259,48 @@ def handle_feature_batch(
 # Órdenes totales para la escalada, derivados de settings (fuente única).
 _SEV_ORDER = [s for s, _ in sorted(SEVERITY_RANK.items(), key=lambda kv: kv[1])]
 _TIER_ORDER = [t for t, _ in sorted(RANK.items(), key=lambda kv: kv[1])]
+_TRIGGER_ORDER = [t for t, _ in sorted(TRIGGER_RANK.items(), key=lambda kv: kv[1])]
 
 # El tier vive en summary (incidents no tiene columna tier); la escalada compara
 # severity y desempata por tier (evacuate_or_hold→manual_only actualiza summary
 # aunque ambos sean 'critical'). El guard de tenant impide que una colisión de
 # event_uuid entre tenants toque el incidente ajeno. Nunca degrada (G3).
+#
+# [T-9.02] TERCER eje: el DISPARADOR. Un local_event cuyo trigger tiene más rango
+# (TRIGGER_RANK) escala aunque severity y tier empaten: umbral local y luego SASMEX,
+# los dos en `evacuate_or_hold`, en el MISMO event_id (caso razonado; en el ensayo 2
+# el golpe quedó en `watch` y el SASMEX escaló por tier). Y como ya no basta con que
+# suba UNO de los tres ejes para copiar el otro entero, el SET compara columna por
+# columna: severity, trigger y summary.tier solo SUBEN, cada uno por su orden. Copiar
+# `EXCLUDED` tal cual haría que un SASMEX con tier menor escalara el disparo y, de
+# paso, bajara la severidad de un incidente que ya estaba en evacuación.
+# `summary.source` sigue al trigger resultante, no al último mensaje. `opened_trigger`
+# no se nombra: lo sella el trigger de base `trg_incidents_opened_trigger` (restaura
+# OLD en cada UPDATE).
 _EVENT_SQL = """
 INSERT INTO incidents
   (event_uuid, tenant_id, site_id, opened_at, severity, state, trigger, summary)
 VALUES (%(event_uuid)s, %(tenant_id)s, %(site_id)s, %(opened_at)s,
         %(severity)s, 'open', %(trigger)s, %(summary)s)
 ON CONFLICT (event_uuid) DO UPDATE SET
-  severity = EXCLUDED.severity,
-  trigger  = EXCLUDED.trigger,
-  summary  = incidents.summary || EXCLUDED.summary
+  severity = CASE
+    WHEN array_position(%(sev_order)s::text[], EXCLUDED.severity)
+       > array_position(%(sev_order)s::text[], incidents.severity)
+    THEN EXCLUDED.severity ELSE incidents.severity END,
+  trigger = CASE
+    WHEN COALESCE(array_position(%(trigger_order)s::text[], EXCLUDED.trigger), 0)
+       > COALESCE(array_position(%(trigger_order)s::text[], incidents.trigger), 0)
+    THEN EXCLUDED.trigger ELSE incidents.trigger END,
+  summary = incidents.summary || EXCLUDED.summary || jsonb_build_object(
+    'tier', CASE
+      WHEN COALESCE(array_position(%(tier_order)s::text[], EXCLUDED.summary->>'tier'), 0)
+         > COALESCE(array_position(%(tier_order)s::text[], incidents.summary->>'tier'), 0)
+      THEN EXCLUDED.summary->>'tier' ELSE incidents.summary->>'tier' END,
+    'source', CASE
+      WHEN COALESCE(array_position(%(trigger_order)s::text[], EXCLUDED.trigger), 0)
+         > COALESCE(array_position(%(trigger_order)s::text[], incidents.trigger), 0)
+      THEN EXCLUDED.trigger ELSE incidents.trigger END
+  )
 WHERE incidents.tenant_id = EXCLUDED.tenant_id
   AND (
     array_position(%(sev_order)s::text[], EXCLUDED.severity)
@@ -282,6 +310,8 @@ WHERE incidents.tenant_id = EXCLUDED.tenant_id
       AND COALESCE(array_position(%(tier_order)s::text[], EXCLUDED.summary->>'tier'), 0)
         > COALESCE(array_position(%(tier_order)s::text[], incidents.summary->>'tier'), 0)
     )
+    OR COALESCE(array_position(%(trigger_order)s::text[], EXCLUDED.trigger), 0)
+      > COALESCE(array_position(%(trigger_order)s::text[], incidents.trigger), 0)
   )
 """
 
@@ -315,6 +345,7 @@ def handle_local_event(
             "summary": Jsonb({"tier": tier, "source": payload["source"]}),
             "sev_order": _SEV_ORDER,
             "tier_order": _TIER_ORDER,
+            "trigger_order": _TRIGGER_ORDER,
         },
     )
     return OK

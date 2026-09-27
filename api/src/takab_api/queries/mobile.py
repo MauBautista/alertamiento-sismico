@@ -16,7 +16,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
+from takab_api.incident.autoridad import autoriza_evacuacion_sql, params_autoriza_evacuacion_sql
+from takab_api.incident.classification import TERMINALES
 from takab_api.queries.fleet import EDAD_DEL_ENLACE, LATIDO_REAL
+from takab_api.reingreso import HABITABLES
 
 # --- acceso a sitio (R2) -------------------------------------------------------
 
@@ -62,13 +65,16 @@ async def assert_site_access(conn: AsyncConnection, claims: Claims, site_id: UUI
 
 # --- push tokens -----------------------------------------------------------------
 
-UPSERT_PUSH_TOKEN = text(
-    "INSERT INTO push_tokens (tenant_id, user_sub, platform, token, site_id) "
-    "VALUES (CAST(:tenant AS uuid), CAST(:sub AS uuid), :platform, :token, "
-    "CAST(:site AS uuid)) "
-    "ON CONFLICT (token) DO UPDATE SET last_seen_at = now(), revoked_at = NULL, "
-    "platform = EXCLUDED.platform, site_id = EXCLUDED.site_id "
-    "RETURNING push_token_id, platform, token, site_id, created_at, last_seen_at, revoked_at"
+# [T-9.05] EL TOKEN ES DEL APARATO. Era un `INSERT … ON CONFLICT DO UPDATE` bajo la
+# RLS `pt_self` (fila = `user_sub`), y el SIGUIENTE usuario del mismo teléfono
+# chocaba con la política —«new row violates row-level security policy (USING
+# expression)»— sobre la fila del anterior; la app callaba y ese teléfono se quedaba
+# sin push. Ahora reclama la fila `app_claim_push_token` (SECURITY DEFINER, dueño
+# `takab_ingest`, migración 0071), que toma tenant, usuario y rol SOLO de la sesión:
+# por eso aquí no viajan.
+CLAIM_PUSH_TOKEN = text(
+    "SELECT push_token_id, platform, token, site_id, created_at, last_seen_at, revoked_at "
+    "FROM app_claim_push_token(:token, :platform, CAST(:site AS uuid))"
 )
 
 LIST_PUSH_TOKENS = text(
@@ -144,36 +150,120 @@ DEACTIVATE_CODE = text(
 
 # --- mobile-state (ingredientes de la derivación de phase) ---------------------------
 
-OPEN_INCIDENT = text(
+# [T-9.04] La regla de T-2.105 como predicado SQL, sobre las columnas de estas
+# consultas. Se filtra AQUÍ, antes de ordenar o limitar: con el filtro aplicado
+# después en Python, cualquier `LIMIT` que cortara sobre incidentes de todo tipo
+# podía dejar fuera justo el que cuenta. La copia en SQL la ata a la de Python
+# `test_la_regla_de_autoridad_en_SQL_es_la_de_Python`; los parámetros salen de
+# `params_autoriza_evacuacion_sql`, nunca de una lista escrita a mano.
+_AUTORIZA_EVACUACION = autoriza_evacuacion_sql("i.trigger", "(e.meta->>'node_count')::int")
+
+# [T-9.04] LOS NO CERRADOS QUE AUTORIZAN, más nuevos primero, SIN `LIMIT`.
+#
+# Con `LIMIT 1` y el filtro de T-2.105 aplicado DESPUÉS, un umbral instrumental de
+# una sola estación abierto a las 12:04 tapaba al SASMEX abierto a las 12:00 y el
+# ocupante pasaba de «EVACÚE» a la calma en plena alerta. Subirlo a `LIMIT 5` sólo
+# movía el defecto al quinto local: las réplicas que siente sólo la estación abren
+# un incidente `local_threshold` cada una mientras el SASMEX sigue en revisión.
+# Ahora sólo llegan los que pueden autorizar, y el router elige el primero
+# re-aplicando la regla en Python (la que decide). Sin límite porque no hace falta:
+# un incidente no cerrado lo cierra el TTL de revisión en horas.
+OPEN_INCIDENTS = text(
     "SELECT i.incident_id, i.trigger, i.severity, i.state, i.opened_at, i.max_pga_g, "
     "(e.meta->>'node_count')::int AS node_count "
     "FROM incidents i LEFT JOIN seismic_events e ON e.event_id = i.event_id "
     "WHERE i.site_id = CAST(:site AS uuid) AND i.state <> 'closed' "
-    "ORDER BY i.opened_at DESC LIMIT 1"
+    f"  AND {_AUTORIZA_EVACUACION} "
+    "ORDER BY i.opened_at DESC, i.incident_id DESC"
 )
 
-# [T-7.55] LA AUTORIZACIÓN DE REINGRESO QUE SIGUE EN PIE, con el incidente ya
-# cerrado. Se consulta SÓLO cuando no hay incidente abierto (ver `mobile_site.py`),
-# y ésa es la garantía que importa: **un incidente abierto nunca puede quedar
-# tapado por uno cerrado**. Al revés, un ocupante en plena alerta leería
-# «REINGRESO AUTORIZADO» donde debería leer «EVACÚE», que es la dirección cara del
-# error y la única que este sistema no se puede permitir.
+# [T-9.04 · sustituye a `REENTRY_STILL_DECLARED` de T-7.55] LO QUE UN INCIDENTE
+# CERRADO SIGUE DICIENDO DEL EDIFICIO. Se consulta SÓLO cuando no hay incidente
+# abierto que autorice (ver `mobile_site.py`): **un incidente abierto nunca puede
+# quedar tapado por uno cerrado**, que es la garantía de T-7.55 y sigue en pie.
 #
-# Pide el dictamen FIRMADO más reciente del incidente —no cualquiera—: un
-# preliminar automático no autoriza a nadie a volver a entrar en un edificio.
-REENTRY_STILL_DECLARED = text(
-    "SELECT i.incident_id, d.status, d.signed_by "
-    "FROM incidents i JOIN LATERAL ("
-    "  SELECT status, signed_by FROM dictamens dd "
+# Aquella consulta tenía tres defectos: sólo traía la cabeza si estaba FIRMADA
+# (y el router sólo re-declaraba las habitables, así que un NO HABITAR firmado
+# caducaba a los tres segundos), no miraba si el incidente había ORDENADO evacuar,
+# y contaba la ventana desde `closed_at`. Éstas no deciden nada: traen los hechos
+# y la regla entera vive en `reingreso.deriva_reingreso`, pura y testeada aparte.
+#
+# · La CABEZA de la cadena, firmada o no (misma definición que `DICTAMEN_VIGENTE`):
+#   una corrección posterior sin firmar deja el veredicto en suspenso. Su
+#   `created_at` es la hora de la firma cuando está firmada.
+# · La clasificación VIGENTE —la que nadie sustituyó—, con el mismo criterio que
+#   `incident/lifecycle._POR_CLASIFICACION_SQL`: corregir INSERTA (T-5.12), y
+#   decidir por una clasificación retirada es decidir por un dato retirado.
+# · Sólo los que CUENTAN —autorizaron evacuar y su clasificación no es terminal—,
+#   filtrados aquí y no después. Con `LIMIT 10` sobre todos los cerrados y el
+#   filtro en Python, diez réplicas de la estación sola o diez pruebas del WR-1
+#   hacían caducar un NO HABITAR firmado (medido contra el endpoint). La función
+#   vuelve a aplicar las dos reglas: lo de aquí sólo acota, nunca decide.
+_CERRADOS_QUE_CUENTAN = (
+    "SELECT i.incident_id, i.trigger, i.opened_at, i.closed_at, "
+    "(e.meta->>'node_count')::int AS node_count, "
+    "d.status AS dictamen_status, d.signed_by AS dictamen_signed_by, "
+    "d.created_at AS dictamen_at, c.classification AS clasificacion "
+    "FROM incidents i "
+    "LEFT JOIN seismic_events e ON e.event_id = i.event_id "
+    "LEFT JOIN LATERAL ("
+    "  SELECT dd.status, dd.signed_by, dd.created_at FROM dictamens dd "
     "   WHERE dd.incident_id = i.incident_id "
     "   ORDER BY dd.created_at DESC LIMIT 1"
     ") d ON true "
+    "LEFT JOIN LATERAL ("
+    "  SELECT cc.classification FROM incident_classifications cc "
+    "   WHERE cc.incident_id = i.incident_id "
+    "     AND NOT EXISTS (SELECT 1 FROM incident_classifications s "
+    "                      WHERE s.supersedes_id = cc.classification_id) "
+    "   ORDER BY cc.classified_at DESC, cc.classification_id DESC LIMIT 1"
+    ") c ON true "
     "WHERE i.site_id = CAST(:site AS uuid) AND i.state = 'closed' "
-    "  AND i.closed_at IS NOT NULL "
-    "  AND i.closed_at > now() - make_interval(secs => :ventana_s) "
-    "  AND d.signed_by IS NOT NULL "
-    "ORDER BY i.closed_at DESC LIMIT 1"
+    f"  AND {_AUTORIZA_EVACUACION} "
+    "  AND (c.classification IS NULL "
+    "       OR c.classification <> ALL(CAST(:terminales AS text[]))) "
 )
+
+# Los NO HABITAR VIGENTES del sitio: cabeza firmada y no habitable. SIN `LIMIT` y
+# sin cota de edad, porque un NO HABITAR no caduca y ninguna ventana puede
+# decidir cuándo deja de verse. Son pocos por construcción: sólo existe mientras
+# nadie firme habitable sobre ese mismo incidente.
+NO_HABITAR_VIGENTES = text(
+    _CERRADOS_QUE_CUENTAN + "  AND d.signed_by IS NOT NULL "
+    "  AND d.status <> ALL(CAST(:habitables AS text[]))"
+)
+
+# Los que pueden DECIDIR el resto: cerrados dentro de la espera del dictamen, MÁS
+# RECIENTEMENTE CERRADOS primero — el mismo criterio con el que decide
+# `deriva_reingreso` (regla 2: manda el último CIERRE, no la última apertura).
+# Ordenar aquí por otra columna dejaba que diez incidentes abiertos después, pero
+# cerrados antes, sacaran del `LIMIT` justo al que la función iba a elegir. Con el
+# mismo orden, el primero es el que manda y el `LIMIT` sólo recorta filas que no
+# pueden cambiar el veredicto (los NO HABITAR los trae la consulta de arriba, sin
+# límite). La cota del pendiente la re-aplica la función con su propio reloj.
+CLOSED_FOR_REENTRY = text(
+    _CERRADOS_QUE_CUENTAN + "  AND i.closed_at > now() - make_interval(secs => :lookback_s) "
+    "ORDER BY i.closed_at DESC, i.incident_id DESC LIMIT 10"
+)
+
+
+def params_reingreso(
+    site_id: UUID, *, min_nodes: int, lookback_pendiente_s: float
+) -> dict[str, object]:
+    """Los parámetros de `NO_HABITAR_VIGENTES` y `CLOSED_FOR_REENTRY`.
+
+    Las listas salen de sus ÚNICAS copias (`TERMINALES`, `HABITABLES`,
+    `ORIGENES_AUTORITATIVOS`): una lista escrita a mano en el SQL es un censo que
+    acaba divergiendo.
+    """
+    return {
+        "site": str(site_id),
+        **params_autoriza_evacuacion_sql(min_nodes),
+        "terminales": sorted(TERMINALES),
+        "habitables": sorted(HABITABLES),
+        "lookback_s": lookback_pendiente_s,
+    }
+
 
 LATEST_TIER = text(
     "SELECT new_tier FROM rule_evaluations WHERE site_id = CAST(:site AS uuid) "

@@ -44,6 +44,8 @@ from __future__ import annotations
 #: identificador en crudo.
 ROTULOS: dict[str, str] = {
     "ack": "ACUSE DE OPERADOR",
+    # [T-9.03] La escalada que re-notifica a todo el edificio.
+    "alert_escalated": "LA ALERTA ESCALÓ · SE REPITE EL AVISO A TODO EL INMUEBLE",
     "close": "INCIDENTE CERRADO",
     "damage_people_at_risk": "PERSONAS EN RIESGO REPORTADAS EN SITIO",
     "dictamen": "DICTAMEN EMITIDO",
