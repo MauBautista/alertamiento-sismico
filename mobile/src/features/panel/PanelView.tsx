@@ -5,6 +5,7 @@
 import type { ActuatorGroup, FeatureRow, MobileSiteHealthOut } from "@takab/sdk";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
+import type { AvisoReingreso } from "@/features/reentry/avisoReingreso";
 import { Pulsable } from "@/ui/Pulsable";
 import { timeAgoLabel } from "@/ui/timeAgo";
 
@@ -52,6 +53,11 @@ export function PanelView(props: {
   /** [T-2.12] Hay dictamen firmado ⇒ enlace al certificado de reingreso (2.7). */
   dictamenSigned?: boolean;
   onOpenDictamen?: () => void;
+  /** [T-9.04] El reingreso bloqueado que sobrevive al cierre del incidente.
+   *  `crisis.tsx` y `checkin.tsx` mandan a «/» con `reentry_blocked`, y para el
+   *  perfil táctico «/» es ESTE panel: sin esto, la brigada —que es quien
+   *  controla la puerta— era la única que no veía el NO HABITAR. */
+  avisoReingreso?: AvisoReingreso | null;
 }) {
   const h = props.health;
   // [T-6.25] Qué dice el pill —y si late— sale de la edad del último frame, no
@@ -69,6 +75,26 @@ export function PanelView(props: {
           </Text>
         </View>
       </View>
+
+      {props.avisoReingreso ? (
+        <View
+          accessibilityRole={props.avisoReingreso.tono === "crit" ? "alert" : undefined}
+          style={
+            props.avisoReingreso.tono === "crit" ? styles.reingresoCrit : styles.reingresoWarn
+          }
+          testID={`panel-reingreso-${props.avisoReingreso.tono}`}
+        >
+          <Text
+            style={
+              props.avisoReingreso.tono === "crit"
+                ? styles.reingresoCritText
+                : styles.reingresoWarnText
+            }
+          >
+            {props.avisoReingreso.titulo} — {props.avisoReingreso.detalle}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>SALUD DEL GABINETE · {h.status}</Text>
@@ -188,6 +214,24 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, backgroundColor: palette.bg },
   wrap: { padding: space[4], paddingTop: 64, gap: space[3] },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  // [T-9.04] Mismo lenguaje que INICIO: NO HABITAR = relleno rojo con texto
+  // oscuro; un pendiente = contorno ámbar informativo.
+  reingresoCrit: {
+    backgroundColor: palette.crit,
+    borderRadius: radius.md,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+  },
+  reingresoCritText: { color: palette.bg, fontSize: fontSize.sm, fontWeight: "800" },
+  reingresoWarn: {
+    backgroundColor: palette.card,
+    borderColor: palette.warn,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+  },
+  reingresoWarnText: { color: palette.warn, fontSize: fontSize.sm, fontWeight: "800" },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2, flexShrink: 1 },
   pill: {
     flexDirection: "row",

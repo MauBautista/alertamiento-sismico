@@ -5,6 +5,9 @@ Dos fases por pasada, bajo un advisory lock propio (serializa instancias):
 1. **ENQUEUE**: incidentes recientes (lookback) con ``state≠closed`` y sin
    jobs → ``plan_jobs`` (cascada / crítico paralelo / fail-open) + INSERT
    ``ON CONFLICT DO NOTHING`` (UNIQUE (incident, channel, mode) = idempotente).
+   [T-9.03] Y la ESCALADA: el push de incidente guarda si autorizaba evacuar al
+   planificarse; si deja de ser así (SASMEX o cuórum llegan después), se escribe
+   ``alert_escalated`` y se encola un push CRISIS nuevo anclado a esa acción.
 2. **DISPATCH**: jobs ``pending`` con ``due_at ≤ now``, en bucle hasta agotar:
    - cascada ya satisfecha (algún cascade 'sent' del incidente) ⇒ ``skipped``;
    - canal SIMULADO (sin proveedor real) ⇒ ``simulated`` (T-2.75, ver abajo);
@@ -67,6 +70,7 @@ import psycopg
 
 from takab_api import demo_mode
 from takab_api.auth.matrix import roles_with_action
+from takab_api.incident.autoridad import autoriza_evacuacion
 from takab_api.notify.config import resolve_destinations, resolve_inspector_emails
 from takab_api.notify.plan import plan_jobs, resolve_params
 from takab_api.notify.providers import (
@@ -114,9 +118,15 @@ _BACKOFF_S = (30.0, 120.0, 600.0)
 #: ver la cota superior en `_PANIC_ACK_TIMEOUT_SQL`.
 _MARGEN_VENTANA_S = 600.0
 
+# [T-9.03] `node_count` del evento enlazado —como `queries/mobile.py::OPEN_INCIDENTS`—
+# para guardar en el push si el incidente AUTORIZABA evacuar al planificarse. Viaja
+# como TEXTO y se interpreta en Python (`_node_count`): un `::int` que reventara
+# aquí tumbaría la pasada entera, y con ella los avisos de todos los clientes.
 _NEW_INCIDENTS_SQL = """
-SELECT i.incident_id, i.tenant_id, i.site_id, i.severity, i.trigger, i.opened_at
+SELECT i.incident_id, i.tenant_id, i.site_id, i.severity, i.trigger, i.opened_at,
+       e.meta->>'node_count' AS node_count
 FROM incidents i
+LEFT JOIN seismic_events e ON e.event_id = i.event_id
 WHERE i.opened_at >= %(since)s
   AND i.opened_at <= %(now)s
   AND i.state <> 'closed'
@@ -238,6 +248,56 @@ INSERT INTO notification_jobs
 VALUES (%(tenant)s, %(incident)s, 'push', 'parallel', 0,
         %(target)s::jsonb, %(due_at)s, %(action)s)
 ON CONFLICT (action_id, channel) WHERE action_id IS NOT NULL DO NOTHING
+"""
+
+# [T-9.03] LA ESCALADA QUE NADIE AVISABA. Candidatos: incidentes vivos de la ventana
+# cuyo push de incidente se planificó SIN autorizar evacuar (`target.autoriza` =
+# false) y que todavía no tienen su `alert_escalated`. Si AHORA autorizan no lo
+# decide este SQL: lo decide `autoriza_evacuacion` en Python, que es la única copia
+# de la regla (la misma que lee `mobile_state`).
+#
+# `target->>'autoriza' = 'false'` y no `IS DISTINCT FROM 'true'`: un job planificado
+# antes de esta ficha no lleva la clave y no se sabe qué se le dijo al edificio. Se
+# elige NO adivinar — tratarlo como «no autorizaba» despertaría a todo el mundo por
+# un incidente que quizá ya ordenó evacuar.
+_ESCALATION_CANDIDATES_SQL = """
+SELECT i.incident_id, i.tenant_id, i.site_id, i.severity, i.trigger, i.opened_trigger,
+       i.opened_at, e.meta->>'node_count' AS node_count
+FROM incidents i
+LEFT JOIN seismic_events e ON e.event_id = i.event_id
+WHERE i.opened_at >= %(since)s
+  AND i.opened_at <= %(now)s
+  AND i.state <> 'closed'
+  AND EXISTS (
+        SELECT 1 FROM notification_jobs j
+        WHERE j.incident_id = i.incident_id
+          AND j.channel = 'push'
+          AND j.action_id IS NULL
+          AND j.target->>'autoriza' = 'false'
+      )
+  AND NOT EXISTS (
+        SELECT 1 FROM incident_actions a
+        WHERE a.incident_id = i.incident_id AND a.kind = 'alert_escalated'
+      )
+ORDER BY i.opened_at, i.incident_id
+"""
+
+# UNA escalada por incidente: el NOT EXISTS de aquí (bajo el advisory lock de la
+# pasada) y, en la base, `uq_incident_actions_escalada` (0070). Es `INSERT … SELECT
+# … WHERE NOT EXISTS` y no `ON CONFLICT (incident_id) WHERE …` a propósito: la
+# inferencia de ON CONFLICT EXIGE que el índice exista, y un código desplegado antes
+# que su migración tumbaría la pasada entera —los avisos de todos los clientes—
+# por un candado. Su `action_id` ancla el push nuevo: `uq_notification_jobs_action`
+# hace idempotente el despertador igual que el resto de pushes por acción.
+_INSERT_ESCALATION_ACTION_SQL = """
+INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload)
+SELECT %(incident)s::uuid, %(tenant)s::uuid, 'alert_escalated', 'system:notify:escalation',
+       %(payload)s::jsonb
+WHERE NOT EXISTS (
+  SELECT 1 FROM incident_actions
+  WHERE incident_id = %(incident)s::uuid AND kind = 'alert_escalated'
+)
+RETURNING action_id
 """
 
 _DUE_JOBS_SQL = """
@@ -539,6 +599,11 @@ def run_notify_pass(
     counts["enqueued"] = _enqueue(
         conn, settings, config_cache, counts, now=now, lookback_s=lookback
     )
+    # [T-9.03] Va DESPUÉS de `_enqueue`: así un incidente que ya nace autorizando
+    # recibe su push con `autoriza=true` y no se «escala» en la misma pasada.
+    counts["enqueued"] += _enqueue_escalations(
+        conn, settings, config_cache, counts, now=now, lookback_s=lookback
+    )
     counts["enqueued"] += _enqueue_dictamen_requests(
         conn, config_cache, now=now, lookback_s=lookback
     )
@@ -630,7 +695,16 @@ def _enqueue(
             _PUSH_EXISTS_SQL, {"site": row["site_id"], "tenant": row["tenant_id"]}
         ).fetchone()
         if has_devices is not None:
-            destinations = {**destinations, "push": {"site_id": str(row["site_id"])}}
+            # [T-9.03] Qué se le DIJO al edificio con este push: si autorizaba
+            # evacuar al planificarse. Es lo que permite a `_enqueue_escalations`
+            # saber, más tarde, que la orden de evacuar nunca le llegó al teléfono.
+            autoriza = autoriza_evacuacion(
+                row["trigger"], _node_count(row["node_count"]), settings.quorum_min_nodes
+            )
+            destinations = {
+                **destinations,
+                "push": {"site_id": str(row["site_id"]), "autoriza": autoriza},
+            }
         else:
             # [T-2.109] Aquí estaba el silencio: sin dispositivos no se encolaba
             # push y la pasada seguía como si nada, así que un edificio entero
@@ -667,6 +741,148 @@ def _enqueue(
                 },
             )
             inserted += result.rowcount
+    return inserted
+
+
+def _node_count(crudo: object) -> int | None:
+    """`seismic_events.meta.node_count` como entero, o None si no lo es.
+
+    El motor de cuórum lo escribe como entero (`incident/engine.py`), pero `meta`
+    es jsonb libre: un valor raro se trata como «sin corroboración», que es la
+    dirección default-deny de `autoriza_evacuacion`, en vez de tumbar la pasada.
+    """
+    if crudo is None:
+        return None
+    try:
+        return int(str(crudo))
+    except ValueError:
+        return None
+
+
+def _enqueue_escalations(
+    conn: psycopg.Connection,
+    settings: Settings,
+    config_cache: dict,
+    counts: dict[str, int],
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-9.03] La escalada RE-NOTIFICA a todo el edificio.
+
+    Medido el 2026-09-24 en el gabinete real: el incidente nace `local_threshold`
+    —una estación sola, que solo advierte— y el WR-1 de SASMEX lo escala segundos
+    después en el MISMO episodio. La app ya ordenaba evacuar al re-leer su estado,
+    pero el teléfono dormido no se enteraba: `_enqueue` solo mira incidentes SIN
+    jobs, y `uq_notification_jobs_incident` impedía un segundo push de incidente.
+    El único push que había recibido el edificio era el de «advertencia».
+
+    Por cada candidato que AHORA autoriza deja, en este orden:
+
+      1. `alert_escalated` en la bitácora — la evidencia de que la orden cambió, y
+         el `action_id` que ancla el push (mismo patrón que el dictamen o el aviso
+         al SOC);
+      2. un push CRISIS a TODO el inmueble (sin `roles`), anclado a esa acción;
+      3. el email paralelo crítico, si el incidente no lo tenía (nació `warning`).
+
+    Devuelve cuántos jobs encoló; `counts["escalated"]` cuenta las escaladas, y es
+    también lo que obliga al COMMIT aunque los jobs ya existieran.
+    """
+    params = resolve_params(settings)
+    rows = conn.execute(
+        _ESCALATION_CANDIDATES_SQL,
+        {"since": now - timedelta(seconds=lookback_s), "now": now},
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        node_count = _node_count(row["node_count"])
+        if not autoriza_evacuacion(row["trigger"], node_count, settings.quorum_min_nodes):
+            continue
+        accion = conn.execute(
+            _INSERT_ESCALATION_ACTION_SQL,
+            {
+                "incident": row["incident_id"],
+                "tenant": row["tenant_id"],
+                "payload": json.dumps(
+                    {
+                        "from_trigger": row["opened_trigger"],
+                        "to_trigger": row["trigger"],
+                        "node_count": node_count,
+                        "quorum_min_nodes": settings.quorum_min_nodes,
+                    }
+                ),
+            },
+        ).fetchone()
+        if accion is None:
+            continue  # otra pasada ya la escribió: el índice único manda
+        counts["escalated"] = counts.get("escalated", 0) + 1
+        logger.warning(
+            "incidente %s ESCALÓ a orden de evacuar (%s -> %s, node_count=%s): "
+            "se avisa de nuevo a todo el inmueble",
+            row["incident_id"],
+            row["opened_trigger"],
+            row["trigger"],
+            node_count,
+        )
+        inserted += conn.execute(
+            _INSERT_PUSH_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                # Sin `roles`: la orden de evacuar es para TODO el inmueble.
+                "target": json.dumps(
+                    {
+                        "site_id": str(row["site_id"]),
+                        "push_class": PUSH_CLASS_CRISIS,
+                        "autoriza": True,
+                    }
+                ),
+                "due_at": now,  # vence YA: la orden cambió ahora
+                "action": accion["action_id"],
+            },
+        ).rowcount
+        inserted += _replan_critical_email(conn, config_cache, row, params, now=now)
+    return inserted
+
+
+def _replan_critical_email(
+    conn: psycopg.Connection, config_cache: dict, row: dict, params, *, now: datetime
+) -> int:
+    """[T-9.03] El email paralelo crítico de un incidente que escaló, si no lo tenía.
+
+    Sale de `plan_jobs` —la misma planificación que al abrir— con `t0 = now`: el
+    plazo de <10 s corre desde que la orden cambió, no desde una apertura en la
+    que todavía no había nada que avisar con urgencia. Es job de INCIDENTE
+    (`action_id` NULL), así que `ON CONFLICT DO NOTHING` sobre
+    `uq_notification_jobs_incident` lo deja en uno si ya existía.
+    """
+    email = (resolve_destinations(_config_for(conn, config_cache, row)) or {}).get("email")
+    if not email:
+        return 0
+    specs = plan_jobs(
+        severity=row["severity"],
+        trigger=row["trigger"],
+        opened_at=now,
+        destinations={"email": email},
+        params=params,
+    )
+    inserted = 0
+    for spec in specs:
+        if spec.channel != "email" or spec.mode != "parallel":
+            continue
+        inserted += conn.execute(
+            _INSERT_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "channel": spec.channel,
+                "mode": spec.mode,
+                "position": spec.position,
+                "target": json.dumps(spec.target),
+                "due_at": spec.due_at,
+                "deadline_at": spec.deadline_at,
+            },
+        ).rowcount
     return inserted
 
 

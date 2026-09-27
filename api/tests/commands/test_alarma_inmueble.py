@@ -152,3 +152,53 @@ def test_un_panico_JAMAS_produce_alert_active() -> None:
             _orden(hace_s=hace_s), ahora=AHORA, vigencia_s=VIGENCIA_S, sin_enlace_s=SIN_ENLACE_S
         )
         assert fase_del_sitio("idle", alarma) != "alert_active"
+
+
+# --- [T-9.04] la precedencia es una TABLA, y el bloqueo de reingreso entra en ella ----
+
+
+def test_la_tabla_de_precedencia_cubre_TODA_fase_publicada() -> None:
+    """Censo: una fase que se publica en el contrato y no está en la tabla sería
+    una fase cuyo lugar decide el azar. Se deriva del `Literal`, no se teclea."""
+    import typing
+
+    from takab_api.commands.alarma_inmueble import PRECEDENCIA
+    from takab_api.schemas.mobile import Phase
+
+    assert set(PRECEDENCIA) == set(typing.get_args(Phase))
+    assert len(PRECEDENCIA) == len(set(PRECEDENCIA)), "una fase repetida en la tabla"
+
+
+def test_el_orden_de_la_tabla_es_el_de_la_ficha() -> None:
+    """alert_active > shaking_concluded > reentry_approved > building_alarm >
+    reentry_blocked > idle. Lo sísmico VIVO manda; la alarma del inmueble le gana
+    al bloqueo porque suena AHORA y el bloqueo es un estado que dura días."""
+    from takab_api.commands.alarma_inmueble import PRECEDENCIA
+
+    assert PRECEDENCIA == (
+        "alert_active",
+        "shaking_concluded",
+        "reentry_approved",
+        "building_alarm",
+        "reentry_blocked",
+        "idle",
+    )
+
+
+def test_la_alarma_del_inmueble_gana_al_bloqueo_de_reingreso() -> None:
+    assert fase_del_sitio("reentry_blocked", ALARMA) == "building_alarm"
+    assert fase_del_sitio("reentry_blocked", None) == "reentry_blocked"
+
+
+def test_con_bloqueo_un_panico_TAMPOCO_produce_alert_active() -> None:
+    """La garantía de T-2.106 sobrevive a la tabla: la alarma sólo aporta
+    `building_alarm` como candidata, así que no puede fabricar una evacuación
+    sísmica desde ninguna fase de partida."""
+    import typing
+
+    from takab_api.schemas.mobile import Phase
+
+    for sismica in typing.get_args(Phase):
+        if sismica in ("alert_active", "building_alarm"):
+            continue
+        assert fase_del_sitio(sismica, ALARMA) != "alert_active", sismica

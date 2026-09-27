@@ -365,6 +365,104 @@ def test_event_same_severity_higher_tier_updates_summary(fleet, ctx, meta) -> No
     assert (row[0], row[1]["tier"]) == ("critical", "manual_only")
 
 
+# --------------------------------------------------------------------------
+# [T-9.02] PRECEDENCIA DE DISPARADOR
+#
+# El edge usa UN event_id por episodio, así que el umbral local y el WR-1 de
+# SASMEX llegan como DOS local_event del MISMO incidente. El UPSERT solo
+# escalaba si subía la severidad o el tier; con EMPATE (los dos en
+# `evacuate_or_hold`) no tocaba nada, `trigger` se quedaba en
+# 'local_threshold', `autoriza_evacuacion()` daba False y el ocupante NO veía
+# la alerta SASMEX real. Es un caso RAZONADO, no medido: en el ensayo 2
+# (2026-09-24) el golpe se quedó en `watch` y el SASMEX sí escaló.
+# --------------------------------------------------------------------------
+
+
+def _incidente(conn: psycopg.Connection) -> tuple:
+    return conn.execute(
+        "SELECT severity, trigger, opened_trigger, summary FROM incidents WHERE event_uuid = %s",
+        (uuid.UUID(EVENT_HEX),),
+    ).fetchone()
+
+
+def test_event_sasmex_con_el_mismo_tier_escala_el_disparador(fleet, ctx, meta) -> None:
+    """(a) Umbral local y luego SASMEX en el mismo episodio, EMPATADOS en el tier.
+
+    Caso razonado: en el ensayo 2 el golpe quedó en `watch` y no empató."""
+    assert handle_local_event(fleet, _event(tier="evacuate_or_hold"), meta, ctx).is_ok
+    assert handle_local_event(
+        fleet, _event(tier="evacuate_or_hold", source="sasmex"), meta, ctx
+    ).is_ok
+    severity, trigger, opened, summary = _incidente(fleet)
+    assert trigger == "sasmex", (
+        "con el tier empatado el disparo se quedó en el umbral local: el ocupante no "
+        "vería la orden de evacuar de una alerta SASMEX real"
+    )
+    # La apertura NO se reescribe: la sella la base (trg_incidents_opened_trigger).
+    assert opened == "local_threshold"
+    assert (severity, summary["tier"], summary["source"]) == (
+        "critical",
+        "evacuate_or_hold",
+        "sasmex",
+    )
+    assert _count(fleet, "SELECT count(*) FROM incidents") == 1
+
+
+def test_event_local_tras_sasmex_con_el_mismo_tier_no_le_quita_el_disparo(fleet, ctx, meta) -> None:
+    """(b) Al revés: el umbral local que llega DESPUÉS no degrada a SASMEX."""
+    assert handle_local_event(
+        fleet, _event(tier="evacuate_or_hold", source="sasmex"), meta, ctx
+    ).is_ok
+    assert handle_local_event(fleet, _event(tier="evacuate_or_hold"), meta, ctx).is_ok
+    _, trigger, opened, summary = _incidente(fleet)
+    assert (trigger, opened, summary["source"]) == ("sasmex", "sasmex", "sasmex")
+
+
+def test_event_local_menor_tras_sasmex_no_degrada_nada(fleet, ctx, meta) -> None:
+    """(c) SASMEX crítico y luego un umbral local en `watch`: nada baja."""
+    assert handle_local_event(
+        fleet, _event(tier="evacuate_or_hold", source="sasmex"), meta, ctx
+    ).is_ok
+    assert handle_local_event(fleet, _event(tier="watch"), meta, ctx).is_ok
+    severity, trigger, _, summary = _incidente(fleet)
+    assert (severity, trigger, summary["tier"]) == ("critical", "sasmex", "evacuate_or_hold")
+
+
+def test_event_sube_el_disparador_sin_degradar_severidad_ni_tier(fleet, ctx, meta) -> None:
+    """(d) La escalada del disparo NO arrastra hacia abajo lo que ya estaba arriba.
+
+    Es la trampa del arreglo ingenuo: añadir «o sube el disparo» al WHERE y dejar el
+    SET copiando `EXCLUDED` tal cual. Con eso, un SASMEX que llega con un tier menor
+    que el umbral local SÍ escala el disparo… y de paso baja la severidad a `watch`
+    en un incidente que ya estaba en evacuación.
+    """
+    assert handle_local_event(fleet, _event(tier="evacuate_or_hold"), meta, ctx).is_ok
+    assert handle_local_event(fleet, _event(tier="watch", source="sasmex"), meta, ctx).is_ok
+    severity, trigger, opened, summary = _incidente(fleet)
+    assert trigger == "sasmex"
+    assert opened == "local_threshold"
+    assert (severity, summary["tier"]) == ("critical", "evacuate_or_hold"), (
+        "subir el disparo degradó la severidad o el tier del incidente"
+    )
+
+
+def test_trigger_rank_cubre_exactamente_el_CHECK_de_incidents_trigger() -> None:
+    """El orden del disparo se compara con `COALESCE(array_position(...), 0)`: un valor
+    nuevo del CHECK que no entre en TRIGGER_RANK tendría rango 0 —el más bajo— y no
+    escalaría NUNCA, en verde y sin un error. Se parsea del DDL para no petrificar
+    una copia, y SASMEX tiene que ser el techo: es el canal autoritativo."""
+    import re  # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    from takab_api.settings import TRIGGER_RANK  # noqa: PLC0415
+
+    ddl = (Path(__file__).resolve().parents[2] / "db" / "schema.sql").read_text("utf-8")
+    m = re.search(r"trigger\s+text NOT NULL CHECK \(trigger IN \(([^)]+)\)\)", ddl)
+    assert m, "CHECK de incidents.trigger no encontrado en db/schema.sql"
+    assert set(TRIGGER_RANK) == set(re.findall(r"'([^']+)'", m.group(1)))
+    assert max(TRIGGER_RANK, key=TRIGGER_RANK.__getitem__) == "sasmex"
+
+
 def test_event_bad_event_id_rejected(fleet, ctx, meta) -> None:
     res = handle_local_event(fleet, _event(event_id="no-es-hex"), meta, ctx)
     assert res.outcome is Outcome.REJECT

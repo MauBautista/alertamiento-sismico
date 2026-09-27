@@ -21,6 +21,7 @@ import { Modal, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
+import { avisoDeReingreso } from "@/features/reentry/avisoReingreso";
 import { ControlSheet } from "@/features/control/ControlSheet";
 import { preconditionsFor } from "@/features/control/preconditions";
 import { executeTacticalCommand, type TacticalAction } from "@/features/control/service";
@@ -206,6 +207,7 @@ export default function Panel() {
       {data !== null && health !== null ? (
         <>
           <PanelView
+            avisoReingreso={avisoDeReingreso(data)}
             canActivate={canActivate}
             canSilence={canSilence}
             dictamenSigned={data.reentry?.dictamen_signed === true}

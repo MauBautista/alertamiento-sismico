@@ -241,19 +241,25 @@ async def _seed_tier(new_tier: str, ts_offset_s: int = 0) -> None:
         )
 
 
-async def _seed_dictamen(incident_id: str, *, status: str, signed: bool) -> None:
+async def _seed_dictamen(
+    incident_id: str, *, status: str, signed: bool, hace_s: float = 0.0
+) -> None:
+    """``hace_s`` [T-9.04]: la fila es append-only y su ``created_at`` ES la hora
+    de la firma, así que envejecer una firma es sembrarla ya vieja."""
     engine = get_engine()
     async with engine.begin() as conn:
         await conn.execute(
             text(
-                "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by) "
-                "VALUES (:t, :i, :st, '{}'::jsonb, :by)"
+                "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by, "
+                "created_at) VALUES (:t, :i, :st, '{}'::jsonb, :by, "
+                "now() - make_interval(secs => :hace))"
             ),
             {
                 "t": au.DB_TENANT_PRIV,
                 "i": incident_id,
                 "st": status,
                 "by": str(uuid.uuid4()) if signed else None,
+                "hace": hace_s,
             },
         )
 
@@ -1256,12 +1262,20 @@ async def test_pasada_su_ventana_la_autorizacion_DEJA_de_declararse(
     La ventana es para alguien que está FUERA del edificio y mira el teléfono al
     volver, no para que la app siga diciéndolo días después de un sismo que ya
     nadie recuerda.
+
+    [T-9.04] ⚠️ CAMBIADO A CONCIENCIA: la ventana cuenta desde la FIRMA, no desde
+    el cierre. Esta prueba sembraba la firma AHORA y el cierre hace 9 h —un orden
+    que en producción no existe, porque `D-33` cierra tres segundos DESPUÉS de
+    firmar— y afirmaba `idle`. Con la regla nueva, una firma habitable de hace
+    un minuto SÍ se declara aunque el cierre sea viejo (es una firma posterior:
+    justo la que levanta un NO HABITAR). Lo que caduca es la firma, así que aquí
+    se envejece la firma.
     """
     await _seed_zone_and_code()
     incident_id = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
-    await _seed_dictamen(incident_id, status="inhabit_monitor", signed=True)
-    # Cerrado hace MÁS que la ventana por defecto (8 h).
-    await _cerrar_incidente(incident_id, hace_s=9 * 3600.0)
+    # Firmado hace MÁS que la ventana por defecto (8 h), y cerrado 3 s después.
+    await _seed_dictamen(incident_id, status="inhabit_monitor", signed=True, hace_s=9 * 3600.0)
+    await _cerrar_incidente(incident_id, hace_s=9 * 3600.0 - 3.0)
 
     url = f"/sites/{au.DB_SITE_PRIV}/mobile-state"
     async with au.client_for(create_app()) as client:
@@ -1269,7 +1283,7 @@ async def test_pasada_su_ventana_la_autorizacion_DEJA_de_declararse(
         estado = (await client.get(url, headers=au.bearer(_occ()))).json()
 
     assert estado["phase"] == "idle", (
-        f"la autorización sigue declarándose 9 h después del cierre (fase {estado['phase']!r})"
+        f"la autorización sigue declarándose 9 h después de la firma (fase {estado['phase']!r})"
     )
 
 
@@ -1288,7 +1302,17 @@ async def test_un_dictamen_SIN_FIRMAR_no_libera_aunque_el_incidente_se_cierre(
         await _enroll(client, _occ())
         estado = (await client.get(url, headers=au.bearer(_occ()))).json()
 
-    assert estado["phase"] == "idle", (
+    # [T-9.04] ⚠️ CAMBIADO A CONCIENCIA: antes se afirmaba `idle`. Lo que esta
+    # prueba defiende —que un preliminar sin firma NO libera— sigue igual; lo que
+    # cambia es qué se dice en su lugar. Un SASMEX cerrado sin veredicto firmado
+    # deja el reingreso BLOQUEADO «pendiente de dictamen» (con cota,
+    # `reentry_pendiente_lookback_s`): `idle` le decía al ocupante que no había
+    # nada de lo que volver, sobre un edificio que nadie había inspeccionado.
+    assert estado["phase"] != "reentry_approved", (
         "un dictamen preliminar SIN firma liberó el reingreso: la firma de un inspector "
         "es lo único que autoriza volver a entrar"
     )
+    assert estado["phase"] == "reentry_blocked"
+    assert estado["reentry"]["blocked"] is True
+    assert estado["reentry"]["reason"] == "pendiente_dictamen"
+    assert estado["reentry"]["dictamen_signed"] is False

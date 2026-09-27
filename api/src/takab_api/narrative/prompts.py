@@ -23,6 +23,14 @@ garantía:
 La versión del prompt se DERIVA de este texto (`prompt_version`), así que cambiarlo aquí
 la mueve sola: ningún dictamen puede quedar registrado con una versión que no es la que
 se usó.
+
+[T-9.02] LOS DOS DISPARADORES. Los hechos traían `opened_trigger` y `trigger` desde
+`T-7.36`, pero como dos claves JSON casi homónimas y sin nada que dijera cuál es cuál.
+El PDF del ensayo 2 (2026-09-24) atribuyó la sirena al umbral local de un incidente que
+escaló a SASMEX. Ahí la ingesta SÍ había escalado el `trigger` (el golpe quedó en `watch`
+y el SASMEX subió el tier): el error era de la prosa, que leyó la clave equivocada. El
+prompt de sistema ahora nombra las dos claves y la regla de lectura. El empate de tier,
+que sí dejaba el `trigger` sin escalar, lo cierra aparte la ingesta (T-9.02).
 """
 
 from __future__ import annotations
@@ -62,6 +70,13 @@ orden, su distancia, lo que midió y contra qué umbral), la cronología de lo q
 clase: una persona, el gabinete o el sistema—, los reportes de daño de la brigada por \
 rol y por categoría, y cuántas fotografías se adjuntan. Úsalos: son lo que distingue \
 este informe de una plantilla.
+
+El disparo viaja en dos claves que no significan lo mismo: `opened_trigger` es con qué \
+se abrió el incidente y `trigger` es la escalada vigente, que puede haber llegado \
+después. Si difieren, di las dos cosas y en ese orden: que se abrió por la primera y \
+que después escaló a la segunda. No atribuyas al disparo de apertura lo que ocurrió \
+tras la escalada, y no atribuyas una actuación a un disparo si la cronología no lo \
+sostiene.
 
 Nombra a las estaciones por su orden en la tabla («la estación 2»), nunca por un nombre \
 ni un código, porque no los tienes. A quien reporta un daño nómbralo por su rol. No \

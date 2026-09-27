@@ -23,6 +23,21 @@ SEVERITY_RANK: dict[str, int] = {
     "critical": 3,
 }
 
+# [T-9.02] Precedencia del DISPARADOR (valores del CHECK de incidents.trigger), de
+# menor a mayor autoridad. El UPSERT de la ingesta tampoco lo degrada nunca: el edge
+# usa UN event_id por episodio, así que umbral local y SASMEX llegan como dos
+# local_event del MISMO incidente. Si los dos llegan con el MISMO tier, el UPSERT no
+# escalaba nada, el trigger se quedaba en 'local_threshold' y el ocupante no veía la
+# orden de evacuar de una alerta SASMEX real (incident/autoridad.py). Es un caso
+# RAZONADO, no medido: en el ensayo 2 (2026-09-24) el golpe se quedó en `watch` y el
+# SASMEX, en `evacuate_or_hold`, sí escaló porque el tier subía.
+TRIGGER_RANK: dict[str, int] = {
+    "manual": 0,
+    "local_threshold": 1,
+    "quorum": 2,
+    "sasmex": 3,
+}
+
 # tier del edge → incidents.severity (valores exactos del CHECK; monótono con RANK).
 TIER_SEVERITY: dict[str, str] = {
     "normal": "info",
@@ -611,7 +626,18 @@ class Settings(BaseSettings):
     # sitio y mira el teléfono cuando vuelve. Ocho horas cubren una jornada sin
     # que la afirmación se quede colgada días. Y no hace falta que cubra más:
     # si abre otro incidente, ése manda (ver la precedencia en `mobile_site.py`).
+    #
+    # [T-9.04] Y cuenta desde la FIRMA, no desde el cierre: un cierre tardío (el
+    # TTL de revisión, una limpieza) resucitaba una autorización firmada días antes.
     reentry_declare_s: float = 8 * 3600.0
+    # [T-9.04] Cuánto sigue el reingreso BLOQUEADO («pendiente de dictamen») tras
+    # cerrarse SIN dictamen firmado un incidente que ordenó evacuar. Un SASMEX que
+    # nadie inspeccionó no deja el edificio en calma; pero sin cota, un incidente
+    # que nadie va a dictaminar dejaría bloqueada para siempre la pantalla de quien
+    # ya volvió a trabajar. Treinta días cubren una campaña de inspección
+    # post-sismo. El NO HABITAR firmado NO usa esta cota: ése no caduca nunca
+    # (ver `takab_api/reingreso.py`).
+    reentry_pendiente_lookback_s: float = 30 * 86400.0
     # Ventana ASIMÉTRICA del pico de PGA del dictamen (T-1.48): en un incidente
     # SASMEX la sacudida llega DESPUÉS de la alerta (ese es el punto de la
     # alerta temprana) — el ±5 s simétrico perdía el pico. Solo afecta la

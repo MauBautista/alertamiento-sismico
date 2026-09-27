@@ -48,3 +48,38 @@
 UPDATE incidents SET state = 'closed', closed_at = now() - interval '30 days'
  WHERE site_id = :'site'::uuid
    AND (state <> 'closed' OR closed_at IS NULL OR closed_at > now() - interval '30 days');
+
+-- ⚠️ [T-9.04] RETRODATAR YA NO BASTA, y la línea de arriba se queda sólo por lo
+-- que dice («esto ya es historia vieja»). Desde `T-9.04` las 8 h de «REINGRESO
+-- AUTORIZADO» cuentan desde la FIRMA del dictamen —no desde el cierre— y un NO
+-- HABITAR firmado NO caduca: retrodatar `closed_at` no mueve ninguna de las dos
+-- cosas, y `dictamens` es append-only. Medido en la suite: tras `reentry` +
+-- `reset` el endpoint seguía en `reentry_approved`, que es el falso verde de
+-- `T-7.62` otra vez.
+--
+-- Lo que el arnés quiere decir es que estos incidentes FUERON PRUEBAS, y eso ya
+-- tiene su palabra: la clasificación terminal `prueba` («prueba, mantenimiento o
+-- puesta en marcha», `incident/classification.py`). Un incidente terminal no
+-- dice nada del edificio (`reingreso.deriva_reingreso`): ni autoriza, ni bloquea,
+-- ni deja un pendiente. Append-only como el resto: si ya había una clasificación
+-- vigente no terminal, ésta la SUSTITUYE (`supersedes_id`), igual que corregir
+-- desde la consola. Idempotente: un incidente que ya es terminal no se toca.
+--
+-- ⚠️ La lista de terminales es el espejo de `TERMINALES`; si se separa, lo peor
+-- que pasa es re-clasificar como `prueba` algo que ya era terminal. Y el sitio
+-- sigue acotado por `guarda.sql`: nunca uno con gabinete.
+INSERT INTO incident_classifications
+       (tenant_id, incident_id, classification, note, classified_by, supersedes_id)
+SELECT i.tenant_id, i.incident_id, 'prueba', 'reset del arnés e2e (T-9.04)',
+       gen_random_uuid(), v.classification_id
+  FROM incidents i
+  LEFT JOIN LATERAL (
+    SELECT cc.classification_id, cc.classification FROM incident_classifications cc
+     WHERE cc.incident_id = i.incident_id
+       AND NOT EXISTS (SELECT 1 FROM incident_classifications s
+                        WHERE s.supersedes_id = cc.classification_id)
+     ORDER BY cc.classified_at DESC, cc.classification_id DESC LIMIT 1
+  ) v ON true
+ WHERE i.site_id = :'site'::uuid
+   AND (v.classification IS NULL
+        OR v.classification NOT IN ('falso_positivo', 'prueba', 'reproduccion'));

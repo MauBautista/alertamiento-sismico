@@ -31,8 +31,9 @@ from takab_api.commands.alarma_inmueble import OrdenSirena, fase_del_sitio, suen
 from takab_api.commands.quorum_actuation import QUORUM_ACTOR_UUID
 from takab_api.compliance import mobile_projection, parse_document
 from takab_api.demo_mode import ventana_viva as demo_mode_vivo
-from takab_api.incident.autoridad import autoriza_evacuacion
+from takab_api.incident.autoridad import autoriza_evacuacion, params_autoriza_evacuacion_sql
 from takab_api.queries import mobile as q
+from takab_api.reingreso import HABITABLES, IncidenteCerrado, RazonBloqueo, deriva_reingreso
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put
 from takab_api.schemas.fleet import DEGRADADO, OPERATIVO, SIN_ENLACE, derive_fleet_state
@@ -61,9 +62,6 @@ _require_enrollment_admin = require_roles(*_ENROLLMENT_ROLES)
 _require_fleet = require_roles(*_FLEET_ROLES)
 
 router = APIRouter()
-
-# Dictamen HABITABLE: libera el reingreso (spec §7 · 2.7 "HABITAR").
-_HABITABLE = frozenset({"normal_operation", "inhabit_monitor"})
 
 
 async def _site_health(
@@ -202,7 +200,12 @@ async def mobile_state(
     site = await q.assert_site_access(conn, claims, site_id)
     settings = Settings()
 
-    incident_row = (await conn.execute(q.OPEN_INCIDENT, {"site": str(site_id)})).first()
+    open_rows = (
+        await conn.execute(
+            q.OPEN_INCIDENTS,
+            {"site": str(site_id), **params_autoriza_evacuacion_sql(settings.quorum_min_nodes)},
+        )
+    ).all()
     tier_row = (await conn.execute(q.LATEST_TIER, {"site": str(site_id)})).first()
     latest_tier = tier_row.new_tier if tier_row else None
 
@@ -210,6 +213,7 @@ async def mobile_state(
     dictamen_status: str | None = None
     dictamen_signed = False
     dictamen_incident_id: UUID | None = None
+    reentry_reason: RazonBloqueo | None = None
     phase: Phase = "idle"
 
     # [T-2.105] UNA ESTACIÓN SOLA NO ORDENA EVACUAR. Un incidente abierto por el
@@ -224,10 +228,21 @@ async def mobile_state(
     # En cuanto la red corrobora (≥ `quorum_min_nodes` estaciones), el mismo
     # incidente empieza a autorizar sin que nadie reescriba nada: `node_count`
     # sale del evento enlazado por el motor de cuórum.
-    if incident_row is not None and not autoriza_evacuacion(
-        incident_row.trigger, incident_row.node_count, settings.quorum_min_nodes
-    ):
-        incident_row = None
+    #
+    # [T-9.04] Y manda el PRIMERO QUE AUTORIZA, no el más nuevo. Con `LIMIT 1` y
+    # este filtro aplicado después, un local abierto a las 12:04 tapaba al SASMEX
+    # abierto a las 12:00 y el ocupante pasaba de «EVACÚE» a la calma; con
+    # `LIMIT 5`, a partir del quinto local. La consulta ya filtra en SQL, antes de
+    # ordenar (`q.OPEN_INCIDENTS`); aquí se re-aplica la regla porque es ésta la
+    # copia que decide, y la de SQL sólo acota.
+    incident_row = next(
+        (
+            r
+            for r in open_rows
+            if autoriza_evacuacion(r.trigger, r.node_count, settings.quorum_min_nodes)
+        ),
+        None,
+    )
 
     if incident_row is not None:
         incident = MobileIncidentOut(
@@ -246,45 +261,73 @@ async def mobile_state(
             dictamen_status = dictamen_row.status
             dictamen_signed = dictamen_row.signed_by is not None
             dictamen_incident_id = incident_row.incident_id
-        if dictamen_signed and dictamen_status in _HABITABLE:
+        if dictamen_signed and dictamen_status in HABITABLES:
             phase = "reentry_approved"
         elif latest_tier == "normal":
             phase = "shaking_concluded"
         else:
             phase = "alert_active"
     else:
-        # [T-7.55] ⚠️ LA AUTORIZACIÓN SOBREVIVE AL CIERRE DEL INCIDENTE.
+        # [T-7.55 · rehecho en T-9.04] ⚠️ EL VEREDICTO SOBREVIVE AL CIERRE.
         #
         # Desde `D-33` el motor cierra el incidente en cuanto se firma el dictamen
-        # —medido: TRES SEGUNDOS—, y hasta aquí eso hacía que la fase cayera a
-        # `idle`. Para el ocupante eso es que **la prohibición de reingreso
-        # desaparece sin que nadie le diga que ya puede volver**: tenía que
-        # deducirlo de la ausencia de un cartel. Es la misma clase de defecto que
-        # `T-7.51` cerró en el dictamen —un documento que se desmiente— visto
-        # desde la pantalla del que está fuera del edificio.
+        # —medido: TRES SEGUNDOS—. `T-7.55` rescató la autorización HABITABLE,
+        # pero sólo ésa: un NO HABITAR firmado dejaba la app en `idle` —el
+        # edificio desbloqueado— tres segundos después de firmarse. Y rescataba
+        # también incidentes que nunca ordenaron evacuar, contando la ventana
+        # desde el cierre. Ahora el veredicto entero lo decide
+        # `reingreso.deriva_reingreso` (pura, reglas en su docstring).
         #
         # Va en el `else` **a propósito, y es la garantía de seguridad de este
-        # bloque**: si hay incidente abierto manda ése, siempre. Al revés, un
-        # ocupante en plena alerta leería «REINGRESO AUTORIZADO» donde debe leer
-        # «EVACÚE». Por eso no se amplía `OPEN_INCIDENT` para que traiga cerrados:
-        # esa vía haría que el orden de un `ORDER BY` decidiera qué lee alguien
-        # que está decidiendo si entra a un edificio.
+        # bloque**: si hay incidente abierto que autoriza manda ése, siempre. Al
+        # revés, un ocupante en plena alerta leería «REINGRESO AUTORIZADO» donde
+        # debe leer «EVACÚE».
         #
-        # Y no se resucita el incidente: lo que persiste es el HECHO de la
-        # autorización, que es lo que el ocupante necesita. `incident` sigue en
-        # `None`, así que `reentry.blocked` queda en falso por el mismo camino de
-        # siempre.
-        reentry_row = (
-            await conn.execute(
-                q.REENTRY_STILL_DECLARED,
-                {"site": str(site_id), "ventana_s": settings.reentry_declare_s},
+        # Y no se resucita el incidente: lo que persiste es el HECHO del
+        # veredicto. `incident` sigue en `None`; `reentry.incident_id` dice de
+        # qué incidente es.
+        #
+        # Dos consultas, y ninguna con un `LIMIT` que pueda tapar lo que cuenta:
+        # los NO HABITAR vigentes, todos y sin cota de edad, y los que pueden
+        # decidir el resto. Se juntan por `incident_id`; el orden y la
+        # precedencia los decide la función, no el `ORDER BY`.
+        params = q.params_reingreso(
+            site_id,
+            min_nodes=settings.quorum_min_nodes,
+            lookback_pendiente_s=settings.reentry_pendiente_lookback_s,
+        )
+        filas = {
+            r.incident_id: r
+            for consulta in (q.NO_HABITAR_VIGENTES, q.CLOSED_FOR_REENTRY)
+            for r in (await conn.execute(consulta, params)).all()
+        }
+        cerrados = [
+            IncidenteCerrado(
+                incident_id=r.incident_id,
+                trigger=r.trigger,
+                node_count=r.node_count,
+                opened_at=r.opened_at,
+                closed_at=r.closed_at,
+                clasificacion=r.clasificacion,
+                dictamen_status=r.dictamen_status,
+                dictamen_firmado=r.dictamen_signed_by is not None,
+                dictamen_at=r.dictamen_at,
             )
-        ).first()
-        if reentry_row is not None and reentry_row.status in _HABITABLE:
-            dictamen_status = reentry_row.status
-            dictamen_signed = True
-            dictamen_incident_id = reentry_row.incident_id
-            phase = "reentry_approved"
+            for r in filas.values()
+        ]
+        reingreso = deriva_reingreso(
+            cerrados,
+            ahora=datetime.now(tz=UTC),
+            min_nodes=settings.quorum_min_nodes,
+            ventana_firma_s=settings.reentry_declare_s,
+            lookback_pendiente_s=settings.reentry_pendiente_lookback_s,
+        )
+        phase = reingreso.fase
+        if reingreso.incidente is not None:
+            dictamen_status = reingreso.incidente.dictamen_status
+            dictamen_signed = reingreso.incidente.dictamen_firmado
+            dictamen_incident_id = reingreso.incidente.incident_id
+        reentry_reason = reingreso.razon
 
     # [T-2.106] ALARMA DEL INMUEBLE. El quórum de pánico emite un `siren/activate`
     # firmado y NO crea incidente, así que hasta aquí no llegaba nada: el edificio
@@ -335,10 +378,16 @@ async def mobile_state(
         latest_tier=latest_tier,
         my_zone=my_zone,
         reentry=MobileReentryOut(
-            blocked=incident is not None and phase != "reentry_approved",
+            # [T-9.04] Bloqueado también con el incidente CERRADO (`reason` dice
+            # por qué). Es un hecho del edificio, no de la pantalla: si la alarma
+            # del inmueble gana la precedencia, el bloqueo sigue siendo verdad y
+            # sigue viajando aquí.
+            blocked=(incident is not None and phase != "reentry_approved")
+            or reentry_reason is not None,
             dictamen_status=dictamen_status,
             dictamen_signed=dictamen_signed,
             incident_id=dictamen_incident_id,
+            reason=reentry_reason,
         ),
         demo_mode=await demo_mode_vivo(conn, str(claims.tenant_id)) is not None,
         assembly_point=_asset_out(assembly_row, settings) if assembly_row else None,

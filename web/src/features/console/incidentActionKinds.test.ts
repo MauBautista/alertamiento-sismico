@@ -239,6 +239,43 @@ describe("[T-2.144] la severidad de los otros siete, una por una", () => {
 });
 
 // ---------------------------------------------------------------------------
+// [T-9.03] LA ESCALADA QUE RE-NOTIFICA A TODO EL EDIFICIO
+// ---------------------------------------------------------------------------
+describe("[T-9.03] `alert_escalated`: la orden cambió y se repite el aviso a todos", () => {
+  it("el barrido lo encuentra: lo escribe el orquestador de notificaciones", () => {
+    expect(KINDS).toContain("alert_escalated");
+  });
+
+  it("es CRÍTICA: un incidente que empezó advirtiendo ahora ordena evacuar", () => {
+    // Pintarla verde sería esconder, entre notificaciones enviadas, la única
+    // línea que dice que la orden al edificio CAMBIÓ.
+    expect(ACTION_STATE.alert_escalated.kind).toBe("critical");
+  });
+
+  it("la bitácora dice que escaló y a quién se repite el aviso, sin afirmar la entrega", () => {
+    const verbo = kindLabel({
+      action_id: "a",
+      ts: "2026-09-24T00:00:00Z",
+      kind: "alert_escalated",
+      actor: "system:notify:escalation",
+    });
+    expect(verbo).toMatch(/ESCAL/);
+    expect(verbo).toMatch(/TODO EL INMUEBLE/);
+    // La acción se escribe al ENCOLAR el push; la entrega la afirman
+    // `notify_sent` y `notify_delivered`, que son otras filas.
+    expect(verbo).not.toMatch(/ENTREGAD|RECIBID/);
+  });
+
+  it("la fila del checklist se pinta crítica de punta a punta", () => {
+    const grupo = groupActions([
+      accion("alert_escalated", { from_trigger: "local_threshold", to_trigger: "sasmex" }),
+    ])[0];
+    expect(grupo.view.kind).toBe("critical");
+    expect(grupo.label).toBe(CHANNEL_LABEL.alert_escalated);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // EL FALLBACK DEJÓ DE SER VERDE
 // ---------------------------------------------------------------------------
 describe("[T-2.144] un kind sin clasificar no es «todo bien»", () => {

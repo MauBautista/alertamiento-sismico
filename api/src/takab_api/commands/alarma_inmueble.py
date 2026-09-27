@@ -226,21 +226,46 @@ def suena_la_alarma(
     )
 
 
+#: [T-9.04] LA PRECEDENCIA, ESCRITA COMO TABLA. Primero manda.
+#:
+#: Hasta T-9.04 era un `if fase_sismica != "idle"`: bastaba porque las fases
+#: sísmicas eran ramas excluyentes del MISMO incidente abierto y la alarma sólo
+#: competía con `idle`. Con `reentry_blocked` eso deja de ser verdad: el bloqueo
+#: sale de un incidente CERRADO y dura días, mientras la alarma del inmueble
+#: suena AHORA. Un `if` más habría escondido esa decisión en el orden de dos
+#: ramas; una tabla la deja escrita, y su censo contra el `Literal` publicado
+#: (`tests/commands/test_alarma_inmueble.py`) impide que nazca una fase sin sitio.
+#:
+#: · Lo sísmico VIVO (`alert_active`, `shaking_concluded`) y el reingreso
+#:   autorizado ganan a la alarma: una sirena de pánico jamás le roba la pantalla
+#:   a una evacuación ni sugiere que el reingreso aprobado se revocó.
+#: · La alarma gana al bloqueo: el hecho del bloqueo sigue viajando en
+#:   ``reentry``, pero la pantalla tiene que explicar la sirena que está sonando.
+PRECEDENCIA: tuple[Phase, ...] = (
+    "alert_active",
+    "shaking_concluded",
+    "reentry_approved",
+    "building_alarm",
+    # "building_movement" — HUECO RESERVADO: llega en F1 (movimiento del edificio
+    # sin orden de evacuar) y va AQUÍ, entre la alarma del inmueble y el bloqueo.
+    "reentry_blocked",
+    "idle",
+)
+
+
 def fase_del_sitio(fase_sismica: Phase, alarma: AlarmaDelInmueble | None) -> Phase:
-    """Precedencia: **LO SÍSMICO MANDA SIEMPRE.**
+    """Precedencia por TABLA (``PRECEDENCIA``): **lo sísmico vivo manda siempre.**
 
     ``alert_active`` > ``shaking_concluded`` > ``reentry_approved`` >
-    ``building_alarm`` > ``idle``.
+    ``building_alarm`` > ``reentry_blocked`` > ``idle``.
 
-    Las tres primeras son ramas excluyentes del MISMO incidente, así que basta
-    con que cualquier fase sísmica distinta de ``idle`` gane: una alarma de
-    inmueble jamás puede robarle la pantalla a una evacuación autorizada, ni
-    tapar el check-in de vida, ni sugerir que el reingreso aprobado se revocó.
-
-    Y al revés, que es el criterio 3 de la tarea: por este camino **un pánico no
-    puede producir ``alert_active`` jamás**. Lo único que esta función puede
-    devolver cuando no hay sismo es ``building_alarm`` o ``idle``.
+    La alarma sólo aporta UNA candidata, ``building_alarm``, y gana la que
+    aparezca antes en la tabla. De ahí sale la garantía que es el criterio 3 de
+    T-2.106: por este camino **un pánico no puede producir ``alert_active``
+    jamás** — lo único que la alarma puede poner en la pantalla es
+    ``building_alarm``, y sólo si ninguna fase de más rango está en juego.
     """
-    if fase_sismica != "idle":
-        return fase_sismica
-    return "building_alarm" if alarma is not None else "idle"
+    candidatas: list[Phase] = [fase_sismica]
+    if alarma is not None:
+        candidatas.append("building_alarm")
+    return min(candidatas, key=PRECEDENCIA.index)

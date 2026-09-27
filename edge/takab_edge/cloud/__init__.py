@@ -249,7 +249,7 @@ class CloudConnector(EdgeModule):
     def _dedup_key(record: dict) -> tuple | None:
         """Identidad LÓGICA del mensaje para dedup (no colapsa mensajes distintos).
 
-        Discrimina por tipo de payload: `tier` (eventos), `channel`+`action`+
+        Discrimina por tipo de payload: `tier`+`source` (eventos), `channel`+`action`+
         `success`+`executed_at` (ACKs: dentro de un episodio la transición
         fallo→éxito de la MISMA actuación es evidencia distinta y debe salir),
         `sha256` (evidencia). Solo la re-publicación idéntica se deduplica.
@@ -270,6 +270,13 @@ class CloudConnector(EdgeModule):
             payload.get("kind"),
             payload.get("new_tier"),
             payload.get("tier"),
+            # [T-9.02] La FUENTE también. Un SASMEX que llega detrás de un umbral
+            # instrumental del MISMO episodio (mismo `event_id`, T-7.49) y el mismo
+            # tier es el caso del sismo cercano, y sin esto se tomaba por
+            # «re-publicación idéntica»: la nube nunca sabía que era SASMEX, no
+            # subía el `trigger` ni escalaba (T-9.03), y el ocupante no recibía la
+            # orden de evacuar. Solo parte identidades: jamás colapsa dos distintas.
+            payload.get("source"),
             payload.get("channel"),
             payload.get("action"),
             payload.get("success"),

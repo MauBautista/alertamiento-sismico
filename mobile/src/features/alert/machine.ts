@@ -23,7 +23,11 @@ import type { MobileStateOut } from "@takab/sdk";
 export type ServerPhase = MobileStateOut["phase"];
 
 /** Estado de la app (spec §4.1). CHECKIN_SENT del diagrama ≡ reentry_blocked:
- * enviado el check-in, lo que queda es el bloqueo hasta el dictamen. */
+ * enviado el check-in, lo que queda es el bloqueo hasta el dictamen.
+ * [T-9.04] `reentry_blocked` también es la fase homónima del servidor (el
+ * bloqueo que persiste con el incidente ya CERRADO, `data.incident = null`);
+ * `crisis.tsx` y `checkin.tsx` la distinguen por `data.phase` y la mandan a
+ * INICIO, donde se pinta su cartel. */
 export type AlertState =
   | "idle"
   | "alert_active"
@@ -56,7 +60,66 @@ export function deriveAlertState(phase: ServerPhase, hasOwnCheckin: boolean): Al
     // decide las fases (§4.1) — aquí no se recalcula nada.
     case "building_alarm":
       return "building_alarm";
+    // [T-9.04] Bloqueo PERSISTENTE: el incidente ya cerró (desde `D-33` firmar
+    // lo cierra en tres segundos) y lo que sobrevive es el VEREDICTO —un NO
+    // HABITAR firmado, o un dictamen que no llega—. Se reutiliza el estado de la
+    // app: el reingreso está bloqueado, y el check-in propio ya no lo cambia
+    // porque no queda incidente abierto al que reportarse. El PORQUÉ viaja en
+    // `reentry.reason` y lo pinta INICIO (`features/reentry/avisoReingreso`);
+    // no es toma de pantalla: el `CrisisWatcher` no enruta con este estado.
+    case "reentry_blocked":
+      return "reentry_blocked";
+    default: {
+      // [T-9.06] Una APK vieja frente a un servidor más nuevo. Sin `default`, una
+      // fase desconocida devolvía `undefined` y cada pantalla que compara
+      // `state === …` se quedaba muda sin decir por qué. Cae a `idle` —jamás a
+      // crisis ni a reingreso autorizado: el teléfono no adivina (§4.1)— y lo
+      // deja escrito en el registro.
+      //
+      // La asignación a `never` conserva la guarda de T-2.106: una fase nueva
+      // en el SDK generado sigue tumbando el typecheck hasta que alguien le dé
+      // su caso. El `default` protege al teléfono ya instalado, no al código.
+      const desconocida: never = phase;
+      // Una vez por fase: esta función corre en cada render y cada sondeo, y un
+      // aviso repetido cada 5 s entierra el registro sin decir nada nuevo.
+      const nombre = String(desconocida);
+      if (!fasesAvisadas.has(nombre)) {
+        fasesAvisadas.add(nombre);
+        console.warn(`alerta: fase del servidor desconocida para esta versión: ${nombre}`);
+      }
+      return "idle";
+    }
   }
+}
+
+const fasesAvisadas = new Set<string>();
+
+/** [T-9.06] Las fases que esta versión CONOCE. `Record` exhaustivo sobre el tipo
+ * del SDK: una fase nueva tumba el typecheck hasta que se declare aquí. */
+const FASES_CONOCIDAS: Record<ServerPhase, true> = {
+  idle: true,
+  alert_active: true,
+  shaking_concluded: true,
+  reentry_approved: true,
+  building_alarm: true,
+  reentry_blocked: true,
+};
+
+/** ¿La app sabe qué significa esta fase? Si no, `deriveAlertState` cae a `idle`
+ * para no quedarse muda, pero INICIO no puede leer ese `idle` como «SEGURO»:
+ * el servidor dijo algo que esta versión no entiende (`HomeView`). */
+export function esFaseConocida(phase: string): phase is ServerPhase {
+  return Object.prototype.hasOwnProperty.call(FASES_CONOCIDAS, phase);
+}
+
+/** [T-9.04] Fases que NO son un episodio en curso y se sondean al ritmo de
+ * reposo. El bloqueo persistente dura DÍAS (un NO HABITAR firmado no caduca):
+ * sondearlo cada 5 s mantendría despierto cada teléfono del edificio sin
+ * ganar nada — un sismo nuevo llega por la push, que invalida la consulta al
+ * instante. Una fase DESCONOCIDA no está aquí a propósito: ante la duda se
+ * pregunta más a menudo, no menos. */
+export function faseEnReposo(phase: ServerPhase): boolean {
+  return phase === "idle" || phase === "reentry_blocked";
 }
 
 /** Segundos transcurridos desde la apertura (T+ ascendente, dato real y

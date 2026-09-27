@@ -252,3 +252,158 @@ describe("[T-6.24 · U-33] la tarjeta no afirma una frescura que no tiene", () =
     expect(v.getByTestId("estado")).toHaveTextContent("SEGURO");
   });
 });
+
+/** Color de fondo efectivo de un nodo, aplanando el array de estilos de RN. */
+function fondo(nodo: { props: { style?: unknown } }): string | undefined {
+  const estilos = [nodo.props.style].flat(3) as (Record<string, unknown> | undefined)[];
+  let c: string | undefined;
+  for (const e of estilos) {
+    if (e && typeof e === "object" && typeof e.backgroundColor === "string") c = e.backgroundColor;
+  }
+  return c;
+}
+
+/** Color del borde efectivo de un nodo (la franja ámbar es de CONTORNO). */
+function borde(nodo: { props: { style?: unknown } }): string | undefined {
+  const estilos = [nodo.props.style].flat(3) as (Record<string, unknown> | undefined)[];
+  let c: string | undefined;
+  for (const e of estilos) {
+    if (e && typeof e === "object" && typeof e.borderColor === "string") c = e.borderColor;
+  }
+  return c;
+}
+
+function bloqueado(reason: "no_habitable" | "pendiente_dictamen" | "pendiente_confirmacion") {
+  return state({
+    phase: "reentry_blocked",
+    incident: null,
+    reentry: {
+      blocked: true,
+      dictamen_signed: reason === "no_habitable",
+      dictamen_status: reason === "no_habitable" ? "do_not_inhabit" : null,
+      incident_id: "i-cerrado",
+      reason,
+    },
+  });
+}
+
+describe("[T-9.04] el reingreso bloqueado del servidor se PINTA en INICIO", () => {
+  // Desde `D-33` firmar cierra el incidente en tres segundos y el veredicto
+  // viaja en `phase = reentry_blocked` + `reentry.reason`. La app sólo pintaba
+  // el cartel verde: con un NO HABITAR firmado INICIO seguía diciendo SEGURO.
+  it("no_habitable: cartel ROJO de relleno sólido con el motivo", async () => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={bloqueado("no_habitable")} nowMs={NOW} {...NOOP} />,
+    );
+    const cartel = v.getByTestId("reentry-denied");
+    expect(cartel).toHaveTextContent(/REINGRESO NO AUTORIZADO/);
+    expect(cartel).toHaveTextContent(/el dictamen indica NO HABITAR · INSPECCIÓN/);
+    expect(fondo(cartel)).toBe(palette.crit);
+    expect(v.getByTestId("reentry-denied-glyph")).toBeTruthy();
+    expect(v.queryByTestId("reentry-banner")).toBeNull();
+    expect(v.queryByTestId("reentry-pending")).toBeNull();
+  });
+
+  it("no_habitable: el estado del sitio NO puede decir SEGURO", async () => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={bloqueado("no_habitable")} nowMs={NOW} {...NOOP} />,
+    );
+    expect(v.getByTestId("estado")).not.toHaveTextContent("SEGURO");
+    expect(v.getByTestId("estado")).toHaveTextContent("NO HABITABLE");
+    expect(color(v.getByTestId("estado"))).toBe(palette.crit);
+    expect(v.queryByText(/REINGRESO AUTORIZADO/)).toBeNull();
+  });
+
+  it.each([
+    ["pendiente_dictamen", /REINGRESO PENDIENTE DE DICTAMEN/],
+    ["pendiente_confirmacion", /REINGRESO PENDIENTE DE CONFIRMACIÓN/],
+  ] as const)("%s: franja ÁMBAR informativa (contorno, no relleno)", async (reason, rotulo) => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={bloqueado(reason)} nowMs={NOW} {...NOOP} />,
+    );
+    const franja = v.getByTestId("reentry-pending");
+    expect(franja).toHaveTextContent(rotulo);
+    expect(borde(franja)).toBe(palette.warn);
+    // Informativa: NO lleva el relleno sólido del cartel rojo ni del verde.
+    expect(fondo(franja)).not.toBe(palette.warn);
+    expect(fondo(franja)).not.toBe(palette.crit);
+    expect(v.getByTestId("reentry-pending-glyph")).toBeTruthy();
+    expect(v.queryByTestId("reentry-denied")).toBeNull();
+    expect(v.queryByTestId("reentry-banner")).toBeNull();
+    // No es toma de pantalla: INICIO sigue siendo INICIO, con su contenido.
+    expect(v.getByText("SU ZONA")).toBeTruthy();
+    expect(v.queryByText(/EVACÚE|REPLIÉGUESE AHORA/)).toBeNull();
+  });
+
+  it.each(["pendiente_dictamen", "pendiente_confirmacion"] as const)(
+    "%s: la tarjeta NO dice SEGURO sobre una franja de reingreso bloqueado",
+    async (reason) => {
+      // [revisión F0] Antes se fijaba aquí lo contrario: «SEGURO» en verde y en
+      // grande bajo la franja ámbar, durante los 30 días que el servidor sirve
+      // el pendiente. Es el mismo defecto que el NO HABITAR ya cerraba.
+      const v = await render(
+        <HomeView brigadistas={[]} data={bloqueado(reason)} nowMs={NOW} {...NOOP} />,
+      );
+      expect(v.getByTestId("estado")).not.toHaveTextContent("SEGURO");
+      expect(v.getByTestId("estado")).toHaveTextContent("REINGRESO PENDIENTE");
+      expect(color(v.getByTestId("estado"))).toBe(palette.warn);
+      // El detalle del gabinete se conserva: sigue vigilando.
+      expect(v.getByText("Monitoreo sísmico activo.")).toBeTruthy();
+    },
+  );
+
+  it("motivo desconocido: tampoco SEGURO — REINGRESO BLOQUEADO", async () => {
+    const data = bloqueado("pendiente_dictamen");
+    (data.reentry as { reason: unknown }).reason = "motivo_del_futuro";
+    const v = await render(<HomeView brigadistas={[]} data={data} nowMs={NOW} {...NOOP} />);
+    expect(v.getByTestId("estado")).not.toHaveTextContent("SEGURO");
+    expect(v.getByTestId("estado")).toHaveTextContent("REINGRESO BLOQUEADO");
+    expect(v.getByTestId("reentry-pending")).toHaveTextContent(/REINGRESO BLOQUEADO/);
+  });
+
+  it("reentry_approved sigue IGUAL: cartel verde, SEGURO, y ningún aviso de bloqueo", async () => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={state({ phase: "reentry_approved" })} nowMs={NOW} {...NOOP} />,
+    );
+    const banner = v.getByTestId("reentry-banner");
+    expect(banner).toHaveTextContent(/REINGRESO AUTORIZADO/);
+    expect(fondo(banner)).toBe(palette.ok);
+    expect(v.getByTestId("reentry-glyph")).toBeTruthy();
+    expect(v.getByTestId("estado")).toHaveTextContent("SEGURO");
+    expect(v.queryByTestId("reentry-denied")).toBeNull();
+    expect(v.queryByTestId("reentry-pending")).toBeNull();
+  });
+
+  it("reposo sano: ningún aviso de reingreso", async () => {
+    const v = await render(<HomeView brigadistas={[]} data={state()} nowMs={NOW} {...NOOP} />);
+    expect(v.queryByTestId("reentry-denied")).toBeNull();
+    expect(v.queryByTestId("reentry-pending")).toBeNull();
+    expect(v.queryByTestId("reentry-banner")).toBeNull();
+  });
+});
+
+describe("[T-9.06] una fase que esta versión NO conoce", () => {
+  // La máquina cae a `idle` para no quedarse muda, pero INICIO no puede leer
+  // ese `idle` como SEGURO: el servidor dijo algo que la app no entiende.
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it("la tarjeta dice ACTUALICE LA APP, nunca SEGURO", async () => {
+    const futura = state({ phase: "fase_del_futuro" as unknown as MobileStateOut["phase"] });
+    const v = await render(<HomeView brigadistas={[]} data={futura} nowMs={NOW} {...NOOP} />);
+    expect(v.getByTestId("estado")).toHaveTextContent("ACTUALICE LA APP");
+    expect(v.queryByText("SEGURO")).toBeNull();
+  });
+
+  it("con un NO HABITAR, manda el rojo aunque la fase sea desconocida", async () => {
+    const base = bloqueado("no_habitable");
+    const futura = { ...base, phase: "fase_del_futuro" as unknown as MobileStateOut["phase"] };
+    const v = await render(<HomeView brigadistas={[]} data={futura} nowMs={NOW} {...NOOP} />);
+    expect(v.getByTestId("estado")).toHaveTextContent("NO HABITABLE");
+  });
+});

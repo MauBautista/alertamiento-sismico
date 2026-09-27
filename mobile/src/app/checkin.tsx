@@ -76,6 +76,13 @@ export default function Checkin() {
   if (state === "idle" || state === "reentry_approved") {
     return <Redirect href="/" />;
   }
+  // [T-9.04] El bloqueo PERSISTENTE del servidor llega con el incidente ya
+  // CERRADO: aquí no queda check-in que enviar, y el vacío de abajo («no reporta
+  // ninguna sacudida») sería cierto y engañoso para quien acaba de leer el
+  // bloqueo. El cartel —rojo o ámbar, según el motivo— vive en INICIO.
+  if (data?.phase === "reentry_blocked") {
+    return <Redirect href="/" />;
+  }
 
   const sinSitio = siteId === null;
   const incident = data?.incident ?? null;

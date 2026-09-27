@@ -14,6 +14,8 @@ import {
   View,
 } from "react-native";
 
+import { esFaseConocida } from "@/features/alert/machine";
+import { avisoDeReingreso, estadoDelInmueble } from "@/features/reentry/avisoReingreso";
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
 
@@ -27,6 +29,12 @@ import { healthBanner, wr1Chip, type HealthTone } from "./health";
  * siendo cierta si alguien cambia el chip.
  */
 const CHIP_ALTO = 24;
+
+const FASE_DESCONOCIDA = (detail: string) => ({
+  label: "ACTUALICE LA APP",
+  tone: "warn" as const,
+  detail: `el servidor envió un estado que esta versión no conoce · ${detail}`,
+});
 
 const TONE_COLOR: Record<HealthTone, string> = {
   ok: palette.ok,
@@ -76,7 +84,22 @@ export function HomeView(props: {
   onOpenPanic?: () => void;
 }) {
   const { data } = props;
-  const banner = healthBanner(data.site_health, props.nowMs);
+  // [T-9.04] El veredicto que sobrevive al cierre del incidente. Lo decide el
+  // servidor (`reentry.reason`); aquí sólo se traduce.
+  const aviso = avisoDeReingreso(data);
+  // Con CUALQUIER aviso de bloqueo el rótulo NO puede decir SEGURO: «SEGURO»
+  // sobre una franja de «no entre» son dos verdades que se desmienten, y la
+  // persona lee la grande. Reglas en `estadoDelInmueble`.
+  //
+  // [T-9.06] Una fase que esta versión no conoce cae a `idle` en la máquina
+  // para no dejar la app muda, pero aquí eso NO puede leerse como «SEGURO»: el
+  // servidor dijo algo que la app no entiende. Sólo el NO HABITAR (rojo) le
+  // gana, porque ése sí lo entiende y es más grave.
+  const salud = healthBanner(data.site_health, props.nowMs);
+  const banner =
+    !esFaseConocida(data.phase) && aviso?.tono !== "crit"
+      ? FASE_DESCONOCIDA(salud.detail)
+      : estadoDelInmueble(aviso, salud);
   const chip = wr1Chip(data.site_health);
   // Retenido MANDA sobre el tono del gabinete: un verde vivo afirma «esto es de
   // ahora», y con el dato viejo eso es falso aunque el edificio esté bien. El
@@ -102,6 +125,41 @@ export function HomeView(props: {
           <Text style={styles.reentryText}>
             REINGRESO AUTORIZADO — el dictamen técnico del inspector aprobó el
             reingreso al inmueble.
+          </Text>
+        </View>
+      ) : null}
+
+      {/* [T-9.04] NO HABITAR firmado: cartel ROJO de relleno sólido, hermano
+          del verde (mismo lugar, misma forma) con su propio glifo, para que se
+          distingan por la FORMA y no sólo por el matiz. No es toma de pantalla:
+          INICIO sigue siendo INICIO debajo. */}
+      {aviso?.tono === "crit" ? (
+        <View accessibilityRole="alert" style={styles.deniedBanner} testID="reentry-denied">
+          <Feather
+            color={palette.bg}
+            name="x-octagon"
+            size={fontSize.md}
+            testID="reentry-denied-glyph"
+          />
+          <Text style={styles.deniedText}>
+            {aviso.titulo} — {aviso.detalle}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* [T-9.04] Pendiente de dictamen o de confirmación: franja ÁMBAR
+          INFORMATIVA de CONTORNO. Ni relleno (eso es un veredicto) ni regla
+          lateral (eso es el simulacro, `features/notices`). */}
+      {aviso?.tono === "warn" ? (
+        <View style={styles.pendingBanner} testID="reentry-pending">
+          <Feather
+            color={palette.warn}
+            name="clock"
+            size={fontSize.md}
+            testID="reentry-pending-glyph"
+          />
+          <Text style={styles.pendingText}>
+            <Text style={styles.pendingTitle}>{aviso.titulo}</Text> — {aviso.detalle}
           </Text>
         </View>
       ) : null}
@@ -258,6 +316,42 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 18,
   },
+  deniedBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
+    backgroundColor: palette.crit,
+    borderRadius: radius.md,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+  },
+  // Texto oscuro sobre el rojo, como el verde: el claro sobre `crit` no llega
+  // al contraste que se lee de un vistazo.
+  deniedText: {
+    flex: 1,
+    color: palette.bg,
+    fontSize: fontSize.sm,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  pendingBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space[3],
+    backgroundColor: palette.card,
+    borderColor: palette.warn,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: space[2],
+    paddingHorizontal: space[3],
+  },
+  pendingText: {
+    flex: 1,
+    color: palette.fg2,
+    fontSize: fontSize.sm,
+    lineHeight: 18,
+  },
+  pendingTitle: { color: palette.warn, fontWeight: "800" },
   statusCard: {
     backgroundColor: palette.card,
     borderWidth: 1,

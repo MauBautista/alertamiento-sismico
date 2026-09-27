@@ -14,6 +14,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
+from takab_api.reingreso import RazonBloqueo
+
 # --- push tokens --------------------------------------------------------------
 
 
@@ -23,6 +25,17 @@ class PushTokenIn(BaseModel):
     platform: Literal["ios", "android"]
     token: str = Field(min_length=8, max_length=4096)
     site_id: UUID | None = None
+
+    @field_validator("token")
+    @classmethod
+    def _no_es_una_lapida_de_arco(cls, v: str) -> str:
+        """[T-9.05] ``arco:<push_token_id>`` es la lápida que deja la supresión
+        ARCO. Desde que el registro puede reclamar la fila de OTRA persona, un
+        token con ese prefijo resucitaría una supresión; la función de la base lo
+        rechaza igual (defensa en profundidad), aquí se contesta un 422 limpio."""
+        if v.startswith("arco:"):
+            raise ValueError("prefijo de token reservado")
+        return v
 
 
 class PushTokenOut(BaseModel):
@@ -106,7 +119,18 @@ class EnrollmentCodeOut(BaseModel):
 #: propósito: el teléfono jamás decide fases (spec móvil §4.1), y un `Literal`
 #: nuevo obliga al `switch` de la app a declarar el caso en vez de inferirlo del
 #: `trigger`. Su lugar en la precedencia lo fija ``commands/alarma_inmueble.py``.
-Phase = Literal["idle", "alert_active", "shaking_concluded", "reentry_approved", "building_alarm"]
+#:
+#: [T-9.04] ``reentry_blocked`` por la misma razón: el edificio sigue SIN poder
+#: habitarse con el incidente ya cerrado (NO HABITAR firmado, o sin dictamen
+#: todavía). La razón viaja en ``MobileReentryOut.reason``.
+Phase = Literal[
+    "idle",
+    "alert_active",
+    "shaking_concluded",
+    "reentry_approved",
+    "building_alarm",
+    "reentry_blocked",
+]
 
 
 class MobileIncidentOut(BaseModel):
@@ -189,6 +213,17 @@ class MobileReentryOut(BaseModel):
     #: DICTAMEN DE REINGRESO» se pintaba y llevaba a «Sin incidente activo»: el
     #: certificado que la RBAC §3 concede era inalcanzable justo cuando existe.
     incident_id: UUID | None = None
+    #: [T-9.04] POR QUÉ está bloqueado, cuando lo está con el incidente cerrado
+    #: (fase ``reentry_blocked``); ``None`` en cualquier otro caso. Aditivo: un
+    #: cliente que no lo conozca sigue leyendo ``blocked``.
+    #:
+    #: · ``no_habitable``       — la cabeza de la cadena es un dictamen FIRMADO no
+    #:   habitable. No caduca y gana a los pendientes: sólo lo levanta una firma
+    #:   habitable posterior sobre ese mismo incidente.
+    #: · ``pendiente_dictamen`` — cerrado sin dictamen firmado, dentro de
+    #:   ``reentry_pendiente_lookback_s``: nadie ha inspeccionado el edificio.
+    #: · ``pendiente_confirmacion`` — RESERVADO para F3; hoy no se produce.
+    reason: RazonBloqueo | None = None
 
 
 class MobileSiteHealthOut(BaseModel):
@@ -281,7 +316,35 @@ class MobileStateOut(BaseModel):
       terminado; el reingreso queda BLOQUEADO durante la evaluación — la app
       muestra check-in o bloqueo según su propio check-in)
     - dictamen FIRMADO habitable (normal_operation|inhabit_monitor) →
-      ``reentry_approved`` (hasta que el incidente cierre → idle)
+      ``reentry_approved``
+    - **[T-9.04] Qué incidente abierto manda.** Se leen los no cerrados del
+      sitio que autorizan evacuar —filtrados en SQL, antes de ordenar, sin
+      ``LIMIT``— y manda el más nuevo (la regla de T-2.105, una sola copia). Un
+      local nuevo ya no tapa a un SASMEX abierto más viejo, que era lo que hacía
+      ``LIMIT 1`` + filtro después (y ``LIMIT 5``, a partir del quinto local).
+    - **[T-9.04] Sin incidente abierto que autorice: el REINGRESO PERSISTE.**
+      Desde ``D-33`` firmar cierra el incidente en tres segundos, así que el
+      veredicto se lee de los incidentes CERRADOS del sitio que CUENTAN
+      —autorizaron evacuar y su clasificación vigente no es terminal (falso
+      positivo, prueba, reproducción: no ocurrieron)— con
+      ``takab_api/reingreso.deriva_reingreso``, pura:
+
+      · **cualquiera** con la cabeza de la cadena FIRMADA NO habitable →
+        ``reentry_blocked`` con ``reentry.reason = "no_habitable"``, **sin
+        caducidad y por encima de todo lo demás**: sólo lo levanta una firma
+        habitable posterior sobre ESE incidente (``sign_dictamen`` no mira el
+        estado). Ni un pendiente más nuevo ni una habitable sobre otro
+        incidente lo tapan.
+      · si no, manda el más RECIENTEMENTE CERRADO dentro de
+        ``reentry_pendiente_lookback_s``: cabeza FIRMADA habitable,
+        firmada hace menos de ``reentry_declare_s`` (8 h **desde la firma**, no
+        desde el cierre) → ``reentry_approved``; pasada la ventana → ``idle``.
+      · sin cabeza firmada y cerrado hace menos de
+        ``reentry_pendiente_lookback_s`` → ``reentry_blocked`` con
+        ``reason = "pendiente_dictamen"``.
+      · lo demás → ``idle``. ``incident`` sigue en ``null``: lo que persiste es
+        el HECHO del veredicto, no el incidente, y ``reentry.incident_id`` dice
+        de qué incidente es.
     - **[T-2.106] sin fase sísmica + sirena del edificio ordenada por una
       persona → ``building_alarm``.** Es ALARMA DEL INMUEBLE, no evacuación
       sísmica (decisión de producto del 2026-08-09): la sirena suena —que es su
@@ -312,11 +375,14 @@ class MobileStateOut(BaseModel):
         TOCÓ el relé) y **caduca** a los ``building_alarm_max_s`` — una alarma
         sin fin es un dato congelado pintado como vivo. Caducar no silencia nada:
         la app deja de afirmar lo que ya no puede corroborar.
-      · **Precedencia: LO SÍSMICO MANDA SIEMPRE** — ``alert_active`` >
+      · **Precedencia: LO SÍSMICO VIVO MANDA SIEMPRE** — ``alert_active`` >
         ``shaking_concluded`` > ``reentry_approved`` > ``building_alarm`` >
-        ``idle``. Una alarma de inmueble jamás tapa una fase sísmica, y por este
-        camino un pánico **no puede producir ``alert_active`` jamás**. La regla
-        vive en ``commands/alarma_inmueble.fase_del_sitio``.
+        ``reentry_blocked`` > ``idle`` (tabla explícita desde T-9.04). Una
+        alarma de inmueble jamás tapa una fase sísmica viva, y por este camino
+        un pánico **no puede producir ``alert_active`` jamás**; sí le gana al
+        bloqueo de reingreso, porque suena AHORA y el bloqueo dura días (el
+        bloqueo sigue viajando en ``reentry``). La regla vive en
+        ``commands/alarma_inmueble.fase_del_sitio``.
 
     Los ingredientes crudos (incident/state, latest_tier, reentry) viajan junto
     a la derivación.
