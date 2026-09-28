@@ -202,6 +202,7 @@ function arrange(
         canOpenFleet={false}
         canOpenBuilding
         volverASitioId={null}
+        canOpenCierre={false}
         {...props}
       />
     </MemoryRouter>,
@@ -241,6 +242,20 @@ describe("TriageDetail · el camino de vuelta y la ficha del edificio", () => {
   it("el sitio del incidente tiene entrada a su ficha de edificio", () => {
     arrange();
     expect(screen.getByTestId("triage-building-link")).toHaveAttribute("href", "/building/s-1");
+  });
+
+  it("[T-9.41] con ack o close, la cabecera entra al asistente de cierre", () => {
+    arrange({}, { canOpenCierre: true });
+    expect(screen.getByTestId("triage-cierre-link")).toHaveAttribute(
+      "href",
+      `/triage/${INCIDENT.incident_id}/cierre`,
+    );
+    expect(screen.getByTestId("triage-cierre-link")).toHaveTextContent("CIERRE DEL EVENTO");
+  });
+
+  it("[T-9.41] sin ack ni close, no se ofrece el asistente", () => {
+    arrange({}, { canOpenCierre: false });
+    expect(screen.queryByTestId("triage-cierre-link")).not.toBeInTheDocument();
   });
 
   it("sin la ruta concedida, el enlace al edificio NO se pinta", () => {

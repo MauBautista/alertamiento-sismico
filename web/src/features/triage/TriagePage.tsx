@@ -275,6 +275,10 @@ export default function TriagePage() {
             // aquí (`&volver=<site_id>`); entrando por la pestaña no hay riel
             // al que volver y el enlace no se pinta.
             volverASitioId={volverASitio}
+            canOpenCierre={
+              me?.allowed_actions.ack_incident === true ||
+              me?.allowed_actions.close_incident === true
+            }
           />
         )}
       </div>

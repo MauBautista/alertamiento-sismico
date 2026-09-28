@@ -7,6 +7,7 @@ import TenantsPage from "../features/tenants/TenantsPage";
 import TriagePage from "../features/triage/TriagePage";
 import AuthCallbackPage from "../pages/AuthCallbackPage";
 import BuildingPage from "../features/building/BuildingPage";
+import CierreWizard from "../features/cierre/CierreWizard";
 import LoginPage from "../pages/LoginPage";
 import NotFoundPage from "../pages/NotFoundPage";
 import AppShell from "../shell/AppShell";
@@ -44,6 +45,17 @@ export const routes: RouteObject[] = [
             element: (
               <RouteGuard routeKey="/triage">
                 <TriagePage />
+              </RouteGuard>
+            ),
+          },
+          {
+            // [T-9.41 · D-43] El asistente de cierre cuelga de la guarda de
+            // `/triage`: no es una ruta nueva de `allowed_routes`, es una vista
+            // del mismo permiso.
+            path: "/triage/:incidentId/cierre",
+            element: (
+              <RouteGuard routeKey="/triage">
+                <CierreWizard />
               </RouteGuard>
             ),
           },

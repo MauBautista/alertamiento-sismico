@@ -581,7 +581,9 @@ describe("censo · todo componente con dato de servidor tiene su prueba", () => 
       conPrueba: CENSO.componentes.filter((c) => CON_PRUEBA.has(c.fichero)).length,
       sinMarcoPropio: CENSO.componentes.filter((c) => !c.tieneMarco).length,
       // [T-6.06] `sinMarcoPropio` baja de 3 a 2: `SiteCard` ya tiene el suyo.
-    }).toEqual({ conDato: 25, conPrueba: 15, sinMarcoPropio: 2 });
+      // [T-9.41] 25→26 y 15→16: `cierre/CierreWizard` nace con marco propio y
+      // con su prueba de los cuatro estados (`CierreWizard.test.tsx`).
+    }).toEqual({ conDato: 26, conPrueba: 16, sinMarcoPropio: 2 });
   });
 });
 
