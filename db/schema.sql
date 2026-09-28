@@ -2156,7 +2156,17 @@ CREATE TABLE reference_earthquakes (
   consulted_at      timestamptz,                    -- cuándo se preguntó A LA FUENTE
   review_status     text CHECK (review_status IS NULL
                                 OR review_status IN ('preliminar','confirmado')),
-  provider_event_id text                            -- id del evento EN la fuente
+  provider_event_id text,                           -- id del evento EN la fuente
+  -- [T-9.60 · D-46 · 0076] Quién escribió la fila. `seed` es el DEFAULT: las
+  -- sembradas y las que la consulta por incidente escribió antes de la 0076.
+  -- Desde ahí la consulta escribe `catalogo` y el worker `catalog-sync`
+  -- `catalog_sync`, y el worker SOLO reescribe las suyas: una fila sembrada o
+  -- de la consulta puede estar citada por un dictamen firmado.
+  origen            text NOT NULL DEFAULT 'seed',
+  usgs_mmi          numeric NULL,                   -- la MMI que PUBLICA USGS, si la hay
+  usgs_url          text NULL,                      -- la página del evento en USGS
+  actualizado_en_fuente timestamptz NULL,           -- el `updated` del evento en USGS
+  CONSTRAINT ck_ref_eq_origen CHECK (origen IN ('seed','catalogo','catalog_sync'))
 );
 CREATE INDEX idx_ref_eq_origin ON reference_earthquakes (origin_time DESC);
 -- [T-7.25] La IDENTIDAD de una fila de catálogo es `(source, provider_event_id)`,
@@ -2190,6 +2200,35 @@ ALTER TABLE reference_earthquakes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reference_earthquakes FORCE  ROW LEVEL SECURITY;
 CREATE POLICY ref_eq_read ON reference_earthquakes FOR SELECT
   USING (app_role() IS NOT NULL);
+
+-- [T-9.60 · D-46] Cómo va la sincronización del catálogo con la fuente. Una fila
+-- por fuente. Es lo que deja a la app decir «sin actualizar desde…»: un catálogo
+-- congelado no puede parecer vivo (regla de oro 7). `apagado` existe porque con la
+-- consulta apagada por configuración cualquiera de los otros tres estados mentiría.
+-- `pagina_desde`/`pagina_max_updated` son el cursor de una puesta al día TRUNCADA:
+-- la fuente ordena por hora de ORIGEN, no por `updated`, así que avanzar la marca a
+-- mitad de páginas se saltaría eventos.
+-- [EXCEPCIÓN DOCUMENTADA] sin tenant, como `reference_earthquakes`. Nunca se poda.
+CREATE TABLE catalog_sync_state (
+  fuente             text PRIMARY KEY CHECK (fuente IN ('USGS')),
+  estado             text NOT NULL CHECK (estado IN ('nunca','ok','fallido','apagado')),
+  ultimo_updated     timestamptz NULL,   -- el mayor `updated` visto: la próxima pide updatedafter
+  ultima_corrida     timestamptz NULL,
+  ultimo_ok          timestamptz NULL,
+  n_ultima           integer NULL,
+  error              text NULL,          -- recortado a 300
+  pagina_desde       timestamptz NULL,
+  pagina_max_updated timestamptz NULL
+);
+ALTER TABLE catalog_sync_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catalog_sync_state FORCE  ROW LEVEL SECURITY;
+CREATE POLICY css_read ON catalog_sync_state FOR SELECT
+  USING (app_role() IS NOT NULL);
+GRANT SELECT, INSERT, UPDATE ON catalog_sync_state TO takab_ingest;
+GRANT SELECT ON catalog_sync_state TO takab_app;
+-- ⚠️ Repetido en la 0076 por la misma razón que en `catalog_consultations`: la 0001
+-- aplica este fichero y DESPUÉS concede `ALL TABLES` a `takab_app`.
+REVOKE INSERT, UPDATE, DELETE ON catalog_sync_state FROM takab_app;
 
 -- [T-7.25] EL INTENTO de preguntarle a una fuente externa por un incidente.
 --

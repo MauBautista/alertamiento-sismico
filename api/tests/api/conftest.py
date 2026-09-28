@@ -57,6 +57,8 @@ _TRUNCATE_WRITTEN = text(
     "TRUNCATE seismic_events, incidents, incident_actions, dictamens, "
     "evidence_objects, quorum_votes, rule_sets, audit_log, "
     "commands, gateway_config_state, user_profiles, reference_earthquakes, "
+    # [T-9.60] el estado del catálogo: `actualizado`/`sync_estado` de la app lo leen.
+    "catalog_sync_state, "
     "drills, drill_sites, "
     # [T-2.03] superficie móvil (life_checkins/damage_reports son append-only:
     # DELETE lo veta el trigger, TRUNCATE no — mismo criterio que arriba).

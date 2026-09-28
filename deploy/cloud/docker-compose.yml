@@ -127,6 +127,21 @@ services:
     entrypoint: ["python", "-m", "takab_api.informes"]
     command: []
 
+  # --- Catálogo de México al día (T-9.60 · D-46) ----------------------------------
+  # Cada 10 min le pregunta a USGS lo que cambió (M≥4, caja de México) y lo escribe
+  # en reference_earthquakes con origen `catalog_sync`; el estado queda en
+  # catalog_sync_state para que la app diga «sin actualizar desde…». Proceso aparte
+  # del motor de incidentes: una respuesta de 2 MB no puede retrasar el quórum.
+  # `db-ingest.env`, como `informes`: el catálogo es global y la API sólo lo lee.
+  # Apagado mientras TAKAB_API_CATALOG_USGS_ENABLED no esté puesto: lo DECLARA.
+  catalog-sync:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    entrypoint: ["python", "-m", "takab_api.catalogo.sincroniza"]
+    command: []
+
   # --- Consola SOC + TLS --------------------------------------------------------
   # Caddy termina TLS (Let's Encrypt sobre sslip.io) y sirve `web/dist`. El mismo
   # origen cubre REST y WebSocket: `liveWsUrl("/api")` ⇒ `wss://host/api/ws`, así que

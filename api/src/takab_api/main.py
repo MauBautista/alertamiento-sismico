@@ -43,6 +43,7 @@ from takab_api.routers.rollouts import router as rollouts_router
 from takab_api.routers.rule_sets import router as rule_sets_router
 from takab_api.routers.sensors import router as sensors_router
 from takab_api.routers.shakemap import router as shakemap_router
+from takab_api.routers.sismos_del_sitio import router as sismos_del_sitio_router
 from takab_api.routers.sites import router as sites_router
 from takab_api.routers.telemetry import router as telemetry_router
 from takab_api.routers.tenants import router as tenants_router
@@ -169,6 +170,8 @@ def create_app() -> FastAPI:
     app.include_router(mobile_me_router)
     app.include_router(mobile_site_router)
     app.include_router(mobile_incident_router)
+    # [T-9.61 · T-9.66 · D-46] Sismos del catálogo vistos desde un inmueble.
+    app.include_router(sismos_del_sitio_router)
 
     # Canal live WebSocket ``/ws`` (B4).
     app.include_router(ws_router)

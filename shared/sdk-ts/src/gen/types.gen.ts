@@ -187,10 +187,16 @@ export type CatalogDiscard = {
 };
 
 /**
- * Lista completa (13 sismos ratificados; sin paginación).
+ * [T-9.61] Una página, más reciente primero.
+ *
+ * Hasta T-9.61 era la lista completa (13 sismos ratificados). Con el worker
+ * `catalog-sync` son cientos, así que se pagina: ``siguiente`` es el cursor
+ * (``origin_time`` ISO del último) para pedir la página siguiente con
+ * ``antes_de``; ``None`` = no hay más.
  */
 export type CatalogEarthquakeList = {
     items: Array<CatalogEarthquakeOut>;
+    siguiente?: string | null;
 };
 
 /**
@@ -203,11 +209,13 @@ export type CatalogEarthquakeOut = {
     lon: number;
     magnitude: number;
     notes: string | null;
+    origen?: string;
     origin_time: string;
     place: string;
     ref_id: string;
     source: string;
     source_ref: string;
+    usgs_url?: string | null;
 };
 
 /**
@@ -1475,6 +1483,52 @@ export type HealthBucket = {
     ntp_offset_abs_max_ms?: number | null;
     seedlink_lag_max_s?: number | null;
     ts: string;
+};
+
+/**
+ * Lo que MIDIÓ el gabinete del inmueble.
+ */
+export type HistorialIncidente = {
+    clasificacion: string | null;
+    estado: string;
+    incident_id: string;
+    opened_at: string;
+    pga_medida_g: number | null;
+    severity: string;
+    tipo?: 'incidente';
+    trigger: string;
+};
+
+/**
+ * [T-9.66 · D-46] Una sola lista, por fecha descendente.
+ */
+export type HistorialSismicoOut = {
+    atribucion?: string;
+    eventos: Array<({
+        tipo?: 'incidente';
+    } & HistorialIncidente) | ({
+        tipo?: 'sismo';
+    } & HistorialSismo)>;
+};
+
+/**
+ * Un sismo del catálogo que en el inmueble se habría sentido (MMI ESTIMADA ≥ III).
+ */
+export type HistorialSismo = {
+    dist_km: number;
+    magnitude: number;
+    /**
+     * MMI ESTIMADA en el inmueble (Wald et al. 1999).
+     */
+    mmi_estimada: number;
+    /**
+     * La MMI ESTIMADA en números romanos.
+     */
+    mmi_romano: string;
+    origin_time: string;
+    place: string;
+    tipo?: 'sismo';
+    usgs_url: string | null;
 };
 
 /**
@@ -2862,6 +2916,55 @@ export type ShakemapOut = {
     superficie_motivo_texto: string | null;
 };
 
+export type SismoCercanoOut = {
+    depth_km: number | null;
+    en_tu_inmueble: SismoEnTuInmuebleEstimado;
+    lat: number;
+    lon: number;
+    magnitude: number;
+    origin_time: string;
+    place: string;
+    review_status: string | null;
+    usgs_url: string | null;
+};
+
+/**
+ * Lo que el sismo habría hecho EN el inmueble. ESTIMADO, nunca medido.
+ */
+export type SismoEnTuInmuebleEstimado = {
+    /**
+     * Distancia epicentral al inmueble, km.
+     */
+    dist_km: number;
+    /**
+     * Cómo se estimó; la app lo muestra junto a la cifra.
+     */
+    metodo: string;
+    /**
+     * Intensidad Mercalli ESTIMADA en el inmueble (Wald et al. 1999).
+     */
+    mmi_estimada: number | null;
+    /**
+     * La MMI ESTIMADA en números romanos. Es una estimación, no una observación.
+     */
+    mmi_romano: string | null;
+    /**
+     * PGA ESTIMADA en el inmueble (ley ATTEN-LAW v1, distancia hipocentral), g.
+     */
+    pga_estimada_g: number;
+};
+
+/**
+ * [T-9.61 · D-46] Sismos publicados cerca de un inmueble. Posteriores al evento:
+ * sin cuenta regresiva ni magnitud preliminar en vivo.
+ */
+export type SismosDelSitioOut = {
+    actualizado: string | null;
+    atribucion?: string;
+    items: Array<SismoCercanoOut>;
+    sync_estado: 'nunca' | 'ok' | 'fallido' | 'apagado';
+};
+
 export type SiteAssetCreateIn = {
     content_type?: string | null;
     description?: string | null;
@@ -3299,9 +3402,24 @@ export type ListBuildingTypesBuildingTypesGetResponse = ListBuildingTypesBuildin
 export type ListReferenceEarthquakesCatalogEarthquakesGetData = {
     body?: never;
     path?: never;
-    query?: never;
+    query?: {
+        limit?: number;
+        /**
+         * Cursor opaco: el `siguiente` de la página anterior.
+         */
+        antes_de?: string | null;
+    };
     url: '/catalog/earthquakes';
 };
+
+export type ListReferenceEarthquakesCatalogEarthquakesGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListReferenceEarthquakesCatalogEarthquakesGetError = ListReferenceEarthquakesCatalogEarthquakesGetErrors[keyof ListReferenceEarthquakesCatalogEarthquakesGetErrors];
 
 export type ListReferenceEarthquakesCatalogEarthquakesGetResponses = {
     /**
@@ -6441,6 +6559,35 @@ export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponse
 
 export type DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponse = DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses[keyof DeactivateEnrollmentCodeSitesSiteIdEnrollmentCodesCodeDeleteResponses];
 
+export type HistorialSismicoSitesSiteIdHistorialSismicoGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: {
+        dias?: number;
+    };
+    url: '/sites/{site_id}/historial-sismico';
+};
+
+export type HistorialSismicoSitesSiteIdHistorialSismicoGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type HistorialSismicoSitesSiteIdHistorialSismicoGetError = HistorialSismicoSitesSiteIdHistorialSismicoGetErrors[keyof HistorialSismicoSitesSiteIdHistorialSismicoGetErrors];
+
+export type HistorialSismicoSitesSiteIdHistorialSismicoGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: HistorialSismicoOut;
+};
+
+export type HistorialSismicoSitesSiteIdHistorialSismicoGetResponse = HistorialSismicoSitesSiteIdHistorialSismicoGetResponses[keyof HistorialSismicoSitesSiteIdHistorialSismicoGetResponses];
+
 export type PanicVoteSitesSiteIdManualActivationVotesPostData = {
     body: PanicVoteIn;
     path: {
@@ -6521,6 +6668,36 @@ export type RetireSiteSitesSiteIdRetirePostResponses = {
 };
 
 export type RetireSiteSitesSiteIdRetirePostResponse = RetireSiteSitesSiteIdRetirePostResponses[keyof RetireSiteSitesSiteIdRetirePostResponses];
+
+export type SismosDelSitioSitesSiteIdSismosGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: {
+        dias?: number;
+        min_mag?: number;
+    };
+    url: '/sites/{site_id}/sismos';
+};
+
+export type SismosDelSitioSitesSiteIdSismosGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SismosDelSitioSitesSiteIdSismosGetError = SismosDelSitioSitesSiteIdSismosGetErrors[keyof SismosDelSitioSitesSiteIdSismosGetErrors];
+
+export type SismosDelSitioSitesSiteIdSismosGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: SismosDelSitioOut;
+};
+
+export type SismosDelSitioSitesSiteIdSismosGetResponse = SismosDelSitioSitesSiteIdSismosGetResponses[keyof SismosDelSitioSitesSiteIdSismosGetResponses];
 
 export type ActivateReleaseSitesSiteIdUpdatePostData = {
     body: ActivateUpdateIn;

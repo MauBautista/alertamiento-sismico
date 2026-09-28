@@ -111,6 +111,9 @@ INSERT INTO _conservar (t) VALUES
   ('drill_templates'), ('drill_template_sites'),
   -- el catálogo, con la procedencia que T-7.12 consultó a la fuente
   ('reference_earthquakes'),
+  -- [T-9.60 · D-46] y el estado de su sincronización: purgarlo haría que la
+  -- siguiente pasada volviera a pedir 90 días, y que la app dijera «nunca».
+  ('catalog_sync_state'),
   -- consumo acumulado: es facturación, no historial de incidentes
   ('billing_meters_daily'), ('ai_spend');
 

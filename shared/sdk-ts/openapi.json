@@ -661,7 +661,7 @@
         "type": "object"
       },
       "CatalogEarthquakeList": {
-        "description": "Lista completa (13 sismos ratificados; sin paginación).",
+        "description": "[T-9.61] Una página, más reciente primero.\n\nHasta T-9.61 era la lista completa (13 sismos ratificados). Con el worker\n`catalog-sync` son cientos, así que se pagina: ``siguiente`` es el cursor\n(``origin_time`` ISO del último) para pedir la página siguiente con\n``antes_de``; ``None`` = no hay más.",
         "properties": {
           "items": {
             "items": {
@@ -669,6 +669,17 @@
             },
             "title": "Items",
             "type": "array"
+          },
+          "siguiente": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Siguiente"
           }
         },
         "required": [
@@ -718,6 +729,11 @@
             ],
             "title": "Notes"
           },
+          "origen": {
+            "default": "seed",
+            "title": "Origen",
+            "type": "string"
+          },
           "origin_time": {
             "format": "date-time",
             "title": "Origin Time",
@@ -739,6 +755,17 @@
           "source_ref": {
             "title": "Source Ref",
             "type": "string"
+          },
+          "usgs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usgs Url"
           }
         },
         "required": [
@@ -6043,6 +6070,168 @@
           "heartbeats"
         ],
         "title": "HealthBucket",
+        "type": "object"
+      },
+      "HistorialIncidente": {
+        "description": "Lo que MIDIÓ el gabinete del inmueble.",
+        "properties": {
+          "clasificacion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clasificacion"
+          },
+          "estado": {
+            "title": "Estado",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "pga_medida_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Medida G"
+          },
+          "severity": {
+            "title": "Severity",
+            "type": "string"
+          },
+          "tipo": {
+            "const": "incidente",
+            "default": "incidente",
+            "title": "Tipo",
+            "type": "string"
+          },
+          "trigger": {
+            "title": "Trigger",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "opened_at",
+          "severity",
+          "trigger",
+          "estado",
+          "clasificacion",
+          "pga_medida_g"
+        ],
+        "title": "HistorialIncidente",
+        "type": "object"
+      },
+      "HistorialSismicoOut": {
+        "description": "[T-9.66 · D-46] Una sola lista, por fecha descendente.",
+        "properties": {
+          "atribucion": {
+            "default": "Fuente: USGS (dominio público)",
+            "title": "Atribucion",
+            "type": "string"
+          },
+          "eventos": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "incidente": "#/components/schemas/HistorialIncidente",
+                  "sismo": "#/components/schemas/HistorialSismo"
+                },
+                "propertyName": "tipo"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/HistorialIncidente"
+                },
+                {
+                  "$ref": "#/components/schemas/HistorialSismo"
+                }
+              ]
+            },
+            "title": "Eventos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "eventos"
+        ],
+        "title": "HistorialSismicoOut",
+        "type": "object"
+      },
+      "HistorialSismo": {
+        "description": "Un sismo del catálogo que en el inmueble se habría sentido (MMI ESTIMADA ≥ III).",
+        "properties": {
+          "dist_km": {
+            "title": "Dist Km",
+            "type": "number"
+          },
+          "magnitude": {
+            "title": "Magnitude",
+            "type": "number"
+          },
+          "mmi_estimada": {
+            "description": "MMI ESTIMADA en el inmueble (Wald et al. 1999).",
+            "title": "Mmi Estimada",
+            "type": "number"
+          },
+          "mmi_romano": {
+            "description": "La MMI ESTIMADA en números romanos.",
+            "title": "Mmi Romano",
+            "type": "string"
+          },
+          "origin_time": {
+            "format": "date-time",
+            "title": "Origin Time",
+            "type": "string"
+          },
+          "place": {
+            "title": "Place",
+            "type": "string"
+          },
+          "tipo": {
+            "const": "sismo",
+            "default": "sismo",
+            "title": "Tipo",
+            "type": "string"
+          },
+          "usgs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usgs Url"
+          }
+        },
+        "required": [
+          "origin_time",
+          "magnitude",
+          "place",
+          "dist_km",
+          "mmi_estimada",
+          "mmi_romano",
+          "usgs_url"
+        ],
+        "title": "HistorialSismo",
         "type": "object"
       },
       "IncidentActionFrame": {
@@ -11498,6 +11687,179 @@
         "title": "ShakemapOut",
         "type": "object"
       },
+      "SismoCercanoOut": {
+        "properties": {
+          "depth_km": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Depth Km"
+          },
+          "en_tu_inmueble": {
+            "$ref": "#/components/schemas/SismoEnTuInmuebleEstimado"
+          },
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          },
+          "magnitude": {
+            "title": "Magnitude",
+            "type": "number"
+          },
+          "origin_time": {
+            "format": "date-time",
+            "title": "Origin Time",
+            "type": "string"
+          },
+          "place": {
+            "title": "Place",
+            "type": "string"
+          },
+          "review_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Status"
+          },
+          "usgs_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usgs Url"
+          }
+        },
+        "required": [
+          "origin_time",
+          "magnitude",
+          "place",
+          "lat",
+          "lon",
+          "depth_km",
+          "usgs_url",
+          "review_status",
+          "en_tu_inmueble"
+        ],
+        "title": "SismoCercanoOut",
+        "type": "object"
+      },
+      "SismoEnTuInmuebleEstimado": {
+        "description": "Lo que el sismo habría hecho EN el inmueble. ESTIMADO, nunca medido.",
+        "properties": {
+          "dist_km": {
+            "description": "Distancia epicentral al inmueble, km.",
+            "title": "Dist Km",
+            "type": "number"
+          },
+          "metodo": {
+            "description": "Cómo se estimó; la app lo muestra junto a la cifra.",
+            "title": "Metodo",
+            "type": "string"
+          },
+          "mmi_estimada": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Intensidad Mercalli ESTIMADA en el inmueble (Wald et al. 1999).",
+            "title": "Mmi Estimada"
+          },
+          "mmi_romano": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "La MMI ESTIMADA en números romanos. Es una estimación, no una observación.",
+            "title": "Mmi Romano"
+          },
+          "pga_estimada_g": {
+            "description": "PGA ESTIMADA en el inmueble (ley ATTEN-LAW v1, distancia hipocentral), g.",
+            "title": "Pga Estimada G",
+            "type": "number"
+          }
+        },
+        "required": [
+          "dist_km",
+          "pga_estimada_g",
+          "mmi_estimada",
+          "mmi_romano",
+          "metodo"
+        ],
+        "title": "SismoEnTuInmuebleEstimado",
+        "type": "object"
+      },
+      "SismosDelSitioOut": {
+        "description": "[T-9.61 · D-46] Sismos publicados cerca de un inmueble. Posteriores al evento:\nsin cuenta regresiva ni magnitud preliminar en vivo.",
+        "properties": {
+          "actualizado": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actualizado"
+          },
+          "atribucion": {
+            "default": "Fuente: USGS (dominio público)",
+            "title": "Atribucion",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SismoCercanoOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "sync_estado": {
+            "enum": [
+              "nunca",
+              "ok",
+              "fallido",
+              "apagado"
+            ],
+            "title": "Sync Estado",
+            "type": "string"
+          }
+        },
+        "required": [
+          "items",
+          "actualizado",
+          "sync_estado"
+        ],
+        "title": "SismosDelSitioOut",
+        "type": "object"
+      },
       "SiteAssetCreateIn": {
         "properties": {
           "content_type": {
@@ -13432,8 +13794,40 @@
     },
     "/catalog/earthquakes": {
       "get": {
-        "description": "Sismos de referencia, más recientes primero.",
+        "description": "Sismos de referencia, más recientes primero, de ``limit`` en ``limit``.",
         "operationId": "list_reference_earthquakes_catalog_earthquakes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Cursor opaco: el `siguiente` de la página anterior.",
+            "in": "query",
+            "name": "antes_de",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Cursor opaco: el `siguiente` de la página anterior.",
+              "title": "Antes De"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -13444,6 +13838,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "List Reference Earthquakes"
@@ -18627,6 +19031,59 @@
         "summary": "Deactivate Enrollment Code"
       }
     },
+    "/sites/{site_id}/historial-sismico": {
+      "get": {
+        "description": "[T-9.66] Incidentes del inmueble + sismos que ahí se habrían sentido.\n\nUna sola ruta para las dos superficies (``BuildingPage`` en la web y la app):\n``get_claims`` + ``assert_site_access``, como ``/sites/{id}/drills``. El\nalcance lo decide el sitio, no la superficie.",
+        "operationId": "historial_sismico_sites__site_id__historial_sismico_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dias",
+            "required": false,
+            "schema": {
+              "default": 365,
+              "maximum": 3650,
+              "minimum": 1,
+              "title": "Dias",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistorialSismicoOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Historial Sismico"
+      }
+    },
     "/sites/{site_id}/manual-activation-votes": {
       "post": {
         "description": "[T-2.13 · 1.9] Voto de pánico del occupant (emergencia NO sísmica del\ninmueble). Quórum = 2 votos de usuarios DISTINTOS en la ventana ⇒ sirena por\nel pipeline HMAC existente + votos ``consumed``. Un voto JAMÁS activa; dos\ndel MISMO usuario JAMÁS activan. Geofence best-effort (GPS fuera de radio se\ndescarta; sin GPS cuenta). Rate-limit por usuario; TODO voto audita.",
@@ -18768,6 +19225,71 @@
           }
         },
         "summary": "Retire Site"
+      }
+    },
+    "/sites/{site_id}/sismos": {
+      "get": {
+        "description": "[T-9.61] Sismos publicados por USGS en los últimos ``dias``, más reciente primero.\n\nSólo filas de USGS: la respuesta lleva la atribución de USGS, y una del SSN\nbajo ese rótulo citaría mal su fuente.",
+        "operationId": "sismos_del_sitio_sites__site_id__sismos_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "dias",
+            "required": false,
+            "schema": {
+              "default": 90,
+              "maximum": 365,
+              "minimum": 1,
+              "title": "Dias",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "min_mag",
+            "required": false,
+            "schema": {
+              "default": 4.0,
+              "maximum": 10.0,
+              "minimum": 0.0,
+              "title": "Min Mag",
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SismosDelSitioOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Sismos Del Sitio"
       }
     },
     "/sites/{site_id}/update": {
