@@ -117,6 +117,8 @@ DENY_ALL = {
     "deploy_firmware": False,
     # [T-9.31 · D-43] Confirmar el dictamen de la regla: nadie desconocido.
     "confirm_dictamen": False,
+    # [T-9.40 · D-43] Cerrar un evento a propósito: nadie desconocido.
+    "close_incident": False,
 }
 
 # [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
@@ -218,6 +220,15 @@ def test_request_dictamen_excludes_gov() -> None:
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["request_dictamen"]}
     # [F3 · D-43] + brigadista (fila «Escalar» de §3), acotado a su inmueble.
     assert can == {"takab_superadmin", "tenant_admin", "brigadista"}
+
+
+def test_close_incident_es_de_la_administracion_y_de_takab() -> None:
+    """[T-9.40 · D-43] Cerrar un evento a propósito deja el registro sin dueño en la
+    consola: lo hace quien responde por el inmueble (administración) o TAKAB. Ni la
+    brigada ni el inspector (juzgan el edificio, no archivan el caso), ni gobierno
+    (su única escritura es el acuse), ni el soporte, ni el ocupante."""
+    can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["close_incident"]}
+    assert can == {"takab_superadmin", "tenant_admin"}
 
 
 def test_read_audit_is_read_only_oversight() -> None:

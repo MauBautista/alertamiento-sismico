@@ -80,7 +80,13 @@ INSERT INTO _purgar (t) VALUES
   -- así que sin esta línea quedarían mapas apuntando a incidentes borrados. Y no
   -- se pierde nada recalculable: el mapa se deriva de features y del catálogo,
   -- que se purgan y se conservan por su cuenta.
-  ('incident_shakemap');
+  ('incident_shakemap'),
+  -- [T-9.42 · D-48] El informe automático cuelga de un incidente Y de su fila de
+  -- `evidence_objects`, y las dos se purgan aquí: conservarlo dejaría informes
+  -- apuntando a un incidente y a un PDF borrados. Su «no se poda» es de RETENCIÓN
+  -- (regla de oro 11), igual que el de `evidence_objects`, que también está en
+  -- esta lista: esta purga no es retención, es la decisión de T-7.10 con su dump.
+  ('post_event_reports');
 
 CREATE TEMP TABLE _conservar (t text PRIMARY KEY) ON COMMIT DROP;
 INSERT INTO _conservar (t) VALUES
@@ -140,6 +146,7 @@ SELECT 'ANTES · ' || t AS q, n FROM (
 -- --- 2) La purga, hijo→padre por legibilidad (las FKs están desactivadas) ------
 DELETE FROM catalog_consultations;   -- [T-7.25] antes que `incidents`
 DELETE FROM incident_shakemap;       -- [T-7.24] ídem: el CASCADE no corre en replica-mode
+DELETE FROM post_event_reports;      -- [T-9.42] antes que `evidence_objects` e `incidents`
 DELETE FROM notification_jobs;
 DELETE FROM notify_template_quarantine;
 DELETE FROM ops_alert_notices;
@@ -207,6 +214,8 @@ SELECT 'huerfanos_' || t AS chequeo, n FROM (
   SELECT 'consultas', count(*) FROM catalog_consultations cc
     LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
   SELECT 'mapas', count(*) FROM incident_shakemap ism
+    LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
+  SELECT 'informes', count(*) FROM post_event_reports per
     LEFT JOIN incidents i USING (incident_id) WHERE i.incident_id IS NULL     UNION ALL
   SELECT 'drill_sites', count(*) FROM drill_sites ds
     LEFT JOIN drills dr USING (drill_id) WHERE dr.drill_id IS NULL            UNION ALL

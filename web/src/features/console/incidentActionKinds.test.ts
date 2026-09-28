@@ -119,6 +119,8 @@ describe("[T-2.144] el barrido de productores no tiene puntos ciegos", () => {
       // aviso que la pide a la brigada: dos productores nuevos de la Fase 9.3.
       "dictamen_confirmed",
       "dictamen_confirm_requested",
+      // [T-9.42 · D-48] El informe posterior al evento que genera el worker `informes`.
+      "post_event_report",
     ]) {
       expect(KINDS, `el censo perdió a ${kind}`).toContain(kind);
     }

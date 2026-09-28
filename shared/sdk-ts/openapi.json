@@ -6162,6 +6162,78 @@
         "title": "IncidentActionOut",
         "type": "object"
       },
+      "IncidentCloseIn": {
+        "description": "Cuerpo de POST /incidents/{id}/close [T-9.40 · D-43].\n\n``motivo`` sólo es OBLIGATORIO (≥ 20 caracteres tras ``strip()``) cuando la\nclasificación vigente es ``real``/``indeterminado`` y la cabeza de la cadena no\nestá firmada: es la razón por escrito de cerrar SIN dictamen. El tope evita que\nla auditoría se convierta en un vertedero.",
+        "properties": {
+          "motivo": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          }
+        },
+        "title": "IncidentCloseIn",
+        "type": "object"
+      },
+      "IncidentCloseOut": {
+        "description": "Resultado del cierre explícito [T-9.40 · D-43].\n\n``sin_dictamen`` = se cerró un ``real``/``indeterminado`` con la cabeza SIN\nfirmar, por motivo escrito (deja además el audit ``cierre_sin_dictamen``).",
+        "properties": {
+          "classification": {
+            "title": "Classification",
+            "type": "string"
+          },
+          "closed_at": {
+            "format": "date-time",
+            "title": "Closed At",
+            "type": "string"
+          },
+          "incident_id": {
+            "format": "uuid",
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "reason": {
+            "default": "explicit",
+            "title": "Reason",
+            "type": "string"
+          },
+          "signature_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Kind"
+          },
+          "sin_dictamen": {
+            "title": "Sin Dictamen",
+            "type": "boolean"
+          },
+          "state": {
+            "default": "closed",
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "incident_id",
+          "closed_at",
+          "classification",
+          "signature_kind",
+          "sin_dictamen"
+        ],
+        "title": "IncidentCloseOut",
+        "type": "object"
+      },
       "IncidentFrame": {
         "description": "Incidente (INSERT/UPDATE) visible para el suscriptor tras RLS.",
         "properties": {
@@ -7084,6 +7156,10 @@
             "title": "Classify Incident",
             "type": "boolean"
           },
+          "close_incident": {
+            "title": "Close Incident",
+            "type": "boolean"
+          },
           "confirm_dictamen": {
             "title": "Confirm Dictamen",
             "type": "boolean"
@@ -7255,7 +7331,8 @@
           "cctv_read",
           "cctv_video",
           "deploy_firmware",
-          "confirm_dictamen"
+          "confirm_dictamen",
+          "close_incident"
         ],
         "title": "MeActions",
         "type": "object"
@@ -8990,6 +9067,94 @@
           "coordinates"
         ],
         "title": "PoligonoGeometry",
+        "type": "object"
+      },
+      "PostEventReportOut": {
+        "description": "[T-9.42 · D-48] El informe posterior al evento que el worker genera SOLO.\n\nEs la fila de `post_event_reports` tal cual. El PDF no viaja aquí: con `ok`,\n`evidence_id` es la evidencia, y se descarga con sesión por la ruta de siempre\n(un enlace prefirmado reenviado abriría el PDF a cualquiera).",
+        "properties": {
+          "attempts": {
+            "title": "Attempts",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "evidence_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Id"
+          },
+          "preliminar": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preliminar"
+          },
+          "state": {
+            "enum": [
+              "pendiente",
+              "ok",
+              "fallido"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "trigger": {
+            "enum": [
+              "firma",
+              "cierre",
+              "plazo"
+            ],
+            "title": "Trigger",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "variant": {
+            "title": "Variant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "trigger",
+          "preliminar",
+          "variant",
+          "evidence_id",
+          "attempts",
+          "error",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PostEventReportOut",
         "type": "object"
       },
       "PresignedDownload": {
@@ -15217,6 +15382,57 @@
         "summary": "Get Classifications"
       }
     },
+    "/incidents/{incident_id}/close": {
+      "post": {
+        "description": "[T-9.40 · D-43] Cierra un incidente a propósito, si cumple los requisitos.\n\nEl ORDEN de las comprobaciones es parte del contrato (cada una presupone las\nanteriores): existe → no está cerrado → está acusado → el edificio está en\ncalma (D-49 · R1: nada se cierra con el edificio moviéndose) → está\nclasificado → si la clasificación NO es terminal, la CABEZA de la cadena está\nfirmada o hay un motivo escrito de al menos ``MOTIVO_MIN_CHARS`` caracteres.\n\nUn cierre sin cabeza firmada deja, además del ``close``, un audit\n``cierre_sin_dictamen`` con el motivo: es la fila que un auditor busca.",
+        "operationId": "close_incident_incidents__incident_id__close_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncidentCloseIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IncidentCloseOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Close Incident"
+      }
+    },
     "/incidents/{incident_id}/damage-reports": {
       "get": {
         "description": "Reportes del incidente (Triage de la consola + tácticos en campo).",
@@ -15900,9 +16116,50 @@
         "summary": "Incident Notifications"
       }
     },
+    "/incidents/{incident_id}/post-event-report": {
+      "get": {
+        "description": "El estado del informe que el worker `informes` genera solo.\n\n404 `sin_informe` si no hay fila: todavía no tocaba (ni firma, ni cierre, ni\nplazo), o el incidente no califica (sólo cautela, una prueba) o no es visible\npara este cliente — la RLS de la tabla lo decide, y un 403 confirmaría que\nexiste. El endpoint no genera nada.",
+        "operationId": "get_post_event_report_incidents__incident_id__post_event_report_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostEventReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Post Event Report"
+      }
+    },
     "/incidents/{incident_id}/report": {
       "post": {
-        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.\n\n[T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de\nevidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK\ndel DDL por una etiqueta no lo valdría.\n\nEl gate de \"sin dictamen no hay PDF\" se retiró: un incidente sin dictamen YA tiene\nhechos que reportar —lo que midió el sensor, quién acusó, qué estaciones\ncorroboraron— y el documento lo rotula como preliminar.\n\n[T-8.12 · A-054] Es TAMBIÉN la función que llama el certificado del móvil\n(`routers/mobile_incident._certificado`) cuando no hay un informe posterior a\nla firma: una sola tubería para el mismo documento, y un solo escritor de\n`export_pdf` —lo que hace contables los dos techos del freno\n(`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`)—. Desde allí\nse llama como función, sin la puerta de rol del decorador: el certificado es\nun derivado de un dictamen YA firmado y lo pide un rol con `dictamen_read`.\nEl freno sí se aplica, aquí dentro, igual que desde la consola.\n\n[T-8.12 · A-080] Lo SÍNCRONO va a un hilo: el render de fpdf2 es CPU pura y\n`put_object`/`presign_get` son boto3 bloqueante. La API corre con UN solo\nworker (`deploy/cloud/docker-compose.yml`), así que en el loop congelaban el\nWebSocket de la consola, `/health` y el sondeo que la app hace cada 5 s en\ncrisis mientras duraba el render. Es el patrón de `commands/service.py`.",
+        "description": "Genera el PDF del incidente y lo registra como evidencia inmutable.\n\n[T-2.41] Dos documentos del mismo modelo. Se conserva `report_pdf` como `kind` de\nevidencia: la variante va en la key de S3 y en la auditoría, y ampliar el CHECK\ndel DDL por una etiqueta no lo valdría.\n\nEl gate de \"sin dictamen no hay PDF\" se retiró: un incidente sin dictamen YA tiene\nhechos que reportar —lo que midió el sensor, quién acusó, qué estaciones\ncorroboraron— y el documento lo rotula como preliminar.\n\n[T-8.12 · A-054] Es TAMBIÉN la función que llama el certificado del móvil\n(`routers/mobile_incident._certificado`) cuando no hay un informe posterior a\nla firma: una sola tubería para el mismo documento, y un solo escritor de\n`export_pdf` —`generar_informe`, desde T-9.42— —lo que hace contables los dos techos del freno\n(`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`)—. Desde allí\nse llama como función, sin la puerta de rol del decorador: el certificado es\nun derivado de un dictamen YA firmado y lo pide un rol con `dictamen_read`.\nEl freno sí se aplica, aquí dentro, igual que desde la consola.\n\n[T-8.12 · A-080] Lo SÍNCRONO va a un hilo: el render de fpdf2 es CPU pura y\n`put_object`/`presign_get` son boto3 bloqueante. La API corre con UN solo\nworker (`deploy/cloud/docker-compose.yml`), así que en el loop congelaban el\nWebSocket de la consola, `/health` y el sondeo que la app hace cada 5 s en\ncrisis mientras duraba el render. Es el patrón de `commands/service.py`.",
         "operationId": "generate_report_incidents__incident_id__report_post",
         "parameters": [
           {

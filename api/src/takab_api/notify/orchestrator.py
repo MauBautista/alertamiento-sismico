@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 import psycopg
@@ -289,6 +290,29 @@ WHERE a.kind = 'dictamen_confirm_requested'
   )
 ORDER BY a.ts, a.action_id
 """
+
+# [T-9.42 · D-48] El informe posterior al evento está listo (la acción la deja el
+# worker `informes`) ⇒ UN correo a la cascada del sitio y UN push OPS al círculo
+# táctico, los dos anclados a la MISMA acción. Por eso el «sin job» mira el CANAL:
+# con el `NOT EXISTS` de siempre (cualquier job de la acción), el primero que se
+# encolara taparía al otro para siempre. El índice único `(action_id, channel)`
+# los deja convivir.
+_POST_EVENT_REPORT_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'post_event_report'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j
+    WHERE j.action_id = a.action_id AND j.channel = '{canal}'
+  )
+ORDER BY a.ts, a.action_id
+"""
+_POST_EVENT_REPORT_EMAIL_SQL = _POST_EVENT_REPORT_SQL.format(canal="email")
+_POST_EVENT_REPORT_PUSH_SQL = _POST_EVENT_REPORT_SQL.format(canal="push")
 
 # 1 push por (action_id, channel): el índice único parcial de 0014 (action) lo
 # hace idempotente. El target lleva site_id + clase OPS (el _dispatch_push
@@ -733,6 +757,19 @@ def run_notify_pass(
         lookback_s=lookback,
         push_class=PUSH_CLASS_DICTAMEN_CONFIRM,
         roles=roles_with_action("confirm_dictamen"),
+    )
+    # [T-9.42 · D-48] El informe automático: correo a la cascada del sitio y push OPS
+    # al círculo táctico de F1 (`movement_alert`: brigada, inspector y administrador),
+    # DERIVADO de la matriz. El ocupante no: el informe es para quien decide.
+    counts["enqueued"] += _enqueue_post_event_report(
+        conn, config_cache, now=now, lookback_s=lookback
+    )
+    counts["enqueued"] += _enqueue_push_for_actions(
+        conn,
+        _POST_EVENT_REPORT_PUSH_SQL,
+        now=now,
+        lookback_s=lookback,
+        roles=roles_with_action("movement_alert"),
     )
     # [T-2.147.a] El pánico va en su propia función y no por `_enqueue_push_for_actions`:
     # aquel encola por ACCIÓN de incidente (`action_id`), y un pánico no genera
@@ -1196,6 +1233,47 @@ def _enqueue_people_at_risk(
     return inserted
 
 
+def _enqueue_post_event_report(
+    conn: psycopg.Connection,
+    config_cache: dict,
+    *,
+    now: datetime,
+    lookback_s: float,
+) -> int:
+    """[T-9.42 · D-48] Un correo por cada informe automático listo, a la cascada.
+
+    Los destinatarios son los `email` de la cascada del SITIO (los mismos que
+    reciben el incidente), no los del inspector: el informe es para quien decide.
+    Sin URL prefirmada ni adjunto (ver `_message`). Sin destinatarios no se
+    inventa uno, pero se DICE: el informe existe y nadie va a enterarse por correo.
+    """
+    rows = conn.execute(
+        _POST_EVENT_REPORT_EMAIL_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        email = resolve_destinations(_config_for(conn, config_cache, row)).get("email")
+        if not email:
+            logger.warning(
+                "post_event_report %s sin destinatarios email en la cascada del sitio: "
+                "el informe está generado y nadie lo recibirá por correo",
+                row["action_id"],
+            )
+            continue
+        result = conn.execute(
+            _INSERT_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"to": email["to"]}),
+                "due_at": row["ts"],  # vence YA: paralelo, sin cascada
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
 def _enqueue_panic_ack_timeout(
     conn: psycopg.Connection,
     settings: Settings,
@@ -1448,7 +1526,15 @@ def _dispatch_one(
     # escribe en la fila del job y no en la RAM de esta instancia.
     state.enter_job(row["job_id"])
     try:
-        provider.send(target, _message(row, base_url=base_url))
+        message = _message(row, base_url=base_url)
+    except ValueError as exc:
+        # [T-9.43] Un kind sin rama: el job FALLA con la causa escrita. Dejar que
+        # la excepción subiera mataría la pasada entera —y con ella todos los
+        # avisos de todos los clientes— por un correo que no se sabe redactar.
+        _fail(conn, counts, row, str(exc), now=now, max_attempts=max_attempts)
+        return
+    try:
+        provider.send(target, message)
     except NotifyError as exc:
         _fail(conn, counts, row, str(exc), now=now, max_attempts=max_attempts)
         return
@@ -2007,12 +2093,64 @@ def _config_for(conn: psycopg.Connection, cache: dict, row: dict) -> dict | None
     return cache[key]
 
 
+def _msg_dictamen_request(message: dict, row: dict, payload: dict) -> str:
+    """[T-1.61] La solicitud de dictamen al inspector: quién la pidió y su nota."""
+    message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
+    message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
+    message["note"] = payload.get("note")
+    return f"/triage?incident={row['incident_id']}"
+
+
+def _msg_people_at_risk(message: dict, row: dict, payload: dict) -> str:
+    """[T-2.10] Prioridad máxima: el SOC ve al frente «personas en riesgo»."""
+    message["headline"] = f"TAKAB Ailert · PERSONAS EN RIESGO · {row['site_name']}"
+    message["reported_by"] = row.get("action_actor")
+    message["report_id"] = payload.get("report_id")
+    return f"/triage?incident={row['incident_id']}"
+
+
+def _msg_tactical_ack_timeout(message: dict, row: dict, payload: dict) -> str:
+    """[T-9.43] La brigada no acusó el pánico: el SOC decide si avisar al inmueble.
+
+    Sin «Solicitado por»: no lo pidió nadie, lo detectó un plazo.
+    """
+    message["headline"] = f"TAKAB Ailert · La brigada no acusó · {row['site_name']}"
+    message["timeout_s"] = payload.get("timeout_s")
+    return f"/triage?incident={row['incident_id']}"
+
+
+def _msg_post_event_report(message: dict, row: dict, payload: dict) -> str:
+    """[T-9.42 · D-48] El informe posterior al evento está listo.
+
+    **Sin URL prefirmada ni adjunto**: el enlace lleva al cierre del evento en la
+    consola y el PDF se descarga CON SESIÓN. Un correo se reenvía, y un enlace
+    reenviado no debe abrir la evidencia de un cliente a quien lo reciba.
+    """
+    message["headline"] = f"TAKAB Ailert · Informe del evento · {row['site_name']}"
+    message["preliminar"] = payload.get("preliminar")
+    return f"/triage/{row['incident_id']}/cierre"
+
+
+#: [T-9.43] El mensaje de un job anclado a una acción, por `kind`. Tabla CERRADA:
+#: un kind que no esté aquí LANZA. Antes toda acción que no fuera «personas en
+#: riesgo» caía en la rama del dictamen, y el aviso de que la brigada no acusó
+#: llegaba al SOC como «Solicitud de dictamen · Solicitado por: system». El censo
+#: (`tests/notify/test_mensaje_por_kind.py`) deriva de las SQL de este módulo qué
+#: kinds anclan un correo y exige que esta tabla tenga exactamente esos.
+MENSAJE_POR_KIND: dict[str, Callable[[dict, dict, dict], str]] = {
+    "dictamen_request": _msg_dictamen_request,
+    "damage_people_at_risk": _msg_people_at_risk,
+    "tactical_ack_timeout": _msg_tactical_ack_timeout,
+    "post_event_report": _msg_post_event_report,
+}
+
+
 def _message(row: dict, *, base_url: str = "") -> dict:
     """Payload de notificación (MVP §8: sin T-MINUS ni magnitud preliminar).
 
-    [T-1.61] Un job con ``action_id`` es una SOLICITUD DE DICTAMEN al
-    inspector: headline propio, quién la pidió, su nota y el link directo al
-    Triage (si hay base pública configurada).
+    Un job con ``action_id`` se redacta según el ``kind`` de su acción
+    (`MENSAJE_POR_KIND`); un kind desconocido lanza ``ValueError``. El enlace sólo
+    se compone con base pública configurada (T-2.158).
     """
     message = {
         "source": "takab-ailert",
@@ -2028,19 +2166,12 @@ def _message(row: dict, *, base_url: str = "") -> dict:
         "headline": f"TAKAB Ailert · Incidente {row['severity']} · {row['site_name']}",
     }
     if row.get("action_id"):
-        payload = row.get("action_payload") or {}
         kind = row.get("action_kind")
-        if kind == "damage_people_at_risk":
-            # [T-2.10] Prioridad máxima: el SOC ve al frente "personas en riesgo".
-            message["headline"] = f"TAKAB Ailert · PERSONAS EN RIESGO · {row['site_name']}"
-            message["kind"] = "damage_people_at_risk"
-            message["reported_by"] = row.get("action_actor")
-            message["report_id"] = payload.get("report_id")
-        else:
-            message["headline"] = f"TAKAB Ailert · Solicitud de dictamen · {row['site_name']}"
-            message["kind"] = "dictamen_request"
-            message["requested_by"] = payload.get("requested_by") or row.get("action_actor")
-            message["note"] = payload.get("note")
+        rama = MENSAJE_POR_KIND.get(kind)
+        if rama is None:
+            raise ValueError(f"acción de kind {kind!r} sin mensaje en MENSAJE_POR_KIND")
+        message["kind"] = kind
+        ruta = rama(message, row, row.get("action_payload") or {})
         if base_url:
-            message["link"] = f"{base_url.rstrip('/')}/triage?incident={row['incident_id']}"
+            message["link"] = f"{base_url.rstrip('/')}{ruta}"
     return message

@@ -14,6 +14,14 @@ muertos.
   en el timeline (append-only). 409 si ya hay una solicitud SIN dictamen firmado
   posterior (idempotencia suave: re-solicitar tras la firma sí procede).
 
+- ``POST /incidents/{id}/close`` [T-9.40 · D-43]: CIERRE EXPLÍCITO desde la
+  consola. Los requisitos se revisan EN ORDEN con la fila bloqueada (``FOR
+  UPDATE``) y cada 409 lleva por ``detail`` su CÓDIGO (la web lo traduce):
+  ``ya_cerrado`` → ``sin_acuse`` → ``sismo_en_curso`` → ``sin_clasificacion`` →
+  ``sin_dictamen``. El tier, la clasificación vigente y la cabeza de la cadena son
+  LOS MISMOS fragmentos SQL que usa la pasada del ciclo de vida: la consola no
+  puede cerrar por una definición distinta de la que cierra sola.
+
 Los frames WS salen gratis: los triggers NOTIFY de 0004 cubren el UPDATE de
 ``incidents`` (link de evento) y todo INSERT en ``incident_actions``.
 """
@@ -33,17 +41,28 @@ from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
 from takab_api.dictamen.sistema import ATIENDE_ESCALADA_SQL
+from takab_api.incident.classification import TERMINALES
+from takab_api.incident.lifecycle import (
+    CABEZA_SQL,
+    CLASIFICACION_VIGENTE_SQL,
+    TIER_ACTUAL_SQL,
+)
+from takab_api.incident.transitions import validate_transition
+from takab_api.reingreso import en_calma
 from takab_api.schemas.incidents import (
     DictamenRequestIn,
     EpicenterRelocateIn,
     EpicenterRelocateOut,
     IncidentActionOut,
+    IncidentCloseIn,
+    IncidentCloseOut,
     LonLat,
 )
 
 # Fuente única: la matriz de acciones (RBAC §2 + divergencias documentadas).
 _require_relocate = require_roles(*roles_with_action("relocate_epicenter"))
 _require_request = require_roles(*roles_with_action("request_dictamen"))
+_require_close = require_roles(*roles_with_action("close_incident"))
 
 router = APIRouter()
 
@@ -76,6 +95,35 @@ _PENDING_REQUEST_SQL = text(
     f"  WHERE d.incident_id = :id AND {ATIENDE_ESCALADA_SQL} AND d.created_at > a.ts"
     ") LIMIT 1"
 )
+
+#: [T-9.40 · D-43] Todo lo que decide el cierre, leído en UNA sentencia y con la fila
+#: BLOQUEADA: dos cierres concurrentes (o el cierre y la pasada del ciclo de vida)
+#: se serializan aquí y el segundo ve ``closed``. ``FOR UPDATE`` exige además la
+#: política de ESCRITURA de la RLS: un incidente que el portador sólo puede LEER
+#: (grant de datos, gobierno) no aparece, y eso es un 404, no un 403 que confirme
+#: que existe. Los fragmentos son los de ``incident/lifecycle`` (alias ``i``).
+_CLOSE_LOCK_SQL = text(
+    f"""
+SELECT i.tenant_id, i.site_id, i.state,
+       {TIER_ACTUAL_SQL} AS tier,
+       {CLASIFICACION_VIGENTE_SQL} AS classification,
+       {CABEZA_SQL.format(col="signed_by")} AS head_signed_by,
+       {CABEZA_SQL.format(col="signature_kind")} AS head_signature_kind
+  FROM incidents i
+ WHERE i.incident_id = :id
+   FOR UPDATE OF i
+"""
+)
+
+_CLOSE_UPDATE_SQL = text(
+    "UPDATE incidents SET state = 'closed', closed_at = now() "
+    "WHERE incident_id = :id RETURNING closed_at"
+)
+
+#: [T-9.40 · D-43] Caracteres mínimos (tras ``strip()``) del motivo para cerrar un
+#: ``real``/``indeterminado`` sin cabeza firmada. Veinte bastan para una frase con
+#: sujeto («el perito firmó en papel») y descartan el «ok» y el «.» de trámite.
+MOTIVO_MIN_CHARS = 20
 
 
 @router.post("/incidents/{incident_id}/epicenter", response_model=EpicenterRelocateOut)
@@ -199,4 +247,100 @@ async def request_dictamen(
         kind=action.kind,
         actor=action.actor,
         payload=action.payload,
+    )
+
+
+def _conflicto(codigo: str) -> HTTPException:
+    """409 cuyo ``detail`` es el CÓDIGO del requisito que falta (la web lo traduce)."""
+    return HTTPException(status_code=409, detail=codigo)
+
+
+@router.post("/incidents/{incident_id}/close", response_model=IncidentCloseOut)
+async def close_incident(
+    incident_id: UUID,
+    body: IncidentCloseIn,
+    claims: Claims = Depends(_require_close),
+    conn: AsyncConnection = Depends(get_session),
+) -> IncidentCloseOut:
+    """[T-9.40 · D-43] Cierra un incidente a propósito, si cumple los requisitos.
+
+    El ORDEN de las comprobaciones es parte del contrato (cada una presupone las
+    anteriores): existe → no está cerrado → está acusado → el edificio está en
+    calma (D-49 · R1: nada se cierra con el edificio moviéndose) → está
+    clasificado → si la clasificación NO es terminal, la CABEZA de la cadena está
+    firmada o hay un motivo escrito de al menos ``MOTIVO_MIN_CHARS`` caracteres.
+
+    Un cierre sin cabeza firmada deja, además del ``close``, un audit
+    ``cierre_sin_dictamen`` con el motivo: es la fila que un auditor busca.
+    """
+    row = (await conn.execute(_CLOSE_LOCK_SQL, {"id": incident_id})).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="incidente no encontrado")
+    # Fuera del alcance por inmueble del portador, el incidente no existe para él.
+    allowed = scope_filter(claims)
+    if allowed is not None and str(row.site_id) not in allowed:
+        raise HTTPException(status_code=404, detail="incidente no encontrado")
+    if row.state == "closed":
+        raise _conflicto("ya_cerrado")
+    if row.state == "open":
+        raise _conflicto("sin_acuse")
+    if not en_calma(row.tier):
+        raise _conflicto("sismo_en_curso")
+    if row.classification is None:
+        raise _conflicto("sin_clasificacion")
+
+    motivo = body.motivo.strip() if body.motivo and body.motivo.strip() else None
+    firmada = row.head_signed_by is not None
+    pide_dictamen = row.classification not in TERMINALES
+    sin_dictamen = pide_dictamen and not firmada
+    if sin_dictamen and (motivo is None or len(motivo) < MOTIVO_MIN_CHARS):
+        raise _conflicto("sin_dictamen")
+
+    validate_transition(row.state, "closed")  # acked|in_review → closed: siempre válida
+    closed_at = (await conn.execute(_CLOSE_UPDATE_SQL, {"id": incident_id})).scalar_one()
+
+    actor = f"user:{claims.sub}"
+    signature_kind = row.head_signature_kind if firmada else None
+    detalle: dict[str, object] = {
+        "from": row.state,
+        "to": "closed",
+        "reason": "explicit",
+        "classification": row.classification,
+        "signature_kind": signature_kind,
+    }
+    if motivo is not None:
+        detalle["motivo"] = motivo
+    await conn.execute(
+        _INSERT_ACTION_SQL,
+        {
+            "id": incident_id,
+            "tenant": row.tenant_id,
+            "kind": "close",
+            "actor": actor,
+            "payload": json.dumps(detalle),
+        },
+    )
+    await audit_async(
+        conn,
+        tenant_id=row.tenant_id,
+        actor=actor,
+        verb="close",
+        obj=f"incident:{incident_id}",
+        meta=detalle,
+    )
+    if sin_dictamen:
+        await audit_async(
+            conn,
+            tenant_id=row.tenant_id,
+            actor=actor,
+            verb="cierre_sin_dictamen",
+            obj=f"incident:{incident_id}",
+            meta={"motivo": motivo, "classification": row.classification},
+        )
+    return IncidentCloseOut(
+        incident_id=incident_id,
+        closed_at=closed_at,
+        classification=row.classification,
+        signature_kind=signature_kind,
+        sin_dictamen=sin_dictamen,
     )

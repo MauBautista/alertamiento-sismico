@@ -76,3 +76,31 @@ class DictamenRequestIn(BaseModel):
     """Cuerpo de POST /incidents/{id}/dictamen-request (T-1.48)."""
 
     note: str | None = Field(default=None, max_length=500)
+
+
+class IncidentCloseIn(BaseModel):
+    """Cuerpo de POST /incidents/{id}/close [T-9.40 · D-43].
+
+    ``motivo`` sólo es OBLIGATORIO (≥ 20 caracteres tras ``strip()``) cuando la
+    clasificación vigente es ``real``/``indeterminado`` y la cabeza de la cadena no
+    está firmada: es la razón por escrito de cerrar SIN dictamen. El tope evita que
+    la auditoría se convierta en un vertedero.
+    """
+
+    motivo: str | None = Field(default=None, max_length=1000)
+
+
+class IncidentCloseOut(BaseModel):
+    """Resultado del cierre explícito [T-9.40 · D-43].
+
+    ``sin_dictamen`` = se cerró un ``real``/``indeterminado`` con la cabeza SIN
+    firmar, por motivo escrito (deja además el audit ``cierre_sin_dictamen``).
+    """
+
+    incident_id: UUID
+    state: str = "closed"
+    closed_at: datetime
+    reason: str = "explicit"
+    classification: str
+    signature_kind: str | None
+    sin_dictamen: bool
