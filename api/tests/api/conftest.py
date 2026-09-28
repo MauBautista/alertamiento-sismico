@@ -68,6 +68,8 @@ _TRUNCATE_WRITTEN = text(
     # [T-2.79] aviso + consentimiento: append-only por trigger, igual que arriba.
     # [T-2.80] la lápida de ARCO, por el mismo motivo.
     "privacy_consents, privacy_notices, privacy_erasures, "
+    # [T-9.80] los contactos de emergencia: cuelgan del titular, no de un sitio.
+    "emergency_contacts, "
     # [T-3.12.c] CCTV. `cctv_clips`/`cctv_stills` caerían igual por el CASCADE de
     # `incidents`, pero `cameras` cuelga de `sites` —que NO se trunca— así que una
     # cámara sembrada en un test cambiaría el veredicto del siguiente: `con_camara`

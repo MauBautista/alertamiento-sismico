@@ -14,6 +14,7 @@ import {
   AccountView,
   type AccountProfile,
 } from "@/features/account/AccountView";
+import { useConteoContactos } from "@/features/emergencyContacts/useEmergencyContacts";
 import { getGpsConsent, setGpsConsent } from "@/services/onboarding";
 import { StateFrame } from "@/ui/StateFrame";
 import { useStaleSince } from "@/ui/useStaleSince";
@@ -58,6 +59,8 @@ export function AccountScreen() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [gpsConsent, setConsent] = useState(false);
+  // [T-9.80 · D-48] Sólo el «N de 3» de la fila: la lista se edita en su pantalla.
+  const contactosCount = useConteoContactos();
 
   useEffect(() => {
     let alive = true;
@@ -120,12 +123,14 @@ export function AccountScreen() {
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
       <AccountView
         canSave={form.displayName.trim().length > 0}
+        contactosCount={contactosCount}
         gpsConsent={gpsConsent}
         isOccupant={profileGroup === "occupant"}
         // [T-8.11] El cierre COMPLETO (T-8.04): da de baja el push, revoca el
         // refresh y borra la cookie de la Hosted UI. El `signOut` local dejaba el
         // refresh vivo en Cognito — con sesiones de 30 días, eso ya no es menor.
         onLogout={() => void logout()}
+        onOpenContactos={() => router.push("/contactos-emergencia")}
         onOpenPermisos={() => router.push("/onboarding/permisos")}
         onOpenPrivacidad={() => router.push("/onboarding/privacidad")}
         onOpenVincular={() => router.push("/onboarding/enrolamiento")}

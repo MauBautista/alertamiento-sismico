@@ -74,6 +74,8 @@ ROTULOS: dict[str, str] = {
     "notify_sent": "NOTIFICACIÓN ENVIADA",
     "notify_simulated": "NOTIFICACIÓN SIMULADA · NADIE LA RECIBIÓ",
     # [T-9.42 · D-48] El worker `informes` generó solo el PDF del evento.
+    # [T-9.80 · D-48] Alguien marcó NECESITO AYUDA y tiene contactos de emergencia.
+    "need_help_contacts": "PIDIÓ AYUDA · SE AVISA A SUS CONTACTOS DE EMERGENCIA",
     "post_event_report": "INFORME POSTERIOR AL EVENTO GENERADO · SE AVISA POR CORREO",
     "siren_off": "SIRENA SILENCIADA",
     "siren_on": "SIRENA ACTIVADA",

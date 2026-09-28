@@ -61,6 +61,10 @@ NOMBRE = "Ernestina Zapopan Quinones"
 TELEFONO = "+525599887766"
 TOKEN = "ExponentPushToken[zzERNESTINA-DEVICE-77zz]"
 LLAVE = "-----BEGIN PUBLIC KEY-----ERNESTINAKEY-----END PUBLIC KEY-----"
+# [T-9.80] Sus contactos de emergencia: datos de TERCEROS que ella declaró. ARCO
+# los BORRA (no hay fila de hechos que conservar: sólo sirven para avisar).
+CONTACTO = "Prudencia Contacto Xochimilco"
+CORREO_CONTACTO = "prudencia.xochimilco@example.mx"
 
 PUNTO = "ST_SetSRID(ST_MakePoint(-99.1332,19.4326),4326)::geography"
 
@@ -82,6 +86,7 @@ def _persona(
     llave: str = LLAVE,
     incidente: str | None = INC_A,
     checkins: int = 2,
+    contactos: int = 2,
 ) -> None:
     """Un titular con TODA su superficie de PII, como en producción."""
     conn.execute(
@@ -108,6 +113,13 @@ def _persona(
             "INSERT INTO life_checkins (tenant_id, incident_id, user_id, site_id, status, geom) "
             f"VALUES (%s,%s,%s,%s,'safe',{PUNTO})",
             (tenant, incidente, user, site),
+        )
+    for posicion in range(1, contactos + 1):
+        conn.execute(
+            "INSERT INTO emergency_contacts (tenant_id, user_sub, posicion, display_name, "
+            "email, phone, consent_version, consented_at) "
+            "VALUES (%s,%s,%s,%s,%s,'+525500001111','contactos-v1-2026-09',now())",
+            (tenant, user, posicion, f"{CONTACTO} {posicion}", f"{posicion}.{CORREO_CONTACTO}"),
         )
 
 
@@ -563,6 +575,14 @@ def test_arco_durante_un_incidente_abierto_se_difiere_y_no_toca_nada(
         ).fetchone()
         == antes
     ), "el diferimiento dejó la anonimización a medias"
+    # [T-9.80] Los contactos tampoco: con el incidente abierto son a quien se avisa
+    # si esta persona pide ayuda AHORA.
+    assert (
+        seeded.execute(
+            "SELECT count(*) FROM emergency_contacts WHERE user_sub = %s", (USER_A,)
+        ).fetchone()[0]
+        == 2
+    )
 
 
 def test_una_sesion_sin_titular_no_puede_ejercer_arco(seeded: psycopg.Connection) -> None:
@@ -858,12 +878,22 @@ def test_con_constancia_el_responsable_ejerce_y_la_lapida_dice_con_que_prueba(
     assert lapida["right_exercised"] == "oposicion"
     assert lapida["affected"]["life_checkins"] == 2
     assert lapida["affected"]["user_profiles"] == 1
+    # [T-9.80] Y los contactos de emergencia, también por cuenta de otro: sin la
+    # política `ec_arco_on_behalf` el DELETE del responsable volvería con CERO filas
+    # sin error, y la lápida diría que se cumplió lo que no.
+    assert lapida["affected"]["emergency_contacts"] == 2
 
     reset(seeded)
     fila = seeded.execute(
         "SELECT display_name, phone FROM user_profiles WHERE user_sub = %s", (USER_A,)
     ).fetchone()
     assert fila == (erasure.ERASED_DISPLAY_NAME, None)
+    assert (
+        seeded.execute(
+            "SELECT count(*) FROM emergency_contacts WHERE user_sub = %s", (USER_A,)
+        ).fetchone()[0]
+        == 0
+    )
 
 
 def test_la_constancia_no_autoriza_a_reescribir_el_perfil(seeded: psycopg.Connection) -> None:
@@ -1001,7 +1031,7 @@ def test_no_queda_rastro_del_titular_en_toda_la_base(seeded: psycopg.Connection)
 
     columnas = seeded.execute(_TEXTUALES).fetchall()
     supervivientes = []
-    for aguja in (NOMBRE, TELEFONO, TOKEN):
+    for aguja in (NOMBRE, TELEFONO, TOKEN, CONTACTO, CORREO_CONTACTO):
         for tabla, col in columnas:
             hay = seeded.execute(
                 f'SELECT 1 FROM "{tabla}" WHERE "{col}"::text LIKE %s LIMIT 1',
@@ -1160,14 +1190,16 @@ def test_la_lapida_no_guarda_copia_de_lo_borrado(seeded: psycopg.Connection) -> 
     lapida = _arco(seeded)
 
     crudo = json.dumps(lapida, default=str)
-    for aguja in (NOMBRE, TELEFONO, TOKEN, LLAVE):
+    for aguja in (NOMBRE, TELEFONO, TOKEN, LLAVE, CONTACTO, CORREO_CONTACTO):
         assert aguja not in crudo, f"la lápida conserva {aguja!r}"
     assert lapida["affected"] == {
         "user_profiles": 1,
         "push_tokens": 1,
         "device_keys": 1,
         "life_checkins": 2,
+        "emergency_contacts": 2,
     }
+    assert set(lapida["affected"]) == set(erasure.TOUCHED_TABLES)
 
 
 def test_el_check_in_de_otro_titular_no_se_anonimiza_por_arrastre(
@@ -1196,3 +1228,30 @@ def test_el_check_in_de_otro_titular_no_se_anonimiza_por_arrastre(
         ).fetchone()[0]
         == 1
     )
+
+
+def test_los_contactos_de_otro_titular_no_caen_por_arrastre(
+    seeded: psycopg.Connection,
+) -> None:
+    """[T-9.80] El borrado de contactos se acota al sujeto: los de su vecino de
+    tenant —con las mismas posiciones 1 y 2— siguen ahí."""
+    reset(seeded)
+    _persona(seeded)
+    _persona(
+        seeded,
+        user=USER_A2,
+        nombre="Otra Persona",
+        telefono="+525500000002",
+        token="ExponentPushToken[otra]",
+        llave=LLAVE + "2",
+    )
+    _cierra_incidentes(seeded)
+    _titular(seeded)
+    _arco(seeded)
+    reset(seeded)
+    por_titular = dict(
+        seeded.execute(
+            "SELECT user_sub::text, count(*) FROM emergency_contacts GROUP BY user_sub"
+        ).fetchall()
+    )
+    assert por_titular == {USER_A2: 2}

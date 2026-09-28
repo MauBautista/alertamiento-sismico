@@ -3153,6 +3153,15 @@ BEGIN
   GET DIAGNOSTICS v_n = ROW_COUNT;
   v_af := v_af || jsonb_build_object('life_checkins', v_n);
 
+  -- [T-9.80 · 0077] Los contactos de emergencia se BORRAN, fila entera: son datos
+  -- de TERCEROS que el titular declaró y sólo sirven para avisarles. No documentan
+  -- ningún hecho (el aviso enviado vive en `incident_actions`/`notification_jobs`),
+  -- así que anonimizarlos dejaría filas que no significan nada.
+  DELETE FROM emergency_contacts
+   WHERE tenant_id = v_tenant AND user_sub = v_user;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_af := v_af || jsonb_build_object('emergency_contacts', v_n);
+
   SELECT coalesce(max(audit_id), 0) INTO v_wm FROM audit_log WHERE tenant_id = v_tenant;
 
   INSERT INTO privacy_erasures
@@ -3847,3 +3856,65 @@ CREATE POLICY cctv_evacuation_metrics_write ON cctv_evacuation_metrics FOR ALL
   WITH CHECK (tenant_id = app_tenant_id() AND app_role() <> 'gov_operator');
 CREATE POLICY cctv_evacuation_metrics_admin ON cctv_evacuation_metrics FOR ALL
   USING (app_is_takab_internal()) WITH CHECK (app_is_takab_internal());
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- [T-9.80 · D-48 · 0077] CONTACTOS DE EMERGENCIA
+--
+-- Hasta tres personas por titular a quienes TAKAB avisa por correo si el titular
+-- marca «NECESITO AYUDA» tras un sismo. Son datos de TERCEROS que el titular
+-- declara con su consentimiento (`consent_version` = la versión del aviso
+-- `privacy/texts/contactos_es_mx.json` que aceptó), así que la superficie es la
+-- mínima: SOLO el titular los ve y los edita. Ningún rol —ni el administrador del
+-- cliente ni el de TAKAB— los lee por la API: la RLS filtra por `user_sub`, no
+-- sólo por tenant.
+--
+-- Va al final del fichero porque sus políticas de ARCO cuelgan de
+-- `app_can_erase_subject`, que nace más arriba.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE TABLE emergency_contacts (
+  contact_id      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id       uuid NOT NULL REFERENCES tenants(tenant_id),
+  user_sub        uuid NOT NULL,                        -- el TITULAR (Cognito sub)
+  posicion        smallint NOT NULL CHECK (posicion BETWEEN 1 AND 3),
+  display_name    text NOT NULL CHECK (char_length(display_name) BETWEEN 1 AND 80),
+  email           text NOT NULL CHECK (char_length(email) <= 254 AND email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
+  phone           text NULL CHECK (phone IS NULL OR phone ~ '^\+[1-9][0-9]{7,14}$'),  -- E.164
+  consent_version text NOT NULL,
+  consented_at    timestamptz NOT NULL,
+  created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_at      timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT uq_emergency_contacts_pos UNIQUE (tenant_id, user_sub, posicion)
+);
+-- UN aviso a los contactos por persona y por incidente: reenviar el check-in (o la
+-- cola offline que lo repite) no manda un segundo correo. `kind` es texto libre y
+-- la tabla es append-only: el «una sola vez» vive aquí, como `uq_incident_actions_escalada`.
+CREATE UNIQUE INDEX uq_need_help_contacts
+  ON incident_actions (incident_id, (payload->>'user_sub')) WHERE kind = 'need_help_contacts';
+
+-- La API los escribe siempre bajo RLS; DELETE incluido (reemplazar la lista y
+-- borrarla son actos del titular). El notificador lee los correos al encolar.
+GRANT SELECT, INSERT, UPDATE, DELETE ON emergency_contacts TO takab_app;
+GRANT SELECT ON emergency_contacts TO takab_ingest;
+
+ALTER TABLE emergency_contacts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE emergency_contacts FORCE  ROW LEVEL SECURITY;
+-- El TITULAR, y sólo sobre su propia lista (el patrón de `user_profiles_self_write`).
+CREATE POLICY ec_self ON emergency_contacts FOR ALL
+  USING      (tenant_id = app_tenant_id() AND user_sub = app_user_id())
+  WITH CHECK (tenant_id = app_tenant_id() AND user_sub = app_user_id());
+-- ARCO por cuenta de otro (T-2.80.b): con constancia, el responsable BORRA los
+-- contactos del sujeto dentro de `privacy_erase_subject`. El DELETE con WHERE
+-- necesita también poder LEER la fila: sin la política de lectura volvería con
+-- CERO filas y sin error, y la lápida diría que se cumplió lo que no.
+CREATE POLICY ec_arco_on_behalf_read ON emergency_contacts FOR SELECT
+  USING (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub));
+CREATE POLICY ec_arco_on_behalf ON emergency_contacts FOR DELETE
+  USING (tenant_id = app_tenant_id() AND app_can_erase_subject(tenant_id, user_sub));
+-- Por RELOJ (`privacy/retention.py`, regla `emergency_contacts.rows`): el job de
+-- retención corre interno y SIN portador (`app.user_id` vacío). Exigir las dos
+-- cosas es lo que deja fuera al superadministrador de la consola, que siempre
+-- lleva su `sub`: un job no actúa en nombre de nadie, una persona sí.
+CREATE POLICY ec_retention_read ON emergency_contacts FOR SELECT
+  USING (tenant_id = app_tenant_id() AND app_is_takab_internal() AND app_user_id() IS NULL);
+CREATE POLICY ec_retention_delete ON emergency_contacts FOR DELETE
+  USING (tenant_id = app_tenant_id() AND app_is_takab_internal() AND app_user_id() IS NULL);

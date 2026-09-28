@@ -13,6 +13,7 @@ from takab_api.routers.cctv import router as cctv_router
 from takab_api.routers.classification import router as classification_router
 from takab_api.routers.commands import router as commands_router
 from takab_api.routers.compliance import router as compliance_router
+from takab_api.routers.contactos_emergencia import router as contactos_emergencia_router
 from takab_api.routers.demo_mode import router as demo_mode_router
 from takab_api.routers.dictamens import router as dictamens_router
 from takab_api.routers.drill_templates import router as drill_templates_router
@@ -168,6 +169,8 @@ def create_app() -> FastAPI:
 
     # Superficie MÓVIL (Fase 2 · T-2.03): portador, sitio e incidente.
     app.include_router(mobile_me_router)
+    # [T-9.80 · D-48] Los contactos de emergencia del portador.
+    app.include_router(contactos_emergencia_router)
     app.include_router(mobile_site_router)
     app.include_router(mobile_incident_router)
     # [T-9.61 · T-9.66 · D-46] Sismos del catálogo vistos desde un inmueble.

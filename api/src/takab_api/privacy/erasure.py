@@ -159,7 +159,15 @@ ERASE_FN_ARGS_PROHIBIDOS: tuple[str, ...] = ("user", "sub", "subject", "tenant",
 
 #: Tablas donde ARCO DESTRUYE un valor. Debe coincidir exactamente con las
 #: entradas ``erase`` del inventario — hay un test que lo comprueba.
-ERASED_TABLES: tuple[str, ...] = ("user_profiles", "push_tokens", "life_checkins")
+ERASED_TABLES: tuple[str, ...] = (
+    "user_profiles",
+    "push_tokens",
+    "life_checkins",
+    # [T-9.80] Aquí ARCO no sobrescribe un valor: BORRA la fila entera. Un contacto
+    # de emergencia es dato de un TERCERO que sólo sirve para avisarle; no queda
+    # ningún hecho que conservar.
+    "emergency_contacts",
+)
 
 #: Tablas donde ARCO no destruye nada: REVOCA una capacidad hacia adelante.
 #: La distinción no es cosmética. ``device_keys.public_key`` verifica la firma de
@@ -173,6 +181,7 @@ TOUCHED_TABLES: tuple[str, ...] = (
     "push_tokens",
     "device_keys",
     "life_checkins",
+    "emergency_contacts",
 )
 
 Right = Literal["cancelacion", "oposicion"]
@@ -312,6 +321,26 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
         "Ubicación GPS EXACTA de una persona. El conteo de rescate no la "
         "necesita (`zone_id` da la granularidad que se usa) y es el dato más "
         "sensible de la tabla. La FILA no se toca: por eso sigue contando.",
+    ),
+    # [T-9.80 · D-48] Los contactos de emergencia: la fila ENTERA se borra
+    # (`privacy_erase_subject`), también el `user_sub` que la ata al titular. No
+    # hay hecho que conservar: el aviso enviado vive en `incident_actions` sin un
+    # solo dato del contacto, y en `notification_jobs.target` (ver retención).
+    ("emergency_contacts", "display_name"): PiiColumn(
+        _ERASE,
+        "Nombre de un TERCERO que el titular declaró. Sólo sirve para avisarle si "
+        "el titular pide ayuda; retirado el titular, no sirve para nada.",
+    ),
+    ("emergency_contacts", "email"): PiiColumn(
+        _ERASE, "Correo de un tercero: el canal del aviso. Dato personal directo."
+    ),
+    ("emergency_contacts", "phone"): PiiColumn(
+        _ERASE, "Teléfono de un tercero (SMS pendiente, D-48). Dato personal directo."
+    ),
+    ("emergency_contacts", "user_sub"): PiiColumn(
+        _ERASE,
+        "El titular de la lista. No es clave de conteo de ningún hecho: se va con "
+        "la fila, porque conservarlo sin la fila no significa nada.",
     ),
     # --- lo que se conserva porque es la clave del hecho ----------------------
     ("life_checkins", "user_id"): PiiColumn(_KEEP, _R_SUB_OPACO),

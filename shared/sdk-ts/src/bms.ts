@@ -313,6 +313,14 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     view: { state: 'HABITABLE · REINGRESO AUTORIZADO', kind: 'ok' },
     logLabel: 'DICTAMEN FIRMADO · HABITABLE, REINGRESO AUTORIZADO',
   },
+  // [T-9.80 · D-48] Una persona marcó NECESITO AYUDA y tiene contactos de
+  // emergencia: se les avisa por correo (uno por persona e incidente). La fila no
+  // lleva datos de los contactos: sólo que el aviso salió.
+  need_help_contacts: {
+    label: 'AVISO A CONTACTOS',
+    view: { state: 'PIDIÓ AYUDA', kind: 'warning' },
+    logLabel: 'PIDIÓ AYUDA · SE AVISA A SUS CONTACTOS DE EMERGENCIA',
+  },
   // [T-9.42 · D-48] El worker `informes` generó solo el PDF del evento (≤ 30 min
   // desde la apertura). La fila sale DESPUÉS de la evidencia, en la misma
   // transacción: si está en el timeline, el PDF existe.

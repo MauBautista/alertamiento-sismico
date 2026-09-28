@@ -1,0 +1,39 @@
+{
+  "_": [
+    "T-9.80 · D-48 · AVISO DE CONTACTOS DE EMERGENCIA — TEXTO PROVISIONAL.",
+    "",
+    "ESTE TEXTO NO ESTÁ REVISADO POR LEGAL. Es un BORRADOR con la misma disciplina que",
+    "`aviso_es_mx.json`: el mecanismo es definitivo y el texto no.",
+    "",
+    "CÓMO SE CITA: cada contacto guarda `consent_version` = `notice.version` de abajo, y",
+    "`PUT /me/emergency-contacts` rechaza (409 `consentimiento_desactualizado`) un",
+    "consentimiento dado sobre otra versión. Cambiar el texto ES UNA VERSIÓN NUEVA: sube",
+    "`notice.version` y la app vuelve a pedir el consentimiento antes de guardar la",
+    "lista. NO edites el texto pensando que 'es solo una errata'.",
+    "",
+    "NO VIVE EN `privacy_notices`/`privacy_consents`: el consentimiento es del TITULAR",
+    "sobre datos de TERCEROS y se sella en la propia fila del contacto. Por eso su",
+    "`purpose` es de repositorio (`artifacts.REPO_ONLY_PURPOSES`) y no del CHECK de la base.",
+    "",
+    "El párrafo final del cuerpo declara que el texto es provisional, DENTRO del cuerpo",
+    "a propósito: viaja hasta la pantalla y desaparece el día que LEGAL entregue el",
+    "definitivo (con versión nueva).",
+    "",
+    "CANAL: hoy sólo correo. El SMS queda pendiente de contratar proveedor (D-48); el",
+    "texto no promete un canal que no existe."
+  ],
+  "purpose": "emergency_contacts",
+  "notice": {
+    "locale": "es-MX",
+    "version": "contactos-v1-2026-09",
+    "title": "Contactos de emergencia — TAKAB Ailert",
+    "body": "SUS CONTACTOS SABEN Y ACEPTAN. Al guardar sus contactos de emergencia, usted declara que cada una de esas personas sabe que la registró y acepta recibir este aviso.\n\nPARA QUÉ SE USAN. Solo para avisarles si usted marca «NECESITO AYUDA» en la app después de un sismo. Nunca para otra cosa: ni publicidad, ni otros avisos del inmueble.\n\nQUÉ RECIBEN. Un correo con su nombre, el inmueble y la zona donde está registrado. Su ubicación solo va en el aviso si usted la compartió en ese mismo check-in.\n\nPUEDE BORRARLOS CUANDO QUIERA. Desde la app puede cambiar o borrar sus contactos en cualquier momento; al borrarlos, dejan de recibir avisos.\n\nSUS DERECHOS. Usted puede acceder a estos datos, rectificarlos, cancelarlos u oponerse a su uso (derechos ARCO) por la misma vía que indica el aviso de privacidad general de la app.\n\nTEXTO PROVISIONAL. Este aviso es un marcador de posición mientras la revisión jurídica entrega el definitivo. Cuando llegue, este párrafo desaparecerá y se le pedirá aceptar el texto nuevo."
+  },
+  "legal_review": {
+    "status": "PROVISIONAL",
+    "approved_digest": "",
+    "approved_by": "",
+    "reviewed_at": "",
+    "note": "Nadie de LEGAL ha revisado este texto. Mientras el estado no sea APPROVED y el approved_digest no cuadre con el digest del bloque `notice`, la API lo sirve marcado `provisional: true`."
+  }
+}

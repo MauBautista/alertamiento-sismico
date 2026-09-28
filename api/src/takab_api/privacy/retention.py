@@ -45,12 +45,19 @@ caduca vive dentro de filas que tienen que sobrevivir:
   tenant — borrarla dejaría huérfanas las constancias de ARCO y descoseria las
   tablas de hechos. Muere el mapeo `sub → persona`, no el perfil.
 
-Por eso el plan que se despacha **no contiene ni una regla que borre filas**, y
-un test lo fija. El modo ``DELETE_ROWS`` existe de todas formas, y no por
+Por eso el plan que se despachaba **no contenía ni una regla que borrase filas**,
+y un test lo fijaba. El modo ``DELETE_ROWS`` existía de todas formas, y no por
 simetría: sin él, "el job intenta podar una tabla protegida" sería inexpresable y
 el test del criterio 2 no probaría nada. Existe para que el guard tenga a qué
-negarse, y para que el día que aparezca PII prunable de verdad (una tabla de
-sesiones, un log de acceso) la regla se pueda escribir y el guard la revise.
+negarse, y para que el día que aparezca PII prunable de verdad la regla se pueda
+escribir y el guard la revise.
+
+**[T-9.80] Ese día llegó: ``emergency_contacts``.** Un contacto de emergencia es
+dato de un TERCERO que sólo sirve para avisarle si el titular pide ayuda. No
+documenta ningún hecho —el aviso enviado vive en ``incident_actions`` sin un solo
+dato del contacto—, así que anonimizarlo dejaría una fila que no significa nada:
+se borra la fila, y sólo esa. El test que exigía la lista vacía exige ahora
+exactamente ésta, y cualquier otra regla que borre filas lo vuelve a poner rojo.
 
 EL PLAZO, Y QUÉ PASA SI NADIE LO CONFIGURA
 ──────────────────────────────────────────
@@ -280,6 +287,38 @@ EXISTS (
 )
 """
 
+#: [T-9.80] El mismo reloj de la baja, para los contactos de emergencia del que se
+#: fue. Unido por ``(tenant_id, user_sub)``: una baja registrada en otro cliente
+#: para el mismo ``sub`` no los alcanza (regla de oro 5).
+_BAJA_DEL_TITULAR_HACE_MAS_DE = """
+EXISTS (
+  SELECT 1 FROM user_deactivations d
+   WHERE d.tenant_id = emergency_contacts.tenant_id
+     AND d.user_sub  = emergency_contacts.user_sub
+     AND d.reactivated_at IS NULL
+     AND d.deactivated_at < %(cutoff)s
+)
+"""
+
+#: [T-9.80] Y el mismo diferimiento que el nombre, acotado al tenant: con un
+#: incidente abierto, estos contactos son a quien se avisa si esta persona pide
+#: ayuda AHORA — aunque su cuenta se haya dado de baja a mitad del sismo.
+_SIN_INCIDENTE_ABIERTO_PARA_CONTACTOS = """
+NOT EXISTS (
+  SELECT 1 FROM incidents i
+   WHERE i.tenant_id = emergency_contacts.tenant_id
+     AND i.state <> 'closed' AND i.closed_at IS NULL
+)
+"""
+
+_R_CONTACTOS = (
+    "Contactos de emergencia de alguien que ya no está: datos de TERCEROS que "
+    "sólo servían para avisarles si el titular pedía ayuda. Caducan con la BAJA "
+    "del titular —no con `consented_at` ni `updated_at`: un contacto dado hace años "
+    "sigue vigente si el titular sigue dentro—. Se borra la FILA: no documenta "
+    "ningún hecho, y anonimizarla dejaría un registro que no significa nada."
+)
+
 RETENTION_PLAN: tuple[RetentionRule, ...] = (
     RetentionRule(
         key="push_tokens.token",
@@ -331,6 +370,20 @@ RETENTION_PLAN: tuple[RetentionRule, ...] = (
             "OR phone IS NOT NULL) AND " + _SIN_INCIDENTE_ABIERTO_EN_EL_TENANT
         ),
         why=_R_IDENTIDAD,
+    ),
+    RetentionRule(
+        key="emergency_contacts.rows",
+        table="emergency_contacts",
+        # La fila entera: las cuatro columnas que el inventario marca `erase`.
+        columns=("display_name", "email", "phone", "user_sub"),
+        mode=DELETE_ROWS,
+        set_clause="",
+        # Idempotente por construcción: una fila borrada no vuelve a cumplir nada.
+        # El DELETE lo abre `ec_retention_delete`, que exige sesión interna SIN
+        # portador —la del job—, así que el superadministrador de la consola no
+        # hereda este borrado.
+        clock=_BAJA_DEL_TITULAR_HACE_MAS_DE + "AND " + _SIN_INCIDENTE_ABIERTO_PARA_CONTACTOS,
+        why=_R_CONTACTOS,
     ),
 )
 
