@@ -15,6 +15,7 @@
 #
 #     infra/scripts/rellena_mapas.sh 2026-07-01
 #     infra/scripts/rellena_mapas.sh 2026-07-01 2026-09-28 400
+#     TF_DEV=infra/terraform/envs/dev ../otro-worktree/infra/scripts/rellena_mapas.sh 2026-07-01
 #
 # Mismo canal que `publish_release.sh`: SSM → `docker compose exec`.
 set -euo pipefail
@@ -28,7 +29,9 @@ if [ -z "$DESDE" ]; then
 fi
 
 AWS_PROFILE="${AWS_PROFILE:-takab-dev}"
-TF_DIR="$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)"
+# `TF_DEV` como en el Makefile: un worktree nuevo no tiene terraform inicializado, y
+# desde él `terraform output` muere con «Backend initialization required».
+TF_DIR="${TF_DEV:-$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)}"
 AWS_REGION="${AWS_REGION:-$(terraform -chdir="$TF_DIR" output -raw region 2>/dev/null || echo us-east-2)}"
 INSTANCE_ID="$(terraform -chdir="$TF_DIR" output -raw db_instance_id)"
 COMPOSE="/opt/takab/cloud/docker-compose.yml"

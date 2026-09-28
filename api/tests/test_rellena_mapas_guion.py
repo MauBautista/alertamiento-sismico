@@ -38,3 +38,9 @@ def test_sin_fecha_no_corre() -> None:
     r = subprocess.run(["bash", str(GUION)], capture_output=True, text=True, timeout=30)
     assert r.returncode == 2
     assert "uso:" in r.stderr
+
+
+def test_admite_TF_DEV_como_el_Makefile() -> None:
+    """Desde un worktree sin terraform inicializado, `terraform output` muere: el guion
+    tiene que poder apuntar al directorio inicializado (medido el 2026-09-28)."""
+    assert 'TF_DIR="${TF_DEV:-' in GUION.read_text()
