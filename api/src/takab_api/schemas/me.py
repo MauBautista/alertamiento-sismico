@@ -85,6 +85,10 @@ class MeActions(BaseModel):
     #: ``dictamen-v2`` sin firmar (brigada, inspector y administración). Un ROJO no se
     #: confirma: lo firma el inspector (``sign_dictamen``).
     confirm_dictamen: bool
+    #: [T-9.40 · D-43] CERRAR un evento a propósito desde la consola (administración y
+    #: TAKAB). Los requisitos —acuse, calma, clasificación, dictamen o motivo— los
+    #: revisa el endpoint; esta celda sólo decide si se pinta el asistente.
+    close_incident: bool
 
 
 class MeEnrolledSite(BaseModel):

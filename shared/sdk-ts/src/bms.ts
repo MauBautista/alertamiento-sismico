@@ -313,6 +313,14 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     view: { state: 'HABITABLE · REINGRESO AUTORIZADO', kind: 'ok' },
     logLabel: 'DICTAMEN FIRMADO · HABITABLE, REINGRESO AUTORIZADO',
   },
+  // [T-9.42 · D-48] El worker `informes` generó solo el PDF del evento (≤ 30 min
+  // desde la apertura). La fila sale DESPUÉS de la evidencia, en la misma
+  // transacción: si está en el timeline, el PDF existe.
+  post_event_report: {
+    label: 'INFORME DEL EVENTO',
+    view: { state: 'GENERADO', kind: 'ok' },
+    logLabel: 'INFORME POSTERIOR AL EVENTO GENERADO · SE AVISA POR CORREO',
+  },
   epicenter_relocate: {
     label: 'EPICENTRO',
     view: { state: 'REUBICADO', kind: 'ok' },

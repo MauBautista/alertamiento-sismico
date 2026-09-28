@@ -250,3 +250,41 @@ def test_incident_shakemap_aisla_TAMBIEN_al_dueno_de_la_tabla(
     use(seeded, "takab_migrator", tenant=TENANT_A, app_role="tenant_admin")
     filas = seeded.execute("SELECT tenant_id FROM incident_shakemap").fetchall()
     assert {str(f[0]) for f in filas} == {TENANT_A}, "FORCE RLS debe aislar al owner"
+
+
+# ---------------------------------------------------------------------------
+# [T-9.42 · D-48] `post_event_reports`: el informe automático es de UN cliente
+# ---------------------------------------------------------------------------
+
+
+def test_post_event_reports_aisla_por_la_columna(seeded: psycopg.Connection) -> None:
+    """El cruce 0/1 de la regla de oro 5 sobre la tabla de la 0074.
+
+    Mismo motivo que el del mapa: el 404 cross-tenant del endpoint lo pondría la RLS
+    de `incidents`; que `per_read` no sea `USING (true)` sólo lo prueba esto. Se
+    siembra como superusuario (sin política de escritura: escribe el worker)."""
+    reset(seeded)
+    inc_b = "b3b3b3b3-0000-0000-0000-000000000942"
+    seeded.execute(
+        "INSERT INTO incidents (incident_id, event_uuid, tenant_id, site_id, opened_at,"
+        " severity, trigger) VALUES (%s, gen_random_uuid(), %s, %s, now(),"
+        " 'warning','sasmex')",
+        (inc_b, TENANT_B, SITE_B),
+    )
+    for inc, tenant in ((INC_A, TENANT_A), (inc_b, TENANT_B)):
+        seeded.execute(
+            "INSERT INTO post_event_reports (tenant_id, incident_id, trigger, variant)"
+            " VALUES (%s,%s,'plazo','executive')",
+            (tenant, inc),
+        )
+
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin")
+    filas = seeded.execute("SELECT tenant_id FROM post_event_reports").fetchall()
+    assert filas, "el tenant A debe ver SU informe (si no, el test es vacío)"
+    assert {str(f[0]) for f in filas} == {TENANT_A}
+
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin")
+    ajenos = seeded.execute(
+        "SELECT count(*) FROM post_event_reports WHERE tenant_id = %s", (TENANT_A,)
+    ).fetchone()
+    assert ajenos[0] == 0, "el tenant B no puede ver el informe del tenant A"

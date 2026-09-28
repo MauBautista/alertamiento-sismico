@@ -1359,6 +1359,8 @@ CREATE TABLE ai_spend (
   PRIMARY KEY (tenant_id, period)
 );
 GRANT SELECT, INSERT, UPDATE ON ai_spend TO takab_app;
+-- [T-9.42 · 0074] El worker `informes` redacta con la misma `build_narrative`.
+GRANT SELECT, INSERT, UPDATE ON ai_spend TO takab_ingest;
 
 ALTER TABLE ai_spend ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_spend FORCE  ROW LEVEL SECURITY;
@@ -1828,6 +1830,8 @@ CREATE TABLE user_profiles (
 );
 CREATE INDEX idx_user_profiles_tenant ON user_profiles (tenant_id);
 GRANT SELECT, INSERT, UPDATE ON user_profiles TO takab_app;
+-- [T-9.42 · 0074] El informe automático imprime quién firmó: el worker lo lee.
+GRANT SELECT ON user_profiles TO takab_ingest;
 
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles FORCE  ROW LEVEL SECURITY;
@@ -2090,6 +2094,8 @@ CREATE TABLE compliance_labels (
   updated_by uuid
 );
 GRANT SELECT, INSERT, UPDATE ON compliance_labels TO takab_app;
+-- [T-9.42 · 0074] La portada del informe automatico la lee el worker `informes`.
+GRANT SELECT ON compliance_labels TO takab_ingest;
 
 ALTER TABLE compliance_labels ENABLE ROW LEVEL SECURITY;
 ALTER TABLE compliance_labels FORCE  ROW LEVEL SECURITY;
@@ -2281,6 +2287,43 @@ REVOKE INSERT, UPDATE, DELETE ON incident_shakemap FROM takab_app;
 ALTER TABLE incident_shakemap ENABLE ROW LEVEL SECURITY;
 ALTER TABLE incident_shakemap FORCE  ROW LEVEL SECURITY;
 CREATE POLICY ism_read ON incident_shakemap FOR SELECT
+  USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
+
+-- [T-9.42 · D-48 · 0074] El informe posterior al evento, que el sistema genera
+-- SOLO (≤ 30 min desde la apertura). Uno por incidente (`incident_id` UNIQUE: el
+-- worker inserta con ON CONFLICT DO NOTHING). Mismo patrón que el mapa: lo
+-- escribe el worker `informes` (`takab_ingest`, BYPASSRLS) y lo lee la consola.
+--   · `trigger` — lo que llegó PRIMERO: firma / cierre / plazo.
+--   · `state`   — pendiente (reclamada) / ok / fallido. NUNCA `ok` sin evidencia:
+--                 lo garantiza `per_ok_con_evidencia` también contra otro escritor.
+--   · `preliminar` — la cabeza de la cadena NO estaba firmada al generarlo.
+-- Es evidencia: no entra en ninguna poda por retención (regla de oro 11).
+CREATE TABLE post_event_reports (
+  report_id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id        uuid NOT NULL REFERENCES tenants(tenant_id),
+  incident_id      uuid NOT NULL UNIQUE REFERENCES incidents(incident_id),
+  trigger          text NOT NULL CHECK (trigger IN ('firma','cierre','plazo')),
+  state            text NOT NULL DEFAULT 'pendiente'
+                   CHECK (state IN ('pendiente','ok','fallido')),
+  variant          text NOT NULL,
+  evidence_id      uuid NULL REFERENCES evidence_objects(evidence_id),
+  preliminar       boolean NULL,
+  dictamen_vigente uuid NULL,
+  attempts         integer NOT NULL DEFAULT 0,
+  error            text NULL,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT per_ok_con_evidencia CHECK (state <> 'ok' OR evidence_id IS NOT NULL)
+);
+GRANT SELECT ON post_event_reports TO takab_app;
+GRANT SELECT, INSERT, UPDATE ON post_event_reports TO takab_ingest;
+-- ⚠️ Repetido en la 0074 por lo mismo que el del mapa: la 0001 concede
+-- `ALL TABLES` a `takab_app` DESPUÉS de aplicar este fichero.
+REVOKE INSERT, UPDATE, DELETE ON post_event_reports FROM takab_app;
+
+ALTER TABLE post_event_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE post_event_reports FORCE  ROW LEVEL SECURITY;
+CREATE POLICY per_read ON post_event_reports FOR SELECT
   USING (tenant_id = app_tenant_id() OR app_is_takab_internal());
 
 -- Reubicación de epicentro: función SECURITY DEFINER

@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import functools
 import hashlib
+from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 import anyio
@@ -33,9 +35,10 @@ from takab_api.dictamen.builder import build_model
 from takab_api.dictamen.pdf import render
 from takab_api.narrative import apply_narrative, build_narrative
 from takab_api.queries import reports as q
-from takab_api.routers._common import http_error
+from takab_api.routers._common import http_error, read_session
 from takab_api.routers._s3 import PRESIGN_TTL_S, get_object, presign_get, put_object
-from takab_api.schemas.reports import ReportOut
+from takab_api.routers.incidents import CONSOLE_ROLES
+from takab_api.schemas.reports import PostEventReportOut, ReportOut
 from takab_api.settings import Settings
 
 # Fuente única: roles con acción generate_report en la matriz (espejo de RBAC §2).
@@ -87,7 +90,7 @@ async def generate_report(
     [T-8.12 · A-054] Es TAMBIÉN la función que llama el certificado del móvil
     (`routers/mobile_incident._certificado`) cuando no hay un informe posterior a
     la firma: una sola tubería para el mismo documento, y un solo escritor de
-    `export_pdf` —lo que hace contables los dos techos del freno
+    `export_pdf` —`generar_informe`, desde T-9.42— —lo que hace contables los dos techos del freno
     (`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`)—. Desde allí
     se llama como función, sin la puerta de rol del decorador: el certificado es
     un derivado de un dictamen YA firmado y lo pide un rol con `dictamen_read`.
@@ -118,11 +121,72 @@ async def generate_report(
     # comandos: el del usuario y el del EDIFICIO (dos operadores coordinados
     # agotan el segundo sin rebasar ninguno el suyo — `RO-8.e`).
     await _freno_de_exportacion(conn, claims, str(incident["site_id"]), settings)
-    actor = f"user:{claims.sub}"
+
+    informe = await generar_informe(
+        conn,
+        incident,
+        variant=variant,
+        actor=f"user:{claims.sub}",
+        origen=origen,
+        settings=settings,
+    )
+    return ReportOut(
+        evidence_id=informe.evidence_id,
+        sha256=informe.sha256,
+        url=await anyio.to_thread.run_sync(presign_get, settings, informe.key),
+        expires_in=PRESIGN_TTL_S,
+    )
+
+
+@dataclass(frozen=True)
+class InformeGenerado:
+    """Lo que deja una generación: la evidencia, su huella y con qué cadena se hizo."""
+
+    evidence_id: UUID
+    sha256: str
+    #: La clave de S3; el endpoint la prefirma, el worker no (un enlace reenviado no
+    #: debe abrir el PDF: la consola lo descarga con sesión).
+    key: str
+    #: La CABEZA de la cadena de dictámenes con que se renderizó, o `None` sin cadena.
+    dictamen_vigente: str | None
+    #: `True` si esa cabeza NO estaba firmada (o no había dictamen): el papel ya lo
+    #: rotula así; esto lo deja dicho para quien avisa del informe.
+    preliminar: bool
+
+
+async def generar_informe(
+    conn: AsyncConnection,
+    incident: Mapping[str, Any],
+    *,
+    variant: str,
+    actor: str,
+    origen: str | None,
+    settings: Settings,
+) -> InformeGenerado:
+    """[T-9.42 · D-48] Modelo → prosa → PDF → S3 → evidencia → bitácora. Sin puertas.
+
+    Extraído de `generate_report` SIN cambiar lo que hace: es todo lo que iba de
+    `build_model` a los dos `audit_async`. Las puertas —rol, bucket, 404 y el freno—
+    se quedan en quien llama, porque no son las mismas para los dos que llaman:
+
+    * el endpoint (y el certificado del móvil, que lo llama como función) pasa por
+      el freno de `T-5.18`;
+    * el worker `informes` llama SIN freno, con `actor='system:informes'` y
+      `origen='informe_automatico'`: está acotado a UN informe por incidente por la
+      clave única de `post_event_reports`, así que no puede gastar sin techo. Su
+      `export_pdf` sí cuenta en el techo del EDIFICIO (lleva `site_id`), que es lo
+      honesto: es una generación de verdad.
+
+    ⚠️ Es el ÚNICO escritor de `export_pdf`
+    (`tests/contracts/test_freno_de_exportacion_cuenta_lo_mismo.py`).
+
+    ``incident`` es la fila de `queries/reports.SELECT_INCIDENT` (o cualquier
+    mapeo con `incident_id`, `tenant_id` y `site_id`).
+    """
 
     model = await build_model(
         conn,
-        str(incident_id),
+        str(incident["incident_id"]),
         variant=variant,
         generated_at=datetime.now(tz=UTC),
         # La lectura del miniSEED es best-effort dentro del builder: un fallo de S3
@@ -131,8 +195,8 @@ async def generate_report(
         fetch_object=functools.partial(get_object, settings),
         settings=settings,
     )
-    if model is None:  # pragma: no cover - el SELECT de arriba ya lo cubre
-        raise http_error(404, "incidente no encontrado")
+    if model is None:  # pragma: no cover - quien llama ya leyó el incidente
+        raise LookupError(f"incidente {incident['incident_id']} no visible para el builder")
 
     # [T-2.42] Prosa que RODEA al veredicto. `build_narrative` nunca lanza: si el
     # proveedor falla, degrada al determinista y el PDF lo declara. El veredicto que
@@ -164,6 +228,13 @@ async def generate_report(
     )
     apply_narrative(model, narrative)
 
+    # [T-9.42] La cabeza de la cadena (el builder la trae primero: `created_at DESC,
+    # dictamen_id DESC`, el orden ÚNICO de D-43 §4). Se calcula UNA vez: la misma
+    # va al `meta` de `export_pdf` y a quien avisa del informe.
+    cabeza = model.dictamens[0] if model.dictamens else None
+    dictamen_vigente = cabeza.dictamen_id if cabeza is not None else None
+    preliminar = cabeza is None or cabeza.signed_by is None
+
     pdf = await anyio.to_thread.run_sync(render, model, variant)
     sha256 = hashlib.sha256(pdf).hexdigest()
     # [T-8.12] La clave lleva además la HUELLA del archivo. Con sólo el sello al
@@ -175,7 +246,7 @@ async def generate_report(
     # preliminar). Es la clase de defecto de `A-142`. El nombre sigue empezando
     # por `report-`, que es la marca con que el backfill lo reconoce.
     key = (
-        f"evidence/{incident['tenant_id']}/{incident_id}/"
+        f"evidence/{incident['tenant_id']}/{incident['incident_id']}/"
         f"report-{variant}-{datetime.now(tz=UTC):%Y%m%dT%H%M%SZ}-{sha256}.pdf"
     )
     await anyio.to_thread.run_sync(
@@ -184,7 +255,7 @@ async def generate_report(
 
     ev_stmt, ev_params = q.insert_evidence(
         tenant_id=str(incident["tenant_id"]),
-        incident_id=str(incident_id),
+        incident_id=str(incident["incident_id"]),
         s3_key=key,
         sha256=sha256,
     )
@@ -230,16 +301,52 @@ async def generate_report(
             # sola comparaba el `now()` de dos transacciones, y una exportación
             # que leyó la cadena justo antes del commit de la firma quedaba
             # fechada después con el PRELIMINAR dentro.
-            "dictamen_vigente": model.dictamens[0].dictamen_id if model.dictamens else None,
+            "dictamen_vigente": dictamen_vigente,
             **({"origen": origen} if origen else {}),
         },
     )
-    return ReportOut(
+    return InformeGenerado(
         evidence_id=evidence_id,
         sha256=sha256,
-        url=await anyio.to_thread.run_sync(presign_get, settings, key),
-        expires_in=PRESIGN_TTL_S,
+        key=key,
+        dictamen_vigente=dictamen_vigente,
+        preliminar=preliminar,
     )
+
+
+# ──────────────────────────────── [T-9.42] el informe automático, leído
+
+#: [T-9.42 · D-48] La MISMA puerta que el detalle del incidente
+#: (`routers/incidents.CONSOLE_ROLES`, derivada de la matriz de rutas): quien ve el
+#: incidente ve si su informe salió. Sin acción nueva en la matriz: es una lectura.
+_require_incident_read = require_roles(*CONSOLE_ROLES)
+
+_POST_EVENT_REPORT = text(
+    "SELECT state, trigger, preliminar, variant, evidence_id, attempts, error, "
+    "created_at, updated_at FROM post_event_reports WHERE incident_id = :incident_id"
+)
+
+
+@router.get(
+    "/incidents/{incident_id}/post-event-report",
+    response_model=PostEventReportOut,
+    dependencies=[Depends(_require_incident_read)],
+)
+async def get_post_event_report(
+    incident_id: UUID,
+    conn: AsyncConnection = Depends(read_session),
+) -> PostEventReportOut:
+    """El estado del informe que el worker `informes` genera solo.
+
+    404 `sin_informe` si no hay fila: todavía no tocaba (ni firma, ni cierre, ni
+    plazo), o el incidente no califica (sólo cautela, una prueba) o no es visible
+    para este cliente — la RLS de la tabla lo decide, y un 403 confirmaría que
+    existe. El endpoint no genera nada.
+    """
+    fila = (await conn.execute(_POST_EVENT_REPORT, {"incident_id": incident_id})).mappings().first()
+    if fila is None:
+        raise http_error(404, "sin_informe")
+    return PostEventReportOut(**dict(fila))
 
 
 # ──────────────────────────────── [T-5.18] el tope y el freno
@@ -253,8 +360,9 @@ _VENTANA_S = 60.0
 #: del `site_id` que el `meta` empezó a llevar en esta misma ficha.
 #:
 #: ⚠️ [T-7.45] EL INVARIANTE QUE HACE CONTABLES ESTOS DOS NÚMEROS: `export_pdf`
-#: tiene **un solo escritor**, `generate_report`, unas líneas más arriba —y desde
-#: `T-8.12` el certificado del móvil lo LLAMA en vez de copiarlo—. Mientras
+#: tiene **un solo escritor**, `generar_informe`, unas líneas más arriba —y desde
+#: `T-8.12` el certificado del móvil LLAMA a `generate_report` en vez de copiarlo;
+#: desde `T-9.42` el worker `informes` llama a `generar_informe`—. Mientras
 #: eso se cumpla, las dos consultas cuentan la misma población —las GENERACIONES—
 #: y el techo estrecho no puede rebasarse por actos que el ancho no ve.
 #:

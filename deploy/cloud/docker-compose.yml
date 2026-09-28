@@ -113,6 +113,20 @@ services:
     entrypoint: ["python", "-m", "takab_api.backfill"]
     command: []
 
+  # --- Informe posterior al evento (T-9.42 · D-48) -------------------------------
+  # Genera SOLO el PDF de cada incidente que dispara (firma, cierre o 25 min) y deja
+  # la acción `post_event_report` que el notificador convierte en correo + push OPS.
+  # Proceso aparte del motor de incidentes: un PDF tarda segundos y aquel bucle
+  # sostiene la actuación del quórum. `db-ingest.env` y no `db-app.env`, como
+  # `backfill`: escribe evidence_objects de TODOS los tenants.
+  informes:
+    <<: *cloud-image
+    env_file:
+      - /etc/takab/cloud.env
+      - /run/takab/db-ingest.env
+    entrypoint: ["python", "-m", "takab_api.informes"]
+    command: []
+
   # --- Consola SOC + TLS --------------------------------------------------------
   # Caddy termina TLS (Let's Encrypt sobre sslip.io) y sirve `web/dist`. El mismo
   # origen cubre REST y WebSocket: `liveWsUrl("/api")` ⇒ `wss://host/api/ws`, así que

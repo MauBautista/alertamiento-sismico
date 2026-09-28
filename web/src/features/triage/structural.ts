@@ -12,6 +12,11 @@ const CATEGORY_LABEL: Record<string, string> = {
   people_trapped: "Personas atrapadas o heridas",
 };
 
+/** [T-9.41] El rótulo de una categoría de daño; una desconocida se pinta cruda. */
+export function damageCategoryLabel(key: string): string {
+  return CATEGORY_LABEL[key] ?? key;
+}
+
 const SEVERITY_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
 export interface DamageCategoryView {
@@ -35,7 +40,7 @@ function categoryView(raw: Record<string, unknown>): DamageCategoryView {
   const key = String(raw.key ?? "");
   return {
     key,
-    label: CATEGORY_LABEL[key] ?? key,
+    label: damageCategoryLabel(key),
     severity: String(raw.severity ?? "low"),
   };
 }

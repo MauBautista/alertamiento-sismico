@@ -607,6 +607,22 @@ class Settings(BaseSettings):
     # [SUPUESTO t-7-13-01] 6 h cubre un turno completo de SOC.
     incident_review_ttl_s: float = 21600.0
 
+    # --- Informe posterior al evento (T-9.42 · D-48) ---
+    # El worker `informes` genera UN PDF por incidente sin que nadie lo pida.
+    #
+    # VENTANA hacia atrás: sólo tocan informe los incidentes abiertos en las
+    # últimas 6 h. Sin ella, el primer despliegue le mandaría al cliente un correo
+    # por cada incidente del histórico.
+    informe_ventana_s: float = 21600.0
+    # PLAZO desde la apertura a partir del cual se genera aunque nadie haya firmado
+    # ni cerrado (entonces sale PRELIMINAR). 25 min para que, con la pasada del
+    # worker y la del notificador, el correo llegue en ≤ 30 (D-48). Tiene que ser
+    # MENOR que la ventana, o el disparo por plazo no saltaría nunca.
+    informe_plazo_s: float = 1500.0
+    # La variante del render: `executive`, porque el informe es para quien decide.
+    # La pericial (`technical`) se sigue generando a mano desde la consola.
+    informe_variante: str = "executive"
+
     # --- Dictamen automático preliminar (T-1.20 · B5) ---
     # Umbrales de PGA del dictamen (placeholders CALIBRABLES por ingeniería;
     # override por rule_sets.config.dictamen). settle_s retrasa la emisión para

@@ -247,6 +247,7 @@ describe("ConsolePage", () => {
           movement_alert: true,
           // [T-9.31 · D-43] Y confirma el AMARILLO de la regla.
           confirm_dictamen: true,
+          close_incident: true,
         },
       },
     });
@@ -747,6 +748,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           cctv_video: false,
           movement_alert: false,
           confirm_dictamen: false,
+          close_incident: false,
         },
       },
     });

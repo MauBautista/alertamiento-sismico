@@ -1510,6 +1510,34 @@ export type IncidentActionOut = {
 };
 
 /**
+ * Cuerpo de POST /incidents/{id}/close [T-9.40 · D-43].
+ *
+ * ``motivo`` sólo es OBLIGATORIO (≥ 20 caracteres tras ``strip()``) cuando la
+ * clasificación vigente es ``real``/``indeterminado`` y la cabeza de la cadena no
+ * está firmada: es la razón por escrito de cerrar SIN dictamen. El tope evita que
+ * la auditoría se convierta en un vertedero.
+ */
+export type IncidentCloseIn = {
+    motivo?: string | null;
+};
+
+/**
+ * Resultado del cierre explícito [T-9.40 · D-43].
+ *
+ * ``sin_dictamen`` = se cerró un ``real``/``indeterminado`` con la cabeza SIN
+ * firmar, por motivo escrito (deja además el audit ``cierre_sin_dictamen``).
+ */
+export type IncidentCloseOut = {
+    classification: string;
+    closed_at: string;
+    incident_id: string;
+    reason?: string;
+    signature_kind: string | null;
+    sin_dictamen: boolean;
+    state?: string;
+};
+
+/**
  * Incidente (INSERT/UPDATE) visible para el suscriptor tras RLS.
  */
 export type IncidentFrame = {
@@ -1721,6 +1749,7 @@ export type MeActions = {
     cctv_video: boolean;
     checkin_submit: boolean;
     classify_incident: boolean;
+    close_incident: boolean;
     confirm_dictamen: boolean;
     damage_report_submit: boolean;
     demo_mode_off: boolean;
@@ -2284,6 +2313,25 @@ export type PhoneErasureOut = {
 export type PoligonoGeometry = {
     coordinates: Array<Array<Array<number>>>;
     type?: 'Polygon';
+};
+
+/**
+ * [T-9.42 · D-48] El informe posterior al evento que el worker genera SOLO.
+ *
+ * Es la fila de `post_event_reports` tal cual. El PDF no viaja aquí: con `ok`,
+ * `evidence_id` es la evidencia, y se descarga con sesión por la ruta de siempre
+ * (un enlace prefirmado reenviado abriría el PDF a cualquiera).
+ */
+export type PostEventReportOut = {
+    attempts: number;
+    created_at: string;
+    error: string | null;
+    evidence_id: string | null;
+    preliminar: boolean | null;
+    state: 'pendiente' | 'ok' | 'fallido';
+    trigger: 'firma' | 'cierre' | 'plazo';
+    updated_at: string;
+    variant: string;
 };
 
 /**
@@ -4442,6 +4490,33 @@ export type GetClassificationsIncidentsIncidentIdClassificationsGetResponses = {
 
 export type GetClassificationsIncidentsIncidentIdClassificationsGetResponse = GetClassificationsIncidentsIncidentIdClassificationsGetResponses[keyof GetClassificationsIncidentsIncidentIdClassificationsGetResponses];
 
+export type CloseIncidentIncidentsIncidentIdClosePostData = {
+    body: IncidentCloseIn;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/close';
+};
+
+export type CloseIncidentIncidentsIncidentIdClosePostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CloseIncidentIncidentsIncidentIdClosePostError = CloseIncidentIncidentsIncidentIdClosePostErrors[keyof CloseIncidentIncidentsIncidentIdClosePostErrors];
+
+export type CloseIncidentIncidentsIncidentIdClosePostResponses = {
+    /**
+     * Successful Response
+     */
+    200: IncidentCloseOut;
+};
+
+export type CloseIncidentIncidentsIncidentIdClosePostResponse = CloseIncidentIncidentsIncidentIdClosePostResponses[keyof CloseIncidentIncidentsIncidentIdClosePostResponses];
+
 export type ListDamageReportsIncidentsIncidentIdDamageReportsGetData = {
     body?: never;
     path: {
@@ -4847,6 +4922,33 @@ export type IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses = 
 };
 
 export type IncidentNotificationsIncidentsIncidentIdNotificationsGetResponse = IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses[keyof IncidentNotificationsIncidentsIncidentIdNotificationsGetResponses];
+
+export type GetPostEventReportIncidentsIncidentIdPostEventReportGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/post-event-report';
+};
+
+export type GetPostEventReportIncidentsIncidentIdPostEventReportGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPostEventReportIncidentsIncidentIdPostEventReportGetError = GetPostEventReportIncidentsIncidentIdPostEventReportGetErrors[keyof GetPostEventReportIncidentsIncidentIdPostEventReportGetErrors];
+
+export type GetPostEventReportIncidentsIncidentIdPostEventReportGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PostEventReportOut;
+};
+
+export type GetPostEventReportIncidentsIncidentIdPostEventReportGetResponse = GetPostEventReportIncidentsIncidentIdPostEventReportGetResponses[keyof GetPostEventReportIncidentsIncidentIdPostEventReportGetResponses];
 
 export type GenerateReportIncidentsIncidentIdReportPostData = {
     body?: never;

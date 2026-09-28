@@ -259,6 +259,7 @@ function arrange(hint: IncidentRefreshHint | null, socket: LiveSocketLike | null
         canOpenFleet={false}
         canOpenBuilding={false}
         volverASitioId={null}
+        canOpenCierre={false}
       />
     );
   }

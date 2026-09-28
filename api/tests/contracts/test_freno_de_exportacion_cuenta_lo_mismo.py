@@ -122,7 +122,7 @@ def _constantes_posibles(expr: ast.expr, funcion: ast.AST) -> set[str]:
 
 
 def _escritores_del_verbo(verbo: str) -> dict[str, ast.Call]:
-    """`{'routers/reports.py::generate_report': <call>}` para TODO `api/src`.
+    """`{'routers/reports.py::generar_informe': <call>}` para TODO `api/src`.
 
     Cuenta un escritor si el verbo PUEDE valer el del freno — incluida la vía por
     variable local y las dos ramas de un ternario (ver `_constantes_posibles`).
@@ -183,7 +183,11 @@ def test_el_verbo_del_freno_lo_escribe_UN_solo_acto() -> None:
     verbo = _verbo_de(sqls["_CUENTA_USUARIO"])
     assert verbo
     escritores = set(_escritores_del_verbo(verbo))
-    assert escritores == {"routers/reports.py::generate_report"}, (
+    # [T-9.42 · D-48] El escritor es `generar_informe`, que extrajo de
+    # `generate_report` todo lo que va del modelo a la bitácora. Lo llaman el
+    # endpoint (con freno) y el worker `informes` (sin él: uno por incidente).
+    # Sigue siendo UN escritor: los dos actos generan de verdad un PDF.
+    assert escritores == {"routers/reports.py::generar_informe"}, (
         f"el verbo `{verbo}` que cuenta el freno lo escribe más de un acto: {sorted(escritores)}. "
         "Cada escritor de más gasta el techo sin ser lo que el techo protege (renderizar un PDF, "
         "subirlo y pagar una llamada de IA). Si el acto nuevo es legítimo, dale verbo propio"

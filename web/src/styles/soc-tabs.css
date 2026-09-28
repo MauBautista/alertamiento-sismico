@@ -2823,3 +2823,121 @@
 .triage-detail__band--ok { color: var(--tk-status-normal); }
 .triage-detail__band--warn { color: var(--tk-status-warning); }
 .triage-detail__band--crit { color: var(--tk-status-critical-text); }
+
+/* =====================================================================
+   [T-9.41 · D-43] CIERRE DEL EVENTO — `/triage/:incidentId/cierre`
+   Seis tarjetas de paso con su estado en icono Y texto (nunca sólo color) y
+   un botón GRANDE por paso. Mismos tokens que `.triage`.
+   ===================================================================== */
+.cierre {
+  display: flex; flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
+}
+.cierre__hd {
+  display: flex; flex-direction: column; align-items: flex-start;
+  gap: 6px; padding-bottom: 14px;
+  border-bottom: 1px solid var(--tk-border);
+}
+.cierre__title {
+  margin: 6px 0 0;
+  font-family: var(--tk-font-ui);
+  font-weight: 600;
+  font-size: var(--tk-text-xl);
+  letter-spacing: -0.02em;
+  color: var(--tk-fg-1);
+}
+.cierre__evento {
+  margin: 0 0 4px;
+  font: 700 var(--tk-text-lg)/1.2 var(--tk-font-ui);
+  letter-spacing: 0.04em;
+  color: var(--tk-fg-1);
+}
+.cierre__pasos { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+
+.cierre-progreso {
+  display: grid; grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px; margin: 12px 0 0; padding: 0; list-style: none;
+}
+.cierre-progreso__paso {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px; border-radius: 4px;
+  border: 1px solid var(--tk-border);
+  border-top-width: 3px;
+}
+.cierre-progreso__paso--hecho { border-top-color: var(--tk-status-normal); }
+.cierre-progreso__paso--pendiente { border-top-color: var(--tk-status-warning); }
+.cierre-progreso__paso--bloqueado { border-top-color: var(--tk-status-critical-text); }
+.cierre-progreso__paso--no_aplica,
+.cierre-progreso__paso--sin_dato { border-top-color: var(--tk-border-strong); }
+.cierre-progreso__n { font: 700 var(--tk-text-md)/1 var(--tk-font-mono); color: var(--tk-fg-1); }
+.cierre-progreso__lbl {
+  font: 700 var(--tk-text-min)/1.2 var(--tk-font-ui); letter-spacing: 0.08em; color: var(--tk-fg-2);
+}
+
+.cierre-estado {
+  display: inline-flex; align-items: center; gap: 4px;
+  font: 700 var(--tk-text-xs)/1 var(--tk-font-ui); letter-spacing: 0.08em;
+}
+.cierre-estado--hecho { color: var(--tk-status-normal); }
+.cierre-estado--pendiente { color: var(--tk-status-warning); }
+.cierre-estado--bloqueado { color: var(--tk-status-critical-text); }
+.cierre-estado--no_aplica,
+.cierre-estado--sin_dato { color: var(--tk-fg-2); }
+
+.cierre-paso { border-left: 3px solid var(--tk-border); }
+.cierre-paso__titulo { font: 700 var(--tk-text-lg)/1.2 var(--tk-font-ui); letter-spacing: 0.04em; }
+.cierre-paso--hecho { border-left: 3px solid var(--tk-status-normal); }
+.cierre-paso--pendiente { border-left: 3px solid var(--tk-status-warning); }
+.cierre-paso--bloqueado { border-left: 3px solid var(--tk-status-critical-text); }
+.cierre-paso--no_aplica,
+.cierre-paso--sin_dato { border-left: 3px solid var(--tk-border-strong); }
+.cierre-paso__porque { margin: 6px 0; font: 400 var(--tk-text-sm)/1.4 var(--tk-font-ui); color: var(--tk-fg-1); }
+.cierre-paso__quien {
+  margin: 6px 0; font: 700 var(--tk-text-xs)/1.4 var(--tk-font-ui);
+  letter-spacing: 0.06em; color: var(--tk-status-warning);
+}
+.cierre-paso__dato { margin: 4px 0; font: 700 var(--tk-text-sm)/1.4 var(--tk-font-ui); color: var(--tk-fg-1); }
+.cierre-paso__error {
+  margin: 6px 0; font: 700 var(--tk-text-sm)/1.4 var(--tk-font-ui); color: var(--tk-status-critical-text);
+}
+.cierre-paso__accion { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* El botón GRANDE del paso: el mismo `soc-btn`, un escalón más y más aire. */
+.cierre-paso__accion .soc-btn {
+  font-size: var(--tk-text-md);
+  padding: 14px 24px;
+  min-width: 220px;
+  justify-content: center;
+}
+
+.cierre-metricas { display: flex; flex-wrap: wrap; gap: 24px; margin: 6px 0; }
+.cierre-metricas dt {
+  font: 700 var(--tk-text-min)/1 var(--tk-font-ui); letter-spacing: 0.08em; color: var(--tk-fg-2);
+}
+.cierre-metricas dd { margin: 4px 0 0; font: 700 var(--tk-text-lg)/1 var(--tk-font-mono); color: var(--tk-fg-1); }
+.cierre-recuento { margin: 0; padding-left: 16px; font: 700 var(--tk-text-sm)/1.6 var(--tk-font-ui); color: var(--tk-fg-1); }
+.cierre-clasif .soc-btn { min-width: 0; }
+
+.cierre-dialogo {
+  margin-top: 10px; padding: 12px;
+  border: 1px solid var(--tk-status-warning); border-radius: 4px;
+}
+.cierre-dialogo__titulo {
+  margin: 0; font: 700 var(--tk-text-md)/1.2 var(--tk-font-ui);
+  letter-spacing: 0.06em; color: var(--tk-status-warning);
+}
+
+.cierre-motivo { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+.cierre-motivo__lbl {
+  font: 700 var(--tk-text-xs)/1.2 var(--tk-font-ui); letter-spacing: 0.08em; color: var(--tk-fg-2);
+}
+.cierre-motivo__txt {
+  font: 400 var(--tk-text-sm)/1.4 var(--tk-font-ui); color: var(--tk-fg-1);
+  background: transparent; border: 1px solid var(--tk-border-strong); border-radius: 4px;
+  padding: 8px; resize: vertical;
+}
+.cierre-motivo__cuenta { font: 700 var(--tk-text-xs)/1 var(--tk-font-mono); color: var(--tk-status-normal); }
+.cierre-motivo__cuenta.is-corto { color: var(--tk-status-warning); }
+
+.triage-detail__cierre { margin-top: 8px; }

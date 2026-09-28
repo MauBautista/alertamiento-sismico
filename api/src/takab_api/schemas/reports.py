@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -28,3 +30,27 @@ class ReportOut(BaseModel):
     sha256: str
     url: str
     expires_in: int
+
+
+class PostEventReportOut(BaseModel):
+    """[T-9.42 · D-48] El informe posterior al evento que el worker genera SOLO.
+
+    Es la fila de `post_event_reports` tal cual. El PDF no viaja aquí: con `ok`,
+    `evidence_id` es la evidencia, y se descarga con sesión por la ruta de siempre
+    (un enlace prefirmado reenviado abriría el PDF a cualquiera).
+    """
+
+    state: Literal["pendiente", "ok", "fallido"]
+    #: Lo que llegó PRIMERO: la cabeza firmada, el cierre o el plazo.
+    trigger: Literal["firma", "cierre", "plazo"]
+    #: `True` = la cabeza de la cadena NO estaba firmada al generarlo. `None`
+    #: mientras no hay PDF (no se sabe todavía qué dirá).
+    preliminar: bool | None
+    variant: str
+    evidence_id: UUID | None
+    attempts: int
+    #: La causa del último fallo (clase y mensaje recortado), tal cual: sólo la ve
+    #: personal del cliente con acceso al incidente.
+    error: str | None
+    created_at: datetime
+    updated_at: datetime

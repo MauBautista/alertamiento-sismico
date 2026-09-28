@@ -294,6 +294,13 @@ ACTIONS: tuple[str, ...] = (
     # confirma por esta vía (403): ése lo firma el inspector. Es también el círculo
     # del push DICTAMEN_CONFIRM. El occupant NO: su superficie es crisis/check-in.
     "confirm_dictamen",
+    # [T-9.40 · D-43] ``close_incident`` — CERRAR un evento a propósito desde la
+    # consola, sin esperar a la pasada del ciclo de vida. Archiva el caso: el
+    # incidente deja de ser «la alerta» para todos. Por eso sólo quien responde por
+    # el inmueble (administración) y TAKAB. La brigada y el inspector juzgan el
+    # edificio, no archivan el caso; gobierno sólo acusa. Los requisitos (acuse,
+    # calma, clasificación, dictamen o motivo) los revisa el endpoint, no la matriz.
+    "close_incident",
 )
 
 
@@ -337,6 +344,7 @@ def _actions(
     cctv_read: bool = False,
     cctv_video: bool = False,
     confirm_dictamen: bool = False,
+    close_incident: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -377,6 +385,7 @@ def _actions(
         "cctv_read": cctv_read,
         "cctv_video": cctv_video,
         "confirm_dictamen": confirm_dictamen,
+        "close_incident": close_incident,
     }
 
 
@@ -424,6 +433,8 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # quiere estrecho. Cada acceso de aquí queda además en `audit_log`.
         cctv_read=True,
         cctv_video=True,
+        # [T-9.40 · D-43] Cierra un evento a propósito, de cualquier tenant.
+        close_incident=True,
     ),
     "takab_support": _actions(read_audit=True),
     "tenant_admin": _actions(
@@ -469,6 +480,8 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         movement_alert=True,
         # [T-9.31 · D-43] Confirma el AMARILLO de la regla (no un ROJO).
         confirm_dictamen=True,
+        # [T-9.40 · D-43] Cierra el evento de SU inmueble a propósito (su RLS lo acota).
+        close_incident=True,
     ),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),

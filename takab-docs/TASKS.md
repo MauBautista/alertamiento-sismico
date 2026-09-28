@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **501** · `[x]` **413** · `[~]` **21** · `[ ]` **67**
+**Conteo de tareas:** total **502** · `[x]` **416** · `[~]` **22** · `[ ]` **64**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17951,26 +17951,68 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.4 · El cierre del evento, paso a paso
 
-### [ ] T-9.40 · **Cerrar un evento a propósito** — `SOFTWARE`
+### [x] T-9.40 · **Cerrar un evento a propósito** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.32 · **Prioridad:** F4 · alta
 - **Objetivo:** un botón CERRAR EVENTO con requisitos claros.
 - **Criterios de aceptación:**
-  - [ ] Endpoint con sus requisitos (estado, clasificación, dictamen o motivo auditado).
+  - [x] Endpoint con sus requisitos (estado, clasificación, dictamen o motivo auditado).
+    `api/tests/api/test_cierre_explicito.py` (30).
+- **Notas de diseño:**
+  - Los requisitos se revisan en orden y cada 409 lleva su código: `ya_cerrado`, `sin_acuse`,
+    `sismo_en_curso` (D-49 · R1), `sin_clasificacion`, `sin_dictamen`.
+  - El tier, la clasificación vigente y la cabeza de la cadena son los MISMOS fragmentos SQL que
+    usa la pasada del ciclo de vida.
+- **Límite conocido (no se arregla aquí):** la RLS de `incident_classifications` (0055) no tiene
+  rama para el personal interno de TAKAB. Un superadmin con token de OTRO tenant no ve la
+  clasificación: el cierre le responde `sin_clasificacion`, y hoy tampoco puede clasificar. El
+  administrador del cliente, que es quien cierra, no lo sufre.
 
-### [ ] T-9.41 · **El asistente «Cierre del evento»** — `SOFTWARE`
+### [x] T-9.41 · **El asistente «Cierre del evento»** — `SOFTWARE`
 - **Componente:** web · **Depende de:** T-9.40 · **Prioridad:** F4 · crítica
 - **Objetivo:** que cerrar un evento deje de ser confuso: seis pasos explicados, con botones grandes.
 - **Criterios de aceptación:**
-  - [ ] Acusar, revisar la sacudida, reportes de campo, dictamen, clasificar, informe y cierre.
-  - [ ] Cada paso marcado como hecho sale de un hecho del servidor.
-  - [ ] Recorrido de punta a punta en el navegador por el administrador.
+  - [x] Acusar, revisar la sacudida, reportes de campo, dictamen, clasificar, informe y cierre.
+    En `web/src/features/cierre/`, con la ruta `/triage/:incidentId/cierre`.
+  - [x] Cada paso marcado como hecho sale de un hecho del servidor. Lo prueba `pasos.test.ts`.
+    Un dato que no cargó se pinta «sin dato», nunca «pendiente».
+  - [x] Recorrido de punta a punta en el navegador por el administrador.
+    `web/e2e/cierre_del_evento.spec.ts`, en verde el 2026-09-28 contra `vite preview` +
+    `soc-local`: acusa, clasifica REAL y cierra con motivo.
 
-### [ ] T-9.42 · **El reporte posterior al evento, solo** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.42 · **El reporte posterior al evento, solo** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · **Depende de:** T-9.40 · **Prioridad:** F4 · alta · **Decisión:** `D-48`
 - **Objetivo:** el reporte llega en 30 minutos o menos sin que nadie pulse «generar».
 - **Criterios de aceptación:**
-  - [ ] Worker `informes` idempotente; un fallo queda declarado, nunca como éxito (migración 0073).
-  - [ ] Correo al cliente y aviso al administrador y a los tácticos.
+  - [x] Worker `informes` idempotente; un fallo queda declarado, nunca como éxito (migración
+    **0074**: la 0073 la tomó F3). Lo prueban `api/tests/informes/`.
+  - [~] Correo al cliente y aviso al administrador y a los tácticos: encolados y probados
+    (`tests/notify/test_informe_avisa.py`). Falta ver el correo llegar desde la nube.
+- **Hallazgo al correrlo de verdad (2026-09-28):**
+  - Contra la base local migrada paso a paso, el worker murió con «permission denied for table
+    compliance_labels» y el informe quedó `fallido`, que es lo que debía declarar.
+  - En CI no se ve: la 0001 concede ALL TABLES a `takab_ingest` en base nueva.
+  - La 0074 concede ahora lo que lee el worker.
+  - `tests/informes/test_privilegios_de_la_nube.py` deriva de las SQL que ejecuta el generador
+    real qué tablas lee y exige su GRANT escrito.
+- **Notas de diseño:**
+  - Gana el primero de tres disparos: la cabeza del dictamen firmada, el cierre, o 25 min desde
+    la apertura (sale PRELIMINAR).
+  - Ni la CAUTELA ni lo clasificado como terminal (prueba…) mandan correo.
+  - El correo lleva el enlace a la consola, **nunca** una URL prefirmada: la evidencia se
+    descarga con sesión.
+
+### [x] T-9.43 · **El correo del SOC decía «Solicitud de dictamen» cuando la brigada no acusó** — `SOFTWARE`
+- **Componente:** api · **Depende de:** T-9.42 · **Prioridad:** F4 · alta
+- **Objetivo:** que cada correo diga lo que pasó.
+- **Hallazgo (2026-09-28, leyendo el código):** `notify/orchestrator.py::_message` trataba TODA
+  acción que no fuera «personas en riesgo» como una solicitud de dictamen. El aviso de
+  `tactical_ack_timeout` (D-05: la brigada no acusó un pánico) llegaba al SOC como «Se solicita
+  un dictamen de habitabilidad…», y es justo el correo que decide si se despierta al edificio.
+- **Criterios de aceptación:**
+  - [x] El mensaje sale de una tabla CERRADA por kind; un kind sin rama lanza. El job falla con
+    su causa, sin tumbar la pasada de notificaciones.
+  - [x] Un censo deriva de las consultas del orquestador qué kinds anclan un correo y exige su
+    rama (`tests/notify/test_mensaje_por_kind.py`).
 
 ## Fase 9.5 · Mapa de calor, relieve y suelos
 

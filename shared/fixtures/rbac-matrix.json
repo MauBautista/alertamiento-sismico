@@ -46,7 +46,8 @@
     "manage_privacy_erasure",
     "cctv_read",
     "cctv_video",
-    "confirm_dictamen"
+    "confirm_dictamen",
+    "close_incident"
   ],
   "internal_roles": [
     "takab_superadmin",
@@ -93,7 +94,8 @@
         "manage_privacy_erasure": false,
         "cctv_read": false,
         "cctv_video": false,
-        "confirm_dictamen": true
+        "confirm_dictamen": true,
+        "close_incident": false
       }
     },
     "gov_operator": {
@@ -142,7 +144,8 @@
         "manage_privacy_erasure": false,
         "cctv_read": false,
         "cctv_video": false,
-        "confirm_dictamen": false
+        "confirm_dictamen": false,
+        "close_incident": false
       }
     },
     "inspector": {
@@ -189,7 +192,8 @@
         "manage_privacy_erasure": false,
         "cctv_read": true,
         "cctv_video": false,
-        "confirm_dictamen": true
+        "confirm_dictamen": true,
+        "close_incident": false
       }
     },
     "occupant": {
@@ -232,7 +236,8 @@
         "manage_privacy_erasure": false,
         "cctv_read": false,
         "cctv_video": false,
-        "confirm_dictamen": false
+        "confirm_dictamen": false,
+        "close_incident": false
       }
     },
     "takab_superadmin": {
@@ -282,7 +287,8 @@
         "manage_privacy_erasure": true,
         "cctv_read": true,
         "cctv_video": true,
-        "confirm_dictamen": false
+        "confirm_dictamen": false,
+        "close_incident": true
       }
     },
     "takab_support": {
@@ -332,7 +338,8 @@
         "manage_privacy_erasure": false,
         "cctv_read": false,
         "cctv_video": false,
-        "confirm_dictamen": false
+        "confirm_dictamen": false,
+        "close_incident": false
       }
     },
     "tenant_admin": {
@@ -382,7 +389,8 @@
         "manage_privacy_erasure": true,
         "cctv_read": true,
         "cctv_video": true,
-        "confirm_dictamen": true
+        "confirm_dictamen": true,
+        "close_incident": true
       }
     }
   }

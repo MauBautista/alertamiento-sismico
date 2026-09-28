@@ -161,6 +161,10 @@ _FASES_LOCK_KEY = 0x7A13
 #: está todo hecho».
 _MAX_POR_PASADA = 200
 
+#: [T-9.40 · D-43] Estos tres fragmentos (tier, clasificación vigente y cabeza de la
+#: cadena) son PÚBLICOS: el cierre explícito (`routers/incidents_ops.py`) los
+#: reutiliza tal cual. Una copia del SQL es una segunda definición que diverge.
+#:
 #: El tier del sitio, como lo define el resto del producto. Es LITERALMENTE la
 #: consulta de `queries/mobile.py::LATEST_TIER`, y eso importa: si el teléfono
 #: del ocupante dice «la sacudida concluyó» porque el último tier es `normal`,
@@ -169,7 +173,7 @@ _MAX_POR_PASADA = 200
 #: ⚠️ El ÚLTIMO tier, no «¿hubo alguna vuelta a normal?». La calma ANTERIOR al
 #: sismo sigue en la tabla: preguntar si existe una fila `normal` la encuentra y
 #: concluye que la sacudida terminó justo cuando está empezando.
-_TIER_ACTUAL = """
+TIER_ACTUAL_SQL = """
   COALESCE((SELECT r.new_tier FROM rule_evaluations r
              WHERE r.site_id = i.site_id
              ORDER BY r.ts DESC LIMIT 1), 'normal')
@@ -180,7 +184,7 @@ SELECT i.incident_id
   FROM incidents i
  WHERE i.state IN ('open','acked')
    AND i.opened_at <= %(cutoff)s
-   AND {_TIER_ACTUAL} = 'normal'
+   AND {TIER_ACTUAL_SQL} = 'normal'
  ORDER BY i.opened_at
  LIMIT %(lim)s
 """
@@ -206,7 +210,7 @@ SELECT i.incident_id, v.classification
 
 #: La clasificación VIGENTE de un incidente (misma definición que arriba), como
 #: subconsulta escalar: ``NULL`` = nadie lo clasificó.
-_CLASIFICACION_VIGENTE = """
+CLASIFICACION_VIGENTE_SQL = """
   (SELECT c.classification
      FROM incident_classifications c
     WHERE c.incident_id = i.incident_id
@@ -218,7 +222,7 @@ _CLASIFICACION_VIGENTE = """
 
 #: La CABEZA de la cadena de dictámenes (misma definición única que la firma, el
 #: worker y el certificado: `created_at DESC, dictamen_id DESC`).
-_CABEZA = """
+CABEZA_SQL = """
   (SELECT d.{col}
      FROM dictamens d
     WHERE d.incident_id = i.incident_id
@@ -235,12 +239,12 @@ _CABEZA = """
 #: una fila SIN firmar, y ese incidente ya no está dictaminado.
 _POR_DICTAMEN_SQL = f"""
 SELECT i.incident_id,
-       {_CABEZA.format(col="signature_kind")} AS signature_kind,
-       {_CLASIFICACION_VIGENTE} AS classification
+       {CABEZA_SQL.format(col="signature_kind")} AS signature_kind,
+       {CLASIFICACION_VIGENTE_SQL} AS classification
   FROM incidents i
  WHERE i.state <> 'closed'
-   AND {_CABEZA.format(col="signed_by")} IS NOT NULL
-   AND {_CLASIFICACION_VIGENTE} IS NOT NULL
+   AND {CABEZA_SQL.format(col="signed_by")} IS NOT NULL
+   AND {CLASIFICACION_VIGENTE_SQL} IS NOT NULL
  ORDER BY i.opened_at
  LIMIT %(lim)s
 """
@@ -250,8 +254,8 @@ SELECT i.incident_id,
 #: revisión tras una noche de réplicas — justo cuando alguien va a mirarlo.
 _POR_TTL_SQL = f"""
 SELECT i.incident_id,
-       {_CABEZA.format(col="signed_by")} IS NOT NULL AS firmado,
-       {_CLASIFICACION_VIGENTE} IS NOT NULL AS clasificado
+       {CABEZA_SQL.format(col="signed_by")} IS NOT NULL AS firmado,
+       {CLASIFICACION_VIGENTE_SQL} IS NOT NULL AS clasificado
   FROM incidents i
  WHERE i.state = 'in_review'
    AND COALESCE((SELECT max(a.ts) FROM incident_actions a

@@ -2,6 +2,7 @@ import {
   AlertOctagon,
   AlertTriangle,
   CheckCircle2,
+  ClipboardCheck,
   ExternalLink,
   FileDown,
   Printer,
@@ -10,7 +11,7 @@ import {
 import { useState } from "react";
 import { Link } from "react-router";
 
-import Button from "../../components/Button";
+import Button, { ButtonLink } from "../../components/Button";
 import Card from "../../components/Card";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
@@ -163,6 +164,11 @@ export interface TriageDetailProps {
    * pantalla en la que no estuvo.
    */
   volverASitioId: string | null;
+  /**
+   * [T-9.41] `ack_incident` o `close_incident`: la entrada al asistente «Cierre
+   * del evento». Sin ninguna de las dos, el asistente sólo diría a quién pedirlo.
+   */
+  canOpenCierre: boolean;
 }
 
 /**
@@ -245,6 +251,7 @@ export default function TriageDetail({
   canOpenFleet,
   canOpenBuilding,
   volverASitioId,
+  canOpenCierre,
 }: TriageDetailProps) {
   /**
    * [T-9.34 · D-43] Lo que el inspector ELIGIÓ, atado al incidente en que lo
@@ -374,6 +381,16 @@ export default function TriageDetail({
           >
             <ExternalLink size={11} aria-hidden /> FICHA DEL EDIFICIO
           </Link>
+        )}
+        {canOpenCierre && (
+          <ButtonLink
+            variant="primary"
+            className="triage-detail__cierre"
+            data-testid="triage-cierre-link"
+            to={`/triage/${encodeURIComponent(inc.incident_id)}/cierre`}
+          >
+            <ClipboardCheck size={13} aria-hidden /> CIERRE DEL EVENTO
+          </ButtonLink>
         )}
       </header>
 

@@ -264,6 +264,20 @@ def cuerpo_email(message: dict) -> str:
         lineas.append(f"Se reportaron personas en riesgo en {sitio}.")
     elif kind == "dictamen_request":
         lineas.append(f"Se solicita un dictamen de habitabilidad para {sitio}.")
+    elif kind == "tactical_ack_timeout":
+        # [T-9.43] Antes caía en la rama del dictamen: «Se solicita un dictamen…»
+        # para una brigada que no contestó. Lo que se pide aquí es una DECISIÓN.
+        plazo = message.get("timeout_s")
+        lineas.append(
+            f"Se activó una alerta de pánico en {sitio} y ningún brigadista acusó "
+            f"en {plazo} s. Decida si hay que avisar a todo el inmueble."
+        )
+    elif kind == "post_event_report":
+        # [T-9.42 · D-48] El informe lo generó el sistema solo. Si la cabeza de la
+        # cadena no estaba firmada, se dice en la segunda línea y no al pie.
+        lineas.append(f"El informe posterior al evento de {sitio} está listo.")
+        if message.get("preliminar"):
+            lineas.append("Es PRELIMINAR: el inmueble todavía no tiene dictamen firmado.")
     else:
         severidad = message.get("severity") or "sin clasificar"
         lineas.append(f"Incidente {severidad} en {sitio}.")
@@ -288,7 +302,11 @@ def cuerpo_email(message: dict) -> str:
     # callar. Quitar el enlace y no decir nada deja al inspector sabiendo que pasó
     # algo y no que le toca actuar.
     enlace = message.get("link")
-    if enlace:
+    if enlace and kind == "post_event_report":
+        # El PDF se descarga CON SESIÓN desde el cierre del evento: el enlace no lo
+        # abre por sí solo, y así un correo reenviado no entrega la evidencia.
+        lineas += ["", f"Descárguelo desde la consola, con su sesión: {enlace}"]
+    elif enlace:
         lineas += ["", f"Atender en la consola: {enlace}"]
     else:
         lineas += ["", "Atienda este aviso desde la consola de TAKAB Ailert."]
