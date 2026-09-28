@@ -79,6 +79,11 @@ dev = [
 # sin ellos y el canal se declara simulado en producción "sin motivo": el catálogo
 # estaría vacío porque el directorio no viajó, no porque Meta no haya aprobado.
 "takab_api.notify" = ["whatsapp_templates/*.json"]
+# [T-9.53 · D-45] La cartografía de la §8 del dictamen (contornos estatales, zonas
+# NTC de la CDMX) y sus atribuciones. Sin esta línea la imagen de la nube sale sin
+# ellas —el `api/Dockerfile` instala el paquete, no el árbol— y el mapa pierde su
+# base y la cita de su procedencia (trampa medida en `T-7.22`).
+"takab_api.geodatos" = ["*.geojson", "*.json"]
 
 [build-system]
 requires = ["setuptools>=68"]

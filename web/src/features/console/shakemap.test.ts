@@ -50,6 +50,10 @@ function punto(over: Partial<PuntoFeature["properties"]> = {}): PuntoFeature {
       pga_g_modelada: 0.041,
       residuo_log10: 0.306,
       medido_en: "2026-09-14T10:00:35Z",
+      // [T-9.52 · D-44] La MMI ESTIMADA del punto viaja siempre (la clave, no el
+      // valor): aquí sin superficie, así que sin estimación.
+      mmi_estimada: null,
+      mmi_romano: null,
       ...over,
     },
   };
@@ -106,6 +110,10 @@ function mapa(over: Partial<ShakemapOut> = {}): ShakemapOut {
         anillo({ umbral: UMBRAL_TRIP, pga_g: 0.08, radio_km: 66 }),
       ],
     },
+    // [T-9.52 · D-44] Sin superficie estimada (y sin motivo): el snapshot neutro.
+    superficie: null,
+    superficie_motivo: null,
+    superficie_motivo_texto: null,
     ...over,
   };
 }

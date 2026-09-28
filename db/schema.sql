@@ -2257,6 +2257,10 @@ CREATE POLICY cc_read ON catalog_consultations FOR SELECT
 -- Cero interpolación, cero isosistas y **cero escala de intensidad**: lo que se
 -- codifica es PGA en g. `dictamen/model.py::NO_MMI` ya está impreso en documentos
 -- FIRMADOS diciendo que TAKAB no reporta intensidad macrosísmica.
+-- [T-9.51 · D-44 enmienda D-08] Desde la 0075 el snapshot lleva ADEMÁS una
+-- superficie ESTIMADA (la ley corregida cerca de lo medido) y la API deriva al
+-- leer una MMI ESTIMADA (Wald 1999). Las dos se rotulan como estimación; lo de
+-- arriba sigue siendo cierto para lo MEDIDO y para los documentos de su fecha.
 --
 -- ⚠️ `anillos.radio_km` va en KILÓMETROS. La guarda que T-7.24 sustituye nació de
 -- dos capas de MapLibre con `circle-radius` en PÍXELES: el mismo anillo afirmaba
@@ -2274,7 +2278,12 @@ CREATE TABLE incident_shakemap (
   epicentro    jsonb,                                -- {lat,lon,depth_km,magnitud,fuente,procedencia,catalog_key}
   cobertura_km numeric NOT NULL CHECK (cobertura_km > 0),  -- el radio VIGENTE al calcular
   puntos       jsonb NOT NULL DEFAULT '[]'::jsonb,   -- capa 1 + capa 3, por inmueble
-  anillos      jsonb NOT NULL DEFAULT '[]'::jsonb    -- censo capa 2: [{umbral, pga_g, radio_km, motivo, radio_max_km}]
+  anillos      jsonb NOT NULL DEFAULT '[]'::jsonb,   -- censo capa 2: [{umbral, pga_g, radio_km, motivo, radio_max_km}]
+  -- [T-9.51 · D-44 · 0075] La superficie ESTIMADA (`shakemap/superficie.py`) o por
+  -- qué no la hay. Tras un cálculo, exactamente una va llena; las DOS en NULL =
+  -- snapshot calculado antes de D-44 (no se inventa nada).
+  superficie        jsonb NULL,                     -- Superficie.to_json(): malla compacta, N, M, ley, método
+  superficie_motivo text  NULL                      -- sin_epicentro | sin_medidas | sin_calibrados
 );
 GRANT SELECT ON incident_shakemap TO takab_app;
 GRANT SELECT, INSERT, UPDATE ON incident_shakemap TO takab_ingest;

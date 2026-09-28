@@ -53,6 +53,7 @@ from takab_api.dictamen.model import (
     LEYENDA_CRUZ,
     LEYENDA_DISCO,
     LEYENDA_SIN_DATO,
+    MMI_ESTIMADA,
     MODELO_Y_RESIDUO,
     NO_MMI,
     SHAKEMAP_DEGRADADO,
@@ -504,9 +505,17 @@ def test_el_papel_ya_no_anuncia_como_DIFERIDO_el_mapa_que_imprime() -> None:
     Lo que NO cambia, y por eso se comprueba en el mismo test: que se sigue sin
     reportar intensidad macrosísmica ni isosistas. Eso está impreso en documentos
     ya firmados y sigue siendo verdad.
+
+    [T-9.53 · D-44] …para un documento SIN superficie estimada, que es éste
+    (`_completo()` no la trae). Con superficie, la §5 imprime `MMI_ESTIMADA` en
+    lugar de `NO_MMI`: la regla nueva, en sus dos direcciones, la fija
+    `test_superficie_en_el_papel.py::
+    test_la_quinta_seccion_dice_MMI_ESTIMADA_con_superficie_y_NO_MMI_sin_ella`.
     """
     texto = _capturado(_completo()).texto
+    assert _completo().superficie is None, "el escenario dejó de ser «sin superficie»"
     assert NO_MMI in texto
+    assert MMI_ESTIMADA not in texto
     assert "DIFERIDO" not in texto.upper(), "el papel sigue anunciando algo como diferido"
     assert "isosistas" in NO_MMI
     assert "MMI" in NO_MMI
@@ -935,6 +944,11 @@ def test_la_frase_del_MODELO_solo_sale_si_el_documento_reporta_un_modelo() -> No
     Lo que NO cambia y se comprueba en el mismo sitio: la parte invariante de
     `NO_MMI` —ni MMI ni isosistas— sale SIEMPRE, porque está impresa en documentos
     ya firmados y sigue siendo verdad.
+
+    [T-9.53 · D-44] «SIEMPRE» pasa a ser «siempre que la §8 no imprima una
+    superficie estimada»: con ella sale `MMI_ESTIMADA` en su lugar. Ninguno de los
+    escenarios de aquí la trae, así que aquí `NO_MMI` sale en todos; la otra
+    dirección la fija `test_superficie_en_el_papel.py`.
     """
     completo = _capturado(_completo()).texto
     assert NO_MMI in completo
@@ -1195,6 +1209,10 @@ def _bloque_por_la_ruta_real(magnitud: float) -> ShakemapBlock:
         epicentro=shk.epicentro_json(mapa),
         puntos=shk.puntos_json(mapa),
         anillos=shk.anillos_json(mapa),
+        # [T-9.51 · D-44 · 0075] La fila real las trae; en NULL = snapshot anterior
+        # a D-44, que es lo que este papel (el lote siguiente lo toca) ya sabe leer.
+        superficie=None,
+        superficie_motivo=None,
     )
 
     class _Conn:

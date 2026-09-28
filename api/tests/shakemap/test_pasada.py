@@ -19,7 +19,8 @@ Lo que fija, por lo que costaría equivocarse:
    pagó dos veces, porque verde en local no es verde en la nube.
 3. **Idempotencia** (regla de oro 3): recalcular no duplica ni corrompe, y la
    fecha del cálculo sí se refresca porque aquí esa fecha ES el dato.
-4. **Converge.** Un `completo` no se vuelve a calcular jamás; un
+4. **Converge.** Un `completo` calculado con la ventana del pico cerrada no se
+   vuelve a calcular jamás (`T-9.50`: el de antes, una vez); un
    `solo_observado` sí, con su propio reloj, porque puede llegarle el epicentro.
 5. **No bloquea el bucle** más allá de su presupuesto de reloj de pared, que es
    la trampa que T-7.25 midió: lo que esta pasada tarda es lo que se retrasa la
@@ -48,6 +49,7 @@ from takab_api.schemas.shakemap import PuntoProps
 from takab_api.settings import Settings
 from takab_api.shakemap import calculo as C
 from takab_api.shakemap import servicio as S
+from takab_api.shakemap.lectura import DERIVADOS_AL_LEER
 from tests.catalogo.fixtures import dsn
 
 # --- el sismo, con su procedencia ---------------------------------------------
@@ -513,8 +515,10 @@ def test_el_contrato_del_punto_no_promete_ningun_campo_que_no_pueda_llenar(
     esc.pasada()
 
     cdmx = esc.punto(inc, "CDMX")
-    # `lat`/`lon` no son propiedades: son la GEOMETRÍA del feature. El resto sí.
-    assert set(cdmx) == set(PuntoProps.model_fields) | {"lat", "lon"}
+    # `lat`/`lon` no son propiedades: son la GEOMETRÍA del feature. El resto sí,
+    # menos las que el lector DERIVA al leer (la MMI estimada, `T-9.51 · D-44`):
+    # ésas no se persisten, así que no pueden estar en la fila.
+    assert set(cdmx) == (set(PuntoProps.model_fields) - set(DERIVADOS_AL_LEER)) | {"lat", "lon"}
     vacios = sorted(k for k, v in cdmx.items() if v is None)
     assert vacios == [], f"el contrato promete campos que el cálculo no llena: {vacios}"
     assert cdmx["pgv_cms"] == pytest.approx(PGV_CDMX, rel=1e-5)
@@ -655,12 +659,18 @@ def test_el_refresco_tiene_su_propio_reloj(esc: Escenario) -> None:
 # ------------------------------------------------------------ la candidatura
 
 
-def test_un_incidente_que_no_entro_en_revision_no_tiene_mapa(esc: Escenario) -> None:
+def test_un_incidente_RECIEN_ABIERTO_no_tiene_mapa(esc: Escenario) -> None:
     """Se calcula cuando hay algo que mirar, no en el segundo del disparo. Un
-    mapa pintado a medias durante la sacudida se lee como verdad y no lo es."""
+    mapa pintado a medias durante la sacudida se lee como verdad y no lo es.
+
+    [T-9.50 · D-44] Lo que marca «hay algo que mirar» ya no es la huella de
+    `in_review` —un sismo que nadie revisaba se quedaba sin mapa para siempre—
+    sino la madurez del incidente, `shakemap_espera_s`. El caso SIN revisión y
+    pasada la espera está en `test_mapa_de_calor.py`.
+    """
     inc = esc.incidente(en_revision=False)
     esc.mide("CDMX", PGA_CDMX)
-    assert esc.pasada().calculados == ()
+    assert esc.pasada(now=ABIERTO + timedelta(seconds=30)).calculados == ()
     assert esc.snapshot(inc) is None
 
 

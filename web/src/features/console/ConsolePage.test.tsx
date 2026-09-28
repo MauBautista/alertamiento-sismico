@@ -177,6 +177,10 @@ const SHAKEMAP: ShakemapOut = {
   fuera_de_alcance: [],
   observado: { type: "FeatureCollection", features: [] },
   modelado: null,
+  // [T-9.52 · D-44] Sin superficie estimada, y sin motivo: el snapshot neutro.
+  superficie: null,
+  superficie_motivo: null,
+  superficie_motivo_texto: null,
 };
 
 function page(): ReactElement {

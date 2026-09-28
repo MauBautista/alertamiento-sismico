@@ -2398,6 +2398,8 @@ export type PuntoProps = {
     dist_km: number | null;
     hypo_km: number | null;
     medido_en: string | null;
+    mmi_estimada: number | null;
+    mmi_romano: string | null;
     pga_g: number | null;
     pga_g_modelada: number | null;
     pgv_cms: number | null;
@@ -2855,6 +2857,9 @@ export type ShakemapOut = {
     ley: string | null;
     modelado: AnillosOut | null;
     observado: PuntosOut;
+    superficie: SuperficieOut | null;
+    superficie_motivo: string | null;
+    superficie_motivo_texto: string | null;
 };
 
 export type SiteAssetCreateIn = {
@@ -3015,6 +3020,30 @@ export type SiteUpdate = {
 export type SubscribeFrame = {
     topic: string;
     type: 'subscribe';
+};
+
+/**
+ * [T-9.51 · D-44] La superficie ESTIMADA, SIN la malla (viaja en el PNG).
+ *
+ * Todo lo que quien la pinta necesita para rotularla como lo que es: «ESTIMADO a
+ * partir de N sensores (M calibrados)», con la ley, el método y la cita de la
+ * relación PGA–MMI.
+ */
+export type SuperficieOut = {
+    alto: number;
+    ancho: number;
+    bbox: Array<number>;
+    cita_mmi: string;
+    escala_km: number;
+    ley: string;
+    metodo: string;
+    mmi_max_estimada: number | null;
+    n_calibrados: number;
+    n_sensores: number;
+    pga_max_g: number | null;
+    png: string;
+    rojo_min_g: number | null;
+    verde_max_g: number | null;
 };
 
 /**
@@ -5062,6 +5091,31 @@ export type IncidentShakemapIncidentsIncidentIdShakemapGetResponses = {
 };
 
 export type IncidentShakemapIncidentsIncidentIdShakemapGetResponse = IncidentShakemapIncidentsIncidentIdShakemapGetResponses[keyof IncidentShakemapIncidentsIncidentIdShakemapGetResponses];
+
+export type IncidentShakemapSuperficiePngIncidentsIncidentIdShakemapSuperficiePngGetData = {
+    body?: never;
+    path: {
+        incident_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/shakemap/superficie.png';
+};
+
+export type IncidentShakemapSuperficiePngIncidentsIncidentIdShakemapSuperficiePngGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type IncidentShakemapSuperficiePngIncidentsIncidentIdShakemapSuperficiePngGetError = IncidentShakemapSuperficiePngIncidentsIncidentIdShakemapSuperficiePngGetErrors[keyof IncidentShakemapSuperficiePngIncidentsIncidentIdShakemapSuperficiePngGetErrors];
+
+export type IncidentShakemapSuperficiePngIncidentsIncidentIdShakemapSuperficiePngGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
 
 export type TacticalAckIncidentsIncidentIdTacticalAckPostData = {
     body?: never;

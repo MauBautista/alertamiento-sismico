@@ -1,0 +1,52 @@
+{
+  "_doc": "[T-9.54 · D-45] Qué cartografía empaqueta el repo, de dónde sale y su huella. Lo reconstruye tools/geodatos/construye.sh y lo comprueba tools/geodatos/verifica.py.",
+  "herramienta": "mapshaper 0.6.121 (npx; herramienta de construcción, no se empaqueta)",
+  "capas": {
+    "ntc_cdmx": {
+      "fuente": {
+        "url": "https://datos.cdmx.gob.mx/dataset/59b8f311-024d-4ca9-b523-9fa624be794c/resource/4f23c6c5-1b2b-410e-8589-a720d7b3db58/download/4f23c6c5-1b2b-410e-8589-a720d7b3db58.csv",
+        "sha256": "8df892871e8999536e6550519bbe0960f96cef4d5f2e34f777c5faa3d200472b",
+        "descargada": "2026-09-28"
+      },
+      "atribucion": "ntc_cdmx",
+      "salidas": {
+        "web/public/geodatos/ntc_cdmx.geojson": {
+          "sha256": "8f71f9af3f6dd9686c3dd47ec12b590032731cec3e242f9c9835de5d58f1ab5f",
+          "bytes": 127328
+        },
+        "api/src/takab_api/geodatos/ntc_cdmx.geojson": {
+          "sha256": "8f71f9af3f6dd9686c3dd47ec12b590032731cec3e242f9c9835de5d58f1ab5f",
+          "bytes": 127328
+        }
+      }
+    },
+    "edafologia": {
+      "fuente": {
+        "url": "https://www.inegi.org.mx/contenidos/productos/prod_serv/contenidos/espanol/bvinegi/productos/geografia/tematicas/Edafologia_hist/1_250_000/serie%20II/794551131916_s.zip",
+        "sha256": "82920775a5326b5937960421cd7c0648493fa52825b7f567ae7665a81bf0e27b",
+        "descargada": "2026-09-28"
+      },
+      "atribucion": "edafologia",
+      "salidas": {
+        "web/public/geodatos/edafologia.geojson": {
+          "sha256": "91f053719736136bde695626d6093576d788588435ede7a6d3be6abb383e9564",
+          "bytes": 5918990
+        }
+      }
+    },
+    "estados": {
+      "fuente": {
+        "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_1_states_provinces.geojson",
+        "sha256": "22d0e3ad85eb3e27f17cabf8ba2d50e554fbc27a87796ff891d958185da62fb5",
+        "descargada": "2026-09-28"
+      },
+      "atribucion": "estados",
+      "salidas": {
+        "api/src/takab_api/geodatos/estados_mex.geojson": {
+          "sha256": "b9b5f84a3ff8d98ec181614b19e676f2736c75c9537da0fa35dad29549995e80",
+          "bytes": 110927
+        }
+      }
+    }
+  }
+}

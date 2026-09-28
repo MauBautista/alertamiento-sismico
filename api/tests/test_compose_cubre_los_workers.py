@@ -81,6 +81,13 @@ NO_RESIDENTES: dict[str, tuple[str, str | None]] = {
         "A MANO y enseña el secreto una sola vez. Un residente aquí no tendría sentido.",
         None,
     ),
+    "takab_api.shakemap.rellena": (
+        "[T-9.50 · D-44] Relleno ONE-SHOT del mapa de la sacudida de incidentes viejos: "
+        "lo corre Mauricio A MANO con `!`, una vez (`docker compose exec incident-engine "
+        "python -m takab_api.shakemap.rellena --desde …`). Residente no tendría sentido: "
+        "la pasada del worker ya calcula lo que entra en su ventana.",
+        None,
+    ),
     "takab_api.ops.restore_drill": (
         "Ensayo LOCAL de restore (`make restore-drill`): crea su propia instancia y mide el "
         "RTO. No corre en la nube.",

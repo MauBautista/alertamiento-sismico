@@ -1,0 +1,27 @@
+{
+  "_doc": "[T-9.54 · D-45] Única fuente de las atribuciones de la cartografía: la leen la consola, el PDF y la app. La copia de la API (api/src/takab_api/geodatos/atribuciones.json) tiene que ser idéntica byte a byte (tools/geodatos/verifica.py).",
+  "relieve": {
+    "corta": "Relieve: Terrain Tiles (AWS Open Data)",
+    "larga": "Relieve: Terrain Tiles de Tilezen en AWS Open Data, a partir de SRTM, GMTED2010, ETOPO1 y otras fuentes públicas.",
+    "licencia": "Datos abiertos con atribución",
+    "url": "https://registry.opendata.aws/terrain-tiles/"
+  },
+  "ntc_cdmx": {
+    "corta": "Zonificación geotécnica: Atlas de Riesgos CDMX (SPCGIR, 2019), CC BY 4.0",
+    "larga": "Zonificación geotécnica de la Ciudad de México (lomas, transición, lago) por AGEB, del Atlas de Riesgos de la Secretaría de Gestión Integral de Riesgos y Protección Civil (2019), publicada en datos.cdmx.gob.mx bajo CC BY 4.0. Cubre las AGEB urbanas.",
+    "licencia": "CC BY 4.0",
+    "url": "https://datos.cdmx.gob.mx/dataset/atlas-de-riesgo-sismico"
+  },
+  "edafologia": {
+    "corta": "Tipo de suelo: INEGI, edafología 1:250 000 serie II (2024)",
+    "larga": "Tipo de suelo (grupo dominante WRB) del Conjunto de datos vectorial edafológico escala 1:250 000 serie II, continuo nacional, INEGI (edición 2024), simplificado. Es tipo de suelo, NO zonificación sísmica. Las localidades urbanas no llevan clasificación.",
+    "licencia": "Términos de libre uso de la información del INEGI",
+    "url": "https://www.inegi.org.mx/app/biblioteca/ficha.html?upc=794551131916"
+  },
+  "estados": {
+    "corta": "Límites estatales: Natural Earth (dominio público)",
+    "larga": "Límites de las entidades federativas de Natural Earth 1:10m (admin-1), de dominio público, simplificados.",
+    "licencia": "Dominio público",
+    "url": "https://www.naturalearthdata.com/"
+  }
+}

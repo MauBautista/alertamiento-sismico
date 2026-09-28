@@ -38,6 +38,7 @@ import { useLiveIncidents } from "./useLiveIncidents";
 import { useQuorumCommands } from "./useQuorumCommands";
 import { useMapState } from "./useMapState";
 import { useShakemap } from "./useShakemap";
+import { useSuperficiePng } from "./useSuperficiePng";
 import { useSiteFeatures } from "./useSiteFeatures";
 import { useSiteRelays } from "./useSiteRelays";
 import { useSiteSoh } from "./useSiteSoh";
@@ -116,6 +117,14 @@ function ConsoleWall() {
   // sea que ningún operador ve el mapa por muchos tests que pasen alrededor.
   // Sin incidente enfocado no se consulta nada y la capa ni se estrena.
   const shakemap = useShakemap(focusIncident?.incident_id ?? null);
+  // [T-9.52 · D-44] El PNG de la superficie ESTIMADA, descargado con la sesión.
+  // Sólo se pide si el snapshot TRAE superficie (sin ella la nube diría 404, y
+  // ese 404 no es un fallo: el motivo ya viene en el JSON); la hora del cálculo
+  // identifica el snapshot para que uno recalculado pida su propia imagen.
+  const superficiePng = useSuperficiePng(
+    focusIncident?.incident_id ?? null,
+    shakemap.data?.superficie != null ? (shakemap.data.calculado_en ?? "") : null,
+  );
 
   // Pop-up automático por anomalía sostenida (criterio #4).
   const openDetail = useCallback((siteId: string) => {
@@ -303,6 +312,9 @@ function ConsoleWall() {
               shakemap={shakemap.data ?? undefined}
               shakemapError={shakemap.error}
               shakemapLoading={shakemap.loading}
+              superficiePng={superficiePng.url}
+              superficiePngCargando={superficiePng.cargando}
+              superficiePngError={superficiePng.error}
             />
             {/* [T-2.55] Pila ÚNICA de sobrepuestos de la página, anclada
                 arriba-derecha. Nada más se ancla a esa esquina, así que dos

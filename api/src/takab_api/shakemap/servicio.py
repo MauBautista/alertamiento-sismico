@@ -21,24 +21,34 @@ normal de refresco: un mapa que no está `completo` se rehace.
 
 CUÁNDO SE CALCULA, Y CUÁNDO SE DEJA DE CALCULAR
 ───────────────────────────────────────────────
-Candidato = incidente que **ya entró en revisión** (la huella que deja
-`transition_incident`, igual que `catalogo/consulta.py`: es el estado histórico y
-no el actual, porque un incidente puede cerrarse después y el mapa le sigue
-sirviendo al dictamen) y que además:
+[T-9.50 · D-44] Candidato = incidente **maduro**: abierto hace más de
+`shakemap_espera_s` (120 s). Hasta el 2026-09-28 era «que ya entró en revisión»,
+y eso dejaba sin mapa para siempre al sismo que nadie revisaba — justo el que
+más falta hace documentar después. La espera no es cero a propósito: un mapa
+pintado a mitad de la sacudida se lee como verdad y no lo es. Y además:
 
 * no tiene snapshot — nunca se calculó; o
-* tiene uno que **no está `completo`** y lleva más de `shakemap_refresco_s` sin
-  rehacerse. Puede llegarle el epicentro del catálogo (`T-7.25`) o el spool de un
-  gabinete que estaba sin red, y entonces el mapa mejora.
+* tiene uno que lleva más de `shakemap_refresco_s` sin rehacerse **y no es
+  definitivo**:
+  - no está `completo`: puede llegarle el epicentro del catálogo (`T-7.25`) o el
+    spool de un gabinete que estaba sin red, y entonces el mapa mejora;
+  - está `completo` pero se calculó con la **ventana del pico abierta**
+    (`calculado_en < opened_at + dictamen_pga_window_post_s`, 180 s). Un mapa de
+    los 120 s puede no tener todavía el pico que sí tendrá el dictamen, y el
+    papel no puede enseñar un mapa más flojo que su propia tabla;
+  - es **anterior a D-44**: las dos columnas de la superficie en NULL.
 
-Un `completo` **no se recalcula jamás**: ya tiene epicentro, magnitud y medidas,
-y volver a hacerlo sería gastar el bucle en confirmar lo mismo. Eso es lo que
-hace que la pasada converja en vez de ser un bucle caliente.
+Un `completo` calculado con la ventana cerrada y con superficie (o su motivo)
+**no se recalcula jamás**: ya tiene epicentro, magnitud y medidas, y volver a
+hacerlo sería gastar el bucle en confirmar lo mismo. Así un `completo` de los
+120 s se rehace UNA vez después de los 180 s y luego converge, en vez de ser un
+bucle caliente.
 
 La ventana hacia atrás se DERIVA de `incident_review_ttl_s`, como la de la
 consulta al catálogo: un número propio aquí sería un tercer plazo que envejecería
 aparte. Consecuencia, escrita para que no sorprenda: si el worker estuviera caído
-más que esa ventana, los incidentes de antes **no estrenan mapa**. La alternativa
+más que esa ventana, los incidentes de antes **no estrenan mapa** (hasta que se
+rellenen a mano con `rellena.py`, T-9.50). La alternativa
 —barrer el histórico entero— haría que un arranque en frío recalculara meses de
 incidentes bloqueando el bucle que sostiene la actuación comandada por el quórum.
 
@@ -78,6 +88,19 @@ features **por inmueble y por incidente**, que es lo que crece sin avisar. Por
 eso `shakemap_presupuesto_s` se comprueba antes de CADA incidente, y lo que no
 cabe se calcula en la vuelta siguiente diciendo por qué (`corte`).
 
+LA SUPERFICIE ESTIMADA (T-9.51 · D-44)
+─────────────────────────────────────
+Va en el MISMO snapshot y con la MISMA lectura: las estaciones son los puntos
+del mapa (su pico, sus coordenadas) y el epicentro es el de los anillos. Lo único
+nuevo que se lee es qué inmueble está calibrado (`_CALIBRADOS_SQL`, sobre los
+sensores ACTIVOS), en el mismo puente, con el mismo rol y el mismo GUC. Sin
+superficie se guarda por qué (`superficie_motivo`): tras calcular, exactamente una
+de las dos columnas va llena.
+
+A DEMANDA (`calcula_uno`): el mismo `_lectura` y el mismo `_mapa` sin persistir,
+para el PDF de un incidente que todavía no tiene snapshot. Y FUERA DE LA VENTANA
+(`rellena.py`): esta misma pasada con un rango, lanzada a mano una vez.
+
 IDEMPOTENCIA (regla de oro 3)
 ─────────────────────────────
 `ON CONFLICT (incident_id) DO UPDATE`: la clave natural es el incidente y es la
@@ -101,6 +124,7 @@ más caro de este repositorio.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import logging
 import time
@@ -117,6 +141,7 @@ from takab_api import procedencia as pr
 from takab_api.estaciones import build_estaciones
 from takab_api.forensics import umbral_de_comparacion
 from takab_api.shakemap import calculo as C
+from takab_api.shakemap import superficie as SUP
 
 if TYPE_CHECKING:
     import psycopg
@@ -150,7 +175,7 @@ CORTE_POR_CERROJO = "cerrojo"
 #: `catalog_consultations` tiene PK `(incident_id, provider)` y hoy sólo hay un
 #: proveedor, pero el día que haya dos este JOIN duplicaría el incidente y se
 #: calcularía dos veces el mismo mapa. El LATERAL deja escrito que se toma UNA.
-_CANDIDATOS_SQL = """
+_SELECT_CANDIDATO = """
 SELECT i.incident_id, i.tenant_id, i.site_id, i.opened_at,
        e.source            AS evento_fuente,
        e.depth_km::float8  AS depth_km,
@@ -168,14 +193,52 @@ SELECT i.incident_id, i.tenant_id, i.site_id, i.opened_at,
      LIMIT 1
   ) c ON true
   LEFT JOIN reference_earthquakes r ON r.catalog_key = c.catalog_key
+"""
+
+#: [T-9.50 · D-44] Candidato = incidente MADURO (`opened_at <= maduro`) que no tiene
+#: snapshot, o cuyo snapshot lleva más de `shakemap_refresco_s` sin rehacerse y
+#: además NO es definitivo. No es definitivo si:
+#:
+#: * no está `completo` (puede llegarle el epicentro o el spool de un gabinete);
+#: * es `completo` pero se calculó con la ventana del pico ABIERTA
+#:   (`calculado_en < opened_at + dictamen_pga_window_post_s`): el pico que llegue
+#:   hasta los 180 s tiene que estar en el mapa, y el del dictamen lo tiene;
+#: * es ANTERIOR a D-44 (las dos columnas de la superficie en NULL). Tras calcular,
+#:   exactamente una va llena, así que esto también converge.
+_CANDIDATOS_SQL = (
+    _SELECT_CANDIDATO
+    + """
  WHERE i.opened_at >= %(desde)s
-   AND EXISTS (SELECT 1 FROM incident_actions a
-                WHERE a.incident_id = i.incident_id AND a.kind = 'in_review')
+   AND i.opened_at <= %(maduro)s
    AND (m.incident_id IS NULL
-        OR (m.estado <> %(completo)s AND m.calculado_en <= %(rehacer_antes_de)s))
+        OR (m.calculado_en <= %(rehacer_antes_de)s
+            AND (m.estado <> %(completo)s
+                 OR m.calculado_en < i.opened_at + make_interval(secs => %(ventana_pico_s)s)
+                 OR (m.superficie IS NULL AND m.superficie_motivo IS NULL))))
  ORDER BY i.opened_at ASC
  LIMIT %(lim)s
 """
+)
+
+#: El MISMO candidato, de un incidente y sin condiciones de madurez: lo que lee el
+#: cálculo a demanda (`calcula_uno`). Comparte el `SELECT` para que no haya una
+#: segunda derivación de la procedencia del epicentro.
+_UNO_SQL = text(_SELECT_CANDIDATO + " WHERE i.incident_id = CAST(:inc AS uuid)")
+
+#: [T-9.51 · D-44] ¿Qué inmueble está calibrado? Sobre los sensores ACTIVOS: un
+#: retirado ni ajusta ni le quita la calibración al sitio, y un sitio sin sensores
+#: activos no sale en el resultado — su punto se sigue pintando, pero no entra en la
+#: superficie. «Calibrado» = `calibration_source` NO vacío, el criterio exacto del
+#: dictamen (`dictamen/service.py`, T-9.30: `NULLIF(btrim(…), '')`); con
+#: `IS NOT NULL` a secas, como `queries/telemetry.py`, una fuente en blanco contaría
+#: como calibración y el mapa pintaría AJUSTADA una zona que el dictamen no admite.
+_CALIBRADOS_SQL = text("""
+SELECT site_id::text AS site_id,
+       bool_and(NULLIF(btrim(calibration_source), '') IS NOT NULL) AS calibrado
+  FROM sensors
+ WHERE status = 'active' AND site_id = ANY(CAST(:sitios AS uuid[]))
+ GROUP BY site_id
+""")
 
 #: `ON CONFLICT (incident_id) DO UPDATE`: recalcular no duplica (regla de oro 3).
 #: `tenant_id` no se toca en el UPDATE — un incidente no cambia de cliente, y si
@@ -183,17 +246,20 @@ SELECT i.incident_id, i.tenant_id, i.site_id, i.opened_at,
 _UPSERT_SQL = """
 INSERT INTO incident_shakemap
        (incident_id, tenant_id, calculado_en, estado, ley, epicentro,
-        cobertura_km, puntos, anillos)
+        cobertura_km, puntos, anillos, superficie, superficie_motivo)
 VALUES (%(inc)s, %(tenant)s, %(ahora)s, %(estado)s, %(ley)s, %(epicentro)s::jsonb,
-        %(cobertura)s, %(puntos)s::jsonb, %(anillos)s::jsonb)
+        %(cobertura)s, %(puntos)s::jsonb, %(anillos)s::jsonb,
+        %(superficie)s::jsonb, %(superficie_motivo)s)
 ON CONFLICT (incident_id) DO UPDATE
-   SET calculado_en = EXCLUDED.calculado_en,
-       estado       = EXCLUDED.estado,
-       ley          = EXCLUDED.ley,
-       epicentro    = EXCLUDED.epicentro,
-       cobertura_km = EXCLUDED.cobertura_km,
-       puntos       = EXCLUDED.puntos,
-       anillos      = EXCLUDED.anillos
+   SET calculado_en      = EXCLUDED.calculado_en,
+       estado            = EXCLUDED.estado,
+       ley               = EXCLUDED.ley,
+       epicentro         = EXCLUDED.epicentro,
+       cobertura_km      = EXCLUDED.cobertura_km,
+       puntos            = EXCLUDED.puntos,
+       anillos           = EXCLUDED.anillos,
+       superficie        = EXCLUDED.superficie,
+       superficie_motivo = EXCLUDED.superficie_motivo
 """
 
 
@@ -224,6 +290,9 @@ class _Lectura:
     medidas: tuple[C.Medida, ...]
     epicentro: C.Epicentro | None
     niveles: tuple[C.Nivel, ...]
+    #: [T-9.51 · D-44] ``site_id`` → ¿todos sus sensores ACTIVOS calibrados? Un
+    #: sitio sin sensores activos NO está: no entra en la superficie.
+    calibrados: dict[str, bool] = dataclasses.field(default_factory=dict)
 
 
 def niveles_de(umbral) -> tuple[C.Nivel, ...]:  # noqa: ANN001 - felt.UmbralComparacion
@@ -260,8 +329,17 @@ def run_shakemap_pass(
     now: datetime | None = None,
     max_por_pasada: int = MAX_POR_PASADA,
     reloj: Callable[[], float] = time.monotonic,
+    desde: datetime | None = None,
+    hasta: datetime | None = None,
+    presupuesto_s: float | None = None,
 ) -> PasadaDeShakemap:
-    """Calcula y persiste el mini-ShakeMap de los incidentes que lo necesitan."""
+    """Calcula y persiste el mini-ShakeMap de los incidentes que lo necesitan.
+
+    ``desde``/``hasta``/``presupuesto_s`` son para el relleno (`rellena.py`): el
+    worker no los pasa y la ventana hacia atrás se deriva de
+    `incident_review_ttl_s`. ``hasta`` sólo puede ESTRECHAR la madurez, nunca
+    saltársela: un incidente de hace 30 s no tiene mapa ni a mano.
+    """
     ahora = now or datetime.now(tz=UTC)
     tomado = conn.execute("SELECT pg_try_advisory_xact_lock(%s) AS tomado", (LOCK_KEY,)).fetchone()[
         "tomado"
@@ -278,7 +356,19 @@ def run_shakemap_pass(
         return PasadaDeShakemap(corte=CORTE_POR_CERROJO)
 
     try:
-        return _pasada(conn, settings, ahora=ahora, maximo=max_por_pasada, reloj=reloj)
+        maduro = ahora - timedelta(seconds=settings.shakemap_espera_s)
+        return _pasada(
+            conn,
+            settings,
+            ahora=ahora,
+            maximo=max_por_pasada,
+            reloj=reloj,
+            desde=desde or ahora - timedelta(seconds=settings.incident_review_ttl_s),
+            maduro=maduro if hasta is None else min(maduro, hasta),
+            presupuesto_s=(
+                settings.shakemap_presupuesto_s if presupuesto_s is None else presupuesto_s
+            ),
+        )
     except Exception:
         # El cerrojo es de transacción: el rollback lo suelta. No hay nada que
         # perder —el snapshot se recalcula entero en la vuelta siguiente— y sí
@@ -295,6 +385,9 @@ def _pasada(
     ahora: datetime,
     maximo: int,
     reloj: Callable[[], float],
+    desde: datetime,
+    maduro: datetime,
+    presupuesto_s: float,
 ) -> PasadaDeShakemap:
     """Los candidatos que quepan en el presupuesto de reloj.
 
@@ -303,13 +396,16 @@ def _pasada(
     segundos. ``ahora`` sigue siendo el reloj de calendario, que es otra cosa y
     se escribe en la base.
     """
-    desde = ahora - timedelta(seconds=settings.incident_review_ttl_s)
     filas = conn.execute(
         _CANDIDATOS_SQL,
         {
             "desde": desde,
+            "maduro": maduro,
             "completo": C.ESTADO_COMPLETO,
             "rehacer_antes_de": ahora - timedelta(seconds=settings.shakemap_refresco_s),
+            # La MISMA ventana del pico que usa el dictamen: si el mapa convergiera
+            # antes, podría quedarse con un pico menor que el del papel firmado.
+            "ventana_pico_s": settings.dictamen_pga_window_post_s,
             "lim": maximo + 1,
         },
     ).fetchall()
@@ -321,26 +417,12 @@ def _pasada(
     corte = CORTE_POR_TOPE if len(filas) > maximo else None
     candidatas = filas[:maximo]
 
-    lecturas, corte_lectura = _lee(settings, candidatas, reloj=reloj)
+    lecturas, corte_lectura = _lee(settings, candidatas, reloj=reloj, presupuesto_s=presupuesto_s)
     corte = corte_lectura or corte
 
     calculados: list[str] = []
     for lectura in lecturas:
-        mapa = C.calcula(
-            list(lectura.medidas),
-            epicentro=lectura.epicentro,
-            niveles=lectura.niveles,
-            cobertura_km=settings.shakemap_cobertura_km,
-            # El tope del radio se DERIVA y no es un ajuste nuevo: es la
-            # distancia máxima epicentro↔sitio con la que este sistema acepta
-            # que un sismo del catálogo sea el que sacudió este edificio
-            # (`forensics/correlacion.py`). Un anillo más lejos afirmaría que el
-            # modelo alcanza donde el propio sistema se niega a atribuir — y un
-            # segundo número aquí envejecería aparte del primero, que es la
-            # razón por la que la ventana hacia atrás también se deriva.
-            radio_max_km=settings.correlation_max_km,
-        )
-        _escribe(conn, lectura, mapa, ahora=ahora)
+        _escribe(conn, lectura, _mapa(lectura, settings), ahora=ahora)
         calculados.append(lectura.incident_id)
 
     conn.commit()
@@ -351,6 +433,57 @@ def _pasada(
             "" if corte is None else f" (PASADA CORTADA POR {corte.upper()})",
         )
     return PasadaDeShakemap(calculados=tuple(calculados), corte=corte)
+
+
+def _mapa(lectura: _Lectura, settings: Settings) -> C.Mapa:
+    """Las tres capas y la superficie estimada de UNA lectura. Puro: no toca la base.
+
+    Es lo único que comparten la pasada y el cálculo a demanda (`calcula_uno`), y
+    por eso vive aparte: el PDF que calcule sin snapshot tiene que dibujar el mismo
+    mapa que la pasada habría escrito.
+    """
+    mapa = C.calcula(
+        list(lectura.medidas),
+        epicentro=lectura.epicentro,
+        niveles=lectura.niveles,
+        cobertura_km=settings.shakemap_cobertura_km,
+        # El tope del radio se DERIVA y no es un ajuste nuevo: es la
+        # distancia máxima epicentro↔sitio con la que este sistema acepta
+        # que un sismo del catálogo sea el que sacudió este edificio
+        # (`forensics/correlacion.py`). Un anillo más lejos afirmaría que el
+        # modelo alcanza donde el propio sistema se niega a atribuir — y un
+        # segundo número aquí envejecería aparte del primero, que es la
+        # razón por la que la ventana hacia atrás también se deriva.
+        radio_max_km=settings.correlation_max_km,
+    )
+    superficie, motivo = SUP.estima(_estaciones_de(lectura), _ley_de(lectura.epicentro))
+    return dataclasses.replace(mapa, superficie=superficie, superficie_motivo=motivo)
+
+
+def _estaciones_de(lectura: _Lectura) -> list[SUP.Estacion]:
+    """[T-9.51 · D-44] Los inmuebles ACTIVOS del mapa, con su pico y su calibración.
+
+    Las medidas son las MISMAS de los puntos (la tabla por estación): la superficie
+    no puede anclarse en un pico distinto del que se pinta encima. Un sitio sin
+    sensores activos no está en ``calibrados`` y se queda fuera.
+    """
+    return [
+        SUP.Estacion(lat=m.lat, lon=m.lon, pga_g=m.pga_g, calibrado=lectura.calibrados[m.site_id])
+        for m in lectura.medidas
+        if m.site_id in lectura.calibrados
+    ]
+
+
+def _ley_de(epicentro: C.Epicentro | None) -> SUP.EpicentroLey | None:
+    """Lo que la ley necesita del epicentro del cálculo: el MISMO de los anillos."""
+    if epicentro is None:
+        return None
+    return SUP.EpicentroLey(
+        lat=epicentro.lat,
+        lon=epicentro.lon,
+        depth_km=epicentro.depth_km,
+        magnitud=epicentro.magnitud,
+    )
 
 
 def _escribe(conn: psycopg.Connection, lectura: _Lectura, mapa: C.Mapa, *, ahora: datetime) -> None:
@@ -366,6 +499,10 @@ def _escribe(conn: psycopg.Connection, lectura: _Lectura, mapa: C.Mapa, *, ahora
             "cobertura": mapa.cobertura_km,
             "puntos": json.dumps(C.puntos_json(mapa)),
             "anillos": json.dumps(C.anillos_json(mapa)),
+            "superficie": None
+            if mapa.superficie is None
+            else json.dumps(mapa.superficie.to_json()),
+            "superficie_motivo": mapa.superficie_motivo,
         },
     )
 
@@ -377,7 +514,11 @@ def _escribe(conn: psycopg.Connection, lectura: _Lectura, mapa: C.Mapa, *, ahora
 
 
 def _lee(
-    settings: Settings, filas: list[dict], *, reloj: Callable[[], float]
+    settings: Settings,
+    filas: list[dict],
+    *,
+    reloj: Callable[[], float],
+    presupuesto_s: float,
 ) -> tuple[list[_Lectura], str | None]:
     """Cruza al mundo async. ``asyncio.run`` a propósito, y no un loop reusado.
 
@@ -386,11 +527,15 @@ def _lee(
     `RuntimeError` en vez de hacer algo raro en silencio, que es la conducta que
     se quiere.
     """
-    return asyncio.run(_lee_async(settings, filas, reloj=reloj))
+    return asyncio.run(_lee_async(settings, filas, reloj=reloj, presupuesto_s=presupuesto_s))
 
 
 async def _lee_async(
-    settings: Settings, filas: list[dict], *, reloj: Callable[[], float]
+    settings: Settings,
+    filas: list[dict],
+    *,
+    reloj: Callable[[], float],
+    presupuesto_s: float,
 ) -> tuple[list[_Lectura], str | None]:
     motor = create_async_engine(settings.database_url, poolclass=NullPool)
     salida: list[_Lectura] = []
@@ -404,7 +549,7 @@ async def _lee_async(
                 # hay que acotar es cuánto se va a pasar. El PRIMERO siempre se
                 # calcula —si no, un presupuesto mal puesto convertiría la pasada
                 # en un no-op silencioso y nadie tendría mapa jamás.
-                if salida and reloj() - arranque > settings.shakemap_presupuesto_s:
+                if salida and reloj() - arranque > presupuesto_s:
                     corte = CORTE_POR_PRESUPUESTO
                     break
                 lectura = await _lee_uno(conn, settings, fila)
@@ -417,7 +562,6 @@ async def _lee_async(
 
 async def _lee_uno(conn: AsyncConnection, settings: Settings, fila: dict) -> _Lectura | None:
     tenant_id = str(fila["tenant_id"])
-    incident_id = str(fila["incident_id"])
     # El rol del worker y el contexto de tenant. Los dos, y por este orden: sin
     # el rol, en local se ejercerían privilegios que la nube no tiene; sin el
     # GUC, la vista segura de features devuelve cero filas y el mapa sale
@@ -425,24 +569,75 @@ async def _lee_uno(conn: AsyncConnection, settings: Settings, fila: dict) -> _Le
     await conn.execute(text('SET LOCAL ROLE "takab_ingest"'))
     await conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tenant_id})
     try:
-        tabla = await build_estaciones(conn, incident_id, settings)
-        if tabla is None:
-            return None
-        umbral = await umbral_de_comparacion(
-            conn, site_id=str(fila["site_id"]), tenant_id=tenant_id, at=fila["opened_at"]
-        )
-        return _Lectura(
-            incident_id=incident_id,
-            tenant_id=tenant_id,
-            medidas=_medidas_de(tabla),
-            epicentro=_epicentro_de(fila, tabla),
-            niveles=niveles_de(umbral),
-        )
+        return await _lectura(conn, settings, fila)
     finally:
         # Cierra la transacción: `SET LOCAL` y `set_config(..., is_local=true)`
         # mueren con ella, así que el incidente siguiente empieza limpio y no
         # hereda el tenant del anterior. Sólo se leyó: no hay nada que commitear.
         await conn.rollback()
+
+
+async def _lectura(conn: AsyncConnection, settings: Settings, fila: dict) -> _Lectura | None:
+    """La lectura de UN incidente, con el contexto que haya puesto quien llama.
+
+    No toca ni el rol ni la transacción: eso lo decide el llamador —la pasada con
+    `_lee_uno`, el cálculo a demanda con un savepoint—, porque la conexión es suya.
+    """
+    tenant_id = str(fila["tenant_id"])
+    incident_id = str(fila["incident_id"])
+    tabla = await build_estaciones(conn, incident_id, settings)
+    if tabla is None:
+        return None
+    umbral = await umbral_de_comparacion(
+        conn, site_id=str(fila["site_id"]), tenant_id=tenant_id, at=fila["opened_at"]
+    )
+    medidas = _medidas_de(tabla)
+    return _Lectura(
+        incident_id=incident_id,
+        tenant_id=tenant_id,
+        medidas=medidas,
+        epicentro=_epicentro_de(fila, tabla),
+        niveles=niveles_de(umbral),
+        calibrados=await _calibrados(conn, [m.site_id for m in medidas]),
+    )
+
+
+async def _calibrados(conn: AsyncConnection, sitios: list[str]) -> dict[str, bool]:
+    """``site_id`` → calibrado, sólo de los sitios con sensores ACTIVOS."""
+    if not sitios:
+        return {}
+    filas = await conn.execute(_CALIBRADOS_SQL, {"sitios": sitios})
+    return {f.site_id: bool(f.calibrado) for f in filas}
+
+
+async def calcula_uno(conn: AsyncConnection, settings: Settings, incident_id: str) -> C.Mapa | None:
+    """[T-9.50 · D-44] El mapa de UN incidente, calculado AHORA y **sin persistir**.
+
+    Es lo que usa el PDF cuando todavía no hay snapshot: el mismo `_lectura` y el
+    mismo `_mapa` que la pasada, así que dibuja lo que la pasada habría escrito.
+    ``None`` si el incidente no existe **o la RLS de quien llama no lo deja ver**.
+
+    ⚠️ La conexión es del llamador (un request, un generador de PDF) y NO se le
+    cambia el rol: se lee con los privilegios que ya tiene. Lo único que hace falta
+    es el GUC de tenant —sin él, la vista segura de features devuelve cero filas y
+    el mapa sale `sin_datos` sin un error—, y se pone DERIVADO del incidente y
+    dentro de un SAVEPOINT que se deshace al salir: `set_config(…, true)` sobrevive
+    a un `RELEASE`, pero no a un `ROLLBACK TO`, así que el llamador recupera su
+    contexto intacto. Sólo se lee: no hay nada que perder deshaciéndolo.
+    """
+    fila = (await conn.execute(_UNO_SQL, {"inc": str(incident_id)})).mappings().first()
+    if fila is None:
+        return None
+    fila = dict(fila)
+    nested = await conn.begin_nested()
+    try:
+        await conn.execute(
+            text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(fila["tenant_id"])}
+        )
+        lectura = await _lectura(conn, settings, fila)
+    finally:
+        await nested.rollback()
+    return None if lectura is None else _mapa(lectura, settings)
 
 
 def _medidas_de(tabla: EstacionesOut) -> tuple[C.Medida, ...]:

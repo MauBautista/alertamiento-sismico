@@ -8,3 +8,6 @@ playwright-report
 src/styles/colors_and_type.css
 src/styles/soc.css
 src/styles/soc-tabs.css
+# [T-9.54 · D-45] Cartografía GENERADA por `tools/geodatos/` y verificada por su
+# sha256: formatearla cambiaría los bytes y rompería la huella del manifiesto.
+public/geodatos

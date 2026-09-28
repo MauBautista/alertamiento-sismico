@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **416** · `[~]` **22** · `[ ]` **64**
+**Conteo de tareas:** total **502** · `[x]` **419** · `[~]` **24** · `[ ]` **59**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18022,39 +18022,56 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.5 · Mapa de calor, relieve y suelos
 
-### [ ] T-9.50 · **El mapa de la sacudida siempre se calcula** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.50 · **El mapa de la sacudida siempre se calcula** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · **Depende de:** — · **Prioridad:** F5 · alta · **Decisión:** `D-44`
 - **Objetivo:** que ningún incidente se quede sin mapa.
 - **Criterios de aceptación:**
-  - [ ] Se calcula a los 120 s de abrir y no se declara completo antes de cerrar la ventana del pico.
-  - [ ] El PDF lo calcula si falta; relleno del histórico corrido en la nube.
+  - [x] Se calcula a los 120 s de abrir y no se declara completo antes de cerrar la ventana del pico
+    (`tests/shakemap/test_mapa_de_calor.py`).
+  - [~] El PDF lo calcula si falta (`servicio.calcula_uno`, sin persistir): hecho. Falta correr el
+    relleno del histórico en la nube: `python -m takab_api.shakemap.rellena --desde …` DENTRO del
+    contenedor `incident-engine` (lo corre Mauricio con `!`).
 
-### [ ] T-9.51 · **La superficie estimada** — `SOFTWARE`
+### [x] T-9.51 · **La superficie estimada** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.50 · **Prioridad:** F5 · alta · **Decisión:** `D-44`
 - **Objetivo:** rojo, amarillo y verde con la intensidad estimada, sin dependencias nuevas.
 - **Criterios de aceptación:**
-  - [ ] Ley de atenuación ajustada con los sensores activos y calibrados; zonas ajustada y modelada.
-  - [ ] MMI estimada con Wald 1999; imagen servida por la API (migración 0074).
+  - [x] Ley de atenuación ajustada con los sensores activos y calibrados; zonas ajustada y modelada.
+    Módulos puros `shakemap/{superficie,gmice,raster}.py` (numpy + Pillow, sin dependencias nuevas).
+  - [x] MMI estimada con Wald 1999; imagen servida por la API (migración **0075**: la 0074 la tomó
+    F4). El JSON publica los cortes de banda del sitio con que se pinta el PNG.
 
-### [ ] T-9.52 · **La superficie en la consola** — `SOFTWARE`
+### [~] T-9.52 · **La superficie en la consola** — `SOFTWARE`
 - **Componente:** web · **Depende de:** T-9.51 · **Prioridad:** F5 · alta
 - **Objetivo:** verla sobre el mapa con los puntos medidos encima y su leyenda de estimación.
 - **Criterios de aceptación:**
-  - [ ] Capa censada; leyenda «ESTIMADO a partir de N sensores».
+  - [x] Capa censada; leyenda «ESTIMADO a partir de N sensores», con los cortes del sitio.
+  - [ ] Vista en un navegador real contra la nube: el orden de capas y el solape del pie de
+    atribución sólo los vigila un Playwright.
 
-### [ ] T-9.53 · **La superficie en el PDF, sobre cartografía embebida** — `SOFTWARE`
+### [x] T-9.53 · **La superficie en el PDF, sobre cartografía embebida** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.51 · **Prioridad:** F5 · alta · **Decisión:** `D-44`
 - **Objetivo:** que el §8 del reporte deje de decir «no calculado todavía».
 - **Criterios de aceptación:**
-  - [ ] Estados y zonas embebidos en el paquete de la API.
-  - [ ] La leyenda de MMI según haya o no superficie; revisado con la imagen del PDF.
+  - [x] Estados y zonas embebidos en el paquete de la API (`takab_api.geodatos`, package-data).
+  - [x] La leyenda de MMI según haya o no superficie; revisado con la imagen del PDF el 2026-09-28.
+- **Pendiente cosmético:** la leyenda creció unas cuatro líneas y la figura puede saltar a la
+  página siguiente, separada de su texto.
 
-### [ ] T-9.54 · **Relieve y zonas de suelo** — `SOFTWARE`
+### [x] T-9.54 · **Relieve y zonas de suelo** — `SOFTWARE`
 - **Componente:** web · tools · infra · **Depende de:** — · **Prioridad:** F5 · media · **Decisión:** `D-45`
 - **Objetivo:** el mapa con relieve y los tipos de suelo, con su atribución.
 - **Criterios de aceptación:**
-  - [ ] Relieve de AWS Terrain Tiles; zonificación de la CDMX; edafología del INEGI.
-  - [ ] Atribuciones desde un solo fichero; sha256 de cada capa comprobado.
+  - [x] Relieve de AWS Terrain Tiles; zonificación de la CDMX; edafología del INEGI.
+  - [x] Atribuciones desde un solo fichero; sha256 de cada capa comprobado.
+- **Fuentes y licencias (2026-09-28):**
+  - Zonificación de la CDMX: Atlas de Riesgos (SPCGIR 2019) por AGEB, CC BY 4.0.
+  - Edafología: INEGI serie II 2024, términos de libre uso.
+  - Estados: Natural Earth, dominio público.
+- **La copia de CONABIO NO sirve:** es CC BY-NC y TAKAB es comercial.
+- **Cómo se reconstruye:** `tools/geodatos/construye.sh`. Lo que se comprueba:
+  `tools/geodatos/verifica.py`.
+- **Límite declarado:** el INEGI no clasifica el suelo de las localidades urbanas.
 
 ## Fase 9.6 · Sismos de México en la app
 

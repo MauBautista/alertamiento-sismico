@@ -8,16 +8,45 @@ const mocks = vi.hoisted(() => {
   const handlers = new Map<string, (event?: unknown) => void>();
   const sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
   const layers = new Set<string>();
+  // [T-9.52] El ORDEN de pintado, como lo deja MapLibre: `addLayer(capa, antes)`
+  // inserta debajo de `antes`; sin `antes`, encima de todo.
+  const orden: string[] = [];
+  // [T-9.52] Los popups que se abrieron, con su texto.
+  const popups: string[] = [];
+  class Popup {
+    setLngLat() {
+      return this;
+    }
+    setText(t: string) {
+      popups.push(t);
+      return this;
+    }
+    addTo() {
+      return this;
+    }
+  }
   const map = {
     on: vi.fn((event: string, layerOrCb: unknown, cb?: (event?: unknown) => void) => {
       if (typeof layerOrCb === "function") handlers.set(event, layerOrCb as () => void);
       else if (cb) handlers.set(`${event}:${layerOrCb as string}`, cb);
     }),
-    addSource: vi.fn((id: string) => {
+    // La firma lleva la especificación para que los tests puedan leerla de
+    // `mock.calls`; el mock sólo necesita el id.
+    addSource: vi.fn<(id: string, espec?: unknown) => void>((id) => {
       sources.set(id, { setData: vi.fn() });
     }),
-    addLayer: vi.fn((layer: { id: string }) => {
+    addLayer: vi.fn((layer: { id: string }, antes?: string) => {
       layers.add(layer.id);
+      const i = antes === undefined ? -1 : orden.indexOf(antes);
+      if (i >= 0) orden.splice(i, 0, layer.id);
+      else orden.push(layer.id);
+    }),
+    removeLayer: vi.fn((id: string) => {
+      layers.delete(id);
+      if (orden.includes(id)) orden.splice(orden.indexOf(id), 1);
+    }),
+    removeSource: vi.fn((id: string) => {
+      sources.delete(id);
     }),
     getSource: vi.fn((id: string) => sources.get(id)),
     getLayer: vi.fn((id: string) => (layers.has(id) ? { id } : undefined)),
@@ -26,6 +55,7 @@ const mocks = vi.hoisted(() => {
     setStyle: vi.fn(() => {
       sources.clear();
       layers.clear();
+      orden.length = 0;
     }),
     setPaintProperty: vi.fn(),
     setLayoutProperty: vi.fn(),
@@ -39,10 +69,10 @@ const mocks = vi.hoisted(() => {
     resize: vi.fn(),
     remove: vi.fn(),
   };
-  return { handlers, sources, layers, map, Map: vi.fn(() => map) };
+  return { handlers, sources, layers, orden, popups, map, Map: vi.fn(() => map), Popup };
 });
 
-vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
+vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map, Popup: mocks.Popup } }));
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 import MapPanel, {
@@ -56,6 +86,7 @@ import MapPanel, {
   staticRingsFeatureCollection,
   trippedFeatures,
 } from "./MapPanel";
+import atribuciones from "../../../../shared/geodatos/atribuciones.json";
 import type { ShakemapOut } from "./shakemap";
 import {
   LINK_DEGRADADO,
@@ -350,6 +381,8 @@ describe("MapPanel", () => {
     mocks.handlers.clear();
     mocks.sources.clear();
     mocks.layers.clear();
+    mocks.orden.length = 0;
+    mocks.popups.length = 0;
     vi.clearAllMocks();
   });
 
@@ -463,6 +496,9 @@ describe("MapPanel", () => {
               residuo_log10: 0.306,
               medido_en: "2026-09-14T10:00:35Z",
               voto_contado: true,
+              // [T-9.52 · D-44] Sin superficie, sin MMI estimada.
+              mmi_estimada: null,
+              mmi_romano: null,
             },
           },
         ],
@@ -491,8 +527,31 @@ describe("MapPanel", () => {
           },
         })),
       },
+      // [T-9.52 · D-44] Sin superficie estimada: este bloque es el de T-7.24, y
+      // sus guardas (ni «MMI» en la leyenda) se escribieron para este caso.
+      superficie: null,
+      superficie_motivo: null,
+      superficie_motivo_texto: null,
     };
 
+    /** [T-9.52] Una superficie estimada, tal como la publica `lectura.py`. */
+    const SUPERFICIE = {
+      bbox: [-99.4, 19.1, -98.9, 19.6],
+      ancho: 50,
+      alto: 50,
+      n_sensores: 4,
+      n_calibrados: 3,
+      escala_km: 30,
+      ley: "ATTEN-LAW v1",
+      metodo: "residuos-gaussianos-v1",
+      cita_mmi: "Wald et al. (1999), relación PGA–MMI",
+      pga_max_g: 0.083,
+      mmi_max_estimada: 6.1,
+      png: "/incidents/i-1/shakemap/superficie.png",
+      // Sin cortes del sitio: la leyenda cae a los de fábrica y lo dice.
+      verde_max_g: null,
+      rojo_min_g: null,
+    };
     /**
      * Tope de un radio CONSTANTE en píxeles para que siga leyéndose como un
      * marcador y no como un área. No es un número a ojo: los marcadores de este
@@ -587,7 +646,10 @@ describe("MapPanel", () => {
       // nombre — la tercera vez que esta ficha lo aprende. Aquí se barre EL
       // CONJUNTO, y luego se juzga cada fuente del mapa de la sacudida por lo
       // que afirma.
-      montar();
+      //
+      // [T-9.52] Con la superficie PINTADA: si no, su rama del censo no se
+      // ejercería nunca y una capa de imagen mal declarada pasaría por aquí.
+      montar({ shakemap: { ...SHAKEMAP, superficie: SUPERFICIE }, superficiePng: "blob:takab/1" });
 
       // BARRIDO 1 · TODAS las capas, sin lista blanca que mantener. El
       // invariante no necesita saber qué afirma cada capa: un radio en PÍXELES
@@ -640,6 +702,12 @@ describe("MapPanel", () => {
               `${id}: ${String(radio)} px ya no se lee como marcador, se lee como área`,
             ).toBeLessThanOrEqual(MARCADOR_MAX_PX);
           }
+        } else if (fuente === "shakemap-superficie") {
+          // [T-9.52 · D-44] La superficie ESTIMADA es una IMAGEN georreferenciada
+          // por las cuatro esquinas de su bbox en grados: una capa `raster`, que
+          // por construcción no puede tener un radio en píxeles.
+          expect(especificacion["type"], `${id}: la superficie es un raster`).toBe("raster");
+          expect(enPantalla, `${id} dibuja la superficie en unidades de pantalla`).toEqual([]);
         } else if (fuente === "shakemap-cobertura") {
           // El halo mide 25 km DE TERRENO: su radio se recalcula con el zoom y
           // viaja en el rasgo, nunca como número en el `paint`.
@@ -1004,6 +1072,247 @@ describe("MapPanel", () => {
       });
       expect(screen.queryByTestId("map-legend-pga")).toBeNull();
       expect(screen.queryByTestId("layer-shakemap")).toBeNull();
+    });
+
+    // [T-9.52 · D-44] LA SUPERFICIE ESTIMADA. Enmienda a T-7.24, no la deroga:
+    // los puntos medidos y los anillos siguen encima, y la superficie se
+    // rotula ESTIMADO en cada sitio donde aparece.
+    describe("[T-9.52] la superficie ESTIMADA", () => {
+      const CON_SUP: ShakemapOut = { ...SHAKEMAP, superficie: SUPERFICIE };
+
+      /** Las fuentes tal como se le pasaron a MapLibre. */
+      function fuente(id: string): Record<string, unknown> | undefined {
+        const llamadas = mocks.map.addSource.mock.calls.filter((c) => c[0] === id);
+        return llamadas.length === 0
+          ? undefined
+          : (llamadas[llamadas.length - 1][1] as unknown as Record<string, unknown>);
+      }
+
+      it("se pinta como IMAGEN sobre las esquinas del bbox, en el orden de MapLibre", () => {
+        montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        expect(fuente("shakemap-superficie")).toMatchObject({
+          type: "image",
+          url: "blob:takab/1",
+          // arriba-izq, arriba-der, abajo-der, abajo-izq
+          coordinates: [
+            [-99.4, 19.6],
+            [-98.9, 19.6],
+            [-98.9, 19.1],
+            [-99.4, 19.1],
+          ],
+        });
+        const espec = capa("shakemap-superficie");
+        expect(espec["type"]).toBe("raster");
+        expect(espec["source"]).toBe("shakemap-superficie");
+      });
+
+      it("va DEBAJO de los puntos medidos, de los anillos y de los edificios, y ENCIMA del relieve", () => {
+        montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        const i = (id: string) => {
+          const n = mocks.orden.indexOf(id);
+          expect(n, `${id} no está en el mapa`).toBeGreaterThanOrEqual(0);
+          return n;
+        };
+        const sup = i("shakemap-superficie");
+        for (const encima of ["shakemap-punto", "shakemap-anillo", "site-core", "epicenter-mark"]) {
+          expect(sup, `la superficie tapa ${encima}`).toBeLessThan(i(encima));
+        }
+        expect(sup, "el relieve tapa la superficie").toBeGreaterThan(i("relieve-sombra"));
+      });
+
+      it("[T-9.52] con los cortes DEL SITIO, la leyenda imprime ésos y no los de fábrica", () => {
+        montar({
+          shakemap: {
+            ...SHAKEMAP,
+            superficie: { ...SUPERFICIE, verde_max_g: 0.02, rojo_min_g: 0.08 },
+          },
+          superficiePng: "blob:takab/1",
+        });
+        const leyenda = screen.getByTestId("map-legend-pga");
+        expect(leyenda).toHaveTextContent("≥ 0.08 g");
+        expect(leyenda).toHaveTextContent("0.02–0.08 g");
+        expect(leyenda).toHaveTextContent("< 0.02 g");
+        expect(leyenda).not.toHaveTextContent("0.04–0.10 g");
+        expect(screen.getByTestId("superficie-cortes")).toHaveTextContent(
+          "CORTES DEL DICTAMEN DE ESTE INMUEBLE",
+        );
+      });
+
+      it("la leyenda dice ESTIMADO, con sus sensores, las tres bandas, la zona y un interruptor", () => {
+        montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        const leyenda = screen.getByTestId("map-legend-pga");
+        expect(leyenda).toHaveTextContent(
+          "ESTIMADO a partir de 4 sensores (3 calibrados) · MMI estimada (Wald 1999), no observada",
+        );
+        expect(leyenda).toHaveTextContent("≥ 0.10 g");
+        expect(leyenda).toHaveTextContent("0.04–0.10 g");
+        expect(leyenda).toHaveTextContent("< 0.04 g");
+        expect(leyenda).toHaveTextContent(/zona ajustada \(opaca\) \/ modelada \(tenue\)/i);
+        // Los cortes son los DEFAULTS y la imagen usa los del sitio: se dice.
+        expect(screen.getByTestId("superficie-cortes")).toHaveTextContent(/POR DEFECTO/);
+
+        const boton = screen.getByTestId("superficie-toggle");
+        expect(boton).toHaveAttribute("aria-pressed", "true");
+        mocks.map.setLayoutProperty.mockClear();
+        fireEvent.click(boton);
+        expect(mocks.map.setLayoutProperty).toHaveBeenCalledWith(
+          "shakemap-superficie",
+          "visibility",
+          "none",
+        );
+        expect(screen.getByTestId("superficie-toggle")).toHaveAttribute("aria-pressed", "false");
+      });
+
+      it("apagar SACUDIDA también apaga la superficie", () => {
+        montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        mocks.map.setLayoutProperty.mockClear();
+        fireEvent.click(screen.getByTestId("layer-shakemap"));
+        expect(mocks.map.setLayoutProperty).toHaveBeenCalledWith(
+          "shakemap-superficie",
+          "visibility",
+          "none",
+        );
+      });
+
+      it("sin superficie, la leyenda dice su MOTIVO y no se cuelga ninguna imagen", () => {
+        montar({
+          shakemap: {
+            ...SHAKEMAP,
+            superficie: null,
+            superficie_motivo: "sin_epicentro",
+            superficie_motivo_texto: "no hay epicentro con magnitud",
+          },
+        });
+        expect(screen.getByTestId("superficie-motivo")).toHaveTextContent(
+          "SIN SUPERFICIE ESTIMADA · no hay epicentro con magnitud",
+        );
+        expect(fuente("shakemap-superficie")).toBeUndefined();
+        expect(screen.queryByTestId("superficie-toggle")).toBeNull();
+      });
+
+      it("mientras el PNG carga no se pinta nada, y con el PNG en error se AVISA", () => {
+        const { rerender } = montar({ shakemap: CON_SUP, superficiePngCargando: true });
+        expect(screen.getByTestId("superficie-cargando")).toBeInTheDocument();
+        expect(fuente("shakemap-superficie")).toBeUndefined();
+        rerender(
+          <MapPanel
+            sites={[CRITICAL]}
+            epicenters={[]}
+            onSelectSite={vi.fn()}
+            shakemap={CON_SUP}
+            superficiePngError={true}
+          />,
+        );
+        expect(screen.getByTestId("superficie-error")).toHaveTextContent(/NO DISPONIBLE/);
+        expect(fuente("shakemap-superficie")).toBeUndefined();
+      });
+
+      it("al cambiar de PNG quita el viejo antes de colgar el nuevo; sin PNG no queda nada", () => {
+        const props = { sites: [CRITICAL], epicenters: [], onSelectSite: vi.fn() };
+        const { rerender } = montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        rerender(<MapPanel {...props} shakemap={CON_SUP} superficiePng="blob:takab/2" />);
+        expect(mocks.map.removeSource).toHaveBeenCalledWith("shakemap-superficie");
+        expect(fuente("shakemap-superficie")?.["url"]).toBe("blob:takab/2");
+        mocks.map.removeLayer.mockClear();
+        rerender(<MapPanel {...props} shakemap={CON_SUP} superficiePng={null} />);
+        expect(mocks.map.removeLayer).toHaveBeenCalledWith("shakemap-superficie");
+        expect(mocks.sources.has("shakemap-superficie")).toBe(false);
+      });
+
+      it("la MMI va SIEMPRE como «estimada»: nunca «INTENSIDAD MMI» ni una MMI a secas", () => {
+        montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        const texto = screen.getByTestId("map-panel").textContent ?? "";
+        expect(texto).toMatch(/MMI estimada/i);
+        expect(texto).not.toMatch(/INTENSIDAD MMI/i);
+        expect(texto, "una MMI sin «estimada» detrás").not.toMatch(/MMI(?!\s+estimada)/i);
+        expect(capas().some((l) => String(l["id"]).startsWith("mmi"))).toBe(false);
+      });
+
+      it("el popup de un punto medido dice su MMI ESTIMADA", () => {
+        montar({ shakemap: CON_SUP, superficiePng: "blob:takab/1" });
+        const props = {
+          ...SHAKEMAP.observado.features[0].properties,
+          mmi_estimada: 6.1,
+          mmi_romano: "VI",
+        };
+        mocks.handlers.get("click:shakemap-punto")?.({
+          lngLat: { lng: -98.24, lat: 19.31 },
+          features: [{ properties: props }],
+        });
+        expect(mocks.popups).toHaveLength(1);
+        expect(mocks.popups[0]).toMatch(/MMI ESTIMADA VI \(6\.1\)/);
+        expect(mocks.popups[0]).toMatch(/NO OBSERVADA/);
+      });
+    });
+
+    // [T-9.54 · D-45] RELIEVE Y SUELOS, con su atribución.
+    describe("[T-9.54] relieve y suelos", () => {
+      function fuente(id: string): Record<string, unknown> | undefined {
+        const llamadas = mocks.map.addSource.mock.calls.filter((c) => c[0] === id);
+        return llamadas.length === 0
+          ? undefined
+          : (llamadas[llamadas.length - 1][1] as unknown as Record<string, unknown>);
+      }
+
+      it("el relieve se cuelga de AWS Terrain Tiles, como hillshade tenue y encendido", () => {
+        montar();
+        expect(fuente("relieve")).toMatchObject({
+          type: "raster-dem",
+          encoding: "terrarium",
+          tileSize: 256,
+          maxzoom: 15,
+          attribution: atribuciones.relieve.corta,
+        });
+        const sombra = capa("relieve-sombra");
+        expect(sombra["type"]).toBe("hillshade");
+        expect(screen.getByTestId("layer-relieve")).toHaveAttribute("aria-pressed", "true");
+        // DEBAJO de todo lo del incidente.
+        expect(mocks.orden.indexOf("relieve-sombra")).toBeLessThan(
+          mocks.orden.indexOf("wave-link"),
+        );
+      });
+
+      it("la edafología (5,9 MB) NO se pide hasta activar su interruptor", () => {
+        montar();
+        expect(fuente("suelo-inegi"), "la edafología se pidió sin que nadie la activara").toBe(
+          undefined,
+        );
+        const boton = screen.getByTestId("layer-sueloInegi");
+        expect(boton).toHaveTextContent("TIPO DE SUELO (INEGI) · no es zonificación sísmica");
+        fireEvent.click(boton);
+        expect(String(fuente("suelo-inegi")?.["data"])).toMatch(/\/geodatos\/edafologia\.geojson$/);
+        expect(fuente("suelo-inegi")?.["attribution"]).toBe(atribuciones.edafologia.corta);
+        // Y su relleno va debajo de lo del incidente.
+        expect(mocks.orden.indexOf("suelo-inegi-relleno")).toBeLessThan(
+          mocks.orden.indexOf("wave-link"),
+        );
+        // Su popup dice el nombre del suelo, y que no es zonificación sísmica.
+        mocks.handlers.get("click:suelo-inegi-relleno")?.({
+          lngLat: { lng: -99, lat: 19 },
+          features: [{ properties: { GRUPO1: "VR", N_G1: "VERTISOL" } }],
+        });
+        expect(mocks.popups.at(-1)).toMatch(/VERTISOL.*NO ES ZONIFICACIÓN SÍSMICA/);
+      });
+
+      it("la zonificación de la CDMX se cuelga al activar SUELO CDMX, con relleno y rótulo", () => {
+        montar();
+        expect(fuente("suelo-cdmx")).toBeUndefined();
+        fireEvent.click(screen.getByTestId("layer-sueloCdmx"));
+        expect(String(fuente("suelo-cdmx")?.["data"])).toMatch(/\/geodatos\/ntc_cdmx\.geojson$/);
+        expect(capa("suelo-cdmx-relleno")["type"]).toBe("fill");
+        expect(capa("suelo-cdmx-rotulo")["type"]).toBe("symbol");
+      });
+
+      it("la atribución de cada capa ENCENDIDA sale de atribuciones.json", () => {
+        montar();
+        const pie = () => screen.getByTestId("map-attribution");
+        expect(pie()).toHaveTextContent(atribuciones.relieve.corta);
+        expect(pie()).not.toHaveTextContent(atribuciones.ntc_cdmx.corta);
+        fireEvent.click(screen.getByTestId("layer-sueloCdmx"));
+        expect(pie()).toHaveTextContent(atribuciones.ntc_cdmx.corta);
+        fireEvent.click(screen.getByTestId("layer-relieve"));
+        expect(pie()).not.toHaveTextContent(atribuciones.relieve.corta);
+      });
     });
   });
 
@@ -1382,7 +1691,7 @@ describe("MapPanel · la ráfaga de arribo", () => {
     act(() => {
       mocks.handlers.get("style.load")?.();
     });
-    const ids: string[] = mocks.map.addLayer.mock.calls.map((c: [{ id: string }]) => c[0].id);
+    const ids: string[] = mocks.map.addLayer.mock.calls.map((c) => c[0].id);
     expect(ids).toContain("arrival-ring");
     // Se añade antes que el halo ⇒ MapLibre lo dibuja debajo: el anillo anuncia
     // que la onda llegó, no tapa lo que el edificio midió.

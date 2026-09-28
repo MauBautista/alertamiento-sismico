@@ -552,6 +552,14 @@ class Settings(BaseSettings):
     # afirmación con caducidad—, y el que impide que la pasada se convierta en un
     # bucle que recalcula los mismos incidentes cada cinco segundos.
     shakemap_refresco_s: float = 60.0
+    # [T-9.50 · D-44] Cuánto tiene que MADURAR un incidente antes de que se le
+    # calcule el mapa. Sustituye a la huella de `in_review`, que dejaba sin mapa
+    # para siempre al sismo que nadie revisaba. No es cero a propósito: un mapa
+    # pintado a mitad de la sacudida se lee como verdad y no lo es, y a los
+    # 120 s ya llegó la onda S a cualquier inmueble a menos de ~400 km. Lo que
+    # llegue después lo recoge el refresco: un `completo` calculado antes de
+    # cerrar la ventana del pico (`dictamen_pga_window_post_s`) se rehace una vez.
+    shakemap_espera_s: float = 120.0
     # Presupuesto de RELOJ DE PARED de la pasada, por la misma razón que
     # `catalog_usgs_presupuesto_s`: el bucle del worker es serial y lo que esta
     # pasada tarda es lo que se retrasa la vuelta siguiente —correlación,

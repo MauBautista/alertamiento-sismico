@@ -31,6 +31,13 @@
 // firmada (la familia de defectos de `T-7.34`/`T-7.38`/`T-7.39`). Lo que se
 // codifica es PGA en g, que es lo que se mide — y por eso los tokens se llaman
 // `--tk-pga-*` y no `--tk-mmi-*`.
+//
+// [T-9.52 · D-44] ENMIENDA, no derogación. Desde `D-44` la nube calcula además
+// una SUPERFICIE ESTIMADA con la MMI ESTIMADA de Wald et al. (1999), y cada
+// punto trae su `mmi_estimada`. Nada de eso vive aquí: la superficie se rotula
+// y se decide en `superficie.ts`, y la MMI sólo se escribe con «estimada»
+// detrás. Los documentos firmados con `NO_MMI` siguen siendo ciertos para su
+// fecha; lo que este módulo codifica sigue siendo PGA en g.
 
 import { cssVariables } from "@takab/design-tokens";
 

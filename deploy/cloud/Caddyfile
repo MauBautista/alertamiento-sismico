@@ -42,13 +42,18 @@
 		#   - connect: la API y el WS del propio host, el discovery de Cognito
 		#     (cognito-idp) y su endpoint de token/revocación (Hosted UI), y el
 		#     estilo, teselas y sprites de openfreemap;
+		#   - [T-9.54 · D-45] img/connect: las teselas de RELIEVE de AWS Terrain
+		#     Tiles, con su RUTA (`/elevation-tiles-prod/`) y no todo
+		#     s3.amazonaws.com, que abriría cualquier bucket público;
+		#   - [T-9.52 · D-44] connect: `blob:`, porque MapLibre descarga la imagen
+		#     de la superficie estimada (un objectURL) con `fetch`, no con <img>;
 		#   - worker/child: blob: (los workers de MapLibre);
 		#   - form-action: el Hosted UI (el login es un formulario suyo).
 		# Va en Report-Only hasta que el recorrido por rol contra la nube dé CERO
 		# violaciones (el navegador las escribe en la consola y el recorrido las
 		# recoge como console_error). Entonces se cambia el nombre de la cabecera a
 		# `Content-Security-Policy` y nada más (T-8.16).
-		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org; font-src 'self' data:; connect-src 'self' wss://{$TAKAB_PUBLIC_HOST} https://tiles.openfreemap.org https://cognito-idp.us-east-2.amazonaws.com https://*.amazoncognito.com; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; form-action 'self' https://*.amazoncognito.com; base-uri 'self'; object-src 'none'"
+		Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://tiles.openfreemap.org https://s3.amazonaws.com/elevation-tiles-prod/; font-src 'self' data:; connect-src 'self' blob: wss://{$TAKAB_PUBLIC_HOST} https://tiles.openfreemap.org https://s3.amazonaws.com/elevation-tiles-prod/ https://cognito-idp.us-east-2.amazonaws.com https://*.amazoncognito.com; worker-src 'self' blob:; child-src 'self' blob:; frame-ancestors 'none'; form-action 'self' https://*.amazoncognito.com; base-uri 'self'; object-src 'none'"
 		-Server
 	}
 
