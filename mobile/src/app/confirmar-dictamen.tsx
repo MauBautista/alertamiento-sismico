@@ -6,7 +6,10 @@
 //   esos roles, pero la app no se fía: el ocupante vuelve a INICIO sin pintar nada.
 // · **No decide nada.** La banda y su porqué los fijó la regla determinista en la
 //   nube; la pantalla los explica y manda la confirmación de ESA cabeza. La nube
-//   responde 409 (cambió o ya firmada) o 403 (ROJO o sin permiso).
+//   responde 409 (cambió, ya firmada, VERDE, sin banda, requiere inspector o
+//   el edificio sigue en movimiento), 403 (ROJO o sin permiso) o 404.
+// · **Sólo en calma** (D-49 · R1): con la alerta viva o el tier fuera de
+//   `normal` se explica «espere a que el edificio vuelva a calma», sin botón.
 // · **Cuatro estados** (regla de oro 7): la cabeza puede cambiar bajo la brigada,
 //   así que un dato viejo se marca como tal.
 //
@@ -17,7 +20,11 @@ import { Redirect, useLocalSearchParams } from "expo-router";
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
 import { ConfirmarDictamenView } from "@/features/dictamen/ConfirmarDictamenView";
-import { confirmacionView } from "@/features/dictamen/confirmacion";
+import {
+  confirmacionView,
+  edificioEnCalma,
+  incidenteDeConfirmacion,
+} from "@/features/dictamen/confirmacion";
 import {
   CADENA_POLL_MS,
   ErrorDeCadena,
@@ -49,8 +56,9 @@ export default function ConfirmarDictamen() {
   const { data: estado } = useAlertState(siteId);
 
   const delParametro = typeof params.incident === "string" && params.incident !== "" ? params.incident : null;
-  const incidentId =
-    delParametro ?? estado?.incident?.incident_id ?? estado?.reentry?.incident_id ?? null;
+  // [D-49 · R2] Sin parámetro, el que CITA el reingreso cuando espera confirmación
+  // (puede ser un incidente ANTERIOR al abierto); si no, el abierto.
+  const incidentId = delParametro ?? incidenteDeConfirmacion(estado);
 
   const { cadena, cabeza, confirmacion, escalado, confirmar, escalar } =
     useConfirmarDictamen(incidentId);
@@ -64,7 +72,9 @@ export default function ConfirmarDictamen() {
     return <Redirect href="/" />;
   }
 
-  const vista = cadena.data ? confirmacionView(cabeza) : null;
+  // [D-49 · R1] Con el edificio en movimiento (o sin saberlo) no se ofrece: la
+  // nube respondería 409 «vuelva a calma». Se explica en su lugar.
+  const vista = cadena.data ? confirmacionView(cabeza, edificioEnCalma(estado)) : null;
 
   return (
     <StateFrame

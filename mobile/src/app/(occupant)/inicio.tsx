@@ -11,11 +11,14 @@ import { useRouter } from "expo-router";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
-import type { Firma } from "@/features/dictamen/confirmacion";
+import { firmaDelCartel, huellaDelReingreso } from "@/features/dictamen/confirmacion";
 import { HomeView } from "@/features/home/HomeView";
 import { useCachedQuery } from "@/offline/useCachedQuery";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
+
+/** Cada cuánto se re-pide el certificado del cartel (el poll del reposo). */
+const CERTIFICADO_POLL_MS = 30_000;
 
 export default function Inicio() {
   const router = useRouter();
@@ -41,15 +44,21 @@ export default function Inicio() {
   // sistema, una confirmación con su rol o el inspector). `mobile-state` no lo
   // trae: sale del certificado, y SOLO si el perfil lo puede leer
   // (`dictamen_read`). Sin él (el ocupante) no se pide y el cartel no se lo
-  // atribuye a nadie. Misma clave que la pantalla del certificado: una caché.
+  // atribuye a nadie.
+  // [F3·r4 · D-49] Se INVALIDA cuando mobile-state cambia: la clave lleva la
+  // huella del dictamen vigente (incidente, status, firmado), así que un cambio
+  // no reusa el certificado viejo; se re-pide con el poll del reposo por si otra
+  // firma deja la misma huella; y uno que no coincide con mobile-state (el del
+  // firmante ANTERIOR) no se le atribuye a nadie (`firmaDelCartel`).
   const puedeLeerDictamen = useSessionStore((s) => s.me?.allowed_actions?.dictamen_read === true);
   const incidenteAprobado =
     data?.phase === "reentry_approved"
       ? (data.reentry?.incident_id ?? data.incident?.incident_id ?? null)
       : null;
   const certificado = useQuery({
-    queryKey: ["dictamen", incidenteAprobado],
+    queryKey: ["dictamen", incidenteAprobado, huellaDelReingreso(data)],
     enabled: puedeLeerDictamen && incidenteAprobado !== null,
+    refetchInterval: CERTIFICADO_POLL_MS,
     queryFn: async () => {
       const res = await readDictamenIncidentsIncidentIdDictamenGet({
         path: { incident_id: incidenteAprobado as string },
@@ -60,8 +69,9 @@ export default function Inicio() {
       return res.data;
     },
   });
-  const firmaReingreso: Firma | null =
-    puedeLeerDictamen && certificado.data?.signed === true ? certificado.data : null;
+  const firmaReingreso = puedeLeerDictamen
+    ? firmaDelCartel(certificado.data, incidenteAprobado, data?.reentry)
+    : null;
 
   const zoneId = data?.my_zone?.zone_id ?? null;
   const all = directory.data ?? [];

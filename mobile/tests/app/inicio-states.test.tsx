@@ -55,9 +55,9 @@ jest.mock("@/offline/useCachedQuery", () => ({
 // la consulta para medir CUÁNDO se pide y qué devuelve.
 type Consulta = { data?: unknown };
 let mockCertificado: Consulta = {};
-const mockConsultas: { enabled?: boolean; queryKey?: unknown[] }[] = [];
+const mockConsultas: { enabled?: boolean; queryKey?: unknown[]; refetchInterval?: unknown }[] = [];
 jest.mock("@tanstack/react-query", () => ({
-  useQuery: (opts: { enabled?: boolean; queryKey?: unknown[] }) => {
+  useQuery: (opts: { enabled?: boolean; queryKey?: unknown[]; refetchInterval?: unknown }) => {
     mockConsultas.push(opts);
     return opts.enabled === false ? {} : mockCertificado;
   },
@@ -238,6 +238,67 @@ describe("1.1 · inicio · [F3·r3 · D-43] el cartel de reingreso dice QUIÉN l
     await asentar();
 
     expect(v.getByTestId("reentry-banner")).toHaveTextContent(/confirmado por BRIGADISTA/i);
+  });
+
+  // [F3·r4 · D-49] El certificado del cartel se INVALIDA cuando mobile-state
+  // cambia: la clave lleva la huella del dictamen vigente, y un certificado que
+  // no coincide con lo que dice mobile-state (el del firmante ANTERIOR, aún en
+  // caché) no se atribuye a nadie.
+  it("la clave cambia con el dictamen de mobile-state y se vuelve a pedir", async () => {
+    conPermiso(true);
+    mockSnapshot = instantanea({ data: aprobado() });
+    await render(<Inicio />);
+    await asentar();
+    const antes = mockConsultas.filter((c) => c.enabled === true).at(-1);
+    mockConsultas.length = 0;
+    const otro = aprobado();
+    otro.reentry = { ...otro.reentry, dictamen_status: "inhabit_monitor" };
+    mockSnapshot = instantanea({ data: otro });
+    await render(<Inicio />);
+    await asentar();
+    const despues = mockConsultas.filter((c) => c.enabled === true).at(-1);
+    expect(JSON.stringify(despues?.queryKey)).not.toBe(JSON.stringify(antes?.queryKey));
+    expect(JSON.stringify(despues?.queryKey)).toContain("inhabit_monitor");
+    expect(despues?.refetchInterval).toEqual(expect.any(Number));
+  });
+
+  it("un certificado que ya no es el vigente (otro status) NO pone al firmante anterior", async () => {
+    conPermiso(true);
+    const e = aprobado();
+    e.reentry = { ...e.reentry, dictamen_status: "inhabit_monitor" };
+    mockSnapshot = instantanea({ data: e });
+    mockCertificado = {
+      data: {
+        signed: true,
+        folio: "d-1",
+        incident_id: INC,
+        status: "normal_operation",
+        signature_kind: "system",
+        band: "verde",
+      },
+    };
+    const v = await render(<Inicio />);
+    await asentar();
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/el dictamen vigente autorizó el reingreso/);
+    expect(b).not.toHaveTextContent(/sistema/);
+  });
+
+  it("un certificado de OTRO incidente tampoco", async () => {
+    conPermiso(true);
+    mockSnapshot = instantanea({ data: aprobado() });
+    mockCertificado = {
+      data: {
+        signed: true,
+        folio: "d-1",
+        incident_id: "otro-incidente",
+        status: "normal_operation",
+        signature_kind: "inspector",
+      },
+    };
+    const v = await render(<Inicio />);
+    await asentar();
+    expect(v.getByTestId("reentry-banner")).not.toHaveTextContent(/inspector/);
   });
 
   it("sin `dictamen_read` (ocupante) NO se pide el certificado ni se le atribuye a nadie", async () => {

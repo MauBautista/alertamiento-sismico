@@ -12,10 +12,10 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-27 · **48 decisiones** · 42 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-09-27 · **49 decisiones** · 43 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
 > 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
-> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 2 el 2026-09-27), 6 delegadas (3 el 2026-08-12,
+> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 3 el 2026-09-27), 6 delegadas (3 el 2026-08-12,
 > 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
@@ -105,6 +105,7 @@
 | [D-46](#d-46) | Los sismos de México en la app del ocupante **desde USGS y M 4.0**, con intensidad estimada en su inmueble; el SSN cuando cierre su atribución | 2026-09-26 | Mauricio |
 | [D-47](#d-47) | Animaciones más vistosas con sismo confirmado **sin que el texto se mueva** *(enmienda `D-30`)* | 2026-09-26 | Mauricio |
 | [D-48](#d-48) | De SeismicAI se toma el **reporte automático**, los **contactos de emergencia** y el **historial por inmueble**; no la cuenta regresiva ni la MMI observada | 2026-09-26 | Mauricio |
+| [D-49](#d-49) | Reglas finas del dictamen automático: **sin calma no hay reingreso** ni confirmación, un **AMARILLO sin confirmar bloquea sin caducidad**, la escalada no frena a la brigada y **la firma humana vale para los daños que vio** | 2026-09-27 | Mauricio |
 
 ---
 
@@ -2199,5 +2200,75 @@ versionado y se borran con el ejercicio de derechos del ocupante.
 
 **Cómo se revocaría.** Cada pieza es un worker o una tabla propia que se puede apagar sin tocar el
 resto.
+
+---
+
+<a id="d-49"></a>
+## D-49 · Reglas finas del dictamen automático
+
+**Fecha:** 2026-09-27 · **Ficha:** `T-9.30`…`T-9.33` (F3, ronda 4) · **Toca:** `reingreso.py`
+(`decide_reingreso`, `en_calma`, reglas 1c y 1d), `queries/mobile.py`, `routers/dictamens.py` (confirmar y firmar),
+`dictamen/service.py`, `dictamen/sistema.py` (`danos_no_vistos`) · **Afina:** `D-43`
+
+**Lo que se decidió.** Cuatro reglas que `D-43` dejaba abiertas y que la verificación de la ronda 3
+demostró contra la API, más una quinta (R5) que se deriva de R2 y R3 y que la ronda 4 demostró:
+
+1. **R1 · Sin calma no hay reingreso.** Ninguna firma —del sistema, una confirmación ni la del
+   inspector— produce `reentry_approved` mientras el último tier del sitio no sea `normal`. Y la
+   brigada **no puede confirmar** un AMARILLO hasta entonces: 409 «espere a que el edificio vuelva a
+   calma». Sin ninguna evaluación el tier cuenta como `normal` (el criterio de siempre del ciclo de
+   vida y de la gracia del VERDE).
+2. **R2 · Un AMARILLO sin confirmar es un bloqueo persistente.** La cabeza sin firmar con banda
+   `amarillo` de **cualquier** incidente que cuente deja el reingreso en `reentry_blocked` /
+   `pendiente_confirmacion`, **sin caducidad**, aunque una réplica posterior salga VERDE. Sólo lo
+   levanta una confirmación o una firma. Precedencia: NO HABITAR firmado (1) > ROJO sin firmar (1b)
+   > AMARILLO sin confirmar (1c) > escalada sin atender (1d, R5) > el más reciente decide (2). Las
+   filas v1 (sin banda) no bloquean.
+3. **R3 · La escalada no frena a la brigada.** Una solicitud al inspector pendiente **no** impide
+   confirmar (se conserva lo que había); sí sigue frenando el VERDE que firma el sistema.
+4. **R4 · La firma humana vale para la evidencia que vio.** Al firmar (inspector) o confirmar se
+   guarda, **dentro del lock** del incidente, la lista de reportes de daño existentes
+   (`basis.danos_vistos`). Después de la última firma humana la banda sólo la sube un reporte que no
+   esté en esa lista —la PGA ya la vio y no vuelve a subir nada—, también con una fila sin firmar
+   encima. El 409 «requiere inspector» de la confirmación sólo cuenta los daños ROJOS que esa firma no
+   vio. Las firmas anteriores sin la lista se comparan por la hora, como antes.
+5. **R5 · Una petición de inspector sin atender no la tapa una réplica** (derivada de R2 y R3). Un
+   incidente que cuenta con una escalada al inspector (`dictamen_request`) **posterior a su última
+   firma humana** deja el reingreso en `reentry_blocked` / `pendiente_dictamen` citando ese
+   incidente, **sin caducidad**, aunque otra réplica tenga un VERDE firmado —y también sobre el
+   propio incidente abierto con su firma habitable—. Firma humana = la del inspector o una
+   confirmación (las firmas anteriores a la 0073, sin tipo, cuentan como del inspector). La levanta
+   **cualquier** firma humana posterior: por R3 la confirmación de la brigada también; el VERDE del
+   sistema no. Es la regla 1d, por debajo de la 1, la 1b y la 1c.
+
+**Por qué.** Medido en la ronda 3: un brigadista confirmaba un AMARILLO en `evacuate_or_hold` y el
+ocupante leía REINGRESO AUTORIZADO en plena sacudida (R1); el VERDE que el sistema firma solo en una
+réplica pequeña liberaba el reingreso con el AMARILLO del sismo principal sin que nadie lo
+confirmara, que es justo lo que `D-43` exige (R2); y tras la firma del inspector una fuga de agua
+subía la banda a AMARILLO y la pasada siguiente, por la PGA que él ya había juzgado, a ROJO —o la
+brigada quedaba en un 409 para siempre por un daño estructural que el inspector ya había visto—
+(R4). En la ronda 4, con la brigada esperando al inspector que pidió sobre el sismo principal, el
+VERDE que el sistema firmó en una réplica devolvía REINGRESO AUTORIZADO, con los dos incidentes
+abiertos y con los dos cerrados: la escalada sólo frenaba el VERDE de su propio incidente (R5). Todo
+es determinista y sin IA (regla de oro 1).
+
+**El precio, declarado.**
+- **R2 no caduca a propósito.** Un AMARILLO que nadie confirma deja fuera a la gente de ese inmueble
+  indefinidamente. Es la dirección barata del error —deja a alguien fuera un rato de más, nunca lo
+  mete— y se corrige con un toque de la brigada. **R5 tampoco caduca**, por la misma razón: una
+  escalada olvidada deja el inmueble fuera hasta que alguien firme; la confirmación de la brigada
+  basta para levantarla.
+- **R1 depende de que el gabinete informe la calma.** Un gabinete que se quedó sin enlace con el
+  último tier en `evacuate_or_hold` impide autorizar el reingreso hasta que vuelva a informar.
+- **R4 existe para que el edificio no quede cerrado 72 h tras la firma del inspector**: sin ella, la
+  re-evaluación volvía a subir la PGA que él ya juzgó en cada pasada de la ventana de 72 h.
+- La lista es de lo que existía en la base al firmar, no de lo que la pantalla le mostró: un reporte
+  que llegó entre que abrió la cadena y firmó cuenta como visto si ya estaba al tomar el lock.
+
+**Cómo se revocaría.** R1: `reingreso.en_calma` y el 409 de `confirm_dictamen`. R2: la regla 1c de
+`reingreso.bloqueo_persistente` y `AMARILLO_SIN_CONFIRMAR_VIGENTES`. R5: la regla 1d de
+`reingreso.bloqueo_persistente`, `ESCALADA_PENDIENTE_VIGENTES` y `sistema.ESCALADA_PENDIENTE_SQL`. R4: `sistema.danos_no_vistos`
+(una copia, la usan el worker, el 409 y el papel). Sus pruebas: `test_reglas_finas_d49.py`,
+`test_reingreso_d49.py`, `test_worker_danos_vistos_d49.py`, `test_papel_danos_vistos_d49.py`.
 
 ---

@@ -48,6 +48,7 @@ def _inc(
     firmado_hace: timedelta = timedelta(hours=1),
     incident_id: UUID | None = None,
     banda: str | None = None,
+    escalada: bool = False,
 ) -> IncidenteCerrado:
     return IncidenteCerrado(
         incident_id=incident_id or uuid4(),
@@ -60,6 +61,7 @@ def _inc(
         dictamen_firmado=firmado,
         dictamen_at=(AHORA - firmado_hace) if dictamen is not None else None,
         dictamen_band=banda,
+        escalada_pendiente=escalada,
     )
 
 

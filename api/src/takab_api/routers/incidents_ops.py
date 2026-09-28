@@ -32,7 +32,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
-from takab_api.dictamen.sistema import FIRMA_DE_INSPECTOR_SQL
+from takab_api.dictamen.sistema import ATIENDE_ESCALADA_SQL
 from takab_api.schemas.incidents import (
     DictamenRequestIn,
     EpicenterRelocateIn,
@@ -62,17 +62,18 @@ _INCIDENT_TENANT_SQL = text(
     "SELECT tenant_id, state, site_id FROM incidents WHERE incident_id = :id"
 )
 
-# Solicitud "pendiente" = existe un dictamen_request SIN firma de INSPECTOR
-# posterior a su ts. El timeline append-only es la única verdad.
-# [F3·r3 · D-43] Sólo la firma del INSPECTOR la atiende (`FIRMA_DE_INSPECTOR_SQL`):
-# el VERDE del sistema o una confirmación de la brigada no son la inspección que se
-# pidió, y darla por atendida con ellos dejaba a la brigada sin su inspector.
+# Solicitud "pendiente" = existe un dictamen_request que ninguna firma HUMANA
+# posterior atendió. El timeline append-only es la única verdad.
+# [D-49 · R3 · R5] El MISMO criterio que la regla 1d del reingreso
+# (`ATIENDE_ESCALADA_SQL`): la atiende el inspector o una confirmación de la brigada,
+# nunca el VERDE del sistema. Con dos criterios distintos, tras una confirmación el
+# reingreso quedaba autorizado y nadie podía volver a escalar (409).
 _PENDING_REQUEST_SQL = text(
     "SELECT 1 FROM incident_actions a "
     "WHERE a.incident_id = :id AND a.kind = 'dictamen_request' "
     "AND NOT EXISTS ("
     "  SELECT 1 FROM dictamens d "
-    f"  WHERE d.incident_id = :id AND {FIRMA_DE_INSPECTOR_SQL} AND d.created_at > a.ts"
+    f"  WHERE d.incident_id = :id AND {ATIENDE_ESCALADA_SQL} AND d.created_at > a.ts"
     ") LIMIT 1"
 )
 

@@ -93,6 +93,7 @@ from takab_api.dictamen.model import (
     umbral_line,
 )
 from takab_api.dictamen.rules import DANOS_ROJO
+from takab_api.dictamen.sistema import CLAVE_DANOS_VISTOS, FIRMAS_HUMANAS, danos_no_vistos
 from takab_api.felt import ORIGEN_INMUEBLE, ORIGEN_REFERENCIA, umbral_desde_dict
 from takab_api.geo import EARTH_RADIUS_KM
 from takab_api.shakemap import calculo as shk
@@ -178,10 +179,39 @@ def _deslinde(m: ReportModel) -> str:
 
 
 def _dano_rojo_reportado(m: ReportModel) -> bool:
-    """¿Algún reporte de daño con una categoría que exige inspector (``DANOS_ROJO``)?"""
-    return any(
-        isinstance(c, dict) and c.get("key") in DANOS_ROJO for d in m.danos for c in d.categorias
+    """¿Algún reporte de daño con una categoría que exige inspector (``DANOS_ROJO``)
+    que la ÚLTIMA firma humana NO vio?
+
+    [D-49 · R4] Espejo del 409 «requiere inspector» de la confirmación, con la MISMA
+    regla (``sistema.danos_no_vistos``): un ROJO que el inspector ya juzgó al firmar
+    no deja al AMARILLO posterior «pendiente de firma del inspector». En una firma
+    sin ``danos_vistos`` (anterior a D-49) la hora del reporte es la del aparato si
+    la hay (``DanoFila.ts``), no la de llegada: aproximación declarada."""
+    firma = next(
+        (d for d in m.dictamens if d.signed_by and d.signature_kind in FIRMAS_HUMANAS), None
     )
+    reportes = [
+        {
+            "report_id": d.report_id,
+            "created_at": d.ts,
+            "claves": [c.get("key") for c in d.categorias if isinstance(c, dict)],
+        }
+        for d in m.danos
+    ]
+    fila_firma = (
+        {
+            "basis": (
+                {CLAVE_DANOS_VISTOS: list(firma.danos_vistos)}
+                if firma.danos_vistos is not None
+                else {}
+            ),
+            "created_at": firma.created_at,
+            "signature_kind": firma.signature_kind,
+        }
+        if firma is not None
+        else None
+    )
+    return any(k in DANOS_ROJO for r in danos_no_vistos(reportes, fila_firma) for k in r["claves"])
 
 
 def _pendiente_de(m: ReportModel) -> str:

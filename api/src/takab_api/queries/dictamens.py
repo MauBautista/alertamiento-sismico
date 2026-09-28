@@ -11,7 +11,8 @@ from typing import Any
 
 from sqlalchemy import TextClause, text
 
-from takab_api.dictamen.rules import DANOS_ROJO, banda_de
+from takab_api.dictamen.rules import banda_de
+from takab_api.dictamen.sistema import FIRMA_HUMANA_SQL
 
 _COLS = (
     "dictamen_id, tenant_id, incident_id, status, basis, signed_by, "
@@ -51,20 +52,32 @@ def lock_incident(incident_id: str) -> tuple[TextClause, dict[str, Any]]:
     )
 
 
-def select_red_damage(incident_id: str) -> tuple[TextClause, dict[str, Any]]:
-    """[F3·r2] Categorías ROJAS (``DANOS_ROJO``) reportadas en el incidente, o vacío.
+def select_damage_reports(incident_id: str) -> tuple[TextClause, dict[str, Any]]:
+    """[D-49 · R4] Los reportes de daño del incidente: id, hora y claves.
 
-    Se lee DENTRO del lock del incidente: confirmar un AMARILLO con un daño
-    estructural reportado —que la regla aún no subió a ROJO— liberaría el reingreso
-    sin inspección."""
+    Se lee DENTRO del lock del incidente: sus ids son ``basis.danos_vistos`` de la
+    firma humana que se inserta, y ``sistema.danos_no_vistos`` los filtra para el
+    409 «requiere inspector». Misma forma que ``_DAMAGE_SQL`` del worker."""
     sql = (
-        "SELECT DISTINCT c.value->>'key' AS clave FROM damage_reports d "
-        "CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(d.categories) "
-        "= 'array' THEN d.categories ELSE '[]'::jsonb END) c "
-        "WHERE d.incident_id = CAST(:id AS uuid) AND c.value->>'key' = ANY(:rojos) "
-        "ORDER BY 1"
+        "SELECT d.report_id, d.created_at, "
+        "COALESCE(array_agg(DISTINCT c.value->>'key') "
+        "FILTER (WHERE c.value->>'key' IS NOT NULL), ARRAY[]::text[]) AS claves "
+        "FROM damage_reports d LEFT JOIN LATERAL jsonb_array_elements(CASE WHEN "
+        "jsonb_typeof(d.categories) = 'array' THEN d.categories ELSE '[]'::jsonb END) c "
+        "ON true WHERE d.incident_id = CAST(:id AS uuid) "
+        "GROUP BY d.report_id, d.created_at ORDER BY d.created_at, d.report_id"
     )
-    return text(sql), {"id": incident_id, "rojos": sorted(DANOS_ROJO)}
+    return text(sql), {"id": incident_id}
+
+
+def select_last_human_signature(incident_id: str) -> tuple[TextClause, dict[str, Any]]:
+    """[D-49 · R4] La ÚLTIMA firma HUMANA de la cadena (``FIRMA_HUMANA_SQL``), o None."""
+    sql = (
+        "SELECT d.dictamen_id, d.signature_kind, d.created_at, d.basis FROM dictamens d "
+        f"WHERE d.incident_id = CAST(:id AS uuid) AND {FIRMA_HUMANA_SQL} "
+        "ORDER BY d.created_at DESC, d.dictamen_id DESC LIMIT 1"
+    )
+    return text(sql), {"id": incident_id}
 
 
 def select_chain_head_row(incident_id: str) -> tuple[TextClause, dict[str, Any]]:

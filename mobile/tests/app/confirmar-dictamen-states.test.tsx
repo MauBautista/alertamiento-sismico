@@ -106,9 +106,17 @@ async function asentar(): Promise<void> {
   await act(async () => {});
 }
 
+/** El sitio EN CALMA: sin él la pantalla no ofrece CONFIRMAR (D-49 · R1). */
+const CALMA = {
+  phase: "reentry_blocked",
+  latest_tier: "normal",
+  incident: null,
+  reentry: { incident_id: "i-9", reason: "pendiente_confirmacion" },
+} as unknown as MobileStateOut;
+
 beforeEach(async () => {
   mockParams = { incident: "i-9" };
-  mockSnapshot = { data: null };
+  mockSnapshot = { data: CALMA };
   mockConfirmar.mockClear();
   mockEscalar.mockClear();
   mockHook = hook({}, { data: [cabeza()], dataUpdatedAt: AHORA });
@@ -181,6 +189,43 @@ describe("confirmar dictamen · el flujo", () => {
     const v = await render(<ConfirmarDictamen />);
     await asentar();
     expect(v.getByTestId("state-empty")).toHaveTextContent(/Aún no hay dictamen/);
+  });
+});
+
+describe("[D-49] confirmar dictamen · calma y el incidente que cita el reingreso", () => {
+  it("R1: con el edificio en movimiento NO hay botón; se explica la calma", async () => {
+    mockSnapshot = {
+      data: { ...CALMA, phase: "alert_active", latest_tier: "evacuate_or_hold" } as MobileStateOut,
+    };
+    const v = await render(<ConfirmarDictamen />);
+    await asentar();
+    expect(v.queryByTestId("confirmar-dictamen")).toBeNull();
+    expect(v.getByTestId("confirmar-espere-calma")).toHaveTextContent(
+      /espere a que el edificio vuelva a calma/,
+    );
+    expect(v.getByTestId("escalar-inspector")).toBeTruthy();
+  });
+
+  it("R1: sin estado del sitio tampoco se ofrece, y se dice que no se pudo comprobar", async () => {
+    mockSnapshot = { data: null };
+    const v = await render(<ConfirmarDictamen />);
+    await asentar();
+    expect(v.queryByTestId("confirmar-dictamen")).toBeNull();
+    expect(v.getByTestId("confirmar-espere-calma")).toHaveTextContent(/no se pudo comprobar/i);
+  });
+
+  it("R2: sin parámetro, el AMARILLO de un incidente ANTERIOR gana al abierto", async () => {
+    mockParams = {};
+    mockSnapshot = {
+      data: {
+        ...CALMA,
+        phase: "shaking_concluded",
+        incident: { incident_id: "i-abierto" },
+        reentry: { incident_id: "i-viejo", reason: "pendiente_confirmacion" },
+      } as unknown as MobileStateOut,
+    };
+    await render(<ConfirmarDictamen />);
+    expect(mockIncidenteDelHook).toBe("i-viejo");
   });
 });
 

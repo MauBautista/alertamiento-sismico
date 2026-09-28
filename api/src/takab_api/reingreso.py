@@ -61,7 +61,28 @@ reproducción ⇒ ese incidente **no ocurrió** en el edificio). Entre ésos:
    Las reglas 1 y 1b viven en ``bloqueo_persistente`` y **también rigen con un
    incidente ABIERTO** (``mobile_site``): el VERDE de la réplica abierta no tapa el
    ROJO del principal.
+1c. [D-49 · R2] **Un AMARILLO de la regla SIN CONFIRMAR** (sólo filas v2, ``band =
+   'amarillo'``) de CUALQUIER incidente que cuente ⇒ `reentry_blocked`/
+   ``pendiente_confirmacion`` citando ese incidente, **sin caducidad a propósito**
+   (como la 1b) y por debajo de la 1 y la 1b: el VERDE que el sistema firma en una
+   réplica no dice que alguien confirmó el AMARILLO del sismo principal. Sólo lo
+   levanta una confirmación o una firma sobre ESE incidente.
+1d. [D-49 · R5] **Una ESCALADA al inspector SIN ATENDER** (acción ``dictamen_request``
+   sin firma HUMANA posterior —inspector o confirmación; las firmas anteriores a la
+   0073, sin tipo, cuentan como inspector—) de CUALQUIER incidente que cuente ⇒
+   `reentry_blocked`/``pendiente_dictamen`` citando ese incidente, sin caducidad y
+   por debajo de la 1, 1b y 1c. Medido en la ronda 4: la escalada sólo frenaba el
+   VERDE del sistema de SU incidente, y el VERDE que el sistema firma en la réplica
+   liberaba el reingreso con la brigada esperando a su inspector. También rige sobre
+   el propio incidente ABIERTO: una petición posterior a su firma habitable la deja
+   en suspenso. La levanta cualquier firma humana posterior (R3: la confirmación de
+   la brigada también). El VERDE del sistema NO la levanta.
 3. Nada de lo anterior ⇒ `idle`.
+
+**[D-49 · R1] Sin calma no hay reingreso.** Ninguna firma —sistema, confirmación
+ni inspector— produce `reentry_approved` si el último tier del sitio no es
+``normal`` (``en_calma``). La regla entera, con y sin incidente abierto, la aplica
+``decide_reingreso``: es la ÚNICA puerta que usa ``mobile_state`` en sus dos ramas.
 
 **Por qué el CIERRE y no la apertura** decide cuál es «el más nuevo»: el cierre
 es lo último que pasó con cada incidente —desde `D-33` firmar lo cierra en tres
@@ -111,7 +132,7 @@ veredicto sigue sobreviviendo al cierre exactamente igual.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -155,6 +176,9 @@ class IncidenteCerrado:
     #: [T-9.30 · D-43] Banda de la cabeza (``verde``/``amarillo``/``rojo``); ``None``
     #: en filas anteriores a la 0073. Sólo decide ``pendiente_confirmacion``.
     dictamen_band: str | None = None
+    #: [D-49 · R5] ¿Tiene una ``dictamen_request`` que ninguna firma HUMANA posterior
+    #: atendió (``sistema.ATIENDE_ESCALADA_SQL``)? Regla 1d.
+    escalada_pendiente: bool = False
 
 
 @dataclass(frozen=True)
@@ -189,9 +213,9 @@ def _no_habitable_vigente(inc: IncidenteCerrado) -> bool:
 def bloqueo_persistente(
     incidentes: Sequence[IncidenteCerrado], *, min_nodes: int
 ) -> Reingreso | None:
-    """Reglas 1 y 1b: el bloqueo que NO caduca, o ``None`` si no hay ninguno.
+    """Reglas 1, 1b, 1c y 1d: el bloqueo que NO caduca, o ``None`` si no hay ninguno.
 
-    [F3·r3 · D-43] Es la ÚNICA copia de esas dos reglas. La usa ``deriva_reingreso``
+    [F3·r3 · D-43 · D-49] Es la ÚNICA copia de esas tres reglas. La usa ``deriva_reingreso``
     (sin incidente abierto que autorice) y también la rama del incidente ABIERTO de
     ``mobile_site``: un VERDE firmado en la réplica abierta no puede liberar el
     reingreso si el sismo principal —abierto o cerrado— tiene un NO HABITAR firmado
@@ -224,7 +248,104 @@ def bloqueo_persistente(
         )
         return Reingreso(fase="reentry_blocked", razon="pendiente_dictamen", incidente=cita)
 
+    # 1c · [D-49 · R2] AMARILLO de la regla SIN CONFIRMAR: bloqueo persistente, SIN
+    # caducidad y de CUALQUIER incidente que cuente. Medido en la ronda 3: el VERDE
+    # que el sistema firma en la réplica (su PGA y sus daños son otros) liberaba el
+    # reingreso con el AMARILLO del sismo principal sin que nadie lo confirmara, y
+    # D-43 exige una persona detrás de cada AMARILLO. Sólo lo levanta una
+    # confirmación o una firma sobre ESE incidente. SÓLO filas v2 (``band =
+    # 'amarillo'``): las v1 no tienen banda y no bloquean.
+    amarillos = [
+        inc for inc in cuentan if not inc.dictamen_firmado and inc.dictamen_band == "amarillo"
+    ]
+    if amarillos:
+        cita = max(
+            amarillos,
+            key=lambda i: (i.dictamen_at or i.opened_at, i.opened_at, str(i.incident_id)),
+        )
+        return Reingreso(fase="reentry_blocked", razon="pendiente_confirmacion", incidente=cita)
+
+    # 1d · [D-49 · R5] ESCALADA al inspector SIN ATENDER: la brigada pidió que viniera
+    # una persona y nadie firmó después. Sin caducidad y de CUALQUIER incidente que
+    # cuente: el VERDE del sistema en la réplica no es la inspección que se pidió.
+    escalados = [inc for inc in cuentan if inc.escalada_pendiente]
+    if escalados:
+        cita = max(
+            escalados,
+            key=lambda i: (i.dictamen_at or i.opened_at, i.opened_at, str(i.incident_id)),
+        )
+        return Reingreso(fase="reentry_blocked", razon="pendiente_dictamen", incidente=cita)
+
     return None
+
+
+def en_calma(tier: str | None) -> bool:
+    """[D-49 · R1] ¿El edificio dejó de moverse? El último tier del sitio es ``normal``.
+
+    ÚNICA copia del criterio para el reingreso y para la confirmación. Sin ninguna
+    evaluación el tier es ``normal`` —mismo criterio que ``incident/lifecycle`` y la
+    gracia del VERDE del sistema (``dictamen/service._gracia_cumplida``)—: un sitio
+    que nunca reportó una transición no está sacudiéndose."""
+    return tier is None or tier == "normal"
+
+
+def decide_reingreso(
+    incidentes: Sequence[IncidenteCerrado],
+    *,
+    abierto: IncidenteCerrado | None,
+    tier: str | None,
+    ahora: datetime,
+    min_nodes: int,
+    ventana_firma_s: float,
+    lookback_pendiente_s: float,
+) -> Reingreso | None:
+    """[D-49] LA regla del reingreso, para las DOS ramas de ``mobile_state``.
+
+    * ``abierto`` = el incidente ABIERTO que autoriza evacuar (con su cabeza), o
+      ``None``. Con él, ``None`` de vuelta significa «manda la alerta del abierto»
+      (``alert_active``/``shaking_concluded``): sólo una cabeza habitable FIRMADA
+      del abierto puede proponer algo, y
+      1. **R1** — sin calma (``en_calma(tier)`` falso) no se autoriza: manda la
+         alerta, ninguna firma (sistema, confirmación, inspector) lo cambia;
+      2. los bloqueos persistentes de OTROS incidentes (1, 1b, 1c, 1d) mandan, y
+         la 1d también por una escalada sin atender del PROPIO abierto (R5);
+      3. si no, ``reentry_approved``.
+    * Sin ``abierto``: ``deriva_reingreso`` sobre los cerrados, y R1 convierte una
+      autorización en ``reentry_blocked`` sin razón (el edificio se mueve; ninguna
+      de las razones del contrato lo describe y ``blocked`` es lo que lee la app).
+
+    ``tier`` se lee UNA vez por petición (el router) y llega aquí.
+    """
+    if abierto is None:
+        r = deriva_reingreso(
+            incidentes,
+            ahora=ahora,
+            min_nodes=min_nodes,
+            ventana_firma_s=ventana_firma_s,
+            lookback_pendiente_s=lookback_pendiente_s,
+        )
+        if r.fase == "reentry_approved" and not en_calma(tier):
+            return Reingreso(fase="reentry_blocked", incidente=r.incidente)
+        return r
+    if not (abierto.dictamen_firmado and abierto.dictamen_status in HABITABLES):
+        return None
+    if not en_calma(tier):
+        return None
+    otros = [inc for inc in incidentes if inc.incident_id != abierto.incident_id]
+    # [D-49 · R5] La escalada del PROPIO abierto (su fila puede venir en ``incidentes``:
+    # la consulta de escaladas no distingue abiertos de cerrados). Su cabeza es
+    # habitable firmada, así que en ``bloqueo_persistente`` sólo puede entrar por la
+    # 1d, y la precedencia 1 > 1b > 1c > 1d la decide esa misma función.
+    if abierto.escalada_pendiente or any(
+        inc.incident_id == abierto.incident_id and inc.escalada_pendiente for inc in incidentes
+    ):
+        otros.append(
+            abierto if abierto.escalada_pendiente else replace(abierto, escalada_pendiente=True)
+        )
+    bloqueo = bloqueo_persistente(otros, min_nodes=min_nodes)
+    if bloqueo is not None:
+        return bloqueo
+    return Reingreso(fase="reentry_approved", incidente=abierto)
 
 
 def deriva_reingreso(

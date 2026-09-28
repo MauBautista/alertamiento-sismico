@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **501** · `[x]` **409** · `[~]` **19** · `[ ]` **73**
+**Conteo de tareas:** total **501** · `[x]` **413** · `[~]` **21** · `[ ]` **67**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17898,50 +17898,54 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.3 · Dictamen automático
 
-### [ ] T-9.30 · **`dictamen-v2` en tres bandas** — `SOFTWARE`
+### [x] T-9.30 · **`dictamen-v2` en tres bandas** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · **Depende de:** T-9.04 · **Prioridad:** F3 · crítica · **Decisión:** `D-43`
 - **Objetivo:** que el sistema decida por la aceleración medida en el edificio.
 - **Criterios de aceptación:**
-  - [ ] VERDE, AMARILLO y ROJO con los umbrales de `D-43` desde `rule_sets`.
-  - [ ] La aceleración es el máximo de todos los sensores activos; un sensor retirado no cuenta.
-  - [ ] Una alerta SASMEX ya no fuerza NO HABITAR por sí sola.
+  - [x] VERDE, AMARILLO y ROJO con los umbrales de `D-43` desde `rule_sets`.
+  - [x] La aceleración es el máximo de todos los sensores activos; un sensor retirado no cuenta.
+  - [x] Una alerta SASMEX ya no fuerza NO HABITAR por sí sola.
 
-### [ ] T-9.31 · **La firma del sistema y la confirmación** — `SOFTWARE`
+### [x] T-9.31 · **La firma del sistema y la confirmación** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · **Depende de:** T-9.30 · **Prioridad:** F3 · crítica · **Decisión:** `D-43`
 - **Objetivo:** que VERDE se firme solo y AMARILLO lo confirme una persona.
 - **Criterios de aceptación:**
-  - [ ] `signature_kind` y `band` en los dictámenes (migración 0073; la 0072 la usó F2).
-  - [ ] Endpoint de confirmación para brigadista e inspector, con sus 409 y 403.
-  - [ ] La prudencia sube sola y solo baja con firma; un reporte de daño re-evalúa durante 72 h.
+  - [x] `signature_kind` y `band` en los dictámenes (migración 0073; la 0072 la usó F2).
+  - [x] Endpoint de confirmación para brigadista e inspector, con sus 409 y 403.
+  - [x] La prudencia sube sola y solo baja con firma; un reporte de daño re-evalúa durante 72 h.
+- **Reglas finas (D-49, decididas por Mauricio el 2026-09-27):** el reingreso nunca se autoriza con el
+  edificio aún moviéndose; un AMARILLO sin confirmar bloquea aunque una réplica salga VERDE; una
+  escalada al inspector sin atender bloquea hasta una firma humana; y la firma humana vale para la
+  evidencia que vio (sólo un daño nuevo vuelve a subir la banda). Cinco rondas de verificación.
 
-### [ ] T-9.32 · **El cierre del incidente, versión 2** — `SOFTWARE`
+### [x] T-9.32 · **El cierre del incidente, versión 2** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · **Depende de:** T-9.31 · **Prioridad:** F3 · alta · **Decisión:** `D-43`
 - **Objetivo:** que un incidente se cierre con dictamen y clasificación, o por una vía declarada.
 - **Criterios de aceptación:**
-  - [ ] Dictamen firmado de cualquier tipo y clasificación ⇒ cierre; las otras vías se conservan.
-  - [ ] El cierre por vencimiento declara lo que faltaba.
+  - [x] Dictamen firmado de cualquier tipo y clasificación ⇒ cierre; las otras vías se conservan.
+  - [x] El cierre por vencimiento declara lo que faltaba.
 
-### [ ] T-9.33 · **El brigadista confirma desde la app** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.33 · **El brigadista confirma desde la app** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · api · **Depende de:** T-9.31 · **Prioridad:** F3 · alta · **Decisión:** `D-43`
 - **Objetivo:** que un AMARILLO no espere a que alguien se siente en la consola.
 - **Criterios de aceptación:**
-  - [ ] Aviso a los tácticos al salir un AMARILLO; pantalla con lista de revisión, CONFIRMAR o
+  - [x] Aviso a los tácticos al salir un AMARILLO; pantalla con lista de revisión, CONFIRMAR o
     ESCALAR AL INSPECTOR.
   - [ ] Probado en el Pixel.
 
-### [ ] T-9.34 · **El papel dice quién firmó** — `SOFTWARE`
+### [x] T-9.34 · **El papel dice quién firmó** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · web · **Depende de:** T-9.31 · **Prioridad:** F3 · alta
 - **Objetivo:** que el PDF distinga la firma del sistema, la confirmación y la firma del inspector.
 - **Criterios de aceptación:**
-  - [ ] Rótulo del firmante por tipo de firma, nunca un identificador interno.
-  - [ ] El desplegable de firma arranca en el estado vigente.
+  - [x] Rótulo del firmante por tipo de firma, nunca un identificador interno.
+  - [x] El desplegable de firma arranca en el estado vigente.
 
-### [ ] T-9.35 · **Los sensores fantasma de Puebla** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.35 · **Los sensores fantasma de Puebla** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** infra · **Depende de:** T-9.30 · **Prioridad:** F3 · alta
 - **Objetivo:** que el sitio de la demostración mida con su sensor real, que ya tiene la
   calibración del fabricante declarada.
 - **Criterios de aceptación:**
-  - [ ] Diagnóstico de solo lectura de los sensores por sitio.
+  - [x] Diagnóstico de solo lectura de los sensores por sitio.
   - [ ] Los dos sensores sin datos ni calibración, retirados.
   - [ ] El PDF de un evento nuevo ya no dice «sin fuente de calibración».
 

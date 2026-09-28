@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 import anyio
 from sqlalchemy import text
@@ -56,6 +57,7 @@ from takab_api.dictamen.model import (
     fuentes_line,
 )
 from takab_api.dictamen.mseed import MseedError, read_traces
+from takab_api.dictamen.sistema import CLAVE_DANOS_VISTOS, FIRMAS_HUMANAS
 from takab_api.documentos import fotos as fotos_mod
 from takab_api.estaciones import build_estaciones
 from takab_api.felt import umbral_congelado
@@ -352,6 +354,14 @@ def bloque_de_shakemap(mapa, site_code: str):  # noqa: ANN001, ANN201 - Shakemap
     )
 
 
+def _danos_vistos(r: Any) -> tuple[str, ...] | None:
+    """[D-49 · R4] ``basis.danos_vistos`` de una firma HUMANA, o ``None``."""
+    if r.signed_by is None or r.signature_kind not in FIRMAS_HUMANAS:
+        return None
+    vistos = (r.basis or {}).get(CLAVE_DANOS_VISTOS) if isinstance(r.basis, dict) else None
+    return tuple(str(v) for v in vistos) if isinstance(vistos, list) else None
+
+
 async def build_model(
     conn: AsyncConnection,
     incident_id: str,
@@ -417,6 +427,7 @@ async def build_model(
             signature_kind=r.signature_kind if r.signed_by else None,
             band=r.band,
             firmante_rol=r.firmante_rol if r.signature_kind == "confirmation" else None,
+            danos_vistos=_danos_vistos(r),
         )
         for r in dictamen_rows
     ]

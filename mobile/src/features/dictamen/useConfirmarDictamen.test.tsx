@@ -247,3 +247,71 @@ it("escalar sin permiso (403) se dice", async () => {
   expect(result.current.escalado.estado).toBe("error");
   expect(result.current.escalado.mensaje).toMatch(/administración/);
 });
+
+// [D-49 · F3·r4] Cada respuesta de confirmar se EXPLICA con su causa real (los
+// `detail` literales de `routers/dictamens.confirm_dictamen`); ninguna cae en el
+// genérico «compruebe la conexión» ni vuelve muda a `idle`.
+describe("[D-49] cada respuesta de confirmar dice por qué", () => {
+  async function confirmarCon(respuesta: unknown) {
+    confirm.mockResolvedValue(respuesta);
+    const { result } = await montar();
+    await waitFor(() => expect(result.current.cabeza).toBeDefined());
+    await act(async () => {
+      await result.current.confirmar();
+    });
+    return result;
+  }
+
+  it("409 R1 (el edificio se mueve) ⇒ «espere a que el edificio vuelva a calma», reintentable", async () => {
+    const r = await confirmarCon(
+      falla(409, "el edificio sigue en movimiento: espere a que el edificio vuelva a calma"),
+    );
+    expect(r.current.confirmacion.estado).toBe("error");
+    expect(r.current.confirmacion.esperaCalma).toBe(true);
+    expect(r.current.confirmacion.mensaje).toMatch(/espere a que el edificio vuelva a calma/i);
+    expect(r.current.confirmacion.requiereInspector).not.toBe(true);
+  });
+
+  it("409 de banda (no es AMARILLO de la regla) ⇒ «lo firma el inspector», terminal", async () => {
+    const r = await confirmarCon(
+      falla(409, "sólo se confirma un AMARILLO de la regla; este dictamen lo firma el inspector"),
+    );
+    expect(r.current.confirmacion.loFirmaElInspector).toBe(true);
+    expect(r.current.confirmacion.mensaje).toMatch(/lo firma el inspector/i);
+    expect(r.current.confirmacion.mensaje).not.toMatch(/cambió/);
+  });
+
+  it("409 VERDE ⇒ «el VERDE lo firma el sistema», terminal", async () => {
+    const r = await confirmarCon(
+      falla(409, "el VERDE lo firma el sistema tras la gracia (o el inspector); no se confirma"),
+    );
+    expect(r.current.confirmacion.loFirmaElSistema).toBe(true);
+    expect(r.current.confirmacion.mensaje).toMatch(/lo emite el sistema/);
+  });
+
+  it("409 «ya está firmado» ⇒ lo dice, no «cambió o ya fue firmado» genérico", async () => {
+    const r = await confirmarCon(falla(409, "el dictamen vigente ya está firmado"));
+    expect(r.current.confirmacion.yaFirmado).toBe(true);
+    expect(r.current.confirmacion.mensaje).toMatch(/ya estaba firmado/i);
+  });
+
+  it("404 ⇒ fuera de su alcance, NO «compruebe la conexión»", async () => {
+    const r = await confirmarCon(falla(404, "incidente no encontrado"));
+    expect(r.current.confirmacion.fueraDeAlcance).toBe(true);
+    expect(r.current.confirmacion.mensaje).toMatch(/no pertenece a su inmueble/i);
+    expect(r.current.confirmacion.mensaje).not.toMatch(/conexión/);
+  });
+
+  it("cabeza YA firmada al releerla ⇒ mensaje, no un idle mudo, y no se envía", async () => {
+    const { result } = await montar();
+    await waitFor(() => expect(result.current.cabeza).toBeDefined());
+    list.mockResolvedValue(ok({ items: [fila("d-2", { signed_by: "u-9" }), fila("d-1")] }));
+    await act(async () => {
+      await result.current.confirmar();
+    });
+    expect(confirm).not.toHaveBeenCalled();
+    expect(result.current.confirmacion.estado).not.toBe("idle");
+    expect(result.current.confirmacion.yaFirmado).toBe(true);
+    expect(result.current.confirmacion.mensaje).toMatch(/ya estaba firmado/i);
+  });
+});

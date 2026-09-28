@@ -21,7 +21,10 @@ import { Modal, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
-import { incidenteAConfirmar } from "@/features/dictamen/confirmacion";
+import {
+  confirmacionPendiente,
+  incidenteAConfirmar,
+} from "@/features/dictamen/confirmacion";
 import { avisoDeReingreso } from "@/features/reentry/avisoReingreso";
 import { ControlSheet } from "@/features/control/ControlSheet";
 import { preconditionsFor } from "@/features/control/preconditions";
@@ -143,7 +146,9 @@ export default function Panel() {
   const canSilence = actions?.siren_silence === true;
   // [F3·r3] Reingreso pendiente de CONFIRMACIÓN y un perfil que confirma ⇒ la
   // brigada entra a la pantalla desde su INICIO, no sólo tocando la push.
+  // [D-49 · R1] Sólo en calma: con el edificio en movimiento se explica, sin botón.
   const aConfirmar = data ? incidenteAConfirmar(data, actions) : null;
+  const confirmarEsperaCalma = aConfirmar === null && confirmacionPendiente(data, actions);
   const [control, setControl] = useState<TacticalAction | null>(null);
   const [busy, setBusy] = useState(false);
   // [T-2.107] La 201 es sólo el PUNTO DE PARTIDA (siempre nace `pending`): el
@@ -234,6 +239,7 @@ export default function Panel() {
                     })
                 : undefined
             }
+            confirmarEsperaCalma={confirmarEsperaCalma}
             onOpenDictamen={() => router.push("/dictamen")}
             onSilence={() => openControl("deactivate")}
             siteName={data.site_name}

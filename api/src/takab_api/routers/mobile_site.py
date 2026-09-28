@@ -35,11 +35,9 @@ from takab_api.incident.autoridad import autoriza_evacuacion, params_autoriza_ev
 from takab_api.notify.circulo import SEVERIDADES_DE_DISPARO
 from takab_api.queries import mobile as q
 from takab_api.reingreso import (
-    HABITABLES,
     IncidenteCerrado,
     RazonBloqueo,
-    bloqueo_persistente,
-    deriva_reingreso,
+    decide_reingreso,
 )
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put
@@ -223,6 +221,7 @@ async def _incidentes_de_reingreso(
             dictamen_firmado=r.dictamen_signed_by is not None,
             dictamen_at=r.dictamen_at,
             dictamen_band=r.dictamen_band,
+            escalada_pendiente=bool(r.escalada_pendiente),
         )
         for r in filas.values()
     ]
@@ -300,79 +299,83 @@ async def mobile_state(
             dictamen_status = dictamen_row.status
             dictamen_signed = dictamen_row.signed_by is not None
             dictamen_incident_id = incident_row.incident_id
-        bloqueo = None
-        if dictamen_signed and dictamen_status in HABITABLES:
-            # [F3·r3 · D-43] Antes de autorizar, los BLOQUEOS PERSISTENTES de OTROS
-            # incidentes (abiertos o cerrados) — la MISMA regla que sin incidente
-            # abierto (`reingreso.bloqueo_persistente`). Medido en la ronda 2: el
-            # VERDE que el sistema firma en la réplica abierta liberaba el reingreso
-            # con el sismo principal en ROJO sin firmar.
-            otros = [
-                c
-                for c in await _incidentes_de_reingreso(
-                    conn, site_id, settings, (q.NO_HABITAR_VIGENTES, q.ROJO_SIN_FIRMAR_VIGENTES)
-                )
-                if c.incident_id != incident_row.incident_id
-            ]
-            bloqueo = bloqueo_persistente(otros, min_nodes=settings.quorum_min_nodes)
-        if bloqueo is not None and bloqueo.incidente is not None:
-            phase = bloqueo.fase
-            reentry_reason = bloqueo.razon
-            dictamen_status = bloqueo.incidente.dictamen_status
-            dictamen_signed = bloqueo.incidente.dictamen_firmado
-            dictamen_incident_id = bloqueo.incidente.incident_id
-        elif dictamen_signed and dictamen_status in HABITABLES:
-            phase = "reentry_approved"
-        else:
-            phase = "shaking_concluded" if latest_tier == "normal" else "alert_active"
-            # [F3·r3 · D-43] Un AMARILLO de la regla SIN FIRMAR en el abierto: la
-            # fase no cambia, pero la app necesita la razón para ofrecer CONFIRMAR
-            # (con la v2 el incidente no se cierra hasta el TTL de revisión, 6 h).
-            if dictamen_row is not None and not dictamen_signed and dictamen_row.band == "amarillo":
-                reentry_reason = "pendiente_confirmacion"
+        abierto: IncidenteCerrado | None = IncidenteCerrado(
+            incident_id=incident_row.incident_id,
+            trigger=incident_row.trigger,
+            node_count=incident_row.node_count,
+            opened_at=incident_row.opened_at,
+            closed_at=None,
+            clasificacion=None,
+            dictamen_status=dictamen_status,
+            dictamen_firmado=dictamen_signed,
+            dictamen_at=dictamen_row.created_at if dictamen_row is not None else None,
+            dictamen_band=dictamen_row.band if dictamen_row is not None else None,
+        )
+        # [F3·r3 · D-43] Los BLOQUEOS PERSISTENTES de OTROS incidentes (abiertos o
+        # cerrados) también rigen aquí: el VERDE que el sistema firma en la réplica
+        # abierta liberaba el reingreso con el sismo principal en ROJO sin firmar
+        # (ronda 2), en AMARILLO sin confirmar (ronda 3 · D-49 R2) o con una escalada
+        # al inspector sin atender (ronda 4 · D-49 R5, que también frena al abierto).
+        consultas: tuple[Any, ...] = (
+            q.NO_HABITAR_VIGENTES,
+            q.ROJO_SIN_FIRMAR_VIGENTES,
+            q.AMARILLO_SIN_CONFIRMAR_VIGENTES,
+            q.ESCALADA_PENDIENTE_VIGENTES,
+        )
     else:
         # [T-7.55 · rehecho en T-9.04] ⚠️ EL VEREDICTO SOBREVIVE AL CIERRE.
         #
-        # Desde `D-33` el motor cierra el incidente en cuanto se firma el dictamen
-        # —medido: TRES SEGUNDOS—. `T-7.55` rescató la autorización HABITABLE,
-        # pero sólo ésa: un NO HABITAR firmado dejaba la app en `idle` —el
-        # edificio desbloqueado— tres segundos después de firmarse. Y rescataba
-        # también incidentes que nunca ordenaron evacuar, contando la ventana
-        # desde el cierre. Ahora el veredicto entero lo decide
-        # `reingreso.deriva_reingreso` (pura, reglas en su docstring).
+        # Desde `D-33` el motor cerraba el incidente en cuanto se firmaba el
+        # dictamen. `T-7.55` rescató la autorización HABITABLE, pero sólo ésa: un
+        # NO HABITAR firmado dejaba la app en `idle` —el edificio desbloqueado—.
+        # Ahora el veredicto entero lo decide `reingreso` (pura, reglas en su
+        # docstring).
         #
-        # Va en el `else` **a propósito, y es la garantía de seguridad de este
-        # bloque**: si hay incidente abierto que autoriza manda ése, siempre. Al
-        # revés, un ocupante en plena alerta leería «REINGRESO AUTORIZADO» donde
-        # debe leer «EVACÚE».
+        # Sin incidente abierto que autorice, y SÓLO entonces, deciden los
+        # cerrados: si hay uno abierto manda ése, siempre (al revés, un ocupante en
+        # plena alerta leería «REINGRESO AUTORIZADO» donde debe leer «EVACÚE»). No
+        # se resucita el incidente: lo que persiste es el HECHO del veredicto;
+        # `incident` sigue en `None` y `reentry.incident_id` dice de cuál es.
         #
-        # Y no se resucita el incidente: lo que persiste es el HECHO del
-        # veredicto. `incident` sigue en `None`; `reentry.incident_id` dice de
-        # qué incidente es.
-        #
-        # Dos consultas, y ninguna con un `LIMIT` que pueda tapar lo que cuenta:
-        # los NO HABITAR vigentes, todos y sin cota de edad, y los que pueden
-        # decidir el resto. Se juntan por `incident_id`; el orden y la
-        # precedencia los decide la función, no el `ORDER BY`.
-        cerrados = await _incidentes_de_reingreso(
-            conn,
-            site_id,
-            settings,
-            (q.NO_HABITAR_VIGENTES, q.ROJO_SIN_FIRMAR_VIGENTES, q.CLOSED_FOR_REENTRY),
+        # Ninguna consulta lleva un `LIMIT` que pueda tapar lo que cuenta; se
+        # juntan por `incident_id` y el orden lo decide la función.
+        abierto = None
+        consultas = (
+            q.NO_HABITAR_VIGENTES,
+            q.ROJO_SIN_FIRMAR_VIGENTES,
+            q.AMARILLO_SIN_CONFIRMAR_VIGENTES,
+            q.ESCALADA_PENDIENTE_VIGENTES,
+            q.CLOSED_FOR_REENTRY,
         )
-        reingreso = deriva_reingreso(
-            cerrados,
-            ahora=datetime.now(tz=UTC),
-            min_nodes=settings.quorum_min_nodes,
-            ventana_firma_s=settings.reentry_declare_s,
-            lookback_pendiente_s=settings.reentry_pendiente_lookback_s,
-        )
+
+    # [D-49] UNA sola regla para las dos ramas (`reingreso.decide_reingreso`), con el
+    # tier del sitio leído UNA vez arriba (R1: sin calma no hay reingreso).
+    reingreso = decide_reingreso(
+        await _incidentes_de_reingreso(conn, site_id, settings, consultas),
+        abierto=abierto,
+        tier=latest_tier,
+        ahora=datetime.now(tz=UTC),
+        min_nodes=settings.quorum_min_nodes,
+        ventana_firma_s=settings.reentry_declare_s,
+        lookback_pendiente_s=settings.reentry_pendiente_lookback_s,
+    )
+    if reingreso is None:
+        # Manda la alerta del incidente ABIERTO (sólo ocurre con uno).
+        # (Sin evaluaciones sigue siendo `alert_active`, como siempre: para AUTORIZAR
+        # basta `en_calma`, para decir «terminó la sacudida» hace falta el `normal`.)
+        phase = "shaking_concluded" if latest_tier == "normal" else "alert_active"
+        # [F3·r3 · D-43] Un AMARILLO de la regla SIN FIRMAR en el abierto: la fase
+        # no cambia, pero la app necesita la razón para ofrecer CONFIRMAR.
+        if abierto is not None and not abierto.dictamen_firmado:
+            if abierto.dictamen_band == "amarillo":
+                reentry_reason = "pendiente_confirmacion"
+    else:
         phase = reingreso.fase
+        reentry_reason = reingreso.razon
         if reingreso.incidente is not None:
             dictamen_status = reingreso.incidente.dictamen_status
             dictamen_signed = reingreso.incidente.dictamen_firmado
             dictamen_incident_id = reingreso.incidente.incident_id
-        reentry_reason = reingreso.razon
 
     # [T-2.106] ALARMA DEL INMUEBLE. El quórum de pánico emite un `siren/activate`
     # firmado y NO crea incidente, así que hasta aquí no llegaba nada: el edificio
@@ -456,7 +459,10 @@ async def mobile_state(
             # sigue viajando aquí.
             # [T-9.11] Del incidente que AUTORIZA y de la fase sísmica, no de la
             # pantalla: un movimiento que la brigada atiende no ordenó salir a nadie.
+            # [D-49 · R1] Y siempre que la fase sísmica sea `reentry_blocked`: sin
+            # calma una autorización de un cerrado se bloquea SIN razón del contrato.
             blocked=(incident_row is not None and fase_sismica != "reentry_approved")
+            or fase_sismica == "reentry_blocked"
             or reentry_reason is not None,
             dictamen_status=dictamen_status,
             dictamen_signed=dictamen_signed,

@@ -30,7 +30,8 @@ async def test_chain_supersedes_and_preliminary_flag(client, make_incident, make
     new = signed.json()
     assert new["signed_by"] == _INSPECTOR
     assert new["supersedes_dictamen_id"] == prelim
-    assert new["basis"] == {"notes": "grietas visibles"}
+    # [D-49 · R4] La firma guarda los reportes de daño que vio (ninguno aquí).
+    assert new["basis"] == {"notes": "grietas visibles", "danos_vistos": []}
 
     after = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("inspector"))
     chain = after.json()["items"]

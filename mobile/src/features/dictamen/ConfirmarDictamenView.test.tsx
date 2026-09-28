@@ -144,3 +144,48 @@ it("un «hecho» de OTRO dictamen no deja el botón terminal en la cabeza nueva"
   await fireEvent.press(r.getByTestId("confirmar-dictamen"));
   expect(props.onConfirmar).toHaveBeenCalled();
 });
+
+// [D-49 · R1] Con el edificio en movimiento NO hay botón de confirmar: se explica.
+it("espere_calma: sin botón de confirmar, explica la calma y deja escalar", async () => {
+  const r = await montar({
+    vista: {
+      tipo: "espere_calma",
+      banda: "amarillo",
+      titulo: "DICTAMEN AMARILLO",
+      porque: ["x"],
+      explicacion: "El edificio sigue en movimiento: espere a que el edificio vuelva a calma para confirmar.",
+    },
+  }).v;
+  expect(r.queryByTestId("confirmar-dictamen")).toBeNull();
+  expect(r.getByTestId("confirmar-espere-calma")).toHaveTextContent(
+    /espere a que el edificio vuelva a calma/,
+  );
+  expect(r.getByTestId("escalar-inspector")).toBeTruthy();
+});
+
+// [D-49] Las causas TERMINALES de un 409/404 dejan el botón quieto con su texto;
+// la de la calma se puede reintentar.
+it.each([
+  [{ loFirmaElInspector: true }, /ESCALE AL INSPECTOR/],
+  [{ yaFirmado: true }, /YA ESTABA FIRMADO/],
+  [{ fueraDeAlcance: true }, /FUERA DE SU ALCANCE/],
+])("respuesta terminal %p ⇒ confirmar deshabilitado", async (flag, texto) => {
+  const r = await montar({
+    confirmacion: { estado: "error", mensaje: "m", dictamenId: "d-1", ...flag },
+  }).v;
+  const boton = r.getByTestId("confirmar-dictamen");
+  expect(boton).toBeDisabled();
+  expect(boton).toHaveTextContent(texto);
+});
+
+it("409 de la calma ⇒ se puede reintentar y el botón lo dice", async () => {
+  const { props, v } = montar({
+    confirmacion: { estado: "error", mensaje: "m", dictamenId: "d-1", esperaCalma: true },
+  });
+  const r = await v;
+  const boton = r.getByTestId("confirmar-dictamen");
+  expect(boton).not.toBeDisabled();
+  expect(boton).toHaveTextContent(/EN CALMA/);
+  await fireEvent.press(boton);
+  expect(props.onConfirmar).toHaveBeenCalled();
+});

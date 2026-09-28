@@ -8,7 +8,8 @@
 //
 // Qué puede hacer la brigada lo dice la NUBE (`confirm` responde 403/409); esta
 // vista solo evita ofrecer lo que la nube ya dijo que no admite:
-//   · cabeza AMARILLA sin firmar ⇒ se confirma (la ÚNICA que la nube acepta);
+//   · cabeza AMARILLA sin firmar ⇒ se confirma (la ÚNICA que la nube acepta),
+//     y SÓLO con el edificio en calma (D-49 · R1: si no, 409 «vuelva a calma»);
 //   · cabeza VERDE sin firmar ⇒ la emite el sistema tras la gracia (409 si se
 //     confirma): se explica, no se ofrece;
 //   · cabeza ROJA, o sin banda (fila histórica), sin firmar ⇒ la firma el
@@ -52,7 +53,9 @@ export type Firma = {
 };
 
 function bandaDeclarada(band: string | null | undefined): Banda | null {
-  return band === "verde" || band === "amarillo" || band === "rojo" ? band : null;
+  return band === "verde" || band === "amarillo" || band === "rojo"
+    ? band
+    : null;
 }
 
 /** Rótulo del firmante, SIEMPRE desde `signature_kind` y nunca desde
@@ -80,7 +83,9 @@ export function selloDeFirma(d: Firma): string {
 }
 
 function rolQueConfirma(role: string | null | undefined): string {
-  return typeof role === "string" && role !== "" ? etiquetaRol(role) : "PERSONAL AUTORIZADO";
+  return typeof role === "string" && role !== ""
+    ? etiquetaRol(role)
+    : "PERSONAL AUTORIZADO";
 }
 
 /** Quién firmó, por su PAPEL. Jamás el `signed_by` (un UUID interno). */
@@ -120,6 +125,57 @@ export function textoReingresoAutorizado(f: Firma | null | undefined): string {
   }
 }
 
+/** [F3·r4 · D-49] La huella del dictamen vigente según mobile-state: si cambia,
+ *  el certificado del cartel es OTRO y se vuelve a pedir. */
+export function huellaDelReingreso(
+  data: Pick<MobileStateOut, "phase" | "reentry"> | null | undefined,
+): string {
+  const r = data?.reentry;
+  return [
+    data?.phase ?? "",
+    r?.incident_id ?? "",
+    r?.dictamen_status ?? "",
+    r?.dictamen_signed === true ? "firmado" : "sin_firma",
+  ].join("|");
+}
+
+/** [F3·r4 · D-49] La firma que el cartel de reingreso puede atribuir: la del
+ *  certificado SÓLO si está firmado y coincide con lo que dice mobile-state (el
+ *  mismo incidente y el mismo status). Uno que no coincide es el de una firma
+ *  ANTERIOR aún en caché: no se le atribuye a nadie (`null` ⇒ texto genérico). */
+export function firmaDelCartel(
+  cert:
+    | (Firma & {
+        signed?: boolean;
+        status?: string | null;
+        incident_id?: string | null;
+      })
+    | null
+    | undefined,
+  incidenteAprobado: string | null,
+  reentry:
+    Pick<MobileStateOut["reentry"], "dictamen_status"> | null | undefined,
+): Firma | null {
+  if (cert == null || cert.signed !== true || incidenteAprobado === null) {
+    return null;
+  }
+  if (
+    typeof cert.incident_id === "string" &&
+    cert.incident_id !== incidenteAprobado
+  ) {
+    return null;
+  }
+  const vigente = reentry?.dictamen_status ?? null;
+  if (
+    typeof cert.status === "string" &&
+    vigente !== null &&
+    cert.status !== vigente
+  ) {
+    return null;
+  }
+  return cert;
+}
+
 /** La banda rotulada para el certificado; sin banda (histórico) o una que la
  *  app no entiende ⇒ null: no se inventa un color. */
 export function bandaRotulada(band: string | null | undefined): string | null {
@@ -127,20 +183,75 @@ export function bandaRotulada(band: string | null | undefined): string | null {
   return b === null ? null : b.toUpperCase();
 }
 
-/** [F3·r3] La entrada a CONFIRMAR DICTAMEN desde el panel táctico: SOLO si el
- *  servidor dice que el reingreso espera una confirmación y el perfil puede
- *  confirmar. Devuelve el incidente a confirmar, o null (sin botón). */
+/** [D-49 · R1] ¿El edificio está en calma para CONFIRMAR? EXACTAMENTE el criterio
+ *  de la nube (`reingreso.en_calma`, el que aplica el 409 de
+ *  `routers/dictamens.confirm_dictamen`): último tier `normal` o sin evaluaciones
+ *  ⇒ calma; cualquier otro tier ⇒ movimiento. La FASE no entra: si la app la
+ *  sumara, negaría una confirmación que la nube acepta (divergencia). Sin estado
+ *  del sitio ⇒ `desconocida`: no se ofrece. */
+export type Calma = "calma" | "movimiento" | "desconocida";
+
+export function edificioEnCalma(
+  data: Pick<MobileStateOut, "latest_tier"> | null | undefined,
+): Calma {
+  if (data == null) {
+    return "desconocida";
+  }
+  return data.latest_tier == null || data.latest_tier === "normal"
+    ? "calma"
+    : "movimiento";
+}
+
+/** [D-49 · R2] El incidente cuyo dictamen se confirma. Con `pendiente_confirmacion`
+ *  manda el que CITA el reingreso (puede ser uno ANTERIOR al abierto: un AMARILLO
+ *  sin confirmar bloquea sin caducidad); si no, el abierto (el de la push). */
+export function incidenteDeConfirmacion(
+  data: Pick<MobileStateOut, "incident" | "reentry"> | null | undefined,
+): string | null {
+  if (data == null) {
+    return null;
+  }
+  const delReingreso = data.reentry?.incident_id ?? null;
+  if (
+    data.reentry?.reason === "pendiente_confirmacion" &&
+    delReingreso !== null
+  ) {
+    return delReingreso;
+  }
+  return data.incident?.incident_id ?? delReingreso;
+}
+
+/** [F3·r3 · D-49] La entrada a CONFIRMAR DICTAMEN desde el panel táctico: SOLO si
+ *  el servidor dice que el reingreso espera una confirmación, el perfil puede
+ *  confirmar y el edificio está en calma (R1: con movimiento la nube responde
+ *  409). Devuelve el incidente a confirmar, o null (sin botón). */
 export function incidenteAConfirmar(
-  data: Pick<MobileStateOut, "incident" | "reentry">,
+  data: Pick<MobileStateOut, "incident" | "reentry"> &
+    Partial<Pick<MobileStateOut, "latest_tier">>,
   acciones: Partial<Record<string, boolean>> | null | undefined,
 ): string | null {
-  if (acciones?.confirm_dictamen !== true) {
+  if (!confirmacionPendiente(data, acciones)) {
     return null;
   }
-  if (data.reentry?.reason !== "pendiente_confirmacion") {
+  if (
+    edificioEnCalma(data as Pick<MobileStateOut, "latest_tier">) !== "calma"
+  ) {
     return null;
   }
-  return data.reentry.incident_id ?? data.incident?.incident_id ?? null;
+  return incidenteDeConfirmacion(data);
+}
+
+/** [D-49 · R1] Hay un AMARILLO esperando la confirmación de este perfil (se
+ *  pueda confirmar YA o haya que esperar la calma). */
+export function confirmacionPendiente(
+  data: Pick<MobileStateOut, "incident" | "reentry"> | null | undefined,
+  acciones: Partial<Record<string, boolean>> | null | undefined,
+): boolean {
+  return (
+    acciones?.confirm_dictamen === true &&
+    data?.reentry?.reason === "pendiente_confirmacion" &&
+    incidenteDeConfirmacion(data) !== null
+  );
 }
 
 /** Lista de revisión corta: lo que la brigada verifica ANTES de confirmar. */
@@ -155,7 +266,19 @@ export type ConfirmacionView =
   | { tipo: "sin_dictamen" }
   | { tipo: "ya_firmado"; banda: Banda; titulo: string; firmante: string }
   | { tipo: "solo_inspector"; banda: Banda; titulo: string; porque: string[] }
-  | { tipo: "lo_firma_el_sistema"; banda: Banda; titulo: string; porque: string[] }
+  | {
+      tipo: "lo_firma_el_sistema";
+      banda: Banda;
+      titulo: string;
+      porque: string[];
+    }
+  | {
+      tipo: "espere_calma";
+      banda: Banda;
+      titulo: string;
+      porque: string[];
+      explicacion: string;
+    }
   | {
       tipo: "confirmable";
       dictamenId: string;
@@ -232,7 +355,9 @@ function porQue(basis: Record<string, unknown>): string[] {
           : "No hay sensores activos con calibración declarada: las lecturas son relativas.",
       );
     } else if (m.startsWith("dano:")) {
-      frases.push(`Se reportó un daño: ${etiquetaDano(m.slice("dano:".length))}.`);
+      frases.push(
+        `Se reportó un daño: ${etiquetaDano(m.slice("dano:".length))}.`,
+      );
     } else if (m === "dano_sin_categoria") {
       frases.push("Se reportó un daño sin categoría.");
     } else {
@@ -246,14 +371,27 @@ function porQue(basis: Record<string, unknown>): string[] {
 }
 
 /** La cabeza vigente (la más reciente de la cadena) ⇒ qué se pinta. */
-export function confirmacionView(head: DictamenOut | undefined | null): ConfirmacionView {
+export const EXPLICA_ESPERE_CALMA =
+  "El edificio sigue en movimiento: espere a que el edificio vuelva a calma para confirmar.";
+export const EXPLICA_CALMA_DESCONOCIDA =
+  "No se pudo comprobar que el edificio esté en calma: sin ese dato no se confirma. Espere a que el edificio vuelva a calma y vuelva a intentarlo.";
+
+export function confirmacionView(
+  head: DictamenOut | undefined | null,
+  calma: Calma,
+): ConfirmacionView {
   if (head == null) {
     return { tipo: "sin_dictamen" };
   }
   const b = banda(head);
   const titulo = TITULO[b];
   if (head.signed_by != null) {
-    return { tipo: "ya_firmado", banda: b, titulo, firmante: selloDeFirma(head) };
+    return {
+      tipo: "ya_firmado",
+      banda: b,
+      titulo,
+      firmante: selloDeFirma(head),
+    };
   }
   const porque = porQue(obj(head.basis));
   // [F3·r3] La nube sólo confirma un AMARILLO con la COLUMNA `band` puesta
@@ -264,6 +402,20 @@ export function confirmacionView(head: DictamenOut | undefined | null): Confirma
   }
   if (b === "rojo" || head.band !== "amarillo") {
     return { tipo: "solo_inspector", banda: b, titulo, porque };
+  }
+  // [D-49 · R1] Un AMARILLO confirmable, pero con el edificio en movimiento (o
+  // sin saberlo): la nube respondería 409. Se explica, no se ofrece.
+  if (calma !== "calma") {
+    return {
+      tipo: "espere_calma",
+      banda: b,
+      titulo,
+      porque,
+      explicacion:
+        calma === "movimiento"
+          ? EXPLICA_ESPERE_CALMA
+          : EXPLICA_CALMA_DESCONOCIDA,
+    };
   }
   return {
     tipo: "confirmable",

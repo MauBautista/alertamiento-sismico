@@ -269,6 +269,59 @@ describe("F3 · panel · entrada a CONFIRMAR DICTAMEN", () => {
     });
   });
 
+  // [D-49 · R1] Con el edificio en movimiento la nube responde 409 «vuelva a
+  // calma»: no se ofrece el botón, pero se DICE que hay un dictamen esperando.
+  it("AMARILLO pendiente con el edificio en movimiento ⇒ sin botón, explica la calma", async () => {
+    mockAcciones = { confirm_dictamen: true };
+    mockSnapshot = instantanea({
+      data: { ...pendiente(), phase: "alert_active", latest_tier: "evacuate_or_hold" },
+    });
+    const v = await render(<Panel />);
+    await asentar();
+    expect(v.queryByTestId("open-confirmar-dictamen")).toBeNull();
+    expect(v.getByTestId("confirmar-espera-calma")).toHaveTextContent(
+      /espere a que el edificio vuelva a calma/,
+    );
+  });
+
+  it("con el tier fuera de normal (fase ya no de alerta) tampoco se ofrece", async () => {
+    mockAcciones = { confirm_dictamen: true };
+    mockSnapshot = instantanea({ data: { ...pendiente(), latest_tier: "watch" } });
+    const v = await render(<Panel />);
+    await asentar();
+    expect(v.queryByTestId("open-confirmar-dictamen")).toBeNull();
+    expect(v.getByTestId("confirmar-espera-calma")).toBeTruthy();
+  });
+
+  // [D-49 · R2] El AMARILLO sin confirmar de un incidente ANTERIOR bloquea aunque
+  // haya otro abierto: la entrada lleva el incidente que CITA el reingreso.
+  it("AMARILLO de un incidente ANTERIOR con otro abierto ⇒ abre el anterior", async () => {
+    mockAcciones = { confirm_dictamen: true };
+    mockSnapshot = instantanea({
+      data: {
+        ...pendiente(),
+        phase: "reentry_blocked",
+        latest_tier: "normal",
+        incident: {
+          incident_id: "i-replica",
+          opened_at: new Date().toISOString(),
+          trigger: "sasmex",
+          max_pga_g: 0.01,
+          node_count: null,
+          severity: "minor",
+          state: "open",
+        },
+      } as unknown as MobileStateOut,
+    });
+    const v = await render(<Panel />);
+    await asentar();
+    fireEvent.press(v.getByTestId("open-confirmar-dictamen"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/confirmar-dictamen",
+      params: { incident: "i-7" },
+    });
+  });
+
   it("sin confirm_dictamen ⇒ no hay botón", async () => {
     mockSnapshot = instantanea({ data: pendiente() });
     const v = await render(<Panel />);

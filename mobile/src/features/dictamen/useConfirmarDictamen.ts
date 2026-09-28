@@ -36,6 +36,16 @@ export type Envio = {
   /** [F3·r3] La nube respondió 409 al confirmar un VERDE: lo firma el sistema
    *  tras la gracia. Tampoco se reintenta. */
   loFirmaElSistema?: boolean;
+  /** [D-49 · R1] 409: el edificio sigue en movimiento. SE reintenta, cuando
+   *  vuelva la calma: no es terminal. */
+  esperaCalma?: boolean;
+  /** [D-49] 409: la cabeza no es un AMARILLO de la regla (fila histórica sin
+   *  banda): la firma el inspector. Terminal. */
+  loFirmaElInspector?: boolean;
+  /** [D-49] La cabeza ya estaba firmada (al releerla o por el 409). Terminal. */
+  yaFirmado?: boolean;
+  /** [D-49] 404: el incidente no está al alcance de este perfil. Terminal. */
+  fueraDeAlcance?: boolean;
   /** [F3·r3] El `dictamen_id` al que se refiere este resultado. «Confirmado» (o
    *  «requiere inspector») vale para ESA cabeza: si aparece otra, el resultado
    *  deja de aplicar y se vuelve a ofrecer. `null`/ausente ⇒ vale para cualquiera. */
@@ -52,20 +62,21 @@ export function envioVigente(e: Envio, dictamenId: string | null | undefined): E
 
 const IDLE: Envio = { estado: "idle", mensaje: null };
 
-/** El 409 de un daño ROJO reportado (la regla aún no subió la banda) lleva
- *  «requiere inspector» en el `detail`; los otros 409 son de cabeza cambiada. */
-function esRequiereInspector(error: unknown): boolean {
-  const detail =
+/** El `detail` de un error del SDK, o `""`. */
+function detalle(error: unknown): string {
+  const d =
     error !== null && typeof error === "object" ? (error as { detail?: unknown }).detail : null;
-  return typeof detail === "string" && detail.includes("requiere inspector");
+  return typeof d === "string" ? d : "";
 }
 
-/** El 409 de confirmar un VERDE: lo firma el sistema al terminar la gracia. */
-function esVerdeDelSistema(error: unknown): boolean {
-  const detail =
-    error !== null && typeof error === "object" ? (error as { detail?: unknown }).detail : null;
-  return typeof detail === "string" && detail.includes("lo firma el sistema");
-}
+// [D-49] Cada 409 de `routers/dictamens.confirm_dictamen` se reconoce por su
+// `detail` literal (el orden importa: el de banda también dice «lo firma el
+// inspector» y el del VERDE «lo firma el sistema»).
+const esRequiereInspector = (e: unknown) => detalle(e).includes("requiere inspector");
+const esVerdeDelSistema = (e: unknown) => detalle(e).includes("lo firma el sistema");
+const esEsperaCalma = (e: unknown) => detalle(e).includes("vuelva a calma");
+const esLoFirmaElInspector = (e: unknown) => detalle(e).includes("lo firma el inspector");
+const esYaFirmado = (e: unknown) => detalle(e).includes("ya está firmado");
 
 const MENSAJE_VERDE_DEL_SISTEMA =
   "Un dictamen verde no lo confirma la brigada: lo emite el sistema cuando termina la espera sin daños reportados. Si ve daño, repórtelo o escálelo al inspector.";
@@ -75,6 +86,18 @@ const MENSAJE_CABEZA_CAMBIO =
 
 const MENSAJE_REQUIERE_INSPECTOR =
   "Hay un daño reportado que exige inspección: este dictamen no lo confirma la brigada. Escálelo al inspector.";
+
+export const MENSAJE_ESPERE_CALMA =
+  "El edificio sigue en movimiento: espere a que el edificio vuelva a calma para confirmar.";
+
+const MENSAJE_LO_FIRMA_EL_INSPECTOR =
+  "Este dictamen no salió de la regla automática: no lo confirma la brigada, lo firma el inspector. Escálelo.";
+
+const MENSAJE_YA_FIRMADO =
+  "El dictamen ya estaba firmado: no hay nada que confirmar. Revise el vigente.";
+
+const MENSAJE_FUERA_DE_ALCANCE =
+  "Este incidente no pertenece a su inmueble o su perfil ya no lo ve: no se puede confirmar desde aquí.";
 
 /** Error con el código HTTP, para que la vista pueda distinguir un 403 (no le
  *  corresponde leer la cadena) de una red caída. */
@@ -92,6 +115,36 @@ function mensajeConfirmar(status: number): string {
     return "Este dictamen no lo puede confirmar usted: escálelo al inspector.";
   }
   return "No se pudo confirmar. Compruebe la conexión y vuelva a intentarlo.";
+}
+
+/** [D-49] La respuesta de confirmar con causa CONOCIDA ⇒ su mensaje y su
+ *  bandera. `null` ⇒ la genérica de `mensajeConfirmar`. */
+function clasificar(
+  status: number,
+  error: unknown,
+): Omit<Envio, "estado" | "dictamenId"> | null {
+  if (status === 404) {
+    return { mensaje: MENSAJE_FUERA_DE_ALCANCE, fueraDeAlcance: true };
+  }
+  if (status !== 409) {
+    return null;
+  }
+  if (esEsperaCalma(error)) {
+    return { mensaje: MENSAJE_ESPERE_CALMA, esperaCalma: true };
+  }
+  if (esRequiereInspector(error)) {
+    return { mensaje: MENSAJE_REQUIERE_INSPECTOR, requiereInspector: true };
+  }
+  if (esVerdeDelSistema(error)) {
+    return { mensaje: MENSAJE_VERDE_DEL_SISTEMA, loFirmaElSistema: true };
+  }
+  if (esLoFirmaElInspector(error)) {
+    return { mensaje: MENSAJE_LO_FIRMA_EL_INSPECTOR, loFirmaElInspector: true };
+  }
+  if (esYaFirmado(error)) {
+    return { mensaje: MENSAJE_YA_FIRMADO, yaFirmado: true };
+  }
+  return null;
 }
 
 export function useConfirmarDictamen(incidentId: string | null) {
@@ -131,7 +184,13 @@ export function useConfirmarDictamen(incidentId: string | null) {
         return;
       }
       if (vigente.signed_by != null) {
-        setConfirmacion({ estado: "idle", mensaje: null });
+        // [D-49] Ya firmado por otro: se DICE (antes volvía muda a `idle`).
+        setConfirmacion({
+          estado: "error",
+          mensaje: MENSAJE_YA_FIRMADO,
+          yaFirmado: true,
+          dictamenId: vigente.dictamen_id,
+        });
         return;
       }
       const dictamenId = vigente.dictamen_id;
@@ -140,23 +199,9 @@ export function useConfirmarDictamen(incidentId: string | null) {
       });
       if (res.error || !res.data) {
         const status = res.response?.status ?? 0;
-        if (status === 409 && esRequiereInspector(res.error)) {
-          setConfirmacion({
-            estado: "error",
-            mensaje: MENSAJE_REQUIERE_INSPECTOR,
-            requiereInspector: true,
-            dictamenId,
-          });
-          void refetch();
-          return;
-        }
-        if (status === 409 && esVerdeDelSistema(res.error)) {
-          setConfirmacion({
-            estado: "error",
-            mensaje: MENSAJE_VERDE_DEL_SISTEMA,
-            loFirmaElSistema: true,
-            dictamenId,
-          });
+        const conocida = clasificar(status, res.error);
+        if (conocida !== null) {
+          setConfirmacion({ estado: "error", ...conocida, dictamenId });
           void refetch();
           return;
         }

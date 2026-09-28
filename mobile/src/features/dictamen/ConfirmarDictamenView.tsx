@@ -28,10 +28,18 @@ export type ConfirmarDictamenViewProps = {
   onEscalar: (() => void) | null;
 };
 
-/** [F3·r3] Un 409 que reintentar no arregla: «requiere inspector» (daño ROJO
- *  reportado) o el VERDE que firma el sistema. */
+/** [F3·r3 · D-49] Una respuesta que reintentar no arregla: «requiere inspector»
+ *  (daño ROJO reportado), el VERDE que firma el sistema, la fila que firma el
+ *  inspector, la cabeza ya firmada o el incidente fuera de alcance (404). La de
+ *  la calma (R1) SÍ se reintenta: cuando el edificio se detenga. */
 function noSeReintenta(e: Envio): boolean {
-  return e.requiereInspector === true || e.loFirmaElSistema === true;
+  return (
+    e.requiereInspector === true ||
+    e.loFirmaElSistema === true ||
+    e.loFirmaElInspector === true ||
+    e.yaFirmado === true ||
+    e.fueraDeAlcance === true
+  );
 }
 
 function textoConfirmar(e: Envio): string {
@@ -39,6 +47,10 @@ function textoConfirmar(e: Envio): string {
   if (e.estado === "hecho") return "DICTAMEN CONFIRMADO";
   if (e.requiereInspector === true) return "NO SE CONFIRMA · ESCALE AL INSPECTOR";
   if (e.loFirmaElSistema === true) return "NO SE CONFIRMA · LO EMITE EL SISTEMA";
+  if (e.loFirmaElInspector === true) return "NO SE CONFIRMA · ESCALE AL INSPECTOR";
+  if (e.yaFirmado === true) return "NO SE CONFIRMA · YA ESTABA FIRMADO";
+  if (e.fueraDeAlcance === true) return "NO SE CONFIRMA · FUERA DE SU ALCANCE";
+  if (e.esperaCalma === true) return "REINTENTAR CON EL EDIFICIO EN CALMA";
   if (e.estado === "error") return "REINTENTAR CONFIRMACIÓN";
   return "CONFIRMAR DICTAMEN";
 }
@@ -102,6 +114,11 @@ export function ConfirmarDictamenView({
                   {i + 1}. {r}
                 </Text>
               ))}
+            </View>
+          ) : vista.tipo === "espere_calma" ? (
+            <View style={styles.bloque} testID="confirmar-espere-calma">
+              <Text style={styles.eyebrow}>TODAVÍA NO SE CONFIRMA</Text>
+              <Text style={styles.texto}>{vista.explicacion}</Text>
             </View>
           ) : vista.tipo === "lo_firma_el_sistema" ? (
             <View style={styles.bloque} testID="confirmar-lo-firma-el-sistema">

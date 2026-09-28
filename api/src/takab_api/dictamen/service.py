@@ -38,7 +38,6 @@ import psycopg
 
 from takab_api.dictamen.rules import (
     BANDA_STATUS,
-    DANOS_ROJO,
     ORDEN_BANDA,
     Decision,
     EvalInputV2,
@@ -49,8 +48,9 @@ from takab_api.dictamen.rules import (
 )
 from takab_api.dictamen.sistema import (
     FIRMA_DE_INSPECTOR_SQL,
-    FIRMAS_HUMANAS,
+    FIRMA_HUMANA_SQL,
     SYSTEM_DICTAMEN_SIGNER_UUID,
+    danos_no_vistos,
 )
 from takab_api.felt import CLAVE_UMBRAL_CONGELADO, umbral_congelado, umbral_de_fila
 from takab_api.incident.quorum import resolve_params as resolve_quorum_params
@@ -152,7 +152,7 @@ _LOCK_INCIDENT_SQL = "SELECT 1 FROM incidents WHERE incident_id = %(incident)s F
 # (toma FOR KEY SHARE del incidente por la FK, así que el lock ESPERA a que se
 # confirme) tiene que decidir el VERDE del sistema y la subida de banda.
 # [F3·r3] Una fila POR REPORTE, con su hora: sobre una cabeza firmada por una
-# persona sólo cuentan los que esa persona no vio (``_danos_no_vistos``).
+# persona sólo cuentan los que esa persona no vio (``sistema.danos_no_vistos``).
 _DAMAGE_SQL = """
 SELECT d.report_id, d.created_at,
        COALESCE(array_agg(DISTINCT c.value->>'key')
@@ -177,6 +177,16 @@ WHERE a.incident_id = %(incident)s AND a.kind = 'dictamen_request'
     WHERE d.incident_id = a.incident_id AND {FIRMA_DE_INSPECTOR_SQL}
       AND d.created_at > a.ts
   )
+LIMIT 1
+"""
+
+# [D-49 · R4] La ÚLTIMA firma HUMANA de la cadena (no necesariamente la cabeza: una
+# subida sin firmar puede estar encima). Tras ella sólo sube lo que no vio.
+_ULTIMA_FIRMA_HUMANA_SQL = f"""
+SELECT d.dictamen_id, d.signature_kind, d.created_at, d.basis
+FROM dictamens d
+WHERE d.incident_id = %(incident)s AND {FIRMA_HUMANA_SQL}
+ORDER BY d.created_at DESC, d.dictamen_id DESC
 LIMIT 1
 """
 
@@ -354,22 +364,7 @@ def _gracia_cumplida(row: dict, settings: Settings, now: datetime) -> tuple[bool
     return ok, desde
 
 
-def _danos_no_vistos(reportes: list, head: dict) -> list:
-    """Los reportes que la persona que firmó la cabeza NO vio.
-
-    Los creados DESPUÉS de su firma; y, sobre una CONFIRMACIÓN, además cualquiera
-    con un daño ROJO: la API no deja confirmar con uno reportado, así que si existe
-    es que entró en vuelo y quien confirmó no lo vio."""
-    confirmacion = head["signature_kind"] == "confirmation"
-    return [
-        r
-        for r in reportes
-        if r["created_at"] > head["created_at"]
-        or (confirmacion and set(r["claves"] or ()) & DANOS_ROJO)
-    ]
-
-
-def _subida_tras_firma_humana(decision: Decision, band: str, head: dict, nuevos: list) -> Decision:
+def _subida_tras_firma_humana(decision: Decision, band: str, firma: dict, nuevos: list) -> Decision:
     """La fila que sube sobre una firma humana: banda y motivos SÓLO de los daños
     nuevos (la PGA y lo anterior ya los juzgó quien firmó); la evidencia completa
     sigue constando."""
@@ -378,8 +373,8 @@ def _subida_tras_firma_humana(decision: Decision, band: str, head: dict, nuevos:
     basis["band"] = band
     basis["motivos"] = [f"dano:{k}" for k in claves] or ["dano_sin_categoria"]
     basis["subida_tras_firma"] = {
-        "signature_kind": head["signature_kind"],
-        "firmada_en": head["created_at"].isoformat(),
+        "signature_kind": firma["signature_kind"],
+        "firmada_en": firma["created_at"].isoformat(),
         "reportes_nuevos": [str(r["report_id"]) for r in nuevos],
     }
     basis["notes"] = "daño reportado después de la firma: requiere nueva revisión"
@@ -395,7 +390,7 @@ def _dictaminar(
     - Banda nueva MÁS ALTA que la cabeza (firmada o no, de quien sea) ⇒ fila sin
       firmar que la supersede: la prudencia sube sola.
     - Jamás inserta una banda más baja: sólo baja con firma.
-    - Cabeza firmada por una PERSONA ⇒ sólo suben los daños que no vio.
+    - Tras la ÚLTIMA firma de una PERSONA ⇒ sólo suben los daños que no vio (D-49 R4).
     - Cabeza VERDE sin firmar + evaluación VERDE + tier normal ≥ gracia + sin
       daños + sin escalada pendiente ⇒ VERDE firmado por el sistema.
     """
@@ -440,22 +435,26 @@ def _dictaminar(
 
     signed_by: str | None = None
     signature_kind: str | None = None
-    if (
-        head is not None
-        and head["signed_by"] is not None
-        and head["signature_kind"] in (FIRMAS_HUMANAS)
-    ):
-        # [F3·r3 · D-43] LA FIRMA HUMANA NO SE DESHACE SOLA. Quien firmó ya vio la PGA
-        # y los daños anteriores; la evaluación completa volvía a subir sobre su firma
-        # en cada pasada durante 72 h (medido: ROJO sin firmar encima del VERDE del
-        # inspector, una y otra vez). Sólo suben los daños que NO vio.
-        nuevos = _danos_no_vistos(reportes, head)
+    firma = (
+        conn.execute(_ULTIMA_FIRMA_HUMANA_SQL, {"incident": row["incident_id"]}).fetchone()
+        if head is not None
+        else None
+    )
+    if head is not None and firma is not None:
+        # [F3·r3 · D-43 · D-49 R4] LA FIRMA HUMANA NO SE DESHACE SOLA. Quien firmó ya
+        # vio la PGA y los daños de su lista (``basis.danos_vistos``); la evaluación
+        # completa volvía a subir sobre su firma en cada pasada durante 72 h. Tras la
+        # ÚLTIMA firma humana —sea la cabeza o tenga una subida sin firmar encima—
+        # sólo sube un daño que NO vio: si no, una fuga de agua tras el VERDE del
+        # inspector con PGA roja subía a AMARILLO y la pasada siguiente, por la PGA
+        # que él ya juzgó, a ROJO (el edificio cerrado 72 h tras la firma).
+        nuevos = danos_no_vistos(reportes, firma)
         if not nuevos:
             return None
         band = banda_por_danos([k for r in nuevos for k in (r["claves"] or ())])
         if ORDEN_BANDA[band] <= ORDEN_BANDA[banda_de(head["status"], head["band"])]:
             return None
-        decision = _subida_tras_firma_humana(decision, band, head, nuevos)
+        decision = _subida_tras_firma_humana(decision, band, firma, nuevos)
     elif head is not None:
         head_band = banda_de(head["status"], head["band"])
         if ORDEN_BANDA[band] > ORDEN_BANDA[head_band]:

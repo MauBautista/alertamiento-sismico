@@ -688,6 +688,9 @@ class DictamenRow:
     band: str | None = None
     #: [T-9.34 · D-43] Rol de quien CONFIRMÓ (sólo `confirmation`), de la bitácora.
     firmante_rol: str | None = None
+    #: [D-49 · R4] `basis.danos_vistos` de una firma HUMANA: los reportes de daño que
+    #: vio al firmar. `None` en las demás filas y en las firmas anteriores a D-49.
+    danos_vistos: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)

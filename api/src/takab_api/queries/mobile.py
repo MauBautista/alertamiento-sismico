@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.roles import literales_de
+from takab_api.dictamen.sistema import ESCALADA_PENDIENTE_SQL
 from takab_api.incident.autoridad import autoriza_evacuacion_sql, params_autoriza_evacuacion_sql
 from takab_api.incident.classification import TERMINALES
 from takab_api.queries.fleet import EDAD_DEL_ENLACE, LATIDO_REAL
@@ -226,7 +227,10 @@ _INCIDENTES_QUE_CUENTAN = (
     "(e.meta->>'node_count')::int AS node_count, "
     "d.status AS dictamen_status, d.signed_by AS dictamen_signed_by, "
     "d.created_at AS dictamen_at, d.band AS dictamen_band, "
-    "c.classification AS clasificacion "
+    "c.classification AS clasificacion, "
+    # [D-49 · R5] Regla 1d: viaja en TODAS las consultas que se juntan por
+    # `incident_id`, así que la fila que gane el merge la lleva siempre.
+    f"{ESCALADA_PENDIENTE_SQL} AS escalada_pendiente "
     "FROM incidents i "
     "LEFT JOIN seismic_events e ON e.event_id = i.event_id "
     "LEFT JOIN LATERAL ("
@@ -272,6 +276,18 @@ ROJO_SIN_FIRMAR_VIGENTES = text(
     _INCIDENTES_QUE_CUENTAN + "  AND d.signed_by IS NULL AND d.band = 'rojo'"
 )
 
+# [D-49 · R2] Los AMARILLO de la regla SIN CONFIRMAR del sitio (regla 1c de
+# `reingreso.bloqueo_persistente`): como los ROJO, sin `LIMIT` y sin cota de edad
+# —no caducan a propósito—. SÓLO filas v2 (`band = 'amarillo'`).
+AMARILLO_SIN_CONFIRMAR_VIGENTES = text(
+    _INCIDENTES_QUE_CUENTAN + "  AND d.signed_by IS NULL AND d.band = 'amarillo'"
+)
+
+# [D-49 · R5] Las ESCALADAS al inspector SIN ATENDER del sitio (regla 1d de
+# `reingreso.bloqueo_persistente`): sin `LIMIT` y sin cota de edad, abiertos o
+# cerrados. Una petición de inspector sin atender no la tapa el VERDE de una réplica.
+ESCALADA_PENDIENTE_VIGENTES = text(_INCIDENTES_QUE_CUENTAN + f"  AND {ESCALADA_PENDIENTE_SQL}")
+
 # Los que pueden DECIDIR el resto: cerrados dentro de la espera del dictamen, MÁS
 # RECIENTEMENTE CERRADOS primero — el mismo criterio con el que decide
 # `deriva_reingreso` (regla 2: manda el último CIERRE, no la última apertura).
@@ -310,7 +326,7 @@ LATEST_TIER = text(
 )
 
 LATEST_DICTAMEN = text(
-    "SELECT status, signed_by, band FROM dictamens "
+    "SELECT status, signed_by, band, created_at FROM dictamens "
     "WHERE incident_id = CAST(:incident AS uuid) "
     "ORDER BY created_at DESC, dictamen_id DESC LIMIT 1"
 )
