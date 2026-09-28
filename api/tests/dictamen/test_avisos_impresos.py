@@ -63,6 +63,7 @@ from takab_api.dictamen.pdf import render
 from takab_api.dictamen.sistema import SYSTEM_DICTAMEN_SIGNER_UUID
 from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import _OPENED, model
+from tests.dictamen.test_superficie_en_el_papel import _bloque as _con_superficie
 
 _VARIANTES = ("technical", "executive")
 
@@ -217,6 +218,8 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         frozenset({"technical"}),
     ),
     # Los cinco del documento pericial.
+    # [T-9.53 · D-44] `NO_MMI` ya no sale SIEMPRE: sólo cuando la §8 no imprime una
+    # superficie estimada. El `model()` pelado es `pendiente`, sin superficie.
     "NO_MMI": (model, frozenset({"technical"})),
     "ENVELOPE_NOTE": (model, frozenset({"technical"})),
     "CENTROID_NOTE": (model, frozenset({"technical"})),
@@ -511,6 +514,29 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
         ),
         frozenset({"technical"}),
     ),
+    # [T-9.53 · D-44] La superficie ESTIMADA. Su bloque sale por la RUTA REAL
+    # (`calculo` + `superficie.estima` → `lectura.desde_mapa` → `bloque_de_shakemap`),
+    # no a mano. `MMI_ESTIMADA` SUSTITUYE a `NO_MMI` en la §5 —no se suman—, y la
+    # frase de cobertura también cambia: la de siempre dice «no se colorea».
+    "MMI_ESTIMADA": (lambda: model(shakemap=_con_superficie()), frozenset({"technical"})),
+    "LEYENDA_SUPERFICIE_ZONAS": (
+        lambda: model(shakemap=_con_superficie()),
+        frozenset({"technical"}),
+    ),
+    "SHAKEMAP_COBERTURA_ESTIMADA": (
+        lambda: model(shakemap=_con_superficie()),
+        frozenset({"technical"}),
+    ),
+    # Sin snapshot, calculado al emitir; y su fallo, que no es ni «ilegible» ni
+    # «pendiente».
+    "SHAKEMAP_A_DEMANDA": (
+        lambda: model(shakemap=_con_superficie(a_demanda=True)),
+        frozenset({"technical"}),
+    ),
+    "SHAKEMAP_NO_CALCULADO": (
+        lambda: model(shakemap=ShakemapBlock(fallo_de_calculo="el cálculo a demanda falló")),
+        frozenset({"technical"}),
+    ),
     # Depende del PROVEEDOR de prosa, no del documento: ver sus dos tests propios.
     "NARRATIVE_AI_NOTE": (model, frozenset()),
 }
@@ -648,9 +674,12 @@ def test_el_espia_NO_esta_ciego() -> None:
     # que no consta de quien confirmó y el AMARILLO pendiente de confirmación.
     # [F3·r3] 53 → 55 y 52 → 54: el deslinde de la confirmación de un INSPECTOR y el
     # AMARILLO que espera al inspector por un daño rojo reportado.
-    assert len(ESCENARIOS) == 55, "cambió el número de avisos declarados"
+    # [T-9.53 · D-44] 55 → 60 y 54 → 59: la superficie ESTIMADA —la MMI estimada que
+    # sustituye a `NO_MMI`, la leyenda de sus dos zonas y la cobertura que ya no
+    # dice «no se colorea»— y el mapa calculado al emitir, con su fallo.
+    assert len(ESCENARIOS) == 60, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 54, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 59, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

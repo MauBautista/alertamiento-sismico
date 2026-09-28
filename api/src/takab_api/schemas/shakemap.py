@@ -8,13 +8,21 @@ feature**: quien las mezcle en una lista no puede perderla por el camino.
 
 Lo que NO hay aquí, y cada ausencia tiene su ficha detrás:
 
-* **No hay escala de intensidad.** `dictamen/model.py::NO_MMI` ya está impreso en
+* **No hay intensidad OBSERVADA.** `dictamen/model.py::NO_MMI` está impreso en
   documentos FIRMADOS diciendo que TAKAB no reporta intensidad macrosísmica ni
-  isosistas; derivar una MMI de la PGA de un sensor volvería falsa una frase ya
-  firmada. Lo que se codifica es PGA en g, que es lo que se mide.
-* **No hay malla ni superficie interpolada.** Con unidades de estaciones no se
-  interpola una superficie y se le llama medición.
+  isosistas, y sigue siendo cierto para su fecha y para lo medido. Lo que se
+  codifica como medida es PGA en g.
 * **No hay forma de onda** (regla de oro 9): el mapa se construye de features.
+
+[T-9.51 · D-44 enmienda D-08] Lo que SÍ hay desde entonces, y siempre rotulado
+como estimación:
+
+* **Una MMI ESTIMADA por punto** (`mmi_estimada`, `mmi_romano`), derivada al leer
+  de su PGA con la relación citada (`gmice.CITA`, Wald 1999). Es una conversión,
+  no una observación, y el nombre del campo lo dice: jamás `mmi` a secas.
+* **Una superficie ESTIMADA** (`superficie`): la ley corregida cerca de lo medido,
+  con N sensores y M calibrados. Aquí viajan sus metadatos; la malla viaja en el
+  PNG (`GET /incidents/{id}/shakemap/superficie.png`), no en el JSON.
 """
 
 from __future__ import annotations
@@ -107,6 +115,12 @@ class PuntoProps(BaseModel):
     #: del que sólo estaba ahí — y el cuórum es lo único, con SASMEX, que puede
     #: ordenar evacuar.
     voto_contado: bool | None
+    #: [T-9.51 · D-44] La intensidad Mercalli ESTIMADA desde `pga_g` (Wald 1999,
+    #: `gmice.CITA`). Se DERIVA al leer y no se persiste. `None` sin PGA medida:
+    #: estimar una intensidad sobre un silencio sería inventarla.
+    mmi_estimada: float | None
+    #: El mismo grado en romanos (`VI`), redondeado. `None` con `mmi_estimada`.
+    mmi_romano: str | None
 
 
 class AnilloProps(BaseModel):
@@ -168,6 +182,44 @@ class AnillosOut(BaseModel):
     features: list[AnilloFeature]
 
 
+class SuperficieOut(BaseModel):
+    """[T-9.51 · D-44] La superficie ESTIMADA, SIN la malla (viaja en el PNG).
+
+    Todo lo que quien la pinta necesita para rotularla como lo que es: «ESTIMADO a
+    partir de N sensores (M calibrados)», con la ley, el método y la cita de la
+    relación PGA–MMI.
+    """
+
+    #: `[oeste, sur, este, norte]` en grados: dónde se coloca el PNG.
+    bbox: list[float]
+    #: Píxeles del PNG: una celda, un píxel. Fila 0 = norte.
+    ancho: int
+    alto: int
+    #: N: inmuebles ACTIVOS que midieron. M: los calibrados, los únicos que ajustan.
+    n_sensores: int
+    n_calibrados: int
+    #: Escala del peso gaussiano (km): hasta `2·escala_km` de un calibrado la zona
+    #: es AJUSTADA; más allá, sólo MODELADA por la ley.
+    escala_km: float
+    ley: str
+    metodo: str
+    cita_mmi: str
+    #: El máximo de la superficie sobre la zona AJUSTADA, calculado al leer. `None`
+    #: si no hubiera celda ajustada: el máximo de la zona modelada es la ley sola.
+    pga_max_g: float | None
+    #: Su MMI ESTIMADA (misma relación que los puntos).
+    mmi_max_estimada: float | None
+    #: Ruta RELATIVA del PNG, sin URL prefirmada: lo sirve la API con los mismos
+    #: roles que este JSON.
+    png: str
+    #: [T-9.52] Los cortes de banda DEL SITIO con que se pinta el PNG
+    #: (`dictamen/rules.resolve_params_v2`): la leyenda de la consola los imprime, y
+    #: sin ellos pintaba los de fábrica junto a una imagen hecha con otros. `None`
+    #: sólo en el cálculo a demanda del PDF, que resuelve los suyos por su lado.
+    verde_max_g: float | None
+    rojo_min_g: float | None
+
+
 class ShakemapOut(BaseModel):
     """El mapa entero de un incidente."""
 
@@ -199,3 +251,11 @@ class ShakemapOut(BaseModel):
     #: Vacío cuando no hubo capa 2 en absoluto —eso lo dice `ley is None`— o
     #: cuando se dibujaron todos.
     fuera_de_alcance: list[NivelFueraOut]
+    #: [T-9.51 · D-44] La superficie ESTIMADA, o `None`. Con `None`,
+    #: `superficie_motivo` dice por qué (`sin_epicentro` / `sin_medidas` /
+    #: `sin_calibrados`); con los DOS en `None` el snapshot es anterior a D-44 (o
+    #: el mapa está `pendiente`), y no se inventa nada.
+    superficie: SuperficieOut | None
+    superficie_motivo: str | None
+    #: La frase de `superficie.MOTIVOS` para imprimirla tal cual.
+    superficie_motivo_texto: str | None

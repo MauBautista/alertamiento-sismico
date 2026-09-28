@@ -22,6 +22,7 @@ from datetime import UTC
 
 from fpdf.enums import MethodReturnValue, XPos, YPos
 
+from takab_api import geodatos
 from takab_api.compliance import compliance_block
 from takab_api.dictamen import plot, rotulos, sketch
 from takab_api.dictamen.bitacora import rotulo as rotulo_de_accion
@@ -54,6 +55,8 @@ from takab_api.dictamen.model import (
     LEYENDA_CRUZ,
     LEYENDA_DISCO,
     LEYENDA_SIN_DATO,
+    LEYENDA_SUPERFICIE_ZONAS,
+    MMI_ESTIMADA,
     MODELO_Y_RESIDUO,
     NARRATIVE_AI_NOTE,
     NO_CALIBRATION,
@@ -66,8 +69,11 @@ from takab_api.dictamen.model import (
     PERSONAS_EN_RIESGO,
     REPRODUCCION_NOTE,
     ROL_NO_RESUELTO,
+    SHAKEMAP_A_DEMANDA,
+    SHAKEMAP_COBERTURA_ESTIMADA,
     SHAKEMAP_DEGRADADO,
     SHAKEMAP_LEYENDA,
+    SHAKEMAP_NO_CALCULADO,
     SHAKEMAP_NO_LEIDO,
     SHAKEMAP_PENDIENTE,
     SHAKEMAP_SIN_ANILLOS,
@@ -97,6 +103,8 @@ from takab_api.dictamen.sistema import CLAVE_DANOS_VISTOS, FIRMAS_HUMANAS, danos
 from takab_api.felt import ORIGEN_INMUEBLE, ORIGEN_REFERENCIA, umbral_desde_dict
 from takab_api.geo import EARTH_RADIUS_KM
 from takab_api.shakemap import calculo as shk
+from takab_api.shakemap import gmice, raster
+from takab_api.shakemap import superficie as SUP
 
 #: [T-7.44] Los altos de las figuras del análisis instrumental, en un solo sitio.
 #: Los saltos de página se derivan de aquí con `reserva()`, no de números
@@ -780,7 +788,13 @@ def _intensity_section(pdf: TakabPDF, m: ReportModel) -> None:
     # siempre: un documento cuyo mapa está `pendiente` —el caso NORMAL, porque se
     # calcula por evento— prometía aquí modelo y residuo y tres secciones más
     # abajo decía «NO CALCULADO TODAVÍA». Se deriva del bloque, no de la intención.
-    pdf.callout(f"{NO_MMI} {MODELO_Y_RESIDUO}" if _reporta_modelo_y_residuo(m.shakemap) else NO_MMI)
+    #
+    # [T-9.53 · D-44] Y la primera frase también se deriva: `NO_MMI` sólo cuando la
+    # §8 NO va a imprimir una superficie estimada. Cuando sí, `MMI_ESTIMADA`, que
+    # conserva lo que `NO_MMI` defendía (la MMI no se OBSERVA desde una PGA) y dice
+    # lo que ahora se hace: se ESTIMA, con su cita.
+    mmi = MMI_ESTIMADA if _imprime_superficie(m.shakemap) else NO_MMI
+    pdf.callout(f"{mmi} {MODELO_Y_RESIDUO}" if _reporta_modelo_y_residuo(m.shakemap) else mmi)
 
 
 def _quorum_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -1104,11 +1118,61 @@ def _reporta_modelo_y_residuo(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
     la columna RESIDUO entera en SIN DATO. Prometer de menos no es una falsedad;
     prometer un número que no está, sí.
     """
-    if b.fallo_de_lectura is not None or b.estado == shk.ESTADO_PENDIENTE:
+    if _mapa_no_disponible(b) or b.estado == shk.ESTADO_PENDIENTE:
         return False
     if b.estado == shk.ESTADO_SIN_DATOS or not b.puntos:
         return False
     return _hay_modelo_por_punto(b) and any(p.residuo_log10 is not None for p in b.puntos)
+
+
+def _mapa_no_disponible(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
+    """[T-9.53] ¿Se rinde la §8 antes de imprimir nada del mapa?
+
+    Dos maneras, y son dos hechos distintos: el snapshot no se pudo LEER, o no lo
+    había y el cálculo para este documento FALLÓ. Las dos dejan la sección sin
+    mapa y ninguna de las dos es `pendiente`.
+    """
+    return b.fallo_de_lectura is not None or b.fallo_de_calculo is not None
+
+
+def _dibujo_del_mapa(b):  # noqa: ANN001, ANN202 - model.ShakemapBlock → sketch.Sketch | None
+    """[T-9.53] El croquis de la §8, o ``None`` si la sección no llega a la figura.
+
+    Una sola función para las dos preguntas que dependen de él —qué dibuja la §8 y
+    qué anuncia la §5—: calcularlo en dos sitios serían dos respuestas posibles.
+    Las puertas son las de `_shakemap_section`, en su orden.
+    """
+    if _mapa_no_disponible(b) or b.estado == shk.ESTADO_PENDIENTE:
+        return None
+    if b.estado == shk.ESTADO_SIN_DATOS or not b.puntos:
+        return None
+    dibujo = sketch.project(_puntos_del_mapa(b), CONTENT_W, _MAPA_SACUDIDA_H)
+    if dibujo is None or dibujo.mm_por_km <= 0:
+        return None
+    return dibujo
+
+
+def _superficie_pintable(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
+    """¿Trae el bloque una superficie con la que se PUEDE colorear?
+
+    Sin los umbrales de banda del sitio no hay color honesto que darle: se
+    pintaría con unos umbrales que no son los del dictamen de ese inmueble.
+    """
+    return (
+        b.superficie is not None
+        and b.banda_verde_max_g is not None
+        and b.banda_rojo_min_g is not None
+    )
+
+
+def _imprime_superficie(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
+    """[T-9.53 · D-44] ¿Va a DIBUJAR la §8 la superficie estimada?
+
+    Derivado de lo que la sección puede imprimir, no de que el bloque la traiga —la
+    doctrina de `_reporta_modelo_y_residuo`—: una §5 que anunciara una MMI
+    estimada sobre un mapa que la §8 no dibuja se desmentiría a sí misma.
+    """
+    return _superficie_pintable(b) and _dibujo_del_mapa(b) is not None
 
 
 def _hay_modelo_por_punto(b) -> bool:  # noqa: ANN001 - model.ShakemapBlock
@@ -1162,6 +1226,8 @@ def _estado_del_mapa(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
     """
     if b.fallo_de_lectura is not None:
         return "NO DISPONIBLE · la lectura del snapshot falló"
+    if b.fallo_de_calculo is not None:
+        return "NO DISPONIBLE · el cálculo para este documento falló"
     derivado = _estado_derivado(b)
     rotulo = _ESTADO_MAPA[derivado]
     if derivado == b.estado:
@@ -1273,6 +1339,18 @@ def _puntos_del_mapa(b):  # noqa: ANN001, ANN202 - model.ShakemapBlock
         for p in b.puntos
         if p.lat is not None and p.lon is not None
     ]
+    if _superficie_pintable(b) and puntos:
+        # [T-9.53 · D-44] Las esquinas de la superficie también ENCUADRAN, con la
+        # misma doctrina que los anillos: una sola escala para todo, y la imagen
+        # entera dentro del recuadro. Sin esto, dos inmuebles juntos y sin anillos
+        # encuadraban unos kilómetros y la superficie —60 km como mínimo— se salía
+        # de la caja por los cuatro lados. Sólo si hay algún punto que dibujar: la
+        # superficie sola no puede crear una figura que no tiene inmuebles.
+        sup = b.superficie
+        puntos += [
+            sketch.Point(sup.norte, sup.oeste, "", "bounds"),
+            sketch.Point(sup.sur, sup.este, "", "bounds"),
+        ]
     if b.epicentro_lat is None or b.epicentro_lon is None:
         return puntos
     puntos.append(sketch.Point(b.epicentro_lat, b.epicentro_lon, "EPICENTRO", "epicenter"))
@@ -1353,6 +1431,15 @@ def _mapa_de_la_sacudida(pdf: TakabPDF, b, dibujo) -> None:  # noqa: ANN001 - Sh
     pdf.set_draw_color(*RULE)
     pdf.rect(MARGIN, top, CONTENT_W, _MAPA_SACUDIDA_H)
 
+    # [T-9.53 · D-44 · D-45] Debajo de todo, en este orden: la cartografía base y
+    # la superficie ESTIMADA; encima, como siempre, lo modelado y lo medido. Lo
+    # medido va encima de lo estimado. Todo RECORTADO al marco: `polyline` e
+    # `image` no recortan, y un contorno estatal cruza el recuadro por definición.
+    with pdf.rect_clip(MARGIN, top, CONTENT_W, _MAPA_SACUDIDA_H):
+        dibujadas = _cartografia(pdf, dibujo, MARGIN, top)
+        if _superficie_pintable(b):
+            _superficie_estimada(pdf, b, dibujo, MARGIN, top)
+
     epicentro = next((p for p in dibujo.points if p.kind == "epicenter"), None)
     if epicentro is not None:
         _anillos_del_modelo(pdf, b, dibujo, MARGIN + epicentro.x, top + epicentro.y)
@@ -1398,6 +1485,133 @@ def _mapa_de_la_sacudida(pdf: TakabPDF, b, dibujo) -> None:  # noqa: ANN001 - Sh
     pdf.set_font(pdf.body_font, "B", 7)
     pdf.cell(8, 4, pdf.text_of("N ↑"))
     pdf.set_y(top + _MAPA_SACUDIDA_H + 2)
+    if dibujadas:
+        # [T-9.53 · D-45] Al pie, la procedencia de lo que SE DIBUJÓ, y sólo eso,
+        # leída de `atribuciones.json` —la misma fuente que la consola y la app—:
+        # una atribución escrita a mano aquí acabaría citando otra edición.
+        atrib = geodatos.carga("atribuciones.json")
+        pdf.para(
+            "CARTOGRAFÍA · " + " · ".join(atrib[clave]["corta"] for clave in dibujadas),
+            size=6.5,
+            muted=True,
+        )
+
+
+#: [T-9.53 · D-45] La cartografía base del mapa de la sacudida.
+#:
+#: Contornos estatales en gris fino y SIN relleno: sitúan, no afirman nada. Las
+#: zonas geotécnicas de la CDMX con un relleno muy tenue —el color fuerte es de la
+#: superficie y de lo medido— en tonos que no se confunden con las tres bandas
+#: (verde, ámbar, rojo): ocre, arena y azul grisáceo.
+_GRIS_CONTORNO = (175, 175, 175)
+_CONTORNO_MM = 0.15
+_ZONAS_NTC: dict[str, tuple[str, tuple[int, int, int]]] = {
+    "lomas": ("LOMAS", (150, 120, 80)),
+    "transicion": ("TRANSICIÓN", (185, 160, 115)),
+    "lago": ("LAGO", (95, 130, 165)),
+}
+_OPACIDAD_ZONA = 0.14
+
+
+def _anillos_de(geometria: dict) -> list[list[list[float]]]:
+    """Los anillos (listas de `[lon, lat]`) de un Polygon o MultiPolygon GeoJSON."""
+    if geometria["type"] == "Polygon":
+        return list(geometria["coordinates"])
+    if geometria["type"] == "MultiPolygon":
+        return [anillo for poligono in geometria["coordinates"] for anillo in poligono]
+    return []
+
+
+def _cruza(anillo: list[list[float]], limites: tuple[float, float, float, float]) -> bool:
+    """¿Toca la caja del anillo el recuadro? Descarta lo que ni se acerca antes de
+    mandarlo al PDF: el recorte lo haría invisible, pero seguiría pesando."""
+    oeste, sur, este, norte = limites
+    lons = [v[0] for v in anillo]
+    lats = [v[1] for v in anillo]
+    return min(lons) <= este and max(lons) >= oeste and min(lats) <= norte and max(lats) >= sur
+
+
+def _cartografia(pdf: TakabPDF, dibujo, x0: float, y0: float) -> list[str]:  # noqa: ANN001
+    """Contornos estatales y zonas NTC de la CDMX, con la MISMA proyección del croquis.
+
+    Sin una sola petición de red: la cartografía viaja en el paquete
+    (`takab_api.geodatos`). Devuelve las claves de `atribuciones.json` de lo que
+    de verdad se dibujó, para que el pie no atribuya lo que no está.
+
+    Todo va dentro de `local_context`: `rect_clip` guarda el estado del PDF con
+    `q`/`Q`, pero fpdf2 no se entera de que el color vuelve atrás, y el siguiente
+    `set_draw_color` al mismo valor se omitiría pintando con el que no es.
+    """
+    limites = dibujo.limites()
+
+    def proyecta(anillo: list[list[float]]) -> list[tuple[float, float]]:
+        return [(x0 + x, y0 + y) for x, y in (dibujo.proyecta(lat, lon) for lon, lat in anillo)]
+
+    dibujadas: list[str] = []
+    zonas = [
+        (f["properties"]["zona"], [a for a in _anillos_de(f["geometry"]) if _cruza(a, limites)])
+        for f in geodatos.carga("ntc_cdmx.geojson")["features"]
+    ]
+    zonas = [(zona, anillos) for zona, anillos in zonas if anillos and zona in _ZONAS_NTC]
+    for zona, anillos in zonas:
+        _, color = _ZONAS_NTC[zona]
+        with pdf.local_context(fill_color=color, fill_opacity=_OPACIDAD_ZONA):
+            for anillo in anillos:
+                pdf.polygon(proyecta(anillo), style="F")
+    for zona, anillos in zonas:
+        # El rótulo, en el centro de la caja de su anillo más grande, y sólo si
+        # ese centro cae dentro del recuadro: un rótulo recortado por la mitad
+        # no se lee y aparenta un fallo de impresión.
+        mayor = max(anillos, key=len)
+        cx = (min(v[0] for v in mayor) + max(v[0] for v in mayor)) / 2
+        cy = (min(v[1] for v in mayor) + max(v[1] for v in mayor)) / 2
+        x, y = dibujo.proyecta(cy, cx)
+        if 6 <= x <= dibujo.ancho_mm - 6 and 3 <= y <= dibujo.alto_mm - 3:
+            rotulo, color = _ZONAS_NTC[zona]
+            with pdf.local_context(text_color=color):
+                pdf.set_font(pdf.body_font, "", 5)
+                pdf.set_xy(x0 + x - 8, y0 + y - 1.2)
+                pdf.cell(16, 2.4, pdf.text_of(rotulo), align="C")
+    if zonas:
+        dibujadas.append("ntc_cdmx")
+
+    estados = [
+        a
+        for f in geodatos.carga("estados_mex.geojson")["features"]
+        for a in _anillos_de(f["geometry"])
+        if _cruza(a, limites)
+    ]
+    if estados:
+        with pdf.local_context(draw_color=_GRIS_CONTORNO, line_width=_CONTORNO_MM):
+            for anillo in estados:
+                pdf.polyline(proyecta(anillo), polygon=True, style="D")
+        # Los estados se atribuyen primero: son la base de toda la figura.
+        dibujadas.insert(0, "estados")
+    return dibujadas
+
+
+def _superficie_estimada(pdf: TakabPDF, b, dibujo, x0: float, y0: float) -> None:  # noqa: ANN001
+    """[T-9.53 · D-44] La superficie ESTIMADA embebida como imagen, una celda un píxel.
+
+    El PNG es el MISMO que sirve la consola (`shakemap.raster.png`), coloreado con
+    las bandas DEL SITIO: el papel no puede pintar ROJO donde la pantalla del mismo
+    sitio pinta VERDE. Se coloca proyectando las esquinas de su `bbox` con el
+    croquis, y eso es EXACTO, no una aproximación: la malla es regular en grados
+    (`superficie.estima` elige el tamaño de celda en km, pero las celdas son
+    uniformes en latitud y en longitud) y `Sketch.proyecta` es lineal en las dos,
+    así que el rectángulo geográfico cae en un rectángulo de página.
+    """
+    sup = b.superficie
+    x_oeste, y_norte = dibujo.proyecta(sup.norte, sup.oeste)
+    x_este, y_sur = dibujo.proyecta(sup.sur, sup.este)
+    imagen = raster.png(sup, verde_max_g=b.banda_verde_max_g, rojo_min_g=b.banda_rojo_min_g)
+    pdf.image(
+        io.BytesIO(imagen),
+        x=x0 + x_oeste,
+        y=y0 + y_norte,
+        w=x_este - x_oeste,
+        h=y_sur - y_norte,
+    )
 
 
 def _anillos_del_modelo(pdf: TakabPDF, b, dibujo, cx: float, cy: float) -> None:  # noqa: ANN001
@@ -1418,6 +1632,74 @@ def _anillos_del_modelo(pdf: TakabPDF, b, dibujo, cx: float, cy: float) -> None:
         pdf.cell(24, 3, pdf.text_of(f"{num(anillo.pga_g, 3, 'g')} · {anillo.radio_km:g} km"))
     pdf.set_dash_pattern()
     pdf.set_draw_color(*RULE)
+
+
+def _plural(n: int, singular: str, plural: str) -> str:
+    return f"{n} {singular if n == 1 else plural}"
+
+
+def _rotulo_de_la_superficie(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """«ESTIMADO a partir de N sensores (M calibrados)», con la cita de la MMI.
+
+    N y M salen de la superficie guardada: N midió, M ajusta. La cita es la que
+    viajó CON la superficie (`superficie_cita_mmi`), no la de hoy.
+    """
+    sup = b.superficie
+    cita = b.superficie_cita_mmi or gmice.CITA
+    return (
+        f"ESTIMADO a partir de {_plural(sup.n_sensores, 'sensor', 'sensores')} "
+        f"({_plural(sup.n_calibrados, 'calibrado', 'calibrados')}) · MMI estimada "
+        f"según {cita}, no observada"
+    )
+
+
+def _bandas_de_la_superficie(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """Las tres bandas con los umbrales DEL SITIO, los mismos del PNG que las pinta."""
+    verde = num(b.banda_verde_max_g, 3, "g")
+    rojo = num(b.banda_rojo_min_g, 3, "g")
+    return (
+        f"VERDE < {verde} · AMARILLO {num(b.banda_verde_max_g, 3)}–{rojo} · ROJO ≥ {rojo} "
+        "(los umbrales del dictamen de este inmueble)"
+    )
+
+
+def _mmi_maxima(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """La MMI máxima ESTIMADA en la zona AJUSTADA, tal como la dio el lector."""
+    if b.superficie_mmi_max is None:
+        # Sin celda ajustada, el máximo sería el de la ley sola: no se imprime como
+        # si hubiera algo medido detrás.
+        return "SIN ZONA AJUSTADA · la superficie es sólo la ley"
+    return (
+        f"{gmice.romano(b.superficie_mmi_max)} (estimada) · {b.superficie_mmi_max:.1f} · "
+        f"de una PGA estimada de {num(b.superficie_pga_max_g, 3, 'g')}"
+    )
+
+
+def _leyenda_de_la_superficie(pdf: TakabPDF, b) -> None:  # noqa: ANN001 - model.ShakemapBlock
+    """[T-9.53 · D-44] Lo que la superficie ES: estimada, con qué, y en qué zonas.
+
+    Va antes de la figura, como la leyenda de los símbolos: condiciona cómo se lee
+    el color. La opacidad dice la mitad («ajustada» / «modelada»); esto dice el
+    resto, con los números.
+    """
+    pdf.field("SUPERFICIE", _rotulo_de_la_superficie(b))
+    pdf.field("BANDAS DEL COLOR", _bandas_de_la_superficie(b))
+    pdf.callout(LEYENDA_SUPERFICIE_ZONAS)
+    pdf.field("MMI MÁXIMA ESTIMADA EN LA ZONA AJUSTADA", _mmi_maxima(b))
+
+
+def _sin_superficie(b) -> str:  # noqa: ANN001 - model.ShakemapBlock
+    """Por qué NO hay superficie, con la frase del vocabulario cerrado del cálculo.
+
+    Los dos en ``None`` es un snapshot anterior a `D-44`: se dice eso, sin
+    inventar un motivo. Un motivo desconocido se imprime tal cual, sin frase.
+    """
+    if b.superficie is not None:
+        # Hay malla y no hay umbrales del sitio con que colorearla.
+        return "NO SE DIBUJA · no se resolvieron los umbrales de banda del sitio"
+    if b.superficie_motivo is None:
+        return "NO SE DIBUJA · el snapshot no la trae (es anterior a la superficie estimada)"
+    return "NO SE DIBUJA · " + SUP.MOTIVOS.get(b.superficie_motivo, b.superficie_motivo)
 
 
 def _shakemap_section(pdf: TakabPDF, m: ReportModel) -> None:
@@ -1446,6 +1728,11 @@ def _shakemap_section(pdf: TakabPDF, m: ReportModel) -> None:
         # que la onda cruda). Se declara el fallo y el documento sigue.
         pdf.callout(SHAKEMAP_NO_LEIDO)
         return
+    if b.fallo_de_calculo is not None:
+        # [T-9.53] No había snapshot y el cálculo para este documento falló. Ni
+        # «no se pudo leer» ni «no ha corrido»: se intentó y no salió.
+        pdf.callout(SHAKEMAP_NO_CALCULADO)
+        return
     if b.estado == shk.ESTADO_PENDIENTE:
         # No es un fallo: el mapa se calcula POR EVENTO, no en vivo. Callarlo
         # dejaría un hueco que se lee como «no sacudió en ninguna parte».
@@ -1458,6 +1745,10 @@ def _shakemap_section(pdf: TakabPDF, m: ReportModel) -> None:
     pdf.field("LEY DEL MODELO", b.ley or "NO SE MODELÓ")
     pdf.field("RADIO DE COBERTURA", num(b.cobertura_km, 0, "km"))
     pdf.field("EPICENTRO DEL MODELO", _epicentro_del_mapa(b))
+    if b.calculado_para_el_documento:
+        # [T-9.53 · D-44] Sin snapshot, calculado al emitir: se dice, porque el
+        # mapa guardado que la pasada escriba después puede llevar más medidas.
+        pdf.callout(SHAKEMAP_A_DEMANDA)
 
     if b.estado == shk.ESTADO_SIN_DATOS or not b.puntos:
         # El `or not b.puntos` no es redundante: un snapshot que se declarase
@@ -1480,8 +1771,8 @@ def _shakemap_section(pdf: TakabPDF, m: ReportModel) -> None:
         # epicentro que acaba de imprimirse dos líneas más arriba.
         pdf.callout(f"{SHAKEMAP_DEGRADADO} {_falta_para_modelar(b)}")
 
-    dibujo = sketch.project(_puntos_del_mapa(b), CONTENT_W, _MAPA_SACUDIDA_H)
-    if dibujo is None or dibujo.mm_por_km <= 0:
+    dibujo = _dibujo_del_mapa(b)
+    if dibujo is None:
         # Declarar la ausencia, no dejar el hueco: un marco vacío se lee como «no
         # hay inmuebles», que es lo contrario de lo que dice la tabla de debajo. Y
         # sin figura no se imprime leyenda de figura: describiría un dibujo que no
@@ -1492,7 +1783,14 @@ def _shakemap_section(pdf: TakabPDF, m: ReportModel) -> None:
         # Un anillo y un disco en la misma caja, sin esta frase, se leen como dos
         # medidas de lo mismo.
         pdf.callout(_leyenda_del_mapa(b, dibujo))
-        pdf.callout(SHAKEMAP_SIN_COBERTURA)
+        if _imprime_superficie(b):
+            _leyenda_de_la_superficie(pdf, b)
+            # ⚠️ [T-9.53] NO `SHAKEMAP_SIN_COBERTURA`: dice «no se colorea» y la
+            # superficie colorea lejos de los sensores. Ver su sustituta.
+            pdf.callout(SHAKEMAP_COBERTURA_ESTIMADA)
+        else:
+            pdf.field("SUPERFICIE ESTIMADA", _sin_superficie(b))
+            pdf.callout(SHAKEMAP_SIN_COBERTURA)
         _mapa_de_la_sacudida(pdf, b, dibujo)
 
     if b.anillos:

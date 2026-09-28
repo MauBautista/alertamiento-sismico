@@ -316,9 +316,9 @@ class IncidentEngine:
     def _shakemap_pass(self, work_conn: psycopg.Connection) -> None:
         """[T-7.24 · D-08] El mini-ShakeMap del evento: tres capas que no se
         mezclan —lo observado, lo modelado y el residuo por punto—, calculado una
-        vez y leído muchas. DESPUÉS de la pasada de fases, que es quien mete al
-        incidente en revisión: esa huella es la que mira para saber que ya hay
-        algo que mapear.
+        vez y leído muchas. DESPUÉS de la pasada de fases. [T-9.50 · D-44] Ya no
+        mira la huella de revisión sino la madurez del incidente
+        (`shakemap_espera_s`), y el snapshot lleva además la superficie ESTIMADA.
 
         Y ANTES de la consulta al catálogo, aunque el epicentro que aquélla trae
         sea justo lo que le falta a la capa modelada. El orden lo manda un

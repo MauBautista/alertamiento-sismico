@@ -31,11 +31,13 @@ Lo que fija, por orden de lo que costaría equivocarse:
 # ruff: noqa: F811  (fixtures de pytest importadas por nombre)
 from __future__ import annotations
 
+import io
 import json
 import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from PIL import Image
 from sqlalchemy import text
 
 import auth_utils as au
@@ -44,6 +46,8 @@ from takab_api.felt import DEFAULT_THRESHOLDS
 from takab_api.geo import haversine_km
 from takab_api.settings import Settings
 from takab_api.shakemap import calculo as C
+from takab_api.shakemap import gmice, raster
+from takab_api.shakemap import superficie as SUP
 from takab_api.shakemap.lectura import circulo, leer
 
 T0 = datetime(2026, 9, 15, 12, 0, 0, tzinfo=UTC)
@@ -399,3 +403,209 @@ async def test_el_endpoint_NO_recalcula_nada(client, base_data):
     await _pide(client, inc)
     despues = (await _sql(lee, i=inc))[0][0]
     assert antes == despues
+
+
+# ------------------------------------------ [T-9.51 · D-44] la superficie ESTIMADA
+#
+# La superficie se escribe A MANO con el módulo puro, como el resto de este
+# fichero: el endpoint LEE, y aquí se prueba que lee. Que la pasada la calcule
+# bien lo mide `test_mapa_de_calor.py`.
+
+
+def _malla() -> SUP.Superficie:
+    sup, motivo = SUP.estima(
+        [SUP.Estacion(SITIO_LAT, SITIO_LON, 0.086, True)],
+        SUP.EpicentroLey(EPI_LAT, EPI_LON, PROF_KM, MAG),
+    )
+    assert sup is not None, motivo
+    return sup
+
+
+async def _con_superficie(inc: str, sup: SUP.Superficie | None, motivo: str | None) -> None:
+    await _sql(
+        "UPDATE incident_shakemap SET superficie = CAST(:s AS jsonb), superficie_motivo = :m"
+        " WHERE incident_id = :i",
+        s=None if sup is None else json.dumps(sup.to_json()),
+        m=motivo,
+        i=inc,
+    )
+
+
+async def _banda(scope_type: str, scope_id: str, verde: float, rojo: float) -> None:
+    """Los umbrales del dictamen por donde el sistema los lee: `rule_sets`."""
+    await _sql(
+        "INSERT INTO rule_sets (tenant_id, scope_type, scope_id, version, is_active, config)"
+        " VALUES (:t, :st, :si, 1, true, CAST(:c AS jsonb))",
+        t=au.DB_TENANT_PRIV,
+        st=scope_type,
+        si=scope_id,
+        c=json.dumps({"dictamen_v2": {"verde_max_g": verde, "rojo_min_g": rojo}}),
+    )
+
+
+async def _png(client, inc: str, **over):
+    return await client.get(f"/incidents/{inc}/shakemap/superficie.png", headers=_token(**over))
+
+
+def _colores(cuerpo: bytes) -> set[tuple[int, int, int]]:
+    crudo = Image.open(io.BytesIO(cuerpo)).convert("RGBA").tobytes()
+    return {tuple(crudo[i : i + 3]) for i in range(0, len(crudo), 4) if crudo[i + 3] > 0}
+
+
+async def test_el_JSON_trae_la_superficie_sin_la_malla_y_con_la_ruta_del_PNG(client, base_data):
+    inc = await _incidente()
+    await _snapshot(inc)
+    sup = _malla()
+    await _con_superficie(inc, sup, None)
+
+    cuerpo = (await _pide(client, inc)).json()
+    s = cuerpo["superficie"]
+    assert s is not None
+    assert s["png"] == f"/incidents/{inc}/shakemap/superficie.png"
+    assert s["bbox"] == pytest.approx([sup.oeste, sup.sur, sup.este, sup.norte])
+    assert (s["ancho"], s["alto"]) == (sup.ancho, sup.alto)
+    assert (s["n_sensores"], s["n_calibrados"]) == (1, 1)
+    assert s["metodo"] == SUP.METODO
+    assert s["ley"] == C.LEY
+    assert s["cita_mmi"] == gmice.CITA
+    # La malla viaja en el PNG, no en el JSON.
+    assert "pga_ug" not in s and "pga_g" not in s and "ajustada" not in s
+    # El máximo, sobre la zona AJUSTADA, y su MMI estimada con la misma relación.
+    ajustadas = [
+        v
+        for fila_v, fila_a in zip(sup.pga_g, sup.ajustada, strict=True)
+        for v, a in zip(fila_v, fila_a, strict=True)
+        if a
+    ]
+    assert s["pga_max_g"] == pytest.approx(max(ajustadas), rel=1e-4)
+    assert s["mmi_max_estimada"] == pytest.approx(gmice.mmi_de_pga(s["pga_max_g"]))
+    assert cuerpo["superficie_motivo"] is None
+    assert cuerpo["superficie_motivo_texto"] is None
+
+
+async def test_sin_superficie_el_JSON_dice_el_motivo_con_su_frase(client, base_data):
+    inc = await _incidente()
+    await _snapshot(inc)
+    await _con_superficie(inc, None, SUP.MOTIVO_SIN_CALIBRADOS)
+
+    cuerpo = (await _pide(client, inc)).json()
+    assert cuerpo["superficie"] is None
+    assert cuerpo["superficie_motivo"] == SUP.MOTIVO_SIN_CALIBRADOS
+    assert cuerpo["superficie_motivo_texto"] == SUP.MOTIVOS[SUP.MOTIVO_SIN_CALIBRADOS]
+
+
+async def test_un_snapshot_ANTERIOR_a_D44_no_inventa_ni_superficie_ni_motivo(client, base_data):
+    """Las dos columnas en NULL = «calculado antes de D-44». No se inventa nada."""
+    inc = await _incidente()
+    await _snapshot(inc)
+    cuerpo = (await _pide(client, inc)).json()
+    assert cuerpo["superficie"] is None
+    assert cuerpo["superficie_motivo"] is None
+    assert cuerpo["superficie_motivo_texto"] is None
+
+
+async def test_el_PENDIENTE_trae_las_claves_de_la_superficie_en_null(client, base_data):
+    inc = await _incidente()
+    cuerpo = (await _pide(client, inc)).json()
+    assert cuerpo["estado"] == C.ESTADO_PENDIENTE
+    assert cuerpo["superficie"] is None
+    assert cuerpo["superficie_motivo"] is None
+
+
+async def test_cada_punto_trae_su_MMI_ESTIMADA_derivada_al_leer(client, base_data):
+    """[D-44 enmienda D-08] La MMI viaja, pero siempre como ESTIMADA: el nombre
+    del campo lo dice, y se deriva de la PGA medida con la relación citada."""
+    inc = await _incidente()
+    await _snapshot(inc)
+    props = (await _pide(client, inc)).json()["observado"]["features"][0]["properties"]
+    esperada = gmice.mmi_de_pga(0.086)
+    assert props["mmi_estimada"] == pytest.approx(esperada)
+    assert props["mmi_romano"] == gmice.romano(esperada)
+
+
+async def test_un_punto_SIN_medida_no_tiene_MMI(client, base_data):
+    inc = await _incidente()
+    await _snapshot(inc)
+    await _sql(
+        "UPDATE incident_shakemap SET puntos = jsonb_set(puntos, '{0,pga_g}', 'null')"
+        " WHERE incident_id = :i",
+        i=inc,
+    )
+    props = (await _pide(client, inc)).json()["observado"]["features"][0]["properties"]
+    assert props["mmi_estimada"] is None
+    assert props["mmi_romano"] is None
+
+
+async def test_el_PNG_se_pinta_con_la_banda_DEL_SITIO(client, base_data):
+    """La banda del sitio manda sobre la del cliente (`dictamen/service.py`), y el
+    mapa no puede pintar ROJO donde el dictamen del mismo sitio dice VERDE."""
+    inc = await _incidente()
+    await _snapshot(inc)
+    sup = _malla()
+    await _con_superficie(inc, sup, None)
+    # La del cliente lo pintaría todo de verde; la del sitio, todo lo visible de rojo.
+    await _banda("tenant", au.DB_TENANT_PRIV, verde=4.0, rojo=4.5)
+    await _banda("site", au.DB_SITE_PRIV, verde=0.001, rojo=0.002)
+
+    r = await _png(client, inc)
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png"
+    assert r.headers["cache-control"] == "private, max-age=60"
+    img = Image.open(io.BytesIO(r.content))
+    assert img.size == (sup.ancho, sup.alto)
+    assert _colores(r.content) == {raster.COLOR[raster.BANDA_ROJO]}
+
+
+async def test_el_JSON_publica_los_cortes_con_que_se_pinto_el_PNG(client, base_data):
+    """[T-9.52] La leyenda de la consola imprime los cortes DEL SITIO, los mismos del
+    PNG. Sin ellos pintaba los de fábrica junto a una imagen hecha con otros."""
+    inc = await _incidente()
+    await _snapshot(inc)
+    await _con_superficie(inc, _malla(), None)
+    s = (await _pide(client, inc)).json()["superficie"]
+    ajustes = Settings()
+    assert (s["verde_max_g"], s["rojo_min_g"]) == (
+        ajustes.dictamen_verde_max_g,
+        ajustes.dictamen_rojo_min_g,
+    )
+
+    await _banda("site", au.DB_SITE_PRIV, verde=0.02, rojo=0.08)
+    s = (await _pide(client, inc)).json()["superficie"]
+    assert (s["verde_max_g"], s["rojo_min_g"]) == (0.02, 0.08)
+
+
+async def test_el_PNG_sin_banda_configurada_usa_la_de_fabrica(client, base_data):
+    inc = await _incidente()
+    await _snapshot(inc)
+    sup = _malla()
+    await _con_superficie(inc, sup, None)
+    s = Settings()
+    esperado = raster.png(sup, verde_max_g=s.dictamen_verde_max_g, rojo_min_g=s.dictamen_rojo_min_g)
+    r = await _png(client, inc)
+    assert r.status_code == 200
+    assert r.content == esperado
+
+
+async def test_el_PNG_sin_superficie_es_404_sin_superficie(client, base_data):
+    inc = await _incidente()
+    await _snapshot(inc)
+    await _con_superficie(inc, None, SUP.MOTIVO_SIN_CALIBRADOS)
+    r = await _png(client, inc)
+    assert r.status_code == 404
+    assert "sin_superficie" in r.text
+
+
+async def test_el_PNG_de_un_incidente_sin_snapshot_es_404(client, base_data):
+    inc = await _incidente()
+    r = await _png(client, inc)
+    assert r.status_code == 404
+
+
+async def test_el_PNG_de_OTRO_cliente_es_404(client, base_data):
+    """Regla de oro 5: la RLS decide qué existe, y un 403 confirmaría que existe."""
+    inc = await _incidente(tenant=au.DB_TENANT_PRIV2, site=au.DB_SITE_PRIV2)
+    await _snapshot(inc, tenant=au.DB_TENANT_PRIV2)
+    await _con_superficie(inc, _malla(), None)
+    r = await _png(client, inc)
+    assert r.status_code == 404
+    assert (await _png(client, inc, tenant=au.DB_TENANT_PRIV2)).status_code == 200

@@ -139,9 +139,15 @@ import dataclasses
 import math
 from dataclasses import dataclass
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from takab_api.felt import Thresholds
 from takab_api.geo import hypo_km, pga_law_g
+
+if TYPE_CHECKING:
+    # Sólo para la anotación: `superficie` importa `LEY` de aquí, y un import en
+    # tiempo de ejecución sería circular.
+    from takab_api.shakemap.superficie import Superficie
 
 #: La ley que produce la capa 2, citada por su nombre. Se escribe en el snapshot
 #: para que un mapa viejo diga con qué se modeló, y no con la ley de hoy.
@@ -368,6 +374,12 @@ class Mapa:
     #: Los niveles que NO se dibujaron, con su motivo. Vacío no es «no se miró»:
     #: sin capa 2 no hay niveles que declarar, y eso lo dice `ley is None`.
     fuera_de_alcance: tuple[NivelFuera, ...] = ()
+    #: [T-9.51 · D-44] La superficie ESTIMADA, o ``None`` con su ``superficie_motivo``
+    #: (`superficie.MOTIVOS`). No la produce `calcula` —que es la física de las tres
+    #: capas— sino quien sabe qué inmueble está calibrado (`servicio.py`), y viaja
+    #: aquí para que el snapshot y el cálculo a demanda del PDF sean el mismo objeto.
+    superficie: Superficie | None = None
+    superficie_motivo: str | None = None
 
 
 def radio_epicentral_km(magnitud: float, pga_g: float, depth_km: float | None) -> float | None:

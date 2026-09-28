@@ -67,7 +67,14 @@ from takab_api.queries import forensics as qf
 from takab_api.schemas import cctv as esq_cctv
 from takab_api.schemas.forensics import CatalogCorrelation, ForensicsOut
 from takab_api.settings import Settings
-from takab_api.shakemap.lectura import leer as leer_shakemap
+from takab_api.shakemap import calculo as shk_calculo
+from takab_api.shakemap.lectura import desde_mapa, umbrales_de_banda
+
+# [T-9.53] El nombre `leer_shakemap` se conserva a propósito: es por donde parchea
+# la guarda del best-effort (`test_shakemap_en_el_builder.py`). Ahora trae además la
+# malla de la superficie, con la MISMA consulta que la consola.
+from takab_api.shakemap.lectura import leer_con_malla as leer_shakemap
+from takab_api.shakemap.servicio import calcula_uno
 
 log = logging.getLogger(__name__)
 
@@ -254,7 +261,13 @@ async def _cctv_block(conn: AsyncConnection, incident_id: str) -> CctvBlock:
     )
 
 
-async def leer_bloque_de_shakemap(conn: AsyncConnection, incident_id: str, s, site_code: str):  # noqa: ANN001, ANN201
+async def leer_bloque_de_shakemap(  # noqa: ANN201 - ShakemapBlock
+    conn: AsyncConnection,
+    incident_id: str,
+    s,  # noqa: ANN001 - Settings
+    site_code: str,
+    ahora: datetime | None = None,
+):
     """Lee el snapshot y lo traduce. **Best-effort a propósito**, como el CCTV.
 
     ⚠️ La lectura del mapa era la ÚNICA del builder que iba desnuda, con la
@@ -277,13 +290,62 @@ async def leer_bloque_de_shakemap(conn: AsyncConnection, incident_id: str, s, si
     cuando lo que pasó es el segundo (regla de oro 7).
     """
     try:
-        mapa = await leer_shakemap(conn, incident_id, s)
+        # [T-9.53] Dentro de un SAVEPOINT: un error de SQL deja abortada la
+        # transacción entera, y el `except` de abajo salvaba el anexo para que el
+        # dictamen muriera en la consulta siguiente. `begin_nested` deshace sólo
+        # esto y el llamador sigue con su transacción viva.
+        async with conn.begin_nested():
+            mapa, malla = await leer_shakemap(conn, incident_id, s)
+            umbrales = await umbrales_de_banda(conn, incident_id, s) if malla is not None else None
     except Exception:  # noqa: BLE001 — el anexo no puede costar el dictamen
         return ShakemapBlock(fallo_de_lectura="la lectura del snapshot falló")
-    return bloque_de_shakemap(mapa, site_code)
+    if mapa is not None and mapa.estado == shk_calculo.ESTADO_PENDIENTE:
+        return await _calcula_bloque_a_demanda(conn, incident_id, s, site_code, ahora)
+    return bloque_de_shakemap(mapa, site_code, malla=malla, umbrales=umbrales)
 
 
-def bloque_de_shakemap(mapa, site_code: str):  # noqa: ANN001, ANN201 - ShakemapOut|None
+async def _calcula_bloque_a_demanda(
+    conn: AsyncConnection,
+    incident_id: str,
+    s,  # noqa: ANN001 - Settings
+    site_code: str,
+    ahora: datetime | None,
+):  # noqa: ANN202 - ShakemapBlock
+    """[T-9.53 · D-44] Sin snapshot, el mapa se CALCULA para este documento.
+
+    Antes el papel imprimía «NO CALCULADO TODAVÍA» y se quedaba sin mapa en el caso
+    normal —el mapa se calcula por evento y el dictamen se pide antes—. Ahora se
+    usa `servicio.calcula_uno`, que es el mismo `_lectura` + `_mapa` de la pasada
+    SIN persistir, y se traduce por el mismo `bloque_de_shakemap` pasando por la
+    forma persistida (`lectura.desde_mapa`): el papel dibuja lo que la pasada habría
+    escrito, y lo dice (`SHAKEMAP_A_DEMANDA`).
+
+    Best-effort como la lectura: si el cálculo revienta, el bloque lo declara
+    (`fallo_de_calculo` → `SHAKEMAP_NO_CALCULADO`) y el dictamen sigue. `None` de
+    `calcula_uno` es que la RLS no deja ver el incidente: el papel no sabe nada, y
+    eso es `pendiente`, no un fallo.
+    """
+    try:
+        async with conn.begin_nested():
+            mapa = await calcula_uno(conn, s, incident_id)
+            if mapa is None:
+                return ShakemapBlock()
+            salida, malla = desde_mapa(incident_id, mapa, calculado_en=ahora or datetime.now(UTC))
+            umbrales = await umbrales_de_banda(conn, incident_id, s) if malla is not None else None
+    except Exception:  # noqa: BLE001 — el anexo no puede costar el dictamen
+        log.exception("dictamen: el cálculo a demanda del mapa falló (%s)", incident_id)
+        return ShakemapBlock(fallo_de_calculo="el cálculo a demanda falló")
+    return bloque_de_shakemap(salida, site_code, malla=malla, umbrales=umbrales, a_demanda=True)
+
+
+def bloque_de_shakemap(  # noqa: ANN201 - ShakemapBlock
+    mapa,  # noqa: ANN001 - ShakemapOut | None
+    site_code: str,
+    *,
+    malla=None,  # noqa: ANN001 - superficie.Superficie | None
+    umbrales: tuple[float, float] | None = None,
+    a_demanda: bool = False,
+):
     """[T-7.24] Traduce el mapa ya leído a las filas que el papel imprime.
 
     **Sólo traduce.** El cálculo vive en `takab_api.shakemap.calculo` y la lectura
@@ -299,10 +361,16 @@ def bloque_de_shakemap(mapa, site_code: str):  # noqa: ANN001, ANN201 - Shakemap
     `mapa is None` (el incidente no existe para quien pide) cae en `pendiente`
     como la ausencia de snapshot: el papel no puede afirmar que no sacudió cuando
     lo que le pasa es que no lo sabe.
+
+    [T-9.53 · D-44] ``malla`` es la superficie que el lector trae aparte —la malla
+    no viaja en el JSON— y ``umbrales`` los ``(verde_max_g, rojo_min_g)`` del sitio
+    con que se colorea; ``a_demanda`` marca un mapa calculado al emitir.
     """
     if mapa is None:
         return ShakemapBlock()
     epi = mapa.epicentro
+    resumen = mapa.superficie
+    verde, rojo = umbrales if umbrales is not None else (None, None)
     return ShakemapBlock(
         estado=mapa.estado,
         ley=mapa.ley,
@@ -351,6 +419,16 @@ def bloque_de_shakemap(mapa, site_code: str):  # noqa: ANN001, ANN201 - Shakemap
             NivelFueraFila(umbral=n.umbral, pga_g=n.pga_g, motivo=n.motivo)
             for n in mapa.fuera_de_alcance
         ],
+        # [T-9.53 · D-44] La malla sólo si el lector la resumió: una malla sin su
+        # resumen (N, M, cita, máximo) no se podría rotular como lo que es.
+        superficie=malla if resumen is not None else None,
+        superficie_motivo=mapa.superficie_motivo,
+        superficie_cita_mmi=resumen.cita_mmi if resumen else None,
+        superficie_pga_max_g=resumen.pga_max_g if resumen else None,
+        superficie_mmi_max=resumen.mmi_max_estimada if resumen else None,
+        banda_verde_max_g=verde,
+        banda_rojo_min_g=rojo,
+        calculado_para_el_documento=a_demanda,
     )
 
 
@@ -579,7 +657,9 @@ async def build_model(
         # función que sirve al endpoint (`shakemap/lectura.py`), por la misma
         # razón que las dos líneas de arriba: dos lecturas del mismo snapshot
         # acabarían discrepando en el detalle que más se mira.
-        shakemap=await leer_bloque_de_shakemap(conn, incident_id, s, inc["site_code"]),
+        shakemap=await leer_bloque_de_shakemap(
+            conn, incident_id, s, inc["site_code"], generated_at
+        ),
     )
 
 

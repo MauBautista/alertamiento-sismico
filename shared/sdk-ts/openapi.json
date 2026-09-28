@@ -9335,6 +9335,28 @@
             ],
             "title": "Medido En"
           },
+          "mmi_estimada": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mmi Estimada"
+          },
+          "mmi_romano": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mmi Romano"
+          },
           "pga_g": {
             "anyOf": [
               {
@@ -9420,7 +9442,9 @@
           "pga_g_modelada",
           "residuo_log10",
           "medido_en",
-          "voto_contado"
+          "voto_contado",
+          "mmi_estimada",
+          "mmi_romano"
         ],
         "title": "PuntoProps",
         "type": "object"
@@ -11423,6 +11447,38 @@
           },
           "observado": {
             "$ref": "#/components/schemas/PuntosOut"
+          },
+          "superficie": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SuperficieOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "superficie_motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superficie Motivo"
+          },
+          "superficie_motivo_texto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Superficie Motivo Texto"
           }
         },
         "required": [
@@ -11434,7 +11490,10 @@
           "epicentro",
           "observado",
           "modelado",
-          "fuera_de_alcance"
+          "fuera_de_alcance",
+          "superficie",
+          "superficie_motivo",
+          "superficie_motivo_texto"
         ],
         "title": "ShakemapOut",
         "type": "object"
@@ -12295,6 +12354,116 @@
           "topic"
         ],
         "title": "SubscribeFrame",
+        "type": "object"
+      },
+      "SuperficieOut": {
+        "description": "[T-9.51 · D-44] La superficie ESTIMADA, SIN la malla (viaja en el PNG).\n\nTodo lo que quien la pinta necesita para rotularla como lo que es: «ESTIMADO a\npartir de N sensores (M calibrados)», con la ley, el método y la cita de la\nrelación PGA–MMI.",
+        "properties": {
+          "alto": {
+            "title": "Alto",
+            "type": "integer"
+          },
+          "ancho": {
+            "title": "Ancho",
+            "type": "integer"
+          },
+          "bbox": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Bbox",
+            "type": "array"
+          },
+          "cita_mmi": {
+            "title": "Cita Mmi",
+            "type": "string"
+          },
+          "escala_km": {
+            "title": "Escala Km",
+            "type": "number"
+          },
+          "ley": {
+            "title": "Ley",
+            "type": "string"
+          },
+          "metodo": {
+            "title": "Metodo",
+            "type": "string"
+          },
+          "mmi_max_estimada": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mmi Max Estimada"
+          },
+          "n_calibrados": {
+            "title": "N Calibrados",
+            "type": "integer"
+          },
+          "n_sensores": {
+            "title": "N Sensores",
+            "type": "integer"
+          },
+          "pga_max_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Max G"
+          },
+          "png": {
+            "title": "Png",
+            "type": "string"
+          },
+          "rojo_min_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rojo Min G"
+          },
+          "verde_max_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verde Max G"
+          }
+        },
+        "required": [
+          "bbox",
+          "ancho",
+          "alto",
+          "n_sensores",
+          "n_calibrados",
+          "escala_km",
+          "ley",
+          "metodo",
+          "cita_mmi",
+          "pga_max_g",
+          "mmi_max_estimada",
+          "png",
+          "verde_max_g",
+          "rojo_min_g"
+        ],
+        "title": "SuperficieOut",
         "type": "object"
       },
       "TemplateSiteOut": {
@@ -16331,6 +16500,43 @@
           }
         },
         "summary": "Incident Shakemap"
+      }
+    },
+    "/incidents/{incident_id}/shakemap/superficie.png": {
+      "get": {
+        "description": "[T-9.51 · D-44] La superficie ESTIMADA como PNG (una celda, un píxel).",
+        "operationId": "incident_shakemap_superficie_png_incidents__incident_id__shakemap_superficie_png_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "image/png": {}
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Incident Shakemap Superficie Png"
       }
     },
     "/incidents/{incident_id}/tactical-ack": {

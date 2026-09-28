@@ -23,6 +23,7 @@ from takab_api.documentos.huella import content_sha256 as huella_de_contenido
 # entero, y no sus nombres, para no meter constantes ajenas en `vars(model)` —
 # que es de donde el censo de avisos impresos deriva qué hay que comprobar.
 from takab_api.shakemap import calculo as _shk
+from takab_api.shakemap.superficie import Superficie
 
 STATUS_LABELS: dict[str, str] = {
     "no_inhabit_inspect": "NO HABITAR · INSPECCIÓN",
@@ -329,6 +330,28 @@ NO_MMI = (
     "del propio inmueble."
 )
 
+#: [T-9.53 · D-44] Lo que la §5 dice cuando la §8 SÍ imprime una superficie estimada.
+#:
+#: ⚠️ **Enmienda a :data:`NO_MMI` sin borrar su porqué.** `D-44` enmienda a `D-08`:
+#: además de los puntos medidos se dibuja una superficie, y de su PGA se ESTIMA una
+#: intensidad Mercalli con una relación publicada (`shakemap.gmice.CITA`). Lo que
+#: `NO_MMI` defendía sigue en pie —la MMI es una intensidad construida con efectos
+#: observados y la PGA de un sensor no la OBSERVA—, y por eso lo que se imprime no
+#: es «se reporta la MMI» sino «se ESTIMA, no se observa», con la cita. Y los
+#: documentos ya firmados que dicen que TAKAB no reporta MMI siguen siendo ciertos
+#: para su fecha: se dice aquí para que nadie los lea como un error corregido.
+#:
+#: Se imprime **en lugar de** `NO_MMI`, y sólo cuando la §8 va a dibujar la
+#: superficie (`pdf._imprime_superficie`): derivado de lo que el papel puede
+#: imprimir, no de que el bloque la traiga — la doctrina de `MODELO_Y_RESIDUO`.
+MMI_ESTIMADA = (
+    "La intensidad Mercalli (MMI) que este documento imprime se ESTIMA a partir de la "
+    "PGA con la relación de Wald et al. (1999); no es una intensidad observada ni una "
+    "isosista. Los documentos anteriores que dicen que TAKAB no reporta MMI son "
+    "ciertos para su fecha. Lo MEDIDO sigue siendo la sacudida registrada por el "
+    "sensor del propio inmueble."
+)
+
 #: [T-7.24 · 2ª vuelta] Lo que el papel añade **sólo cuando de verdad lo añade**.
 #:
 #: ⚠️ Esta frase vivía dentro de :data:`NO_MMI`, y por eso el documento se
@@ -396,6 +419,15 @@ LEYENDA_ANILLO = (
 #: [T-7.24] Pieza de leyenda: el epicentro. Se nombra sólo si se dibuja.
 LEYENDA_CRUZ = "LA CRUZ es el epicentro citado para este incidente."
 
+#: [T-9.53 · D-44] Pieza de leyenda: las dos zonas de la superficie estimada. La
+#: opacidad es la mitad del rótulo «ESTIMADO» que puede decir la imagen
+#: (`shakemap.raster`): cerca de un sensor calibrado la superficie está ajustada a
+#: lo medido; lejos, es sólo la ley.
+LEYENDA_SUPERFICIE_ZONAS = (
+    "COLOR = superficie ESTIMADA, no medida: zona AJUSTADA (opaca), cerca de un sensor "
+    "calibrado; zona MODELADA (tenue), sólo la ley de atenuación. Bajo 0.010 g no se colorea."
+)
+
 #: [T-7.24] Qué NO afirma la figura fuera del alcance de los sensores.
 #:
 #: `SIN COBERTURA` no es un estado del mapa: es una propiedad del espacio, y la
@@ -408,6 +440,21 @@ SHAKEMAP_SIN_COBERTURA = (
     "FUERA DEL RADIO DE COBERTURA ESTE DOCUMENTO NO AFIRMA NADA: donde no hay un "
     "inmueble instrumentado cerca no se extrapola ni se colorea, se dice SIN "
     "COBERTURA."
+)
+
+#: [T-9.53 · D-44] Lo que sustituye a :data:`SHAKEMAP_SIN_COBERTURA` cuando la
+#: figura lleva la superficie estimada.
+#:
+#: ⚠️ Aquella frase dice «donde no hay un inmueble instrumentado cerca no se
+#: extrapola ni se colorea», y con la superficie el color SÍ llega lejos de los
+#: sensores: es la ley corregida por lo medido. Imprimir las dos sobre la misma
+#: figura sería el papel desmintiéndose (la familia de `T-7.34`). Lo que sigue
+#: siendo cierto —fuera de la cobertura nada está MEDIDO— se conserva; lo que
+#: dejó de serlo —que no se colorea— se dice como lo que ahora es: una estimación.
+SHAKEMAP_COBERTURA_ESTIMADA = (
+    "FUERA DEL RADIO DE COBERTURA NADA ESTÁ MEDIDO: el color que llega allí es la "
+    "superficie ESTIMADA (la ley de atenuación corregida por lo medido), no una "
+    "medición. Lo único medido son los discos."
 )
 
 #: [T-7.24] El worker todavía no ha pasado. Es una condición NORMAL del sistema
@@ -436,6 +483,30 @@ SHAKEMAP_NO_LEIDO = (
     "MAPA DE LA SACUDIDA NO DISPONIBLE al generar este documento: el cálculo pudo "
     "haber corrido, pero su lectura falló y el resto del dictamen no se detiene por "
     "un anexo. Esto no afirma nada sobre cuánto sacudió."
+)
+
+#: [T-9.53 · D-44] El incidente no tenía snapshot y el mapa se calculó AL EMITIR.
+#:
+#: Antes de `T-9.53` el papel imprimía aquí «NO CALCULADO TODAVÍA» y se quedaba
+#: sin mapa; ahora el builder calcula en memoria con `shakemap.servicio.calcula_uno`
+#: —el mismo cálculo que la pasada, sin persistir— y lo dice, porque no es lo mismo
+#: que el snapshot: otro documento emitido minutos después, o la consola cuando la
+#: pasada escriba, pueden llevar más medidas que éste.
+SHAKEMAP_A_DEMANDA = (
+    "MAPA CALCULADO PARA ESTE DOCUMENTO: al emitirlo no había mapa guardado del "
+    "incidente y se calculó con el mismo procedimiento, sin guardarlo. Refleja las "
+    "medidas disponibles en el instante de CALCULADO; el mapa guardado posterior "
+    "puede incorporar más."
+)
+
+#: [T-9.53 · D-44] El cálculo a demanda FALLÓ. No es `SHAKEMAP_NO_LEIDO` —no había
+#: nada que leer— ni `SHAKEMAP_PENDIENTE` —se intentó y no salió—: es un hecho sobre
+#: ESTE documento, y se declara con la misma doctrina (un anexo no puede costar el
+#: dictamen, que es lo que autoriza reocupar un edificio).
+SHAKEMAP_NO_CALCULADO = (
+    "MAPA DE LA SACUDIDA NO DISPONIBLE: no había mapa guardado y el cálculo para "
+    "este documento falló; el resto del dictamen no se detiene por un anexo. Esto "
+    "no afirma nada sobre cuánto sacudió."
 )
 
 #: [T-7.24] Ningún inmueble instrumentado midió en la ventana. Distinto del
@@ -955,6 +1026,28 @@ class ShakemapBlock:
     #: Se distingue de `pendiente` a propósito — «no ha corrido» y «no lo pude
     #: leer» son dos hechos distintos sobre el mismo incidente.
     fallo_de_lectura: str | None = None
+    #: [T-9.53 · D-44] La superficie ESTIMADA (la malla, de `Superficie.from_json`),
+    #: leída por el MISMO lector que la consola, o ``None`` con su
+    #: ``superficie_motivo`` (`shakemap.superficie.MOTIVOS`). Los dos en ``None`` =
+    #: snapshot anterior a `D-44`, y no se inventa nada.
+    superficie: Superficie | None = None
+    superficie_motivo: str | None = None
+    #: La cita de la relación PGA–MMI que viajó CON la superficie, no la de hoy.
+    superficie_cita_mmi: str | None = None
+    #: El máximo sobre la zona AJUSTADA y su MMI ESTIMADA, tal como los da el lector
+    #: (`lectura._superficie`): el papel no los recalcula.
+    superficie_pga_max_g: float | None = None
+    superficie_mmi_max: float | None = None
+    #: Los umbrales de banda DEL SITIO (`dictamen/rules.resolve_params_v2`), los
+    #: mismos del PNG de la consola: el papel no puede pintar ROJO donde la pantalla
+    #: del mismo sitio pinta VERDE.
+    banda_verde_max_g: float | None = None
+    banda_rojo_min_g: float | None = None
+    #: [T-9.53] ¿Se calculó al emitir, sin snapshot (`SHAKEMAP_A_DEMANDA`)?
+    calculado_para_el_documento: bool = False
+    #: [T-9.53] Por qué NO se pudo calcular a demanda. Distinto de
+    #: ``fallo_de_lectura``: no había nada que leer, y se intentó calcular.
+    fallo_de_calculo: str | None = None
 
 
 #: [T-7.36] Rótulos de celda del disparo. La versión en PROSA vive en

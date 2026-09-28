@@ -50,8 +50,15 @@ from takab_api.schemas.shakemap import (
     ShakemapOut,
 )
 from takab_api.shakemap import calculo as shk
+from takab_api.shakemap import gmice
 
 _CALCULADO = datetime(2026, 8, 3, 10, 5, 0, tzinfo=UTC)
+
+
+def _mmi(pga_g: float | None) -> dict:
+    """[T-9.51 · D-44] La MMI ESTIMADA que el lector deriva de la PGA, igual que él."""
+    mmi = gmice.mmi_de_pga(pga_g)
+    return {"mmi_estimada": mmi, "mmi_romano": None if mmi is None else gmice.romano(mmi)}
 
 
 def _salida(**over) -> ShakemapOut:
@@ -64,6 +71,10 @@ def _salida(**over) -> ShakemapOut:
         # Siempre presente, vacío incluido: el contrato lo declara obligatorio
         # para que quien pinta no tenga que distinguir «no vino» de «vino vacío».
         "fuera_de_alcance": [],
+        # [T-9.51 · D-44] Sin superficie y sin motivo = snapshot anterior a D-44.
+        "superficie": None,
+        "superficie_motivo": None,
+        "superficie_motivo_texto": None,
         "epicentro": EpicentroOut(
             lat=16.80,
             lon=-99.50,
@@ -91,6 +102,7 @@ def _salida(**over) -> ShakemapOut:
                         hypo_km=None,
                         medido_en=None,
                         voto_contado=None,
+                        **_mmi(0.081),
                     ),
                 ),
                 PuntoFeature(
@@ -105,6 +117,7 @@ def _salida(**over) -> ShakemapOut:
                         hypo_km=None,
                         medido_en=None,
                         voto_contado=None,
+                        **_mmi(None),
                         pga_g_modelada=None,
                         residuo_log10=None,
                     ),
@@ -126,6 +139,7 @@ def _salida(**over) -> ShakemapOut:
                         hypo_km=None,
                         medido_en=None,
                         voto_contado=None,
+                        **_mmi(0.012),
                     ),
                 ),
             ]
@@ -260,7 +274,13 @@ def test_sin_lectura_el_bloque_declara_PENDIENTE() -> None:
 
 @pytest.mark.asyncio
 async def test_el_builder_ENGANCHA_la_lectura_del_snapshot(base_data, make_incident) -> None:
-    """Contra la base de verdad: un incidente sin mapa calculado sale `pendiente`.
+    """Contra la base de verdad: un incidente sin snapshot se CALCULA para el documento.
+
+    [T-9.53 · D-44] Salía `pendiente` («NO CALCULADO TODAVÍA»). Desde `T-9.53` el
+    builder calcula en memoria con `servicio.calcula_uno` —sin persistir— y lo
+    declara; aquí el incidente no tiene medidas y el cálculo dice `sin_datos`. Lo
+    que sigue siendo cierto de abajo es la parte del ENGANCHE: `cobertura_km` la
+    pone el cálculo, nunca el bloque por defecto.
 
     ⚠️ **`estado == "pendiente"` NO demuestra el enganche**, y por poco se queda
     así: es exactamente lo que da el `default_factory` del bloque, así que un
@@ -285,7 +305,8 @@ async def test_el_builder_ENGANCHA_la_lectura_del_snapshot(base_data, make_incid
 
     assert m is not None
     assert hay_fila == 0, "el arnés dejó un snapshot y este caso ya no mide lo que dice"
-    assert m.shakemap.estado == shk.ESTADO_PENDIENTE
+    assert m.shakemap.calculado_para_el_documento is True
+    assert m.shakemap.estado == shk.ESTADO_SIN_DATOS, "el arnés no siembra medidas"
     # Y el `cobertura_km` del lector, que NO es cero: es el radio con el que se VA
     # a calcular. Un cero sería un número inventado sobre un mapa que no existe.
     assert m.shakemap.cobertura_km is not None

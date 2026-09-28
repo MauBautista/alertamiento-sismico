@@ -46,6 +46,48 @@ class Sketch:
     #: Longitud de la barra de escala, en mm de página y en km reales.
     scale_bar_mm: float
     scale_bar_km: float
+    #: [T-9.53] Los parámetros de la transformación con que se proyectaron los
+    #: puntos: centro (en «x = lon·kx», «y = lat»), el `kx` del coseno, la escala
+    #: en mm por grado y el tamaño del recuadro. Viajan para que la cartografía y la
+    #: superficie del mapa de la sacudida se proyecten con la MISMA fórmula que los
+    #: inmuebles (`proyecta`), y no con una segunda que acabaría discrepando.
+    centro_x: float = 0.0
+    centro_y: float = 0.0
+    kx: float = 1.0
+    escala: float = 0.0
+    ancho_mm: float = 0.0
+    alto_mm: float = 0.0
+
+    def proyecta(self, lat: float, lon: float) -> tuple[float, float]:
+        """[T-9.53] ``(x, y)`` en mm del recuadro de un punto geográfico cualquiera.
+
+        Es la transformación de `project`, sin redondeo ni recorte: un punto fuera
+        del encuadre sale fuera del recuadro, y recortarlo es cosa de quien pinta.
+        **Es lineal en (lat, lon)** —equirectangular con un único `kx`—, así que un
+        rectángulo geográfico se proyecta en un rectángulo de página: la superficie
+        se puede embeber como una imagen sin deformarla.
+        """
+        return (
+            self.ancho_mm / 2 + (lon * self.kx - self.centro_x) * self.escala,
+            self.alto_mm / 2 - (lat - self.centro_y) * self.escala,
+        )
+
+    def limites(self) -> tuple[float, float, float, float]:
+        """[T-9.53] ``(oeste, sur, este, norte)`` en grados del recuadro entero.
+
+        La inversa de `proyecta` sobre las cuatro esquinas: sirve para descartar
+        la cartografía que no cae dentro antes de mandarla al PDF.
+        """
+        if self.escala <= 0 or self.kx <= 0:
+            return (0.0, 0.0, 0.0, 0.0)
+        semi_x = self.ancho_mm / 2 / self.escala
+        semi_y = self.alto_mm / 2 / self.escala
+        return (
+            (self.centro_x - semi_x) / self.kx,
+            self.centro_y - semi_y,
+            (self.centro_x + semi_x) / self.kx,
+            self.centro_y + semi_y,
+        )
 
     @property
     def mm_por_km(self) -> float:
@@ -165,4 +207,10 @@ def project(
         points=projected,
         scale_bar_mm=min(bar_km * mm_per_km, tope_mm),
         scale_bar_km=bar_km,
+        centro_x=cx,
+        centro_y=cy,
+        kx=kx,
+        escala=scale,
+        ancho_mm=width_mm,
+        alto_mm=height_mm,
     )

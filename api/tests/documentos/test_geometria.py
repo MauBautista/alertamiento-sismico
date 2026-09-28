@@ -44,6 +44,7 @@ from takab_api.dictamen.duracion import Duracion
 from takab_api.dictamen.espectrograma import Espectrograma
 from takab_api.dictamen.model import AnilloFila, SacudidaFila, ShakemapBlock
 from takab_api.dictamen.pdf import render
+from takab_api.shakemap import superficie as SUP
 from tests.dictamen.test_pdf import model
 
 #: Carta en puntos, que es la unidad del `/MediaBox`. 215.9 mm × 279.4 mm.
@@ -428,6 +429,21 @@ def _modelo_con_todas_las_figuras():
                 AnilloFila(pga_g=0.070, radio_km=40.0, umbral="pga_watch_g"),
                 AnilloFila(pga_g=0.020, radio_km=100.0, umbral="correlacion_min_pga_g"),
             ],
+            # [T-9.53 · D-44] Y la superficie ESTIMADA, que entra como IMAGEN en la
+            # figura: sin ella, el barrido del pie no mediría la única imagen del
+            # mapa, que es justo lo que `image` no recorta.
+            superficie=SUP.estima(
+                [
+                    SUP.Estacion(19.43, -99.13, 0.012, calibrado=True),
+                    SUP.Estacion(19.06, -98.30, 0.081, calibrado=False),
+                ],
+                SUP.EpicentroLey(16.80, -99.50, 20.0, 7.1),
+            )[0],
+            superficie_cita_mmi="Wald et al. (1999), relación PGA–MMI",
+            superficie_pga_max_g=0.02,
+            superficie_mmi_max=5.2,
+            banda_verde_max_g=0.04,
+            banda_rojo_min_g=0.10,
         ),
         raw_waveform={c: [(i % 32) - 16 for i in range(n)] for c in ("EHZ", "ENN", "ENE")},
         raw_sample_rate=100.0,
@@ -636,6 +652,13 @@ def test_el_censo_de_figuras_las_tiene_TODAS() -> None:
         # entra con ellos. Medirlo solo exigiría inventarle un centro que en el
         # documento sale del croquis proyectado.
         "_anillos_del_modelo",
+        # [T-9.53 · D-44 · D-45] Tampoco son figuras: la cartografía base y la
+        # superficie estimada van DENTRO de `_mapa_de_la_sacudida`, recortadas a su
+        # marco, y entran con ella —el modelo con todas las figuras trae superficie,
+        # así que su imagen pasa por el barrido del pie—. Medirlas solas exigiría
+        # inventarles un croquis que en el documento sale de los inmuebles.
+        "_cartografia",
+        "_superficie_estimada",
         # Las fotografías del brigadista tienen guardas propias y más específicas,
         # que además necesitan JPEG de verdad: en
         # `tests/dictamen/test_fotos_en_el_papel.py`, el mismo barrido «entre

@@ -14,19 +14,28 @@ en rojo por algo que se resuelve solo en la vuelta siguiente del bucle.
 
 El endpoint **no calcula nada**. Si lo hiciera, dos operadores verían mapas
 distintos del mismo sismo según cuándo apretaran F5.
+
+[T-9.51 · D-44] `GET …/shakemap/superficie.png` sirve la superficie ESTIMADA del
+MISMO snapshot como imagen, con los mismos roles y la misma RLS que el JSON: nada
+de URL prefirmada (un enlace a S3 se reenvía y ya no pasa por la RLS) y nada de
+JSON de por medio. Se pinta con la banda del dictamen del sitio, así que tampoco
+aquí se calcula nada que dependa de cuándo se pide, salvo el color si alguien
+cambia la banda: y eso es lo que se quiere, que el mapa y el dictamen de hoy
+digan lo mismo. `private, max-age=60`: la consola la pide con cada vista, y un
+minuto es lo que tarda el refresco del mapa en cambiarla.
 """
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.deps import require_web_surface
 from takab_api.routers._common import http_error, read_session
 from takab_api.schemas.shakemap import ShakemapOut
-from takab_api.shakemap.lectura import leer
+from takab_api.shakemap.lectura import SIN_SUPERFICIE, leer, superficie_png
 
 router = APIRouter(dependencies=[Depends(require_web_surface)])
 
@@ -41,3 +50,25 @@ async def incident_shakemap(
     if data is None:
         raise http_error(404, "incidente no encontrado")
     return data
+
+
+@router.get(
+    "/incidents/{incident_id}/shakemap/superficie.png",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+async def incident_shakemap_superficie_png(
+    incident_id: UUID,
+    conn: AsyncConnection = Depends(read_session),
+) -> Response:
+    """[T-9.51 · D-44] La superficie ESTIMADA como PNG (una celda, un píxel)."""
+    png = await superficie_png(conn, str(incident_id))
+    if png is None:
+        raise http_error(404, "incidente no encontrado")
+    if isinstance(png, str):  # `SIN_SUPERFICIE`: existe, pero no hay superficie
+        raise http_error(404, SIN_SUPERFICIE)
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={"Cache-Control": "private, max-age=60"},
+    )
