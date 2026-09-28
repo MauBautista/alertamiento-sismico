@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 import { useSessionStore } from "@/auth/session.store";
 import { CrisisView } from "@/features/alert/CrisisView";
 import { elapsedSeconds } from "@/features/alert/machine";
-import { sourceLabel } from "@/features/alert/source";
+import { autorizaEvacuar, sourceLabel } from "@/features/alert/source";
 import { marcarSalidaTactica } from "@/features/alert/salidaTactica";
 import { stopAlertLoop } from "@/features/alert/sound";
 import { useAlertFeedback } from "@/features/alert/useAlertFeedback";
@@ -116,6 +116,9 @@ export default function Crisis() {
     >
       {incident !== null && data !== null ? (
         <CrisisView
+          // [T-9.73 · D-47] Los anillos sólo con SASMEX o cuórum: del trigger
+          // que sirve el servidor, nunca de lo que crea el teléfono.
+          autoriza={autorizaEvacuar(incident.trigger)}
           elapsedS={elapsedSeconds(incident.opened_at, nowMs)}
           policy={(data.my_zone?.evac_policy as "evacuate" | "shelter" | null) ?? null}
           onSalir={salir}

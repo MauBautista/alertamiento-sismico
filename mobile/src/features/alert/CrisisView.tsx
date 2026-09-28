@@ -8,6 +8,7 @@ import { Animated, StyleSheet, Text, View } from "react-native";
 import { Pulsable } from "@/ui/Pulsable";
 import { emergency, fontSize, motion, palette, radius, space } from "@/ui/theme";
 
+import { AnillosAlerta } from "./AnillosAlerta";
 import { ALERT_SOURCE_CARRIES_ETA, formatElapsed } from "./machine";
 import type { SourceLabel } from "./source";
 
@@ -43,6 +44,14 @@ export type CrisisViewProps = {
    * vista es presentacional: el hook vive en la ruta, como en `SiteNotices`.
    */
   reduceMotion?: boolean;
+  /**
+   * [T-9.73 · D-47] ¿La alerta AUTORIZA evacuar (SASMEX o cuórum de red)? Sólo
+   * entonces lleva los anillos concéntricos detrás de la instrucción. Lo decide
+   * la ruta con `autorizaEvacuar(trigger)` del dato del servidor; ausente es
+   * `false`, porque un anillo de más le diría «evacúe» a un aviso de una
+   * estación sola (D-39).
+   */
+  autoriza?: boolean;
 };
 
 /** Opacidad del anillo en reposo — la que se queda puesta sin animación. */
@@ -87,6 +96,7 @@ export function CrisisView({
   onSalir,
   viva,
   reduceMotion = false,
+  autoriza = false,
 }: CrisisViewProps) {
   const variant = VARIANTS[policy ?? "none"];
   // [T-7.19 · D-30] EL HALO. Se anima la CARCASA —un anillo sobre el borde de la
@@ -151,6 +161,12 @@ export function CrisisView({
 
       <View style={styles.body}>
         <View style={styles.hero}>
+          {/* [T-9.73] Detrás del texto (van primero en el árbol) y sólo mientras
+              el servidor sostenga una alerta que autoriza: al dejar de ser
+              `viva` se desmontan y sus bucles se paran. */}
+          {autoriza && viva ? (
+            <AnillosAlerta color={variant.accent} reduceMotion={reduceMotion} />
+          ) : null}
           <Text style={styles.actionEyebrow}>— SU INSTRUCCIÓN —</Text>
           <Text style={[styles.instruction, { color: variant.accent }]}>
             {variant.instruction}

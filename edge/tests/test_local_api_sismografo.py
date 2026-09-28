@@ -751,7 +751,7 @@ def test_la_vista_nueva_no_anade_ni_una_peticion_a_internet():
 def test_la_vista_nueva_no_anade_movimiento():
     """El inventario de movimiento sigue siendo dos keyframes y cero transiciones."""
     hoja = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
-    assert set(re.findall(r"@keyframes ([a-z-]+)", hoja)) == {"tk-blink", "tk-pulse"}
+    assert set(re.findall(r"@keyframes ([a-z-]+)", hoja)) == {"tk-halo", "tk-pulse"}
     assert re.findall(r"transition:\s*([a-z-]+)", hoja) == ["none"]
 
 

@@ -49,6 +49,16 @@ export function formatPga(pgaG: number): string {
   return `${(pgaG * 1000).toFixed(1)}mg`;
 }
 
+/**
+ * [T-9.73 · D-47 · D-39] ¿Esta fuente AUTORIZA evacuar? Sólo SASMEX o el
+ * cuórum de red (≥3 inmuebles). Una estación sola es AVISO (T-2.32), una
+ * activación manual no es un sismo, y lo desconocido no se adivina: `false`.
+ * Lo usa la toma de crisis para decidir si lleva los anillos de alerta.
+ */
+export function autorizaEvacuar(trigger: string): boolean {
+  return trigger === "sasmex" || trigger === "quorum";
+}
+
 export function sourceLabel(input: SourceInput): SourceLabel {
   switch (input.trigger) {
     case "sasmex":
