@@ -20,12 +20,14 @@ import { useLocation } from "react-router";
 
 import StateFrame from "../../components/StateFrame";
 import { useNow } from "../../lib/useNow";
+import { alertaViva } from "../console/alertaViva";
 import { useActiveDrill } from "../console/useActiveDrill";
 import { useDemoMode } from "../console/useDemoMode";
 import { useLiveIncidents } from "../console/useLiveIncidents";
 import { useMaintenanceWindows } from "../console/useMaintenanceWindows";
 import { useMapState } from "../console/useMapState";
 import AlertLine from "./AlertLine";
+import AlertTakeover from "./AlertTakeover";
 import ReviewLine from "./ReviewLine";
 import DemoModeBanner from "./DemoModeBanner";
 import DrillBanner from "./DrillBanner";
@@ -82,45 +84,55 @@ export default function SceneStrip() {
       ? incidents.dataUpdatedAt
       : null;
 
+  // [T-9.73 · D-47] La toma de pantalla: la MISMA clase que decide la franja
+  // (`alert`, nunca `notice` ni `review`) y además viva según el servidor — un
+  // frame de cierre puede dejar la fila en la mesa con `state="closed"`, y
+  // `alertKind` sólo separa la revisión.
+  const takeover = alert !== null && kind === "alert" && alertaViva(alert);
+  const takeoverStale = alertStale !== null || incidents.error !== null;
+
   return (
-    <div
-      className="soc-scene"
-      data-scene={scene}
-      data-wall={String(wall)}
-      data-testid="scene-strip"
-    >
-      {!wall && (
-        <StateFrame
-          label="ALERTA"
-          className="soc-drill__frame"
-          loading={incidents.loading}
-          error={incidents.error}
-          onRetry={incidents.refetch}
-          empty={alert === null}
-          emptyText="SIN INCIDENTE CRÍTICO ABIERTO"
-          silentEmpty
-          staleSince={alertStale}
-        >
-          {alert !== null && kind === "review" && (
-            <ReviewLine
-              incident={alert}
-              siteName={siteName}
-              siteCode={siteCode}
-              epicentro={epicentro}
-              now={now}
-            />
-          )}
-          {alert !== null && (kind === "alert" || kind === "notice") && (
-            <AlertLine incident={alert} kind={kind} siteName={siteName} siteCode={siteCode} />
-          )}
-        </StateFrame>
-      )}
-      <DrillBanner data={drill} scene={scene} />
-      {/* Leer QUÉ está silenciado lo gatea la API por rol (`maintenance.py`):
+    <>
+      {takeover && <AlertTakeover stale={takeoverStale} />}
+      <div
+        className="soc-scene"
+        data-scene={scene}
+        data-wall={String(wall)}
+        data-testid="scene-strip"
+      >
+        {!wall && (
+          <StateFrame
+            label="ALERTA"
+            className="soc-drill__frame"
+            loading={incidents.loading}
+            error={incidents.error}
+            onRetry={incidents.refetch}
+            empty={alert === null}
+            emptyText="SIN INCIDENTE CRÍTICO ABIERTO"
+            silentEmpty
+            staleSince={alertStale}
+          >
+            {alert !== null && kind === "review" && (
+              <ReviewLine
+                incident={alert}
+                siteName={siteName}
+                siteCode={siteCode}
+                epicentro={epicentro}
+                now={now}
+              />
+            )}
+            {alert !== null && (kind === "alert" || kind === "notice") && (
+              <AlertLine incident={alert} kind={kind} siteName={siteName} siteCode={siteCode} />
+            )}
+          </StateFrame>
+        )}
+        <DrillBanner data={drill} scene={scene} />
+        {/* Leer QUÉ está silenciado lo gatea la API por rol (`maintenance.py`):
           a quien el servidor le dice 403 no se le pinta un fallo de lectura en
           las seis pantallas — no es un fallo, es su alcance. */}
-      {!maintenance.forbidden && <MaintenanceBanner data={maintenance} />}
-      <DemoModeBanner data={demo} />
-    </div>
+        {!maintenance.forbidden && <MaintenanceBanner data={maintenance} />}
+        <DemoModeBanner data={demo} />
+      </div>
+    </>
   );
 }
