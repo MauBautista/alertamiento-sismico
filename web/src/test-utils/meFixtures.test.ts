@@ -25,8 +25,8 @@ describe("[T-5.28] fixtures de /me derivadas de la matriz", () => {
   it("declara CUÁNTOS roles, acciones y rutas trae", () => {
     // [T-9.20 · D-42] 7 roles (eran 10).
     expect(Object.keys(ME_FIXTURES)).toHaveLength(7);
-    // [T-9.11] 37: `movement_alert` (D-39).
-    expect(Object.keys(ACTIONS_NONE)).toHaveLength(37);
+    // [T-9.11] 37: `movement_alert` (D-39). [T-9.31] 38: `confirm_dictamen` (D-43).
+    expect(Object.keys(ACTIONS_NONE)).toHaveLength(38);
     expect(ALL_ROUTES).toHaveLength(6);
     // 5 con superficie web + 2 solo móvil (brigadista, occupant). El reparto también se deriva.
     expect(WEB_ROLES).toHaveLength(5);
@@ -35,7 +35,7 @@ describe("[T-5.28] fixtures de /me derivadas de la matriz", () => {
 
   it("ningún rol sale con el mapa de acciones vacío", () => {
     for (const [rol, me] of Object.entries(ME_FIXTURES)) {
-      expect(Object.keys(me.allowed_actions), `${rol} sin acciones`).toHaveLength(37);
+      expect(Object.keys(me.allowed_actions), `${rol} sin acciones`).toHaveLength(38);
       for (const [accion, valor] of Object.entries(me.allowed_actions)) {
         expect(typeof valor, `${rol}.${accion} no es booleano`).toBe("boolean");
       }

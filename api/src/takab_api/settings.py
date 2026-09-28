@@ -614,6 +614,19 @@ class Settings(BaseSettings):
     dictamen_pga_no_inhabit_g: float = 0.25
     dictamen_pga_monitor_g: float = 0.05
     dictamen_settle_s: float = 60.0
+    # [T-9.30 · D-43] Regla `dictamen-v2` en tres bandas por la PGA MÁXIMA de los
+    # sensores activos del inmueble: < verde ⇒ VERDE; [verde, rojo) ⇒ AMARILLO;
+    # ≥ rojo ⇒ ROJO. Override por `rule_sets.config.dictamen_v2` (sitio sobre
+    # tenant); `verde_max_g = 0` apaga el automático (nada es VERDE).
+    dictamen_verde_max_g: float = 0.04
+    dictamen_rojo_min_g: float = 0.10
+    # Cuánto tiene que llevar el tier del sitio en `normal` antes de que el
+    # sistema FIRME un VERDE (D-43: la gracia acota el reingreso sin persona).
+    dictamen_verde_gracia_s: float = 300.0
+    # Ventana de re-evaluación: durante 72 h desde la apertura, un reporte de
+    # daño posterior a la última fila de la cadena re-abre el dictamen, aunque el
+    # incidente esté cerrado (la prudencia sube sola; sólo baja con firma).
+    dictamen_reevaluacion_s: float = 259200.0
     # [T-7.55] ⚠️ CUÁNTO SIGUE DECLARÁNDOSE «REINGRESO AUTORIZADO» DESPUÉS DE QUE
     # EL INCIDENTE SE CIERRE.
     #

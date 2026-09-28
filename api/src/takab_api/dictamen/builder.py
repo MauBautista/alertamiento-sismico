@@ -108,10 +108,30 @@ _DICTAMENS = text(
     # lectura: el papel imprimía el `sub` de Cognito. LEFT JOIN porque un perfil
     # que no existe —o cuyo nombre se podó por retención de PII— deja el rol solo,
     # y el dictamen no puede desaparecer por eso.
+    #
+    # [T-9.34 · D-43] QUIÉN firmó (`signature_kind`), la BANDA y, para una
+    # confirmación, el ROL de quien confirmó: no vive en `dictamens` sino en la
+    # bitácora del `dictamen_confirmed` (`routers/dictamens.py::confirm_dictamen`
+    # guarda `claims.role`). LEFT JOIN: sin fila de bitácora el papel DECLARA que
+    # el rol no consta, no lo supone. Orden de la cabeza ÚNICO (D-43 §4):
+    # `created_at DESC, dictamen_id DESC`.
     "SELECT d.dictamen_id, d.status, d.created_at, d.signed_by, d.basis, "
-    "d.supersedes_dictamen_id, p.display_name AS firmante_nombre "
+    "d.supersedes_dictamen_id, p.display_name AS firmante_nombre, "
+    # [F3·r2] El rol va en la propia fila (`basis.confirmacion.rol`); la bitácora
+    # queda como respaldo para las confirmaciones anteriores a ese campo.
+    "d.signature_kind, d.band, "
+    "CASE WHEN d.signature_kind = 'confirmation' "
+    "     THEN COALESCE(NULLIF(d.basis->'confirmacion'->>'rol', ''), conf.rol) "
+    "END AS firmante_rol "
     "FROM dictamens d LEFT JOIN user_profiles p ON p.user_sub = d.signed_by "
-    "WHERE d.incident_id = CAST(:id AS uuid) ORDER BY d.created_at DESC"
+    "LEFT JOIN LATERAL ("
+    "  SELECT a.meta->>'role' AS rol FROM audit_log a "
+    "  WHERE d.signature_kind = 'confirmation' AND a.verb = 'dictamen_confirmed' "
+    "    AND a.meta->>'dictamen_id' = d.dictamen_id::text "
+    "  ORDER BY a.ts DESC LIMIT 1"
+    ") conf ON true "
+    "WHERE d.incident_id = CAST(:id AS uuid) "
+    "ORDER BY d.created_at DESC, d.dictamen_id DESC"
 )
 
 #: [T-8.12 · A-053] La clasificación VIGENTE: la más reciente que nadie sustituye.
@@ -394,6 +414,9 @@ async def build_model(
             rule_set_version=(r.basis or {}).get("rule_set_version", "sin versión"),
             supersedes=str(r.supersedes_dictamen_id) if r.supersedes_dictamen_id else None,
             firmante_nombre=r.firmante_nombre if r.signed_by else None,
+            signature_kind=r.signature_kind if r.signed_by else None,
+            band=r.band,
+            firmante_rol=r.firmante_rol if r.signature_kind == "confirmation" else None,
         )
         for r in dictamen_rows
     ]

@@ -45,7 +45,8 @@
     "manage_privacy_notice",
     "manage_privacy_erasure",
     "cctv_read",
-    "cctv_video"
+    "cctv_video",
+    "confirm_dictamen"
   ],
   "internal_roles": [
     "takab_superadmin",
@@ -66,7 +67,7 @@
         "demo_mode_off": false,
         "classify_incident": false,
         "relocate_epicenter": false,
-        "request_dictamen": false,
+        "request_dictamen": true,
         "read_audit": false,
         "self_test": false,
         "drill_start": false,
@@ -91,7 +92,8 @@
         "manage_privacy_notice": false,
         "manage_privacy_erasure": false,
         "cctv_read": false,
-        "cctv_video": false
+        "cctv_video": false,
+        "confirm_dictamen": true
       }
     },
     "gov_operator": {
@@ -139,7 +141,8 @@
         "manage_privacy_notice": false,
         "manage_privacy_erasure": false,
         "cctv_read": false,
-        "cctv_video": false
+        "cctv_video": false,
+        "confirm_dictamen": false
       }
     },
     "inspector": {
@@ -185,7 +188,8 @@
         "manage_privacy_notice": false,
         "manage_privacy_erasure": false,
         "cctv_read": true,
-        "cctv_video": false
+        "cctv_video": false,
+        "confirm_dictamen": true
       }
     },
     "occupant": {
@@ -227,7 +231,8 @@
         "manage_privacy_notice": false,
         "manage_privacy_erasure": false,
         "cctv_read": false,
-        "cctv_video": false
+        "cctv_video": false,
+        "confirm_dictamen": false
       }
     },
     "takab_superadmin": {
@@ -276,7 +281,8 @@
         "manage_privacy_notice": true,
         "manage_privacy_erasure": true,
         "cctv_read": true,
-        "cctv_video": true
+        "cctv_video": true,
+        "confirm_dictamen": false
       }
     },
     "takab_support": {
@@ -325,7 +331,8 @@
         "manage_privacy_notice": false,
         "manage_privacy_erasure": false,
         "cctv_read": false,
-        "cctv_video": false
+        "cctv_video": false,
+        "confirm_dictamen": false
       }
     },
     "tenant_admin": {
@@ -374,7 +381,8 @@
         "manage_privacy_notice": true,
         "manage_privacy_erasure": true,
         "cctv_read": true,
-        "cctv_video": true
+        "cctv_video": true,
+        "confirm_dictamen": true
       }
     }
   }

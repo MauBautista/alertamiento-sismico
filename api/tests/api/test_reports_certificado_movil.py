@@ -259,7 +259,10 @@ async def test_DOS_lecturas_SIMULTANEAS_generan_UN_solo_certificado(client, make
 
 
 async def test_una_correccion_SIN_FIRMAR_posterior_no_se_certifica(client, make_incident) -> None:
-    """Cualquier PDF de hoy diría PRELIMINAR: la cabeza de la cadena no está firmada."""
+    """Cualquier PDF de hoy diría PRELIMINAR: la cabeza de la cadena no está firmada.
+
+    [F3·r2 · D-43] Y el certificado ya no dice «firmado»: lee la CABEZA, no la última
+    firmada (con la v2 la cabeza sin firmar puede ser un ROJO que subió la regla)."""
     with mock_aws():
         _crea_bucket()
         iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
@@ -267,7 +270,8 @@ async def test_una_correccion_SIN_FIRMAR_posterior_no_se_certifica(client, make_
         await _firma(iid, firmado=False)
         cert = await client.get(f"/incidents/{iid}/dictamen", headers=_brig())
         assert cert.status_code == 200
-        assert cert.json()["signed"] is True
+        assert cert.json()["signed"] is False
+        assert cert.json()["habitable"] is False
         assert cert.json()["pdf_url"] is None
         assert await _informes(iid) == [], "generó un PDF que habría dicho PRELIMINAR"
 
@@ -356,3 +360,81 @@ async def test_si_la_generacion_FALLA_el_certificado_sigue_en_pie(
             )
         ).scalar_one()
     assert leidas == 1, "la lectura del certificado no quedó auditada"
+
+
+# ───────────────────────────────── [T-9.34 · D-43] quién firmó, en el certificado
+
+
+async def _firma_de(iid: str, kind: str) -> str:
+    """Una cabeza firmada por el SISTEMA (VERDE) o por quien CONFIRMA (AMARILLO)."""
+    from takab_api.dictamen.sistema import SYSTEM_DICTAMEN_SIGNER_UUID  # noqa: PLC0415
+
+    sistema = kind == "system"
+    firmante = SYSTEM_DICTAMEN_SIGNER_UUID if sistema else _BRIGADISTA
+    async with get_engine().begin() as conn:
+        did = (
+            await conn.execute(
+                text(
+                    "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by, "
+                    "signature_kind, band) VALUES (:t, :i, :s, "
+                    '\'{"rule_set_version": "dictamen-v2"}\'::jsonb, :by, :k, :b) '
+                    "RETURNING dictamen_id"
+                ),
+                {
+                    "t": au.DB_TENANT_PRIV,
+                    "i": iid,
+                    "s": "normal_operation" if sistema else "inhabit_monitor",
+                    "by": firmante,
+                    "k": kind,
+                    "b": "verde" if sistema else "amarillo",
+                },
+            )
+        ).scalar_one()
+        if not sistema:
+            await conn.execute(
+                text(
+                    "INSERT INTO audit_log (tenant_id, actor, verb, object, meta) "
+                    "VALUES (:t, :a, 'dictamen_confirmed', :o, CAST(:m AS jsonb))"
+                ),
+                {
+                    "t": au.DB_TENANT_PRIV,
+                    "a": f"user:{_BRIGADISTA}",
+                    "o": f"incident:{iid}",
+                    "m": f'{{"dictamen_id": "{did}", "role": "brigadista"}}',
+                },
+            )
+    return firmante
+
+
+def _texto_entero(pdf: bytes) -> str:
+    return "\n".join(p.extract_text() or "" for p in PdfReader(io.BytesIO(pdf)).pages)
+
+
+@pytest.mark.parametrize(
+    ("kind", "encabezado", "firma"),
+    [
+        ("system", "DICTAMEN OPERATIVO EMITIDO POR EL SISTEMA", "EMITIDO POR EL SISTEMA"),
+        ("confirmation", "DICTAMEN OPERATIVO CONFIRMADO", "CONFIRMADO POR BRIGADISTA"),
+    ],
+)
+async def test_el_certificado_dice_QUIEN_firmo_y_nunca_el_identificador(
+    client, make_incident, kind: str, encabezado: str, firma: str
+) -> None:
+    """Un VERDE del sistema o un AMARILLO confirmado liberan el reingreso y el móvil
+    los certifica: el papel no puede decir «FIRMADO por inspector» ni imprimir el
+    UUID fijo del sistema o el `sub` de quien confirmó."""
+    with mock_aws():
+        _crea_bucket()
+        iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+        firmante = await _firma_de(iid, kind)
+        cert = await client.get(f"/incidents/{iid}/dictamen", headers=_brig())
+        assert cert.status_code == 200, cert.text
+        url = cert.json()["pdf_url"]
+        assert url is not None, "no hay certificado de un dictamen firmado"
+        [servido] = [f for f in await _informes(iid) if f.s3_key in unquote(url)]
+        pdf = _objeto(servido.s3_key)
+    assert encabezado in _encabezado(pdf)
+    texto = " ".join(_texto_entero(pdf).split())
+    assert firma in texto
+    assert "FIRMADO por inspector" not in texto
+    assert firmante not in texto

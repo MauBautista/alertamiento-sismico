@@ -294,6 +294,10 @@ class NarrativeFacts:
     verdict_label: str
     verdict_status: str | None
     verdict_signed: bool
+    #: [T-9.34 · D-43] QUIÉN firmó la cabeza: `system` · `confirmation` · `inspector`,
+    #: o `None` (sin firma o fila histórica). Un enum de tres valores: no identifica a
+    #: nadie, y sin él la prosa atribuía a un inspector la firma del sistema.
+    verdict_signature_kind: str | None
     verdict_actions: tuple[str, ...]
     rule_set_version: str | None
     basis: dict = field(default_factory=dict)

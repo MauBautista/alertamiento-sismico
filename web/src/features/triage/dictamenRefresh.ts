@@ -110,7 +110,15 @@ export interface IncidentRefreshHint {
 export interface DictamenChainRow {
   /** `dictamens.signed_by`; `null` = preliminar automático. */
   signed_by: string | null;
+  /**
+   * [T-9.30 · D-43] `dictamens.status`. Con `dictamen-v2` lo que para al worker
+   * ya no es la firma sino la cabeza en lo MÁS GRAVE: la prudencia sube sola.
+   */
+  status: string;
 }
+
+/** El status más grave del CHECK: por encima no hay nada que la regla pueda escribir. */
+const MAS_GRAVE = "no_inhabit_inspect";
 
 export interface DictamenRefreshInput {
   /** Incidente seleccionado; `null` = la consulta ni siquiera está habilitada. */
@@ -138,6 +146,14 @@ export interface DictamenRefreshInput {
  *    una fecha que no parsea, no hay ventana que calcular y por tanto tampoco
  *    hora de parada. Ver la cabecera del módulo: se prefiere quedarse sin suelo
  *    a montar un temporizador perpetuo.
+ *  · [T-9.30 · D-43] LA CABEZA NO ESTÁ EN LO MÁS GRAVE. Con `dictamen-v2` la
+ *    firma dejó de ser la parada del worker: «la prudencia sube sola» —un daño
+ *    estructural reportado tras una firma VERDE inserta una fila ROJA sin firmar
+ *    encima— y el VERDE del sistema se emite sobre un preliminar. Sólo con la
+ *    cabeza (el orden del servidor, `dictamens[0]`) en `no_inhabit_inspect` no
+ *    queda nada que la regla pueda escribir; bajar exige una firma humana, que
+ *    invalida por su cuenta (`signMutation.onSuccess`). LO QUE SIGUE era la
+ *    regla de `dictamen-v1` y queda como historia:
  *  · LA CABEZA NO ESTÁ FIRMADA. Ésta es la condición de parada del propio
  *    worker: `run_dictamen_pass` hace `if row["head_signed_by"] is not None:
  *    continue` («el juicio del inspector manda»). Mientras la cabeza siga SIN
@@ -162,7 +178,7 @@ export function dictamenRefetchMs(input: DictamenRefreshInput): number | false {
   if (incidentId === null || incident === null) {
     return false;
   }
-  if (dictamens !== undefined && dictamens.some((d) => d.signed_by !== null)) {
+  if (dictamens !== undefined && dictamens.length > 0 && dictamens[0].status === MAS_GRAVE) {
     return false;
   }
   const openedAt = Date.parse(incident.openedAt);

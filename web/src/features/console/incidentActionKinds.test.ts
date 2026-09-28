@@ -115,6 +115,10 @@ describe("[T-2.144] el barrido de productores no tiene puntos ciegos", () => {
       "headcount_notify",
       // El octavo, que la ficha no listaba porque no está en `api/src`.
       "notify_delivered",
+      // [T-9.31 · T-9.33 · D-43] La confirmación del dictamen de la regla y el
+      // aviso que la pide a la brigada: dos productores nuevos de la Fase 9.3.
+      "dictamen_confirmed",
+      "dictamen_confirm_requested",
     ]) {
       expect(KINDS, `el censo perdió a ${kind}`).toContain(kind);
     }

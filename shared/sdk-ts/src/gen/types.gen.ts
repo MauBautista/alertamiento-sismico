@@ -657,12 +657,15 @@ export type DictamenList = {
  * Fila de ``dictamens``: ``signed_by`` NULL = preliminar; cadena vía supersedes.
  */
 export type DictamenOut = {
+    band?: string | null;
     basis: {
         [key: string]: unknown;
     };
+    confirmed_by_role?: string | null;
     created_at: string;
     dictamen_id: string;
     incident_id: string;
+    signature_kind?: string | null;
     signed_by: string | null;
     status: string;
     supersedes_dictamen_id: string | null;
@@ -1718,6 +1721,7 @@ export type MeActions = {
     cctv_video: boolean;
     checkin_submit: boolean;
     classify_incident: boolean;
+    confirm_dictamen: boolean;
     damage_report_submit: boolean;
     demo_mode_off: boolean;
     demo_mode_on: boolean;
@@ -1834,10 +1838,13 @@ export type MobileBuildingAlarmOut = {
  * entregado por ``dictamen_read``; jamás un PDF paralelo).
  */
 export type MobileDictamenOut = {
+    band?: string | null;
+    confirmed_by_role?: string | null;
     folio: string | null;
     habitable: boolean;
     incident_id: string;
     pdf_url: string | null;
+    signature_kind?: string | null;
     signed: boolean;
     signed_at: string | null;
     signed_by: string | null;
@@ -4596,6 +4603,34 @@ export type SignDictamenIncidentsIncidentIdDictamensPostResponses = {
 };
 
 export type SignDictamenIncidentsIncidentIdDictamensPostResponse = SignDictamenIncidentsIncidentIdDictamensPostResponses[keyof SignDictamenIncidentsIncidentIdDictamensPostResponses];
+
+export type ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostData = {
+    body?: never;
+    path: {
+        incident_id: string;
+        dictamen_id: string;
+    };
+    query?: never;
+    url: '/incidents/{incident_id}/dictamens/{dictamen_id}/confirm';
+};
+
+export type ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostError = ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostErrors[keyof ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostErrors];
+
+export type ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: DictamenOut;
+};
+
+export type ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostResponse = ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostResponses[keyof ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostResponses];
 
 export type RelocateEpicenterIncidentsIncidentIdEpicenterPostData = {
     body: EpicenterRelocateIn;

@@ -2,7 +2,7 @@
 // nulas ⇒ S/D, features en espera declarada, y la traza BMS usa la MISMA
 // agrupación compartida que la consola (@takab/sdk · groupActions).
 import { groupActions, type IncidentActionOut, type MobileSiteHealthOut } from "@takab/sdk";
-import { render } from "@testing-library/react-native";
+import { fireEvent, render } from "@testing-library/react-native";
 
 import { mergeAction } from "./actions";
 import { applyHealthFrame, fmtMetric, upsLabel } from "./health";
@@ -166,6 +166,24 @@ describe("[T-9.04] el panel táctico también pinta el reingreso bloqueado", () 
   it("pendiente ⇒ franja ámbar", async () => {
     const v = await render(<PanelView {...BASE} avisoReingreso={PENDIENTE} />);
     expect(v.getByTestId("panel-reingreso-warn")).toHaveTextContent(/PENDIENTE DE DICTAMEN/);
+  });
+
+  // [F3·r3] Reingreso pendiente de CONFIRMACIÓN y un perfil que confirma ⇒ la
+  // brigada llega a la pantalla desde su INICIO, no sólo tocando la push.
+  it("con onOpenConfirmar ⇒ botón CONFIRMAR DICTAMEN que lo abre", async () => {
+    const abrir = jest.fn();
+    const v = await render(
+      <PanelView {...BASE} avisoReingreso={PENDIENTE} onOpenConfirmar={abrir} />,
+    );
+    const btn = v.getByTestId("open-confirmar-dictamen");
+    expect(btn).toHaveTextContent(/CONFIRMAR DICTAMEN/);
+    fireEvent.press(btn);
+    expect(abrir).toHaveBeenCalledTimes(1);
+  });
+
+  it("sin onOpenConfirmar ⇒ no hay botón de confirmar", async () => {
+    const v = await render(<PanelView {...BASE} avisoReingreso={PENDIENTE} />);
+    expect(v.queryByTestId("open-confirmar-dictamen")).toBeNull();
   });
 
   it("sin aviso ⇒ nada", async () => {

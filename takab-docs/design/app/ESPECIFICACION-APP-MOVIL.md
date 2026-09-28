@@ -497,6 +497,12 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
 - Strings normativos desde `compliance_labels` (§2.1-C).
 - **Aceptación:** ningún camino de código local puede transicionar a `REENTRY_APPROVED` sin
   evento del backend (test).
+- **[T-9.30…T-9.34 · D-43] Dictamen en tres bandas.** El backend emite el dictamen con la regla
+  determinista `dictamen-v2` (sin IA): **VERDE** (lo firma el sistema tras 5 min en calma y sin
+  reportes de daño), **AMARILLO** (queda «pendiente de confirmación» hasta que la brigada, el
+  inspector o la administración lo **confirman** con la acción `confirm_dictamen`) o **ROJO**
+  (sólo lo levanta la firma del inspector). La liberación sigue llegando **sólo** del backend;
+  la app nunca decide la banda. Un reporte de daño posterior sube la banda y vuelve a bloquear.
 
 #### 1.6 Rutas (tab Rutas — SE AGREGA)
 - Lista de rutas de evacuación por zona (PDF/imagen de `site_assets`, badge "disponible
@@ -659,6 +665,15 @@ consola (precedencia loading > error > empty > stale > ready; banner "DATOS RETE
   `reentry_approved` → push CRISIS de cambio de fase; jamás acción local).
 - **Aceptación:** flujo consola-firma → push → PDF visible → ocupantes liberados, verificable
   en staging.
+- **[T-9.31 · T-9.33 · T-9.34 · D-43]** Con el dictamen en tres bandas el firmante ya no es
+  siempre el inspector: el sello de la UI sale de `signature_kind` —`system` ⇒ «EMITIDO POR EL
+  SISTEMA», `confirmation` ⇒ «CONFIRMADO POR <rol>», `inspector` ⇒ «FIRMA DIGITAL · INSPECTOR»
+  (histórico sin tipo, como antes)—, nunca de un identificador interno. Un AMARILLO sin firmar
+  llega como push de clase `DICTAMEN_CONFIRM` (canal OPS, prioridad normal) a los roles con
+  `confirm_dictamen`, que lo confirman con
+  `POST /incidents/{id}/dictamens/{dictamen_id}/confirm` (409 si ya no es la cabeza vigente o ya
+  está firmado; 403 si es ROJO). Limitación declarada: la app reporta daños sólo sobre el
+  incidente abierto.
 
 ---
 

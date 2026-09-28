@@ -46,6 +46,12 @@ PUSH_CLASS_PANIC = "PANIC"
 #: el texto de CRISIS. Suena la VOZ «Se detectó un movimiento en el inmueble.
 #: Verifique.» (`shared/audio/MANIFEST.json`), para que quien la oye sepa qué hacer.
 PUSH_CLASS_MOVEMENT = "MOVEMENT"
+#: [T-9.33 · D-43] La regla ``dictamen-v2`` emitió un AMARILLO sin firmar: se pide a
+#: quien tiene ``confirm_dictamen`` (brigada, inspector, administración) que revise y
+#: confirme. NO despierta: prioridad normal, canal ``ops`` y sonido por defecto — es
+#: trabajo posterior a la sacudida, no una alarma. Clase propia (y no ``OPS``) porque
+#: la app abre OTRA pantalla y porque ``OPS`` va a TODO el inmueble.
+PUSH_CLASS_DICTAMEN_CONFIRM = "DICTAMEN_CONFIRM"
 
 # Texto visible FIJO y genérico (lockscreen): jamás nombres de sitio ni datos.
 _ALERT_TEXT = {
@@ -64,6 +70,10 @@ _ALERT_TEXT = {
     PUSH_CLASS_MOVEMENT: {
         "title": "MOVIMIENTO EN EL INMUEBLE",
         "body": "Se detectó un movimiento. Verifique el inmueble.",
+    },
+    PUSH_CLASS_DICTAMEN_CONFIRM: {
+        "title": "DICTAMEN POR CONFIRMAR",
+        "body": "Revise el inmueble y confirme el dictamen en la app.",
     },
 }
 
@@ -127,6 +137,13 @@ _DELIVERY_STYLE = {
         # que `seismic_alert_v3`: el sonido de un canal Android es inmutable.
         "sound": "movimiento_inmueble.wav",
         "channel_id": "building_movement_v2",
+    },
+    PUSH_CLASS_DICTAMEN_CONFIRM: {
+        # Trabajo de revisión, no alarma: el estilo exacto de OPS.
+        "interruption_level": "active",
+        "sound": "default",
+        "android_priority": "normal",
+        "channel_id": "ops",
     },
 }
 

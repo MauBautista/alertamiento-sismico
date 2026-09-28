@@ -225,7 +225,13 @@ class MobileReentryOut(BaseModel):
     #:   habitable posterior sobre ese mismo incidente.
     #: · ``pendiente_dictamen`` — cerrado sin dictamen firmado, dentro de
     #:   ``reentry_pendiente_lookback_s``: nadie ha inspeccionado el edificio.
-    #: · ``pendiente_confirmacion`` — RESERVADO para F3; hoy no se produce.
+    #: · ``pendiente_confirmacion`` — [D-43] la cabeza es un AMARILLO de la regla
+    #:   SIN firmar: falta que la brigada, el inspector o la administración lo
+    #:   confirmen. También con el incidente ABIERTO (sin cambiar la fase), para
+    #:   que la app ofrezca CONFIRMAR.
+    #: [F3·r3] Con incidente ABIERTO también viaja ``no_habitable``/
+    #: ``pendiente_dictamen`` cuando OTRO incidente del sitio tiene un bloqueo
+    #: persistente (``reingreso.bloqueo_persistente``); ``incident_id`` es ése.
     reason: RazonBloqueo | None = None
 
 
@@ -536,6 +542,15 @@ class MobileDictamenOut(BaseModel):
     habitable: bool
     #: PDF presignado del reporte (None si aún no se generó o sin bucket).
     pdf_url: str | None
+    #: [F3·r2 · D-43] QUIÉN firmó la cabeza: ``inspector`` / ``system`` /
+    #: ``confirmation`` (None = sin firmar o fila histórica). El sello de la app sale
+    #: de aquí, nunca de ``signed_by`` (que para el sistema viaja nulo).
+    signature_kind: str | None = None
+    #: [F3·r2 · D-43] Banda de la CABEZA (``verde``/``amarillo``/``rojo``), firmada o
+    #: no: con ``signed=false`` dice por qué no hay certificado.
+    band: str | None = None
+    #: [F3·r2 · D-43] Rol de quien CONFIRMÓ (sólo ``signature_kind='confirmation'``).
+    confirmed_by_role: str | None = None
 
 
 # --- damage reports (2.4) --------------------------------------------------------

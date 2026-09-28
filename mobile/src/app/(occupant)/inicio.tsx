@@ -1,10 +1,17 @@
 // 1.1 · Modo reposo del ocupante. El estado del edificio viene de
 // mobile-state (verdad única de Flota); el directorio con copia offline.
 // StateFrame garantiza los 4 estados obligatorios (regla de oro 7).
-import { siteDirectorySitesSiteIdDirectoryGet, type DirectoryEntryOut } from "@takab/sdk";
+import {
+  readDictamenIncidentsIncidentIdDictamenGet,
+  siteDirectorySitesSiteIdDirectoryGet,
+  type DirectoryEntryOut,
+} from "@takab/sdk";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 
+import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
+import type { Firma } from "@/features/dictamen/confirmacion";
 import { HomeView } from "@/features/home/HomeView";
 import { useCachedQuery } from "@/offline/useCachedQuery";
 import { useWatchedSiteId } from "@/services/mySite";
@@ -30,6 +37,32 @@ export default function Inicio() {
     },
   });
 
+  // [F3·r3 · D-43] El cartel verde de reingreso dice QUIÉN lo aprobó (el
+  // sistema, una confirmación con su rol o el inspector). `mobile-state` no lo
+  // trae: sale del certificado, y SOLO si el perfil lo puede leer
+  // (`dictamen_read`). Sin él (el ocupante) no se pide y el cartel no se lo
+  // atribuye a nadie. Misma clave que la pantalla del certificado: una caché.
+  const puedeLeerDictamen = useSessionStore((s) => s.me?.allowed_actions?.dictamen_read === true);
+  const incidenteAprobado =
+    data?.phase === "reentry_approved"
+      ? (data.reentry?.incident_id ?? data.incident?.incident_id ?? null)
+      : null;
+  const certificado = useQuery({
+    queryKey: ["dictamen", incidenteAprobado],
+    enabled: puedeLeerDictamen && incidenteAprobado !== null,
+    queryFn: async () => {
+      const res = await readDictamenIncidentsIncidentIdDictamenGet({
+        path: { incident_id: incidenteAprobado as string },
+      });
+      if (!res.data) {
+        throw new Error("dictamen no disponible");
+      }
+      return res.data;
+    },
+  });
+  const firmaReingreso: Firma | null =
+    puedeLeerDictamen && certificado.data?.signed === true ? certificado.data : null;
+
   const zoneId = data?.my_zone?.zone_id ?? null;
   const all = directory.data ?? [];
   const brigadistas = (zoneId ? all.filter((b) => b.zone_id === zoneId) : all).slice(0, 3);
@@ -51,6 +84,7 @@ export default function Inicio() {
         <HomeView
           brigadistas={brigadistas}
           data={data}
+          firmaReingreso={firmaReingreso}
           // Edad relativa al momento de la CONSULTA (se refresca con el poll);
           // render puro — sin Date.now() en el cuerpo (react-hooks/purity).
           nowMs={dataUpdatedAt}

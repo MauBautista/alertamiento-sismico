@@ -58,6 +58,9 @@ export function PanelView(props: {
    *  perfil táctico «/» es ESTE panel: sin esto, la brigada —que es quien
    *  controla la puerta— era la única que no veía el NO HABITAR. */
   avisoReingreso?: AvisoReingreso | null;
+  /** [F3·r3] Reingreso pendiente de CONFIRMACIÓN y un perfil con
+   *  `confirm_dictamen` ⇒ entrada a CONFIRMAR DICTAMEN. Ausente ⇒ sin botón. */
+  onOpenConfirmar?: () => void;
 }) {
   const h = props.health;
   // [T-6.25] Qué dice el pill —y si late— sale de la edad del último frame, no
@@ -94,6 +97,17 @@ export function PanelView(props: {
             {props.avisoReingreso.titulo} — {props.avisoReingreso.detalle}
           </Text>
         </View>
+      ) : null}
+
+      {props.onOpenConfirmar ? (
+        <Pulsable
+          accessibilityRole="button"
+          onPress={props.onOpenConfirmar}
+          style={styles.dictamenBtn}
+          testID="open-confirmar-dictamen"
+        >
+          <Text style={styles.dictamenText}>REVISAR Y CONFIRMAR DICTAMEN →</Text>
+        </Pulsable>
       ) : null}
 
       <View style={styles.card}>

@@ -71,6 +71,51 @@ DISCLAIMER_ESTADO = {
     True: "Dictamen operativo FIRMADO por inspector, sobre evidencia instrumental de TAKAB Ailert.",
 }
 
+#: [T-9.34 · D-43] La primera frase del deslinde cuando NO firmó un inspector. Con
+#: D-43 firman tres y `DISCLAIMER_ESTADO[True]` —«FIRMADO por inspector»— sólo es
+#: verdad de uno: la llave es `dictamens.signature_kind` de la cabeza. `inspector`
+#: y NULL (filas históricas, anteriores a la columna) siguen con la de siempre.
+#: Son constantes sueltas —y no sólo el dict— para que entren al censo de avisos
+#: impresos (`tests/dictamen/test_avisos_impresos.py`), que deriva de `vars(model)`.
+DISCLAIMER_SISTEMA = (
+    "Dictamen operativo EMITIDO Y FIRMADO POR EL SISTEMA con una regla determinista, "
+    "sobre evidencia instrumental de TAKAB Ailert; sin firma de inspector."
+)
+DISCLAIMER_CONFIRMACION = (
+    "Dictamen operativo CONFIRMADO por una persona autorizada del inmueble, sobre la "
+    "evaluación automática de TAKAB Ailert; sin firma de inspector."
+)
+#: [F3·r3 · D-43] La misma frase cuando quien CONFIRMÓ es un INSPECTOR: decir «sin
+#: firma de inspector» al lado de «CONFIRMADO POR INSPECTOR» era falso.
+DISCLAIMER_CONFIRMACION_INSPECTOR = (
+    "Dictamen operativo CONFIRMADO por un inspector, sobre la evaluación automática "
+    "de TAKAB Ailert."
+)
+DISCLAIMER_FIRMA: dict[str, str] = {
+    "system": DISCLAIMER_SISTEMA,
+    "confirmation": DISCLAIMER_CONFIRMACION,
+}
+
+#: [T-9.34 · D-43] El rol de quien CONFIRMÓ sale de la bitácora (`audit_log` del
+#: `dictamen_confirmed`). Si no consta se dice: suponer «brigadista» por costumbre
+#: sería afirmar bajo firma un rol que nadie registró.
+ROL_CONFIRMANTE_NO_CONSTA = "USUARIO AUTORIZADO · rol no consta en la bitácora"
+
+#: [T-9.34 · D-43] Lo que dice la sección de firma de un AMARILLO que la regla emitió
+#: y nadie ha confirmado todavía: el reingreso está bloqueado por eso.
+PENDIENTE_CONFIRMACION = (
+    "PRELIMINAR · PENDIENTE DE CONFIRMACIÓN por la brigada, la administración o un "
+    "inspector del inmueble"
+)
+
+#: [F3·r3 · D-43] Un AMARILLO sin firmar con un daño ROJO reportado (estructural,
+#: personas atrapadas, fuga de gas) que la regla aún no subió: la API se niega a
+#: confirmarlo («requiere inspector»), así que el papel no puede decir que espera a
+#: la brigada.
+PENDIENTE_FIRMA_INSPECTOR = (
+    "PRELIMINAR · PENDIENTE DE FIRMA DEL INSPECTOR: hay daños reportados que exigen inspección"
+)
+
 TS_FMT = "%Y-%m-%d %H:%M:%S UTC"
 
 #: Rótulos de ausencia. Existen como constantes para que un test pueda exigirlos y
@@ -636,6 +681,13 @@ class DictamenRow:
     #: `None` ⇒ el FIRMÓ imprime sólo el rol: un nombre inventado sería peor que
     #: ninguno, y el identificador de Cognito no es un nombre.
     firmante_nombre: str | None = None
+    #: [T-9.34 · D-43] QUIÉN firmó (`inspector` · `system` · `confirmation`); `None`
+    #: en filas sin firma y en las HISTÓRICAS, que se rotulan como siempre.
+    signature_kind: str | None = None
+    #: [T-9.30 · D-43] Banda de la regla `dictamen-v2`; `None` en filas v1.
+    band: str | None = None
+    #: [T-9.34 · D-43] Rol de quien CONFIRMÓ (sólo `confirmation`), de la bitácora.
+    firmante_rol: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

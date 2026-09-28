@@ -29,9 +29,10 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.audit import audit_async
-from takab_api.auth.claims import Claims
+from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
+from takab_api.dictamen.sistema import FIRMA_DE_INSPECTOR_SQL
 from takab_api.schemas.incidents import (
     DictamenRequestIn,
     EpicenterRelocateIn,
@@ -57,16 +58,21 @@ _INSERT_ACTION_SQL = text(
     "RETURNING action_id, incident_id, tenant_id, ts, kind, actor, payload"
 )
 
-_INCIDENT_TENANT_SQL = text("SELECT tenant_id, state FROM incidents WHERE incident_id = :id")
+_INCIDENT_TENANT_SQL = text(
+    "SELECT tenant_id, state, site_id FROM incidents WHERE incident_id = :id"
+)
 
-# Solicitud "pendiente" = existe un dictamen_request SIN dictamen FIRMADO
+# Solicitud "pendiente" = existe un dictamen_request SIN firma de INSPECTOR
 # posterior a su ts. El timeline append-only es la única verdad.
+# [F3·r3 · D-43] Sólo la firma del INSPECTOR la atiende (`FIRMA_DE_INSPECTOR_SQL`):
+# el VERDE del sistema o una confirmación de la brigada no son la inspección que se
+# pidió, y darla por atendida con ellos dejaba a la brigada sin su inspector.
 _PENDING_REQUEST_SQL = text(
     "SELECT 1 FROM incident_actions a "
     "WHERE a.incident_id = :id AND a.kind = 'dictamen_request' "
     "AND NOT EXISTS ("
     "  SELECT 1 FROM dictamens d "
-    "  WHERE d.incident_id = :id AND d.signed_by IS NOT NULL AND d.created_at > a.ts"
+    f"  WHERE d.incident_id = :id AND {FIRMA_DE_INSPECTOR_SQL} AND d.created_at > a.ts"
     ") LIMIT 1"
 )
 
@@ -149,6 +155,11 @@ async def request_dictamen(
     """Solicita dictamen técnico: acción auditada en el timeline del incidente."""
     row = (await conn.execute(_INCIDENT_TENANT_SQL, {"id": incident_id})).first()
     if row is None:
+        raise HTTPException(status_code=404, detail="incidente no encontrado")
+    # [F3·r2] La brigada pide el dictamen técnico de SU inmueble: fuera del alcance
+    # por inmueble del portador, el incidente no existe para él (404, como el RLS).
+    allowed = scope_filter(claims)
+    if allowed is not None and str(row.site_id) not in allowed:
         raise HTTPException(status_code=404, detail="incidente no encontrado")
     pending = (await conn.execute(_PENDING_REQUEST_SQL, {"id": incident_id})).first()
     if pending is not None:

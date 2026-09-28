@@ -39,11 +39,20 @@ jest.mock("@tanstack/react-query", () => ({
 }));
 
 jest.mock("expo-sharing", () => ({ shareAsync: jest.fn(async () => undefined) }));
+// Cada `new File(dir, nombre)` queda anotado: el NOMBRE del PDF local es lo que
+// decide si se abre el papel de la firma vigente o uno viejo del mismo incidente.
+const mockArchivos: string[] = [];
 jest.mock("expo-file-system", () => ({
   Paths: { document: "file:///doc" },
   File: class {
     uri = "file:///doc/dictamen.pdf";
     exists = false;
+    constructor(_dir?: unknown, nombre?: string) {
+      if (typeof nombre === "string") {
+        mockArchivos.push(nombre);
+        this.uri = `file:///doc/${nombre}`;
+      }
+    }
     delete() {}
     static downloadFileAsync: () => Promise<void> = jest.fn(async () => undefined);
   },
@@ -203,6 +212,46 @@ describe("2.7 · dictamen · tras el cierre automático de D-33 (T-8.11 · A-022
     await asentar();
 
     expect(v.getByTestId("download-error")).toHaveTextContent(/No se pudo descargar/);
+  });
+});
+
+describe("2.7 · dictamen · el PDF local es el de ESA firma (D-43 · F3)", () => {
+  it("se nombra por el folio de la firma, no sólo por el incidente", async () => {
+    mockArchivos.length = 0;
+    mockDictamen = consulta({ data: firmado({ folio: "folio-A" }), dataUpdatedAt: AHORA });
+
+    await render(<Dictamen />);
+    await asentar();
+
+    expect(mockArchivos.at(-1)).toContain("folio-A");
+  });
+
+  it("una firma NUEVA del mismo incidente no reutiliza el PDF de la anterior", async () => {
+    mockArchivos.length = 0;
+    mockDictamen = consulta({ data: firmado({ folio: "folio-A" }), dataUpdatedAt: AHORA });
+    const v = await render(<Dictamen />);
+    await asentar();
+    const primero = mockArchivos.at(-1);
+
+    mockDictamen = consulta({ data: firmado({ folio: "folio-B" }), dataUpdatedAt: AHORA });
+    await v.rerender(<Dictamen />);
+    await asentar();
+
+    expect(mockArchivos.at(-1)).toContain("folio-B");
+    expect(mockArchivos.at(-1)).not.toBe(primero);
+  });
+
+  it("sin folio (sin firma) no hay PDF local que abrir", async () => {
+    mockArchivos.length = 0;
+    mockDictamen = consulta({
+      data: firmado({ signed: false, folio: null, pdf_url: null }),
+      dataUpdatedAt: AHORA,
+    });
+
+    await render(<Dictamen />);
+    await asentar();
+
+    expect(mockArchivos).toEqual([]);
   });
 });
 

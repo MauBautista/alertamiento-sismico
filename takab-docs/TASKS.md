@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **501** · `[x]` **408** · `[~]` **20** · `[ ]` **73**
+**Conteo de tareas:** total **501** · `[x]` **409** · `[~]` **19** · `[ ]` **73**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17880,13 +17880,14 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   `tenant_admin` genera el reporte sin `export` (la descarga va en su propia respuesta firmada), y los
   rótulos canónicos del PDF cambian a los de D-42 (GOBIERNO, ADMINISTRADOR, SUPERADMIN TAKAB).
 
-### [~] T-9.21 · **La migración de usuarios de Cognito** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.21 · **La migración de usuarios de Cognito** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-27**
 - **Componente:** api · **Depende de:** T-9.20 · **Prioridad:** F2 · alta · **Decisión:** `D-42`
 - **Objetivo:** pasar los usuarios existentes a los roles nuevos sin tocar la base.
 - **Criterios de aceptación:**
   - [x] Script con simulación, aplicación y verificación; se niega a aplicar sin el mapeo de cada
     administrador de inmueble.
-  - [ ] Mauricio lo corre y la verificación da cero miembros en los grupos viejos.
+  - [x] Mauricio lo corre y la verificación da cero miembros en los grupos viejos (2026-09-27:
+    `soc_operator` y el `building_admin` de la demo pasaron a `tenant_admin`).
 
 ### [~] T-9.22 · **Los censos cuentan siete** — `SOFTWARE`
 - **Componente:** api · web · mobile · **Depende de:** T-9.20 · **Prioridad:** F2 · alta
@@ -17909,7 +17910,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 - **Componente:** api · **Depende de:** T-9.30 · **Prioridad:** F3 · crítica · **Decisión:** `D-43`
 - **Objetivo:** que VERDE se firme solo y AMARILLO lo confirme una persona.
 - **Criterios de aceptación:**
-  - [ ] `signature_kind` y `band` en los dictámenes (migración 0072).
+  - [ ] `signature_kind` y `band` en los dictámenes (migración 0073; la 0072 la usó F2).
   - [ ] Endpoint de confirmación para brigadista e inspector, con sus 409 y 403.
   - [ ] La prudencia sube sola y solo baja con firma; un reporte de daño re-evalúa durante 72 h.
 

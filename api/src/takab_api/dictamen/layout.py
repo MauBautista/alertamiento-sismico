@@ -64,7 +64,11 @@ class TakabPDF(MembretePDF):
     #: [T-7.42] Afirma un veredicto de habitabilidad: su pie imprime la huella.
     afirma_datos = True
 
-    def verdict_banner(self, status: str, label: str, signed: bool) -> None:
+    def verdict_banner(
+        self, status: str, label: str, signed: bool, leyenda: str | None = None
+    ) -> None:
+        """[T-9.34 · D-43] `leyenda` sustituye la segunda línea: la BANDA y QUIÉN
+        firmó. Sin ella, la de siempre (FIRMADO / AUTOMÁTICO PRELIMINAR)."""
         color = VERDICT_COLORS.get(status, MUTED)
         y = self.get_y()
         self.set_fill_color(*color)
@@ -78,7 +82,9 @@ class TakabPDF(MembretePDF):
         self.cell(
             CONTENT_W - 8,
             4,
-            self.text_of("DICTAMEN FIRMADO" if signed else "DICTAMEN AUTOMÁTICO PRELIMINAR"),
+            self.text_of(
+                leyenda or ("DICTAMEN FIRMADO" if signed else "DICTAMEN AUTOMÁTICO PRELIMINAR")
+            ),
         )
         self.set_xy(MARGIN, y + 19)
         self.set_text_color(*INK)

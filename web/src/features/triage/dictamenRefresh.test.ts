@@ -41,9 +41,19 @@ function entrada(over: Partial<DictamenRefreshInput> = {}): DictamenRefreshInput
 }
 
 /** Preliminar automático: la cabeza que el worker TODAVÍA puede corregir. */
-const PRELIMINAR = [{ signed_by: null }];
-/** Cadena con firma del inspector: intocable para la pasada automática. */
-const FIRMADO = [{ signed_by: "u-1" }, { signed_by: null }];
+const PRELIMINAR = [{ signed_by: null, status: "inhabit_monitor" }];
+/**
+ * [T-9.30 · D-43] Cadena FIRMADA en una banda que NO es la más alta: con la regla
+ * `dictamen-v2` la prudencia sube sola, y un daño estructural reportado después
+ * inserta una fila ROJA sin firmar encima de la firma.
+ */
+const FIRMADO = [
+  { signed_by: "u-1", status: "normal_operation" },
+  { signed_by: null, status: "inhabit_monitor" },
+];
+/** La cabeza ya está en lo más grave: la pasada automática no escribe por encima. */
+const ROJO = [{ signed_by: "u-1", status: "no_inhabit_inspect" }];
+const ROJO_SIN_FIRMA = [{ signed_by: null, status: "no_inhabit_inspect" }];
 
 describe("dictamenRefetchMs · cuándo se sondea", () => {
   it("incidente abierto y sin dictamen: sondea", () => {
@@ -69,11 +79,20 @@ describe("dictamenRefetchMs · cuándo se sondea", () => {
     expect(dictamenRefetchMs(entrada({ dictamens: PRELIMINAR }))).toBe(DICTAMEN_REFETCH_MS);
   });
 
-  it("con la cadena FIRMADA: para", () => {
-    // Firmar es la condición de parada del worker, y la de aquí. La cadena sólo
-    // vuelve a crecer al firmar otra vez, y eso invalida por su cuenta
-    // (`signMutation.onSuccess`).
-    expect(dictamenRefetchMs(entrada({ dictamens: FIRMADO }))).toBe(false);
+  it("[T-9.30 · D-43] con la cadena FIRMADA por debajo de ROJO SIGUE sondeando", () => {
+    // Con `dictamen-v1` firmar era la condición de parada del worker. Con la
+    // regla `dictamen-v2` ya no: «la prudencia sube sola» —un daño estructural
+    // reportado tras una firma VERDE inserta una fila ROJA sin firmar—, y el
+    // VERDE del sistema llega a los 300 s sobre un preliminar. Parar con la
+    // primera firma dejaba la pantalla autorizando un reingreso ya revocado.
+    expect(dictamenRefetchMs(entrada({ dictamens: FIRMADO }))).toBe(DICTAMEN_REFETCH_MS);
+  });
+
+  it("[T-9.30 · D-43] con la cabeza en NO HABITAR · INSPECCIÓN: para, firmada o no", () => {
+    // Lo más grave no tiene por encima nada que la regla pueda escribir, y bajar
+    // exige una firma humana, que invalida por su cuenta (`signMutation.onSuccess`).
+    expect(dictamenRefetchMs(entrada({ dictamens: ROJO }))).toBe(false);
+    expect(dictamenRefetchMs(entrada({ dictamens: ROJO_SIN_FIRMA }))).toBe(false);
   });
 
   it("sin incidente seleccionado: para", () => {
@@ -123,6 +142,7 @@ describe("dictamenRefetchMs · TODO sondeo caduca", () => {
     ["consulta en vuelo", { dictamens: undefined }],
     ["preliminar sin firmar", { dictamens: PRELIMINAR }],
     ["cadena firmada", { dictamens: FIRMADO }],
+    ["cabeza roja", { dictamens: ROJO }],
     ["sin incidente", { incidentId: null }],
   ];
 
@@ -140,6 +160,7 @@ describe("dictamenRefetchMs · TODO sondeo caduca", () => {
       "caso base",
       "consulta en vuelo",
       "preliminar sin firmar",
+      "cadena firmada",
     ]);
   });
 });

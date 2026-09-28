@@ -8,6 +8,8 @@ import type {
   SiteOut,
 } from "@takab/sdk";
 
+import { etiquetaDeRol } from "../../auth/rolesHistoricos";
+
 import { citaDeProcedencia, pintaCifra, rotuloProcedencia } from "./procedencia";
 
 /** Estados del CHECK de ``dictamens.status`` (db/schema.sql), de menor a mayor gravedad. */
@@ -60,6 +62,77 @@ export function chainHead(dictamens: DictamenOut[] | undefined): DictamenOut | n
 /** ``signed_by IS NULL`` ⇒ dictamen automático preliminar (schemas/dictamens.py). */
 export function isPreliminary(d: DictamenOut | null): boolean {
   return d !== null && d.signed_by === null;
+}
+
+/**
+ * [T-9.34 · D-43] El status en el que ARRANCA el desplegable de firma: el de la
+ * cabeza vigente. Arrancar siempre en `no_inhabit_inspect` convertía un clic de
+ * más en un veredicto rojo firmado sobre una cabeza amarilla. Sin cabeza —o con
+ * un status que no entendemos— no hay nada que heredar y se arranca en el más
+ * prudente.
+ */
+export function initialSignStatus(head: DictamenOut | null): DictamenStatus {
+  const s = head?.status;
+  return SIGNABLE_STATUS.includes(s as DictamenStatus)
+    ? (s as DictamenStatus)
+    : "no_inhabit_inspect";
+}
+
+/** [T-9.30 · D-43] Bandas de la regla `dictamen-v2` (CHECK de `dictamens.band`). */
+const BAND: Record<string, { label: string; kind: VerdictKind; nombre: string }> = {
+  verde: { label: "BANDA VERDE", kind: "ok", nombre: "VERDE" },
+  amarillo: { label: "BANDA AMARILLA", kind: "warn", nombre: "AMARILLO" },
+  rojo: { label: "BANDA ROJA", kind: "crit", nombre: "ROJO" },
+};
+
+/**
+ * Rótulo de la banda, o `null` en una fila histórica (anterior a la 0073): no se
+ * inventa una banda que la regla v1 no calculó. Una banda desconocida sale CRUDA
+ * en ámbar, como `verdictOf`.
+ */
+export function bandOf(
+  band: string | null | undefined,
+): { label: string; kind: VerdictKind } | null {
+  if (!band) return null;
+  return BAND[band] ?? { label: `BANDA ${band.toUpperCase()}`, kind: "warn" };
+}
+
+/**
+ * [T-9.34 · D-43] QUIÉN firmó, leído de `signature_kind` —nunca de `signed_by`,
+ * que sólo dice «firmado» y cuyo valor es un identificador interno que no se
+ * pinta—. La fila histórica firmada (sin tipo) se rotula como hoy: la única vía
+ * de firma que existía era la del inspector.
+ *
+ * `confirmation` se rotula «CONFIRMADO POR <rol>» con el rol que publica
+ * `DictamenOut.confirmed_by_role` (la API lo guarda en el `basis` de la fila). Sin
+ * rol publicado se queda en «CONFIRMADO»: rotular «brigada» sin saberlo sería
+ * inventarlo. Un rol retirado lleva su rótulo de entonces (`etiquetaDeRol`).
+ */
+export function signatureOf(d: DictamenOut): string {
+  if (d.signed_by === null) return "PRELIMINAR · SIN FIRMA";
+  switch (d.signature_kind) {
+    case "system": {
+      const regla =
+        typeof d.basis?.rule_set_version === "string" ? d.basis.rule_set_version : "dictamen-v2";
+      const banda = d.band ? (BAND[d.band]?.nombre ?? d.band.toUpperCase()) : null;
+      return `EMITIDO POR EL SISTEMA · regla ${regla}${banda ? ` · banda ${banda}` : ""}`;
+    }
+    case "confirmation":
+      return d.confirmed_by_role
+        ? `CONFIRMADO POR ${etiquetaDeRol(d.confirmed_by_role)}`
+        : "CONFIRMADO";
+    default:
+      return "FIRMADO POR INSPECTOR";
+  }
+}
+
+/** El sello de la cabeza, del mismo tipo de firma. */
+export function sealOf(head: DictamenOut): string {
+  if (head.signed_by === null) return "DICTAMEN AUTOMÁTICO PRELIMINAR";
+  if (head.signature_kind === "system") return "DICTAMEN EMITIDO POR EL SISTEMA";
+  // [F3·r3] Con el rol que publica la API, igual que la fila de la cadena.
+  if (head.signature_kind === "confirmation") return `DICTAMEN ${signatureOf(head)}`;
+  return "DICTAMEN FIRMADO";
 }
 
 export interface TriageRow {

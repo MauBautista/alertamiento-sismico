@@ -8,7 +8,7 @@ el dictamen"). Sin DB; espejo del patrón ``incident.quorum``.
 from __future__ import annotations
 
 from takab_api.dictamen.rules import (
-    RULE_SET_VERSION,
+    RULE_SET_VERSION_V1,
     DictamenParams,
     EvalInput,
     evaluate,
@@ -94,7 +94,7 @@ def test_basis_carries_version_evidence_and_params() -> None:
         _inp(severity="warning", pga_g=0.07, node_count=4, event_id="EVT-X", trigger="quorum"),
         PARAMS,
     )
-    assert d.basis["rule_set_version"] == RULE_SET_VERSION
+    assert d.basis["rule_set_version"] == RULE_SET_VERSION_V1
     ev = d.basis["evidence"]
     assert ev["severity"] == "warning"
     assert ev["pga_g"] == 0.07

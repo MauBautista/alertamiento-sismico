@@ -282,6 +282,22 @@ export const INCIDENT_ACTION_KINDS: Record<string, IncidentActionSpec> = {
     view: { state: 'EMITIDO', kind: 'ok' },
     logLabel: 'DICTAMEN EMITIDO',
   },
+  // [T-9.33 · D-43] La regla `dictamen-v2` emitió un AMARILLO sin firmar y pide a
+  // quien tiene `confirm_dictamen` que revise y confirme. `warning`: el reingreso
+  // sigue bloqueado hasta que alguien confirme.
+  dictamen_confirm_requested: {
+    label: 'DICTAMEN POR CONFIRMAR',
+    view: { state: 'CONFIRMACIÓN SOLICITADA', kind: 'warning' },
+    logLabel: 'DICTAMEN POR CONFIRMAR · SE AVISA A LA BRIGADA',
+  },
+  // [T-9.31 · D-43] Alguien con `confirm_dictamen` CONFIRMÓ el dictamen de la
+  // regla (AMARILLO o VERDE; un ROJO no se confirma, lo firma el inspector). Libera
+  // el reingreso igual que una firma habitable.
+  dictamen_confirmed: {
+    label: 'DICTAMEN CONFIRMADO',
+    view: { state: 'CONFIRMADO · REINGRESO AUTORIZADO', kind: 'ok' },
+    logLabel: 'DICTAMEN CONFIRMADO · HABITABLE, REINGRESO AUTORIZADO',
+  },
   dictamen_request: {
     label: 'DICTAMEN SOLICITADO',
     view: { state: 'SOLICITADO', kind: 'ok' },

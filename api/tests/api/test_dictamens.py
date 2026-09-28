@@ -89,8 +89,9 @@ async def test_sign_authz_and_read_authz(client, make_incident, make_dictamen) -
     )
     assert forbidden.status_code == 403
 
-    # brigadista: sin Triage → ni lectura.
-    no_triage = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("brigadista"))
+    # occupant: sin Triage ni confirmación → ni lectura. [F3 · D-43] La brigada SÍ
+    # lee la cadena de su inmueble: confirma sobre ella (test_dictamen_confirmar).
+    no_triage = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("occupant"))
     assert no_triage.status_code == 403
 
 

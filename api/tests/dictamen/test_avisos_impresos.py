@@ -51,6 +51,7 @@ from takab_api.dictamen.model import (
     AnilloFila,
     CctvBlock,
     DanoFila,
+    DictamenRow,
     EvidenceRow,
     NivelFueraFila,
     ReportModel,
@@ -59,6 +60,7 @@ from takab_api.dictamen.model import (
     fuentes_line,
 )
 from takab_api.dictamen.pdf import render
+from takab_api.dictamen.sistema import SYSTEM_DICTAMEN_SIGNER_UUID
 from takab_api.documentos.membrete import MembretePDF
 from tests.dictamen.test_pdf import _OPENED, model
 
@@ -160,6 +162,22 @@ def _sacudida(**over) -> ShakemapBlock:
     return ShakemapBlock(**{**base, **over})
 
 
+def _fila(kind: str | None, signed_by: str | None, **over) -> DictamenRow:
+    return DictamenRow(
+        "d-2", "inhabit_monitor", _OPENED, signed_by, "dictamen-v2", None,
+        signature_kind=kind, **over,
+    )  # fmt: skip
+
+
+def _firmado_por(kind: str, rol: str | None = None) -> ReportModel:
+    firmante = SYSTEM_DICTAMEN_SIGNER_UUID if kind == "system" else "0f1e2d3c-aaaa"
+    band = "verde" if kind == "system" else "amarillo"
+    return model(
+        verdict_signed=True,
+        dictamens=[_fila(kind, firmante, band=band, firmante_rol=rol)],
+    )
+
+
 #: Para cada aviso: cómo se fabrica el documento que DEBE llevarlo, y en qué
 #: variantes. Las variantes se midieron ejecutando el render, no se supusieron.
 #:
@@ -172,6 +190,32 @@ ESCENARIOS: dict[str, tuple[Callable[[], ReportModel], frozenset[str]]] = {
     # Sin fuente de calibración, los números son RELATIVOS. También en el ejecutivo,
     # que es el que lee quien decide.
     "NO_CALIBRATION": (lambda: model(calibrated=False), frozenset(_VARIANTES)),
+    # [T-9.34 · D-43] Quién firmó la cabeza, en el deslinde de LOS DOS documentos:
+    # «FIRMADO por inspector» sólo es verdad de una de las tres firmas.
+    "DISCLAIMER_SISTEMA": (lambda: _firmado_por("system"), frozenset(_VARIANTES)),
+    "DISCLAIMER_CONFIRMACION": (
+        lambda: _firmado_por("confirmation", rol="brigadista"),
+        frozenset(_VARIANTES),
+    ),
+    # [F3·r3] Quien confirmó es INSPECTOR: el deslinde no dice «sin firma de inspector».
+    "DISCLAIMER_CONFIRMACION_INSPECTOR": (
+        lambda: _firmado_por("confirmation", rol="inspector"),
+        frozenset(_VARIANTES),
+    ),
+    # [F3·r3] AMARILLO sin firmar con un daño ROJO reportado: espera al inspector.
+    "PENDIENTE_FIRMA_INSPECTOR": (
+        lambda: model(
+            dictamens=[_fila(None, None, band="amarillo")],
+            danos=[_dano(categorias=[{"key": "structural", "severity": "critical"}])],
+        ),
+        frozenset({"technical"}),
+    ),
+    # En la FIRMA de la §18, que sólo tiene el pericial.
+    "ROL_CONFIRMANTE_NO_CONSTA": (lambda: _firmado_por("confirmation"), frozenset({"technical"})),
+    "PENDIENTE_CONFIRMACION": (
+        lambda: model(dictamens=[_fila(None, None, band="amarillo")]),
+        frozenset({"technical"}),
+    ),
     # Los cinco del documento pericial.
     "NO_MMI": (model, frozenset({"technical"})),
     "ENVELOPE_NOTE": (model, frozenset({"technical"})),
@@ -600,9 +644,13 @@ def test_el_espia_NO_esta_ciego() -> None:
     # documento que imprime el residuo ocho líneas más abajo.
     # 47 → 49 en `T-8.12`: las dos caras de la clasificación humana que no son
     # una clasificación —nadie la ha puesto, y quien exporta no puede leerla—.
-    assert len(ESCENARIOS) == 49, "cambió el número de avisos declarados"
+    # [T-9.34 · D-43] 49 → 53 y 48 → 52: los dos deslindes por tipo de firma, el rol
+    # que no consta de quien confirmó y el AMARILLO pendiente de confirmación.
+    # [F3·r3] 53 → 55 y 52 → 54: el deslinde de la confirmación de un INSPECTOR y el
+    # AMARILLO que espera al inspector por un daño rojo reportado.
+    assert len(ESCENARIOS) == 55, "cambió el número de avisos declarados"
     con_variantes = [n for n, (_, v) in ESCENARIOS.items() if v]
-    assert len(con_variantes) == 48, "cambió cuántos avisos se comprueban por variante"
+    assert len(con_variantes) == 54, "cambió cuántos avisos se comprueban por variante"
 
     texto = _texto_dibujado(model(), "technical")
     assert len(texto) > 3000, (

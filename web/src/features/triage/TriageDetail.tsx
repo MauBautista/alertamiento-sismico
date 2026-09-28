@@ -34,12 +34,16 @@ import {
   feltLabelOf,
   insufficientData,
   isCorroborated,
+  initialSignStatus,
   isPreliminary,
   magnitudeOf,
   dictamenPdfOf,
   miniseedOf,
   miniseedState,
+  bandOf,
   quorumView,
+  sealOf,
+  signatureOf,
   verdictOf,
 } from "./model";
 import type { TriageRow } from "./model";
@@ -89,6 +93,12 @@ function eventStateOf(
     return "loading";
   }
   return "ready";
+}
+
+/** Fecha de una versión de la cadena; una fecha ilegible se pinta cruda, no revienta. */
+function fechaDeVersion(iso: string): string {
+  const ms = Date.parse(iso);
+  return Number.isNaN(ms) ? iso : `${utcStamp(ms)} UTC`;
 }
 
 /** Cardinal de un recurso que puede no haber llegado: nunca 0 por ausencia. */
@@ -236,10 +246,20 @@ export default function TriageDetail({
   canOpenBuilding,
   volverASitioId,
 }: TriageDetailProps) {
-  const [status, setStatus] = useState<string>("no_inhabit_inspect");
+  /**
+   * [T-9.34 · D-43] Lo que el inspector ELIGIÓ, atado al incidente en que lo
+   * eligió. Mientras no elija, el desplegable sigue a la cabeza VIGENTE (si la
+   * regla sube la banda en una relectura, el desplegable sube con ella); antes
+   * arrancaba siempre en `no_inhabit_inspect`.
+   */
+  const [elegido, setElegido] = useState<{ incidentId: string; status: string } | null>(null);
   const inc = row.incident;
   const { dictamens, actions, evidence, event } = detail;
   const head = chainHead(dictamens.data);
+  const status =
+    elegido !== null && elegido.incidentId === inc.incident_id
+      ? elegido.status
+      : initialSignStatus(head);
   const verdict = head ? verdictOf(head.status) : null;
   const Icon = verdict ? VERDICT_ICON[verdict.kind] : AlertTriangle;
   const quorum = quorumView(event.data?.quorum_votes);
@@ -255,9 +275,7 @@ export default function TriageDetail({
       ? "DICTAMEN NO DISPONIBLE"
       : head === null
         ? "SIN DICTAMEN"
-        : isPreliminary(head)
-          ? "DICTAMEN AUTOMÁTICO PRELIMINAR"
-          : "DICTAMEN FIRMADO";
+        : sealOf(head);
 
   // [T-2.43] Seis estados distinguibles en lugar de un botón gris sin explicación.
   // `evidenceUnknown` (data === undefined) cuenta como carga —una consulta que aún no
@@ -281,7 +299,7 @@ export default function TriageDetail({
         value={status}
         disabled={!canSign}
         title={signGateTitle(canSign, detail.signing)}
-        onChange={(e) => setStatus(e.target.value)}
+        onChange={(e) => setElegido({ incidentId: inc.incident_id, status: e.target.value })}
       >
         {SIGNABLE_STATUS.map((s) => (
           <option key={s} value={s}>
@@ -573,7 +591,11 @@ export default function TriageDetail({
 
             {isPreliminary(head) && insufficientData(head) && (
               <p className="triage-detail__insufficient" role="note">
-                SIN EVIDENCIA INSTRUMENTAL — DICTAMEN POR SEVERIDAD DE ALERTA (basis v2)
+                {/* [T-9.30 · D-43] En `dictamen-v2` la severidad consta pero NO decide:
+                    sin PGA medida la banda es AMARILLA por falta de medición. */}
+                {head.basis?.rule_set_version === "dictamen-v2"
+                  ? "SIN PGA MEDIDA — BANDA AMARILLA POR FALTA DE MEDICIÓN (regla dictamen-v2)"
+                  : "SIN EVIDENCIA INSTRUMENTAL — DICTAMEN POR SEVERIDAD DE ALERTA (basis v2)"}
               </p>
             )}
 
@@ -582,8 +604,31 @@ export default function TriageDetail({
             <div className="triage-detail__chain">
               <ShieldCheck size={11} aria-hidden />
               CADENA DE CUSTODIA · {countOf(dictamens)} VERSIÓN(ES) APPEND-ONLY
-              {head.signed_by && ` · firmó ${head.signed_by.slice(0, 8)}`}
             </div>
+            {/* [T-9.34 · D-43] Cada versión con QUIÉN la firmó —por su tipo— y su
+                banda. Antes sólo la cabeza, y con `signed_by[:8]`: un id interno. */}
+            <ol className="triage-detail__chain-list" data-testid="dictamen-cadena">
+              {(dictamens.data ?? []).map((d) => {
+                const banda = bandOf(d.band);
+                return (
+                  <li key={d.dictamen_id}>
+                    <span className="soc-mono">{fechaDeVersion(d.created_at)}</span>
+                    {" · "}
+                    {verdictOf(d.status).label}
+                    {banda && (
+                      <>
+                        {" · "}
+                        <span className={`triage-detail__band triage-detail__band--${banda.kind}`}>
+                          {banda.label}
+                        </span>
+                      </>
+                    )}
+                    {" · "}
+                    {signatureOf(d)}
+                  </li>
+                );
+              })}
+            </ol>
           </>
         )}
       </StateFrame>

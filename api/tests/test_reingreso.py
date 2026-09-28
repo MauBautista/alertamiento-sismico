@@ -47,6 +47,7 @@ def _inc(
     firmado: bool = False,
     firmado_hace: timedelta = timedelta(hours=1),
     incident_id: UUID | None = None,
+    banda: str | None = None,
 ) -> IncidenteCerrado:
     return IncidenteCerrado(
         incident_id=incident_id or uuid4(),
@@ -58,6 +59,7 @@ def _inc(
         dictamen_status=dictamen,
         dictamen_firmado=firmado,
         dictamen_at=(AHORA - firmado_hace) if dictamen is not None else None,
+        dictamen_band=banda,
     )
 
 
@@ -412,3 +414,69 @@ def test_las_razones_son_las_del_contrato() -> None:
     anotacion = MobileReentryOut.model_fields["reason"].annotation
     publicadas = {a for arg in typing.get_args(anotacion) for a in typing.get_args(arg)}
     assert publicadas == razones
+
+
+# ── [T-9.32 · D-43] pendiente de CONFIRMACIÓN ─────────────────────────────────
+
+
+def test_un_AMARILLO_de_la_regla_sin_firmar_es_PENDIENTE_DE_CONFIRMACION() -> None:
+    r = _deriva(_inc(dictamen="inhabit_monitor", banda="amarillo"))
+    assert (r.fase, r.razon) == ("reentry_blocked", "pendiente_confirmacion")
+
+
+@pytest.mark.parametrize(
+    ("dictamen", "banda"),
+    [("no_inhabit_inspect", "rojo"), ("inhabit_monitor", None), ("normal_operation", "verde")],
+)
+def test_sin_firmar_y_no_amarillo_sigue_PENDIENTE_DE_DICTAMEN(dictamen: str, banda) -> None:
+    """Un ROJO lo firma el inspector; una fila histórica no tiene banda; el VERDE lo
+    firma el sistema tras la gracia. Ninguno espera una confirmación."""
+    r = _deriva(_inc(dictamen=dictamen, banda=banda))
+    assert (r.fase, r.razon) == ("reentry_blocked", "pendiente_dictamen")
+
+
+def test_un_AMARILLO_CONFIRMADO_autoriza() -> None:
+    r = _deriva(_inc(dictamen="inhabit_monitor", banda="amarillo", firmado=True))
+    assert r.fase == "reentry_approved"
+
+
+# ── 1b · [F3·r2 · D-43] ROJO de la regla SIN FIRMAR ─────────────────────────────
+
+
+def test_rojo_sin_firmar_viejo_gana_a_una_replica_verde_firmada_posterior() -> None:
+    principal = _inc(
+        abierto_hace=timedelta(days=60),
+        cerrado_hace=timedelta(days=59),
+        dictamen="no_inhabit_inspect",
+        banda="rojo",
+        firmado_hace=timedelta(days=58),
+    )
+    replica = _inc(
+        abierto_hace=timedelta(hours=3),
+        cerrado_hace=timedelta(hours=1),
+        dictamen="normal_operation",
+        banda="verde",
+        firmado=True,
+        firmado_hace=timedelta(hours=2),
+    )
+    r = _deriva(replica, principal)
+    assert r.fase == "reentry_blocked"
+    assert r.razon == "pendiente_dictamen"
+    assert r.incidente == principal
+
+
+def test_un_no_habitar_firmado_sigue_antes_que_la_regla_1b() -> None:
+    rojo = _inc(dictamen="no_inhabit_inspect", banda="rojo", firmado_hace=timedelta(hours=1))
+    firmado = _inc(dictamen="no_inhabit_inspect", firmado=True, firmado_hace=timedelta(days=2))
+    r = _deriva(rojo, firmado)
+    assert r.razon == "no_habitable" and r.incidente == firmado
+
+
+def test_la_regla_1b_no_toca_filas_v1_sin_banda() -> None:
+    viejo = _inc(
+        abierto_hace=timedelta(days=60),
+        cerrado_hace=timedelta(days=59),
+        dictamen="no_inhabit_inspect",
+        banda=None,
+    )
+    assert _deriva(viejo).fase == "idle"

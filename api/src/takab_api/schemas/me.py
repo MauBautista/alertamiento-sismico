@@ -81,6 +81,10 @@ class MeActions(BaseModel):
     #: artefacto lo puso su operador y una release mala deja un edificio sin
     #: alertamiento — un tenant_admin no tiene con qué juzgarla.
     deploy_firmware: bool
+    #: [T-9.31 · D-43] CONFIRMAR el dictamen AMARILLO/VERDE que emitió la regla
+    #: ``dictamen-v2`` sin firmar (brigada, inspector y administración). Un ROJO no se
+    #: confirma: lo firma el inspector (``sign_dictamen``).
+    confirm_dictamen: bool
 
 
 class MeEnrolledSite(BaseModel):

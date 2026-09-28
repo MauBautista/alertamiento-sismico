@@ -55,6 +55,46 @@ async def test_after_signed_dictamen_can_request_again(
     assert r2.status_code == 201
 
 
+@pytest.mark.parametrize(
+    ("kind", "status", "band"),
+    [("system", "normal_operation", "verde"), ("confirmation", "inhabit_monitor", "amarillo")],
+)
+async def test_la_firma_del_SISTEMA_o_una_CONFIRMACION_no_atienden_la_solicitud(
+    client, make_incident, make_dictamen, kind, status, band
+) -> None:
+    """[F3·r3 · D-43] La brigada pidió que viniera un INSPECTOR: ni el VERDE que
+    firma el sistema ni una confirmación son esa inspección. La solicitud sigue
+    pendiente (409 al repetirla)."""
+    from takab_api.dictamen.sistema import SYSTEM_DICTAMEN_SIGNER_UUID
+
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    r1 = await client.post(f"/incidents/{iid}/dictamen-request", headers=_hdr(), json={})
+    assert r1.status_code == 201
+    await make_dictamen(
+        au.DB_TENANT_PRIV,
+        iid,
+        status=status,
+        band=band,
+        signature_kind=kind,
+        signed_by=SYSTEM_DICTAMEN_SIGNER_UUID if kind == "system" else str(uuid.uuid4()),
+    )
+    r2 = await client.post(f"/incidents/{iid}/dictamen-request", headers=_hdr(), json={})
+    assert r2.status_code == 409, r2.text
+
+
+async def test_la_firma_del_INSPECTOR_si_atiende_la_solicitud(
+    client, make_incident, make_dictamen
+) -> None:
+    iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    r1 = await client.post(f"/incidents/{iid}/dictamen-request", headers=_hdr(), json={})
+    assert r1.status_code == 201
+    await make_dictamen(
+        au.DB_TENANT_PRIV, iid, signed_by=str(uuid.uuid4()), signature_kind="inspector"
+    )
+    r2 = await client.post(f"/incidents/{iid}/dictamen-request", headers=_hdr(), json={})
+    assert r2.status_code == 201, r2.text
+
+
 @pytest.mark.parametrize("role", ["gov_operator", "inspector", "takab_support"])
 async def test_request_forbidden_roles(client, make_incident, role: str) -> None:
     """gov queda fuera a propósito: la RLS actions_insert le impide insertar —

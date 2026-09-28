@@ -49,51 +49,64 @@ export default function Dictamen() {
   const dictamenStaleSinceMs = useStaleSince(dictamen.dataUpdatedAt, DICTAMEN_STALE_MS / 3);
 
   const [downloading, setDownloading] = useState(false);
-  const [cached, setCached] = useState(false);
+  // [D-43 · F3] «Descargado» es de UN folio: se guarda para cuál, y con otra
+  // firma deja de valer sin tener que borrarlo en un efecto.
+  const [cachedFolio, setCachedFolio] = useState<string | null>(null);
   // [T-8.11] Una descarga que falla (sin red, URL firmada caducada) se DICE: antes
   // el `finally` sin `catch` la dejaba en silencio y el botón volvía a su sitio
   // como si nada.
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [downloadErr, setDownloadErr] = useState<{ folio: string; msg: string } | null>(null);
 
+  // [D-43 · F3] El PDF local se nombra por el FOLIO de la firma (su
+  // `dictamen_id`), no por el incidente: la cadena admite firmas nuevas del mismo
+  // incidente (el sistema, una confirmación, el inspector) y un nombre por
+  // incidente abría el papel VIEJO de otra firma como si fuera el vigente. Sin
+  // folio (sin firma) no hay papel local que abrir.
+  const folio = dictamen.data?.signed ? (dictamen.data.folio ?? null) : null;
   const localPdf = useMemo(
-    () => (incidentId ? new File(Paths.document, `dictamen-${incidentId}.pdf`) : null),
-    [incidentId],
+    () => (folio ? new File(Paths.document, `dictamen-${folio}.pdf`) : null),
+    [folio],
   );
 
+  const cached = folio !== null && cachedFolio === folio;
+  const downloadError = downloadErr !== null && downloadErr.folio === folio ? downloadErr.msg : null;
+
   useEffect(() => {
-    if (localPdf === null) {
+    if (localPdf === null || folio === null) {
       return;
     }
     let alive = true;
     Promise.resolve(localPdf.exists).then((v) => {
       if (alive) {
-        setCached(v);
+        setCachedFolio((prev) => (v ? folio : prev === folio ? null : prev));
       }
     });
     return () => {
       alive = false;
     };
-  }, [localPdf]);
+  }, [localPdf, folio]);
 
   const cert = dictamen.data ? certificateView(dictamen.data) : null;
 
   const download = () => {
-    if (!dictamen.data?.pdf_url || localPdf === null) {
+    if (!dictamen.data?.pdf_url || localPdf === null || folio === null) {
       return;
     }
+    const deEste = folio;
     setDownloading(true);
-    setDownloadError(null);
+    setDownloadErr(null);
     void (async () => {
       try {
         if (localPdf.exists) {
           localPdf.delete();
         }
         await File.downloadFileAsync(dictamen.data.pdf_url as string, localPdf);
-        setCached(true);
+        setCachedFolio(deEste);
       } catch {
-        setDownloadError(
-          "No se pudo descargar el certificado. Compruebe la conexión y vuelva a intentarlo.",
-        );
+        setDownloadErr({
+          folio: deEste,
+          msg: "No se pudo descargar el certificado. Compruebe la conexión y vuelva a intentarlo.",
+        });
       } finally {
         setDownloading(false);
       }

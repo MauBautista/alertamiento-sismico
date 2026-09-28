@@ -45,6 +45,22 @@ reproducción ⇒ ese incidente **no ocurrió** en el edificio). Entre ésos:
      veredicto es «habitable» y ya no hace falta repetirlo.
    La cota del ``lookback`` existe para que un incidente que nadie dictaminó no
    bloquee para siempre la pantalla de quien ya volvió a trabajar.
+1b. [F3·r2 · D-43] **Un ROJO de la regla SIN FIRMAR** (sólo filas v2, ``band =
+   'rojo'``) ⇒ `reentry_blocked`/``pendiente_dictamen`` citando ese incidente, sin
+   cota de edad y por encima de la regla 2: un daño tardío subió la banda del sismo
+   principal y una réplica cerrada después con VERDE firmado no lo inspeccionó.
+   ⚠️ **La falta de cota de edad es DECISIÓN DECLARADA, no un olvido** (D-43,
+   F3·r3). La cota del ``lookback`` de la regla 2 existe para que un incidente que
+   nadie dictaminó no bloquee para siempre; la 1b NO la lleva a propósito: un ROJO
+   de la regla dice que la PGA o un daño reportado cruzaron el umbral de «no
+   habitar», y eso no se vuelve habitable porque pase el tiempo. Falla del lado
+   seguro (deja a alguien fuera, nunca lo mete) y **sólo la firma de un inspector
+   lo levanta**: ni el sistema ni una confirmación pueden firmar un ROJO. Un SASMEX
+   con PGA ≥ 0,10 g cerrado por TTL sin inspección sigue en ``pendiente_dictamen``
+   meses después, y eso es lo que se quiere.
+   Las reglas 1 y 1b viven en ``bloqueo_persistente`` y **también rigen con un
+   incidente ABIERTO** (``mobile_site``): el VERDE de la réplica abierta no tapa el
+   ROJO del principal.
 3. Nada de lo anterior ⇒ `idle`.
 
 **Por qué el CIERRE y no la apertura** decide cuál es «el más nuevo»: el cierre
@@ -83,9 +99,13 @@ dejó escrito que el orden de un ``ORDER BY`` no puede decidir lo que lee alguie
 que está decidiendo si entra a un edificio. Por eso acepta ``cerrados`` en
 cualquier orden y con duplicados: el router le junta dos consultas.
 
-``pendiente_confirmacion`` se RESERVA en el tipo aunque ninguna regla lo
-produzca hoy: lo usa F3, y un valor que ya está en el `Literal` publicado obliga
-a la app a declararlo antes de recibirlo.
+[T-9.32 · D-43] ``pendiente_confirmacion``: la cabeza del candidato está SIN
+firmar y su banda (columna ``dictamens.band``) es ``amarillo`` — la regla
+``dictamen-v2`` dijo «habitable con vigilancia» y falta que la brigada, el
+inspector o la administración lo CONFIRMEN. Sin banda (fila histórica) o con un
+ROJO sin firmar sigue siendo ``pendiente_dictamen``. Desde D-43 firmar ya no
+cierra el incidente por sí solo (hace falta además la clasificación), pero el
+veredicto sigue sobreviviendo al cierre exactamente igual.
 """
 
 from __future__ import annotations
@@ -132,6 +152,9 @@ class IncidenteCerrado:
     dictamen_status: str | None
     dictamen_firmado: bool
     dictamen_at: datetime | None
+    #: [T-9.30 · D-43] Banda de la cabeza (``verde``/``amarillo``/``rojo``); ``None``
+    #: en filas anteriores a la 0073. Sólo decide ``pendiente_confirmacion``.
+    dictamen_band: str | None = None
 
 
 @dataclass(frozen=True)
@@ -163,6 +186,47 @@ def _no_habitable_vigente(inc: IncidenteCerrado) -> bool:
     return inc.dictamen_firmado and inc.dictamen_status not in HABITABLES
 
 
+def bloqueo_persistente(
+    incidentes: Sequence[IncidenteCerrado], *, min_nodes: int
+) -> Reingreso | None:
+    """Reglas 1 y 1b: el bloqueo que NO caduca, o ``None`` si no hay ninguno.
+
+    [F3·r3 · D-43] Es la ÚNICA copia de esas dos reglas. La usa ``deriva_reingreso``
+    (sin incidente abierto que autorice) y también la rama del incidente ABIERTO de
+    ``mobile_site``: un VERDE firmado en la réplica abierta no puede liberar el
+    reingreso si el sismo principal —abierto o cerrado— tiene un NO HABITAR firmado
+    vigente o un ROJO de la regla sin firmar. ``incidentes`` en cualquier orden y con
+    duplicados; los que no cuentan (no ordenaron evacuar, o terminales) se descartan
+    aquí.
+    """
+    cuentan = [inc for inc in incidentes if _cuenta(inc, min_nodes)]
+
+    # 1 · NO HABITAR vigente: precedencia sobre todo, sin caducidad.
+    bloqueantes = [inc for inc in cuentan if _no_habitable_vigente(inc)]
+    if bloqueantes:
+        cita = max(
+            bloqueantes,
+            key=lambda i: (i.dictamen_at or i.opened_at, i.opened_at, str(i.incident_id)),
+        )
+        return Reingreso(fase="reentry_blocked", razon="no_habitable", incidente=cita)
+
+    # 1b · [F3·r2 · D-43] ROJO de la regla SIN FIRMAR: la prudencia subió sola (un
+    # daño tardío sobre el sismo principal) y nadie la ha inspeccionado. Sin cota de
+    # edad y por encima de la regla 2: una réplica cerrada después con un VERDE
+    # firmado NO dice que el daño de éste se inspeccionó. SÓLO filas v2 (``band =
+    # 'rojo'``): las v1 no tienen banda, y un SASMEX viejo con su preliminar sin
+    # firmar bloquearía el edificio para siempre.
+    rojos = [inc for inc in cuentan if not inc.dictamen_firmado and inc.dictamen_band == "rojo"]
+    if rojos:
+        cita = max(
+            rojos,
+            key=lambda i: (i.dictamen_at or i.opened_at, i.opened_at, str(i.incident_id)),
+        )
+        return Reingreso(fase="reentry_blocked", razon="pendiente_dictamen", incidente=cita)
+
+    return None
+
+
 def deriva_reingreso(
     cerrados: Sequence[IncidenteCerrado],
     *,
@@ -177,16 +241,10 @@ def deriva_reingreso(
     invocarla cuando NO hay incidente abierto que autorice evacuar — con alerta
     viva manda la alerta, siempre.
     """
+    bloqueo = bloqueo_persistente(cerrados, min_nodes=min_nodes)
+    if bloqueo is not None:
+        return bloqueo
     cuentan = [inc for inc in cerrados if _cuenta(inc, min_nodes)]
-
-    # 1 · NO HABITAR vigente: precedencia sobre todo, sin caducidad.
-    bloqueantes = [inc for inc in cuentan if _no_habitable_vigente(inc)]
-    if bloqueantes:
-        cita = max(
-            bloqueantes,
-            key=lambda i: (i.dictamen_at or i.opened_at, i.opened_at, str(i.incident_id)),
-        )
-        return Reingreso(fase="reentry_blocked", razon="no_habitable", incidente=cita)
 
     # 2 · el cerrado MÁS RECIENTEMENTE dentro de la espera decide, diga lo que diga.
     recientes = [
@@ -200,7 +258,12 @@ def deriva_reingreso(
     # consulta (el ``str`` de un UUID ordena igual que el ``uuid`` de Postgres).
     inc = max(recientes, key=lambda i: (i.closed_at, str(i.incident_id)))
     if not inc.dictamen_firmado:
-        return Reingreso(fase="reentry_blocked", razon="pendiente_dictamen", incidente=inc)
+        # [T-9.32 · D-43] Un AMARILLO de la regla sólo espera a que alguien lo
+        # confirme; cualquier otra cosa sin firmar espera un dictamen.
+        razon: RazonBloqueo = (
+            "pendiente_confirmacion" if inc.dictamen_band == "amarillo" else "pendiente_dictamen"
+        )
+        return Reingreso(fase="reentry_blocked", razon=razon, incidente=inc)
     # Cabeza firmada ⇒ habitable: las no habitables salieron en la regla 1.
     if inc.dictamen_at is not None and _hace_s(ahora, inc.dictamen_at) < ventana_firma_s:
         return Reingreso(fase="reentry_approved", incidente=inc)

@@ -258,6 +258,8 @@ def make_dictamen(base_data) -> Callable[..., Awaitable[str]]:
         status: str = "inhabit_monitor",
         signed_by: str | None = None,
         supersedes: str | None = None,
+        band: str | None = None,
+        signature_kind: str | None = None,
     ) -> str:
         engine = get_engine()
         did = str(uuid.uuid4())
@@ -265,9 +267,9 @@ def make_dictamen(base_data) -> Callable[..., Awaitable[str]]:
             await conn.execute(
                 text(
                     "INSERT INTO dictamens (dictamen_id, tenant_id, incident_id, status, "
-                    "basis, signed_by, supersedes_dictamen_id) "
+                    "basis, signed_by, supersedes_dictamen_id, band, signature_kind) "
                     "VALUES (:d, :t, :i, :st, '{}'::jsonb, "
-                    "CAST(:sb AS uuid), CAST(:sup AS uuid))"
+                    "CAST(:sb AS uuid), CAST(:sup AS uuid), :band, :kind)"
                 ),
                 {
                     "d": did,
@@ -276,6 +278,8 @@ def make_dictamen(base_data) -> Callable[..., Awaitable[str]]:
                     "st": status,
                     "sb": signed_by,
                     "sup": supersedes,
+                    "band": band,
+                    "kind": signature_kind,
                 },
             )
         return did

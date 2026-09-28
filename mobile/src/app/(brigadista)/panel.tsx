@@ -21,6 +21,7 @@ import { Modal, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { useAlertState } from "@/features/alert/useAlertState";
+import { incidenteAConfirmar } from "@/features/dictamen/confirmacion";
 import { avisoDeReingreso } from "@/features/reentry/avisoReingreso";
 import { ControlSheet } from "@/features/control/ControlSheet";
 import { preconditionsFor } from "@/features/control/preconditions";
@@ -140,6 +141,9 @@ export default function Panel() {
   const actions = useSessionStore((s) => s.me?.allowed_actions);
   const canActivate = actions?.manual_activate === true;
   const canSilence = actions?.siren_silence === true;
+  // [F3·r3] Reingreso pendiente de CONFIRMACIÓN y un perfil que confirma ⇒ la
+  // brigada entra a la pantalla desde su INICIO, no sólo tocando la push.
+  const aConfirmar = data ? incidenteAConfirmar(data, actions) : null;
   const [control, setControl] = useState<TacticalAction | null>(null);
   const [busy, setBusy] = useState(false);
   // [T-2.107] La 201 es sólo el PUNTO DE PARTIDA (siempre nace `pending`): el
@@ -221,6 +225,15 @@ export default function Panel() {
             live={live}
             nowMs={nowMs}
             onActivate={() => openControl("activate")}
+            onOpenConfirmar={
+              aConfirmar !== null
+                ? () =>
+                    router.push({
+                      pathname: "/confirmar-dictamen",
+                      params: { incident: aConfirmar },
+                    })
+                : undefined
+            }
             onOpenDictamen={() => router.push("/dictamen")}
             onSilence={() => openControl("deactivate")}
             siteName={data.site_name}

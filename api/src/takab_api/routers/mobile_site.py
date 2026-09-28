@@ -34,7 +34,13 @@ from takab_api.demo_mode import ventana_viva as demo_mode_vivo
 from takab_api.incident.autoridad import autoriza_evacuacion, params_autoriza_evacuacion_sql
 from takab_api.notify.circulo import SEVERIDADES_DE_DISPARO
 from takab_api.queries import mobile as q
-from takab_api.reingreso import HABITABLES, IncidenteCerrado, RazonBloqueo, deriva_reingreso
+from takab_api.reingreso import (
+    HABITABLES,
+    IncidenteCerrado,
+    RazonBloqueo,
+    bloqueo_persistente,
+    deriva_reingreso,
+)
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put
 from takab_api.schemas.fleet import DEGRADADO, OPERATIVO, SIN_ENLACE, derive_fleet_state
@@ -190,6 +196,38 @@ def _drill_out(row: Any, next_row: Any, last_row: Any) -> MobileDrillOut:
     )
 
 
+async def _incidentes_de_reingreso(
+    conn: AsyncConnection, site_id: UUID, settings: Settings, consultas: tuple[Any, ...]
+) -> list[IncidenteCerrado]:
+    """Los hechos que juzga `reingreso`: las consultas se juntan por `incident_id`;
+    el orden y la precedencia los decide la función pura, no el ``ORDER BY``."""
+    params = q.params_reingreso(
+        site_id,
+        min_nodes=settings.quorum_min_nodes,
+        lookback_pendiente_s=settings.reentry_pendiente_lookback_s,
+    )
+    filas = {
+        r.incident_id: r
+        for consulta in consultas
+        for r in (await conn.execute(consulta, params)).all()
+    }
+    return [
+        IncidenteCerrado(
+            incident_id=r.incident_id,
+            trigger=r.trigger,
+            node_count=r.node_count,
+            opened_at=r.opened_at,
+            closed_at=r.closed_at,
+            clasificacion=r.clasificacion,
+            dictamen_status=r.dictamen_status,
+            dictamen_firmado=r.dictamen_signed_by is not None,
+            dictamen_at=r.dictamen_at,
+            dictamen_band=r.dictamen_band,
+        )
+        for r in filas.values()
+    ]
+
+
 @router.get("/sites/{site_id}/mobile-state", response_model=MobileStateOut)
 async def mobile_state(
     site_id: UUID,
@@ -262,12 +300,36 @@ async def mobile_state(
             dictamen_status = dictamen_row.status
             dictamen_signed = dictamen_row.signed_by is not None
             dictamen_incident_id = incident_row.incident_id
+        bloqueo = None
         if dictamen_signed and dictamen_status in HABITABLES:
+            # [F3·r3 · D-43] Antes de autorizar, los BLOQUEOS PERSISTENTES de OTROS
+            # incidentes (abiertos o cerrados) — la MISMA regla que sin incidente
+            # abierto (`reingreso.bloqueo_persistente`). Medido en la ronda 2: el
+            # VERDE que el sistema firma en la réplica abierta liberaba el reingreso
+            # con el sismo principal en ROJO sin firmar.
+            otros = [
+                c
+                for c in await _incidentes_de_reingreso(
+                    conn, site_id, settings, (q.NO_HABITAR_VIGENTES, q.ROJO_SIN_FIRMAR_VIGENTES)
+                )
+                if c.incident_id != incident_row.incident_id
+            ]
+            bloqueo = bloqueo_persistente(otros, min_nodes=settings.quorum_min_nodes)
+        if bloqueo is not None and bloqueo.incidente is not None:
+            phase = bloqueo.fase
+            reentry_reason = bloqueo.razon
+            dictamen_status = bloqueo.incidente.dictamen_status
+            dictamen_signed = bloqueo.incidente.dictamen_firmado
+            dictamen_incident_id = bloqueo.incidente.incident_id
+        elif dictamen_signed and dictamen_status in HABITABLES:
             phase = "reentry_approved"
-        elif latest_tier == "normal":
-            phase = "shaking_concluded"
         else:
-            phase = "alert_active"
+            phase = "shaking_concluded" if latest_tier == "normal" else "alert_active"
+            # [F3·r3 · D-43] Un AMARILLO de la regla SIN FIRMAR en el abierto: la
+            # fase no cambia, pero la app necesita la razón para ofrecer CONFIRMAR
+            # (con la v2 el incidente no se cierra hasta el TTL de revisión, 6 h).
+            if dictamen_row is not None and not dictamen_signed and dictamen_row.band == "amarillo":
+                reentry_reason = "pendiente_confirmacion"
     else:
         # [T-7.55 · rehecho en T-9.04] ⚠️ EL VEREDICTO SOBREVIVE AL CIERRE.
         #
@@ -292,30 +354,12 @@ async def mobile_state(
         # los NO HABITAR vigentes, todos y sin cota de edad, y los que pueden
         # decidir el resto. Se juntan por `incident_id`; el orden y la
         # precedencia los decide la función, no el `ORDER BY`.
-        params = q.params_reingreso(
+        cerrados = await _incidentes_de_reingreso(
+            conn,
             site_id,
-            min_nodes=settings.quorum_min_nodes,
-            lookback_pendiente_s=settings.reentry_pendiente_lookback_s,
+            settings,
+            (q.NO_HABITAR_VIGENTES, q.ROJO_SIN_FIRMAR_VIGENTES, q.CLOSED_FOR_REENTRY),
         )
-        filas = {
-            r.incident_id: r
-            for consulta in (q.NO_HABITAR_VIGENTES, q.CLOSED_FOR_REENTRY)
-            for r in (await conn.execute(consulta, params)).all()
-        }
-        cerrados = [
-            IncidenteCerrado(
-                incident_id=r.incident_id,
-                trigger=r.trigger,
-                node_count=r.node_count,
-                opened_at=r.opened_at,
-                closed_at=r.closed_at,
-                clasificacion=r.clasificacion,
-                dictamen_status=r.dictamen_status,
-                dictamen_firmado=r.dictamen_signed_by is not None,
-                dictamen_at=r.dictamen_at,
-            )
-            for r in filas.values()
-        ]
         reingreso = deriva_reingreso(
             cerrados,
             ahora=datetime.now(tz=UTC),

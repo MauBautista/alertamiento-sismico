@@ -10,7 +10,7 @@
 // presentacional puro y no monta marcos), así que `expectFourStates` aplica
 // directo y la nota queda corregida por medición.
 import type { MobileStateOut } from "@takab/sdk";
-import { act, render } from "@testing-library/react-native";
+import { act, fireEvent, render } from "@testing-library/react-native";
 
 import { expectFourStates } from "@/test-utils/expectFourStates";
 
@@ -26,8 +26,9 @@ const AHORA = Date.now();
 
 // ------------------------------------------------------------------ mocks
 
+const mockPush = jest.fn();
 jest.mock("expo-router", () => ({
-  useRouter: () => ({ push: jest.fn(), replace: jest.fn(), back: jest.fn() }),
+  useRouter: () => ({ push: mockPush, replace: jest.fn(), back: jest.fn() }),
 }));
 
 let mockSitio: string | null = SITE;
@@ -41,11 +42,12 @@ jest.mock("@/features/alert/useAlertState", () => ({
   useAlertState: () => mockSnapshot,
 }));
 
+let mockAcciones: Record<string, boolean> = { manual_activate: true, siren_silence: true };
 jest.mock("@/auth/session.store", () => ({
   useSessionStore: (sel: (s: { status: string; me: unknown }) => unknown) =>
     sel({
       status: "authenticated",
-      me: { sub: "u-1", allowed_actions: { manual_activate: true, siren_silence: true } },
+      me: { sub: "u-1", allowed_actions: mockAcciones },
     }),
 }));
 
@@ -122,6 +124,8 @@ function instantanea(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   mockSitio = SITE;
   mockSnapshot = instantanea();
+  mockAcciones = { manual_activate: true, siren_silence: true };
+  mockPush.mockClear();
 });
 
 async function asentar(): Promise<void> {
@@ -191,5 +195,84 @@ describe("2.1 · panel · contrato de 4 estados (regla de oro 7)", () => {
       },
       { asentar },
     );
+  });
+});
+
+// [F3·r3] La entrada a CONFIRMAR DICTAMEN desde el INICIO táctico: el servidor
+// dice «pendiente de confirmación» y el perfil confirma ⇒ un botón que abre la
+// pantalla con ESE incidente. Sin el permiso, no hay botón.
+describe("F3 · panel · entrada a CONFIRMAR DICTAMEN", () => {
+  function pendiente(): MobileStateOut {
+    const e = estado();
+    return {
+      ...e,
+      phase: "reentry_blocked",
+      reentry: {
+        blocked: true,
+        dictamen_status: "inhabit_monitor",
+        dictamen_signed: false,
+        incident_id: "i-7",
+        reason: "pendiente_confirmacion",
+      },
+    } as unknown as MobileStateOut;
+  }
+
+  it("con confirm_dictamen ⇒ el botón abre /confirmar-dictamen con el incidente", async () => {
+    mockAcciones = { confirm_dictamen: true };
+    mockSnapshot = instantanea({ data: pendiente() });
+    const v = await render(<Panel />);
+    await asentar();
+    fireEvent.press(v.getByTestId("open-confirmar-dictamen"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/confirmar-dictamen",
+      params: { incident: "i-7" },
+    });
+  });
+
+  // [F3·r3] Con el incidente AÚN ABIERTO (fase `shaking_concluded`), la nube ya
+  // manda `reason = pendiente_confirmacion` con `blocked = true` y SIN tocar la
+  // fase: la entrada debe existir igual y llevar el incidente ABIERTO.
+  it.each([
+    ["sin incident_id en el reingreso", null],
+    ["con incident_id en el reingreso", "i-8"],
+  ])("incidente ABIERTO (%s) ⇒ el botón abre el incidente abierto", async (_n, delReingreso) => {
+    mockAcciones = { confirm_dictamen: true };
+    const e = estado();
+    mockSnapshot = instantanea({
+      data: {
+        ...e,
+        phase: "shaking_concluded",
+        incident: {
+          incident_id: "i-8",
+          opened_at: new Date().toISOString(),
+          trigger: "sasmex",
+          max_pga_g: 0.06,
+          node_count: null,
+          severity: "moderate",
+          state: "open",
+        },
+        reentry: {
+          blocked: true,
+          dictamen_status: "inhabit_monitor",
+          dictamen_signed: false,
+          incident_id: delReingreso,
+          reason: "pendiente_confirmacion",
+        },
+      } as unknown as MobileStateOut,
+    });
+    const v = await render(<Panel />);
+    await asentar();
+    fireEvent.press(v.getByTestId("open-confirmar-dictamen"));
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: "/confirmar-dictamen",
+      params: { incident: "i-8" },
+    });
+  });
+
+  it("sin confirm_dictamen ⇒ no hay botón", async () => {
+    mockSnapshot = instantanea({ data: pendiente() });
+    const v = await render(<Panel />);
+    await asentar();
+    expect(v.queryByTestId("open-confirmar-dictamen")).toBeNull();
   });
 });

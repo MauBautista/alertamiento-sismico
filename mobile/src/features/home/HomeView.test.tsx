@@ -429,3 +429,65 @@ describe("[T-9.06] una fase que esta versión NO conoce", () => {
     expect(v.getByTestId("estado")).toHaveTextContent("NO HABITABLE");
   });
 });
+
+// [F3·r3 · D-43] Desde D-43 no sólo firma el inspector: el VERDE lo emite el
+// sistema y un AMARILLO lo confirma la brigada. El cartel verde decía SIEMPRE
+// «el dictamen técnico del inspector» — una atribución falsa en el papel que
+// deja entrar gente al edificio.
+describe("cartel de reingreso: dice QUIÉN aprobó según signature_kind", () => {
+  const aprobado = state({ phase: "reentry_approved" });
+
+  it("firma del SISTEMA ⇒ regla automática, no el inspector", async () => {
+    const v = await render(
+      <HomeView
+        brigadistas={[]}
+        data={aprobado}
+        firmaReingreso={{ signature_kind: "system", band: "verde" }}
+        nowMs={NOW}
+        {...NOOP}
+      />,
+    );
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/sistema/);
+    expect(b).not.toHaveTextContent(/inspector/);
+  });
+
+  it("CONFIRMACIÓN ⇒ dice el ROL de quien confirmó", async () => {
+    const v = await render(
+      <HomeView
+        brigadistas={[]}
+        data={aprobado}
+        firmaReingreso={{ signature_kind: "confirmation", confirmed_by_role: "site_admin" }}
+        nowMs={NOW}
+        {...NOOP}
+      />,
+    );
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/confirm/i);
+    expect(b).not.toHaveTextContent(/técnico del inspector/);
+  });
+
+  it("INSPECTOR (o fila histórica sin tipo) ⇒ el dictamen técnico del inspector", async () => {
+    for (const kind of ["inspector", null] as const) {
+      const v = await render(
+        <HomeView
+          brigadistas={[]}
+          data={aprobado}
+          firmaReingreso={{ signature_kind: kind }}
+          nowMs={NOW}
+          {...NOOP}
+        />,
+      );
+      expect(v.getByTestId("reentry-banner")).toHaveTextContent(/inspector/);
+    }
+  });
+
+  it("sin saber quién firmó ⇒ no se le atribuye a nadie", async () => {
+    const v = await render(
+      <HomeView brigadistas={[]} data={aprobado} nowMs={NOW} {...NOOP} />,
+    );
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/REINGRESO AUTORIZADO/);
+    expect(b).not.toHaveTextContent(/inspector/);
+  });
+});
