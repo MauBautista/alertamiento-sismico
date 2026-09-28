@@ -204,12 +204,43 @@ SELECT i.incident_id, v.classification
  LIMIT %(lim)s
 """
 
-_POR_DICTAMEN_SQL = """
-SELECT i.incident_id
+#: La clasificación VIGENTE de un incidente (misma definición que arriba), como
+#: subconsulta escalar: ``NULL`` = nadie lo clasificó.
+_CLASIFICACION_VIGENTE = """
+  (SELECT c.classification
+     FROM incident_classifications c
+    WHERE c.incident_id = i.incident_id
+      AND NOT EXISTS (SELECT 1 FROM incident_classifications s
+                       WHERE s.supersedes_id = c.classification_id)
+    ORDER BY c.classified_at DESC, c.classification_id DESC
+    LIMIT 1)
+"""
+
+#: La CABEZA de la cadena de dictámenes (misma definición única que la firma, el
+#: worker y el certificado: `created_at DESC, dictamen_id DESC`).
+_CABEZA = """
+  (SELECT d.{col}
+     FROM dictamens d
+    WHERE d.incident_id = i.incident_id
+    ORDER BY d.created_at DESC, d.dictamen_id DESC
+    LIMIT 1)
+"""
+
+#: [T-9.32 · D-43 · sustituye al cierre «por dictamen firmado a secas» de D-33]
+#: Cierra la CABEZA firmada —de cualquier firmante: inspector, confirmación o el
+#: sistema— **y** una clasificación vigente, la que sea. Con la firma sola, un
+#: VERDE que firma el sistema cerraba el incidente en la pasada siguiente y no
+#: quedaba ventana para el daño que alguien encuentra al volver a entrar. Y es la
+#: CABEZA, no «alguna firmada»: un daño estructural tras la firma sube la banda en
+#: una fila SIN firmar, y ese incidente ya no está dictaminado.
+_POR_DICTAMEN_SQL = f"""
+SELECT i.incident_id,
+       {_CABEZA.format(col="signature_kind")} AS signature_kind,
+       {_CLASIFICACION_VIGENTE} AS classification
   FROM incidents i
  WHERE i.state <> 'closed'
-   AND EXISTS (SELECT 1 FROM dictamens d
-                WHERE d.incident_id = i.incident_id AND d.signed_by IS NOT NULL)
+   AND {_CABEZA.format(col="signed_by")} IS NOT NULL
+   AND {_CLASIFICACION_VIGENTE} IS NOT NULL
  ORDER BY i.opened_at
  LIMIT %(lim)s
 """
@@ -217,8 +248,10 @@ SELECT i.incident_id
 #: El TTL se cuenta desde el INGRESO A REVISIÓN, no desde la apertura. Contarlo
 #: desde `opened_at` cerraría por vencimiento un incidente que acaba de entrar en
 #: revisión tras una noche de réplicas — justo cuando alguien va a mirarlo.
-_POR_TTL_SQL = """
-SELECT i.incident_id
+_POR_TTL_SQL = f"""
+SELECT i.incident_id,
+       {_CABEZA.format(col="signed_by")} IS NOT NULL AS firmado,
+       {_CLASIFICACION_VIGENTE} IS NOT NULL AS clasificado
   FROM incidents i
  WHERE i.state = 'in_review'
    AND COALESCE((SELECT max(a.ts) FROM incident_actions a
@@ -262,8 +295,10 @@ def run_lifecycle_pass(
       en ``normal`` **y** han pasado ``dictamen_settle_s`` **y**
       ``alert_hold_min_s`` desde la apertura. Las dos condiciones se suman: el
       retén no basta por sí solo y el tier tampoco.
-    * → ``closed`` por clasificación terminal, por dictamen firmado o por
-      ``incident_review_ttl_s`` en revisión. Cada cierre deja su ``reason``.
+    * → ``closed`` por clasificación terminal, por CABEZA de dictamen firmada
+      **y** clasificación vigente (`D-43`, T-9.32: la firma sola ya no cierra), o
+      por ``incident_review_ttl_s`` en revisión — que declara en ``faltaba`` lo
+      que no hubo. Cada cierre deja su ``reason``.
 
     ⚠️ **Un gabinete que escala y se queda mudo deja su incidente en ALERTA.** Es
     deliberado y es la dirección segura: el último tier conocido del sitio dice
@@ -323,7 +358,8 @@ def _a_revision(
 def _cerrar(
     conn: psycopg.Connection, settings: Settings, *, ahora: datetime, maximo: int
 ) -> tuple[list[str], bool]:
-    """Las tres vías de cierre de `D-33`, con su causa escrita en la traza."""
+    """Las tres vías de cierre (`D-33`, la del dictamen reescrita por `D-43`),
+    con su causa escrita en la traza."""
     causas: dict[str, dict] = {}
     sobraban = False
 
@@ -342,7 +378,14 @@ def _cerrar(
     elegidos, falta = _limitado(filas, maximo)
     sobraban = sobraban or falta
     for r in elegidos:
-        causas.setdefault(str(r["incident_id"]), {"reason": "dictamen_signed"})
+        causas.setdefault(
+            str(r["incident_id"]),
+            {
+                "reason": "dictamen_y_clasificacion",
+                "signature_kind": r["signature_kind"],
+                "classification": r["classification"],
+            },
+        )
 
     # `0` desactiva esta vía y deja las otras dos: así se revoca `D-33` sin tocar código.
     if settings.incident_review_ttl_s > 0:
@@ -356,7 +399,17 @@ def _cerrar(
         elegidos, falta = _limitado(filas, maximo)
         sobraban = sobraban or falta
         for r in elegidos:
-            causas.setdefault(str(r["incident_id"]), {"reason": "review_ttl"})
+            # [T-9.32 · D-43] El TTL DECLARA qué faltaba para el cierre normal: un
+            # cierre por vencimiento no puede leerse como un incidente resuelto.
+            faltaba = [
+                clave
+                for clave, presente in (
+                    ("sin_dictamen_firmado", r["firmado"]),
+                    ("sin_clasificacion", r["clasificado"]),
+                )
+                if not presente
+            ]
+            causas.setdefault(str(r["incident_id"]), {"reason": "review_ttl", "faltaba": faltaba})
 
     ids = list(causas)[:maximo]
     sobraban = sobraban or len(causas) > maximo

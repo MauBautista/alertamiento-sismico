@@ -37,6 +37,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from takab_api.dictamen.sistema import SYSTEM_DICTAMEN_SIGNER_UUID
 from takab_api.incident.lifecycle import PasadaDeFases, run_lifecycle_pass
 from takab_api.settings import Settings
 
@@ -121,11 +122,19 @@ class Escenario:
         self.conn.commit()
         return str(fila["classification_id"])
 
-    def dictamen(self, inc: str, *, firmado: bool) -> None:
+    def dictamen(
+        self,
+        inc: str,
+        *,
+        firmado: bool,
+        kind: str | None = None,
+        status: str = "normal_operation",
+    ) -> None:
         self.conn.execute(
-            "INSERT INTO dictamens (incident_id, tenant_id, status, basis, signed_by) "
-            "VALUES (%s,%s,'normal_operation','{}'::jsonb,%s)",
-            (inc, self.tenant, FIRMANTE if firmado else None),
+            "INSERT INTO dictamens "
+            "(incident_id, tenant_id, status, basis, signed_by, signature_kind) "
+            "VALUES (%s,%s,%s,'{}'::jsonb,%s,%s)",
+            (inc, self.tenant, status, FIRMANTE if firmado else None, kind),
         )
         self.conn.commit()
 
@@ -345,17 +354,82 @@ def test_la_clasificacion_CORREGIDA_manda_sobre_la_sustituida(esc: Escenario) ->
     assert esc.estado(inc)["state"] == "in_review"
 
 
-def test_el_dictamen_FIRMADO_cierra_y_el_preliminar_no(esc: Escenario) -> None:
+def test_firmado_Y_clasificado_cierra_y_el_preliminar_no(esc: Escenario) -> None:
+    """[T-9.32 · D-43] Cierra la CABEZA firmada **y** una clasificación vigente.
+
+    Antes (`D-33`) cerraba el dictamen firmado a secas; la intención que sobrevive:
+    un preliminar sin firmar NO cierra, aunque esté clasificado."""
     firmado = esc.incidente(state="in_review")
     preliminar = esc.incidente(state="in_review")
-    esc.dictamen(firmado, firmado=True)
+    esc.dictamen(firmado, firmado=True, kind="inspector")
     esc.dictamen(preliminar, firmado=False)
+    esc.clasificar(firmado, "real")
+    esc.clasificar(preliminar, "real")
 
     esc.pasada()
 
     assert esc.estado(firmado)["state"] == "closed"
     assert esc.estado(preliminar)["state"] == "in_review"
-    assert esc.cierre(firmado)[0]["payload"]["reason"] == "dictamen_signed"
+    causa = esc.cierre(firmado)[0]["payload"]
+    assert causa["reason"] == "dictamen_y_clasificacion"
+    assert causa["classification"] == "real"
+    assert causa["signature_kind"] == "inspector"
+
+
+def test_firmado_SIN_clasificar_NO_cierra(esc: Escenario) -> None:
+    """[T-9.32 · D-43] La firma sola ya no cierra: con ella, un VERDE que firma el
+    SISTEMA cerraba el incidente al instante y no quedaba ventana para el daño."""
+    inspector = esc.incidente(state="in_review")
+    sistema = esc.incidente(state="in_review")
+    esc.dictamen(inspector, firmado=True, kind="inspector")
+    esc.conn.execute(
+        "INSERT INTO dictamens "
+        "(incident_id, tenant_id, status, basis, signed_by, signature_kind, band) "
+        "VALUES (%s,%s,'normal_operation','{}'::jsonb,%s,'system','verde')",
+        (sistema, esc.tenant, SYSTEM_DICTAMEN_SIGNER_UUID),
+    )
+    esc.conn.commit()
+
+    esc.pasada()
+
+    assert esc.estado(inspector)["state"] == "in_review"
+    assert esc.estado(sistema)["state"] == "in_review"
+
+
+def test_el_VERDE_del_sistema_clasificado_cierra(esc: Escenario) -> None:
+    """Cualquier firmante vale para el cierre: también el sistema y la confirmación."""
+    inc = esc.incidente(state="in_review")
+    conf = esc.incidente(state="in_review")
+    esc.conn.execute(
+        "INSERT INTO dictamens "
+        "(incident_id, tenant_id, status, basis, signed_by, signature_kind, band) "
+        "VALUES (%s,%s,'normal_operation','{}'::jsonb,%s,'system','verde')",
+        (inc, esc.tenant, SYSTEM_DICTAMEN_SIGNER_UUID),
+    )
+    esc.conn.commit()
+    esc.dictamen(conf, firmado=True, kind="confirmation", status="inhabit_monitor")
+    esc.clasificar(inc, "real")
+    esc.clasificar(conf, "real")
+
+    esc.pasada()
+
+    assert esc.estado(inc)["state"] == "closed"
+    assert esc.cierre(inc)[0]["payload"]["signature_kind"] == "system"
+    assert esc.estado(conf)["state"] == "closed"
+    assert esc.cierre(conf)[0]["payload"]["signature_kind"] == "confirmation"
+
+
+def test_una_firma_SUSTITUIDA_por_una_fila_sin_firmar_no_cierra(esc: Escenario) -> None:
+    """Es la CABEZA la que cuenta: un daño tras la firma sube la banda en una fila
+    SIN firmar, y ese incidente ya no está dictaminado aunque haya una firma vieja."""
+    inc = esc.incidente(state="in_review")
+    esc.dictamen(inc, firmado=True, kind="inspector")
+    esc.dictamen(inc, firmado=False, status="no_inhabit_inspect")
+    esc.clasificar(inc, "real")
+
+    esc.pasada()
+
+    assert esc.estado(inc)["state"] == "in_review"
 
 
 def test_el_TTL_cierra_contando_desde_que_ENTRO_a_revision(esc: Escenario) -> None:
@@ -376,6 +450,25 @@ def test_el_TTL_cierra_contando_desde_que_ENTRO_a_revision(esc: Escenario) -> No
     esc.pasada(now=NOW + timedelta(seconds=TTL_S))
     assert esc.estado(inc)["state"] == "closed"
     assert esc.cierre(inc)[0]["payload"]["reason"] == "review_ttl"
+    # [T-9.32 · D-43] Y declara qué faltaba para el cierre normal.
+    assert esc.cierre(inc)[0]["payload"]["faltaba"] == [
+        "sin_dictamen_firmado",
+        "sin_clasificacion",
+    ]
+
+
+def test_el_TTL_declara_SOLO_lo_que_faltaba(esc: Escenario) -> None:
+    """[T-9.32] Firmado sin clasificar: el TTL dice `sin_clasificacion` y nada más."""
+    inc = esc.incidente(state="in_review", abierto_hace_s=TTL_S * 2)
+    esc.entro_a_revision(inc, hace_s=TTL_S + 60.0)
+    esc.dictamen(inc, firmado=True, kind="inspector")
+
+    esc.pasada()
+
+    assert esc.estado(inc)["state"] == "closed"
+    causa = esc.cierre(inc)[0]["payload"]
+    assert causa["reason"] == "review_ttl"
+    assert causa["faltaba"] == ["sin_clasificacion"]
 
 
 def test_el_TTL_en_CERO_desactiva_esa_via_y_deja_las_otras(esc: Escenario) -> None:

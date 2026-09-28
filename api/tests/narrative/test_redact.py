@@ -283,7 +283,11 @@ def test_la_allowlist_declara_CUANTOS_hechos_deja_pasar() -> None:
     # hechos. Meterlos aquí volvería ilegible este payload —que es justo lo que los
     # tests de arriba inspeccionan— y pondría megabytes en cada `asdict`. Ese canal
     # tiene su propio censo, aquí abajo.
-    assert total == 57, (
+    # [T-9.34 · D-43] 57 → 58: `verdict_signature_kind`. Un enum de tres valores
+    # —¿firmó el inspector, el sistema o una persona que CONFIRMÓ?— del mismo tipo que
+    # `verdict_signed`, que ya salía. No identifica ni al inmueble ni a nadie: el `sub`
+    # de quien firmó sigue sin salir.
+    assert total == 58, (
         "cambió lo que viaja al proveedor de prosa. Si el campo nuevo es un dato "
         "del inmueble o de una persona, NO puede salir; si es un hecho agregado, "
         f"actualiza el número y di por qué. Campos: {campos}"
@@ -318,7 +322,8 @@ def test_el_CANAL_DE_LAS_IMAGENES_tambien_declara_lo_que_lleva() -> None:
         "alto",
         "reporte",
     ), f"cambió lo que acompaña a cada fotografía: {campos['ImagenAdjunta']}"
-    assert sum(len(c) for c in campos.values()) == 66
+    # [T-9.34 · D-43] 66 → 67: `NarrativeFacts.verdict_signature_kind` (ver arriba).
+    assert sum(len(c) for c in campos.values()) == 67
 
 
 # ---- [T-7.38·E] el hecho de la razón viaja; el texto JAMÁS -------------------

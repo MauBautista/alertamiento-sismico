@@ -637,3 +637,183 @@ describe("TriageDetail · VERIFICAR la huella del dictamen exige `dictamen_read`
     expect(screen.queryByTestId("verify-dictamen-denied")).toBeNull();
   });
 });
+
+// ═══════════════════ [T-9.34 · D-43] la firma se rotula por su TIPO, nunca por un id
+
+/** Filas de la regla `dictamen-v2`: sin firmar, del sistema, confirmada, del inspector. */
+const SISTEMA_UUID = "00000000-0000-4000-8000-00000000d1c7";
+const USUARIO_UUID = "9f1c2b3a-4d5e-4f60-8a7b-1c2d3e4f5a6b";
+function fila(over: Partial<DictamenOut>): DictamenOut {
+  return { ...DICTAMEN, ...over } as DictamenOut;
+}
+const PRELIMINAR_VERDE = fila({
+  dictamen_id: "aaaaaaaa-0000-4000-8000-000000000001",
+  status: "normal_operation",
+  band: "verde",
+  signature_kind: null,
+  signed_by: null,
+  created_at: "2026-08-03T10:01:00Z",
+});
+const VERDE_SISTEMA = fila({
+  dictamen_id: "aaaaaaaa-0000-4000-8000-000000000002",
+  status: "normal_operation",
+  band: "verde",
+  signature_kind: "system",
+  signed_by: SISTEMA_UUID,
+  supersedes_dictamen_id: PRELIMINAR_VERDE.dictamen_id,
+  created_at: "2026-08-03T10:06:00Z",
+});
+const AMARILLO_CONFIRMADO = fila({
+  dictamen_id: "aaaaaaaa-0000-4000-8000-000000000003",
+  status: "inhabit_monitor",
+  band: "amarillo",
+  signature_kind: "confirmation",
+  signed_by: USUARIO_UUID,
+  confirmed_by_role: "brigadista",
+  created_at: "2026-08-03T10:10:00Z",
+});
+const ROJO_INSPECTOR = fila({
+  dictamen_id: "aaaaaaaa-0000-4000-8000-000000000004",
+  status: "no_inhabit_inspect",
+  band: "rojo",
+  signature_kind: "inspector",
+  signed_by: USUARIO_UUID,
+  created_at: "2026-08-03T10:20:00Z",
+});
+const HISTORICO_FIRMADO = fila({
+  dictamen_id: "aaaaaaaa-0000-4000-8000-000000000005",
+  status: "restricted",
+  signed_by: USUARIO_UUID,
+  created_at: "2026-08-03T09:00:00Z",
+});
+
+describe("TriageDetail · el desplegable de firma arranca en la CABEZA vigente [T-9.34]", () => {
+  it("con cabeza AMARILLA el desplegable arranca en HABITAR · MONITOREO, no en NO HABITAR", () => {
+    const sign = vi.fn();
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [DICTAMEN] }), sign }, { canSign: true });
+    const select = screen.getByLabelText("Status del dictamen a firmar") as HTMLSelectElement;
+    expect(select.value).toBe("inhabit_monitor");
+    fireEvent.click(screen.getByRole("button", { name: /FIRMAR DICTAMEN/ }));
+    fireEvent.click(screen.getByRole("button", { name: /CONFIRMAR/ }));
+    expect(sign).toHaveBeenCalledWith("inhabit_monitor", null);
+  });
+
+  it("con cabeza VERDE del sistema arranca en OPERACIÓN NORMAL", () => {
+    arrange(
+      { dictamens: resource<DictamenOut[]>({ data: [VERDE_SISTEMA, PRELIMINAR_VERDE] }) },
+      { canSign: true },
+    );
+    const select = screen.getByLabelText("Status del dictamen a firmar") as HTMLSelectElement;
+    expect(select.value).toBe("normal_operation");
+  });
+
+  it("sin cabeza arranca en el más prudente: no hay nada que heredar", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [] }) }, { canSign: true });
+    const select = screen.getByLabelText("Status del dictamen a firmar") as HTMLSelectElement;
+    expect(select.value).toBe("no_inhabit_inspect");
+  });
+
+  it("un status desconocido en la cabeza NO se hereda: arranca en el más prudente", () => {
+    arrange(
+      { dictamens: resource<DictamenOut[]>({ data: [fila({ status: "otro_estado" })] }) },
+      { canSign: true },
+    );
+    const select = screen.getByLabelText("Status del dictamen a firmar") as HTMLSelectElement;
+    expect(select.value).toBe("no_inhabit_inspect");
+  });
+
+  it("lo que el inspector elige se respeta aunque la cadena se relea", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [DICTAMEN] }) }, { canSign: true });
+    const select = screen.getByLabelText("Status del dictamen a firmar") as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "restricted" } });
+    expect(select.value).toBe("restricted");
+  });
+});
+
+describe("TriageDetail · la cadena dice QUIÉN firmó por su tipo [T-9.34]", () => {
+  const CADENA = [ROJO_INSPECTOR, AMARILLO_CONFIRMADO, VERDE_SISTEMA, PRELIMINAR_VERDE];
+
+  it("lista cada versión con su tipo de firma y su banda", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: CADENA }) });
+    const cadena = screen.getByTestId("dictamen-cadena");
+    const filas = cadena.querySelectorAll("li");
+    expect(filas).toHaveLength(4);
+    expect(filas[0].textContent).toMatch(/FIRMADO POR INSPECTOR/);
+    expect(filas[0].textContent).toMatch(/BANDA ROJA/);
+    // [F3·r3] El rol de quien confirma viaja en DictamenOut: la web lo rotula.
+    expect(filas[1].textContent).toMatch(/CONFIRMADO POR BRIGADISTA/);
+    expect(filas[1].textContent).toMatch(/BANDA AMARILLA/);
+    expect(filas[2].textContent).toMatch(
+      /EMITIDO POR EL SISTEMA · regla dictamen-v2 · banda VERDE/,
+    );
+    expect(filas[3].textContent).toMatch(/PRELIMINAR · SIN FIRMA/);
+    expect(filas[3].textContent).toMatch(/BANDA VERDE/);
+  });
+
+  it("NUNCA pinta un identificador interno: ni el firmante ni el dictamen", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: CADENA }) });
+    const texto = document.body.textContent ?? "";
+    for (const id of [SISTEMA_UUID, USUARIO_UUID, ...CADENA.map((d) => d.dictamen_id)]) {
+      expect(texto).not.toContain(id.slice(0, 8));
+    }
+  });
+
+  it("confirmación sin rol publicado ⇒ «CONFIRMADO» a secas (no se inventa quién)", () => {
+    const sinRol = { ...AMARILLO_CONFIRMADO, confirmed_by_role: null };
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [sinRol] }) });
+    const fila0 = screen.getByTestId("dictamen-cadena").querySelector("li");
+    expect(fila0?.textContent).toMatch(/CONFIRMADO/);
+    expect(fila0?.textContent).not.toMatch(/CONFIRMADO POR/);
+  });
+
+  it("el rol se pinta con el rótulo de la tabla de roles, no crudo", () => {
+    const admin = { ...AMARILLO_CONFIRMADO, confirmed_by_role: "tenant_admin" };
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [admin] }) });
+    const fila0 = screen.getByTestId("dictamen-cadena").querySelector("li");
+    expect(fila0?.textContent).toMatch(/CONFIRMADO POR ADMINISTRADOR/);
+    expect(fila0?.textContent).not.toMatch(/tenant_admin/);
+  });
+
+  it("una fila histórica (sin tipo ni banda) se rotula como hoy, sin inventar banda", () => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [HISTORICO_FIRMADO] }) });
+    const fila0 = screen.getByTestId("dictamen-cadena").querySelector("li");
+    expect(fila0?.textContent).toMatch(/FIRMADO POR INSPECTOR/);
+    expect(fila0?.textContent).not.toMatch(/BANDA/);
+  });
+
+  it.each([
+    [VERDE_SISTEMA, "DICTAMEN EMITIDO POR EL SISTEMA"],
+    // [F3·r3] El sello dice el ROL, como la fila de la cadena.
+    [AMARILLO_CONFIRMADO, "DICTAMEN CONFIRMADO POR BRIGADISTA"],
+    [ROJO_INSPECTOR, "DICTAMEN FIRMADO"],
+    [PRELIMINAR_VERDE, "DICTAMEN AUTOMÁTICO PRELIMINAR"],
+  ])("el sello de la cabeza sale del tipo (%#)", (cabeza, sello) => {
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [cabeza] }) });
+    expect(screen.getByText(sello)).toBeInTheDocument();
+  });
+});
+
+describe("TriageDetail · sin PGA, la regla v2 NO decide por severidad [T-9.30]", () => {
+  // `dictamen-v2`: SASMEX y la severidad constan pero YA NO deciden; sin PGA
+  // medida la banda es AMARILLA por falta de medición. Rotular «por severidad de
+  // alerta» sería atribuirle a la severidad una decisión que no tomó.
+  it("un preliminar v2 sin PGA dice que falta la medición, no que decidió la severidad", () => {
+    const v2 = fila({
+      band: "amarillo",
+      basis: { rule_set_version: "dictamen-v2", evidence: { insufficient_data: true } },
+    });
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [v2] }) });
+    const nota = screen.getByRole("note");
+    expect(nota.textContent).toMatch(/SIN PGA MEDIDA/);
+    expect(nota.textContent).toMatch(/dictamen-v2/);
+    expect(nota.textContent).not.toMatch(/SEVERIDAD/);
+  });
+
+  it("un preliminar v1 sin evidencia conserva su rótulo de siempre", () => {
+    const v1 = fila({
+      basis: { rule_set_version: "dictamen-v1", evidence: { insufficient_data: true } },
+    });
+    arrange({ dictamens: resource<DictamenOut[]>({ data: [v1] }) });
+    expect(screen.getByRole("note").textContent).toMatch(/POR SEVERIDAD DE ALERTA/);
+  });
+});

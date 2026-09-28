@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.roles import literales_de
+from takab_api.dictamen.sistema import ESCALADA_PENDIENTE_SQL
 from takab_api.incident.autoridad import autoriza_evacuacion_sql, params_autoriza_evacuacion_sql
 from takab_api.incident.classification import TERMINALES
 from takab_api.queries.fleet import EDAD_DEL_ENLACE, LATIDO_REAL
@@ -221,17 +222,22 @@ OPEN_MOVEMENT = text(
 #   filtro en Python, diez réplicas de la estación sola o diez pruebas del WR-1
 #   hacían caducar un NO HABITAR firmado (medido contra el endpoint). La función
 #   vuelve a aplicar las dos reglas: lo de aquí sólo acota, nunca decide.
-_CERRADOS_QUE_CUENTAN = (
+_INCIDENTES_QUE_CUENTAN = (
     "SELECT i.incident_id, i.trigger, i.opened_at, i.closed_at, "
     "(e.meta->>'node_count')::int AS node_count, "
     "d.status AS dictamen_status, d.signed_by AS dictamen_signed_by, "
-    "d.created_at AS dictamen_at, c.classification AS clasificacion "
+    "d.created_at AS dictamen_at, d.band AS dictamen_band, "
+    "c.classification AS clasificacion, "
+    # [D-49 · R5] Regla 1d: viaja en TODAS las consultas que se juntan por
+    # `incident_id`, así que la fila que gane el merge la lleva siempre.
+    f"{ESCALADA_PENDIENTE_SQL} AS escalada_pendiente "
     "FROM incidents i "
     "LEFT JOIN seismic_events e ON e.event_id = i.event_id "
     "LEFT JOIN LATERAL ("
-    "  SELECT dd.status, dd.signed_by, dd.created_at FROM dictamens dd "
+    "  SELECT dd.status, dd.signed_by, dd.created_at, dd.band FROM dictamens dd "
     "   WHERE dd.incident_id = i.incident_id "
-    "   ORDER BY dd.created_at DESC LIMIT 1"
+    # [T-9.30 · D-43] Cabeza ÚNICA: el mismo desempate que la firma y el worker.
+    "   ORDER BY dd.created_at DESC, dd.dictamen_id DESC LIMIT 1"
     ") d ON true "
     "LEFT JOIN LATERAL ("
     "  SELECT cc.classification FROM incident_classifications cc "
@@ -240,20 +246,47 @@ _CERRADOS_QUE_CUENTAN = (
     "                      WHERE s.supersedes_id = cc.classification_id) "
     "   ORDER BY cc.classified_at DESC, cc.classification_id DESC LIMIT 1"
     ") c ON true "
-    "WHERE i.site_id = CAST(:site AS uuid) AND i.state = 'closed' "
+    "WHERE i.site_id = CAST(:site AS uuid) "
     f"  AND {_AUTORIZA_EVACUACION} "
     "  AND (c.classification IS NULL "
     "       OR c.classification <> ALL(CAST(:terminales AS text[]))) "
 )
+_CERRADOS_QUE_CUENTAN = _INCIDENTES_QUE_CUENTAN + "  AND i.state = 'closed' "
+
+# [F3·r3 · D-43] Los BLOQUEOS PERSISTENTES (reglas 1 y 1b de `deriva_reingreso`) se
+# leen sobre TODOS los incidentes que cuentan, ABIERTOS o cerrados: la rama del
+# incidente abierto de `mobile_site` también los consulta, y un ROJO sin firmar del
+# sismo principal todavía abierto no puede quedar tapado por el VERDE de la réplica
+# (medido en la ronda 2: `reentry_approved`). En la rama sin incidente abierto que
+# autorice el resultado es el mismo: no hay abiertos que cuenten.
 
 # Los NO HABITAR VIGENTES del sitio: cabeza firmada y no habitable. SIN `LIMIT` y
 # sin cota de edad, porque un NO HABITAR no caduca y ninguna ventana puede
 # decidir cuándo deja de verse. Son pocos por construcción: sólo existe mientras
 # nadie firme habitable sobre ese mismo incidente.
 NO_HABITAR_VIGENTES = text(
-    _CERRADOS_QUE_CUENTAN + "  AND d.signed_by IS NOT NULL "
+    _INCIDENTES_QUE_CUENTAN + "  AND d.signed_by IS NOT NULL "
     "  AND d.status <> ALL(CAST(:habitables AS text[]))"
 )
+
+# [F3·r2 · D-43] Los ROJO de la regla SIN FIRMAR del sitio (regla 1b de
+# `deriva_reingreso`): como los NO HABITAR, sin `LIMIT` y sin cota de edad. SÓLO
+# filas v2 (`band = 'rojo'`): una fila v1 no tiene banda y no entra.
+ROJO_SIN_FIRMAR_VIGENTES = text(
+    _INCIDENTES_QUE_CUENTAN + "  AND d.signed_by IS NULL AND d.band = 'rojo'"
+)
+
+# [D-49 · R2] Los AMARILLO de la regla SIN CONFIRMAR del sitio (regla 1c de
+# `reingreso.bloqueo_persistente`): como los ROJO, sin `LIMIT` y sin cota de edad
+# —no caducan a propósito—. SÓLO filas v2 (`band = 'amarillo'`).
+AMARILLO_SIN_CONFIRMAR_VIGENTES = text(
+    _INCIDENTES_QUE_CUENTAN + "  AND d.signed_by IS NULL AND d.band = 'amarillo'"
+)
+
+# [D-49 · R5] Las ESCALADAS al inspector SIN ATENDER del sitio (regla 1d de
+# `reingreso.bloqueo_persistente`): sin `LIMIT` y sin cota de edad, abiertos o
+# cerrados. Una petición de inspector sin atender no la tapa el VERDE de una réplica.
+ESCALADA_PENDIENTE_VIGENTES = text(_INCIDENTES_QUE_CUENTAN + f"  AND {ESCALADA_PENDIENTE_SQL}")
 
 # Los que pueden DECIDIR el resto: cerrados dentro de la espera del dictamen, MÁS
 # RECIENTEMENTE CERRADOS primero — el mismo criterio con el que decide
@@ -293,16 +326,20 @@ LATEST_TIER = text(
 )
 
 LATEST_DICTAMEN = text(
-    "SELECT status, signed_by FROM dictamens "
-    "WHERE incident_id = CAST(:incident AS uuid) ORDER BY created_at DESC LIMIT 1"
+    "SELECT status, signed_by, band, created_at FROM dictamens "
+    "WHERE incident_id = CAST(:incident AS uuid) "
+    "ORDER BY created_at DESC, dictamen_id DESC LIMIT 1"
 )
 
-# [T-2.12] Dictamen FIRMADO más reciente del incidente (2.7): folio, firmante,
-# estado y fecha. La vigencia/certificado los deriva el móvil del estado.
-LATEST_SIGNED_DICTAMEN = text(
-    "SELECT dictamen_id, status, signed_by, created_at FROM dictamens "
-    "WHERE incident_id = CAST(:incident AS uuid) AND signed_by IS NOT NULL "
-    "ORDER BY created_at DESC LIMIT 1"
+# [T-2.12 · rehecho en F3·r2 · D-43] La CABEZA de la cadena para el certificado
+# (2.7). Era la última fila FIRMADA: con la v2, «la prudencia sube sola» inserta un
+# ROJO sin firmar ENCIMA de una firma, y el certificado seguía sirviendo la firma
+# vieja como HABITABLE. La cabeza es única (mismo desempate que el worker, la firma
+# y el reingreso); «firmado» = ESTA fila firmada.
+CABEZA_DEL_CERTIFICADO = text(
+    "SELECT dictamen_id, status, band, signed_by, signature_kind, basis, created_at "
+    "FROM dictamens WHERE incident_id = CAST(:incident AS uuid) "
+    "ORDER BY created_at DESC, dictamen_id DESC LIMIT 1"
 )
 
 # [T-8.12 · A-054] El dictamen VIGENTE —la cabeza de la cadena, firmada o no—.
@@ -310,7 +347,8 @@ LATEST_SIGNED_DICTAMEN = text(
 # posterior sin firmar hace que cualquier PDF de hoy diga PRELIMINAR.
 DICTAMEN_VIGENTE = text(
     "SELECT dictamen_id, signed_by, created_at FROM dictamens "
-    "WHERE incident_id = CAST(:incident AS uuid) ORDER BY created_at DESC LIMIT 1"
+    "WHERE incident_id = CAST(:incident AS uuid) "
+    "ORDER BY created_at DESC, dictamen_id DESC LIMIT 1"
 )
 
 # [T-2.12 · reescrito en T-8.12 · A-054] El PDF que el táctico DESCARGA como
@@ -351,6 +389,14 @@ CANDADO_DEL_CERTIFICADO = text("SELECT pg_try_advisory_xact_lock(hashtext(:clave
 INSERT_DICTAMEN_SIGNED_ACTION = text(
     "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
     "VALUES (CAST(:incident AS uuid), CAST(:tenant AS uuid), 'dictamen_signed', "
+    ":actor, CAST(:payload AS jsonb))"
+)
+
+# [T-9.31 · D-43] La confirmación del dictamen de la regla. Mismo papel que
+# `dictamen_signed` para el orquestador: push OPS de cambio de fase.
+INSERT_DICTAMEN_CONFIRMED_ACTION = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "VALUES (CAST(:incident AS uuid), CAST(:tenant AS uuid), 'dictamen_confirmed', "
     ":actor, CAST(:payload AS jsonb))"
 )
 
@@ -671,7 +717,7 @@ MY_CHECKINS = text(
 )
 
 INCIDENT_FOR_MOBILE = text(
-    "SELECT incident_id, tenant_id, site_id, state FROM incidents "
+    "SELECT incident_id, tenant_id, site_id, state, opened_at FROM incidents "
     "WHERE incident_id = CAST(:incident AS uuid)"
 )
 

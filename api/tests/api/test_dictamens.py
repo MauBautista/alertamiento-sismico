@@ -30,7 +30,8 @@ async def test_chain_supersedes_and_preliminary_flag(client, make_incident, make
     new = signed.json()
     assert new["signed_by"] == _INSPECTOR
     assert new["supersedes_dictamen_id"] == prelim
-    assert new["basis"] == {"notes": "grietas visibles"}
+    # [D-49 · R4] La firma guarda los reportes de daño que vio (ninguno aquí).
+    assert new["basis"] == {"notes": "grietas visibles", "danos_vistos": []}
 
     after = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("inspector"))
     chain = after.json()["items"]
@@ -89,8 +90,9 @@ async def test_sign_authz_and_read_authz(client, make_incident, make_dictamen) -
     )
     assert forbidden.status_code == 403
 
-    # brigadista: sin Triage → ni lectura.
-    no_triage = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("brigadista"))
+    # occupant: sin Triage ni confirmación → ni lectura. [F3 · D-43] La brigada SÍ
+    # lee la cadena de su inmueble: confirma sobre ella (test_dictamen_confirmar).
+    no_triage = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("occupant"))
     assert no_triage.status_code == 403
 
 

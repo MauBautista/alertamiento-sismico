@@ -144,7 +144,9 @@ Reglas de la ventana (no se reinterpretan):
     función SECURITY DEFINER `relocate_incident_epicenter` con el punto previo preservado en
     `meta.manual_override`): acto de operador del tenant. Ni gov (solo lectura+acuse) ni
     inspector (juzga el dictamen, no edita la física del evento).
-  - `request_dictamen` (botón SOLICITAR DICTAMEN TÉCNICO) = los mismos tres. Es
+  - `request_dictamen` (botón SOLICITAR DICTAMEN TÉCNICO) = los mismos tres, **más
+    `brigadista` desde D-43** (fila «Escalar» de §3: pide el dictamen de SU inmueble;
+    el endpoint aplica su `site_scope`). Es
     `ack_incident` MENOS `gov_operator`: la política RLS `actions_insert` le impide a gov
     insertar en `incident_actions`, y concederle la acción pintaría un botón que siempre
     da 403 (regla de oro 7).
@@ -369,6 +371,8 @@ Reglas de la ventana (no se reinterpretan):
 | Headcount / pase de lista | — | ✅ | — | ✅ |
 | Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
 | Aviso con voz de **movimiento del inmueble** (umbral local en DISPARO, `D-39`) | — | ✅ | ✅ | ✅ |
+| **Confirmar** el dictamen automático AMARILLO/VERDE sin firmar (`D-43`) | — | ✅ | ✅ | ✅ |
+| **Escalar**: solicitar dictamen técnico de su inmueble (`request_dictamen`, `D-43`) | — | ✅ | — | ✅ |
 
 > **[D-42]** Hasta el 2026-09-27 esta tabla tenía además las columnas `security_guard`
 > (idéntica a `brigadista`, que la absorbe) y `building_admin` (sin cámara forense ni triage,
@@ -378,7 +382,8 @@ Reglas de la ventana (no se reinterpretan):
 > **[T-2.03] Esta matriz es EJECUTABLE:** las celdas con acción se materializan en
 > `api/src/takab_api/auth/matrix.py` (`checkin_submit`, `roster_read`,
 > `damage_report_submit`, `evidence_upload`, `siren_silence`, `manual_activate`,
-> `enrollment_manage`, `panic_vote`, `dictamen_read`, `panel_read`, `movement_alert`) y el parity test
+> `enrollment_manage`, `panic_vote`, `dictamen_read`, `panel_read`, `movement_alert`,
+> `confirm_dictamen`, `request_dictamen`) y el parity test
 > `tests/auth/test_matrix.py::test_mobile_actions_match_rbac_section_3` compara el
 > código contra esta tabla celda a celda — si divergen, CI falla (misma disciplina
 > que §2 para la web). El voto de pánico del occupant (quórum 2/30 s) es la acción
@@ -389,6 +394,29 @@ Reglas de la ventana (no se reinterpretan):
 > `mobile-state`: el ocupante **nunca** lo recibe. Y el **administrador** (`tenant_admin`)
 > tiene desde F1 la app táctica completa: todas las celdas de `brigadista` de esta tabla
 > más el aviso de movimiento, además de su consola web (§2).
+>
+> **[T-9.31 · D-43]** Confirmar el dictamen (`confirm_dictamen`) es la fila «Confirmar el
+> dictamen automático»: la regla determinista `dictamen-v2` emite el dictamen en tres bandas
+> (VERDE/AMARILLO/ROJO) y quien está en el inmueble —brigada, inspector o administración—
+> confirma el AMARILLO (o un VERDE todavía sin firmar) con
+> `POST /incidents/{id}/dictamens/{dictamen_id}/confirm`. Confirmar **no** es firmar un
+> veredicto propio: inserta una fila nueva con el mismo estado y banda que la cabeza vigente y
+> `signature_kind = 'confirmation'`. Un **ROJO no se confirma** por esta vía (403): lo firma el
+> inspector con `sign_dictamen`, que sigue siendo **solo del inspector** y puede firmar
+> cualquier estado. 409 si el `dictamen_id` ya no es la cabeza o si ya está firmada. El
+> `occupant` no la recibe. Es también el círculo del push `DICTAMEN_CONFIRM`
+> (`roles_with_action("confirm_dictamen")`). Ancla: la columna `confirm_dictamen` de
+> `tests/auth/test_matrix.py::test_mobile_actions_match_rbac_section_3`.
+>
+> **[F3 · D-43 · 2ª vuelta]** Tres cierres sobre la fila anterior. (1) Confirmar aplica el
+> **alcance por inmueble** del portador (`site_scope`): fuera de él, 404. (2) Si en el
+> incidente hay un reporte de daño de categoría ROJA (`structural`, `people_trapped`,
+> `gas_leak`) que la regla aún no subió, la confirmación responde **409 «requiere
+> inspector»**. (3) El rol de quien confirma viaja en la fila (`basis.confirmacion.rol`) y
+> la API lo publica como `confirmed_by_role`. Quien confirma **lee la cadena**
+> (`GET /incidents/{id}/dictamens`, dentro de su alcance) y, si no puede confirmar,
+> **escala**: la fila «Escalar» concede `request_dictamen` a `brigadista` (el inspector no
+> la necesita: firma él), también acotado a su inmueble.
 
 ---
 

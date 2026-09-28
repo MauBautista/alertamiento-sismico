@@ -18,8 +18,11 @@ from typing import Protocol
 logger = logging.getLogger(__name__)
 
 # Versión del conjunto de reglas: queda grabada en el basis de CADA dictamen
-# automático (requisito de trazabilidad §9: ruleSetVersion).
-RULE_SET_VERSION = "dictamen-v1"
+# automático (requisito de trazabilidad §9: ruleSetVersion). [T-9.30 · D-43] Las
+# filas NUEVAS son `dictamen-v2` (tres bandas); la regla v1 se CONSERVA —con su
+# versión propia— porque las filas viejas la citan y el papel la rotula.
+RULE_SET_VERSION_V1 = "dictamen-v1"
+RULE_SET_VERSION = "dictamen-v2"
 
 
 class _DictamenDefaults(Protocol):
@@ -57,10 +60,13 @@ class EvalInput:
 
 @dataclass(frozen=True)
 class Decision:
-    """Status calculado + basis completo (versión, evidencia, params, notas)."""
+    """Status calculado + basis completo (versión, evidencia, params, notas).
+
+    ``band`` (v2): ``verde``/``amarillo``/``rojo``; ``None`` en la regla v1."""
 
     status: str
     basis: dict
+    band: str | None = None
 
 
 def resolve_params(config: dict | None, settings: _DictamenDefaults) -> DictamenParams:
@@ -103,7 +109,7 @@ def evaluate(inp: EvalInput, params: DictamenParams) -> Decision:
     else:
         status = "normal_operation"
     basis = {
-        "rule_set_version": RULE_SET_VERSION,
+        "rule_set_version": RULE_SET_VERSION_V1,
         "evidence": {
             "severity": inp.severity,
             "pga_g": inp.pga_g,
@@ -124,6 +130,171 @@ def evaluate(inp: EvalInput, params: DictamenParams) -> Decision:
         "notes": "dictamen automático preliminar",
     }
     return Decision(status=status, basis=basis)
+
+
+# ---------------------------------------------------------------------------
+# [T-9.30 · D-43] dictamen-v2 · tres bandas por la aceleración del EDIFICIO
+# ---------------------------------------------------------------------------
+
+#: Banda → status de ``dictamens`` (el CHECK de status no cambia).
+BANDA_STATUS: dict[str, str] = {
+    "verde": "normal_operation",
+    "amarillo": "inhabit_monitor",
+    "rojo": "no_inhabit_inspect",
+}
+#: Orden de PRUDENCIA: la prudencia sube sola y sólo baja con firma.
+ORDEN_BANDA: dict[str, int] = {"verde": 0, "amarillo": 1, "rojo": 2}
+#: Status → banda, para cabezas sin ``band`` (filas v1 e históricas). ``restricted``
+#: no es habitable ⇒ rojo; un status desconocido cae a rojo (default-deny).
+STATUS_BANDA: dict[str, str] = {
+    "normal_operation": "verde",
+    "inhabit_monitor": "amarillo",
+    "restricted": "rojo",
+    "no_inhabit_inspect": "rojo",
+}
+#: Daños que exigen al inspector (D-43).
+DANOS_ROJO = frozenset({"structural", "people_trapped", "gas_leak"})
+#: Daños que piden confirmación. Una categoría DESCONOCIDA también cae aquí: un
+#: reporte de daño nunca puede dejar el VERDE en pie.
+DANOS_AMARILLO = frozenset({"non_structural", "water_leak", "electrical"})
+
+
+def banda_por_danos(damage_keys: tuple[str, ...] | list[str]) -> str:
+    """[F3·r3 · D-43] La banda que exigen SÓLO unos reportes de daño (≥ 1 reporte).
+
+    La usa el worker sobre una cabeza firmada por una PERSONA: lo que esa persona ya
+    vio (la PGA, los daños anteriores) no vuelve a subir; sólo los daños nuevos. Un
+    reporte sin categoría o con una desconocida cuenta como amarillo, igual que en
+    ``evaluate_v2`` (un reporte de daño nunca deja el VERDE en pie)."""
+    return "rojo" if set(damage_keys) & DANOS_ROJO else "amarillo"
+
+
+def banda_de(status: str | None, band: str | None = None) -> str:
+    """Banda de una fila de la cadena: la columna si existe; si no, del status."""
+    if band in ORDEN_BANDA:
+        return band
+    return STATUS_BANDA.get(status or "", "rojo")
+
+
+class _DictamenV2Defaults(Protocol):
+    dictamen_verde_max_g: float
+    dictamen_rojo_min_g: float
+
+
+@dataclass(frozen=True)
+class DictamenParamsV2:
+    """Umbrales v2 resueltos (``rule_sets.config.dictamen_v2`` → defaults)."""
+
+    verde_max_g: float
+    rojo_min_g: float
+
+
+@dataclass(frozen=True)
+class EvalInputV2:
+    """Evidencia de la regla v2. ``severity``/``trigger`` NO deciden: constan.
+
+    ``active_sensors``/``uncalibrated_sensors`` cuentan SOLO sensores con
+    ``status = 'active'``: un retirado ni aporta PGA ni impide el VERDE."""
+
+    pga_g: float | None
+    pga_source: str
+    active_sensors: int
+    uncalibrated_sensors: int
+    damage_reports: int
+    damage_keys: tuple[str, ...]
+    severity: str
+    trigger: str
+    event_id: str | None
+
+
+def resolve_params_v2(config: dict | None, settings: _DictamenV2Defaults) -> DictamenParamsV2:
+    """``config['dictamen_v2']`` (sitio sobre tenant, lo elige quien llama) o
+    defaults. Campo inválido ⇒ su default; par invertido o banda amarilla vacía
+    (verde ≥ rojo) ⇒ el par entero a defaults. ``verde_max_g = 0`` es válido y
+    apaga el automático (nada es VERDE)."""
+    defaults = DictamenParamsV2(
+        verde_max_g=settings.dictamen_verde_max_g,
+        rojo_min_g=settings.dictamen_rojo_min_g,
+    )
+    raw = config.get("dictamen_v2") if isinstance(config, dict) else None
+    if not isinstance(raw, dict):
+        return defaults
+    verde = _field_num(raw, "verde_max_g", defaults.verde_max_g, valid=lambda v: v >= 0)
+    rojo = _field_num(raw, "rojo_min_g", defaults.rojo_min_g, valid=lambda v: v > 0)
+    if verde >= rojo:
+        logger.warning(
+            "dictamen_v2 config: verde_max_g %r ≥ rojo_min_g %r invierte la escala → defaults",
+            verde,
+            rojo,
+        )
+        return defaults
+    return DictamenParamsV2(verde_max_g=verde, rojo_min_g=rojo)
+
+
+def evaluate_v2(inp: EvalInputV2, params: DictamenParamsV2) -> Decision:
+    """Banda por PGA máxima del edificio, daños reportados y calibración.
+
+    Determinista (regla de oro 1). Cada motivo que sostiene la banda queda en
+    ``basis.motivos``: el papel puede decir POR QUÉ, no sólo QUÉ."""
+    motivos: list[str] = []
+    rojo = False
+    amarillo = False
+
+    pga = inp.pga_g
+    if pga is None:
+        motivos.append("sin_pga")
+        amarillo = True
+    elif pga >= params.rojo_min_g:
+        motivos.append("pga_banda_roja")
+        rojo = True
+    elif pga >= params.verde_max_g:
+        motivos.append("pga_banda_amarilla")
+        amarillo = True
+
+    calibrated = inp.active_sensors > 0 and inp.uncalibrated_sensors == 0
+    if not calibrated:
+        motivos.append("sin_calibracion")
+        amarillo = True
+
+    keys = sorted(set(inp.damage_keys))
+    for key in keys:
+        motivos.append(f"dano:{key}")
+        if key in DANOS_ROJO:
+            rojo = True
+        else:
+            amarillo = True  # no estructural o desconocida
+    if inp.damage_reports > 0 and not keys:
+        motivos.append("dano_sin_categoria")
+        amarillo = True
+
+    band = "rojo" if rojo else "amarillo" if amarillo else "verde"
+    if band == "verde":
+        motivos.append("pga_bajo_verde")
+    basis = {
+        "rule_set_version": RULE_SET_VERSION,
+        "band": band,
+        "evidence": {
+            "pga_g": pga,
+            "pga_source": inp.pga_source,
+            "calibrated": calibrated,
+            "active_sensors": inp.active_sensors,
+            "uncalibrated_sensors": inp.uncalibrated_sensors,
+            "damage_reports": inp.damage_reports,
+            "damage_categories": keys,
+            # Constan, NO deciden (D-43: SASMEX deja de forzar NO HABITAR).
+            "severity": inp.severity,
+            "trigger": inp.trigger,
+            "event_id": inp.event_id,
+            "insufficient_data": pga is None,
+        },
+        "params": {
+            "verde_max_g": params.verde_max_g,
+            "rojo_min_g": params.rojo_min_g,
+        },
+        "motivos": motivos,
+        "notes": "dictamen automático preliminar",
+    }
+    return Decision(status=BANDA_STATUS[band], basis=basis, band=band)
 
 
 def _field_num(raw: dict, key: str, default: float, *, valid: Callable[[float], bool]) -> float:

@@ -13,7 +13,7 @@ from collections import Counter
 
 from takab_api.dictamen import bitacora
 from takab_api.dictamen.model import ABSENT, num
-from takab_api.dictamen.rotulos import SEVERIDAD, rotulo
+from takab_api.dictamen.rotulos import BANDA, CATEGORIA_DE_DANO, SEVERIDAD, rotulo
 from takab_api.narrative.base import Narrative, NarrativeFacts, NarrativeRequest
 from takab_api.narrative.prompts import SECTION_TITLES
 
@@ -44,8 +44,21 @@ _SOURCE_TEXT = {
 # fija `tests/dictamen/test_rotulos.py` renderizando la prosa REAL.
 
 
+#: [T-9.34 · D-43] Quién firmó, dicho en la prosa. Con D-43 firman tres y
+#: «firmado por un inspector» sólo es verdad de uno: la llave es `signature_kind`
+#: de la cabeza (`None` = inspector o fila histórica, como siempre).
+_FIRMADO_POR = {
+    "system": "emitido y firmado por el sistema con una regla determinista, sin firma de inspector",
+    "confirmation": "confirmado por una persona autorizada del inmueble, sin firma de inspector",
+}
+
+
 def _resumen(f: NarrativeFacts) -> str:
-    firmado = "firmado por un inspector" if f.verdict_signed else "sin firma de inspector todavía"
+    firmado = (
+        _FIRMADO_POR.get(f.verdict_signature_kind or "", "firmado por un inspector")
+        if f.verdict_signed
+        else "sin firma de inspector todavía"
+    )
     pico = (
         f"con un pico medido de {num(f.peak_pga_g, 3, 'g')}"
         if f.peak_pga_g is not None
@@ -166,11 +179,24 @@ def _por_que(f: NarrativeFacts) -> str:
     # builder había puesto por defecto y no existe—. Estaba impreso en el PDF que se
     # enseñó el 2026-09-13, cuatro líneas encima de «Este dictamen lo firmó un
     # inspector» y de la huella del firmante.
-    partes = [
-        f"El veredicto «{f.verdict_label}» lo eligió y firmó una persona."
-        if f.verdict_signed
-        else f"El veredicto «{f.verdict_label}» lo produjo el conjunto de reglas {version}."
-    ]
+    # [T-9.34 · D-43] …salvo que lo firmara el SISTEMA o que una persona sólo lo
+    # CONFIRMARA: ahí el veredicto sí es del conjunto de reglas.
+    kind = f.verdict_signature_kind if f.verdict_signed else None
+    if kind == "system":
+        origen = (
+            f"El veredicto «{f.verdict_label}» lo produjo y lo firmó el sistema con el "
+            f"conjunto de reglas {version}."
+        )
+    elif kind == "confirmation":
+        origen = (
+            f"El veredicto «{f.verdict_label}» lo produjo el conjunto de reglas y lo "
+            "confirmó sin cambiarlo una persona autorizada del inmueble."
+        )
+    elif f.verdict_signed:
+        origen = f"El veredicto «{f.verdict_label}» lo eligió y firmó una persona."
+    else:
+        origen = f"El veredicto «{f.verdict_label}» lo produjo el conjunto de reglas {version}."
+    partes = [origen]
 
     evidencia = f.basis.get("evidence", {}) if isinstance(f.basis, dict) else {}
     params = f.basis.get("params", {}) if isinstance(f.basis, dict) else {}
@@ -184,7 +210,12 @@ def _por_que(f: NarrativeFacts) -> str:
         # De la nota solo se afirma que EXISTE. Su texto es prosa libre sin
         # validar, la allowlist de `redact` lo deja fuera de la nube a propósito,
         # y ninguna sección del PDF tiene dónde imprimirlo.
-        if f.reason_recorded:
+        if kind in ("system", "confirmation"):
+            partes.append(
+                "El umbral instrumental que lo determinó consta en el dictamen automático "
+                "al que sucede, en la cadena de dictámenes."
+            )
+        elif f.reason_recorded:
             partes.append(
                 "Este dictamen lo firmó una persona: en su registro no consta umbral "
                 "instrumental, y sí consta una nota escrita al firmar."
@@ -203,6 +234,11 @@ def _por_que(f: NarrativeFacts) -> str:
         # la §9 del mismo papel ya enseña en una tabla, y la salida temprana dejaba
         # la sección de un dictamen firmado en dos frases, callándola.
         return " ".join(partes + _cola_de_cadena(f))
+
+    if "verde_max_g" in params or "rojo_min_g" in params:
+        # [F3·r2 · D-43] basis de la regla ``dictamen-v2``: otros umbrales, y la
+        # severidad y los nodos CONSTAN pero NO deciden.
+        return " ".join(partes + _por_que_v2(evidencia, params, f.basis) + _cola_de_cadena(f))
 
     pga = evidencia.get("pga_g")
     no_hab = params.get("pga_no_inhabit_g")
@@ -257,6 +293,91 @@ def _por_que(f: NarrativeFacts) -> str:
     return " ".join(partes + _cola_de_cadena(f))
 
 
+_BANDA_POR_PGA = {
+    "pga_banda_roja": "rojo",
+    "pga_banda_amarilla": "amarillo",
+    "pga_bajo_verde": "verde",
+}
+
+
+def _por_que_v2(evidencia: dict, params: dict, basis: dict) -> list[str]:
+    """[F3·r2 · D-43] El porqué de un basis ``dictamen-v2``: la PGA contra el límite
+    de la banda verde y el umbral de la roja, los daños reportados y la calibración.
+    Sólo lo que consta en el basis; nada de IA (regla de oro 1)."""
+    partes: list[str] = []
+    motivos = [m for m in basis.get("motivos", []) if isinstance(m, str)]
+    verde = params.get("verde_max_g")
+    rojo = params.get("rojo_min_g")
+    umbrales = (
+        f"el límite de la banda verde ({num(verde, 3, 'g')}) y el umbral de la banda "
+        f"roja ({num(rojo, 3, 'g')})"
+        if verde is not None and rojo is not None
+        else "los umbrales de la regla"
+    )
+    pga = evidencia.get("pga_g")
+    if pga is None:
+        partes.append(
+            "No consta medición de aceleración en la ventana del incidente: sin medición "
+            f"el veredicto no puede apoyarse en {umbrales}, y la regla lo deja por eso en "
+            f"{rotulo(BANDA, 'amarillo').replace('BANDA', 'banda')}."
+        )
+    else:
+        banda_pga = next((_BANDA_POR_PGA[m] for m in motivos if m in _BANDA_POR_PGA), None)
+        if banda_pga is None and verde is not None and rojo is not None:
+            banda_pga = "rojo" if pga >= rojo else "amarillo" if pga >= verde else "verde"
+        frase = f"El valor evaluado fue {num(pga, 3, 'g')} frente a {umbrales}"
+        if banda_pga is not None:
+            frase += (
+                f": por aceleración queda en {rotulo(BANDA, banda_pga).replace('BANDA', 'banda')}"
+            )
+        partes.append(frase + ".")
+    danos = [m.split(":", 1)[1] for m in motivos if m.startswith("dano:")]
+    if danos:
+        partes.append(
+            "Se reportaron daños en el inmueble ("
+            + ", ".join(rotulo(CATEGORIA_DE_DANO, d).lower() for d in danos)
+            + "); un daño estructural, una fuga de gas o personas atrapadas llevan la "
+            "banda a roja, y cualquier otro daño a amarilla."
+        )
+    elif "dano_sin_categoria" in motivos:
+        partes.append("Se reportó un daño sin categoría: la regla lo cuenta como amarilla.")
+    if "sin_calibracion" in motivos:
+        partes.append(
+            "Algún sensor activo del inmueble no tiene fuente de calibración declarada: "
+            "la regla no emite banda verde sin calibración."
+        )
+    banda_final = basis.get("band")
+    if isinstance(banda_final, str) and banda_final in BANDA:
+        partes.append(
+            f"Con todo lo anterior, la regla resolvió "
+            f"{rotulo(BANDA, banda_final).replace('BANDA', 'banda')}."
+        )
+    firma = basis.get("firma_sistema")
+    if isinstance(firma, dict) and firma.get("gracia_s") is not None:
+        partes.append(
+            "El sistema lo firmó tras comprobar que el nivel del inmueble llevaba "
+            f"{int(firma['gracia_s'])} s en normal y que no había reportes de daño."
+        )
+    severidad = evidencia.get("severity")
+    if severidad:
+        partes.append(
+            f"La severidad de la alerta era «{rotulo(SEVERIDAD, str(severidad))}»; en esta "
+            "regla consta, pero no decide la banda."
+        )
+    nodos = evidencia.get("node_count")
+    if nodos is not None:
+        partes.append(
+            f"La red contó {nodos} estación(es) y "
+            f"{'sí' if evidencia.get('corroborated') else 'no'} alcanzó el quórum; en esta "
+            "regla consta, pero no decide la banda."
+        )
+    fuente = evidencia.get("pga_source")
+    if fuente and pga is not None:
+        texto = _SOURCE_TEXT.get(fuente, f"«{fuente} · {bitacora.SIN_ROTULO}»")
+        partes.append(f"El pico evaluado provino de {texto}.")
+    return partes
+
+
 def _cola_de_cadena(f: NarrativeFacts) -> list[str]:
     """La cadena de dictámenes, que vale para las dos ramas de `_por_que`."""
     if f.dictamen_count <= 1:
@@ -288,11 +409,21 @@ def _limitaciones(f: NarrativeFacts) -> str:
     # salvedades— llamaba «preliminar y automático» a un dictamen que acababa de
     # firmar una persona. Lo que NO cambia es el alcance de la medición, que es
     # el motivo de que esta sección exista.
-    origen = (
-        "Este dictamen lo firmó un inspector sobre una evaluación automática."
-        if f.verdict_signed
-        else "Este dictamen es preliminar y automático."
-    )
+    kind = f.verdict_signature_kind if f.verdict_signed else None
+    if kind == "system":
+        origen = (
+            "Este dictamen lo emitió y firmó el sistema con una regla determinista, "
+            "sin firma de inspector."
+        )
+    elif kind == "confirmation":
+        origen = (
+            "Este dictamen es automático y lo confirmó una persona autorizada del "
+            "inmueble, sin firma de inspector."
+        )
+    elif f.verdict_signed:
+        origen = "Este dictamen lo firmó un inspector sobre una evaluación automática."
+    else:
+        origen = "Este dictamen es preliminar y automático."
     base = (
         f"{origen} TAKAB no calcula intensidad "
         "macrosísmica ni isosistas, y no localiza sismos: lo que reporta es la sacudida "

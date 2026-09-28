@@ -54,8 +54,14 @@ _REGION = "us-east-2"
 #: Lo que se hace esperar a cada llamada síncrona. Y el hueco máximo tolerado en
 #: el loop: bastante por encima de una vuelta normal, bastante por debajo del
 #: sueño, para que la prueba no dependa de lo rápida que sea la máquina.
-_SUENO_S = 0.6
-_HUECO_MAX_S = 0.3
+#:
+#: ⚠️ Medido en el runner de CI el 2026-09-27: con el render YA en un hilo, el loop se
+#: quedó parado 0,30 y 0,32 s. No es un bloqueo: el render real de fpdf2 es Python puro
+#: y, en su hilo, le quita el GIL al loop a ráfagas. Con 0,6 s de sueño y 0,3 de umbral
+#: el margen era nulo. Un bloqueo de verdad deja el loop parado AL MENOS el sueño entero,
+#: así que 0,9 de sueño y 0,6 de umbral separan las dos cosas con holgura a los dos lados.
+_SUENO_S = 0.9
+_HUECO_MAX_S = 0.6
 
 
 @pytest.fixture

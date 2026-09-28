@@ -49,6 +49,8 @@ ROTULOS: dict[str, str] = {
     "close": "INCIDENTE CERRADO",
     "damage_people_at_risk": "PERSONAS EN RIESGO REPORTADAS EN SITIO",
     "dictamen": "DICTAMEN EMITIDO",
+    "dictamen_confirm_requested": "DICTAMEN POR CONFIRMAR · SE AVISA A LA BRIGADA",
+    "dictamen_confirmed": "DICTAMEN CONFIRMADO · HABITABLE, REINGRESO AUTORIZADO",
     "dictamen_request": "DICTAMEN SOLICITADO",
     "dictamen_signed": "DICTAMEN FIRMADO · HABITABLE, REINGRESO AUTORIZADO",
     "door_release": "RETENEDORES DE PUERTA LIBERADOS",

@@ -1,5 +1,5 @@
 // 2.7 · Certificado de reingreso — presentacional. Folio, firmante, vigencia y
-// sello "FIRMA DIGITAL · INSPECTOR". El PDF (mismo artefacto de la consola) se
+// sello del tipo de firma (T-9.33). El PDF (mismo artefacto de la consola) se
 // descarga y cachea offline; sin PDF aún, se declara (no se finge).
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
@@ -28,7 +28,10 @@ export function DictamenCertificate(props: {
           <Field label="FOLIO" value={props.cert.folio} />
           <Field label="FIRMANTE" value={props.cert.signer} />
         </View>
-        <Field label="FIRMADO" value={props.cert.signedAt} />
+        <View style={styles.row}>
+          <Field label="FIRMADO" value={props.cert.signedAt} />
+          {props.cert.band !== null ? <Field label="BANDA" value={props.cert.band} /> : null}
+        </View>
 
         <View style={styles.seal}>
           <Text style={styles.sealText}>{props.cert.seal}</Text>

@@ -2572,10 +2572,32 @@
       "DictamenOut": {
         "description": "Fila de ``dictamens``: ``signed_by`` NULL = preliminar; cadena vía supersedes.",
         "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
           "basis": {
             "additionalProperties": true,
             "title": "Basis",
             "type": "object"
+          },
+          "confirmed_by_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By Role"
           },
           "created_at": {
             "format": "date-time",
@@ -2591,6 +2613,17 @@
             "format": "uuid",
             "title": "Incident Id",
             "type": "string"
+          },
+          "signature_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Kind"
           },
           "signed_by": {
             "anyOf": [
@@ -7051,6 +7084,10 @@
             "title": "Classify Incident",
             "type": "boolean"
           },
+          "confirm_dictamen": {
+            "title": "Confirm Dictamen",
+            "type": "boolean"
+          },
           "damage_report_submit": {
             "title": "Damage Report Submit",
             "type": "boolean"
@@ -7217,7 +7254,8 @@
           "manage_privacy_erasure",
           "cctv_read",
           "cctv_video",
-          "deploy_firmware"
+          "deploy_firmware",
+          "confirm_dictamen"
         ],
         "title": "MeActions",
         "type": "object"
@@ -7467,6 +7505,28 @@
       "MobileDictamenOut": {
         "description": "[T-2.12 · 2.7] Certificado de reingreso para el móvil: metadatos del\ndictamen FIRMADO + PDF presignado (el MISMO artefacto que genera la consola,\nentregado por ``dictamen_read``; jamás un PDF paralelo).",
         "properties": {
+          "band": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Band"
+          },
+          "confirmed_by_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmed By Role"
+          },
           "folio": {
             "anyOf": [
               {
@@ -7498,6 +7558,17 @@
               }
             ],
             "title": "Pdf Url"
+          },
+          "signature_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature Kind"
           },
           "signed": {
             "title": "Signed",
@@ -15334,7 +15405,7 @@
     },
     "/incidents/{incident_id}/dictamens": {
       "get": {
-        "description": "Cadena de dictámenes del incidente (más reciente primero). 404 si no visible.",
+        "description": "Cadena de dictámenes del incidente (más reciente primero). 404 si no visible\n(otro tenant, o fuera del alcance por inmueble del portador).",
         "operationId": "list_dictamens_incidents__incident_id__dictamens_get",
         "parameters": [
           {
@@ -15420,6 +15491,57 @@
           }
         },
         "summary": "Sign Dictamen"
+      }
+    },
+    "/incidents/{incident_id}/dictamens/{dictamen_id}/confirm": {
+      "post": {
+        "description": "[T-9.31 · D-43] CONFIRMA el dictamen vigente que emitió la regla.\n\nInserta una fila NUEVA con el mismo status y banda que la cabeza, firmada por\nquien confirma (``signature_kind='confirmation'``) y que la supersede. No es un\nveredicto propio: por eso sólo la CABEZA vigente (409 si no), sólo sin firmar\n(409 si ya lo está), nunca un ROJO (403: ése lo firma el inspector por\n``POST /incidents/{id}/dictamens``) y SÓLO un AMARILLO (409 con un VERDE —lo\nfirma el sistema tras la gracia— o con una fila v1 sin banda). [D-49] Tampoco con\nel edificio en movimiento (409, R1) ni con un daño ROJO que la última firma humana\nno vio (409, R4); una escalada al inspector pendiente NO lo impide (R3). Todo\ndentro del lock del incidente.",
+        "operationId": "confirm_dictamen_incidents__incident_id__dictamens__dictamen_id__confirm_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "incident_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Incident Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dictamen_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Dictamen Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DictamenOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Confirm Dictamen"
       }
     },
     "/incidents/{incident_id}/epicenter": {

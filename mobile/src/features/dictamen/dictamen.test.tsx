@@ -36,6 +36,51 @@ describe("certificateView", () => {
     expect(v.seal).not.toMatch(/HSM|TPM/);
   });
 
+  // [T-9.33 · D-43] El sello sale del `signature_kind`, nunca de `signed_by`: un
+  // VERDE que emitió el sistema no puede llevar «FIRMA DIGITAL · INSPECTOR».
+  it("el sello sale del signature_kind (sistema, confirmación, inspector)", () => {
+    const sistema = certificateView(
+      dictamen({ signature_kind: "system" } as Partial<MobileDictamenOut>),
+    )!;
+    expect(sistema.seal).toBe("EMITIDO POR EL SISTEMA · REGLA AUTOMÁTICA");
+    // Ni el identificador interno del firmante del sistema.
+    expect(sistema.signer).toBe("SISTEMA");
+    expect(
+      certificateView(dictamen({ signature_kind: "confirmation" } as Partial<MobileDictamenOut>))!
+        .seal,
+    ).toBe("CONFIRMADO POR PERSONAL AUTORIZADO");
+    expect(
+      certificateView(dictamen({ signature_kind: "inspector" } as Partial<MobileDictamenOut>))!
+        .seal,
+    ).toBe("FIRMA DIGITAL · INSPECTOR");
+  });
+
+  // [F3·r3] La API ya publica tipo, banda y rol: el certificado los usa y NUNCA
+  // imprime el identificador interno de quien firmó (ni el prefijo del UUID).
+  it("nunca un UUID: el firmante sale del tipo y del rol", () => {
+    const insp = certificateView(dictamen({ signature_kind: "inspector" }))!;
+    expect(insp.signer).toBe("INSPECTOR");
+    expect(insp.signer).not.toMatch(/70000000/);
+    const hist = certificateView(dictamen({ signature_kind: null }))!;
+    expect(hist.signer).toBe("INSPECTOR");
+    const conf = certificateView(
+      dictamen({ signature_kind: "confirmation", confirmed_by_role: "brigadista" }),
+    )!;
+    expect(conf.seal).toBe("CONFIRMADO POR BRIGADISTA");
+    expect(conf.signer).toBe("BRIGADISTA");
+    const sis = certificateView(
+      dictamen({ signature_kind: "system", band: "verde", signed_by: null }),
+    )!;
+    expect(sis.seal).toBe("EMITIDO POR EL SISTEMA · REGLA AUTOMÁTICA · BANDA VERDE");
+    expect(sis.signer).toBe("SISTEMA");
+  });
+
+  it("la banda se rotula en el certificado; sin banda (histórico) no se inventa", () => {
+    expect(certificateView(dictamen({ band: "amarillo" }))!.band).toBe("AMARILLO");
+    expect(certificateView(dictamen({ band: null }))!.band).toBeNull();
+    expect(certificateView(dictamen({ band: "morado" }))!.band).toBeNull();
+  });
+
   it("no habitable ⇒ habitable=false", () => {
     expect(certificateView(dictamen({ status: "restricted", habitable: false }))!.habitable).toBe(
       false,

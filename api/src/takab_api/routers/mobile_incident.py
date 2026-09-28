@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -30,11 +31,14 @@ from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.deps import get_session, require_roles
 from takab_api.auth.matrix import roles_with_action
 from takab_api.commands.intent import canonical_intent, intent_sha256, intent_signature_valid
+from takab_api.dictamen.rules import banda_de
 from takab_api.queries import mobile as q
+from takab_api.reingreso import HABITABLES
 from takab_api.routers._common import http_error, integrity_error
 from takab_api.routers._s3 import presign_get, presign_put, read_object
 from takab_api.routers.incidents import CONSOLE_ROLES
 from takab_api.routers.reports import ORIGEN_CERTIFICADO_MOVIL, generate_report
+from takab_api.schemas.dictamens import rol_de_confirmacion
 from takab_api.schemas.mobile import (
     CheckinIn,
     CheckinOut,
@@ -68,7 +72,8 @@ _require_evidence = require_roles(*_EVIDENCE_ROLES)
 _require_dictamen_read = require_roles(*_DICTAMEN_READ_ROLES)
 
 # Dictamen HABITABLE: libera el reingreso (spec §7 · 2.7 "HABITAR").
-_HABITABLE = frozenset({"normal_operation", "inhabit_monitor"})
+# [T-9.32 · D-43] UNA sola copia, en `reingreso.py`.
+_HABITABLE = HABITABLES
 
 router = APIRouter()
 log = logging.getLogger(__name__)
@@ -393,17 +398,21 @@ async def read_dictamen(
     hay, se genera aquí con la MISMA función que la consola (ver `_certificado`).
     """
     incident = await _incident_in_scope(conn, claims, incident_id)
-    row = (await conn.execute(q.LATEST_SIGNED_DICTAMEN, {"incident": str(incident_id)})).first()
-    if row is None:
+    head = (await conn.execute(q.CABEZA_DEL_CERTIFICADO, {"incident": str(incident_id)})).first()
+    if head is None or head.signed_by is None:
+        # [F3·r2 · D-43] Sin dictamen, o la CABEZA sin firmar (una subida de la
+        # regla sobre una firma, o el preliminar): NO hay certificado vigente. Se
+        # publican status y banda de la cabeza para que la app diga POR QUÉ.
         return MobileDictamenOut(
             incident_id=incident_id,
             signed=False,
             folio=None,
-            status=None,
+            status=head.status if head is not None else None,
             signed_by=None,
             signed_at=None,
             habitable=False,
             pdf_url=None,
+            band=banda_de(head.status, head.band) if head is not None else None,
         )
     settings = Settings()
     pdf_url: str | None = None
@@ -419,12 +428,16 @@ async def read_dictamen(
     return MobileDictamenOut(
         incident_id=incident_id,
         signed=True,
-        folio=row.dictamen_id,
-        status=row.status,
-        signed_by=row.signed_by,
-        signed_at=row.created_at,
-        habitable=row.status in _HABITABLE,
+        folio=head.dictamen_id,
+        status=head.status,
+        # El firmante del SISTEMA nunca sale como un id: su rótulo es el tipo.
+        signed_by=None if head.signature_kind == "system" else head.signed_by,
+        signed_at=head.created_at,
+        habitable=head.status in _HABITABLE,
         pdf_url=pdf_url,
+        signature_kind=head.signature_kind,
+        band=banda_de(head.status, head.band),
+        confirmed_by_role=rol_de_confirmacion(head.signature_kind, head.basis),
     )
 
 
@@ -512,6 +525,16 @@ async def submit_damage_report(
     riesgo, se registra un ``incident_action`` que el orchestrator OPS convierte
     en notificación INMEDIATA al SOC (email por la cascada existente)."""
     incident = await _incident_in_scope(conn, claims, incident_id)
+    # [T-9.30 · D-43 §10] Sobre un incidente CERRADO se acepta hasta la ventana de
+    # re-evaluación del dictamen (72 h desde la APERTURA): es la misma ventana en la
+    # que el worker todavía sube la banda por un daño tardío. Pasada, el reporte no
+    # movería ningún dictamen y se rechaza en vez de guardarse como si contara.
+    if incident.state == "closed":
+        ventana_s = Settings().dictamen_reevaluacion_s
+        if (datetime.now(tz=UTC) - incident.opened_at).total_seconds() > ventana_s:
+            raise http_error(
+                409, "incidente cerrado hace más de 72 h: el reporte ya no cambia el dictamen"
+            )
     people_at_risk = any(c.key == "people_trapped" for c in body.categories)
 
     try:

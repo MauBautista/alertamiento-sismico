@@ -286,6 +286,14 @@ ACTIONS: tuple[str, ...] = (
     # civil, y las imágenes de las personas de su edificio, menos.
     "cctv_read",
     "cctv_video",
+    # [T-9.31 · D-43] ``confirm_dictamen`` — CONFIRMAR el dictamen AMARILLO (o VERDE)
+    # que emitió la regla ``dictamen-v2`` y que todavía no está firmado. No es firmar
+    # un veredicto propio (eso sigue siendo ``sign_dictamen``, del inspector): es la
+    # persona presente en el inmueble diciendo «revisé, coincide». Por eso la recibe
+    # la brigada y la administración del inmueble además del inspector. Un ROJO NO se
+    # confirma por esta vía (403): ése lo firma el inspector. Es también el círculo
+    # del push DICTAMEN_CONFIRM. El occupant NO: su superficie es crisis/check-in.
+    "confirm_dictamen",
 )
 
 
@@ -328,6 +336,7 @@ def _actions(
     manage_privacy_erasure: bool = False,
     cctv_read: bool = False,
     cctv_video: bool = False,
+    confirm_dictamen: bool = False,
 ) -> dict[str, bool]:
     return {
         "ack_incident": ack_incident,
@@ -367,6 +376,7 @@ def _actions(
         "manage_privacy_erasure": manage_privacy_erasure,
         "cctv_read": cctv_read,
         "cctv_video": cctv_video,
+        "confirm_dictamen": confirm_dictamen,
     }
 
 
@@ -457,6 +467,8 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         dictamen_read=True,
         panel_read=True,
         movement_alert=True,
+        # [T-9.31 · D-43] Confirma el AMARILLO de la regla (no un ROJO).
+        confirm_dictamen=True,
     ),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),
@@ -478,6 +490,9 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # El CLIP no: un perito estructural no necesita once minutos de caras para decir
         # si el edificio es habitable, y `B.4` pide el acceso lo más estrecho posible.
         cctv_read=True,
+        # [T-9.31 · D-43] Confirma el AMARILLO de la regla; además FIRMA cualquier
+        # estado por ``sign_dictamen``.
+        confirm_dictamen=True,
     ),
     # [T-2.03] Tácticos de campo (RBAC §4): deslizar-para-activar individual,
     # silenciar = retirada de demanda, forense y headcount. [T-9.20 · D-42] Absorbe
@@ -492,6 +507,13 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         dictamen_read=True,
         panel_read=True,
         movement_alert=True,
+        # [T-9.31 · D-43] Quien está en el inmueble confirma el AMARILLO de la regla.
+        confirm_dictamen=True,
+        # [F3·r2 · D-43] …y si no lo puede confirmar (daño que exige inspección, o
+        # no está de acuerdo) lo ESCALA: pide el dictamen técnico de SU inmueble (el
+        # endpoint aplica su ``site_scope``). Sin esto la pantalla de confirmación
+        # dejaba a la brigada sin salida.
+        request_dictamen=True,
     ),
     # [T-2.03] occupant: SOLO su check-in y su voto de pánico (quórum 2/30 s).
     "occupant": _actions(checkin_submit=True, panic_vote=True),

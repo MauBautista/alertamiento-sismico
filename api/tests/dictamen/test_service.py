@@ -171,6 +171,9 @@ def _cleanup(conn: psycopg.Connection, tenant: str) -> None:
         ]
         conn.execute("DELETE FROM incident_actions WHERE tenant_id = %s", (tenant,))
         conn.execute("DELETE FROM dictamens WHERE tenant_id = %s", (tenant,))
+        # [T-9.30] el worker v2 lee daños y tiers: sus siembras también se purgan.
+        conn.execute("DELETE FROM damage_reports WHERE tenant_id = %s", (tenant,))
+        conn.execute("DELETE FROM rule_evaluations WHERE tenant_id = %s", (tenant,))
         conn.execute("DELETE FROM incidents WHERE tenant_id = %s", (tenant,))
         if event_ids:
             conn.execute("DELETE FROM quorum_votes WHERE event_id = ANY(%s)", (event_ids,))
@@ -209,10 +212,13 @@ def test_emits_preliminary_dictamen(scenario: _Scenario) -> None:
     assert basis["evidence"]["severity"] == "warning"
     assert basis["evidence"]["pga_g"] == pytest.approx(0.06)
 
+    # [T-9.33 · D-43] Un AMARILLO sin firmar deja además la petición de confirmación
+    # (el ancla del push DICTAMEN_CONFIRM). La acción `dictamen` sigue siendo una.
     acts = scenario.actions(seeded["incident"])
-    assert [a["kind"] for a in acts] == ["dictamen"]
-    assert acts[0]["actor"] == "system"
-    assert acts[0]["payload"]["status"] == "inhabit_monitor"
+    assert sorted(a["kind"] for a in acts) == ["dictamen", "dictamen_confirm_requested"]
+    [act] = [a for a in acts if a["kind"] == "dictamen"]
+    assert act["actor"] == "system"
+    assert act["payload"]["status"] == "inhabit_monitor"
 
 
 def test_high_pga_yields_no_inhabit(scenario: _Scenario) -> None:
@@ -238,36 +244,53 @@ def test_rerun_is_idempotent(scenario: _Scenario) -> None:
     assert len(first) == 1
     assert _run(scenario.conn) == []
     assert len(scenario.dictamens(seeded["incident"])) == 1
-    assert len(scenario.actions(seeded["incident"])) == 1
+    # [T-9.33] `dictamen` + `dictamen_confirm_requested` del AMARILLO: la segunda
+    # pasada no añade NINGUNA de las dos.
+    assert sorted(a["kind"] for a in scenario.actions(seeded["incident"])) == [
+        "dictamen",
+        "dictamen_confirm_requested",
+    ]
 
 
 # ---------------------------------------------------------------- versionado
 
 
-def test_later_corroboration_supersedes_unsigned_head(scenario: _Scenario) -> None:
-    """El quórum llega DESPUÉS del preliminar → corrección = fila nueva."""
+def _pico_tardio(sc: _Scenario, ids: dict, pga: float) -> None:
+    """Un pico que llega DESPUÉS del preliminar, dentro de la ventana post."""
+    sc.conn.execute(
+        "INSERT INTO waveform_features_1s (ts, tenant_id, site_id, sensor_id, channel, pga_g) "
+        "VALUES (%s,%s,%s,%s,'ENZ',%s)",
+        (BASE + timedelta(seconds=120), sc.tenant, ids["site"], ids["sensor"], pga),
+    )
+    sc.conn.commit()
+
+
+def test_a_later_higher_band_supersedes_unsigned_head(scenario: _Scenario) -> None:
+    """[T-9.30] La evidencia sube DESPUÉS del preliminar → corrección = fila nueva.
+    (En v1 lo hacía el quórum; en v2 la corroboración ya no decide.)"""
     seeded = scenario.seed_incident(severity="info", pga_g=0.01)
     _run(scenario.conn)
     head = scenario.dictamens(seeded["incident"])[0]
-    assert head["status"] == "normal_operation"
+    assert head["status"] == "inhabit_monitor"  # sensor sin calibrar ⇒ AMARILLO
 
-    scenario.corroborate(seeded["incident"], seeded["sensor"], nodes=3)
+    _pico_tardio(scenario, seeded, 0.30)
     _run(scenario.conn)
 
     rows = scenario.dictamens(seeded["incident"])
     assert len(rows) == 2
     new = rows[1]
-    assert new["status"] == "inhabit_monitor"  # regla de nodos: eleva
+    assert new["status"] == "no_inhabit_inspect"
     assert new["supersedes_dictamen_id"] == head["dictamen_id"]
     assert new["signed_by"] is None
 
 
-def test_signed_head_is_never_superseded_automatically(scenario: _Scenario) -> None:
-    """El juicio del inspector manda: el servicio jamás corrige un firmado."""
+def test_signed_head_is_never_lowered_automatically(scenario: _Scenario) -> None:
+    """[T-9.30] La prudencia sólo baja con firma: un NO HABITAR firmado no se
+    corrige solo, aunque la evidencia sea menor."""
     seeded = scenario.seed_incident(severity="info", pga_g=0.01)
     _run(scenario.conn)
     head = scenario.dictamens(seeded["incident"])[0]
-    scenario.sign_head(seeded["incident"], str(head["dictamen_id"]), "normal_operation")
+    scenario.sign_head(seeded["incident"], str(head["dictamen_id"]), "no_inhabit_inspect")
 
     scenario.corroborate(seeded["incident"], seeded["sensor"], nodes=3)
     assert _run(scenario.conn) == []
@@ -287,21 +310,26 @@ def test_unchanged_status_does_not_duplicate(scenario: _Scenario) -> None:
 
 
 def test_rule_set_config_overrides_thresholds(scenario: _Scenario) -> None:
-    """config.dictamen del rule_set del tenant sube el umbral de monitoreo."""
+    """config.dictamen_v2 del rule_set del tenant sube el umbral del VERDE."""
     seeded = scenario.seed_incident(severity="info", pga_g=0.10)
+    scenario.conn.execute(
+        "UPDATE sensors SET calibration_source = 'fabricante' WHERE sensor_id = %s",
+        (seeded["sensor"],),
+    )
     scenario.conn.execute(
         "INSERT INTO rule_sets (tenant_id, scope_type, scope_id, version, "
         "is_active, config) VALUES (%s,'tenant',%s,1,true,%s::jsonb)",
         (
             scenario.tenant,
             scenario.tenant,
-            '{"dictamen": {"pga_no_inhabit_g": 0.5, "pga_monitor_g": 0.2}}',
+            '{"dictamen_v2": {"verde_max_g": 0.2, "rojo_min_g": 0.5}}',
         ),
     )
     scenario.conn.commit()
     _run(scenario.conn)
     rows = scenario.dictamens(seeded["incident"])
     assert rows and rows[0]["status"] == "normal_operation"  # 0.10 < 0.2 configurado
+    assert rows[0]["basis"]["params"] == {"verde_max_g": 0.2, "rojo_min_g": 0.5}
 
 
 # ---------------------------------------------------- backfill + basis v2 (T-1.48)
@@ -361,7 +389,8 @@ def test_backfill_applies_even_with_signed_head(scenario: _Scenario) -> None:
     ids = scenario.seed_incident(pga_g=0.06)
     created = _run(scenario.conn)
     assert len(created) == 1
-    scenario.sign_head(ids["incident"], created[0], "inhabit_monitor")
+    # NO HABITAR firmado: ninguna banda es más alta, así que no hay fila nueva.
+    scenario.sign_head(ids["incident"], created[0], "no_inhabit_inspect")
     # pico tardío mayor, dentro de la ventana post
     scenario.conn.execute(
         "INSERT INTO waveform_features_1s (ts, tenant_id, site_id, sensor_id, channel, pga_g) "
@@ -388,7 +417,7 @@ def test_late_sasmex_peak_enters_post_window(scenario: _Scenario) -> None:
     _run(scenario.conn)
     rows = scenario.dictamens(ids["incident"])
     assert len(rows) == 1
-    assert rows[0]["status"] == "no_inhabit_inspect"  # 0.30 ≥ 0.25
+    assert rows[0]["status"] == "no_inhabit_inspect"  # 0.30 ≥ rojo_min_g (0.10)
     ev = rows[0]["basis"]["evidence"]
     assert ev["pga_source"] == "features"
     assert ev["insufficient_data"] is False
@@ -397,13 +426,13 @@ def test_late_sasmex_peak_enters_post_window(scenario: _Scenario) -> None:
 
 
 def test_basis_v2_insufficient_data_without_any_evidence(scenario: _Scenario) -> None:
-    """Sin features, sin max_pga_g y sin nodos: el basis lo declara — el
-    veredicto se sostiene solo en la severidad de la alerta."""
+    """Sin features, sin max_pga_g y sin nodos: el basis lo declara. [T-9.30 ·
+    D-43] La severidad (SASMEX) ya no fuerza NO HABITAR: sin PGA ⇒ AMARILLO."""
     ids = scenario.seed_incident(severity="critical", pga_g=None)
     _run(scenario.conn)
     rows = scenario.dictamens(ids["incident"])
     assert len(rows) == 1
-    assert rows[0]["status"] == "no_inhabit_inspect"  # fail-safe por severidad
+    assert rows[0]["status"] == "inhabit_monitor"  # sin PGA ⇒ AMARILLO, no ROJO
     ev = rows[0]["basis"]["evidence"]
     assert ev["pga_source"] == "none"
     assert ev["insufficient_data"] is True
@@ -478,11 +507,11 @@ def test_una_CORRECCION_arrastra_el_umbral_verbatim(scenario: _Scenario) -> None
     run_dictamen_pass(scenario.conn, Settings(), now=NOW)
     primero = _congelado(scenario.dictamens(caso["incident"])[0])
 
-    # El inmueble se reconfigura DESPUÉS, y el quórum corrobora ⇒ corrección.
+    # El inmueble se reconfigura DESPUÉS, y un pico tardío sube la banda ⇒ corrección.
     _rule_set(
         scenario, caso["site"], version=8, umbrales=_UMBRAL_V2, cuando=BASE + timedelta(days=3)
     )
-    scenario.corroborate(caso["incident"], caso["sensor"])
+    _pico_tardio(scenario, caso, 0.30)
     run_dictamen_pass(scenario.conn, Settings(), now=NOW)
 
     filas = scenario.dictamens(caso["incident"])

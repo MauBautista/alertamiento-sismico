@@ -47,6 +47,7 @@ from takab_api.dictamen.bitacora import SIN_ROTULO
 # declararlos aquí los habría dejado fuera de él.
 from takab_api.dictamen.model import (
     CLASIFICACION_NO_LEGIBLE,
+    ROL_CONFIRMANTE_NO_CONSTA,
     SIN_CLASIFICAR,
     ZONA_POR_DEFECTO,
 )
@@ -226,6 +227,49 @@ def firmante(nombre: str | None) -> str:
     return f"{rol} · {limpio}" if limpio else rol
 
 
+#: [T-9.30 · D-43] `dictamens.band` (CHECK del DDL). Femenino: es «la banda».
+BANDA: dict[str, str] = {
+    "verde": "BANDA VERDE",
+    "amarillo": "BANDA AMARILLA",
+    "rojo": "BANDA ROJA",
+}
+
+#: [T-9.34 · D-43] La regla que emite y firma el VERDE del sistema, cuando la fila
+#: no la trae en su `basis` (el builder pone «sin versión» por defecto).
+REGLA_DEL_SISTEMA = "dictamen-v2"
+
+
+def banda(valor: str | None) -> str | None:
+    """`None` si la fila no tiene banda (v1): no se inventa una."""
+    return rotulo(BANDA, valor) if valor else None
+
+
+def firma(
+    kind: str | None,
+    nombre: str | None,
+    *,
+    rol: str | None = None,
+    regla: str | None = None,
+    banda_: str | None = None,
+) -> str:
+    """[T-9.34 · D-43] Quién firmó el dictamen, leído de `signature_kind`.
+
+    NUNCA de `signed_by`: la firma del sistema lleva la identidad fija
+    `SYSTEM_DICTAMEN_SIGNER_UUID`, y el rol que se deriva de la matriz
+    (`rol_que_firma`) es el del INSPECTOR. `inspector` y `None` (histórico) salen
+    como siempre (`firmante`).
+    """
+    if kind == "system":
+        version = regla if regla and regla != "sin versión" else REGLA_DEL_SISTEMA
+        cola = f" · banda {rotulo(BANDA, banda_).removeprefix('BANDA ')}" if banda_ else ""
+        return f"EMITIDO POR EL SISTEMA · regla {version}{cola}"
+    if kind == "confirmation":
+        quien = rotulo(ROL, rol) if rol else ROL_CONFIRMANTE_NO_CONSTA
+        limpio = (nombre or "").strip()
+        return f"CONFIRMADO POR {quien}" + (f" · {limpio}" if limpio else "")
+    return firmante(nombre)
+
+
 #: Autores de sistema de `incident_actions.actor` (`system:<quién>`), por su
 #: primer segmento.
 _SISTEMA: dict[str, str] = {
@@ -237,10 +281,13 @@ _SISTEMA: dict[str, str] = {
     "backfill": "recuperación de datos",
     "demo_mode": "modo demostración",
     "config_sync": "sincronización de configuración",
+    # [T-9.30 · D-43] El worker de dictamen: emite, corrige, pide confirmación y
+    # firma el VERDE. Se nombra la REGLA y no un identificador interno.
+    "dictamen": "regla de dictamen dictamen-v2",
 }
 
 
-def firmantes_de_la_cadena(cadena: Sequence[tuple[str | None, str | None]]) -> dict[str, str]:
+def firmantes_de_la_cadena(cadena: Sequence[tuple[str | None, ...]]) -> dict[str, str]:
     """`sub` → cómo se nombra en la cronología a quien firmó un dictamen de la cadena.
 
     `cadena` son pares `(signed_by, firmante_nombre)` de la CABEZA a la cola. Quien
@@ -250,8 +297,20 @@ def firmantes_de_la_cadena(cadena: Sequence[tuple[str | None, str | None]]) -> d
     la cronología no puede ser la puerta por la que entre un dato personal nuevo.
     """
     salida: dict[str, str] = {}
-    for i, (sub, nombre) in enumerate(cadena):
-        if not sub or sub in salida:
+    for i, (sub, nombre, *resto) in enumerate(cadena):
+        # [T-9.34 · D-43] Tercer y cuarto elemento opcionales: `signature_kind` y el
+        # rol de quien confirmó. La firma del SISTEMA no se mapea: sus acciones van
+        # como `system:dictamen`, nunca como `user:<uuid fijo>`.
+        kind = resto[0] if resto else None
+        rol = resto[1] if len(resto) > 1 else None
+        if not sub or sub in salida or kind == "system":
+            continue
+        if kind == "confirmation":
+            quien = rotulo(ROL, rol) if rol else ROL_CONFIRMANTE_NO_CONSTA
+            limpio = (nombre or "").strip()
+            salida[sub] = (
+                (f"{quien} · {limpio}" if limpio else quien) if i == 0 else f"{quien} {sub[:8]}"
+            )
             continue
         salida[sub] = firmante(nombre) if i == 0 else f"{rol_que_firma()} {sub[:8]}"
     return salida

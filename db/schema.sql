@@ -412,8 +412,25 @@ CREATE TABLE dictamens (
   basis       jsonb NOT NULL,
   signed_by   uuid,                                  -- NULL = preliminar automático sin firma
   supersedes_dictamen_id uuid REFERENCES dictamens,  -- [ANALISIS-00] cadena de versiones
-  created_at  timestamptz NOT NULL DEFAULT now()
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  -- [T-9.31 · D-43 · 0073] QUIÉN firmó (signed_by NOT NULL sigue siendo «firmado»):
+  -- inspector | system (VERDE tras la gracia) | confirmation (AMARILLO confirmado).
+  -- NULL = sin firma o fila histórica. La identidad del sistema es la constante
+  -- `takab_api.dictamen.sistema.SYSTEM_DICTAMEN_SIGNER_UUID` y va SÓLO con 'system'.
+  signature_kind text,
+  band        text,                                  -- [T-9.30] dictamen-v2; NULL = fila v1
+  CONSTRAINT ck_dictamens_signature_kind
+    CHECK (signature_kind IN ('inspector','system','confirmation')),
+  CONSTRAINT ck_dictamens_band CHECK (band IN ('verde','amarillo','rojo')),
+  -- [F3·r2] Las DOS direcciones, también con signature_kind NULL.
+  CONSTRAINT ck_dictamens_firmante
+    CHECK ((signature_kind IS NULL OR signed_by IS NOT NULL)
+           AND (signature_kind IS NOT DISTINCT FROM 'system')
+             = (signed_by IS NOT DISTINCT FROM '00000000-0000-4000-8000-00000000d043'::uuid))
 );
+-- [F3·r3] La versión de la restricción, como la escribe la 0073 (su guarda la lee).
+COMMENT ON CONSTRAINT ck_dictamens_firmante ON dictamens IS
+  'ck_dictamens_firmante v2 · NULL-segura · F3';
 CREATE INDEX idx_dictamens_incident ON dictamens (incident_id, created_at DESC);
 CREATE TRIGGER trg_dictamens_append_only
   BEFORE UPDATE OR DELETE ON dictamens
@@ -2057,6 +2074,7 @@ CREATE TRIGGER trg_damage_reports_append_only
   BEFORE UPDATE OR DELETE ON damage_reports
   FOR EACH ROW EXECUTE FUNCTION forbid_update_delete();
 GRANT SELECT, INSERT ON damage_reports TO takab_app;
+GRANT SELECT ON damage_reports TO takab_ingest;  -- [T-9.30 · 0073] el worker del dictamen lee los daños
 
 ALTER TABLE damage_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE damage_reports FORCE  ROW LEVEL SECURITY;

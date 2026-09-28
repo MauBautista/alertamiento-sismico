@@ -16,6 +16,7 @@ import {
 
 import { etiquetaRol } from "@/auth/roles";
 import { esFaseConocida } from "@/features/alert/machine";
+import { textoReingresoAutorizado, type Firma } from "@/features/dictamen/confirmacion";
 import { avisoDeReingreso, estadoDelInmueble } from "@/features/reentry/avisoReingreso";
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, slopHasta, space, touch } from "@/ui/theme";
@@ -83,6 +84,9 @@ export function HomeView(props: {
   onOpenRutas: () => void;
   onOpenDirectorio: () => void;
   onOpenPanic?: () => void;
+  /** [F3·r3 · D-43] La firma vigente que autorizó el reingreso (tipo, banda,
+   *  rol que confirma). Ausente ⇒ el cartel no le atribuye la firma a nadie. */
+  firmaReingreso?: Firma | null;
 }) {
   const { data } = props;
   // [T-9.04] El veredicto que sobrevive al cierre del incidente. Lo decide el
@@ -124,8 +128,7 @@ export function HomeView(props: {
             testID="reentry-glyph"
           />
           <Text style={styles.reentryText}>
-            REINGRESO AUTORIZADO — el dictamen técnico del inspector aprobó el
-            reingreso al inmueble.
+            REINGRESO AUTORIZADO — {textoReingresoAutorizado(props.firmaReingreso)}
           </Text>
         </View>
       ) : null}

@@ -2804,3 +2804,22 @@
   user-select: all;
   line-height: 1.45;
 }
+
+/* [T-9.34 · D-43] La cadena de dictámenes, versión a versión: tipo de firma y banda. */
+.triage-detail__chain-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-family: var(--tk-font-mono);
+  font-size: 10.5px;
+  color: var(--tk-fg-2);
+  letter-spacing: 0.04em;
+  display: grid;
+  gap: 2px;
+}
+.triage-detail__band {
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.triage-detail__band--ok { color: var(--tk-status-normal); }
+.triage-detail__band--warn { color: var(--tk-status-warning); }
+.triage-detail__band--crit { color: var(--tk-status-critical-text); }

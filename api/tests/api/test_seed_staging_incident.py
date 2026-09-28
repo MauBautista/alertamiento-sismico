@@ -200,6 +200,8 @@ async def test_crisis_vuelve_a_la_toma_de_crisis_tras_un_dictamen_firmado(
     todavía no tiene dictamen.
     """
     primera = await _crisis(variables)
+    # [D-49 · R1] Sin la calma (`conclude`) ninguna firma autoriza el reingreso.
+    await _correr("conclude.sql", primera)
     await _correr("reentry.sql", primera)
     assert await _fase(client) == "reentry_approved"
 
@@ -517,6 +519,8 @@ async def test_reset_devuelve_a_IDLE_aunque_D33_ya_hubiera_cerrado_el_incidente(
     anterior y saldría en verde sin haber probado nada.
     """
     v = await _crisis(variables)
+    # [D-49 · R1] Sin la calma (`conclude`) ninguna firma autoriza el reingreso.
+    await _correr("conclude.sql", v)
     await _correr("reentry.sql", v)
     assert await _fase(client) == "reentry_approved"
 

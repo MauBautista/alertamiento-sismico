@@ -124,8 +124,16 @@ _BASIS_EVIDENCE_KEYS = (
     "trigger",
     "pga_source",
     "insufficient_data",
+    # [F3·r2 · D-43] Evidencia de la regla ``dictamen-v2``: conteos y categorías de
+    # un catálogo cerrado, nada identificable.
+    "calibrated",
+    "active_sensors",
+    "uncalibrated_sensors",
+    "damage_reports",
+    "damage_categories",
 )
-_BASIS_PARAM_KEYS = ("pga_no_inhabit_g", "pga_monitor_g")
+#: v1 (``pga_no_inhabit_g``/``pga_monitor_g``) y v2 (``verde_max_g``/``rojo_min_g``).
+_BASIS_PARAM_KEYS = ("pga_no_inhabit_g", "pga_monitor_g", "verde_max_g", "rojo_min_g")
 
 
 def redact_basis(basis: dict | None) -> dict:
@@ -144,6 +152,17 @@ def redact_basis(basis: dict | None) -> dict:
         out["evidence"] = ev
     if pa:
         out["params"] = pa
+    # [F3·r2 · D-43] La banda y sus MOTIVOS (identificadores de un catálogo cerrado
+    # de ``evaluate_v2``) y la gracia de la firma del sistema (segundos).
+    band = basis.get("band")
+    if isinstance(band, str):
+        out["band"] = band
+    motivos = basis.get("motivos")
+    if isinstance(motivos, list):
+        out["motivos"] = [m for m in motivos if isinstance(m, str)]
+    firma = basis.get("firma_sistema")
+    if isinstance(firma, dict) and isinstance(firma.get("gracia_s"), (int, float)):
+        out["firma_sistema"] = {"gracia_s": firma["gracia_s"]}
     return out
 
 
@@ -255,10 +274,19 @@ def _razon_de_persona(m: ReportModel) -> bool:
     pasaría por el fundamento de un veredicto; con `verdict_signed` solo, un firmado
     sin razón sería indistinguible de uno con razón.
     """
-    if not m.verdict_signed:
+    if not m.verdict_signed or _tipo_de_firma(m) == "system":
+        # [T-9.34 · D-43] La nota del VERDE del sistema es ENLATADA: no es una razón
+        # escrita por una persona.
         return False
     nota = (m.verdict_basis or {}).get("notes")
     return isinstance(nota, str) and bool(nota.strip())
+
+
+def _tipo_de_firma(m: ReportModel) -> str | None:
+    """[T-9.34 · D-43] `signature_kind` de la cabeza firmada; `None` si no lo hay."""
+    if not m.verdict_signed or not m.dictamens:
+        return None
+    return m.dictamens[0].signature_kind
 
 
 def _clase_de_actor(actor: str | None) -> str:
@@ -480,6 +508,7 @@ def facts_from(m: ReportModel, *, imagenes: tuple[ImagenAdjunta, ...] = ()) -> N
         verdict_label=m.verdict_label,
         verdict_status=m.verdict_status,
         verdict_signed=m.verdict_signed,
+        verdict_signature_kind=_tipo_de_firma(m),
         verdict_actions=STATUS_ACTIONS.get(m.verdict_status or "", ()),
         rule_set_version=m.rule_set_version,
         basis=redact_basis(m.verdict_basis),

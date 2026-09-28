@@ -291,3 +291,72 @@ def test_el_dictamen_AUTOMATICO_no_declara_nota_de_nadie() -> None:
     cadena de fábrica en el fundamento de un veredicto."""
     texto = dict(sections_for(facts_from(model(verdict_basis=BASIS))))["Por qué este veredicto"]
     assert "nota" not in texto.lower()
+
+
+# ---- [F3·r2 · D-43] un basis v2 real (evaluate_v2) --------------------------------
+
+
+def _basis_v2(pga, *, danos=(), sin_calibrar=0, sistema=False) -> dict:
+    from takab_api.dictamen.rules import DictamenParamsV2, EvalInputV2, evaluate_v2
+
+    d = evaluate_v2(
+        EvalInputV2(
+            pga_g=pga,
+            pga_source="features" if pga is not None else "none",
+            active_sensors=2,
+            uncalibrated_sensors=sin_calibrar,
+            damage_reports=1 if danos else 0,
+            damage_keys=tuple(danos),
+            severity="critical",
+            trigger="sasmex",
+            event_id="EVT-9",
+        ),
+        DictamenParamsV2(verde_max_g=0.04, rojo_min_g=0.10),
+    )
+    d.basis["evidence"]["node_count"] = 1
+    d.basis["evidence"]["corroborated"] = False
+    if sistema:
+        d.basis["firma_sistema"] = {"gracia_s": 300, "tier_normal_desde": "2026-09-27T12:00:00Z"}
+    return d.basis
+
+
+def _por_que_v2(basis: dict, **over) -> str:
+    over.setdefault("verdict_status", "inhabit_monitor")
+    over.setdefault("rule_set_version", "dictamen-v2")
+    return dict(sections_for(facts_from(model(verdict_basis=basis, **over))))[
+        "Por qué este veredicto"
+    ]
+
+
+def test_un_basis_v2_cita_SUS_umbrales_y_la_banda_de_la_pga() -> None:
+    texto = _por_que_v2(_basis_v2(0.07))
+    assert "dictamen-v2" in texto
+    assert "0.070 g" in texto
+    assert "0.040 g" in texto and "0.100 g" in texto
+    assert "banda AMARILLA" in texto
+    # los rótulos de la v1 no aparecen en un veredicto v2
+    assert "no habitar" not in texto and "monitoreo" not in texto
+
+
+def test_un_basis_v2_no_atribuye_el_veredicto_a_la_severidad_ni_a_los_nodos() -> None:
+    texto = _por_que_v2(_basis_v2(None), verdict_status="inhabit_monitor")
+    assert "únicamente en la severidad" not in texto
+    assert "nunca rebajarla" not in texto
+    assert "no decide" in texto
+    assert "sin medición" in texto.lower() or "no consta medición" in texto.lower()
+
+
+def test_un_basis_v2_dice_los_danos_y_la_calibracion_que_lo_sostienen() -> None:
+    texto = _por_que_v2(
+        _basis_v2(0.01, danos=("structural",), sin_calibrar=1),
+        verdict_status="no_inhabit_inspect",
+    )
+    assert "estructural" in texto.lower()
+    assert "calibra" in texto.lower()
+    assert "banda ROJA" in texto
+
+
+def test_un_basis_v2_firmado_por_el_sistema_dice_la_gracia() -> None:
+    texto = _por_que_v2(_basis_v2(0.01, sistema=True), verdict_status="normal_operation")
+    assert "banda VERDE" in texto
+    assert "300 s" in texto

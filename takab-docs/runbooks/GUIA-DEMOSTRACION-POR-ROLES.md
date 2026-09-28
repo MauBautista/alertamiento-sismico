@@ -398,7 +398,8 @@ Sale de `api/src/takab_api/auth/matrix.py`, que es la **fuente única** de la qu
 >
 > Lo cierto es esto: **copiada de `matrix.py` y verificada acción por acción el 2026-09-22**, y
 > **re-derivada el 2026-09-27 para los siete roles de `D-42`** (sin `soc_operator`,
-> `building_admin` ni `security_guard`) —las trece filas coinciden hoy—. Si el código cambia, **esta hoja hay que re-derivarla a
+> `building_admin` ni `security_guard`) —las trece filas coinciden hoy—, y **re-derivada otra
+> vez para `D-43`** (fila 14, `confirm_dictamen`). Si el código cambia, **esta hoja hay que re-derivarla a
 > mano**: es el «censo que enumera a mano acaba divergiendo» de `TRASPASO-SESION.md`, y saberlo
 > es lo que obliga a revisarla antes de cada demostración.
 
@@ -417,8 +418,9 @@ Sale de `api/src/takab_api/auth/matrix.py`, que es la **fuente única** de la qu
 | `roster_read` — pase de lista | `brigadista`, `tenant_admin` |
 | `dictamen_read` — leer el PDF en el móvil | `brigadista`, `inspector`, `tenant_admin` |
 | `panel_read` — el táctico del gabinete | `brigadista`, `inspector`, `tenant_admin` |
+| `confirm_dictamen` — confirmar el AMARILLO/VERDE automático (`D-43`) | `brigadista`, `inspector`, `tenant_admin` |
 
-**Tres cosas que esta tabla dice y la prosa no dejaba claras:**
+**Cuatro cosas que esta tabla dice y la prosa no dejaba claras:**
 
 1. **El `takab_superadmin` NO firma dictámenes** — lo tiene en `False`, explícitamente. Puede
    generar el PDF y puede pedirlo, pero la firma es del inspector. No es una omisión: firmar un
@@ -427,6 +429,14 @@ Sale de `api/src/takab_api/auth/matrix.py`, que es la **fuente única** de la qu
    `manual_activate`. Por eso hacen falta dos ocupantes: uno solo no acciona nada.
 3. **El `occupant` no tiene `dictamen_read`.** Recibe el aviso de «reingreso permitido», no el
    documento — y eso es deliberado.
+4. **Confirmar no es firmar (`D-43`).** Desde el dictamen en tres bandas, la regla determinista
+   `dictamen-v2` emite VERDE, AMARILLO o ROJO sola (PGA máxima de los sensores activos, reportes
+   de daño y calibración; nada de IA). Un **VERDE** lo firma el propio sistema tras 5 min en
+   calma sin daños; un **AMARILLO** lo **confirma** quien está en el inmueble
+   (`confirm_dictamen`, también desde la app) y hasta entonces el reingreso dice «pendiente de
+   confirmación»; un **ROJO** sólo lo levanta la **firma del inspector** (`sign_dictamen`), que
+   sigue pudiendo firmar cualquier estado. El papel rotula quién fue: «EMITIDO POR EL SISTEMA»,
+   «CONFIRMADO POR <rol>» o el inspector, como antes.
 
 ---
 

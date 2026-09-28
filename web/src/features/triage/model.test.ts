@@ -20,6 +20,7 @@ import {
   verdictOf,
   durationOf,
   insufficientData,
+  sealOf,
 } from "./model";
 import { anEvent, anIncident, aSite } from "./fixtures";
 
@@ -457,5 +458,40 @@ describe("[T-6.26] los veredictos salen del glosario compartido", () => {
 
   it("el glosario no trae ninguno que la consola no conozca", () => {
     expect(Object.keys(glosario.veredictos).sort()).toEqual([...SIGNABLE_STATUS].sort());
+  });
+});
+
+// [F3·r3 · D-43] El SELLO de la cabeza dice QUIÉN confirmó, igual que la fila de
+// la cadena: «DICTAMEN CONFIRMADO» a secas callaba el rol que la API ya publica.
+describe("sealOf · el sello de la cabeza", () => {
+  const base: DictamenOut = {
+    dictamen_id: "d-1",
+    incident_id: "i-1",
+    tenant_id: "t-1",
+    status: "inhabit_monitor",
+    band: "amarillo",
+    basis: {},
+    signed_by: "u-1",
+    signature_kind: "confirmation",
+    confirmed_by_role: "brigadista",
+    supersedes_dictamen_id: null,
+    created_at: "2026-09-27T10:00:00Z",
+  };
+
+  it("confirmación con rol ⇒ «DICTAMEN CONFIRMADO POR <rol>» con su rótulo", () => {
+    expect(sealOf(base)).toBe("DICTAMEN CONFIRMADO POR BRIGADISTA");
+    expect(sealOf({ ...base, confirmed_by_role: "tenant_admin" })).toMatch(
+      /^DICTAMEN CONFIRMADO POR ADMINISTRADOR/,
+    );
+  });
+
+  it("confirmación sin rol publicado ⇒ «DICTAMEN CONFIRMADO» (no se inventa quién)", () => {
+    expect(sealOf({ ...base, confirmed_by_role: null })).toBe("DICTAMEN CONFIRMADO");
+  });
+
+  it("sistema, inspector y preliminar no cambian", () => {
+    expect(sealOf({ ...base, signature_kind: "system" })).toBe("DICTAMEN EMITIDO POR EL SISTEMA");
+    expect(sealOf({ ...base, signature_kind: "inspector" })).toBe("DICTAMEN FIRMADO");
+    expect(sealOf({ ...base, signed_by: null })).toBe("DICTAMEN AUTOMÁTICO PRELIMINAR");
   });
 });

@@ -71,6 +71,7 @@ import psycopg
 from takab_api import demo_mode
 from takab_api.auth.matrix import roles_with_action
 from takab_api.auth.roles import literales_de
+from takab_api.dictamen.sistema import FIRMA_DE_INSPECTOR_SQL
 from takab_api.incident.autoridad import autoriza_evacuacion
 from takab_api.notify.circulo import (
     ROLES_DE_TODO_EL_CLIENTE,
@@ -89,6 +90,7 @@ from takab_api.notify.providers import (
 )
 from takab_api.notify.push import (
     PUSH_CLASS_CRISIS,
+    PUSH_CLASS_DICTAMEN_CONFIRM,
     PUSH_CLASS_MOVEMENT,
     PUSH_CLASS_OPS,
     PUSH_CLASS_PANIC,
@@ -111,6 +113,8 @@ _PUSH_PHASE = {
     PUSH_CLASS_PANIC: "building_alarm",
     # [T-9.11] La brigada abre la pantalla del movimiento; el occupant jamás la recibe.
     PUSH_CLASS_MOVEMENT: "building_movement",
+    # [T-9.33 · D-43] Quien confirma abre el dictamen del incidente.
+    PUSH_CLASS_DICTAMEN_CONFIRM: "dictamen_confirm",
 }
 
 #: [T-9.11] Cuánto hacia atrás, desde la APERTURA, se buscan subidas (CAUTELA ⇒ DISPARO)
@@ -174,10 +178,11 @@ VALUES (%(tenant)s, %(incident)s, %(channel)s, %(mode)s, %(position)s,
 ON CONFLICT (incident_id, channel, mode) WHERE action_id IS NULL DO NOTHING
 """
 
-# [T-1.61] Solicitudes de dictamen SIN job y SIN dictamen firmado posterior —
+# [T-1.61] Solicitudes de dictamen SIN job y SIN firma de INSPECTOR posterior —
 # espejo del _PENDING_REQUEST_SQL de incidents_ops.py (409): una solicitud ya
-# satisfecha no molesta al inspector.
-_DICTAMEN_REQUESTS_SQL = """
+# satisfecha no molesta al inspector. [F3·r3 · D-43] El VERDE del sistema o una
+# confirmación NO la satisfacen: el correo al inspector sale igual.
+_DICTAMEN_REQUESTS_SQL = f"""
 SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
        i.tenant_id, i.site_id
 FROM incident_actions a
@@ -191,7 +196,7 @@ WHERE a.kind = 'dictamen_request'
   AND NOT EXISTS (
     SELECT 1 FROM dictamens d
     WHERE d.incident_id = a.incident_id
-      AND d.signed_by IS NOT NULL
+      AND {FIRMA_DE_INSPECTOR_SQL}
       AND d.created_at > a.ts
   )
 ORDER BY a.ts, a.action_id
@@ -249,11 +254,38 @@ SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
        i.tenant_id, i.site_id
 FROM incident_actions a
 JOIN incidents i ON i.incident_id = a.incident_id
-WHERE a.kind = 'dictamen_signed'
+WHERE ( a.kind IN ('dictamen_signed', 'dictamen_confirmed')
+        -- [T-9.30 · D-43] El VERDE firmado por el SISTEMA también libera el
+        -- reingreso: deja la acción `dictamen` con `signature_kind='system'`.
+        OR (a.kind = 'dictamen' AND a.payload->>'signature_kind' = 'system') )
   AND a.ts >= %(since)s
   AND a.ts <= %(now)s
   AND NOT EXISTS (
     SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# [T-9.33 · D-43] La regla emitió un AMARILLO sin firmar (`dictamen_confirm_requested`,
+# la deja el worker de dictamen) ⇒ push DICTAMEN_CONFIRM a quien puede confirmarlo.
+# Mismo patrón de acción. El segundo NOT EXISTS: si alguien ya firmó o confirmó
+# DESPUÉS de la petición, avisar sería pedir una confirmación que ya está hecha.
+_DICTAMEN_CONFIRM_REQUESTED_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'dictamen_confirm_requested'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j WHERE j.action_id = a.action_id
+  )
+  AND NOT EXISTS (
+    SELECT 1 FROM dictamens d
+    WHERE d.incident_id = a.incident_id
+      AND d.signed_by IS NOT NULL
+      AND d.created_at > a.ts
   )
 ORDER BY a.ts, a.action_id
 """
@@ -691,6 +723,16 @@ def run_notify_pass(
     )
     counts["enqueued"] += _enqueue_push_for_actions(
         conn, _DICTAMEN_SIGNED_SQL, now=now, lookback_s=lookback
+    )
+    # [T-9.33 · D-43] El AMARILLO de la regla: sólo a quien puede confirmarlo. El
+    # círculo se DERIVA de la matriz; el occupant no lo tiene y no lo recibe.
+    counts["enqueued"] += _enqueue_push_for_actions(
+        conn,
+        _DICTAMEN_CONFIRM_REQUESTED_SQL,
+        now=now,
+        lookback_s=lookback,
+        push_class=PUSH_CLASS_DICTAMEN_CONFIRM,
+        roles=roles_with_action("confirm_dictamen"),
     )
     # [T-2.147.a] El pánico va en su propia función y no por `_enqueue_push_for_actions`:
     # aquel encola por ACCIÓN de incidente (`action_id`), y un pánico no genera
@@ -1276,7 +1318,13 @@ def _enqueue_panic_push(conn: psycopg.Connection, *, now: datetime, lookback_s: 
 
 
 def _enqueue_push_for_actions(
-    conn: psycopg.Connection, sql: str, *, now: datetime, lookback_s: float
+    conn: psycopg.Connection,
+    sql: str,
+    *,
+    now: datetime,
+    lookback_s: float,
+    push_class: str = PUSH_CLASS_OPS,
+    roles: tuple[str, ...] | None = None,
 ) -> int:
     """[T-2.11/2.12] Un push OPS por cada acción reciente sin job (headcount o
     dictamen firmado). El push va a los dispositivos del sitio (best-effort R5);
@@ -1284,12 +1332,16 @@ def _enqueue_push_for_actions(
     rows = conn.execute(sql, {"since": now - timedelta(seconds=lookback_s), "now": now}).fetchall()
     inserted = 0
     for row in rows:
+        target: dict = {"site_id": str(row["site_id"]), "push_class": push_class}
+        # [T-9.33] `roles` acota el círculo; ausente = todo el inmueble (OPS de siempre).
+        if roles is not None:
+            target["roles"] = list(roles)
         result = conn.execute(
             _INSERT_PUSH_ACTION_JOB_SQL,
             {
                 "tenant": row["tenant_id"],
                 "incident": row["incident_id"],
-                "target": json.dumps({"site_id": str(row["site_id"]), "push_class": "OPS"}),
+                "target": json.dumps(target),
                 "due_at": row["ts"],  # vence YA (paralelo)
                 "action": row["action_id"],
             },

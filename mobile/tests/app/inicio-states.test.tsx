@@ -8,6 +8,7 @@
 import type { MobileStateOut } from "@takab/sdk";
 import { act, render } from "@testing-library/react-native";
 
+import { useSessionStore } from "@/auth/session.store";
 import { expectFourStates } from "@/test-utils/expectFourStates";
 
 import Inicio from "@/app/(occupant)/inicio";
@@ -48,6 +49,18 @@ jest.mock("@/offline/useCachedQuery", () => ({
     error: null,
     refetch: jest.fn(),
   }),
+}));
+
+// [F3·r3 · D-43] El certificado (quién firmó) se lee con `useQuery`; se captura
+// la consulta para medir CUÁNDO se pide y qué devuelve.
+type Consulta = { data?: unknown };
+let mockCertificado: Consulta = {};
+const mockConsultas: { enabled?: boolean; queryKey?: unknown[]; refetchInterval?: unknown }[] = [];
+jest.mock("@tanstack/react-query", () => ({
+  useQuery: (opts: { enabled?: boolean; queryKey?: unknown[]; refetchInterval?: unknown }) => {
+    mockConsultas.push(opts);
+    return opts.enabled === false ? {} : mockCertificado;
+  },
 }));
 
 // ------------------------------------------------------------------ datos
@@ -99,6 +112,9 @@ function instantanea(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   mockSitio = SITE;
   mockSnapshot = instantanea();
+  mockCertificado = {};
+  mockConsultas.length = 0;
+  useSessionStore.setState({ me: null });
 });
 
 async function asentar(): Promise<void> {
@@ -166,5 +182,136 @@ describe("1.1 · inicio · contrato de 4 estados (regla de oro 7)", () => {
       },
       { asentar },
     );
+  });
+});
+
+describe("1.1 · inicio · [F3·r3 · D-43] el cartel de reingreso dice QUIÉN lo aprobó", () => {
+  const INC = "22222222-2222-2222-2222-222222222222";
+  function aprobado(): MobileStateOut {
+    return {
+      ...estado(),
+      phase: "reentry_approved",
+      reentry: {
+        blocked: false,
+        dictamen_status: "normal_operation",
+        dictamen_signed: true,
+        incident_id: INC,
+      },
+    } as unknown as MobileStateOut;
+  }
+  function conPermiso(dictamenRead: boolean): void {
+    useSessionStore.setState({
+      me: { allowed_actions: { dictamen_read: dictamenRead } },
+    } as never);
+  }
+
+  it("firma del SISTEMA ⇒ no se la atribuye al inspector", async () => {
+    conPermiso(true);
+    mockSnapshot = instantanea({ data: aprobado() });
+    mockCertificado = {
+      data: { signed: true, folio: "d-1", signature_kind: "system", band: "verde" },
+    };
+
+    const v = await render(<Inicio />);
+    await asentar();
+
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/el sistema emitió el dictamen/);
+    expect(b).not.toHaveTextContent(/inspector/);
+    expect(mockConsultas.some((c) => c.enabled === true && c.queryKey?.includes(INC))).toBe(true);
+  });
+
+  it("CONFIRMACIÓN ⇒ dice el rol que confirmó", async () => {
+    conPermiso(true);
+    mockSnapshot = instantanea({ data: aprobado() });
+    mockCertificado = {
+      data: {
+        signed: true,
+        folio: "d-2",
+        signature_kind: "confirmation",
+        confirmed_by_role: "brigadista",
+        band: "amarillo",
+      },
+    };
+
+    const v = await render(<Inicio />);
+    await asentar();
+
+    expect(v.getByTestId("reentry-banner")).toHaveTextContent(/confirmado por BRIGADISTA/i);
+  });
+
+  // [F3·r4 · D-49] El certificado del cartel se INVALIDA cuando mobile-state
+  // cambia: la clave lleva la huella del dictamen vigente, y un certificado que
+  // no coincide con lo que dice mobile-state (el del firmante ANTERIOR, aún en
+  // caché) no se atribuye a nadie.
+  it("la clave cambia con el dictamen de mobile-state y se vuelve a pedir", async () => {
+    conPermiso(true);
+    mockSnapshot = instantanea({ data: aprobado() });
+    await render(<Inicio />);
+    await asentar();
+    const antes = mockConsultas.filter((c) => c.enabled === true).at(-1);
+    mockConsultas.length = 0;
+    const otro = aprobado();
+    otro.reentry = { ...otro.reentry, dictamen_status: "inhabit_monitor" };
+    mockSnapshot = instantanea({ data: otro });
+    await render(<Inicio />);
+    await asentar();
+    const despues = mockConsultas.filter((c) => c.enabled === true).at(-1);
+    expect(JSON.stringify(despues?.queryKey)).not.toBe(JSON.stringify(antes?.queryKey));
+    expect(JSON.stringify(despues?.queryKey)).toContain("inhabit_monitor");
+    expect(despues?.refetchInterval).toEqual(expect.any(Number));
+  });
+
+  it("un certificado que ya no es el vigente (otro status) NO pone al firmante anterior", async () => {
+    conPermiso(true);
+    const e = aprobado();
+    e.reentry = { ...e.reentry, dictamen_status: "inhabit_monitor" };
+    mockSnapshot = instantanea({ data: e });
+    mockCertificado = {
+      data: {
+        signed: true,
+        folio: "d-1",
+        incident_id: INC,
+        status: "normal_operation",
+        signature_kind: "system",
+        band: "verde",
+      },
+    };
+    const v = await render(<Inicio />);
+    await asentar();
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/el dictamen vigente autorizó el reingreso/);
+    expect(b).not.toHaveTextContent(/sistema/);
+  });
+
+  it("un certificado de OTRO incidente tampoco", async () => {
+    conPermiso(true);
+    mockSnapshot = instantanea({ data: aprobado() });
+    mockCertificado = {
+      data: {
+        signed: true,
+        folio: "d-1",
+        incident_id: "otro-incidente",
+        status: "normal_operation",
+        signature_kind: "inspector",
+      },
+    };
+    const v = await render(<Inicio />);
+    await asentar();
+    expect(v.getByTestId("reentry-banner")).not.toHaveTextContent(/inspector/);
+  });
+
+  it("sin `dictamen_read` (ocupante) NO se pide el certificado ni se le atribuye a nadie", async () => {
+    conPermiso(false);
+    mockSnapshot = instantanea({ data: aprobado() });
+    mockCertificado = { data: { signed: true, folio: "d-3", signature_kind: "inspector" } };
+
+    const v = await render(<Inicio />);
+    await asentar();
+
+    const b = v.getByTestId("reentry-banner");
+    expect(b).toHaveTextContent(/el dictamen vigente autorizó el reingreso/);
+    expect(b).not.toHaveTextContent(/inspector/);
+    expect(mockConsultas.every((c) => c.enabled !== true)).toBe(true);
   });
 });

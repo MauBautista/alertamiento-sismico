@@ -591,6 +591,29 @@ def test_solicitud_ya_firmada_no_notifica(scenario: _Scenario) -> None:
     assert providers["email"].sent == []
 
 
+def test_el_VERDE_del_sistema_NO_atiende_la_solicitud_y_el_correo_sale(
+    scenario: _Scenario,
+) -> None:
+    """[F3·r3 · D-43] La brigada escaló al inspector: una firma del SISTEMA posterior
+    no es la inspección que pidió, así que el correo al inspector sale igual."""
+    from takab_api.dictamen.sistema import SYSTEM_DICTAMEN_SIGNER_UUID
+
+    scenario.seed_config(INSPECTOR_CONFIG)
+    incident = _old_incident(scenario)
+    action = _seed_action(scenario, incident, ts=BASE - timedelta(minutes=10))
+    scenario.conn.execute(
+        "INSERT INTO dictamens (tenant_id, incident_id, status, basis, band, signed_by, "
+        "signature_kind, created_at) VALUES (%s,%s,'normal_operation','{}'::jsonb,'verde',"
+        "%s,'system',%s)",
+        (scenario.tenant, incident, SYSTEM_DICTAMEN_SIGNER_UUID, BASE - timedelta(minutes=5)),
+    )
+    scenario.conn.commit()
+    providers = _providers()
+    _run(scenario, providers, now=BASE)
+    assert len(_action_jobs(scenario, action)) == 1
+    assert len(providers["email"].sent) == 1
+
+
 def test_sin_inspector_emails_se_omite_con_gracia(scenario: _Scenario) -> None:
     scenario.seed_config(NOTIF_CONFIG)  # sin inspector_emails
     incident = _old_incident(scenario)

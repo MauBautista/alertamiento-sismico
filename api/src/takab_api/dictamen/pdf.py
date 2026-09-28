@@ -41,7 +41,9 @@ from takab_api.dictamen.model import (
     CENTROID_NOTE,
     CRONOLOGIA_SIN_ROTULO,
     DISCLAIMER,
+    DISCLAIMER_CONFIRMACION_INSPECTOR,
     DISCLAIMER_ESTADO,
+    DISCLAIMER_FIRMA,
     ENVELOPE_NOTE,
     EPICENTRO_REUBICADO,
     EPICENTRO_REUBICADO_AQUI,
@@ -59,6 +61,8 @@ from takab_api.dictamen.model import (
     NO_MMI,
     NO_SPECTRUM,
     ONDA_NO_LEIDA,
+    PENDIENTE_CONFIRMACION,
+    PENDIENTE_FIRMA_INSPECTOR,
     PERSONAS_EN_RIESGO,
     REPRODUCCION_NOTE,
     ROL_NO_RESUELTO,
@@ -79,6 +83,7 @@ from takab_api.dictamen.model import (
     STATUS_ACTIONS,
     STATUS_LABELS,
     TS_FMT,
+    DictamenRow,
     ReportModel,
     cierre_text,
     disparo_line,
@@ -87,6 +92,8 @@ from takab_api.dictamen.model import (
     num,
     umbral_line,
 )
+from takab_api.dictamen.rules import DANOS_ROJO
+from takab_api.dictamen.sistema import CLAVE_DANOS_VISTOS, FIRMAS_HUMANAS, danos_no_vistos
 from takab_api.felt import ORIGEN_INMUEBLE, ORIGEN_REFERENCIA, umbral_desde_dict
 from takab_api.geo import EARTH_RADIUS_KM
 from takab_api.shakemap import calculo as shk
@@ -137,11 +144,115 @@ def _firmado(m: ReportModel) -> bool:
     return bool(m.dictamens and m.dictamens[0].signed_by)
 
 
+def _tipo_de_firma(m: ReportModel) -> str | None:
+    """[T-9.34 · D-43] QUIÉN firmó la cabeza, de `signature_kind` (nunca de `signed_by`).
+
+    `None` si no está firmada o si es una fila HISTÓRICA (anterior a la columna):
+    ésas se rotulan como siempre, como firma de inspector.
+    """
+    if not _firmado(m):
+        return None
+    return m.dictamens[0].signature_kind
+
+
+#: [T-9.34 · D-43] Cómo se llama el documento según quién firmó su cabeza.
+_ESTADO_POR_FIRMA = {"system": "EMITIDO POR EL SISTEMA", "confirmation": "CONFIRMADO"}
+
+
+def _estado(m: ReportModel) -> str:
+    """La palabra del encabezado: FIRMADO / EMITIDO POR EL SISTEMA / CONFIRMADO / PRELIMINAR."""
+    if not _firmado(m):
+        return "PRELIMINAR"
+    return _ESTADO_POR_FIRMA.get(_tipo_de_firma(m) or "", "FIRMADO")
+
+
+def _deslinde(m: ReportModel) -> str:
+    """El deslinde entero. La primera frase dice QUIÉN firmó (`D-43`): «FIRMADO por
+    inspector» sólo es verdad de una de las tres firmas."""
+    kind = _tipo_de_firma(m)
+    if kind == "confirmation" and m.dictamens[0].firmante_rol == "inspector":
+        # [F3·r3] Quien confirmó ES inspector: «sin firma de inspector» sería falso.
+        estado = DISCLAIMER_CONFIRMACION_INSPECTOR
+    else:
+        estado = DISCLAIMER_FIRMA.get(kind or "") or DISCLAIMER_ESTADO[_firmado(m)]
+    return f"{estado} {DISCLAIMER}"
+
+
+def _dano_rojo_reportado(m: ReportModel) -> bool:
+    """¿Algún reporte de daño con una categoría que exige inspector (``DANOS_ROJO``)
+    que la ÚLTIMA firma humana NO vio?
+
+    [D-49 · R4] Espejo del 409 «requiere inspector» de la confirmación, con la MISMA
+    regla (``sistema.danos_no_vistos``): un ROJO que el inspector ya juzgó al firmar
+    no deja al AMARILLO posterior «pendiente de firma del inspector». En una firma
+    sin ``danos_vistos`` (anterior a D-49) la hora del reporte es la del aparato si
+    la hay (``DanoFila.ts``), no la de llegada: aproximación declarada."""
+    firma = next(
+        (d for d in m.dictamens if d.signed_by and d.signature_kind in FIRMAS_HUMANAS), None
+    )
+    reportes = [
+        {
+            "report_id": d.report_id,
+            "created_at": d.ts,
+            "claves": [c.get("key") for c in d.categorias if isinstance(c, dict)],
+        }
+        for d in m.danos
+    ]
+    fila_firma = (
+        {
+            "basis": (
+                {CLAVE_DANOS_VISTOS: list(firma.danos_vistos)}
+                if firma.danos_vistos is not None
+                else {}
+            ),
+            "created_at": firma.created_at,
+            "signature_kind": firma.signature_kind,
+        }
+        if firma is not None
+        else None
+    )
+    return any(k in DANOS_ROJO for r in danos_no_vistos(reportes, fila_firma) for k in r["claves"])
+
+
+def _pendiente_de(m: ReportModel) -> str:
+    """[F3·r3 · D-43] A quién espera un AMARILLO sin firmar: a la brigada, salvo que
+    haya un daño ROJO reportado — entonces la API no deja confirmarlo."""
+    return PENDIENTE_FIRMA_INSPECTOR if _dano_rojo_reportado(m) else PENDIENTE_CONFIRMACION
+
+
+def _leyenda_del_banner(m: ReportModel) -> str:
+    """[T-9.34 · D-43] La segunda línea del banner: la BANDA, si la hay, y la firma."""
+    head = m.dictamens[0] if m.dictamens else None
+    kind = _tipo_de_firma(m)
+    if kind == "system":
+        firma = "EMITIDO Y FIRMADO POR EL SISTEMA"
+    elif kind == "confirmation":
+        firma = "DICTAMEN CONFIRMADO"
+    elif _firmado(m):
+        firma = "DICTAMEN FIRMADO"
+    elif head is not None and head.band == "amarillo":
+        firma = (
+            "DICTAMEN AUTOMÁTICO PRELIMINAR · PENDIENTE DE FIRMA DEL INSPECTOR"
+            if _dano_rojo_reportado(m)
+            else "DICTAMEN AUTOMÁTICO PRELIMINAR · PENDIENTE DE CONFIRMACIÓN"
+        )
+    else:
+        firma = "DICTAMEN AUTOMÁTICO PRELIMINAR"
+    banda = rotulos.banda(head.band) if head is not None else None
+    return f"{banda} · {firma}" if banda else firma
+
+
+def _banner(pdf: TakabPDF, m: ReportModel) -> None:
+    pdf.verdict_banner(
+        m.verdict_status or "", m.verdict_label, m.verdict_signed, _leyenda_del_banner(m)
+    )
+
+
 def _render_technical(m: ReportModel) -> bytes:
     # [T-7.33] El estado va DERIVADO, no escrito a fuego: el encabezado se
     # repite en todas las páginas, y decía PRELIMINAR encima del banner que
     # decía FIRMADO. En un papel con peso legal eso no es una errata.
-    estado = "FIRMADO" if _firmado(m) else "PRELIMINAR"
+    estado = _estado(m)
     # [T-7.42] La huella Y el instante del suceso van al PIE, no sólo a la portada.
     #
     # Hasta esta ficha ninguno de los dos se pasaba: el pie declaraba «SIN HUELLA
@@ -202,7 +313,7 @@ def _cierre(m: ReportModel) -> str:
 
 
 def _cover(pdf: TakabPDF, m: ReportModel) -> None:
-    pdf.verdict_banner(m.verdict_status or "", m.verdict_label, m.verdict_signed)
+    _banner(pdf, m)
     # [T-8.12 · A-053] La leyenda de la reproducción TAMBIÉN aquí, debajo del
     # veredicto: la portada es lo que se lee de un vistazo, y sin la frase afirma
     # un veredicto sobre una sacudida que no ocurrió. Es ADITIVA: se deriva igual
@@ -1476,8 +1587,11 @@ def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
             head.cell(pdf.text_of(h))
         for d in m.dictamens:
             row = table.row()
-            row.cell(pdf.text_of("FIRMADO" if d.signed_by else "PRELIMINAR"))
-            row.cell(pdf.text_of(STATUS_LABELS.get(d.status, d.status)))
+            # [T-9.34 · D-43] Quién firmó, de `signature_kind`; la BANDA, bajo el veredicto.
+            row.cell(pdf.text_of(_estado_de_fila(d)))
+            veredicto = STATUS_LABELS.get(d.status, d.status)
+            banda = rotulos.banda(d.band)
+            row.cell(pdf.text_of(f"{veredicto}\n{banda}" if banda else veredicto))
             # [T-8.12 · A-150] Con su «UTC»: era la única fecha del papel sin zona.
             row.cell(pdf.text_of(f"{d.created_at.astimezone(UTC):%Y-%m-%d %H:%M} UTC"))
             row.cell(pdf.text_of(d.rule_set_version))
@@ -1487,6 +1601,16 @@ def _chain_section(pdf: TakabPDF, m: ReportModel) -> None:
         "Las correcciones INSERTAN una versión nueva; ninguna fila se reescribe.",
         size=7,
         muted=True,
+    )
+
+
+def _estado_de_fila(d: DictamenRow) -> str:
+    """La celda ESTADO de la cadena. La palabra suelta PRELIMINAR se conserva: es la
+    que `test_estado_del_documento` deja sobrevivir como historia."""
+    if not d.signed_by:
+        return "PRELIMINAR"
+    return {"system": "FIRMADO POR EL SISTEMA", "confirmation": "CONFIRMADO"}.get(
+        d.signature_kind or "", "FIRMADO"
     )
 
 
@@ -1566,7 +1690,7 @@ def _cronologia_section(pdf: TakabPDF, m: ReportModel) -> None:
     # Quien firmó un dictamen de la cadena NO es «OPERADOR»: se nombra por su rol,
     # y quien firmó la cabeza exactamente como en el FIRMÓ.
     firmantes = rotulos.firmantes_de_la_cadena(
-        [(d.signed_by, d.firmante_nombre) for d in m.dictamens]
+        [(d.signed_by, d.firmante_nombre, d.signature_kind, d.firmante_rol) for d in m.dictamens]
     )
     with pdf.table(col_widths=(38, 82, 38), text_align="LEFT") as table:
         head = table.row()
@@ -1886,18 +2010,34 @@ def _closing(pdf: TakabPDF, m: ReportModel) -> None:
         # imprimía el `sub` de Cognito —un UUID entero— en la línea de más peso
         # del documento. `D-36` no cambia: el renglón de firma del emisor sigue
         # siendo la persona moral; ésta es la línea de QUIÉN firmó el dictamen.
-        pdf.field("FIRMÓ", rotulos.firmante(head.firmante_nombre))
+        # [T-9.34 · D-43] QUIÉN se lee de `signature_kind`: el sistema y quien
+        # confirma no son «INSPECTOR», y el UUID fijo del sistema no se imprime.
+        pdf.field(
+            "FIRMÓ",
+            rotulos.firma(
+                head.signature_kind,
+                head.firmante_nombre,
+                rol=head.firmante_rol,
+                regla=head.rule_set_version,
+                banda_=head.band,
+            ),
+        )
         pdf.field("FECHA DE FIRMA", rotulos.instante(head.created_at, m.zona_horaria))
         pdf.para(
-            "Firma de usuario autenticado (Cognito). NO es una firma criptográfica ni "
+            "Firma automática de la regla determinista registrada en la cadena de "
+            "dictámenes. NO es una firma criptográfica ni un sello de tiempo de HSM."
+            if head.signature_kind == "system"
+            else "Firma de usuario autenticado (Cognito). NO es una firma criptográfica ni "
             "un sello de tiempo de HSM.",
             size=7,
             muted=True,
         )
+    elif head is not None and head.band == "amarillo":
+        pdf.field("FIRMA", _pendiente_de(m))
     else:
         pdf.field("FIRMA", "PRELIMINAR · SIN FIRMA DE INSPECTOR")
     pdf.ln(2)
-    pdf.callout(f"{DISCLAIMER_ESTADO[_firmado(m)]} {DISCLAIMER}", (20, 24, 30))
+    pdf.callout(_deslinde(m), (20, 24, 30))
 
 
 # --- documento ejecutivo ------------------------------------------------------
@@ -1917,7 +2057,7 @@ def _render_executive(m: ReportModel) -> bytes:
     pdf.seal(m.opened_at)
     pdf.add_page()
 
-    pdf.verdict_banner(m.verdict_status or "", m.verdict_label, m.verdict_signed)
+    _banner(pdf, m)
     # [T-8.12 · A-053] La clasificación humana, igual que en la portada.
     pdf.field("CLASIFICACIÓN", _clasificacion(m))
     # [T-8.12 · A-139] Y la leyenda de la reproducción. El censo la eximía del
@@ -1993,5 +2133,5 @@ def _render_executive(m: ReportModel) -> bytes:
         pdf.callout(note)
 
     pdf.ln(3)
-    pdf.callout(f"{DISCLAIMER_ESTADO[_firmado(m)]} {DISCLAIMER}", (20, 24, 30))
+    pdf.callout(_deslinde(m), (20, 24, 30))
     return bytes(pdf.output())

@@ -115,6 +115,8 @@ DENY_ALL = {
     # rol desconocido no puede tocar el código desde el que arranca el camino de
     # vida de un edificio.
     "deploy_firmware": False,
+    # [T-9.31 · D-43] Confirmar el dictamen de la regla: nadie desconocido.
+    "confirm_dictamen": False,
 }
 
 # [T-2.03] Acciones de la superficie MÓVIL (spec §5/§8 + RBAC §3/§4).
@@ -132,6 +134,12 @@ MOBILE_ACTIONS = (
     "panel_read",
     # [T-9.11 · D-39] El aviso con voz del movimiento de UN inmueble: de campo.
     "movement_alert",
+    # [T-9.31 · D-43] Confirmar el AMARILLO de la regla: lo hace quien está en el
+    # inmueble (brigada) además del inspector y la administración.
+    "confirm_dictamen",
+    # (`request_dictamen` NO va aquí aunque la brigada la tenga desde F3 · D-43: es
+    # también acción de la consola web del superadmin; su fila móvil «Escalar» la
+    # ancla `RBAC_SECTION_3`.)
 )
 
 
@@ -208,7 +216,8 @@ def test_request_dictamen_excludes_gov() -> None:
     un botón que siempre da 403 (regla de oro 7). Divergencia anotada en
     RBAC-TAKAB.md §2."""
     can = {r for r in RBAC_SECTION_2 if allowed_actions(r)["request_dictamen"]}
-    assert can == {"takab_superadmin", "tenant_admin"}
+    # [F3 · D-43] + brigadista (fila «Escalar» de §3), acotado a su inmueble.
+    assert can == {"takab_superadmin", "tenant_admin", "brigadista"}
 
 
 def test_read_audit_is_read_only_oversight() -> None:
@@ -289,10 +298,14 @@ def test_manage_users_excludes_support() -> None:
 def test_mobile_roles_have_only_mobile_actions() -> None:
     """[T-2.03] Los roles móviles dejaron de ser placeholders, pero sus acciones
     son EXCLUSIVAMENTE de campo: ninguna acción del SOC web se les concede."""
+    # [F3 · D-43] ÚNICA acción COMPARTIDA con la consola: escalar el dictamen
+    # (`request_dictamen`, fila «Escalar» de §3). Enumerada aquí, no abierta.
+    compartidas = {"request_dictamen"}
     for role in MOBILE_ONLY:
         granted = {a for a, ok in allowed_actions(role).items() if ok}
         assert granted, role  # ya no están vacíos
-        assert granted <= set(MOBILE_ACTIONS), (role, granted - set(MOBILE_ACTIONS))
+        permitidas = set(MOBILE_ACTIONS) | compartidas
+        assert granted <= permitidas, (role, granted - permitidas)
 
 
 def test_occupant_field_actions_are_minimal() -> None:
@@ -308,12 +321,12 @@ def test_occupant_field_actions_are_minimal() -> None:
 # desde T-2.08: ``panel_read`` espeja la fila "Dashboard táctico (salud
 # gabinete + actuadores)" — occupant "—", inspector "Lectura".)
 RBAC_SECTION_3 = {
-    #                 checkin roster  damage  evid.  silence activate dict_read panel movement
-    "occupant": (True, False, False, False, False, False, False, False, False),
-    "brigadista": (True, True, True, True, True, True, True, True, True),
-    "inspector": (True, False, True, True, False, True, True, True, True),
+    #          checkin roster damage evid. silence activate dict_read panel movement confirm escalar
+    "occupant": (True, False, False, False, False, False, False, False, False, False, False),
+    "brigadista": (True, True, True, True, True, True, True, True, True, True, True),
+    "inspector": (True, False, True, True, False, True, True, True, True, True, False),
     # [T-9.11 · D-42] El ADMINISTRADOR tiene la app táctica completa.
-    "tenant_admin": (True, True, True, True, True, True, True, True, True),
+    "tenant_admin": (True, True, True, True, True, True, True, True, True, True, True),
 }
 _S3_COLS = (
     "checkin_submit",
@@ -326,6 +339,10 @@ _S3_COLS = (
     "panel_read",
     # [T-9.11] La fila «Aviso con voz de movimiento del inmueble» (D-39).
     "movement_alert",
+    # [T-9.31 · D-43] La fila «Confirmar el dictamen automático AMARILLO/VERDE».
+    "confirm_dictamen",
+    # [F3 · D-43] La fila «Escalar: solicitar dictamen técnico de su inmueble».
+    "request_dictamen",
 )
 
 

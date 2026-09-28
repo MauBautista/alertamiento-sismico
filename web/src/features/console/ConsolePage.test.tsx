@@ -245,6 +245,8 @@ describe("ConsolePage", () => {
           cctv_video: false,
           // [T-9.11 · D-42] El administrador tiene la app táctica y el aviso de movimiento.
           movement_alert: true,
+          // [T-9.31 · D-43] Y confirma el AMARILLO de la regla.
+          confirm_dictamen: true,
         },
       },
     });
@@ -744,6 +746,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
           cctv_read: false,
           cctv_video: false,
           movement_alert: false,
+          confirm_dictamen: false,
         },
       },
     });
