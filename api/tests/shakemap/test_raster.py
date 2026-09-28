@@ -59,7 +59,8 @@ def test_los_bordes_de_banda_son_los_del_dictamen() -> None:
 
 
 def test_lo_MODELADO_se_ve_menos_que_lo_AJUSTADO() -> None:
-    sup = _sup([[0.07, 0.07]], [[True, False]])
+    # 10 columnas de ≈10.5 km: la segunda está a una celda de la ajustada (< L).
+    sup = _sup([[0.07] * 10], [[True] + [False] * 9])
     img = _pixeles(R.png(sup, verde_max_g=VERDE_MAX, rojo_min_g=ROJO_MIN))
     assert img.getpixel((0, 0))[3] > img.getpixel((1, 0))[3] > 0
 
@@ -82,3 +83,26 @@ def test_mismo_dato_mismos_bytes() -> None:
     a = R.png(sup, verde_max_g=VERDE_MAX, rojo_min_g=ROJO_MIN)
     b = R.png(sup, verde_max_g=VERDE_MAX, rojo_min_g=ROJO_MIN)
     assert a == b and a.startswith(b"\x89PNG")
+
+
+def test_lo_MODELADO_solo_se_pinta_cerca_de_lo_AJUSTADO() -> None:
+    """Más allá de L de la zona ajustada, transparente: el borde de la malla no es un
+    límite físico, y teñir hasta él pintaba una sacudida donde nadie midió.
+
+    La malla de `_sup` va de -99 a -98 (≈105 km a 19.5°N) en 10 columnas: celdas de
+    ≈10.5 km. Con L = 15 km, la columna 1 (a una celda de la ajustada) se pinta y la
+    columna 3 (a tres celdas, ≈31 km) ya no.
+    """
+    fila = [0.07] * 10
+    mascara = [True] + [False] * 9
+    img = _pixeles(R.png(_sup([fila], [mascara]), verde_max_g=VERDE_MAX, rojo_min_g=ROJO_MIN))
+    assert img.getpixel((1, 0))[3] == R.ALFA_MODELADA
+    assert img.getpixel((3, 0))[3] == 0
+    assert img.getpixel((9, 0))[3] == 0
+
+
+def test_sin_zona_AJUSTADA_no_se_pinta_nada() -> None:
+    img = _pixeles(
+        R.png(_sup([[0.07, 0.2]], [[False, False]]), verde_max_g=VERDE_MAX, rojo_min_g=ROJO_MIN)
+    )
+    assert img.getpixel((0, 0))[3] == 0 and img.getpixel((1, 0))[3] == 0

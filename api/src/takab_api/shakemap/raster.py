@@ -11,6 +11,11 @@ para la capa `image` de MapLibre y lo embebe el PDF.
 * **Bajo `PISO_VISIBLE_G` la celda es transparente**: 0.01 g es una MMI estimada de III
   (Wald 1999), apenas perceptible, y teñir de verde todo lo que queda por debajo
   afirmaría una sacudida donde la ley ya no dice nada útil.
+* **Lo MODELADO sólo se pinta a menos de ``escala_km`` (L) de la zona AJUSTADA.** Más
+  allá, transparente. Visto en la consola el 2026-09-28: con la malla entera teñida,
+  un rectángulo verde de bordes rectos cubría de Cuernavaca a Tlaxcala, y su borde —que
+  es sólo el margen de la malla— se leía como un límite de la sacudida. Así la mancha
+  termina en redondo alrededor de lo medido, y sin zona ajustada no se pinta nada.
 
 Fila 0 = norte, que es el orden de la malla y el de la imagen: nada se voltea.
 """
@@ -18,7 +23,9 @@ Fila 0 = norte, que es el orden de la malla y el de la imagen: nada se voltea.
 from __future__ import annotations
 
 import io
+import math
 
+import numpy as np
 from PIL import Image
 
 from takab_api.shakemap.superficie import Superficie
@@ -51,12 +58,33 @@ def banda(pga_g: float, verde_max_g: float, rojo_min_g: float) -> str:
     return BANDA_VERDE
 
 
+def _cerca_de_lo_ajustado(sup: Superficie) -> np.ndarray:
+    """Máscara de las celdas a menos de L (km) de una celda AJUSTADA (ésas incluidas).
+
+    Distancia entre centros de celda en km locales (la longitud escalada con el coseno de
+    la latitud media): a la escala de la malla, la equirrectangular basta.
+    """
+    ajustada = np.array(sup.ajustada, dtype=bool)
+    if not ajustada.any():
+        return ajustada
+    lat_media = math.radians((sup.norte + sup.sur) / 2)
+    km_x = (sup.este - sup.oeste) / sup.ancho * 111.195 * math.cos(lat_media)
+    km_y = (sup.norte - sup.sur) / sup.alto * 111.195
+    filas, columnas = np.nonzero(ajustada)
+    ii, jj = np.indices(ajustada.shape)
+    cerca = np.zeros(ajustada.shape, dtype=bool)
+    for i, j in zip(filas, columnas, strict=True):
+        cerca |= ((ii - i) * km_y) ** 2 + ((jj - j) * km_x) ** 2 <= sup.escala_km**2
+    return cerca
+
+
 def png(sup: Superficie, *, verde_max_g: float, rojo_min_g: float) -> bytes:
     """El PNG RGBA de la superficie (ancho × alto píxeles)."""
+    cerca = _cerca_de_lo_ajustado(sup)
     pixeles: list[tuple[int, int, int, int]] = []
-    for fila_pga, fila_ajustada in zip(sup.pga_g, sup.ajustada, strict=True):
-        for pga, ajustada in zip(fila_pga, fila_ajustada, strict=True):
-            if pga < PISO_VISIBLE_G:
+    for i, (fila_pga, fila_ajustada) in enumerate(zip(sup.pga_g, sup.ajustada, strict=True)):
+        for j, (pga, ajustada) in enumerate(zip(fila_pga, fila_ajustada, strict=True)):
+            if pga < PISO_VISIBLE_G or not cerca[i, j]:
                 pixeles.append((0, 0, 0, 0))
                 continue
             r, g, b = COLOR[banda(pga, verde_max_g, rojo_min_g)]
