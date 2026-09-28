@@ -917,8 +917,10 @@ export const signDictamenIncidentsIncidentIdDictamensPost = <ThrowOnError extend
  * veredicto propio: por eso sólo la CABEZA vigente (409 si no), sólo sin firmar
  * (409 si ya lo está), nunca un ROJO (403: ése lo firma el inspector por
  * ``POST /incidents/{id}/dictamens``) y SÓLO un AMARILLO (409 con un VERDE —lo
- * firma el sistema tras la gracia— o con una fila v1 sin banda). Todo dentro del
- * lock del incidente.
+ * firma el sistema tras la gracia— o con una fila v1 sin banda). [D-49] Tampoco con
+ * el edificio en movimiento (409, R1) ni con un daño ROJO que la última firma humana
+ * no vio (409, R4); una escalada al inspector pendiente NO lo impide (R3). Todo
+ * dentro del lock del incidente.
  */
 export const confirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPost = <ThrowOnError extends boolean = false>(options: Options<ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostData, ThrowOnError>) => {
     return (options.client ?? _heyApiClient).post<ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostResponse, ConfirmDictamenIncidentsIncidentIdDictamensDictamenIdConfirmPostError, ThrowOnError>({

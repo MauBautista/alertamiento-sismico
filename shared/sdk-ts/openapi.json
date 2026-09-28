@@ -15495,7 +15495,7 @@
     },
     "/incidents/{incident_id}/dictamens/{dictamen_id}/confirm": {
       "post": {
-        "description": "[T-9.31 · D-43] CONFIRMA el dictamen vigente que emitió la regla.\n\nInserta una fila NUEVA con el mismo status y banda que la cabeza, firmada por\nquien confirma (``signature_kind='confirmation'``) y que la supersede. No es un\nveredicto propio: por eso sólo la CABEZA vigente (409 si no), sólo sin firmar\n(409 si ya lo está), nunca un ROJO (403: ése lo firma el inspector por\n``POST /incidents/{id}/dictamens``) y SÓLO un AMARILLO (409 con un VERDE —lo\nfirma el sistema tras la gracia— o con una fila v1 sin banda). Todo dentro del\nlock del incidente.",
+        "description": "[T-9.31 · D-43] CONFIRMA el dictamen vigente que emitió la regla.\n\nInserta una fila NUEVA con el mismo status y banda que la cabeza, firmada por\nquien confirma (``signature_kind='confirmation'``) y que la supersede. No es un\nveredicto propio: por eso sólo la CABEZA vigente (409 si no), sólo sin firmar\n(409 si ya lo está), nunca un ROJO (403: ése lo firma el inspector por\n``POST /incidents/{id}/dictamens``) y SÓLO un AMARILLO (409 con un VERDE —lo\nfirma el sistema tras la gracia— o con una fila v1 sin banda). [D-49] Tampoco con\nel edificio en movimiento (409, R1) ni con un daño ROJO que la última firma humana\nno vio (409, R4); una escalada al inspector pendiente NO lo impide (R3). Todo\ndentro del lock del incidente.",
         "operationId": "confirm_dictamen_incidents__incident_id__dictamens__dictamen_id__confirm_post",
         "parameters": [
           {
