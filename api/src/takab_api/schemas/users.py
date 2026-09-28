@@ -15,6 +15,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from takab_api.auth.roles import CANONICAL_ROLES
+
 #: Superficies válidas del token (espejo de ``auth/claims._SURFACES``).
 Surface = Literal["web", "mobile", "both"]
 
@@ -28,17 +30,14 @@ _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 #: aparte con ancla pool→rol (``auth/deps.get_claims``), así que crearlo aquí
 #: produciría una cuenta que se autentica y recibe 401 en cada request. Los
 #: ocupantes se dan de alta con un código de enrolamiento (T-2.53).
-ASSIGNABLE_ROLES: tuple[str, ...] = (
-    "takab_superadmin",
-    "takab_support",
-    "tenant_admin",
-    "soc_operator",
-    "gov_operator",
-    "inspector",
-    "building_admin",
-    "brigadista",
-    "security_guard",
-)
+#:
+#: [T-9.20 · D-42] DERIVADA de los siete canónicos (``auth/roles.py``): los tres roles
+#: viejos NO se asignan (422). Su alias solo existe para que los TOKENS viejos sigan
+#: entrando durante la ventana; dar de alta con uno sería alargarla a mano. Los
+#: internos siguen aquí porque un ``takab_superadmin`` los otorga; a un rol de cliente
+#: se los niega ``PLATFORM_ROLES`` (403) y ``GET /users/assignable-roles`` no se los
+#: ofrece.
+ASSIGNABLE_ROLES: tuple[str, ...] = tuple(r for r in CANONICAL_ROLES if r != "occupant")
 
 #: Roles internos de plataforma: SOLO un ``takab_superadmin`` puede otorgarlos. Sin
 #: esta frontera, un ``tenant_admin`` se fabricaría un superadmin y saldría de su
@@ -185,3 +184,16 @@ class UserActionOut(BaseModel):
     detail: str = Field(
         description="Qué pasó, en lenguaje de operador. Jamás una credencial.",
     )
+
+
+class AssignableRole(BaseModel):
+    """Un rol que quien pregunta puede otorgar, con su etiqueta (T-9.20 · D-42)."""
+
+    role: str
+    label: str
+
+
+class AssignableRolesOut(BaseModel):
+    """``GET /users/assignable-roles``: la web deja de escribir la lista a mano."""
+
+    items: list[AssignableRole]

@@ -70,7 +70,7 @@ async def seeded_db():
 
 
 def _ctx(tenant: str) -> SessionCtx:
-    return SessionCtx(tenant_id=tenant, role="soc_operator", user_id=f"user-{tenant}")
+    return SessionCtx(tenant_id=tenant, role="tenant_admin", user_id=f"user-{tenant}")
 
 
 async def test_guc_set_inside_txn():
@@ -80,7 +80,7 @@ async def test_guc_set_inside_txn():
         role = (await conn.execute(text("SELECT current_setting('app.role')"))).scalar_one()
         user = (await conn.execute(text("SELECT current_setting('app.user_id')"))).scalar_one()
     assert tenant == T1
-    assert role == "soc_operator"
+    assert role == "tenant_admin"
     assert user == f"user-{T1}"
 
 

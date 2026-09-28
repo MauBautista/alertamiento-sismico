@@ -47,10 +47,7 @@ D38 = {
     "takab_superadmin": DAY,
     "takab_support": DAY,
     "tenant_admin": DAY,
-    "soc_operator": DAY,
     "gov_operator": DAY,
-    "building_admin": DAY,
-    "security_guard": DAY,
 }
 
 SESSION_CHALLENGE = 'Bearer error="invalid_token", error_description="sesion_expirada"'
@@ -88,14 +85,14 @@ def _claims(role: str, auth_time: int) -> Claims:
 
 
 def test_el_plazo_es_auth_time_mas_el_tope_del_rol() -> None:
-    assert session_deadline(_claims("soc_operator", 1_000)) == 1_000 + DAY
+    assert session_deadline(_claims("tenant_admin", 1_000)) == 1_000 + DAY
     assert session_deadline(_claims("brigadista", 1_000)) == 1_000 + 30 * DAY
     assert session_deadline(_claims("occupant", 1_000)) == 1_000 + 90 * DAY
 
 
 def test_el_limite_es_cerrado_en_el_instante_del_plazo() -> None:
     """``now >= deadline`` ⇒ caducada: en el segundo exacto ya no hay sesión."""
-    c = _claims("soc_operator", 1_000)
+    c = _claims("tenant_admin", 1_000)
     enforce_session_age(c, now=1_000 + DAY - 1)  # un segundo antes: vale
     with pytest.raises(SessionExpired):
         enforce_session_age(c, now=1_000 + DAY)
@@ -123,7 +120,7 @@ def test_decode_exige_auth_time() -> None:
     settings = au.test_settings()
     with pytest.raises(AuthError):
         decode_verify(
-            au.make_token("soc_operator", drop=("auth_time",)), settings, select_jwks(settings)
+            au.make_token("tenant_admin", drop=("auth_time",)), settings, select_jwks(settings)
         )
 
 
@@ -131,7 +128,7 @@ def test_decode_exige_auth_time() -> None:
 def test_auth_time_que_no_es_un_entero_razonable_es_401(valor: object) -> None:
     settings = au.test_settings()
     verified = decode_verify(
-        au.make_token("soc_operator", auth_time=valor), settings, select_jwks(settings)
+        au.make_token("tenant_admin", auth_time=valor), settings, select_jwks(settings)
     )
     with pytest.raises(AuthError):
         Claims.from_verified(verified)
@@ -140,7 +137,7 @@ def test_auth_time_que_no_es_un_entero_razonable_es_401(valor: object) -> None:
 def test_from_verified_puebla_auth_time_y_NO_usa_iat() -> None:
     settings = au.test_settings()
     verified = decode_verify(
-        au.make_token("soc_operator", auth_age=5_000), settings, select_jwks(settings)
+        au.make_token("tenant_admin", auth_age=5_000), settings, select_jwks(settings)
     )
     claims = Claims.from_verified(verified)
     assert claims.auth_time == verified["auth_time"]
@@ -152,7 +149,7 @@ def test_un_auth_time_POSTERIOR_a_iat_no_alarga_la_sesion() -> None:
     empujaría el plazo hacia adelante; se recorta a ``iat`` (acorta, jamás alarga)."""
     settings = au.test_settings()
     verified = decode_verify(
-        au.make_token("soc_operator", auth_age=-10 * DAY), settings, select_jwks(settings)
+        au.make_token("tenant_admin", auth_age=-10 * DAY), settings, select_jwks(settings)
     )
     claims = Claims.from_verified(verified)
     assert claims.auth_time == verified["iat"]
@@ -171,10 +168,10 @@ def _assert_expired(resp) -> None:
     assert resp.headers.get("WWW-Authenticate") == SESSION_CHALLENGE
 
 
-async def test_soc_operator_un_segundo_pasado_el_dia_es_401_sesion_expirada(
+async def test_tenant_admin_un_segundo_pasado_el_dia_es_401_sesion_expirada(
     client, db_engine
 ) -> None:
-    _assert_expired(await _me(client, au.make_token("soc_operator", auth_age=DAY + 1)))
+    _assert_expired(await _me(client, au.make_token("tenant_admin", auth_age=DAY + 1)))
 
 
 def _freeze_check_clock(monkeypatch: pytest.MonkeyPatch, token: str) -> None:
@@ -193,26 +190,24 @@ def _freeze_check_clock(monkeypatch: pytest.MonkeyPatch, token: str) -> None:
     monkeypatch.setattr(deps, "time", types.SimpleNamespace(time=lambda: float(iat)))
 
 
-async def test_soc_operator_un_segundo_antes_del_dia_entra(
+async def test_tenant_admin_un_segundo_antes_del_dia_entra(
     client, db_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    token = au.make_token("soc_operator", auth_age=DAY - 1)
+    token = au.make_token("tenant_admin", auth_age=DAY - 1)
     _freeze_check_clock(monkeypatch, token)
     resp = await _me(client, token)
     assert resp.status_code == 200, resp.text
 
 
-async def test_soc_operator_en_el_segundo_exacto_del_dia_ya_no_entra(
+async def test_tenant_admin_en_el_segundo_exacto_del_dia_ya_no_entra(
     client, db_engine, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    token = au.make_token("soc_operator", auth_age=DAY)
+    token = au.make_token("tenant_admin", auth_age=DAY)
     _freeze_check_clock(monkeypatch, token)
     _assert_expired(await _me(client, token))
 
 
-@pytest.mark.parametrize(
-    "role", ["takab_superadmin", "tenant_admin", "gov_operator", "building_admin"]
-)
+@pytest.mark.parametrize("role", ["takab_superadmin", "takab_support", "gov_operator"])
 async def test_los_demas_roles_de_consola_tambien_24h(client, db_engine, role: str) -> None:
     _assert_expired(await _me(client, au.make_token(role, auth_age=DAY + 1)))
 
@@ -248,7 +243,7 @@ async def test_occupant_del_pool_de_ocupantes_89_dias_entra_y_91_no(
 async def test_token_sin_auth_time_es_401_generico(client, db_engine) -> None:
     """Sin ``auth_time`` no hay de dónde contar: se rechaza. Y NO es «sesión
     expirada» — no sabemos cuándo empezó; el 401 conserva su forma de siempre."""
-    resp = await _me(client, au.make_token("soc_operator", drop=("auth_time",)))
+    resp = await _me(client, au.make_token("tenant_admin", drop=("auth_time",)))
     assert resp.status_code == 401
     assert resp.json()["detail"] != "sesion_expirada"
     assert resp.headers.get("WWW-Authenticate") == "Bearer"
@@ -257,7 +252,7 @@ async def test_token_sin_auth_time_es_401_generico(client, db_engine) -> None:
 async def test_los_demas_401_conservan_su_forma(client, db_engine) -> None:
     """El reto especial es SOLO para la sesión caducada: un token vencido (renovable)
     sigue diciendo ``Bearer`` a secas — el cliente lo distingue por eso."""
-    resp = await _me(client, au.expired_token("soc_operator"))
+    resp = await _me(client, au.expired_token("tenant_admin"))
     assert resp.status_code == 401
     assert resp.json()["detail"] == "token expired"
     assert resp.headers.get("WWW-Authenticate") == "Bearer"
@@ -265,7 +260,7 @@ async def test_los_demas_401_conservan_su_forma(client, db_engine) -> None:
 
 async def test_me_publica_el_plazo_coherente(client, db_engine) -> None:
     antes = int(time.time())
-    resp = await _me(client, au.make_token("soc_operator", auth_age=3_600))
+    resp = await _me(client, au.make_token("tenant_admin", auth_age=3_600))
     despues = int(time.time())
     assert resp.status_code == 200, resp.text
     body = resp.json()
@@ -288,7 +283,7 @@ async def test_me_de_un_brigadista_publica_30_dias(client, db_engine) -> None:
 def _mfa_app() -> FastAPI:
     """Ruta mínima con la MISMA composición que el camino de comando."""
     app = FastAPI()
-    guard = deps.require_roles("occupant", "soc_operator", inner=require_mfa(deps.get_claims))
+    guard = deps.require_roles("occupant", "tenant_admin", inner=require_mfa(deps.get_claims))
 
     @app.get("/probe")
     def probe(claims: Claims = Depends(guard)) -> dict[str, str]:
@@ -310,5 +305,5 @@ async def test_sesion_caducada_es_401_ANTES_que_el_403_de_MFA(
         viejo = await client.get("/probe", headers=au.bearer(au.occupant_token(auth_age=91 * DAY)))
         _assert_expired(viejo)
         # Del pool CON MFA y fresco ⇒ pasa.
-        ok = await client.get("/probe", headers=au.bearer(au.make_token("soc_operator")))
+        ok = await client.get("/probe", headers=au.bearer(au.make_token("tenant_admin")))
         assert ok.status_code == 200

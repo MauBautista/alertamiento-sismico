@@ -11,7 +11,7 @@ _USER = "abcabcab-0000-0000-0000-0000000000e1"
 _BASE = datetime(2026, 6, 2, 8, 0, 0, tzinfo=UTC)
 
 
-def _token(role: str = "soc_operator") -> dict[str, str]:
+def _token(role: str = "tenant_admin") -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=au.DB_TENANT_PRIV, site_scope="*", user_id=_USER))
 
 

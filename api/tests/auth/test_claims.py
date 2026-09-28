@@ -14,7 +14,7 @@ from takab_api.auth.tokens import AuthError
 def _verified(**over: object) -> dict:
     settings = au.test_settings()
     jwks = select_jwks(settings)
-    token = au.make_token(over.pop("role", "soc_operator"), **over)
+    token = au.make_token(over.pop("role", "tenant_admin"), **over)
     return decode_verify(token, settings, jwks)
 
 
@@ -30,7 +30,7 @@ def test_role_not_in_groups_raises_401() -> None:
     payload = {
         "sub": "u",
         "cognito:groups": ["occupant"],
-        "custom:role": "soc_operator",
+        "custom:role": "tenant_admin",
         "custom:tenant_id": au.TENANT_A,
         "custom:site_scope": "*",
         "custom:surface": "web",
@@ -49,8 +49,8 @@ def _payload(**over: object) -> dict:
         "auth_time": 1_700_000_000,
         "iat": 1_700_000_000,
         "sub": "u",
-        "cognito:groups": ["soc_operator"],
-        "custom:role": "soc_operator",
+        "cognito:groups": ["tenant_admin"],
+        "custom:role": "tenant_admin",
         "custom:tenant_id": au.TENANT_A,
         "custom:site_scope": "*",
         "custom:surface": "web",

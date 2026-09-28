@@ -71,6 +71,21 @@ describe("signOut(motivo)", () => {
     expect(useSessionStore.getState().signOutReason).toBe("max_age");
   });
 
+  it("[F2] `rol_retirado` es un motivo legible", () => {
+    autenticar();
+    useSessionStore.getState().signOut("rol_retirado");
+    expect(useSessionStore.getState().signOutReason).toBe("rol_retirado");
+  });
+
+  it("[F2] el `rol_retirado` del REST PRECISA un `expired` previo del canal (y no al revés)", () => {
+    autenticar();
+    useSessionStore.getState().signOut("expired");
+    useSessionStore.getState().signOut("rol_retirado");
+    expect(useSessionStore.getState().signOutReason).toBe("rol_retirado");
+    useSessionStore.getState().signOut("expired");
+    expect(useSessionStore.getState().signOutReason).toBe("rol_retirado");
+  });
+
   it("volver a entrar limpia el motivo anterior", () => {
     autenticar();
     useSessionStore.getState().signOut("expired");

@@ -78,13 +78,14 @@ async def test_sign_authz_and_read_authz(client, make_incident, make_dictamen) -
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     await make_dictamen(au.DB_TENANT_PRIV, iid, signed_by=None)
 
-    # soc_operator: Triage lectura sí, firma no.
-    read = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("soc_operator"))
+    # tenant_admin: Triage lectura sí, firma no ([T-9.20 · D-42] antes soc_operator;
+    # su heredero tampoco porta ``sign_dictamen``, así que la intención se conserva).
+    read = await client.get(f"/incidents/{iid}/dictamens", headers=_tok("tenant_admin"))
     assert read.status_code == 200
     forbidden = await client.post(
         f"/incidents/{iid}/dictamens",
         json={"status": "restricted"},
-        headers=_tok("soc_operator"),
+        headers=_tok("tenant_admin"),
     )
     assert forbidden.status_code == 403
 
@@ -202,7 +203,7 @@ async def test_una_firma_RECHAZADA_no_deja_fila(client, make_incident) -> None:
     r = await client.post(
         f"/incidents/{iid}/dictamens",
         json={"status": "normal_operation"},
-        headers=_tok("soc_operator"),
+        headers=_tok("tenant_admin"),
     )
     assert r.status_code == 403
     assert await _bitacora(iid) == []

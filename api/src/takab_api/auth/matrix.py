@@ -13,9 +13,13 @@ ninguna pantalla que lo consumiera. La celda es EXACTAMENTE la acción
 ``read_audit`` (superadmin, support, tenant_admin, gov_operator) — no se inventa
 una frontera nueva, se hace visible la que ya decidía el endpoint.
 
-Divergencia doc conocida: §7 lista ``building_admin`` en ``/fleet`` pero §2 le da
-"—" en Flota Edge. Seguimos §2 (celda a celda, como el test) → building_admin
-NO tiene /fleet. Pendiente de resolver en el documento.
+[T-9.20 · D-42] SIETE roles. ``soc_operator``, ``security_guard`` y ``building_admin``
+salieron de la matriz: sus tokens entran canonizados a ``tenant_admin`` /
+``brigadista`` / ``brigadista`` durante la ventana de alias (``auth/roles.py``).
+Nada de lo que tenían se perdió para su heredero (``tenant_admin`` ⊇ ``soc_operator``
+y ``brigadista`` == ``security_guard`` celda a celda, lo ancla
+``tests/auth/test_roles_heredados.py``); el ``building_admin`` pierde la consola,
+que D-42 acepta: quien la necesite se mapea a ``tenant_admin`` en la migración.
 
 Acciones (derivadas de §2 + notas §4):
 - ``ack_incident``  ← MONITOREO ∈ {Total, "Lectura + ack"}.
@@ -23,9 +27,11 @@ Acciones (derivadas de §2 + notas §4):
   no se deriva del "Total" de superadmin — decisión de seguridad, ver notas).
 - ``export``        ← Triage ∈ {Total, "Lectura + export"}: DESCARGAR evidencia ya
   archivada (miniSEED/PDF existente).
-- ``generate_report`` ← CREAR evidencia nueva (PDF de dictamen) en el tenant. Es un
-  subconjunto estricto de ``export``: gov_operator descarga evidencia de tenants
-  ``gov_shared`` pero no escribe filas en un tenant ajeno. Separarla de ``export``
+- ``generate_report`` ← CREAR evidencia nueva (PDF de dictamen) en el tenant. Era un
+  subconjunto estricto de ``export`` hasta D-42, que se la da a ``tenant_admin`` sin
+  ``export`` (el PDF recién generado llega con su propia descarga firmada). Lo que se
+  conserva: gov_operator descarga evidencia de tenants ``gov_shared`` pero no escribe
+  filas en un tenant ajeno. Separarla de ``export``
   evita que la consola pinte a gov_operator un botón que siempre daría 403
   (regla de oro 7).
 - ``edit_thresholds`` ← administra umbrales (§1/§2: tenant_admin) + dueño de plataforma.
@@ -72,14 +78,11 @@ ROLE_ROUTE_MATRIX: dict[str, frozenset[str]] = {
     "takab_superadmin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),
     "takab_support": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),
     "tenant_admin": frozenset({CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING}),
-    "soc_operator": frozenset({CONSOLE, FLEET, TRIAGE, BUILDING}),
     # [T-2.52] gov_operator SÍ ve /audit: RBAC §2 le da `read_audit` como evidencia
     # de protección civil, y la RLS `audit_read` ya acota las filas a lo que puede ver.
     "gov_operator": frozenset({CONSOLE, FLEET, TRIAGE, AUDIT, BUILDING}),
     "inspector": frozenset({CONSOLE, TRIAGE, BUILDING}),
-    "building_admin": frozenset({CONSOLE, TRIAGE, BUILDING}),
     "brigadista": frozenset(),
-    "security_guard": frozenset(),
     "occupant": frozenset(),
 }
 
@@ -418,6 +421,9 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # Apagar SÍ, encender NO: ver la razón en el censo de acciones.
         demo_mode_off=True,
         ack_incident=True,
+        # [T-9.20 · D-42] Absorbe al operador SOC y a la administración del inmueble:
+        # GENERA el reporte del incidente de su propio cliente (su RLS lo acota).
+        generate_report=True,
         edit_thresholds=True,
         siren_test=True,
         manage_fleet=True,
@@ -452,17 +458,6 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         panel_read=True,
         movement_alert=True,
     ),
-    # [T-3.12.c] El SOC opera el incidente: necesita las métricas Y el clip, porque la
-    # pregunta que el vídeo contesta —«¿están saliendo o están atrapados?»— es suya y es
-    # el escenario entero para el que existe este módulo (`D-14`).
-    "soc_operator": _actions(
-        classify_incident=True,
-        ack_incident=True,
-        relocate_epicenter=True,
-        request_dictamen=True,
-        cctv_read=True,
-        cctv_video=True,
-    ),
     # Descarga evidencia de tenants gov_shared, pero no la GENERA en tenant ajeno.
     "gov_operator": _actions(ack_incident=True, export=True, read_audit=True),
     # [T-2.03] inspector en móvil (RBAC §3, celda a celda): forense (cámara +
@@ -484,38 +479,10 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
         # si el edificio es habitable, y `B.4` pide el acceso lo más estrecho posible.
         cctv_read=True,
     ),
-    # [T-2.03] building_admin (RBAC §3): headcount y silenciar SÍ; forense NO
-    # (§3 da "—" en cámara/formulario — administra el inmueble, no lo peritea).
-    "building_admin": _actions(
-        classify_incident=True,
-        siren_test=True,
-        self_test=True,
-        checkin_submit=True,
-        roster_read=True,
-        siren_silence=True,
-        manual_activate=True,
-        enrollment_manage=True,
-        dictamen_read=True,
-        panel_read=True,
-        movement_alert=True,
-        # [T-3.12.c] Las dos: administra el inmueble y la evacuación es de su gente.
-        cctv_read=True,
-        cctv_video=True,
-    ),
     # [T-2.03] Tácticos de campo (RBAC §4): deslizar-para-activar individual,
-    # silenciar = retirada de demanda, forense y headcount.
+    # silenciar = retirada de demanda, forense y headcount. [T-9.20 · D-42] Absorbe
+    # al ``security_guard`` (idéntico celda a celda) y al ``building_admin``.
     "brigadista": _actions(
-        checkin_submit=True,
-        roster_read=True,
-        damage_report_submit=True,
-        evidence_upload=True,
-        siren_silence=True,
-        manual_activate=True,
-        dictamen_read=True,
-        panel_read=True,
-        movement_alert=True,
-    ),
-    "security_guard": _actions(
         checkin_submit=True,
         roster_read=True,
         damage_report_submit=True,
@@ -539,8 +506,9 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
 #: pasado el plazo, 401 ``sesion_expirada`` en REST y cierre 4440 en el WS.
 #:
 #: - campo (brigadista, inspector): 30 d — no se les pide contraseña ni código en
-#:   un mes; el interruptor contra un teléfono perdido es la baja, que cierra sus
-#:   sesiones (``users/directory.py``).
+#:   un mes [T-9.20 · D-42: el ex-guardia y el ex-administrador de inmueble,
+#:   canonizados a brigadista, heredan los 30 d]; el interruptor contra un
+#:   teléfono perdido es la baja, que cierra sus sesiones (``users/directory.py``).
 #: - occupant: 90 d — su pool, su cliente.
 #: - todo rol con poder de consola u operación: 24 h.
 #:
@@ -552,12 +520,9 @@ SESSION_MAX_AGE_S: dict[str, int] = {
     "takab_superadmin": _DAY_S,
     "takab_support": _DAY_S,
     "tenant_admin": _DAY_S,
-    "soc_operator": _DAY_S,
     "gov_operator": _DAY_S,
     "inspector": 30 * _DAY_S,
-    "building_admin": _DAY_S,
     "brigadista": 30 * _DAY_S,
-    "security_guard": _DAY_S,
     "occupant": 90 * _DAY_S,
 }
 

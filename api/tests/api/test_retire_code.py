@@ -437,7 +437,7 @@ async def test_retirar_un_sitio_exige_su_code_y_el_codigo_del_tenant(seed: None)
 async def test_el_codigo_no_sustituye_al_permiso(seed: None) -> None:
     """Conocer el código no da permiso: ``manage_fleet`` sigue siendo obligatorio."""
     await _set_code()
-    resp = await _post(f"/fleet/gateways/{G_A}/retire", _retire_gw(), _tok("soc_operator"))
+    resp = await _post(f"/fleet/gateways/{G_A}/retire", _retire_gw(), _tok("gov_operator"))
     assert resp.status_code == 403
 
     assert await _audit("gateway_retire") == []

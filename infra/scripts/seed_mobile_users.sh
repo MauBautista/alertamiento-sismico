@@ -21,7 +21,7 @@
 #
 # Por qué el código se inserta por SQL y no por la API: `POST /sites/{id}/
 # enrollment-codes` exige un rol con `enrollment_manage` (superadmin/
-# tenant_admin/building_admin), todos en el pool con MFA=ON ⇒ no automatizable
+# tenant_admin), todos en el pool con MFA=ON ⇒ no automatizable
 # sin authenticator. Y la consola web todavía no tiene pantalla para ello.
 #
 # Uso:  AWS_PROFILE=takab-dev infra/scripts/seed_mobile_users.sh [rol ...]
@@ -81,9 +81,10 @@ ROLES=("${ARGS[@]:-${DEFAULT_ROLES[@]}}")
 
 for ROLE in "${ROLES[@]}"; do
   case "$ROLE" in
-  occupant | brigadista | security_guard) ;;
+  occupant | brigadista) ;;
   *)
-    echo "rol no móvil: $ROLE (usa occupant|brigadista|security_guard)" >&2
+    # [D-42] security_guard ya no se siembra: es alias heredado de brigadista.
+    echo "rol no móvil: $ROLE (usa occupant|brigadista)" >&2
     exit 2
     ;;
   esac

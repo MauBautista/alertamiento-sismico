@@ -275,7 +275,7 @@ async def _get(token: str):
 
 
 async def test_states_derived_server_side(seed: None) -> None:
-    resp = await _get(au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     by_serial = {g["serial"]: g["derived_state"] for g in resp.json()}
     assert by_serial == {
@@ -292,7 +292,7 @@ async def test_states_derived_server_side(seed: None) -> None:
 
 
 async def test_rls_tenant_a_does_not_see_b_gateway(seed: None) -> None:
-    resp = await _get(au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(au.make_token("tenant_admin", tenant=T_A))
     serials = {g["serial"] for g in resp.json()}
     assert "GW-B" not in serials
     assert "GW-GOV" not in serials  # tenant privado no ve la flota gov_shared
@@ -308,7 +308,7 @@ async def test_gov_operator_sees_only_gov_shared(seed: None) -> None:
     assert "GW-B" not in serials
 
 
-@pytest.mark.parametrize("role", ["inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["inspector", "brigadista"])
 async def test_role_without_fleet_forbidden(seed: None, role: str) -> None:
     resp = await _get(au.make_token(role, tenant=T_A))
     assert resp.status_code == 403

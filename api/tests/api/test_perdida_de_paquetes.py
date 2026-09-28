@@ -66,7 +66,7 @@ async def test_la_perdida_de_paquetes_LLEGA_a_la_flota(client, base_data):
 
     r = await client.get(
         "/fleet/gateways",
-        headers=au.bearer(au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*")),
+        headers=au.bearer(au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*")),
     )
     assert r.status_code == 200, r.text
     fila = next(g for g in r.json() if g["gateway_id"] == gw)
@@ -80,7 +80,7 @@ async def test_sin_dato_sale_NULL_y_no_un_cero(client, base_data):
 
     r = await client.get(
         "/fleet/gateways",
-        headers=au.bearer(au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*")),
+        headers=au.bearer(au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*")),
     )
     fila = next(g for g in r.json() if g["gateway_id"] == gw)
     assert fila["packet_loss_pct"] is None
@@ -102,7 +102,7 @@ async def test_la_perdida_NO_degrada_el_estado_por_su_cuenta(client, base_data):
 
     r = await client.get(
         "/fleet/gateways",
-        headers=au.bearer(au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*")),
+        headers=au.bearer(au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*")),
     )
     fila = next(g for g in r.json() if g["gateway_id"] == gw)
     assert fila["packet_loss_pct"] == pytest.approx(99.0)

@@ -47,7 +47,7 @@ def _user(
     *,
     tenant: str,
     email: str | None = None,
-    role: str = "soc_operator",
+    role: str = "gov_operator",
     site_scope: str = "*",
     surface: str = "web",
     enabled: bool = True,
@@ -130,7 +130,7 @@ async def _audit(verb: str) -> list[dict]:
 
 
 @pytest.mark.parametrize(
-    "role", ["takab_support", "soc_operator", "gov_operator", "inspector", "building_admin"]
+    "role", ["takab_support", "gov_operator", "inspector", "brigadista", "occupant"]
 )
 async def test_roles_without_manage_users_are_403(app, sites, role: str) -> None:
     """`takab_support` incluido: soporte lee la plataforma, no reparte identidades."""
@@ -189,7 +189,7 @@ async def test_tenant_admin_creates_user_in_own_tenant_and_audits(app, sites, di
         resp = await c.post(
             "/users",
             headers=_token(),
-            json={"email": "Nuevo@Takab.Test", "role": "soc_operator", "site_scope": "*"},
+            json={"email": "Nuevo@Takab.Test", "role": "gov_operator", "site_scope": "*"},
         )
     assert resp.status_code == 201, resp.text
     body = resp.json()
@@ -216,7 +216,7 @@ async def test_tenant_admin_creates_user_in_own_tenant_and_audits(app, sites, di
     assert len(rows) == 1
     assert rows[0]["tenant_id"] == au.DB_TENANT_PRIV
     assert rows[0]["actor"] == f"user:{ADMIN_SUB}"
-    assert rows[0]["meta"]["role"] == "soc_operator"
+    assert rows[0]["meta"]["role"] == "gov_operator"
 
 
 async def test_tenant_admin_cannot_create_in_another_tenant(app, sites) -> None:
@@ -226,7 +226,7 @@ async def test_tenant_admin_cannot_create_in_another_tenant(app, sites) -> None:
             headers=_token(),
             json={
                 "email": "invasor@takab.test",
-                "role": "soc_operator",
+                "role": "gov_operator",
                 "tenant_id": au.DB_TENANT_PRIV2,
             },
         )
@@ -252,7 +252,7 @@ async def test_superadmin_must_name_the_tenant(app, sites) -> None:
         resp = await c.post(
             "/users",
             headers=_token("takab_superadmin"),
-            json={"email": "sin-tenant@takab.test", "role": "soc_operator"},
+            json={"email": "sin-tenant@takab.test", "role": "gov_operator"},
         )
     assert resp.status_code == 400
 
@@ -274,21 +274,21 @@ async def test_site_scope_must_name_sites_of_this_tenant(app, sites) -> None:
         alien = await c.post(
             "/users",
             headers=_token(),
-            json={"email": "acotado@takab.test", "role": "soc_operator", "site_scope": SITE_PRIV2},
+            json={"email": "acotado@takab.test", "role": "gov_operator", "site_scope": SITE_PRIV2},
         )
         ghost = await c.post(
             "/users",
             headers=_token(),
             json={
                 "email": "acotado2@takab.test",
-                "role": "soc_operator",
+                "role": "gov_operator",
                 "site_scope": str(uuid.uuid4()),
             },
         )
         ok = await c.post(
             "/users",
             headers=_token(),
-            json={"email": "acotado3@takab.test", "role": "soc_operator", "site_scope": SITE_PRIV},
+            json={"email": "acotado3@takab.test", "role": "gov_operator", "site_scope": SITE_PRIV},
         )
     assert alien.status_code == 400
     assert ghost.status_code == 400
@@ -303,7 +303,7 @@ async def test_site_scope_is_normalised(app, sites) -> None:
             headers=_token(),
             json={
                 "email": "dup@takab.test",
-                "role": "soc_operator",
+                "role": "gov_operator",
                 "site_scope": f" {SITE_PRIV} , {SITE_PRIV} ",
             },
         )
@@ -316,7 +316,7 @@ async def test_site_scope_rejects_garbage(app, sites) -> None:
         resp = await c.post(
             "/users",
             headers=_token(),
-            json={"email": "malo@takab.test", "role": "soc_operator", "site_scope": "no-es-uuid"},
+            json={"email": "malo@takab.test", "role": "gov_operator", "site_scope": "no-es-uuid"},
         )
     assert resp.status_code == 422
 
@@ -324,7 +324,7 @@ async def test_site_scope_rejects_garbage(app, sites) -> None:
 async def test_duplicate_email_is_409(app, sites) -> None:
     async with au.client_for(app) as c:
         resp = await c.post(
-            "/users", headers=_token(), json={"email": "propio@takab.test", "role": "soc_operator"}
+            "/users", headers=_token(), json={"email": "propio@takab.test", "role": "gov_operator"}
         )
     assert resp.status_code == 409
 
@@ -370,7 +370,7 @@ async def test_tenant_admin_patching_foreign_user_is_404(app, sites, directory) 
     async with au.client_for(app) as c:
         resp = await c.patch("/users/u-other", headers=_token(), json={"role": "inspector"})
     assert resp.status_code == 404
-    assert directory.get_user("u-other").role == "soc_operator"
+    assert directory.get_user("u-other").role == "gov_operator"
     assert await _audit("user_update") == []
 
 
@@ -378,7 +378,7 @@ async def test_tenant_admin_cannot_escalate_an_existing_user(app, sites, directo
     async with au.client_for(app) as c:
         resp = await c.patch("/users/u-own", headers=_token(), json={"role": "takab_superadmin"})
     assert resp.status_code == 403
-    assert directory.get_user("u-own").role == "soc_operator"
+    assert directory.get_user("u-own").role == "gov_operator"
 
 
 async def test_patch_cannot_move_a_user_between_tenants(app, sites) -> None:
@@ -618,7 +618,7 @@ def test_simulated_writes_shout(caplog) -> None:
         directory.create_user(
             email="a@b.test",
             tenant_id=au.DB_TENANT_PRIV,
-            role="soc_operator",
+            role="gov_operator",
             site_scope="*",
             zone_id="",
             surface="web",
@@ -658,6 +658,8 @@ class _FakeCognito:
 
     def admin_list_groups_for_user(self, **kw):
         self._rec("admin_list_groups_for_user", **kw)
+        # [T-9.20 · D-42] Un grupo HEREDADO a propósito: la baja de un rol viejo es
+        # justo el cambio de rol que saca al usuario de ese grupo.
         return {"Groups": [{"GroupName": "soc_operator"}, {"GroupName": "inspector"}]}
 
     def admin_get_user(self, **kw):

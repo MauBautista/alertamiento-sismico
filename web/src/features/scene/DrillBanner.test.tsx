@@ -100,12 +100,13 @@ afterEach(() => {
 
 describe("DrillBanner", () => {
   it("con drill activo pinta el banner rotulado NO-real", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     pintar(drillData({ drill: DRILL }));
     const banner = screen.getByTestId("drill-banner");
     expect(banner).toHaveTextContent("SIMULACRO EN CURSO — ESTO NO ES UNA ALERTA REAL");
     expect(banner).toHaveTextContent("1 SITIO(S)");
-    // soc_operator no puede terminarlo (gate drill_start).
+    // [T-9.20] gov_operator no puede terminarlo (gate drill_start). Era el operador
+    // SOC; su heredero tenant_admin SÍ puede, así que la restricción cambia de rol.
     expect(screen.queryByRole("button", { name: "TERMINAR" })).toBeNull();
   });
 
@@ -130,7 +131,7 @@ describe("DrillBanner", () => {
     // [U-45] La consola dedicaba una franja permanente a «SIN SIMULACRO EN
     // CURSO». El estado sigue existiendo para la tabla y los tests (`empty`),
     // pero no ocupa un píxel.
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     const { container } = pintar(drillData(), "normal");
     const marco = container.querySelector('[data-state="empty"]');
     expect(marco).not.toBeNull();
@@ -156,7 +157,7 @@ describe("DrillBanner", () => {
   // --- El bug que motivó la reescritura de T-2.48 ---------------------------
 
   it("si /drills/active FALLA con el simulacro vivo, el banner NO desaparece", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     const { container } = pintar(
       drillData({ drill: DRILL, readError: "GET /drills/active falló (503)" }),
     );
@@ -168,7 +169,7 @@ describe("DrillBanner", () => {
   });
 
   it("sin ningún dato conocido, el fallo se MUESTRA (no se calla)", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     const refetch = vi.fn();
     const { container } = pintar(
       drillData({ readError: "GET /drills/active falló (503)", refetch }),
@@ -180,14 +181,14 @@ describe("DrillBanner", () => {
   });
 
   it("mientras carga NO afirma que no hay simulacro", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     const { container } = pintar(drillData({ loading: true }), "normal");
     expect(container.querySelector('[data-state="loading"]')).not.toBeNull();
     expect(screen.queryByTestId("drill-banner")).toBeNull();
   });
 
   it("materializa los 4 estados obligatorios (regla de oro 7)", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     const byState: Record<UiState, Partial<ActiveDrillData>> = {
       loading: { loading: true },
       error: { readError: "boom" },
@@ -243,7 +244,7 @@ describe("DrillBanner", () => {
 
   it("un rol sin drill_start VE el armado pero no puede tocarlo", () => {
     vi.setSystemTime(Date.parse("2026-08-04T17:55:00Z"));
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     pintar(drillData({ scheduled: [AGENDA] }), "normal");
     expect(screen.getByTestId("drill-armed")).toHaveTextContent("SIMULACRO ARMADO");
     expect(screen.queryByRole("button", { name: "EJECUTAR AHORA" })).toBeNull();
@@ -252,7 +253,7 @@ describe("DrillBanner", () => {
 
   it("el armado NO se degrada bajo alerta real: es un aviso, no un simulacro sonando", () => {
     vi.setSystemTime(Date.parse("2026-08-04T17:55:00Z"));
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     pintar(drillData({ scheduled: [AGENDA] }), "alert");
     expect(screen.getByTestId("drill-armed")).toBeInTheDocument();
     expect(screen.queryByTestId("drill-badge")).toBeNull();

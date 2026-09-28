@@ -167,7 +167,7 @@ async def test_rate_limit_user_site_429(client, gateway, publisher, monkeypatch)
 
 
 async def test_role_without_actuator_action_forbidden(client, gateway) -> None:
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV)  # sin siren_test
+    tok = au.make_token("gov_operator", tenant=au.DB_TENANT_PRIV)  # sin siren_test
     r = await client.post(
         f"/sites/{au.DB_SITE_PRIV}/commands", json=_body(), headers=au.bearer(tok)
     )
@@ -335,9 +335,11 @@ async def test_self_test_channel_action_cross_is_400(client, gateway, channel, a
     assert r.status_code == 400
 
 
-async def test_soc_operator_cannot_self_test(client, gateway) -> None:
-    """soc_operator opera incidentes, no mantenimiento del gabinete (matriz)."""
-    tok = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV)
+async def test_rol_de_consola_sin_self_test_no_autodiagnostica(client, gateway) -> None:
+    """Un rol de consola sin ``self_test`` (gov_operator: lee y acusa, no mantiene el
+    gabinete) recibe 403. [T-9.20 · D-42] Antes lo probaba ``soc_operator``, que ahora
+    canoniza a ``tenant_admin`` y SÍ autodiagnostica: se elige otro rol sin el permiso."""
+    tok = au.make_token("gov_operator", tenant=au.DB_TENANT_PRIV)
     r = await client.post(
         f"/sites/{au.DB_SITE_PRIV}/commands",
         json={"channel": "system", "action": "self_test", "event_id": None},
@@ -346,11 +348,17 @@ async def test_soc_operator_cannot_self_test(client, gateway) -> None:
     assert r.status_code == 403
 
 
-async def test_building_admin_can_self_test_but_not_actuate(client, gateway, publisher) -> None:
+async def test_building_admin_heredado_ya_no_autodiagnostica(client, gateway, publisher) -> None:
+    """[T-9.20 · D-42] El rol ``building_admin`` (que autodiagnosticaba sin actuar)
+    desaparece: su token entra canonizado a ``brigadista``, que NO porta
+    ``self_test``. D-42 acepta la pérdida; quien la necesite se migra a
+    ``tenant_admin``. Ya no existe un rol canónico con self_test y sin siren_test,
+    así que la intención vieja no tiene sustituto: se prueba el alias."""
     tok = au.make_token("building_admin", tenant=au.DB_TENANT_PRIV)
     st = await client.post(
         f"/sites/{au.DB_SITE_PRIV}/commands",
         json={"channel": "system", "action": "self_test", "event_id": None},
         headers=au.bearer(tok),
     )
-    assert st.status_code == 201
+    assert st.status_code == 403, st.text
+    assert publisher.published == []

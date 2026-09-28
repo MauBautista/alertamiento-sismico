@@ -345,7 +345,7 @@ export default function TriageDetail({
           {inc.event_id ?? inc.incident_id} · {utcStamp(Date.parse(inc.opened_at))} UTC
         </div>
         {/* [T-6.14] `/building` colgaba de UN enlace en el riel de `/console`.
-            `inspector` y `building_admin` tienen la ruta concedida y NO tienen
+            `inspector` (y el antiguo `building_admin`) tienen la ruta y NO tienen
             `/fleet`: para ellos ese riel era el único camino a la ficha del
             inmueble que están evaluando. Aquí es donde la necesitan. */}
         {canOpenBuilding && (

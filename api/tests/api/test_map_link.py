@@ -50,7 +50,7 @@ _GEOM = "ST_SetSRID(ST_MakePoint(-98.20, 19.04), 4326)::geography"
 
 
 def _auth() -> dict[str, str]:
-    return au.bearer(au.make_token("soc_operator", tenant=T_PRIV_A, site_scope="*", surface="web"))
+    return au.bearer(au.make_token("tenant_admin", tenant=T_PRIV_A, site_scope="*", surface="web"))
 
 
 @pytest.fixture

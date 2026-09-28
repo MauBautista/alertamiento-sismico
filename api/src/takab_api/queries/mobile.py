@@ -16,6 +16,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from takab_api.auth.claims import Claims, scope_filter
+from takab_api.auth.roles import literales_de
 from takab_api.incident.autoridad import autoriza_evacuacion_sql, params_autoriza_evacuacion_sql
 from takab_api.incident.classification import TERMINALES
 from takab_api.queries.fleet import EDAD_DEL_ENLACE, LATIDO_REAL
@@ -535,13 +536,18 @@ SITE_HEALTH = text(
 
 # Roster PÚBLICO del sitio: contactos de emergencia (jamás occupants). El RLS
 # acota el tenant; el alcance del sitio lo valida assert_site_access antes.
+# [T-9.20 · D-42] Los roles del directorio son el BRIGADISTA y sus literales viejos
+# (``security_guard``/``building_admin``): la 0072 canoniza las asignaciones, pero
+# durante la ventana de alias una fila vieja no debe desaparecer del directorio. La
+# lista sale de ``auth/roles.py`` (constantes, no entrada de usuario), no a mano.
+_ROLES_DEL_DIRECTORIO = ",".join(f"'{r}'" for r in literales_de("brigadista"))
 SITE_DIRECTORY = text(
     "SELECT a.user_id, p.display_name, a.role, a.zone_id, z.name AS zone_name, p.phone "
     "FROM user_zone_assignments a "
     "JOIN user_profiles p ON p.user_sub = a.user_id "
     "LEFT JOIN zones z ON z.zone_id = a.zone_id "
     "WHERE a.site_id = CAST(:site AS uuid) "
-    "AND a.role IN ('brigadista','security_guard','building_admin') "
+    f"AND a.role IN ({_ROLES_DEL_DIRECTORIO}) "
     "ORDER BY z.name NULLS LAST, p.display_name"
 )
 

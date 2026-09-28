@@ -7,7 +7,7 @@ señal de «lo tengo»: hoy no existía ninguna.
 POR QUÉ NO SE REUSÓ `POST /incidents/{id}/ack`
 -----------------------------------------------
 Aquel mueve el incidente `open→acked` y lo firman los roles de MONITOREO
-(`ack_incident`: superadmin, tenant_admin, soc_operator, gov_operator). Conflarlo
+(`ack_incident`: superadmin, tenant_admin, gov_operator). Conflarlo
 con el acuse de la brigada costaría en las DOS direcciones:
 
   · un brigadista vaciaría la cola del SOC desde el teléfono;
@@ -136,6 +136,30 @@ async def test_un_tactico_puede_acusar(client, incidente) -> None:
     acuses = await _acuses()
     assert len(acuses) == 1, f"se esperaba un acuse, hay {len(acuses)}"
     assert acuses[0]["kind"] == "tactical_ack"
+
+
+async def test_el_acuse_de_un_EX_GUARDIA_guarda_el_rol_que_traia(client, incidente) -> None:
+    """[T-9.20 · D-42] Durante la ventana de alias el acuse se hace como `brigadista`, pero
+    la historia nueva no pierde el rol con el que se firmó: `role_raw`."""
+    token = au.make_token(
+        "security_guard",
+        surface="mobile",
+        site_scope=SITE,
+        user_id="70000000-0000-0000-0000-0000000ac0f2",
+        tenant=au.DB_TENANT_PRIV,
+    )
+    resp = await _ack(client, token)
+    assert resp.status_code == 200, resp.text
+    [acuse] = await _acuses()
+    assert acuse["payload"]["role"] == "brigadista"
+    assert acuse["payload"]["role_raw"] == "security_guard"
+
+
+async def test_el_acuse_con_rol_canonico_NO_repite_el_rol(client, incidente) -> None:
+    resp = await _ack(client, _tactico("70000000-0000-0000-0000-0000000ac0f3"))
+    assert resp.status_code == 200, resp.text
+    [acuse] = await _acuses()
+    assert "role_raw" not in acuse["payload"]
 
 
 async def test_el_acuse_de_la_brigada_NO_mueve_el_estado_del_incidente(client, incidente) -> None:

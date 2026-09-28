@@ -22,7 +22,7 @@ import { retryDelayMs } from "./degradedRetry";
  *  1. NO ARRANCAR — inaceptable. Una caída de base coincide a menudo con un
  *     incidente, y eso deja al SOC sin pantalla justo cuando hace falta.
  *  2. ARRANCAR Y MOSTRAR DATOS — inaceptable (regla de oro 5). Sin `/me` no hay
- *     `site_scope` ni `allowed_routes`: un `soc_operator` sin alcance resuelto no
+ *     `site_scope` ni `allowed_routes`: un operador acotado sin alcance resuelto no
  *     puede ver NADA, y adivinarlo —del claim, de un caché, de un default— es la
  *     brecha multi-tenant, no un atajo.
  *  3. ARRANCAR Y DECLARAR — la única que respeta las dos reglas, y la elegida.

@@ -20,7 +20,7 @@ function sembrar(extra: Partial<ReturnType<typeof useSessionStore.getState>>): v
     status: "authenticated",
     origin: "dev",
     idToken: "t",
-    me: ME_FIXTURES.soc_operator,
+    me: ME_FIXTURES.tenant_admin,
     ...extra,
   });
 }

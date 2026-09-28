@@ -1,7 +1,7 @@
 """Authz del WebSocket ``/ws`` (T-1.22 · B4 + T-2.08 — regla de oro #5).
 
 El canal live impone allowlist topic×rol DEFAULT-DENY (spec móvil §5.3):
-- Consola C4I (RBAC §2) y tácticos móviles (brigadista/security_guard con
+- Consola C4I (RBAC §2) y tácticos móviles (brigadista con
   surface móvil — RBAC §3 ``panel_read``) suscriben incidents/site_state/
   features, siempre acotados a ``site_scope``;
 - ``occupant`` queda FUERA del WS: su handshake cierra 4401 (push + REST);
@@ -93,9 +93,11 @@ async def test_brigadista_surface_web_denegado(ws_server: str) -> None:
 
 
 async def test_features_site_scope_denies_out_of_scope(ws_server: str) -> None:
-    # soc_operator acotado a WS_SITE_A: features de otro sitio → rechazo; su
-    # propio sitio → poller activo (recibe el strip sembrado).
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, site_scope=WS_SITE_A)
+    # inspector acotado a WS_SITE_A: features de otro sitio → rechazo; su
+    # propio sitio → poller activo (recibe el strip sembrado). [T-9.20 · D-42]
+    # Antes soc_operator; su heredero tenant_admin suele ir con '*', así que el
+    # rol de consola acotado de referencia es el inspector.
+    tok = au.make_token("inspector", tenant=WS_TENANT_A, site_scope=WS_SITE_A)
     ws = await _auth_ready(ws_server, tok)
     try:
         await w.send(ws, {"type": "subscribe", "topic": f"features:{WS_SITE_B}"})
@@ -115,7 +117,7 @@ async def test_features_poller_cap_per_socket(ws_server: str) -> None:
     # Con site_scope='*' el gate de scope no aplica; el tope por socket sí acota
     # cuántos pollers puede abrir un único cliente.
     cap = deps._settings().ws_max_feature_pollers
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A, site_scope="*")
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A, site_scope="*")
     ws = await _auth_ready(ws_server, tok)
     try:
         # Hasta el tope: sitios aleatorios (RLS → vacío, sin frame ni error).

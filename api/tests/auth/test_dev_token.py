@@ -17,14 +17,14 @@ async def test_dev_token_mounted_and_roundtrips() -> None:
     async with au.client_for(app) as client:
         resp = await client.post(
             "/dev/token",
-            json={"role": "soc_operator", "tenant_id": au.TENANT_A, "site_scope": "*"},
+            json={"role": "tenant_admin", "tenant_id": au.TENANT_A, "site_scope": "*"},
         )
         assert resp.status_code == 200, resp.text
         token = resp.json()["id_token"]
 
         me = await client.get("/me", headers=au.bearer(token))
         assert me.status_code == 200
-        assert me.json()["role"] == "soc_operator"
+        assert me.json()["role"] == "tenant_admin"
         assert me.json()["tenant_id"] == au.TENANT_A
 
 
@@ -33,7 +33,7 @@ async def test_dev_token_not_mounted_in_prod(monkeypatch: pytest.MonkeyPatch) ->
     app = create_app()
     async with au.client_for(app) as client:
         resp = await client.post(
-            "/dev/token", json={"role": "soc_operator", "tenant_id": au.TENANT_A}
+            "/dev/token", json={"role": "tenant_admin", "tenant_id": au.TENANT_A}
         )
         assert resp.status_code == 404
 
@@ -50,7 +50,7 @@ def _payload(token: str) -> dict:
 
 
 async def _forge(client, **extra) -> tuple[int, dict]:
-    body = {"role": "soc_operator", "tenant_id": au.TENANT_A, "site_scope": "*", **extra}
+    body = {"role": "tenant_admin", "tenant_id": au.TENANT_A, "site_scope": "*", **extra}
     resp = await client.post("/dev/token", json=body)
     return resp.status_code, resp.json()
 

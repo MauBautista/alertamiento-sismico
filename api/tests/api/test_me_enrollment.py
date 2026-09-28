@@ -124,7 +124,7 @@ async def test_un_rol_de_consola_sin_enrolamiento_no_rompe(base_data) -> None:
         resp = await client.get(
             "/me",
             headers=au.bearer(
-                au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*")
+                au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*")
             ),
         )
     assert resp.status_code == 200

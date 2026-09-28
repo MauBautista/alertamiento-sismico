@@ -1,8 +1,9 @@
 import Button from "../components/Button";
+import { etiquetaDeRol } from "../auth/rolesHistoricos";
 import { useSessionStore } from "../auth/session.store";
 
-/** Rol autenticado pero sin superficie web (allowed_routes = []): brigadista,
- * security_guard y occupant operan desde la app móvil (T-1.31, diferida). */
+/** Rol autenticado pero sin superficie web (allowed_routes = []): brigadista
+ * y occupant operan desde la app móvil (T-1.31, diferida). */
 export default function MobileOnlyScreen() {
   const me = useSessionStore((s) => s.me);
   const logout = useSessionStore((s) => s.logout);
@@ -11,8 +12,8 @@ export default function MobileOnlyScreen() {
       <div className="soc-screen__panel">
         <h1 className="soc-screen__title">SIN SUPERFICIE WEB</h1>
         <p className="soc-screen__sub">
-          El rol <span className="soc-mono">{me?.role}</span> opera desde la app móvil. Esta consola
-          es solo para roles con acceso SOC.
+          El rol <span className="soc-mono">{me ? etiquetaDeRol(me.role) : ""}</span> opera desde la
+          app móvil. Esta consola es solo para roles con acceso SOC.
         </p>
         <Button variant="secondary" onClick={() => void logout()}>
           CERRAR SESIÓN

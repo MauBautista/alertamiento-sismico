@@ -38,7 +38,7 @@ def app() -> FastAPI:
     return application
 
 
-def _token(role: str = "soc_operator", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
+def _token(role: str = "tenant_admin", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*"))
 
 

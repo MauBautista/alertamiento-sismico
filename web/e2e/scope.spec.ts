@@ -17,7 +17,8 @@ const LABELS = {
 } as const;
 
 test("la insignia de alcance está en la topbar de todas las pantallas", async ({ page }) => {
-  await devLogin(page, "soc_operator");
+  // [T-9.20 · D-42] Era el operador SOC, hoy `tenant_admin` (todo el cliente).
+  await devLogin(page, "tenant_admin");
   const badge = page.getByTestId("scope-badge");
   await expect(badge).toBeVisible();
 
@@ -34,7 +35,7 @@ test("la insignia de alcance está en la topbar de todas las pantallas", async (
 test("la insignia dice una de las tres verdades posibles, nunca un número inventado", async ({
   page,
 }) => {
-  await devLogin(page, "soc_operator");
+  await devLogin(page, "tenant_admin");
   const text = ((await page.getByTestId("scope-badge").textContent()) ?? "").trim();
 
   // Tres formas válidas: todo el tenant, sin estaciones, o "N ESTACIÓN(ES)".
@@ -49,7 +50,9 @@ test("la insignia dice una de las tres verdades posibles, nunca un número inven
 });
 
 test("acotado ⇒ la insignia se ACENTÚA y el mapa enseña un subconjunto", async ({ page }) => {
-  await devLogin(page, "soc_operator");
+  // [F2 · D-42] `inspector`: el ÚNICO rol web acotable. `tenant_admin` está en
+  // `SCOPE_EXEMPT_ROLES` (api auth/scope.py) y nunca probaría el acotado.
+  await devLogin(page, "inspector");
   await gotoScreen(page, "/console", "01 Monitoreo en Vivo");
   const badge = page.getByTestId("scope-badge");
   const enforced = await badge.evaluate((el) => el.classList.contains("soc-scope--limited"));

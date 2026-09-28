@@ -7,7 +7,16 @@
 
 ---
 
-## 1. Roles del sistema (10)
+## 1. Roles del sistema (7)
+
+> **[D-42 · 2026-09-27 · T-9.20] Los roles bajan de 10 a 7.** Quedan dos internos de TAKAB y
+> cinco del cliente: **ADMINISTRADOR** (`tenant_admin`, que absorbe al operador SOC y al
+> administrador de inmueble, ve TODO el cliente y tiene además la app táctica completa),
+> **GOBIERNO** (`gov_operator`), **INSPECTOR**, **BRIGADISTA** (absorbe al guardia de seguridad) y
+> **OCUPANTE**. Los identificadores técnicos no cambian (la RLS no se toca). La razón medida: el
+> guardia y el brigadista tenían **exactamente** los mismos permisos y el operador SOC era un
+> subconjunto estricto del administrador. La verdad ejecutable del catálogo es
+> `api/src/takab_api/auth/roles.py` (`CANONICAL_ROLES`, `ETIQUETA`, `ALIAS_HEREDADOS`).
 
 > [PLAN-MAESTRO-01] El encabezado decía "(11)" pero esta lista canónica siempre enumeró **10**
 > (2 internos + 7 de tenant + 1 gobierno) — también en el snapshot de junio. Las **identidades
@@ -19,26 +28,53 @@
 > faltara ninguno).
 
 ### Internos de TAKAB
-| Rol | Descripción | Superficie primaria |
-|---|---|---|
-| `takab_superadmin` | Dueño de la plataforma. Gestiona tenants. Ve todo. | Web |
-| `takab_support` | Operadores técnicos de TAKAB. Mantenimiento y diagnóstico de flota. | Web |
+| Rol | Etiqueta | Descripción | Superficie primaria |
+|---|---|---|---|
+| `takab_superadmin` | SUPERADMIN TAKAB | Dueño de la plataforma. Gestiona tenants. Ve todo. | Web |
+| `takab_support` | SOPORTE TAKAB | Operadores técnicos de TAKAB. Mantenimiento y diagnóstico de flota. | Web |
 
 ### Por tenant (cliente)
-| Rol | Descripción | Superficie primaria |
-|---|---|---|
-| `tenant_admin` | Administra su organización: sitios, usuarios, umbrales. | Web |
-| `soc_operator` | Operador de centro de monitoreo 24/7. **Puede ser servicio TAKAB o rol del propio tenant** — mismo rol, distinto alcance según a qué tenant pertenece el usuario. | Web |
-| `inspector` | Ingeniero estructural. Firma dictámenes de reingreso. | Web + Móvil |
-| `building_admin` | Responsable de un edificio específico. | Web + Móvil |
-| `brigadista` | Personal de respuesta en campo. | **Móvil** (sin superficie web hoy) |
-| `security_guard` | Seguridad/vigilancia del inmueble. | Móvil |
-| `occupant` | Ocupante común del edificio. Rol más numeroso, menor privilegio. | **Móvil only** |
+| Rol | Etiqueta | Descripción | Superficie primaria |
+|---|---|---|---|
+| `tenant_admin` | ADMINISTRADOR | Administra y opera su organización: sitios, usuarios, umbrales, incidentes 24/7. Ve **todo** su cliente (`site_scope='*'`, sin alcance por inmueble). Desde D-42 tiene además la **app táctica completa**. Absorbe a `soc_operator` y a `building_admin`. | Web + Móvil |
+| `inspector` | INSPECTOR | Ingeniero estructural. Firma dictámenes de reingreso. | Web + Móvil |
+| `brigadista` | BRIGADISTA | Personal de respuesta en campo del inmueble (brigada y vigilancia). Absorbe a `security_guard`. | **Móvil** (sin superficie web) |
+| `occupant` | OCUPANTE | Ocupante común del edificio. Rol más numeroso, menor privilegio. | **Móvil only** |
 
 ### Gobierno
-| Rol | Descripción | Superficie primaria |
-|---|---|---|
-| `gov_operator` | Protección Civil. Visibilidad cruzada **solo** de tenants marcados `visibility = 'gov_shared'`. | Web |
+| Rol | Etiqueta | Descripción | Superficie primaria |
+|---|---|---|---|
+| `gov_operator` | GOBIERNO | Protección Civil. Visibilidad cruzada **solo** de tenants marcados `visibility = 'gov_shared'`. | Web |
+
+### Alias heredados (ventana de D-42)
+Los tres roles retirados **no tienen fila en ninguna matriz**. Durante la ventana, un token que
+todavía los trae entra **canonizado** a su heredero; la historia (bitácora, acciones, dictámenes,
+PDF) conserva el rol que se tenía, con su rótulo histórico (`auth/roles.py::ROL_HISTORICO`; en la
+web, `rolesHistoricos.ts`).
+
+| Rol viejo | Entra como | Rótulo histórico | Nota |
+|---|---|---|---|
+| `soc_operator` | `tenant_admin` | OPERACIÓN SOC | Era subconjunto estricto del administrador. **Gana** permisos de administración y visibilidad de todo el cliente (precio declarado en D-42). |
+| `security_guard` | `brigadista` | SEGURIDAD | Mismos permisos exactos. Su sesión pasa de 24 h a 30 d (§5.4). |
+| `building_admin` | `brigadista` | ADMINISTRACIÓN DEL INMUEBLE | `brigadista` NO tiene consola: quien la necesite se mapea a `tenant_admin` con el script de migración (el de la demostración, así). |
+
+Reglas de la ventana (no se reinterpretan):
+
+1. **Antifalsificación sobre lo crudo.** `Claims.from_verified` comprueba `custom:role` ∈
+   `cognito:groups` **tal como vienen** y solo después canoniza. Canonizar antes dejaría pasar un
+   `custom:role` viejo con el grupo de su heredero.
+2. **Sin excepciones por usuario en tiempo de ejecución.** El destino de cada persona lo fija la
+   migración de Cognito (`api/scripts/migrar_roles_7.py`, T-9.21), no la API: una excepción por
+   usuario dentro de la API sería una vía de escalada.
+3. **La baja.** `Settings.roles_heredados_hasta` (`TAKAB_API_ROLES_HEREDADOS_HASTA`; vacía =
+   ventana abierta). Pasada esa fecha, un token con rol viejo es **401 `rol_retirado`** en REST y
+   cierre WS **4401 `rol_retirado`**, comprobado **antes** que la edad de sesión (si no, el cliente
+   vería `sesion_expirada`, que manda a re-entrar con el mismo rol y no arregla nada).
+4. **Los grupos viejos de Cognito se quedan** hasta que `migrar_roles_7.py --verify` salga 0; se
+   borran en T-9.81 junto con los alias del código. Borrarlos antes da «role not in groups» (401)
+   a los tokens viejos antes de que el alias llegue a actuar.
+5. **Asignar** un rol viejo es 422: `ASSIGNABLE_ROLES` y `GET /users/assignable-roles` solo
+   ofrecen canónicos.
 
 ---
 
@@ -55,13 +91,10 @@
 |---|---|---|---|---|---|---|---|
 | `takab_superadmin` | Total | Total | Total | Total | Lectura | Total | Toda la plataforma |
 | `takab_support` | Lectura | **Total** | Lectura | Lectura | Lectura | Lectura | Todos los tenants |
-| `tenant_admin` | Lectura + ack | Lectura | Lectura | Solo sus umbrales | Lectura | Total | Su tenant |
-| `soc_operator` | **Total** | Lectura | Lectura + crear | — | — | Lectura | Su tenant |
+| `tenant_admin` | **Total** | Lectura (+ `manage_fleet`) | Lectura + crear | Solo sus umbrales y usuarios | Lectura | **Total** | Todo su tenant |
 | `gov_operator` | Lectura + ack | Lectura | Lectura + export | — | Lectura | Lectura | Tenants `gov_shared` |
 | `inspector` | Lectura | — | **Total** (firma dictamen) | — | — | Lectura | Sitios asignados |
-| `building_admin` | Lectura (su sitio) | — | Lectura (su sitio) | — | — | **Total** | Su(s) sitio(s) |
 | `brigadista` | — | — | — | — | — | — | (móvil en MVP) |
-| `security_guard` | — | — | — | — | — | — | (móvil) |
 | `occupant` | — | — | — | — | — | — | (móvil only) |
 
 **Notas:**
@@ -73,10 +106,15 @@
   de evidencia sí es coherente con coordinar respuesta). A nivel de datos, RLS solo le da
   SELECT sobre tenants `gov_shared`; su único write es el acuse vía función dedicada
   (`gov_ack_incident`, ver `db/schema.sql §8`).
-- `building_admin`: **sí puede ejecutar prueba de sirena** en su sitio; cada prueba queda en
-  `audit_log` con su firma (`actor = user:{uuid}`, `verb = siren_test`).
-- `soc_operator`: el alcance lo determina el `tenant_id` del usuario. Un operador empleado por
-  TAKAB que presta servicio a un cliente se modela como usuario perteneciente a ese tenant.
+- `tenant_admin` (D-42): absorbe la operación 24/7 del antiguo `soc_operator` (acuse,
+  dictamen, reubicar epicentro) y el Dash Edificio del antiguo `building_admin` (prueba de
+  sirena, con cada prueba en `audit_log` y su firma: `actor = user:{uuid}`, `verb = siren_test`).
+  Su alcance es TODO su tenant (`site_scope='*'`). Un operador empleado por TAKAB que presta
+  servicio a un cliente se sigue modelando como usuario de ese tenant —ahora como
+  `tenant_admin`, con el precio que D-42 declara: gana administración—.
+- *Histórico:* hasta D-42 esta tabla tenía filas para `soc_operator` (MONITOREO total, sin
+  Multi-Tenant ni Auditoría), `building_admin` (Dash Edificio total, su(s) sitio(s)) y
+  `security_guard` (móvil). Las decisiones fechadas de abajo los nombran tal como eran.
 - **[DECISION 2026-07-09 · T-1.32] La celda "Total" de `takab_support` en Flota Edge es de
   LECTURA, no de escritura.** Al introducir la acción `manage_fleet` (alta/edición/retiro de
   sitios, gabinetes y sensores), soporte **no** la recibe: solo `takab_superadmin` y
@@ -102,7 +140,7 @@
 - **[DECISION 2026-07-10 · T-1.48] Acciones nuevas de MONITOREO (extensión de §2,
   no listadas en la matriz original):**
   - `relocate_epicenter` (botón REUBICAR EPICENTRO) = `takab_superadmin`, `tenant_admin`,
-    `soc_operator`. Reescribe un dato de RED compartido (`seismic_events.epicenter`, vía
+    `soc_operator` (desde D-42, canonizado a `tenant_admin`). Reescribe un dato de RED compartido (`seismic_events.epicenter`, vía
     función SECURITY DEFINER `relocate_incident_epicenter` con el punto previo preservado en
     `meta.manual_override`): acto de operador del tenant. Ni gov (solo lectura+acuse) ni
     inspector (juzga el dictamen, no edita la física del evento).
@@ -158,6 +196,8 @@
   gabinete. Viaja por el MISMO envelope firmado del Command Service (canal lógico
   `system`, cruce `self_test ⇔ system` forzado por el router). Ancla:
   `tests/auth/test_matrix.py::test_self_test_is_owner_maintenance_action`.
+  *[D-42] Hoy el círculo es `takab_superadmin` y `tenant_admin`: `building_admin` y
+  `soc_operator` ya no existen como roles (canonizan a `brigadista` y `tenant_admin`).*
 - **[DECISION 2026-07-12 · T-1.60] `drill_start` (simulacro institucional, extensión de
   §2):** acto ADMINISTRATIVO del tenant = `takab_superadmin`, `tenant_admin` (banner
   NO-real + voceo en N sitios vía `POST /drills`; cero relés — jamás via el endpoint
@@ -188,7 +228,7 @@
     (`dlq_depth`, `iot_rule_errors`, `ghost_gateways`) y la política IAM tampoco las
     concede — AWS comprueba `PutAlarmMuteRule` sobre CADA alarma apuntada.
   - La LECTURA de ventanas (`GET /maintenance-windows`) es de CONSOLA y se concede ancho
-    (incluye `soc_operator`/`takab_support`) a propósito: una ventana invisible es
+    (incluía `soc_operator`, hoy `tenant_admin`, y `takab_support`) a propósito: una ventana invisible es
     exactamente el fallo que el criterio 2 existe para evitar.
   - Anclas: `tests/auth/test_matrix.py::test_maintenance_window_is_tenant_admin_action_not_a_field_role`,
     `::test_platform_maintenance_window_is_superadmin_only`,
@@ -299,7 +339,7 @@
 
   | Acción | Quién | Por qué |
   |---|---|---|
-  | `cctv_read` | `takab_superadmin`, `tenant_admin`, `soc_operator`, `inspector`, `building_admin` | es lo que sostiene un dictamen: cuánto tardó la gente en salir, y las cuatro fotos |
+  | `cctv_read` | `takab_superadmin`, `tenant_admin`, `inspector` (hasta D-42 también `soc_operator` y `building_admin`, hoy canonizados) | es lo que sostiene un dictamen: cuánto tardó la gente en salir, y las cuatro fotos |
   | `cctv_video` | los mismos **menos `inspector`** | once minutos de caras. Un perito estructural no los necesita para decir si el edificio es habitable |
 
   **`gov_operator` y `takab_support` NO tienen ninguna de las dos**, y la ausencia es la
@@ -315,20 +355,25 @@
 
 ## 3. Matriz de acceso · App Móvil
 
-| Función móvil | `occupant` | `brigadista` | `security_guard` | `inspector` | `building_admin` |
-|---|---|---|---|---|---|
-| Estado del edificio (verde/alerta) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Directorio emergencia / rutas evacuación | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Pantalla de crisis + instrucción por piso | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Check-in de vida (a salvo / necesito ayuda) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Dashboard táctico (salud gabinete + actuadores) | — | ✅ | ✅ | Lectura | ✅ |
-| **Silenciar** sirena local | — | ✅ | ✅ | — | ✅ |
-| **Activar** sirena manual (no sísmica) | ✅ *(quórum 2 ocupantes)* | ✅ *(individual)* | ✅ *(individual)* | ✅ *(individual)* | ✅ *(individual)* |
-| Cámara forense (watermark PGA/GPS/hora/ID) | — | ✅ | ✅ | ✅ | — |
-| Formulario de triage de daños | — | ✅ | ✅ | ✅ (firma) | — |
-| Headcount / pase de lista | — | ✅ | ✅ | — | ✅ |
-| Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
-| Aviso con voz de **movimiento del inmueble** (umbral local en DISPARO, `D-39`) | — | ✅ | ✅ | ✅ | ✅ |
+| Función móvil | `occupant` | `brigadista` | `inspector` | `tenant_admin` |
+|---|---|---|---|---|
+| Estado del edificio (verde/alerta) | ✅ | ✅ | ✅ | ✅ |
+| Directorio emergencia / rutas evacuación | ✅ | ✅ | ✅ | ✅ |
+| Pantalla de crisis + instrucción por piso | ✅ | ✅ | ✅ | ✅ |
+| Check-in de vida (a salvo / necesito ayuda) | ✅ | ✅ | ✅ | ✅ |
+| Dashboard táctico (salud gabinete + actuadores) | — | ✅ | Lectura | ✅ |
+| **Silenciar** sirena local | — | ✅ | — | ✅ |
+| **Activar** sirena manual (no sísmica) | ✅ *(quórum 2 ocupantes)* | ✅ *(individual)* | ✅ *(individual)* | ✅ *(individual)* |
+| Cámara forense (watermark PGA/GPS/hora/ID) | — | ✅ | ✅ | ✅ |
+| Formulario de triage de daños | — | ✅ | ✅ (firma) | ✅ |
+| Headcount / pase de lista | — | ✅ | — | ✅ |
+| Recepción de dictamen de reingreso | Solo aviso "reingreso permitido" | ✅ (PDF) | ✅ (lo emite) | ✅ (PDF) |
+| Aviso con voz de **movimiento del inmueble** (umbral local en DISPARO, `D-39`) | — | ✅ | ✅ | ✅ |
+
+> **[D-42]** Hasta el 2026-09-27 esta tabla tenía además las columnas `security_guard`
+> (idéntica a `brigadista`, que la absorbe) y `building_admin` (sin cámara forense ni triage,
+> ahora `brigadista` o `tenant_admin` según la migración de Cognito). `tenant_admin` entró como
+> columna en T-9.11.
 
 > **[T-2.03] Esta matriz es EJECUTABLE:** las celdas con acción se materializan en
 > `api/src/takab_api/auth/matrix.py` (`checkin_submit`, `roster_read`,
@@ -353,12 +398,14 @@
 - **`occupant`:** requiere **quórum de 2 ocupantes** — dos activaciones independientes en el mismo
   `site_id` dentro de una ventana de **30 s**. Evita pánico/abuso de un solo usuario.
   La primera activación queda "pendiente" y notifica; la segunda confirma y dispara.
-- **`brigadista` / `security_guard` / `inspector` / `building_admin`:** **deslizar-para-activar
-  individual**, sin segundo confirmante.
+- **`brigadista` / `inspector` / `tenant_admin`:** **deslizar-para-activar individual**, sin
+  segundo confirmante (acción `manual_activate`; antes de D-42 también `security_guard` y
+  `building_admin`, hoy canonizados).
 - Toda activación manual → `incident_actions` + `audit_log` con ID, GPS y timestamp.
 
 ### 4.2 Silenciar sirena
-- Roles con permiso: `brigadista`, `security_guard`, `building_admin` (y superiores TAKAB).
+- Roles con permiso (`siren_silence`): `brigadista` y `tenant_admin` (antes de D-42 también
+  `security_guard` y `building_admin`, hoy canonizados).
 - **Ruta del comando:** la app intenta **LAN primero** (`takab_local_api` del gabinete), pero
   **la nube es obligatoria como camino garantizado** — el brigadista puede estar en LTE sin
   acceso a la LAN del edificio. Flujo nube: `app → AWS IoT Core (comando firmado) → gateway`.
@@ -393,9 +440,23 @@ camino es la superficie más sensible del sistema. Requisitos no negociables:
 
 ### 5.1 Grupos de Cognito (uno por rol)
 ```
-takab_superadmin · takab_support · tenant_admin · soc_operator · gov_operator
-inspector · building_admin · brigadista · security_guard · occupant
+takab_superadmin · takab_support · tenant_admin · gov_operator
+inspector · brigadista · occupant
 ```
+
+**[D-42] Ventana de alias.** Los grupos `soc_operator`, `building_admin` y `security_guard`
+**siguen existiendo en el pool** (terraform `modules/identity`, y `infra/scripts/verify_infra.sh`
+sigue esperando los 10) hasta T-9.81: sin su grupo, el token de quien todavía no se migró daría
+«role not in groups» (401) antes de que la API llegara a canonizarlo. Nadie nuevo entra en ellos
+(asignar un rol viejo es 422). El vaciado lo hace `api/scripts/migrar_roles_7.py`:
+
+1. `--dry-run` lista a cada usuario con rol o grupo viejo y su destino.
+2. `--apply --map usuario=rol …` migra: entra al grupo nuevo → `custom:role` (y
+   `custom:site_scope='*'` si pasa a `tenant_admin`; conserva su inmueble y nunca `surface=web` si
+   pasa a `brigadista`) → sale del grupo viejo. Se **niega** si algún `building_admin` no trae su
+   `--map` explícito, o si un `building_admin` con alcance `*` iría a `brigadista`.
+3. `--verify` sale 0 solo si ya nadie tiene rol ni grupo viejo: es la condición para fijar
+   `TAKAB_API_ROLES_HEREDADOS_HASTA` y, después, para T-9.81.
 
 ### 5.2 Claims del JWT (custom attributes + token claims)
 ```json
@@ -413,7 +474,8 @@ inspector · building_admin · brigadista · security_guard · occupant
 > **[ANALISIS-00] Semántica de `site_scope` corregida a default-deny:** antes decía
 > "vacío = todo el tenant", es decir, un usuario creado SIN asignación heredaba acceso a todos
 > los sitios (default-allow). Regla nueva: **vacío o ausente = SIN acceso a sitios**; el alcance
-> de tenant completo se otorga explícitamente con `"*"` (roles admin/soc). Nota de diseño: si un
+> de tenant completo se otorga explícitamente con `"*"` (roles admin; desde D-42 el
+> `tenant_admin` siempre lleva `"*"`). Nota de diseño: si un
 > usuario acumula muchos sitios, no inflar el JWT — resolver el alcance server-side contra
 > `user_zone_assignments` y dejar `"*"`/lista corta en el claim.
 
@@ -439,14 +501,19 @@ WebSocket) y hay que volver a entrar con contraseña y código. La verdad ejecut
 |---|---|---|
 | `takab_superadmin` | 24 h | web (30 d) |
 | `takab_support` | 24 h | web (30 d) |
-| `tenant_admin` | 24 h | web (30 d) |
-| `soc_operator` | 24 h | web (30 d) |
+| `tenant_admin` | 24 h | web (30 d) y táctico (30 d) |
 | `gov_operator` | 24 h | web (30 d) |
 | `inspector` | 30 d | web (30 d) y táctico (30 d) |
-| `building_admin` | 24 h | web (30 d) y táctico (30 d) |
 | `brigadista` | 30 d | táctico (30 d) |
-| `security_guard` | 24 h | táctico (30 d) |
 | `occupant` | 90 d | ocupantes (90 d) |
+
+**[D-42] Los alias no tienen fila:** un token de `soc_operator` recibe el tope de `tenant_admin`
+(24 h, el mismo que tenía) y uno de `security_guard` o `building_admin` el de `brigadista`: su
+sesión pasa de **24 h a 30 d** en cuanto sale el cambio, sin volver a iniciar sesión (su
+`auth_time` es el viejo). Es el precio que D-42 declara para el guardia con teléfono compartido
+en caseta; lo compensa que deshabilitar al usuario cierra sus sesiones al instante (`D-38`).
+Pasada la fecha de baja de los alias, esos tokens reciben `rol_retirado` (§1) **antes** que
+`sesion_expirada`.
 
 Cognito fija la validez del refresh **por cliente**, no por grupo, así que cada cliente declara el
 **máximo** de los roles que lo usan (`infra/terraform/modules/identity/tests/sesion.tftest.hcl`) y
@@ -523,12 +590,12 @@ Los 4 mockups web + el blueprint móvil se reorganizan en estas rutas, cada una 
 **Web (`web/`):**
 | Ruta | Página (mockup) | Roles con acceso |
 |---|---|---|
-| `/console` | MONITOREO (1) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
-| `/fleet` | Flota Edge (2) | superadmin, support, tenant_admin, soc_operator, gov_operator, building_admin |
-| `/triage` | EVALUACIÓN (3) | superadmin, support, tenant_admin, soc_operator, gov_operator, inspector, building_admin |
+| `/console` | MONITOREO (1) | superadmin, support, tenant_admin, gov_operator, inspector |
+| `/fleet` | Flota Edge (2) | superadmin, support, tenant_admin, gov_operator |
+| `/triage` | EVALUACIÓN (3) | superadmin, support, tenant_admin, gov_operator, inspector |
 | `/tenants` | Multi-Tenant (4) | superadmin, support(lectura), tenant_admin(solo suyo) |
 | `/audit` | Auditoría (T-2.52) | superadmin, support, tenant_admin(su tenant), gov_operator |
-| `/building/:siteId` | Dash Edificio | tenant_admin, building_admin, +lectura otros |
+| `/building/:siteId` | Dash Edificio | tenant_admin (total), +lectura superadmin, support, gov_operator, inspector |
 
 **Sub-superficies que NO son rutas** (van dentro de una ruta existente, gateadas por
 acción — añadir una ruta obliga a tocar `auth/matrix.py`, y estas ya están cubiertas):
@@ -546,7 +613,7 @@ quedó "CUBIERTA POR LA FASE 2 COMPLETA"):**
 | Stack de navegación | Pantallas | Roles |
 |---|---|---|
 | Ocupante | Reposo · Crisis · Check-in | `occupant` (y todos como base) |
-| Táctico | Dashboard gabinete · Control Edge · Triage cámara · Headcount · Dictamen | `brigadista`, `security_guard`, `inspector`, `building_admin` |
+| Táctico | Dashboard gabinete · Control Edge · Triage cámara · Headcount · Dictamen | `brigadista`, `inspector`, `tenant_admin` (D-42; antes también `security_guard` y `building_admin`) |
 
 Cada pantalla/ruta debe manejar el estado **"sin acceso"** (no solo ocultar el botón: el guard
 del router bloquea la navegación directa por URL/deep-link).

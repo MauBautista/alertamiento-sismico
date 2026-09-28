@@ -61,19 +61,19 @@ describe("devToken", () => {
     fetchMock.mockResolvedValueOnce(tokenResponse({ sub: "u-7", auth_time: NOW / 1000 }, 120));
 
     const session = await requestDevToken({
-      role: "soc_operator",
+      role: "tenant_admin",
       tenant_id: "t-1",
       expires_in: 120,
     });
 
     expect(sentBody(fetchMock)).toEqual({
-      role: "soc_operator",
+      role: "tenant_admin",
       tenant_id: "t-1",
       expires_in: 120,
     });
     expect(session.expiresAt).toBe(NOW + 120_000);
     expect(session.request).toEqual({
-      role: "soc_operator",
+      role: "tenant_admin",
       tenant_id: "t-1",
       expires_in: 120,
       sub: "u-7",
@@ -85,7 +85,7 @@ describe("devToken", () => {
     const hace2h = NOW - 7_200_000;
     fetchMock.mockResolvedValueOnce(tokenResponse({ sub: "u-7", auth_time: hace2h / 1000 }));
 
-    const session = await requestDevToken({ role: "soc_operator", tenant_id: "t-1" });
+    const session = await requestDevToken({ role: "tenant_admin", tenant_id: "t-1" });
 
     expect(session.authTimeMs).toBe(hace2h);
   });
@@ -94,7 +94,7 @@ describe("devToken", () => {
     fetchMock.mockResolvedValueOnce(tokenResponse({ sub: "u-7" }));
 
     const session = await requestDevToken({
-      role: "soc_operator",
+      role: "tenant_admin",
       tenant_id: "t-1",
       auth_age_s: 600,
     });
@@ -152,7 +152,7 @@ describe("devToken", () => {
     saveDevSession({
       idToken: "vencido",
       expiresAt: NOW - 1,
-      request: { role: "soc_operator", tenant_id: "t-1" },
+      request: { role: "tenant_admin", tenant_id: "t-1" },
       authTimeMs: NOW - 10_000,
     });
 

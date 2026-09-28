@@ -51,7 +51,7 @@ def _feature_a() -> None:
 
 
 async def test_incident_reaches_subscriber_under_2s(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     ws = await w.auth_subscribe(ws_server, tok, "incidents")
     try:
         t0 = time.monotonic()
@@ -68,7 +68,7 @@ async def test_incident_reaches_subscriber_under_2s(ws_server: str) -> None:
 
 
 async def test_incident_action_frames_follow(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     ws = await w.auth_subscribe(ws_server, tok, "incidents")
     try:
         ids = await asyncio.to_thread(_quake_a)
@@ -84,7 +84,7 @@ async def test_incident_action_frames_follow(ws_server: str) -> None:
 
 
 async def test_features_poller_pushes_frame(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     await asyncio.to_thread(_feature_a)
     ws = await w.auth_subscribe(ws_server, tok, f"features:{WS_SITE_A}")
     try:

@@ -170,7 +170,7 @@ async def test_push_tokens_ciclo_completo_y_superficie(base_data) -> None:
         assert gone.status_code == 204
         assert (await client.get("/me/push-tokens", headers=headers)).json() == []
 
-        web = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="web")
+        web = au.make_token("gov_operator", tenant=au.DB_TENANT_PRIV, surface="web")
         resp = await client.post("/me/push-tokens", json=body, headers=au.bearer(web))
         assert resp.status_code == 403
 
@@ -989,8 +989,8 @@ async def test_damage_report_deriva_prioridad_y_llega_a_consola(base_data, make_
             ).all()
         assert len(kinds) == 1
 
-        # la consola (soc_operator del tenant) LEE el reporte para Triage
-        soc = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, surface="web")
+        # la consola (tenant_admin del tenant; antes soc_operator) LEE el reporte para Triage
+        soc = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, surface="web")
         listed = await client.get(url, headers=au.bearer(soc))
         assert listed.status_code == 200
         assert len(listed.json()) == 1
@@ -1016,9 +1016,11 @@ async def test_damage_report_deriva_prioridad_y_llega_a_consola(base_data, make_
 
 @pytest.mark.anyio
 async def test_enrollment_codes_gestion(base_data) -> None:
-    """building_admin administra códigos; el occupant no (403)."""
+    """tenant_admin administra códigos; el occupant no (403). [T-9.20 · D-42] Antes
+    lo probaba building_admin, que canoniza a brigadista y ya no tiene
+    ``enrollment_manage``."""
     admin = au.make_token(
-        "building_admin", tenant=au.DB_TENANT_PRIV, surface="both", site_scope=au.DB_SITE_PRIV
+        "tenant_admin", tenant=au.DB_TENANT_PRIV, surface="both", site_scope=au.DB_SITE_PRIV
     )
     base = f"/sites/{au.DB_SITE_PRIV}/enrollment-codes"
     async with au.client_for(create_app()) as client:
@@ -1042,12 +1044,13 @@ async def test_enrollment_codes_gestion(base_data) -> None:
 
 @pytest.mark.anyio
 async def test_enrollment_code_cross_site_mismo_tenant_es_403(base_data) -> None:
-    """[Auditoría F2 · MEDIA] Un building_admin acotado a un sitio NO puede crear
+    """[Auditoría F2 · MEDIA] Un tenant_admin (antes building_admin) acotado a un
+    sitio NO puede crear
     códigos en OTRO sitio del MISMO tenant: RLS no lo frena (mismo tenant), lo
     frena ``site_scope``. Antes usaba ``site_or_404`` (solo tenant) ⇒ cruzaba."""
     await _seed_second_priv_site()
     scoped = au.make_token(
-        "building_admin", tenant=au.DB_TENANT_PRIV, surface="both", site_scope=au.DB_SITE_PRIV
+        "tenant_admin", tenant=au.DB_TENANT_PRIV, surface="both", site_scope=au.DB_SITE_PRIV
     )
     async with au.client_for(create_app()) as client:
         # su sitio (dentro del scope): 201

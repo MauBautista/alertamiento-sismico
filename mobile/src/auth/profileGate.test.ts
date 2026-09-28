@@ -16,8 +16,8 @@ describe("gateFor — default-deny server-driven", () => {
     });
   });
 
-  it.each(["brigadista", "security_guard", "inspector", "building_admin", "tenant_admin"])(
-    "%s (RBAC §3: superficie móvil o both) ⇒ grupo tactical",
+  it.each(["brigadista", "inspector", "tenant_admin"])(
+    "%s (RBAC §3 · D-42: superficie móvil o both) ⇒ grupo tactical",
     (role) => {
       expect(gateFor({ role, surface: "mobile" })).toEqual({ allowed: true, group: "tactical" });
       expect(gateFor({ role, surface: "both" })).toEqual({ allowed: true, group: "tactical" });
@@ -35,8 +35,8 @@ describe("gateFor — default-deny server-driven", () => {
     });
   });
 
-  it("rol sin superficie móvil declarada (p.ej. soc_operator) ⇒ role_not_mobile", () => {
-    expect(gateFor({ role: "soc_operator", surface: "both" })).toEqual({
+  it("rol sin superficie móvil (p.ej. gov_operator o takab_superadmin) ⇒ role_not_mobile", () => {
+    expect(gateFor({ role: "gov_operator", surface: "both" })).toEqual({
       allowed: false,
       reason: "role_not_mobile",
     });
@@ -54,13 +54,24 @@ describe("gateFor — default-deny server-driven", () => {
   });
 
   // [T-9.11 · D-42] el administrador usa la app táctica completa.
-  it("el set táctico es exactamente el de RBAC §3 + tenant_admin (D-42)", () => {
-    expect([...TACTICAL_ROLES].sort()).toEqual([
-      "brigadista",
-      "building_admin",
-      "inspector",
-      "security_guard",
-      "tenant_admin",
-    ]);
+  it("el set táctico es exactamente brigadista, inspector y tenant_admin (D-42)", () => {
+    expect([...TACTICAL_ROLES].sort()).toEqual(["brigadista", "inspector", "tenant_admin"]);
+  });
+
+  // [T-9.20 · D-42] el servidor ya canoniza; si aun así llegara un rol viejo, la
+  // app aplica el MISMO alias que la nube (`auth/roles.ts`), no una lista aparte.
+  it.each([
+    ["security_guard", "tactical"],
+    ["building_admin", "tactical"],
+    ["soc_operator", "tactical"],
+  ])("rol viejo %s ⇒ se trata como su canónico (%s)", (role, group) => {
+    expect(gateFor({ role, surface: "mobile" })).toEqual({ allowed: true, group });
+  });
+
+  it("un rol viejo con superficie web sigue fuera: el alias no salta la superficie", () => {
+    expect(gateFor({ role: "security_guard", surface: "web" })).toEqual({
+      allowed: false,
+      reason: "wrong_surface",
+    });
   });
 });

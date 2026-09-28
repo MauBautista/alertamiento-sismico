@@ -11,6 +11,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
 import StateFrame from "../../components/StateFrame";
+import { etiquetaDeRol } from "../../auth/rolesHistoricos";
 import { useSessionStore } from "../../auth/session.store";
 import { useAuthEvidence } from "../../auth/useAuthEvidence";
 import { useProfile } from "../../auth/useProfile";
@@ -336,7 +337,7 @@ function ConsoleWall() {
             operatorLabel={
               me
                 ? (profile.data?.display_name?.toUpperCase() ??
-                  `${me.role.toUpperCase()} · ${me.sub.slice(0, 8)}`)
+                  `${etiquetaDeRol(me.role)} · ${me.sub.slice(0, 8)}`)
                 : "—"
             }
             authBadge={auth.badge}

@@ -64,6 +64,7 @@ from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_session, require_roles, require_web_surface
 from takab_api.auth.matrix import roles_with_action
+from takab_api.auth.roles import ETIQUETA
 from takab_api.routers._common import (
     INTERNAL_ROLES,
     clamp_limit,
@@ -71,7 +72,10 @@ from takab_api.routers._common import (
     resolve_write_tenant,
 )
 from takab_api.schemas.users import (
+    ASSIGNABLE_ROLES,
     PLATFORM_ROLES,
+    AssignableRole,
+    AssignableRolesOut,
     UserActionOut,
     UserCreate,
     UserOut,
@@ -214,6 +218,26 @@ def _directory_error(exc: DirectoryError) -> Exception:
         # despliegue, no del operador. 502 lo dice sin culpar a quien pulsó.
         return http_error(502, "la API no tiene permiso sobre el pool de identidades")
     return http_error(502, f"el directorio de identidades falló: {exc}")
+
+
+@router.get("/users/assignable-roles", response_model=AssignableRolesOut)
+async def assignable_roles(
+    claims: Claims = Depends(_require_manage_users),
+) -> AssignableRolesOut:
+    """[T-9.20 · D-42] Los roles que QUIEN PREGUNTA puede otorgar, con su etiqueta.
+
+    Es la misma frontera que ``_require_assignable``: un rol de cliente no ve los de
+    plataforma porque no puede darlos. Los roles viejos no aparecen nunca (no son
+    asignables). La web lo consume en vez de mantener un espejo a mano.
+    """
+    internal = claims.role in INTERNAL_ROLES
+    return AssignableRolesOut(
+        items=[
+            AssignableRole(role=r, label=ETIQUETA[r])
+            for r in ASSIGNABLE_ROLES
+            if internal or r not in PLATFORM_ROLES
+        ]
+    )
 
 
 @router.get("/users", response_model=UserPage)

@@ -31,17 +31,25 @@
 
 ---
 
-## 2. Grupos = roles (10)
+## 2. Grupos = roles (7 canónicos + 3 alias en ventana · D-42)
 
-Un grupo de Cognito **por cada** rol RBAC (RBAC §1 y §5.1). El pool DEBE tener exactamente estos
-10 grupos, ni más ni menos:
+Un grupo de Cognito **por cada** rol RBAC (RBAC §1 y §5.1). Los roles canónicos son **7** desde
+D-42 (2026-09-27):
 
 ```
 Internos TAKAB (2):  takab_superadmin · takab_support
-Por tenant (7):      tenant_admin · soc_operator · inspector · building_admin ·
-                     brigadista · security_guard · occupant
+Por tenant (4):      tenant_admin · inspector · brigadista · occupant
 Gobierno (1):        gov_operator
 ```
+
+**Ventana de alias.** Hasta T-9.81 el pool tiene además los 3 grupos de los roles retirados
+(`soc_operator`, `building_admin`, `security_guard`), así que hoy son **10 grupos, ni más ni
+menos** (lo comprueba `infra/scripts/verify_infra.sh`). Se quedan porque la antifalsificación
+(G3, abajo) mira el rol CRUDO contra los grupos CRUDOS antes de canonizar: sin su grupo, el token
+de quien todavía no se migró daría 401 antes de que el alias actuara. Nadie nuevo entra en ellos
+(la API da 422 al asignar un rol viejo). Se vacían con `api/scripts/migrar_roles_7.py`
+(`--dry-run` → `--apply --map usuario=rol` → `--verify`) y se borran en T-9.81, cuando `--verify`
+salga 0. Detalle en `RBAC-TAKAB.md §1` y `§5.1`.
 
 El grupo llega al token en el claim `cognito:groups`. La API exige que `custom:role` ∈
 `cognito:groups`; si no coincide ⇒ **401** (G3). Las **identidades máquina** (X.509 de gateway,
@@ -125,8 +133,8 @@ software_token_mfa = enabled      # solo TOTP (sin SMS)
 ```
 
 Correcto para el MVP: la superficie de este pool es **solo web** y los roles que pueden
-activar/silenciar actuadores (RBAC §4.3: `brigadista`, `security_guard`, `building_admin`,
-`inspector`, y superiores) **requieren MFA obligatorio, no negociable**. Con `ON` + TOTP se cumple.
+activar/silenciar actuadores (RBAC §4.3: `brigadista`, `inspector`, `tenant_admin` y los
+internos; antes de D-42 también `security_guard` y `building_admin`) **requieren MFA obligatorio, no negociable**. Con `ON` + TOTP se cumple.
 
 ### 5.2 El hueco: `occupant` sin MFA y la limitación de Cognito
 
@@ -221,7 +229,7 @@ Resumen:
 
 | Chequeo | Esperado | Real | Resultado |
 |---|---|---|---|
-| Grupos | conjunto de los 10 roles | los 10 (mismo conjunto) | ✅ |
+| Grupos | conjunto de los 10 roles (antes de D-42; hoy 7 + 3 alias en ventana, §2) | los 10 (mismo conjunto) | ✅ |
 | MFA | `ON`, TOTP | `MfaConfiguration=ON`, software_token | ✅ |
 | Custom attrs | 5 String mutables | tenant_id/role/zone_id 36, surface 8, site_scope 2048 | ✅ |
 | App client | `takab-web` público, `code`, openid/email/profile | secreto null, flows `[code]`, scopes ok | ✅ |

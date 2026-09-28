@@ -1,6 +1,7 @@
 import { screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { etiquetaDeRol } from "../auth/rolesHistoricos";
 import { resetSessionStoreForTests, useSessionStore } from "../auth/session.store";
 import { ALL_ROUTES, ME_FIXTURES, MOBILE_ONLY_ROLES, WEB_ROLES } from "../test-utils/meFixtures";
 import { renderRoutesAt, seedAuthenticated } from "../test-utils/renderRoutes";
@@ -25,7 +26,7 @@ const HEADING_BY_ROUTE: Record<RouteKey, string> = {
   "/building": "DASHBOARD EDIFICIO",
 };
 
-describe("guards de routing — matriz 10 roles × 6 rutas (criterio central T-1.26)", () => {
+describe("guards de routing — matriz 7 roles × 6 rutas (D-42) (criterio central T-1.26)", () => {
   beforeEach(() => {
     resetSessionStoreForTests();
   });
@@ -43,10 +44,13 @@ describe("guards de routing — matriz 10 roles × 6 rutas (criterio central T-1
     if (me.allowed_routes.length === 0) {
       // Rol mobile-only: ninguna URL protegida rinde contenido web.
       expect(screen.getByText("SIN SUPERFICIE WEB")).toBeInTheDocument();
+      // [F2] El rol se nombra con su RÓTULO, no con el id crudo.
+      expect(document.body).toHaveTextContent(`El rol ${etiquetaDeRol(role)} opera`);
     } else if (me.allowed_routes.includes(routeKey)) {
       expect(screen.getByRole("heading", { name: HEADING_BY_ROUTE[routeKey] })).toBeInTheDocument();
     } else {
       expect(screen.getByRole("heading", { name: "SIN ACCESO" })).toBeInTheDocument();
+      expect(document.body).toHaveTextContent(`El rol ${etiquetaDeRol(role)} no tiene acceso`);
     }
     // Bloqueo IN-PLACE: la URL del deep-link nunca cambia estando autenticado.
     expect(router.state.location.pathname).toBe(url);

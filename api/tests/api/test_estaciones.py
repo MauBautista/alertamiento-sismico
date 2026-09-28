@@ -54,7 +54,7 @@ def app() -> FastAPI:
     return application
 
 
-def _token(role: str = "soc_operator") -> dict[str, str]:
+def _token(role: str = "tenant_admin") -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=au.DB_TENANT_PRIV, site_scope="*"))
 
 
@@ -199,7 +199,7 @@ async def esc():
     await _sql("SET session_replication_role = 'origin'")
 
 
-async def _tabla(client, incident_id: str, rol: str = "soc_operator"):
+async def _tabla(client, incident_id: str, rol: str = "tenant_admin"):
     r = await client.get(f"/incidents/{incident_id}/estaciones", headers=_token(rol))
     assert r.status_code == 200, r.text
     return r.json()

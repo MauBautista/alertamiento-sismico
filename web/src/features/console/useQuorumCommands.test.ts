@@ -72,8 +72,8 @@ describe("summarizeQuorumCommands", () => {
 //
 // `GET /sites/{id}/commands` lo guarda `COMMAND_ROLES` (routers/commands.py):
 // los roles con ALGUNA acción de comando —siren_test, self_test, manual_activate
-// o siren_silence—. `soc_operator`, `gov_operator` y `takab_support` no tienen
-// ninguna, y el hook pedía igual cada 15 s mientras hubiera un incidente con
+// o siren_silence—. `gov_operator` y `takab_support` no tienen ninguna (el
+// operador SOC tampoco la tenía; D-42 lo fundió en `tenant_admin`, que sí lee), y el hook pedía igual cada 15 s mientras hubiera un incidente con
 // evento en foco: 403 tras 403 en la pestaña de red, y un resumen `null` que se
 // leía como «no hubo actuación de la red». No se amplía el permiso: se deja de
 // pedir lo que el rol no tiene, y se DICE por qué no hay lectura.
@@ -99,7 +99,7 @@ describe("useQuorumCommands · sólo pide lo que el rol puede leer [A-090]", () 
     vi.clearAllMocks();
   });
 
-  it.each(["soc_operator", "gov_operator", "takab_support"] as const)(
+  it.each(["gov_operator", "takab_support"] as const)(
     "%s: NO dispara la petición condenada y declara `sin-permiso`",
     async (role) => {
       como(role);
@@ -146,7 +146,7 @@ describe("useQuorumCommands · sólo pide lo que el rol puede leer [A-090]", () 
   });
 
   it("el envoltorio de siempre sigue devolviendo el resumen o null", async () => {
-    como("soc_operator");
+    como("gov_operator");
     const { result } = renderHook(() => useQuorumCommands("s-1", "EVT-1"), { wrapper });
     expect(result.current).toBeNull();
     expect(sdk.listCommandsSitesSiteIdCommandsGet).not.toHaveBeenCalled();
@@ -154,7 +154,7 @@ describe("useQuorumCommands · sólo pide lo que el rol puede leer [A-090]", () 
 
   it("la puerta cuadra con `COMMAND_ROLES` para los roles web (medido en la auditoría)", () => {
     const leen = WEB_ROLES.filter((r) => puedeLeerComandos(ME_FIXTURES[r].allowed_actions)).sort();
-    expect(leen).toEqual(["building_admin", "inspector", "takab_superadmin", "tenant_admin"]);
+    expect(leen).toEqual(["inspector", "takab_superadmin", "tenant_admin"]);
     // Sin sesión no hay lectura: default-deny.
     expect(puedeLeerComandos(null)).toBe(false);
   });

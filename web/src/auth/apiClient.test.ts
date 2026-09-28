@@ -53,11 +53,11 @@ describe("configureApiClient", () => {
       status: "authenticated",
       origin: "dev",
       idToken: "tok-1",
-      me: ME_FIXTURES.soc_operator,
+      me: ME_FIXTURES.tenant_admin,
     });
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, ME_FIXTURES.soc_operator));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, ME_FIXTURES.tenant_admin));
 
-    await expect(getMe()).resolves.toEqual(ME_FIXTURES.soc_operator);
+    await expect(getMe()).resolves.toEqual(ME_FIXTURES.tenant_admin);
 
     const request = capturedRequest();
     expect(new URL(request.url).pathname).toBe("/me");
@@ -65,7 +65,7 @@ describe("configureApiClient", () => {
   });
 
   it("no manda Authorization cuando no hay sesión", async () => {
-    fetchMock.mockResolvedValueOnce(jsonResponse(200, ME_FIXTURES.soc_operator));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, ME_FIXTURES.tenant_admin));
 
     await getMe();
 
@@ -77,7 +77,7 @@ describe("configureApiClient", () => {
       status: "authenticated",
       origin: "dev",
       idToken: "tok-viejo",
-      me: ME_FIXTURES.soc_operator,
+      me: ME_FIXTURES.tenant_admin,
     });
     fetchMock.mockResolvedValueOnce(jsonResponse(401, { detail: "token expirado" }));
 
@@ -110,7 +110,7 @@ describe("configureApiClient", () => {
       status: "authenticated",
       origin: "cognito",
       idToken: token,
-      me: ME_FIXTURES.soc_operator,
+      me: ME_FIXTURES.tenant_admin,
     });
   }
 
@@ -134,6 +134,35 @@ describe("configureApiClient", () => {
     await getMe().catch(() => undefined);
 
     await vi.waitFor(() => expect(useSessionStore.getState().endedReason).toBe("max_age"));
+    expect(um.signinSilent).not.toHaveBeenCalled();
+  });
+
+  it("[F2] 401 `rol_retirado` ⇒ fin 'rol_retirado' SIN intentar renovar (renovar no le devuelve el rol)", async () => {
+    seedCognito();
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: "rol_retirado" }), {
+        status: 401,
+        headers: {
+          "Content-Type": "application/json",
+          "WWW-Authenticate": 'Bearer error="invalid_token", error_description="rol_retirado"',
+        },
+      }),
+    );
+
+    await getMe().catch(() => undefined);
+
+    await vi.waitFor(() => expect(useSessionStore.getState().endedReason).toBe("rol_retirado"));
+    expect(useSessionStore.getState().status).toBe("anonymous");
+    expect(um.signinSilent).not.toHaveBeenCalled();
+  });
+
+  it("[F2] 401 `rol_retirado` solo en el cuerpo ⇒ también fin 'rol_retirado'", async () => {
+    seedCognito();
+    fetchMock.mockResolvedValueOnce(jsonResponse(401, { detail: "rol_retirado" }));
+
+    await getMe().catch(() => undefined);
+
+    await vi.waitFor(() => expect(useSessionStore.getState().endedReason).toBe("rol_retirado"));
     expect(um.signinSilent).not.toHaveBeenCalled();
   });
 
@@ -167,7 +196,7 @@ describe("configureApiClient", () => {
       status: "authenticated",
       origin: "dev",
       idToken: "tok-1",
-      me: ME_FIXTURES.soc_operator,
+      me: ME_FIXTURES.tenant_admin,
     });
     fetchMock.mockResolvedValueOnce(jsonResponse(403, { detail: "fuera de site_scope" }));
 

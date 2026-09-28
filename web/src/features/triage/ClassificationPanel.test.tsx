@@ -75,7 +75,7 @@ function tasa(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   resetSessionStoreForTests();
-  useSessionStore.setState({ me: ME_FIXTURES.soc_operator });
+  useSessionStore.setState({ me: ME_FIXTURES.tenant_admin });
   mocks.useClassification.mockReturnValue(cadena());
   mocks.useClassificationStats.mockReturnValue(tasa());
 });

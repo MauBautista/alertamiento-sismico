@@ -68,7 +68,7 @@ def _claims(conn: psycopg.Connection) -> set[str]:
 # --- Lectura ------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("app_role", ["tenant_admin", "soc_operator", "inspector"])
+@pytest.mark.parametrize("app_role", ["tenant_admin", "brigadista", "inspector"])
 def test_un_rol_de_cliente_solo_ve_las_etiquetas_de_su_tenant(
     labelled: psycopg.Connection, app_role: str
 ) -> None:
@@ -125,7 +125,7 @@ def _try_update(conn: psycopg.Connection, tenant: str, doc: str) -> int:
     ).rowcount
 
 
-@pytest.mark.parametrize("app_role", ["tenant_admin", "soc_operator", "inspector", "gov_operator"])
+@pytest.mark.parametrize("app_role", ["tenant_admin", "brigadista", "inspector", "gov_operator"])
 def test_ningun_rol_de_cliente_reescribe_sus_propias_etiquetas(
     labelled: psycopg.Connection, app_role: str
 ) -> None:
@@ -143,7 +143,7 @@ def test_ningun_rol_de_cliente_reescribe_sus_propias_etiquetas(
     assert _claims(labelled) == {"Protocolo A", "Protocolo B", "Protocolo G"}
 
 
-@pytest.mark.parametrize("app_role", ["tenant_admin", "soc_operator"])
+@pytest.mark.parametrize("app_role", ["tenant_admin", "inspector"])
 def test_un_rol_de_cliente_tampoco_estrena_su_fila(
     seeded: psycopg.Connection, app_role: str
 ) -> None:

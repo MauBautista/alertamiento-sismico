@@ -411,7 +411,7 @@ describe("TriageDetail · ningún enlace promete lo que el rol no tiene [T-6.02]
     expect(screen.queryByTestId("fleet-link-denied")).toBeNull();
   });
 
-  it("[U-38] sin /fleet (inspector, building_admin) no hay enlace: la ausencia se declara", () => {
+  it("[U-38] sin /fleet (inspector) no hay enlace: la ausencia se declara", () => {
     arrange({}, { canExport: true, canOpenFleet: false });
     expect(screen.queryByRole("link", { name: "IR A FLOTA EDGE" })).toBeNull();
     expect(screen.getByTestId("fleet-link-denied")).toHaveTextContent(

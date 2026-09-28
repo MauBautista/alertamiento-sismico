@@ -1341,7 +1341,9 @@ def _check_tenant_isolation(conn: psycopg.Connection) -> Check:
         with conn.transaction():
             conn.execute("SET LOCAL ROLE takab_app")
             conn.execute("SELECT set_config('app.tenant_id', %s, true)", (str(viewer),))
-            conn.execute("SELECT set_config('app.role', 'soc_operator', true)")
+            # Un rol de tenant SIN rama propia en la RLS (antes `soc_operator`, retirado en
+            # D-42): `inspector` es el canónico que la RLS trata igual.
+            conn.execute("SELECT set_config('app.role', 'inspector', true)")
             conn.execute(
                 "SELECT set_config('app.user_id', '00000000-0000-0000-0000-000000000000', true)"
             )

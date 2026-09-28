@@ -86,7 +86,7 @@ async def _measure(telemetry_client, url: str, headers: dict[str, str]) -> float
 async def test_dashboard_queries_p95_under_budget(telemetry_client, perf_seed) -> None:
     tenant = perf_seed.tenant_ids[0]
     site = perf_seed.dense_site_id
-    headers = au.bearer(au.make_token("soc_operator", tenant=tenant, site_scope="*", surface="web"))
+    headers = au.bearer(au.make_token("tenant_admin", tenant=tenant, site_scope="*", surface="web"))
     now = datetime.now(UTC)
     # Sufijo Z (no '+00:00') para embeber el offset en el query string sin encoding.
     d90 = (now - timedelta(days=90)).isoformat().replace("+00:00", "Z")
@@ -118,7 +118,7 @@ async def test_90d_query_scans_cagg_not_raw_hypertable(telemetry_client, perf_se
     )
     explain = text("EXPLAIN (FORMAT JSON) " + stmt.text)
     async with get_tenant_conn(
-        SessionCtx(tenant_id=tenant, role="soc_operator", user_id="u")
+        SessionCtx(tenant_id=tenant, role="tenant_admin", user_id="u")
     ) as conn:
         row = (await conn.execute(explain, params)).scalar_one()
     plan = json.dumps(row).lower()

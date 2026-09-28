@@ -48,8 +48,9 @@ export function summarizeQuorumCommands(
  *
  * Espejo de `COMMAND_ROLES` (`api/.../routers/commands.py`), la guarda de
  * `GET /sites/{id}/commands`: los roles con ALGUNA acción de comando. Hoy, en la
- * consola, `takab_superadmin`, `tenant_admin`, `building_admin` e `inspector`;
- * NO `soc_operator`, `gov_operator` ni `takab_support`, a los que el hook les
+ * consola, `takab_superadmin`, `tenant_admin` e `inspector`; NO `gov_operator`
+ * ni `takab_support` (ni el operador SOC, hasta que D-42 lo fundió en
+ * `tenant_admin`), a los que el hook les
  * disparaba un 403 cada 15 s. No se amplía nada: se deja de pedir lo condenado.
  *
  * Sin sesión, `false` (default-deny).

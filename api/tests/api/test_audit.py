@@ -94,7 +94,7 @@ async def test_interno_ve_todo_incluidas_filas_de_plataforma(client, make_audit)
     assert any(r["tenant_id"] is None for r in rows)  # la fila de plataforma
 
 
-@pytest.mark.parametrize("role", ["soc_operator", "inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["inspector", "brigadista", "occupant"])
 async def test_rol_sin_read_audit_403(client, make_audit, role: str) -> None:
     await _seed_mixed(make_audit)
     resp = await client.get("/audit", headers=_token(role))

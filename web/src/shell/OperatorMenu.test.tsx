@@ -23,7 +23,7 @@ function seed(): void {
     status: "authenticated",
     origin: "dev",
     idToken: "t",
-    me: ME_FIXTURES.soc_operator,
+    me: ME_FIXTURES.tenant_admin,
   });
 }
 
@@ -42,7 +42,7 @@ describe("OperatorMenu", () => {
   it("sin perfil muestra el ROL como fallback honesto (nunca inventa nombre)", () => {
     seed();
     render(<OperatorMenu />);
-    expect(screen.getByRole("button", { expanded: false })).toHaveTextContent("soc_operator");
+    expect(screen.getByRole("button", { expanded: false })).toHaveTextContent("ADMINISTRADOR");
   });
 
   it("con display_name lo muestra y el caption conserva rol · sub8", () => {
@@ -55,7 +55,7 @@ describe("OperatorMenu", () => {
     expect(btn).toHaveTextContent("M. Rodríguez");
 
     fireEvent.click(btn);
-    expect(screen.getByText(/soc_operator · sub-soc_/)).toBeInTheDocument();
+    expect(screen.getByText(/ADMINISTRADOR · sub-tena/)).toBeInTheDocument();
   });
 
   it("guarda el nombre NORMALIZADO (trim + colapso de espacios)", () => {

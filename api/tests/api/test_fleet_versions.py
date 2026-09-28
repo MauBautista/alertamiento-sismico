@@ -290,7 +290,7 @@ async def _get(path: str, token: str):
 
 
 async def test_cada_gabinete_dice_en_que_estado_esta_su_version(seed: None) -> None:
-    resp = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     by_serial = {g["serial"]: g["version_state"] for g in resp.json()}
     assert by_serial == {
@@ -309,7 +309,7 @@ async def test_la_edad_del_dato_de_version_viaja_con_la_fila(seed: None) -> None
     """Criterio 1: «con edad del dato». La versión cabalga en CADA latido, así que
     la edad del dato de versión es la edad del último latido — y es ``None``
     cuando no hay versión que fechar."""
-    resp = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_A))
     by_serial = {g["serial"]: g for g in resp.json()}
     assert by_serial["GW-DIA"]["version_age_s"] < 120
     assert by_serial["GW-OFF"]["version_age_s"] > 3000  # una hora de silencio
@@ -319,7 +319,7 @@ async def test_la_edad_del_dato_de_version_viaja_con_la_fila(seed: None) -> None
 
 async def test_la_deriva_agregada_es_contable(seed: None) -> None:
     """Criterio 2: cuántos están atrás y cuánto."""
-    resp = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_A))
     rows = resp.json()
     atrasados = [g for g in rows if g["version_state"] == VERSION_ATRASADA]
     assert len(atrasados) == 1
@@ -328,7 +328,7 @@ async def test_la_deriva_agregada_es_contable(seed: None) -> None:
 
 
 async def test_el_registro_de_releases_se_lee(seed: None) -> None:
-    resp = await _get("/fleet/releases", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/releases", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     versions = [r["version"] for r in resp.json()]
     assert versions == [V_NUEVA, V_VIEJA, V_ANTIGUA]  # más nuevo primero
@@ -337,10 +337,10 @@ async def test_el_registro_de_releases_se_lee(seed: None) -> None:
 async def test_el_registro_es_de_plataforma_no_de_tenant(seed: None) -> None:
     """Qué firmware existe lo decide TAKAB, no el cliente: los dos tenants ven el
     MISMO registro. La deriva de CADA UNO sigue acotada por la RLS de gateways."""
-    a = await _get("/fleet/releases", au.make_token("soc_operator", tenant=T_A))
-    b = await _get("/fleet/releases", au.make_token("soc_operator", tenant=T_B))
+    a = await _get("/fleet/releases", au.make_token("tenant_admin", tenant=T_A))
+    b = await _get("/fleet/releases", au.make_token("tenant_admin", tenant=T_B))
     assert [r["version"] for r in a.json()] == [r["version"] for r in b.json()]
-    flota_b = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_B))
+    flota_b = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_B))
     assert {g["serial"] for g in flota_b.json()} == {"GW-B"}
 
 
@@ -355,11 +355,11 @@ async def test_publicar_un_release_es_acto_del_dueno_de_la_plataforma(seed: None
     )
     assert resp.status_code == 201
     assert resp.json()["version"] == "9999999"
-    lista = await _get("/fleet/releases", au.make_token("soc_operator", tenant=T_A))
+    lista = await _get("/fleet/releases", au.make_token("tenant_admin", tenant=T_A))
     assert [r["version"] for r in lista.json()][0] == "9999999"
 
 
-@pytest.mark.parametrize("role", ["tenant_admin", "soc_operator", "takab_support"])
+@pytest.mark.parametrize("role", ["tenant_admin", "gov_operator", "takab_support"])
 async def test_un_cliente_no_publica_firmware(seed: None, role: str) -> None:
     """Ni siquiera su propio tenant_admin: qué código corre el gabinete que protege
     un edificio lo decide TAKAB. `takab_support` lee la plataforma, no la publica."""
@@ -499,7 +499,7 @@ async def test_la_consola_recibe_los_dos_SHAs_cuando_el_deploy_se_quedo_a_medias
     acción (reiniciar, o ir a ver por qué la unidad quedó en `failed`) depende de
     ambos. Un solo campo obligaba a adivinar cuál de los dos estaba viendo.
     """
-    resp = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_A))
     fila = next(g for g in resp.json() if g["serial"] == "GW-TRABADO")
     assert fila["fw_version"] == V_NUEVA, "lo que dejó el rsync en el disco"
     assert fila["fw_running"] == V_VIEJA, "lo que el proceso sigue ejecutando"

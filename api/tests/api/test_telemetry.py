@@ -35,7 +35,7 @@ def _auth(role: str, tenant: str) -> dict[str, str]:
 
 async def test_features_columnar_default_window(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
-        f"/telemetry/sites/{S_A}/features", headers=_auth("soc_operator", T_PRIV_A)
+        f"/telemetry/sites/{S_A}/features", headers=_auth("tenant_admin", T_PRIV_A)
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -50,11 +50,11 @@ async def test_features_columnar_default_window(telemetry_client, seed) -> None:
 async def test_features_channel_filter(telemetry_client, seed) -> None:
     r_ehz = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features?channel=EHZ",
-        headers=_auth("soc_operator", T_PRIV_A),
+        headers=_auth("tenant_admin", T_PRIV_A),
     )
     r_enz = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features?channel=ENZ",
-        headers=_auth("soc_operator", T_PRIV_A),
+        headers=_auth("tenant_admin", T_PRIV_A),
     )
     assert len(r_ehz.json()["ts"]) == 3
     assert r_enz.json()["ts"] == []  # solo se sembró EHZ
@@ -66,7 +66,7 @@ async def test_features_span_over_2h_rejected(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features",
         params={"from": (now - timedelta(hours=3)).isoformat(), "to": now.isoformat()},
-        headers=_auth("soc_operator", T_PRIV_A),
+        headers=_auth("tenant_admin", T_PRIV_A),
     )
     assert r.status_code == 422
     assert "2 h" in r.json()["detail"]
@@ -75,7 +75,7 @@ async def test_features_span_over_2h_rejected(telemetry_client, seed) -> None:
 async def test_features_bad_timestamp_rejected(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/features?from=not-a-date",
-        headers=_auth("soc_operator", T_PRIV_A),
+        headers=_auth("tenant_admin", T_PRIV_A),
     )
     assert r.status_code == 422
 
@@ -83,7 +83,7 @@ async def test_features_bad_timestamp_rejected(telemetry_client, seed) -> None:
 async def test_features_cross_tenant_is_empty(telemetry_client, seed) -> None:
     # Tenant A pide el sitio de B: RLS (vía la vista) devuelve cero filas, no fuga.
     r = await telemetry_client.get(
-        f"/telemetry/sites/{S_B}/features", headers=_auth("soc_operator", T_PRIV_A)
+        f"/telemetry/sites/{S_B}/features", headers=_auth("tenant_admin", T_PRIV_A)
     )
     assert r.status_code == 200
     assert r.json()["ts"] == []
@@ -91,7 +91,7 @@ async def test_features_cross_tenant_is_empty(telemetry_client, seed) -> None:
 
 async def test_metrics_default_bucket_1m(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
-        f"/telemetry/sites/{S_A}/metrics", headers=_auth("soc_operator", T_PRIV_A)
+        f"/telemetry/sites/{S_A}/metrics", headers=_auth("tenant_admin", T_PRIV_A)
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -103,7 +103,7 @@ async def test_metrics_default_bucket_1m(telemetry_client, seed) -> None:
 async def test_metrics_bucket_1h_explicit(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/metrics?bucket=1h",
-        headers=_auth("soc_operator", T_PRIV_A),
+        headers=_auth("tenant_admin", T_PRIV_A),
     )
     assert r.status_code == 200, r.text
     assert r.json()["bucket"] == "1h"
@@ -112,13 +112,13 @@ async def test_metrics_bucket_1h_explicit(telemetry_client, seed) -> None:
 async def test_metrics_invalid_bucket_rejected(telemetry_client, seed) -> None:
     r = await telemetry_client.get(
         f"/telemetry/sites/{S_A}/metrics?bucket=5m",
-        headers=_auth("soc_operator", T_PRIV_A),
+        headers=_auth("tenant_admin", T_PRIV_A),
     )
     assert r.status_code == 422
 
 
 async def test_map_state_has_site_with_open_incident(telemetry_client, seed) -> None:
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     assert r.status_code == 200, r.text
     sites = {s["site_id"]: s for s in r.json()["sites"]}
     assert S_A in sites
@@ -142,7 +142,7 @@ async def test_map_state_publica_el_codigo_del_sitio(telemetry_client, seed) -> 
     Sale el código —un HECHO— y no un `demo: bool`: decidir qué se rotula es de la
     presentación, y meter la política del seed en el contrato la duplicaría.
     """
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     assert r.status_code == 200, r.text
     sites = {s["site_id"]: s for s in r.json()["sites"]}
     assert sites, "el mapa salió vacío: el test no comprueba nada"
@@ -200,7 +200,7 @@ async def test_map_state_trae_la_IDENTIDAD_del_hardware(
     telemetry_client, seed, gabinete_del_sitio_a
 ) -> None:
     """Serial, firmware, modelo del sismógrafo y respaldo eléctrico, en el mapa."""
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     assert r.status_code == 200, r.text
     sitio = next(s for s in r.json()["sites"] if s["site_id"] == S_A)
 
@@ -226,7 +226,7 @@ async def test_el_mapa_dice_SIN_DATO_en_vez_de_inventar_identidad(telemetry_clie
     sitios NO tienen gabinete, así que la respuesta correcta es `None` en los
     cuatro campos de hardware — y el modelo del sensor sí, porque ése sí consta.
     """
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     sitio = next(s for s in r.json()["sites"] if s["site_id"] == S_A)
 
     for campo in ("serial", "fw_version", "power_status", "battery_pct"):
@@ -248,7 +248,7 @@ async def test_map_state_reports_shaking_MEASURED_not_alert_severity(
     viene del canal de alerta (SASMEX es un booleano, no mide nada de lo que pasa
     aquí) y `felt` viene del acelerógrafo del inmueble.
     """
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     assert r.status_code == 200, r.text
     site = {s["site_id"]: s for s in r.json()["sites"]}[S_A]
 
@@ -272,7 +272,7 @@ async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(
     Con incidente abierto, `felt` tiene que ser el PICO de su ventana, no la calma
     posterior. S_SHOOK reproduce ese estado: 0.50 g hace 20 min, 0.001 g ahora.
     """
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     assert r.status_code == 200, r.text
     site = {s["site_id"]: s for s in r.json()["sites"]}[S_SHOOK]
 
@@ -287,7 +287,7 @@ async def test_map_state_uses_the_INCIDENT_PEAK_not_the_calm_that_came_after(
 
 async def test_map_state_declares_uncalibrated_sites(telemetry_client, seed) -> None:
     """Sin fuente de calibración el PGA es RELATIVO: la UI no puede llamarlo intensidad."""
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     site = {s["site_id"]: s for s in r.json()["sites"]}[S_A]
     # El seed inserta sensores sin `calibration_source`.
     assert site["calibrated"] is False
@@ -299,7 +299,7 @@ async def test_map_state_has_no_epicenter_when_no_event_locates_one(telemetry_cl
     El seed abre incidentes sin `event_id`, así que no hay sismo localizado: la lista
     sale vacía y el mapa lo declara, en vez de plantar el epicentro sobre el inmueble.
     """
-    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A))
+    r = await telemetry_client.get("/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A))
     assert r.json()["epicenters"] == []
 
 
@@ -336,7 +336,7 @@ async def test_map_state_epicenter_reports_node_count(telemetry_client, seed) ->
         )
     try:
         r = await telemetry_client.get(
-            "/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A)
+            "/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A)
         )
         assert r.status_code == 200, r.text
         eps = {e["event_id"]: e for e in r.json()["epicenters"]}
@@ -388,7 +388,7 @@ async def test_map_state_epicenter_declara_si_es_REPRODUCCION(telemetry_client, 
             )
     try:
         r = await telemetry_client.get(
-            "/telemetry/map/state", headers=_auth("soc_operator", T_PRIV_A)
+            "/telemetry/map/state", headers=_auth("tenant_admin", T_PRIV_A)
         )
         assert r.status_code == 200, r.text
         eps = {e["event_id"]: e for e in r.json()["epicenters"]}

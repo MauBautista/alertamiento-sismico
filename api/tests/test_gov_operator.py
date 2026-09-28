@@ -73,7 +73,7 @@ def test_gov_ack_rejects_private_tenant(seeded: psycopg.Connection) -> None:
 
 def test_gov_ack_requires_gov_role(seeded: psycopg.Connection) -> None:
     # Un rol no-gov no puede usar la función aunque tenga EXECUTE.
-    use(seeded, "takab_app", tenant=TENANT_G, app_role="soc_operator")
+    use(seeded, "takab_app", tenant=TENANT_G, app_role="tenant_admin")
     with pytest.raises(psycopg.errors.RaiseException, match="gov_operator"):
         seeded.execute("SELECT gov_ack_incident(%s)", (INC_G,))
 

@@ -49,6 +49,21 @@ export type ArriboOut = {
     t_s_s: number;
 };
 
+/**
+ * Un rol que quien pregunta puede otorgar, con su etiqueta (T-9.20 · D-42).
+ */
+export type AssignableRole = {
+    label: string;
+    role: string;
+};
+
+/**
+ * ``GET /users/assignable-roles``: la web deja de escribir la lista a mano.
+ */
+export type AssignableRolesOut = {
+    items: Array<AssignableRole>;
+};
+
 export type AuditPage = {
     items: Array<AuditRowOut>;
     next_cursor: string | null;
@@ -6706,6 +6721,22 @@ export type CreateUserUsersPostResponses = {
 };
 
 export type CreateUserUsersPostResponse = CreateUserUsersPostResponses[keyof CreateUserUsersPostResponses];
+
+export type AssignableRolesUsersAssignableRolesGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/users/assignable-roles';
+};
+
+export type AssignableRolesUsersAssignableRolesGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: AssignableRolesOut;
+};
+
+export type AssignableRolesUsersAssignableRolesGetResponse = AssignableRolesUsersAssignableRolesGetResponses[keyof AssignableRolesUsersAssignableRolesGetResponses];
 
 export type DeleteUserUsersUsernameDeleteData = {
     body?: never;

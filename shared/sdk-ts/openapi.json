@@ -161,6 +161,42 @@
         "title": "ArriboOut",
         "type": "object"
       },
+      "AssignableRole": {
+        "description": "Un rol que quien pregunta puede otorgar, con su etiqueta (T-9.20 · D-42).",
+        "properties": {
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "label"
+        ],
+        "title": "AssignableRole",
+        "type": "object"
+      },
+      "AssignableRolesOut": {
+        "description": "``GET /users/assignable-roles``: la web deja de escribir la lista a mano.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AssignableRole"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "AssignableRolesOut",
+        "type": "object"
+      },
       "AuditPage": {
         "properties": {
           "items": {
@@ -18928,6 +18964,25 @@
           }
         },
         "summary": "Create User"
+      }
+    },
+    "/users/assignable-roles": {
+      "get": {
+        "description": "[T-9.20 · D-42] Los roles que QUIEN PREGUNTA puede otorgar, con su etiqueta.\n\nEs la misma frontera que ``_require_assignable``: un rol de cliente no ve los de\nplataforma porque no puede darlos. Los roles viejos no aparecen nunca (no son\nasignables). La web lo consume en vez de mantener un espejo a mano.",
+        "operationId": "assignable_roles_users_assignable_roles_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssignableRolesOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Assignable Roles"
       }
     },
     "/users/{username}": {

@@ -203,7 +203,7 @@ export interface UseFleetOptions {
 export function useFleet({ includeRetired = false }: UseFleetOptions = {}): FleetData {
   // /fleet/gateways exige permiso de flota. FleetPage ya vive detrás del
   // RouteGuard, pero useSiteRelays monta este hook en la CONSOLA, donde
-  // inspector y building_admin sí entran y no pueden leer la flota: sin este
+  // inspector (y el antiguo building_admin) sí entran y no pueden leer la flota: sin este
   // gate cada carga de /console les disparaba un 403 (la misma matriz del
   // server que guarda la ruta decide aquí, cero matriz local).
   const canReadFleet = useSessionStore((s) => s.me?.allowed_routes.includes("/fleet") ?? false);

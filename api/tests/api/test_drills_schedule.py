@@ -231,7 +231,7 @@ async def test_cancel_404_y_403(client, gateway):
 
     created = await client.post("/drills", json={"scheduled_at": _future()}, headers=_token())
     drill_id = created.json()["drill_id"]
-    forbidden = await client.post(f"/drills/{drill_id}/cancel", headers=_token("soc_operator"))
+    forbidden = await client.post(f"/drills/{drill_id}/cancel", headers=_token("gov_operator"))
     assert forbidden.status_code == 403
     assert (await _row(drill_id))["stopped_at"] is None
 

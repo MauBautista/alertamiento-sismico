@@ -46,17 +46,17 @@ async def test_gucs_propagate_and_no_cross_tenant_read(make_incident) -> None:
     app = _probe_app()
     async with au.client_for(app) as client:
         tok_a = au.make_token(
-            "soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id="ua"
+            "tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id="ua"
         )
         body_a = (await client.get("/_probe", headers=au.bearer(tok_a))).json()
         assert body_a["tenant_id"] == au.DB_TENANT_PRIV
-        assert body_a["role"] == "soc_operator"
+        assert body_a["role"] == "tenant_admin"
         assert body_a["user_id"] == "ua"
         assert ia in body_a["incidents"]
         assert ib not in body_a["incidents"], "tenant A no puede ver incidentes de B"
 
         tok_b = au.make_token(
-            "soc_operator", tenant=au.DB_TENANT_PRIV2, site_scope="*", user_id="ub"
+            "tenant_admin", tenant=au.DB_TENANT_PRIV2, site_scope="*", user_id="ub"
         )
         body_b = (await client.get("/_probe", headers=au.bearer(tok_b))).json()
         assert body_b["tenant_id"] == au.DB_TENANT_PRIV2
@@ -101,7 +101,7 @@ async def test_tenant_ack_writes_action_and_audit(client, make_incident) -> None
 
 async def test_cross_tenant_ack_is_404(client, make_incident) -> None:
     ib = await make_incident(au.DB_TENANT_PRIV2, au.DB_SITE_PRIV2)
-    token = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id="ua")
+    token = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id="ua")
 
     resp = await client.post(f"/incidents/{ib}/ack", headers=au.bearer(token))
     assert resp.status_code == 404, "un usuario de A no puede acusar (ni ver) un incidente de B"
@@ -109,7 +109,7 @@ async def test_cross_tenant_ack_is_404(client, make_incident) -> None:
 
 async def test_double_tenant_ack_is_409(client, make_incident) -> None:
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
-    token = au.make_token("soc_operator", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id="ua")
+    token = au.make_token("tenant_admin", tenant=au.DB_TENANT_PRIV, site_scope="*", user_id="ua")
 
     first = await client.post(f"/incidents/{iid}/ack", headers=au.bearer(token))
     assert first.status_code == 200

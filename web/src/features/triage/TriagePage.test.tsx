@@ -336,8 +336,13 @@ describe("TriagePage · gates de allowed_actions (server-driven)", () => {
     );
   });
 
-  it("soc_operator no exporta ni firma", () => {
-    seedRole("soc_operator");
+  // [T-9.20 · D-42] Era el operador SOC, que hoy entra como tenant_admin. El rol
+  // de la RESTRICCIÓN tiene que seguir sin `export` ni `sign_dictamen`:
+  // `takab_support` (solo lee la auditoría), NUNCA su heredero.
+  it("takab_support no exporta ni firma", () => {
+    seedRole("takab_support");
+    expect(ME_FIXTURES.takab_support.allowed_actions.export).toBe(false);
+    expect(ME_FIXTURES.takab_support.allowed_actions.sign_dictamen).toBe(false);
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res([{ ...DICTAMEN }]) }));
     render(pageAt());
@@ -487,7 +492,7 @@ describe("TriagePage · deep-link ?incident= (T-1.51)", () => {
   );
 
   beforeEach(() => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
     mocks.useTriage.mockReturnValue(triageData({ rows: TWO_ROWS }));
     mocks.useIncidentDetail.mockReturnValue(detailData());
   });
@@ -514,7 +519,7 @@ describe("TriagePage · deep-link ?incident= (T-1.51)", () => {
 
 describe("TriagePage · hechos fuera del gate del dictamen (T-1.52)", () => {
   it("SIN dictamen los tiles de hechos siguen visibles (PGA/DURACIÓN/…): el empty es solo del dictamen", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(detailData({ dictamens: res<DictamenOut[]>([]) }));
     render(pageAt());
@@ -526,7 +531,7 @@ describe("TriagePage · hechos fuera del gate del dictamen (T-1.52)", () => {
   });
 
   it("dictamen preliminar con basis v2 insuficiente: rotulado honesto visible", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.tenant_admin });
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useIncidentDetail.mockReturnValue(
       detailData({
@@ -567,8 +572,8 @@ describe("TriagePage · CCTV solo se pide con `cctv_read` [A-042]", () => {
     },
   );
 
-  it("soc_operator sí la tiene: se pide para el incidente en foco y el panel está", () => {
-    seedRole("soc_operator");
+  it("tenant_admin sí la tiene: se pide para el incidente en foco y el panel está", () => {
+    seedRole("tenant_admin");
     mocks.useTriage.mockReturnValue(triageData());
     render(pageAt());
     expect(mocks.useCctv).toHaveBeenLastCalledWith(ROWS[0].incident.incident_id);
@@ -578,7 +583,7 @@ describe("TriagePage · CCTV solo se pide con `cctv_read` [A-042]", () => {
 
 describe("TriagePage · DESCARGAR CLIP llega a la mutación [A-014]", () => {
   it("con `cctv_video`, el clic pide la URL firmada de ESE clip", () => {
-    seedRole("soc_operator");
+    seedRole("tenant_admin");
     mocks.useTriage.mockReturnValue(triageData());
     mocks.useCctv.mockReturnValue(
       cctvData({
@@ -618,7 +623,7 @@ describe("TriagePage · VERIFICAR la huella del dictamen solo con `dictamen_read
 
   // [T-9.11 · D-42] `tenant_admin` salió de esta lista: el administrador tiene ahora
   // las acciones de campo del brigadista, `dictamen_read` incluida.
-  it.each(["takab_superadmin", "takab_support", "soc_operator", "gov_operator"] as const)(
+  it.each(["takab_superadmin", "takab_support", "gov_operator"] as const)(
     "%s: sin botón que respondería 404; la causa se declara",
     (role) => {
       seedRole(role);

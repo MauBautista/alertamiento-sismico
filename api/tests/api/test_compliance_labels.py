@@ -157,7 +157,7 @@ async def test_lo_que_se_imprime_lo_decide_el_SERVIDOR_en_los_tres_estados(
     assert (await _get(_root(), au.DB_TENANT_PRIV)).json()["notes"] == [UNREADABLE_LEGACY]
 
 
-@pytest.mark.parametrize("role", ["tenant_admin", "soc_operator", "inspector", "takab_support"])
+@pytest.mark.parametrize("role", ["tenant_admin", "brigadista", "inspector", "takab_support"])
 async def test_cualquier_rol_lee_las_de_su_propio_cliente(base_data: None, role: str) -> None:
     """Se sirven a la app móvil de todo ocupante: no son un secreto. Lo que importa
     es de QUIÉN se leen, y eso lo decide la RLS."""
@@ -225,7 +225,7 @@ async def test_el_superadmin_carga_las_etiquetas(base_data: None) -> None:
 
 
 @pytest.mark.parametrize(
-    "role", ["takab_support", "tenant_admin", "soc_operator", "inspector", "gov_operator"]
+    "role", ["takab_support", "tenant_admin", "brigadista", "inspector", "gov_operator"]
 )
 async def test_nadie_mas_carga_etiquetas(base_data: None, role: str) -> None:
     """``takab_support`` incluido, y a propósito: la DB se lo permitiría

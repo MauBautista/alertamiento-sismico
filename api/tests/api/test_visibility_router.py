@@ -149,7 +149,7 @@ async def test_target_all_grant(seed: None) -> None:
     assert resp.json()["target_tenant_id"] is None
 
 
-@pytest.mark.parametrize("role", ["tenant_admin", "takab_support", "soc_operator", "gov_operator"])
+@pytest.mark.parametrize("role", ["tenant_admin", "takab_support", "inspector", "gov_operator"])
 async def test_non_superadmin_forbidden(seed: None, role: str) -> None:
     tok = au.make_token(role, tenant=T_A, site_scope="*", surface="web")
     assert (

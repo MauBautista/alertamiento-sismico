@@ -46,7 +46,7 @@ def test_gov_operator_esta_exento_porque_su_alcance_lo_manda_la_visibilidad() ->
 
 def test_un_scope_de_asterisco_no_filtra_en_ningun_rol() -> None:
     for enforced in (False, True):
-        s = console_scope(claims("soc_operator", ALL_SITES), enforced=enforced)
+        s = console_scope(claims("inspector", ALL_SITES), enforced=enforced)
         assert s.sites is None
         assert s.declared is True
         assert s.gap is False
@@ -58,13 +58,13 @@ def test_un_scope_de_asterisco_no_filtra_en_ningun_rol() -> None:
 def test_fase_A_un_claim_vacio_NO_deja_la_consola_en_blanco() -> None:
     """El claim no está aprovisionado para usuarios web: filtrar dejaría a todo
     `soc_operator` con cero sitios en una plataforma de alertamiento."""
-    s = console_scope(claims("soc_operator", frozenset()), enforced=False)
+    s = console_scope(claims("inspector", frozenset()), enforced=False)
     assert s.sites is None
     assert s.enforced is False
 
 
 def test_fase_A_el_hueco_NO_es_silencioso() -> None:
-    s = console_scope(claims("soc_operator", frozenset()), enforced=False)
+    s = console_scope(claims("inspector", frozenset()), enforced=False)
     assert s.gap is True
     assert s.declared is False
 
@@ -72,7 +72,7 @@ def test_fase_A_el_hueco_NO_es_silencioso() -> None:
 def test_fase_A_un_claim_CON_sitios_se_respeta_desde_ya() -> None:
     """Honrar una restricción declarada es estrictamente más seguro; no hay motivo
     para esperar a la fase B."""
-    s = console_scope(claims("soc_operator", frozenset({SITIO_A})), enforced=False)
+    s = console_scope(claims("inspector", frozenset({SITIO_A})), enforced=False)
     assert s.sites == frozenset({SITIO_A})
     assert s.gap is False
     assert s.allows(SITIO_A) is True
@@ -84,7 +84,7 @@ def test_fase_A_un_claim_CON_sitios_se_respeta_desde_ya() -> None:
 
 def test_fase_B_un_claim_vacio_significa_cero_sitios() -> None:
     """Que es lo que el claim significa: default-deny (RBAC §5.2)."""
-    s = console_scope(claims("soc_operator", frozenset()), enforced=True)
+    s = console_scope(claims("inspector", frozenset()), enforced=True)
     assert s.sites == frozenset()
     assert s.enforced is True
     assert s.allows(SITIO_A) is False
@@ -101,7 +101,7 @@ def test_fase_B_no_cambia_nada_para_un_claim_con_sitios() -> None:
 # ---- roles acotados ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("role", ["soc_operator", "inspector", "building_admin"])
+@pytest.mark.parametrize("role", ["inspector"])
 def test_los_roles_de_consola_no_exentos_si_se_acotan(role: str) -> None:
     s = console_scope(claims(role, frozenset({SITIO_B})), enforced=False)
     assert s.sites == frozenset({SITIO_B})

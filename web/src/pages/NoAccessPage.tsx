@@ -1,6 +1,7 @@
 import { ShieldOff } from "lucide-react";
 import { useLocation } from "react-router";
 
+import { etiquetaDeRol } from "../auth/rolesHistoricos";
 import { useSessionStore } from "../auth/session.store";
 
 /** Se renderiza IN-PLACE: la URL del deep-link denegado NO cambia, para que el
@@ -13,8 +14,8 @@ export default function NoAccessPage() {
       <ShieldOff size={32} aria-hidden="true" />
       <h1>SIN ACCESO</h1>
       <p className="soc-screen__sub">
-        El rol <span className="soc-mono">{me?.role}</span> no tiene acceso a{" "}
-        <span className="soc-mono">{location.pathname}</span>.
+        El rol <span className="soc-mono">{me ? etiquetaDeRol(me.role) : ""}</span> no tiene acceso
+        a <span className="soc-mono">{location.pathname}</span>.
       </p>
     </section>
   );

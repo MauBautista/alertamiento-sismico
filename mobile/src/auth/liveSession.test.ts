@@ -181,6 +181,19 @@ describe("[D-38] 4440 ⇒ fuera con motivo 'max_age', sin renovar", () => {
   });
 });
 
+describe("[F2 · D-42] cierre por rol retirado ⇒ fuera con ese motivo", () => {
+  it("el aviso del canal con `rol_retirado` cierra la sesión con esa causa", async () => {
+    await conectar();
+    const opciones = (getLiveSocket() as unknown as {
+      options: { onUnauthorized: (r?: string) => void };
+    }).options;
+    opciones.onUnauthorized("rol_retirado");
+    await flush();
+    expect(refresh).not.toHaveBeenCalled();
+    expect(useSessionStore.getState().signOutReason).toBe("rol_retirado");
+  });
+});
+
 describe("el canal sigue a la sesión", () => {
   it("al cerrarse la sesión, el socket se cierra (no reintenta con un token que ya no existe)", async () => {
     const ws = await conectar();

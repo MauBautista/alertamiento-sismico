@@ -310,3 +310,17 @@ def test_una_subida_pasada_la_HORA_sigue_despertando_a_la_brigada(esc: _Escena) 
     esc.pasada(3700)
     assert len(esc.escaladas(incidente)) == 1
     assert ocupante in _alcanzados(esc)
+
+
+def test_un_telefono_con_ROL_VIEJO_guardado_sigue_en_el_circulo(esc: _Escena) -> None:  # noqa: F811
+    """[T-9.20 · D-42] La 0072 canoniza `push_tokens.role`, pero un teléfono que no se ha
+    vuelto a abrir puede traer aún `security_guard`: sigue siendo de la brigada."""
+    incidente = esc.sc.seed_incident(trigger="local_threshold", severity="critical")
+    sitio = _sitio(esc, incidente)
+    guardia = _telefono(esc, sitio, "security_guard")
+    ocupante = _telefono(esc, sitio, "occupant")
+
+    esc.pasada()
+
+    assert guardia in _alcanzados(esc)
+    assert ocupante not in _alcanzados(esc)

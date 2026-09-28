@@ -85,21 +85,21 @@ describe("Topbar", () => {
   );
 
   it("marca el tab activo con aria-current=page", () => {
-    seed(ME_FIXTURES.soc_operator);
+    seed(ME_FIXTURES.tenant_admin);
     renderTopbar("/console");
     expect(screen.getByRole("link", { name: "MONITOREO" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "FLOTA EDGE" })).not.toHaveAttribute("aria-current");
   });
 
   it("arranque honesto: DESCONECTADO + EDGE·MQTT·S/D (canal cerrado, sin heartbeat)", () => {
-    seed(ME_FIXTURES.soc_operator);
+    seed(ME_FIXTURES.tenant_admin);
     renderTopbar();
     expect(screen.getByTestId("system-pill")).toHaveTextContent("DESCONECTADO");
     expect(screen.getByTestId("mqtt-pill")).toHaveTextContent("EDGE · MQTT · S/D");
   });
 
   it("canal ready ⇒ CONECTADO; connecting ⇒ CONECTANDO…", () => {
-    seed(ME_FIXTURES.soc_operator);
+    seed(ME_FIXTURES.tenant_admin);
     renderTopbar();
     act(() => {
       useLiveHealthStore.getState().setStatus("connecting");
@@ -114,7 +114,7 @@ describe("Topbar", () => {
   it("heartbeat fresco ⇒ RTT real; 90 s sin frames ⇒ vuelve a S/D (no congela)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-10T00:00:00Z"));
-    seed(ME_FIXTURES.soc_operator);
+    seed(ME_FIXTURES.tenant_admin);
     renderTopbar();
 
     act(() => {
@@ -131,7 +131,7 @@ describe("Topbar", () => {
   it("reloj UTC/CST con tick de 1 s", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-07T12:00:00Z"));
-    seed(ME_FIXTURES.soc_operator);
+    seed(ME_FIXTURES.tenant_admin);
     renderTopbar();
     expect(screen.getByText("12:00:00")).toBeInTheDocument();
     expect(screen.getByText("06:00:00")).toBeInTheDocument();
@@ -145,7 +145,7 @@ describe("Topbar", () => {
     profileMocks.useProfile.mockReturnValue({
       data: { user_sub: "u", display_name: "M. Rodríguez", updated_at: null },
     });
-    seed(ME_FIXTURES.soc_operator);
+    seed(ME_FIXTURES.tenant_admin);
     const logout = vi.fn().mockResolvedValue(undefined);
     useSessionStore.setState({ logout });
     renderTopbar();

@@ -111,7 +111,7 @@ class _SocketDeMentira:
         self.cerrado = (code, reason)
 
 
-def _claims(tenant: str = WS_TENANT_A, role: str = "soc_operator") -> Claims:
+def _claims(tenant: str = WS_TENANT_A, role: str = "tenant_admin") -> Claims:
     return Claims(
         sub="u-lock",
         groups=(role,),

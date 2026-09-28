@@ -2,7 +2,7 @@ import { client } from "@takab/sdk";
 
 import { getEnv } from "../app/env";
 import { useSessionStore } from "./session.store";
-import { isSessionExpiredResponse } from "./sessionLimit";
+import { isRoleRetiredResponse, isSessionExpiredResponse } from "./sessionLimit";
 
 let configured = false;
 
@@ -21,6 +21,8 @@ function bearerOf(request: Request): string | null {
  *   · el del TOPE de sesión (`sesion_expirada`: 24 h / 30 días desde el login)
  *     cierra con causa `max_age` SIN intentar renovar — Cognito seguiría
  *     refrescando y la API rechazaría en bucle;
+ *   · [F2] el del ROL RETIRADO (`rol_retirado`) cierra con esa causa, tampoco
+ *     renovable: Cognito devolvería el mismo rol;
  *   · cualquier otro (el token de 60 min venció) intenta UNA renovación antes
  *     de cerrar. La petición que falló NO se reintenta aquí: una consulta vuelve
  *     sola en su siguiente ciclo, y reenviar a ciegas un POST —un comando de
@@ -46,6 +48,8 @@ export function configureApiClient(): void {
     const store = useSessionStore.getState();
     if (await isSessionExpiredResponse(response)) {
       store.handleUnauthorized("max_age");
+    } else if (await isRoleRetiredResponse(response)) {
+      store.handleUnauthorized("rol_retirado");
     } else {
       void store.recoverFromUnauthorized(bearerOf(request));
     }

@@ -306,7 +306,7 @@ describe("ConsolePage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("AVISO SÍSMICO · UMBRAL INSTRUMENTAL");
     expect(screen.getByRole("alert")).toHaveTextContent("Planta Cholula");
     expect(screen.getByText("1 ACTIVOS")).toBeInTheDocument();
-    expect(screen.getByTestId("operator-label")).toHaveTextContent("TENANT_ADMIN · abcdef12");
+    expect(screen.getByTestId("operator-label")).toHaveTextContent("ADMINISTRADOR · abcdef12");
   });
 
   it("[A-063] un umbral local que la RED corroboró es alerta en el muro, como en el teléfono", () => {
@@ -700,7 +700,7 @@ describe("flujo SOLICITAR DICTAMEN (T-1.51)", () => {
       idToken: "tok",
       me: {
         sub: "abcdef12-3456",
-        role: "soc_operator",
+        role: "tenant_admin",
         tenant_id: "t-1",
         surface: "web",
         site_scope: "*",
@@ -839,13 +839,13 @@ describe("[A-012 · T-8.07] la selección de la cola es por INCIDENTE", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // El rol principal de la consola, con la /me DERIVADA de la matriz: acusa,
+    // El rol principal de la consola (tenant_admin desde D-42), con la /me DERIVADA de la matriz: acusa,
     // reubica y pide dictamen.
     resetSessionStoreForTests();
     useSessionStore.setState({
       status: "authenticated",
       idToken: "tok",
-      me: ME_FIXTURES.soc_operator,
+      me: ME_FIXTURES.tenant_admin,
     });
     mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [INCIDENT, SEGUNDO] }));
     mocks.useMapState.mockReturnValue(mapData());
@@ -925,7 +925,7 @@ describe("[A-013 · T-8.07] se puede teclear en un modal de la consola", () => {
     useSessionStore.setState({
       status: "authenticated",
       idToken: "tok",
-      me: ME_FIXTURES.soc_operator,
+      me: ME_FIXTURES.tenant_admin,
     });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mocks.useLiveIncidents.mockReturnValue(incidentsData());

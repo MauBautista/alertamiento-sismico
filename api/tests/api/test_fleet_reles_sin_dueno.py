@@ -225,7 +225,7 @@ async def _get(path: str, token: str):
 
 
 async def test_la_consola_recibe_el_censo_de_reles_de_cada_gabinete(seed: None) -> None:
-    resp = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     por_serial = {g["serial"]: g["relays_state"] for g in resp.json()}
     assert por_serial == {
@@ -238,7 +238,7 @@ async def test_la_consola_recibe_el_censo_de_reles_de_cada_gabinete(seed: None) 
 
 async def test_el_gabinete_huerfano_no_sale_operativo(seed: None) -> None:
     """El defecto medido, de punta a punta: mismo latido sano, distinto veredicto."""
-    resp = await _get("/fleet/gateways", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/fleet/gateways", au.make_token("tenant_admin", tenant=T_A))
     filas = {g["serial"]: g for g in resp.json()}
     assert filas["GW-SANO"]["derived_state"] == OPERATIVO
     assert filas["GW-HUERFANO"]["derived_state"] == DEGRADADO, (

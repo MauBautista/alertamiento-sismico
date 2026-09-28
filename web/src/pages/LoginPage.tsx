@@ -6,25 +6,18 @@ import { getEnv } from "../app/env";
 import { landingPath } from "../app/landing";
 import logoTakab from "../assets/imagotipo-takab-ailert.png";
 import { useSessionStore } from "../auth/session.store";
-import { maxAgeLabel } from "../auth/sessionLimit";
+import { MENSAJE_ROL_RETIRADO, maxAgeLabel } from "../auth/sessionLimit";
+import { ETIQUETA_ROL } from "../auth/rolesHistoricos";
 import { cognitoConfigured } from "../auth/userManager";
 import MobileOnlyScreen from "./MobileOnlyScreen";
 import { SplashScreen } from "./StatusScreens";
 
 /** Solo para el panel dev local: la matriz de autorización REAL vive en el
- * backend (/me · matrix.py); esta lista únicamente llena el <select>. */
-const DEV_ROLES = [
-  "takab_superadmin",
-  "takab_support",
-  "tenant_admin",
-  "soc_operator",
-  "gov_operator",
-  "inspector",
-  "building_admin",
-  "brigadista",
-  "security_guard",
-  "occupant",
-];
+ * backend (/me · matrix.py); esta lista únicamente llena el <select>.
+ * [T-9.20 · D-42] Los 7 canónicos, de la tabla de rótulos (no otra lista a mano).
+ * `/dev/token` todavía acepta los ids retirados para ensayar la ventana de alias,
+ * pero el panel no los ofrece. */
+const DEV_ROLES = Object.keys(ETIQUETA_ROL);
 
 /** Tenant de la flota sembrada por `db/seeds/dev_fleet.sql` (21 sitios con `geom`).
  *
@@ -37,7 +30,7 @@ export const DEV_TENANT_DEFAULT = "d0000000-0000-0000-0000-000000000001";
 function DevLoginPanel() {
   const loginDev = useSessionStore((s) => s.loginDev);
   const status = useSessionStore((s) => s.status);
-  const [role, setRole] = useState("soc_operator");
+  const [role, setRole] = useState("tenant_admin");
   const [tenantId, setTenantId] = useState(DEV_TENANT_DEFAULT);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,6 +141,13 @@ export default function LoginPage() {
         {endedReason === "max_age" ? (
           <p className="soc-screen__aviso" role="status" data-testid="login-sesion-tope">
             {avisoDeTope(sessionMaxAgeS)}
+          </p>
+        ) : null}
+        {/* [F2 · D-42] El rol retirado tampoco es una expiración: volver a entrar
+            no lo arregla hasta que un administrador le asigne un rol vigente. */}
+        {endedReason === "rol_retirado" ? (
+          <p className="soc-screen__aviso" role="status" data-testid="login-rol-retirado">
+            {MENSAJE_ROL_RETIRADO}
           </p>
         ) : null}
         {cognitoConfigured() ? (

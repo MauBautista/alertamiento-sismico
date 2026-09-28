@@ -100,13 +100,13 @@ def test_el_censo_declara_SU_TAMAÑO(fichero: dict) -> None:
     pone rojo y alguien tiene que mirar a quién se le concede — que es exactamente
     la conversación que la divergencia de trece celdas se saltó durante meses.
     """
-    assert len(ROLE_ACTION_MATRIX) == 10, "cambió el número de roles"
+    assert len(ROLE_ACTION_MATRIX) == 7, "cambió el número de roles (D-42: siete)"
     # [T-9.11] 37: `movement_alert` (D-39), concedida a brigada, inspector y admin.
     assert len(ACTIONS) == 37, "cambió el número de acciones"
     assert len(ROUTE_ORDER) == 6, "cambió el número de rutas"
 
     celdas = len(ROLE_ACTION_MATRIX) * len(ACTIONS)
-    assert celdas == 370, "el producto no cuadra: el censo no está comparando la matriz entera"
+    assert celdas == 259, "el producto no cuadra: el censo no está comparando la matriz entera"
     # Y el fichero tiene las mismas: si estuviera vacío, el test de arriba
     # compararía `None != False` y sería el único en enterarse.
     assert sum(len(r["actions"]) for r in fichero["roles"].values()) == celdas

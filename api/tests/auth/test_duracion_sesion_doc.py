@@ -33,8 +33,8 @@ def _tabla_del_documento() -> dict[str, int]:
 
 def test_la_tabla_del_documento_no_esta_vacia() -> None:
     """Guarda de no-vacuidad: si el formato cambia, `{} == {}` pasaría en verde."""
-    assert len(_tabla_del_documento()) == 10, (
-        "RBAC-TAKAB.md §5.4 dejó de leerse: el test esperaba las 10 filas de roles "
+    assert len(_tabla_del_documento()) == 7, (
+        "RBAC-TAKAB.md §5.4 dejó de leerse: el test esperaba las 7 filas de roles (D-42) "
         "(`| `rol` | N h|d | …`). Si cambió el formato, cambia la expresión, no la cuenta."
     )
 

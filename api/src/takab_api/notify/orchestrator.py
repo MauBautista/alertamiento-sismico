@@ -70,6 +70,7 @@ import psycopg
 
 from takab_api import demo_mode
 from takab_api.auth.matrix import roles_with_action
+from takab_api.auth.roles import literales_de
 from takab_api.incident.autoridad import autoriza_evacuacion
 from takab_api.notify.circulo import (
     ROLES_DE_TODO_EL_CLIENTE,
@@ -827,12 +828,22 @@ def _enqueue(
     return inserted
 
 
+def _con_alias(roles: object) -> list[str]:
+    """[T-9.20 · D-42] Cada rol canónico MÁS sus alias heredados.
+
+    La 0072 canoniza `push_tokens.role` y `user_zone_assignments.role`, pero un teléfono
+    que no se ha vuelto a abrir desde entonces, o una fila escrita antes de desplegarla,
+    puede traer todavía `security_guard` o `building_admin`: sin esto se quedaría fuera
+    del aviso de movimiento o del pánico que su rol canónico sí recibe."""
+    return sorted({lit for r in roles for lit in literales_de(r)})
+
+
 def _params_del_sitio(site_id: object, tenant_id: object) -> dict:
     """Parámetros de `_DEL_SITIO`: el sitio, su tenant y los roles del cliente entero."""
     return {
         "site": site_id,
         "tenant": tenant_id,
-        "roles_cliente": list(ROLES_DE_TODO_EL_CLIENTE),
+        "roles_cliente": _con_alias(ROLES_DE_TODO_EL_CLIENTE),
     }
 
 
@@ -1463,7 +1474,7 @@ def _dispatch_push(
             _PUSH_DEVICES_BY_ROLE_SQL,
             {
                 **_params_del_sitio(site_id, row["tenant_id"]),
-                "roles": list(roles),
+                "roles": _con_alias(roles),
             },
         )
     else:

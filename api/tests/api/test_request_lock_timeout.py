@@ -65,7 +65,7 @@ _ESPERANDO_LECTURA = (
 )
 
 
-def _token(role: str = "soc_operator", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
+def _token(role: str = "tenant_admin", tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
     return au.bearer(au.make_token(role, tenant=tenant, site_scope="*", user_id=_USER))
 
 
@@ -201,7 +201,7 @@ async def test_una_espera_por_lock_de_FILA_legitima_NO_se_corta(make_incident) -
     """
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     retencion_s = 2.0
-    ctx = SessionCtx(tenant_id=au.DB_TENANT_PRIV, role="soc_operator", user_id=_USER)
+    ctx = SessionCtx(tenant_id=au.DB_TENANT_PRIV, role="tenant_admin", user_id=_USER)
 
     async with await psycopg.AsyncConnection.connect(_raw_dsn()) as tercero:
         await tercero.execute(
@@ -285,7 +285,7 @@ async def test_el_error_del_tope_sigue_siendo_un_fallo_de_BASE_para_quien_ya_lo_
     from sqlalchemy.exc import SQLAlchemyError
 
     iid = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
-    ctx = SessionCtx(tenant_id=au.DB_TENANT_PRIV, role="soc_operator", user_id=_USER)
+    ctx = SessionCtx(tenant_id=au.DB_TENANT_PRIV, role="tenant_admin", user_id=_USER)
     async with _Bloqueo():
         atrapado: Exception | None = None
         try:

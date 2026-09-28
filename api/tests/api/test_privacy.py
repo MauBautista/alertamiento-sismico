@@ -59,8 +59,11 @@ def _admin(tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
 
 
 def _operador(tenant: str = au.DB_TENANT_PRIV) -> dict[str, str]:
+    """Un rol de consola SIN ``manage_privacy_notice``. [T-9.20 · D-42] Era
+    ``soc_operator``, que ahora canoniza a ``tenant_admin`` (el dueño): gov_operator
+    conserva la intención."""
     return au.bearer(
-        au.make_token("soc_operator", tenant=tenant, site_scope="*", user_id=OPERADOR_SUB)
+        au.make_token("gov_operator", tenant=tenant, site_scope="*", user_id=OPERADOR_SUB)
     )
 
 
@@ -157,7 +160,7 @@ async def test_el_aviso_del_tenant_tapa_al_de_plataforma_y_solo_para_ese_tenant(
 
 @pytest.mark.anyio
 async def test_publicar_es_del_dueno_del_cliente(limpia_privacidad) -> None:
-    """Un ``soc_operator`` opera incidentes; no firma el aviso de privacidad."""
+    """Un ``gov_operator`` lee evidencia; no firma el aviso de privacidad."""
     async with au.client_for(create_app()) as client:
         resp = await client.post("/privacy/notices", json=_publicar("1.0.0"), headers=_operador())
     assert resp.status_code == 403

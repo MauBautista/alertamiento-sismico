@@ -17,7 +17,7 @@ from takab_api.db.engine import get_engine
 pytestmark = pytest.mark.usefixtures("base_data")
 
 
-def _hdr(role: str = "soc_operator", *, sub: str | None = None, **over):
+def _hdr(role: str = "tenant_admin", *, sub: str | None = None, **over):
     return au.bearer(
         au.make_token(role, tenant=au.DB_TENANT_PRIV, user_id=sub or str(uuid.uuid4()), **over)
     )

@@ -39,4 +39,28 @@ describe("DirectoryList (1.7)", () => {
     expect(v.getByText("sin teléfono")).toBeTruthy();
     spy.mockRestore();
   });
+
+  // [T-9.20 · D-42] etiquetas de los siete; una fila VIEJA del roster conserva
+  // su rótulo histórico (la historia no se reescribe).
+  it("rótulos: canónicos de D-42 y el histórico de una fila vieja", async () => {
+    const v = await render(
+      <DirectoryList
+        entries={[
+          ...ENTRIES,
+          {
+            user_id: "u-3",
+            display_name: "Admin Cliente",
+            role: "tenant_admin",
+            zone_id: null,
+            zone_name: null,
+            phone: null,
+          },
+        ]}
+      />,
+    );
+    expect(v.getByText("BRIGADISTA")).toBeTruthy();
+    expect(v.getByText("ADMINISTRADOR")).toBeTruthy();
+    // `u-2` es un `security_guard` de antes de la migración.
+    expect(v.getByText("SEGURIDAD")).toBeTruthy();
+  });
 });

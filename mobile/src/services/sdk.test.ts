@@ -237,6 +237,27 @@ describe("[T-8.04 · D-38] sesion_expirada ⇒ fuera con motivo, SIN renovar", (
   });
 });
 
+describe("[F2 · D-42] rol_retirado ⇒ fuera con ese motivo, SIN renovar", () => {
+  it("por la cabecera WWW-Authenticate", async () => {
+    const r = respuesta(401, { detail: "otra cosa" }, {
+      "WWW-Authenticate": 'Bearer error="invalid_token", error_description="rol_retirado"',
+    });
+    await alResponder(r, peticion("/me"), { fetch: reintento });
+    expect(mockSignOut).toHaveBeenCalledWith("rol_retirado");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(reintento).not.toHaveBeenCalled();
+  });
+
+  it("por el cuerpo {detail: 'rol_retirado'}, y el cuerpo sigue legible", async () => {
+    const r = await alResponder(respuesta(401, { detail: "rol_retirado" }), peticion("/me"), {
+      fetch: reintento,
+    });
+    expect(mockSignOut).toHaveBeenCalledWith("rol_retirado");
+    expect(refresh).not.toHaveBeenCalled();
+    await expect(r.json()).resolves.toEqual({ detail: "rol_retirado" });
+  });
+});
+
 describe("[T-8.04] interceptor de petición — no mandar tokens vencidos", () => {
   it("renueva (si hace falta) ANTES de poner el Bearer, y pone el token resultante", async () => {
     ensureFresh.mockImplementation(async () => {

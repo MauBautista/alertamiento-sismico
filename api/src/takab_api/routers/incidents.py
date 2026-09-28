@@ -201,7 +201,16 @@ async def tactical_ack(
                 "incident": str(incident_id),
                 "tenant": str(row["tenant_id"]),
                 "actor": actor,
-                "payload": json.dumps({"role": claims.role, "surface": claims.surface}),
+                # [T-9.20] `role_raw` sólo si difiere: durante la ventana de alias, un
+                # acuse de un ex-guardia dice qué rol traía de verdad (la historia nueva no
+                # pierde el rol con el que se firmó).
+                "payload": json.dumps(
+                    {
+                        "role": claims.role,
+                        "surface": claims.surface,
+                        **({"role_raw": claims.role_raw} if claims.role_raw != claims.role else {}),
+                    }
+                ),
             },
         )
     ).first()

@@ -53,7 +53,7 @@ async def test_expired_token_closes_4401(ws_server: str) -> None:
 
 
 async def test_valid_auth_gets_ready(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})
@@ -64,7 +64,7 @@ async def test_valid_auth_gets_ready(ws_server: str) -> None:
 
 
 async def test_bad_topic_gets_error_frame(ws_server: str) -> None:
-    tok = au.make_token("soc_operator", tenant=WS_TENANT_A)
+    tok = au.make_token("tenant_admin", tenant=WS_TENANT_A)
     ws = await w.connect(ws_server)
     try:
         await w.send(ws, {"type": "auth", "token": tok})

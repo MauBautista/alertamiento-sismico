@@ -102,7 +102,7 @@ async def _get(path: str, token: str):
 
 
 async def test_list_sites_scoped_to_tenant(seed: None) -> None:
-    resp = await _get("/sites", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get("/sites", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     body = resp.json()
     ids = {s["site_id"] for s in body}
@@ -113,7 +113,7 @@ async def test_list_sites_scoped_to_tenant(seed: None) -> None:
 
 
 async def test_get_site_detail_with_zones(seed: None) -> None:
-    resp = await _get(f"/sites/{S_A}", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(f"/sites/{S_A}", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 200
     body = resp.json()
     assert body["site_id"] == S_A
@@ -122,7 +122,7 @@ async def test_get_site_detail_with_zones(seed: None) -> None:
 
 
 async def test_rls_tenant_a_cannot_see_b_site(seed: None) -> None:
-    resp = await _get(f"/sites/{S_B}", au.make_token("soc_operator", tenant=T_A))
+    resp = await _get(f"/sites/{S_B}", au.make_token("tenant_admin", tenant=T_A))
     assert resp.status_code == 404
 
 

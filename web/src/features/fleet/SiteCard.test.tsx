@@ -220,7 +220,7 @@ describe("SiteCard", () => {
   });
 
   it("autodiagnóstico: sin la acción self_test queda deshabilitado con la razón", () => {
-    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.soc_operator });
+    useSessionStore.setState({ status: "authenticated", me: ME_FIXTURES.gov_operator });
     render(<SiteCard cabinet={cabinet()} />);
     const btn = screen.getByRole("button", { name: /AUTODIAGNÓSTICO SILENCIOSO/ });
     expect(btn).toBeDisabled();

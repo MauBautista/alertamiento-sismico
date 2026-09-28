@@ -37,6 +37,12 @@ describe("AccountView (1.8)", () => {
     expect(brig.queryByTestId("totp-row")).toBeNull();
   });
 
+  it("[F2] la cabecera nombra el rol con su RÓTULO, no con el id crudo", async () => {
+    const v = await render(<AccountView {...props({ isOccupant: false, role: "tenant_admin" })} />);
+    expect(v.getByText("CUENTA · ADMINISTRADOR")).toBeTruthy();
+    expect(v.queryByText("CUENTA · TENANT_ADMIN")).toBeNull();
+  });
+
   it("consentimiento revocado: declara que se enviará zona SIN GPS", async () => {
     const v = await render(<AccountView {...props({ gpsConsent: false })} />);
     expect(v.getByTestId("consent-note")).toHaveTextContent(/su zona asignada, sin GPS/);

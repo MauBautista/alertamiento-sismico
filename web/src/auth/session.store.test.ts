@@ -100,7 +100,7 @@ describe("session.store", () => {
 
   it("bootstrap retoma una sesión dev guardada ⇒ authenticated + me", async () => {
     saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
 
     await useSessionStore.getState().bootstrap();
 
@@ -108,7 +108,7 @@ describe("session.store", () => {
     expect(state.status).toBe("authenticated");
     expect(state.origin).toBe("dev");
     expect(state.idToken).toBe("dev-tok");
-    expect(state.me).toEqual(ME_FIXTURES.soc_operator);
+    expect(state.me).toEqual(ME_FIXTURES.tenant_admin);
   });
 
   it("bootstrap con usuario Cognito vigente ⇒ authenticated y eventos wired", async () => {
@@ -169,7 +169,7 @@ describe("session.store", () => {
     await useSessionStore.getState().bootstrap();
     expect(useSessionStore.getState().endedReason).toBe("expired");
 
-    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().refreshMe();
 
     // Sin esto, «SU SESIÓN SE CERRÓ» reaparecería meses después, en el siguiente
@@ -179,7 +179,7 @@ describe("session.store", () => {
   });
 
   it("un arranque en frío no acusa expiración de nada", async () => {
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
 
     expect(useSessionStore.getState().endedReason).toBeNull();
@@ -201,17 +201,17 @@ describe("session.store", () => {
     expect(state.idToken).toBe("dev-tok");
     expect(window.sessionStorage.getItem(DEV_STORAGE_KEY)).not.toBeNull();
 
-    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().refreshMe();
 
     state = useSessionStore.getState();
     expect(state.status).toBe("authenticated");
-    expect(state.me).toEqual(ME_FIXTURES.soc_operator);
+    expect(state.me).toEqual(ME_FIXTURES.tenant_admin);
   });
 
   it("un /me caído tras haber cargado alcance lo BORRA (no se adivina el viejo)", async () => {
     saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
-    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValueOnce(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
     expect(useSessionStore.getState().me).not.toBeNull();
 
@@ -269,14 +269,14 @@ describe("session.store", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(503, {})));
 
     await expect(
-      useSessionStore.getState().loginDev({ role: "soc_operator", tenant_id: TENANT_ID }),
+      useSessionStore.getState().loginDev({ role: "tenant_admin", tenant_id: TENANT_ID }),
     ).rejects.toThrow("503");
     expect(useSessionStore.getState().status).toBe("anonymous");
   });
 
   it("logout dev ⇒ anonymous local, sin redirect ni removeUser", async () => {
     saveDevSession({ idToken: "dev-tok", expiresAt: Date.now() + 60_000 });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
 
     await useSessionStore.getState().logout();
@@ -319,7 +319,7 @@ describe("session.store", () => {
       id_token: "cb-tok",
       state: { returnTo: "/fleet" },
     });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
 
     const result = await useSessionStore.getState().completeCognitoCallback();
 
@@ -372,7 +372,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
 
   function meCon(expiresAt: number | null, maxAgeS: number | null) {
     return {
-      ...ME_FIXTURES.soc_operator,
+      ...ME_FIXTURES.tenant_admin,
       session_expires_at: expiresAt === null ? null : new Date(expiresAt).toISOString(),
       session_max_age_s: maxAgeS,
     };
@@ -422,7 +422,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
       refresh_token: "r-1",
     });
     mocks.userManager.signinSilent.mockResolvedValue({ id_token: "nuevo", expired: false });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
 
     await useSessionStore.getState().bootstrap();
 
@@ -507,7 +507,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
     mocks.userManager.signinSilent.mockResolvedValue({ id_token: "t2" });
     mocks.getMe
       .mockRejectedValueOnce(new MeRequestError(401))
-      .mockResolvedValueOnce(ME_FIXTURES.soc_operator);
+      .mockResolvedValueOnce(ME_FIXTURES.tenant_admin);
 
     await useSessionStore.getState().bootstrap();
 
@@ -554,7 +554,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
       id_token: fakeJwt({ auth_time: T0 / 1000 }),
       state: {},
     });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
 
     await useSessionStore.getState().completeCognitoCallback();
 
@@ -569,7 +569,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(T0 + 5_000);
     mocks.userManager.signinRedirectCallback.mockResolvedValue({ id_token: "opaco", state: {} });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
 
     await useSessionStore.getState().completeCognitoCallback();
 
@@ -628,7 +628,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
     vi.useFakeTimers();
     vi.setSystemTime(T0);
     saveDevSession({ idToken: "dev-tok", expiresAt: T0 + H });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
 
     expect(selectSessionDeadline(useSessionStore.getState())).toBeNull();
@@ -640,7 +640,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
 
   it("renewToken (Cognito): signinSilent y el id_token nuevo al store; dos a la vez ⇒ UNA", async () => {
     mocks.userManager.getUser.mockResolvedValue({ id_token: "t1", expired: false });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
     let soltar: (u: { id_token: string }) => void = () => undefined;
     mocks.userManager.signinSilent.mockReturnValue(
@@ -663,10 +663,10 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
     saveDevSession({
       idToken: "dev-1",
       expiresAt: Date.now() + 60_000,
-      request: { role: "soc_operator", tenant_id: TENANT_ID, sub: "u-7", expires_in: 120 },
+      request: { role: "tenant_admin", tenant_id: TENANT_ID, sub: "u-7", expires_in: 120 },
       authTimeMs: Date.now() - 10_000,
     });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
     const fetchMock = vi
       .fn()
@@ -679,7 +679,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
 
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string);
     expect(body).toMatchObject({
-      role: "soc_operator",
+      role: "tenant_admin",
       tenant_id: TENANT_ID,
       sub: "u-7",
       expires_in: 120,
@@ -707,7 +707,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
     saveDevSession({
       idToken: "dev-viejo",
       expiresAt: Date.now() - 1,
-      request: { role: "soc_operator", tenant_id: TENANT_ID, sub: "u-7" },
+      request: { role: "tenant_admin", tenant_id: TENANT_ID, sub: "u-7" },
       authTimeMs: Date.now() - 2 * H,
     });
     vi.stubGlobal(
@@ -718,7 +718,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
           jsonResponse(200, { id_token: "dev-nuevo", token_use: "id", expires_in: 3600 }),
         ),
     );
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
 
     await useSessionStore.getState().bootstrap();
 
@@ -731,7 +731,7 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
 
   it("un 401 con un token que YA no es el vigente no renueva otra vez", async () => {
     mocks.userManager.getUser.mockResolvedValue({ id_token: "t2", expired: false });
-    mocks.getMe.mockResolvedValue(ME_FIXTURES.soc_operator);
+    mocks.getMe.mockResolvedValue(ME_FIXTURES.tenant_admin);
     await useSessionStore.getState().bootstrap();
 
     await expect(useSessionStore.getState().recoverFromUnauthorized("t1")).resolves.toBe(true);
@@ -755,6 +755,22 @@ describe("[T-8.03] la sesión sobrevive al token y muere en el tope", () => {
     useSessionStore.getState().handleUnauthorized("expired");
 
     expect(useSessionStore.getState().endedReason).toBe("max_age");
+  });
+
+  it("[F2] un 'expired' tardío tampoco pisa el 'rol_retirado'", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.getState().handleUnauthorized("rol_retirado");
+    useSessionStore.getState().handleUnauthorized("expired");
+
+    expect(useSessionStore.getState().endedReason).toBe("rol_retirado");
+  });
+
+  it("[F2] si el WS cerró primero con 'expired', el 'rol_retirado' del REST precisa la causa", () => {
+    useSessionStore.setState({ status: "authenticated", origin: "dev", idToken: "t" });
+    useSessionStore.getState().handleUnauthorized("expired");
+    useSessionStore.getState().handleUnauthorized("rol_retirado");
+
+    expect(useSessionStore.getState().endedReason).toBe("rol_retirado");
   });
 
   it("logout cognito revoca el refresh ANTES de borrar el usuario y de ir al /logout", async () => {

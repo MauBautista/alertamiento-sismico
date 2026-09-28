@@ -38,9 +38,9 @@ U2 = "e1111111-0000-0000-0000-000000000002"
 
 # ---------------------------------------------------------------- app_user_id()
 def test_app_user_id_gucs(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     assert seeded.execute("SELECT app_user_id()::text").fetchone()[0] == U1
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=None)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=None)
     assert seeded.execute("SELECT app_user_id()").fetchone()[0] is None
 
 
@@ -56,7 +56,7 @@ def _put_profile(conn: psycopg.Connection, sub: str, tenant: str, name: str) -> 
 
 
 def test_profile_self_write_and_tenant_read(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     _put_profile(seeded, U1, TENANT_A, "Mauricio B.")
     row = seeded.execute(
         "SELECT display_name FROM user_profiles WHERE user_sub = %s", (U1,)
@@ -77,10 +77,10 @@ def test_profile_self_write_and_tenant_read(seeded: psycopg.Connection) -> None:
 
 
 def test_profile_cross_tenant_invisible_and_unwritable(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     _put_profile(seeded, U1, TENANT_A, "Mauricio B.")
 
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator", user_id=U2)
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin", user_id=U2)
     assert (
         seeded.execute("SELECT count(*) FROM user_profiles WHERE user_sub = %s", (U1,)).fetchone()[
             0
@@ -114,7 +114,7 @@ def test_catalog_read_any_role_write_denied(seeded: psycopg.Connection) -> None:
         "ON CONFLICT (catalog_key) DO NOTHING"
     )
 
-    for role, tenant in (("soc_operator", TENANT_A), ("building_admin", TENANT_B)):
+    for role, tenant in (("tenant_admin", TENANT_A), ("brigadista", TENANT_B)):
         use(seeded, "takab_app", tenant=tenant, app_role=role, user_id=U1)
         n = seeded.execute(
             "SELECT count(*) FROM reference_earthquakes WHERE catalog_key = 'TEST-1985'"
@@ -163,7 +163,7 @@ def _link_event(conn: psycopg.Connection, incident_id: str, event_id: str) -> No
 
 def test_relocate_with_event_updates_and_keeps_prev(seeded: psycopg.Connection) -> None:
     _link_event(seeded, INC_A, "EVT-T0011-A")
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     r = seeded.execute(_CALL, (INC_A, -98.50, 18.90)).fetchone()
     event_id, created, prev_lon, prev_lat = r
     assert created is False
@@ -194,7 +194,7 @@ def test_relocate_without_event_creates_manual_deterministic(
         (inc, TENANT_A, SITE_A),
     )
 
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     r = seeded.execute(_CALL, (inc, -98.21, 19.05)).fetchone()
     event_id, created = r[0], r[1]
     assert created is True
@@ -212,13 +212,13 @@ def test_relocate_without_event_creates_manual_deterministic(
     assert row[2] == event_id
 
     # Re-POST: mismo evento determinista, ya no "created".
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     r2 = seeded.execute(_CALL, (inc, -98.22, 19.06)).fetchone()
     assert r2[0] == event_id
     assert r2[1] is False
 
 
-@pytest.mark.parametrize("role", ["inspector", "gov_operator", "building_admin"])
+@pytest.mark.parametrize("role", ["inspector", "gov_operator", "brigadista"])
 def test_relocate_role_guard(seeded: psycopg.Connection, role: str) -> None:
     use(seeded, "takab_app", tenant=TENANT_A, app_role=role, user_id=U1)
     with pytest.raises(psycopg.errors.Error, match="rol sin permiso"):
@@ -226,13 +226,13 @@ def test_relocate_role_guard(seeded: psycopg.Connection, role: str) -> None:
 
 
 def test_relocate_cross_tenant_is_invisible(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_B, app_role="soc_operator", user_id=U2)
+    use(seeded, "takab_app", tenant=TENANT_B, app_role="tenant_admin", user_id=U2)
     with pytest.raises(psycopg.errors.Error, match="inexistente"):
         seeded.execute(_CALL, (INC_A, -98.5, 18.9))
 
 
 def test_relocate_bounds_guard(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     with pytest.raises(psycopg.errors.Error, match="fuera de rango"):
         seeded.execute(_CALL, (INC_A, 200.0, 18.9))
 
@@ -242,7 +242,7 @@ def test_relocate_audits_nothing_by_itself(seeded: psycopg.Connection) -> None:
     en audit_log — evita doble fila y respeta el contract-test."""
     seeded.execute("RESET ROLE")
     before = seeded.execute("SELECT count(*) FROM audit_log").fetchone()[0]
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     seeded.execute(_CALL, (INC_A, -98.55, 18.95))
     seeded.execute("RESET ROLE")
     after = seeded.execute("SELECT count(*) FROM audit_log").fetchone()[0]
@@ -250,7 +250,7 @@ def test_relocate_audits_nothing_by_itself(seeded: psycopg.Connection) -> None:
 
 
 def test_relocate_meta_manual_override_shape(seeded: psycopg.Connection) -> None:
-    use(seeded, "takab_app", tenant=TENANT_A, app_role="soc_operator", user_id=U1)
+    use(seeded, "takab_app", tenant=TENANT_A, app_role="tenant_admin", user_id=U1)
     seeded.execute(_CALL, (INC_A, -98.40, 18.80))
     r = seeded.execute(_CALL, (INC_A, -98.41, 18.81)).fetchone()
     _lon, _lat, meta = _event_state(seeded, r[0])
