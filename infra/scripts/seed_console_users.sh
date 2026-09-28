@@ -25,12 +25,10 @@
 # surface=both (ficha T-8.13 en TASKS.md). Para dar de alta un rol nuevo, pásalo
 # SOLO a él.
 #
-# [D-42 · T-9.21] soc_operator y building_admin YA NO se siembran: son alias
-# heredados que la API canoniza (soc_operator → tenant_admin, building_admin →
-# brigadista) y, pasada `roles_heredados_hasta`, dan 401 «rol_retirado». Los
-# usuarios que ya existen con esos roles —incluido el de la demo,
-# `…+building_admin@…`— NO se resiembran aquí: los migra
-# `api/scripts/migrar_roles_7.py` (--dry-run / --apply --map / --verify).
+# [D-42 · T-9.81] soc_operator y building_admin YA NO existen: la API los rechaza
+# siempre con 401 «rol_retirado» (la ventana de alias se cerró cuando
+# `migrar_roles_7.py --verify` dio cero) y sus grupos salen de Cognito con el
+# siguiente `terraform apply`. Aquí sólo se siembran los 7 roles canónicos.
 set -euo pipefail
 
 TF_DIR="$(cd "$(dirname "$0")/../terraform/envs/dev" && pwd)"

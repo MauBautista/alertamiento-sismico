@@ -25,9 +25,9 @@ En el handshake, una sesión ya caducada cierra con ``4440``. Mientras el socket
 vive, su plazo es ``min(exp, plazo_de_sesión)``: si llega antes (o a la vez) el de
 la sesión, ``4440``; si llega antes el ``exp`` del token, ``4401`` como en REST.
 
-[T-9.20 · D-42] Pasada ``roles_heredados_hasta``, un token con rol viejo cierra
-``4401`` con MOTIVO ``rol_retirado`` (el mismo detalle que el 401 de REST), y se
-comprueba ANTES que el tope de sesión, como en ``auth/deps.get_claims``.
+[T-9.81 · D-42] Un token con rol viejo cierra SIEMPRE ``4401`` con MOTIVO
+``rol_retirado`` (el mismo detalle que el 401 de REST), y se comprueba ANTES que el
+tope de sesión, como en ``auth/deps.get_claims`` (lo lanza ``Claims.from_verified``).
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ from starlette.websockets import WebSocketDisconnect, WebSocketState
 from takab_api.auth import deps
 from takab_api.auth.claims import Claims, scope_filter
 from takab_api.auth.matrix import CONSOLE, ROLE_ROUTE_MATRIX, roles_with_action
-from takab_api.auth.roles import ROL_RETIRADO, RolRetirado, enforce_rol_vigente
+from takab_api.auth.roles import ROL_RETIRADO, RolRetirado
 from takab_api.auth.session_age import SessionExpired, enforce_session_age, session_deadline
 from takab_api.auth.tokens import AuthError, decode_verify
 from takab_api.ws import protocol as p
@@ -149,7 +149,7 @@ def _authenticate(raw: str, settings: Any) -> tuple[Claims, float, float] | int 
     """Valida el frame ``auth`` → ``(Claims, exp, plazo_de_sesión)``.
 
     Ante un fallo devuelve el CÓDIGO de cierre: ``4440`` si la sesión ya llegó a
-    su tope (``auth/session_age.py``), ``4401`` ante cualquier otro. [T-9.20 · D-42]
+    su tope (``auth/session_age.py``), ``4401`` ante cualquier otro. [T-9.81 · D-42]
     Un rol retirado devuelve el MOTIVO (``rol_retirado``), que se cierra con 4401.
     """
     try:
@@ -164,7 +164,6 @@ def _authenticate(raw: str, settings: Any) -> tuple[Claims, float, float] | int 
     try:
         verified = decode_verify(token.strip(), settings, deps._jwks())
         claims = Claims.from_verified(verified)
-        enforce_rol_vigente(claims, settings.roles_heredados_hasta)
         enforce_session_age(claims, time.time())
     except RolRetirado:
         return ROL_RETIRADO

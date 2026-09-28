@@ -21,16 +21,17 @@ locals {
     surface    = 8
   }
 
+  # [T-9.81 · D-42] Los SIETE roles canonicos (`api/src/takab_api/auth/roles.py`).
+  # soc_operator, security_guard y building_admin se dieron de baja: su token es 401
+  # `rol_retirado` y `migrar_roles_7.py --verify` dio cero miembros. Lo ancla
+  # `tests/roles.tftest.hcl`.
   groups = {
     takab_superadmin = "Plataforma TAKAB: administracion total"
     takab_support    = "Plataforma TAKAB: soporte"
     tenant_admin     = "Administrador del tenant"
-    soc_operator     = "Operador SOC"
     gov_operator     = "Operador de gobierno / Proteccion Civil"
     inspector        = "Inspector estructural"
-    building_admin   = "Administrador de edificio"
     brigadista       = "Brigadista"
-    security_guard   = "Guardia de seguridad"
     occupant         = "Ocupante"
   }
 }
@@ -656,10 +657,11 @@ resource "aws_cognito_user_pool_client" "mobile_occupants" {
 
 # App client móvil TÁCTICO sobre el pool principal (MFA ON intacto): mismos
 # deep links. [T-8.05 · D-38] El refresh pasa de 24 h a 30 DÍAS: brigadista e
-# inspector no vuelven a teclear contraseña ni código en un mes. security_guard y
-# building_admin comparten este cliente y D-38 les da 24 h: esa diferencia NO se
-# puede expresar aquí (Cognito no tiene validez por grupo) y la impone la API con
-# `auth_time` (`auth/session_age.py`). El MFA sigue ON en el pool: se presenta en
+# inspector no vuelven a teclear contraseña ni código en un mes. [T-9.81] Los roles
+# de 24 h que compartían este cliente (security_guard, building_admin) se dieron de
+# baja; si otro rol más corto lo usara, esa diferencia NO se puede expresar aquí
+# (Cognito no tiene validez por grupo) y la impone la API con `auth_time`
+# (`auth/session_age.py`). El MFA sigue ON en el pool: se presenta en
 # cada login, una vez al mes; la guarda de comandos (`auth/mfa.py`) exige el pool,
 # no la frescura, y eso no cambia. Lo ancla `tests/sesion.tftest.hcl`.
 resource "aws_cognito_user_pool_client" "mobile_tactical" {

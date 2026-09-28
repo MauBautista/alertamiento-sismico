@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ROLES_HEREDADOS } from "../auth/rolesHistoricos";
+import { ROLES_RETIRADOS } from "../auth/rolesHistoricos";
 import matriz from "../../../shared/fixtures/rbac-matrix.json";
 import { ACTIONS_NONE, ALL_ROUTES, ME_FIXTURES, MOBILE_ONLY_ROLES, WEB_ROLES } from "./meFixtures";
 
@@ -159,7 +159,7 @@ describe("[T-9.20] ningún test pide un rol que la matriz no trae", () => {
     for (const f of todos) {
       if (PERMITIDOS_HEREDADOS.has(f)) continue;
       const texto = readFileSync(f, "utf8");
-      for (const viejo of ROLES_HEREDADOS) {
+      for (const viejo of ROLES_RETIRADOS) {
         // Como DATO (literal entre comillas o `.propiedad`), no en la prosa de un
         // comentario, que puede contar la historia con su nombre.
         const comoDato = new RegExp(`["']${viejo}["']|\\.${viejo}\\b`);

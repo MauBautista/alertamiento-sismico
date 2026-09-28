@@ -1,5 +1,5 @@
-// [D-42 · T-9.20] ¿Rol de todo el cliente? El rol se lee con el MISMO alias que
-// la nube (`auth/roles.ts`): un `soc_operator` viejo es un `tenant_admin`.
+// [D-42 · T-9.81] ¿Rol de todo el cliente? Desde la baja de los alias el rol se
+// lee TAL CUAL: un `soc_operator` viejo ya no es un `tenant_admin`.
 import type { MeResponse } from "@takab/sdk";
 
 import { esDeTodoElCliente } from "./alcanceCliente";
@@ -15,8 +15,8 @@ describe("esDeTodoElCliente", () => {
     expect(esDeTodoElCliente(null)).toBe(false);
   });
 
-  it("un rol viejo se canoniza como en la nube", () => {
-    expect(esDeTodoElCliente(me("soc_operator", "*"))).toBe(true);
+  it("[T-9.81] un rol retirado no se traduce a su heredero", () => {
+    expect(esDeTodoElCliente(me("soc_operator", "*"))).toBe(false);
     expect(esDeTodoElCliente(me("building_admin", "*"))).toBe(false);
   });
 });

@@ -1,7 +1,8 @@
-// [T-9.20 · D-42] Los rótulos de los roles, atados a la fuente de la api.
+// [T-9.20 · T-9.81 · D-42] Los rótulos de los roles, atados a la fuente de la api.
 //
-// D-42 bajó los roles de 10 a 7. Las filas HISTÓRICAS (bitácora, acciones,
-// usuarios que todavía no pasó el script de T-9.21) siguen trayendo el id viejo,
+// D-42 bajó los roles de 10 a 7 y T-9.81 dio de baja los tres viejos (su token es
+// 401 `rol_retirado`). Las filas HISTÓRICAS (bitácora, acciones firmadas) siguen
+// trayendo el id viejo,
 // y la web necesita pintarlo con SU rótulo, no con el id crudo ni con el del
 // heredero (eso reescribiría la historia en pantalla). Ese rótulo vive en UN
 // solo fichero de la web y aquí se ata, celda a celda, a
@@ -15,8 +16,8 @@ import matriz from "../../../shared/fixtures/rbac-matrix.json";
 import {
   ETIQUETA_ROL,
   ROL_HISTORICO,
-  ROLES_HEREDADOS,
-  esRolHeredado,
+  ROLES_RETIRADOS,
+  esRolRetirado,
   etiquetaDeRol,
 } from "./rolesHistoricos";
 
@@ -34,6 +35,13 @@ function dictDe(nombre: string): Record<string, string> {
   return out;
 }
 
+/** Lee `ROLES_RETIRADOS: frozenset[str] = frozenset({"a", ...})` de `roles.py`. */
+function retiradosPy(): string[] {
+  const m = ROLES_PY.match(/^ROLES_RETIRADOS: frozenset\[str\] = frozenset\(\{([^}]*)\}\)/m);
+  if (m === null) throw new Error("no encuentro ROLES_RETIRADOS en roles.py");
+  return [...m[1].matchAll(/"([a-z_]+)"/g)].map((par) => par[1]).sort();
+}
+
 describe("[T-9.20] rolesHistoricos: un solo sitio, atado a la api", () => {
   it("los rótulos canónicos son los de `roles.ETIQUETA`, y son los 7 de la matriz", () => {
     expect(ETIQUETA_ROL).toEqual(dictDe("ETIQUETA"));
@@ -44,15 +52,16 @@ describe("[T-9.20] rolesHistoricos: un solo sitio, atado a la api", () => {
     const py = dictDe("ROL_HISTORICO");
     expect(Object.keys(py)).toHaveLength(3);
     expect(ROL_HISTORICO).toEqual(py);
-    expect([...ROLES_HEREDADOS].sort()).toEqual(Object.keys(dictDe("ALIAS_HEREDADOS")).sort());
+    expect([...ROLES_RETIRADOS].sort()).toEqual(retiradosPy());
+    expect(retiradosPy()).toHaveLength(3);
   });
 
   it("ningún rol histórico sigue en la matriz: por eso necesitan rótulo aparte", () => {
-    for (const viejo of ROLES_HEREDADOS) {
+    for (const viejo of ROLES_RETIRADOS) {
       expect(Object.keys(matriz.roles), viejo).not.toContain(viejo);
-      expect(esRolHeredado(viejo)).toBe(true);
+      expect(esRolRetirado(viejo)).toBe(true);
     }
-    for (const canonico of Object.keys(matriz.roles)) expect(esRolHeredado(canonico)).toBe(false);
+    for (const canonico of Object.keys(matriz.roles)) expect(esRolRetirado(canonico)).toBe(false);
   });
 
   it("etiquetaDeRol: canónico con su rótulo, viejo con el SUYO (no el del heredero), desconocido crudo", () => {

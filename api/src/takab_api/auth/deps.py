@@ -25,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.audit import audit_async
 from takab_api.auth.claims import Claims
 from takab_api.auth.jwks import JWKSProvider, select_jwks, select_jwks_occupants
-from takab_api.auth.roles import ROL_RETIRADO, RolRetirado, enforce_rol_vigente
+from takab_api.auth.roles import ROL_RETIRADO, RolRetirado
 from takab_api.auth.scope import ConsoleScope, console_scope
 from takab_api.auth.session_age import SESSION_EXPIRED, SessionExpired, enforce_session_age
 from takab_api.auth.tokens import (
@@ -55,7 +55,7 @@ _SESSION_EXPIRED_CHALLENGE = {
     "WWW-Authenticate": f'Bearer error="invalid_token", error_description="{SESSION_EXPIRED}"'
 }
 
-# [T-9.20 · D-42] Reto del rol RETIRADO (pasada ``roles_heredados_hasta``). Tampoco es
+# [T-9.81 · D-42] Reto del rol RETIRADO (``auth/roles.ROLES_RETIRADOS``). Tampoco es
 # renovable, y tampoco se arregla re-entrando: hay que cambiarle el rol al usuario.
 _ROL_RETIRADO_CHALLENGE = {
     "WWW-Authenticate": f'Bearer error="invalid_token", error_description="{ROL_RETIRADO}"'
@@ -98,10 +98,10 @@ def get_claims(request: Request) -> Claims:
     herede, y ANTES que cualquier guarda que envuelva a ésta (``require_mfa``,
     ``require_roles``): una sesión caducada es 401, nunca 403.
 
-    [T-9.20 · D-42] Y ANTES de la edad de sesión, la baja de los roles viejos: pasada
-    ``roles_heredados_hasta``, un token con rol viejo es 401 ``rol_retirado``. Si fuera
-    después, una sesión vieja y retirada diría ``sesion_expirada`` y la persona
-    re-entraría para chocar con lo mismo.
+    [T-9.81 · D-42] Y ANTES de la edad de sesión, la baja de los roles viejos: un token
+    con rol viejo es SIEMPRE 401 ``rol_retirado`` (lo lanza ``Claims.from_verified``,
+    que va primero). Si fuera después, una sesión vieja y retirada diría
+    ``sesion_expirada`` y la persona re-entraría para chocar con lo mismo.
     """
     header = request.headers.get("Authorization") or ""
     scheme, _, token = header.partition(" ")
@@ -119,7 +119,6 @@ def get_claims(request: Request) -> Claims:
             raise AuthError("el pool de ocupantes solo emite occupant")
         if pool == POOL_PRINCIPAL and claims.role == "occupant" and _jwks_occupants() is not None:
             raise AuthError("occupant debe autenticarse en el pool de ocupantes")
-        enforce_rol_vigente(claims, _settings().roles_heredados_hasta)
         enforce_session_age(claims, time.time())
         return claims
     except RolRetirado as exc:

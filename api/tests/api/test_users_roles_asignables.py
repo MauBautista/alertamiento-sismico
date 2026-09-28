@@ -1,8 +1,8 @@
 """T-9.20 · D-42 — qué roles se pueden ASIGNAR tras bajar de 10 a 7.
 
 - Un rol viejo (``soc_operator``/``security_guard``/``building_admin``) ya no se
-  asigna: 422. Los alias solo existen para que los TOKENS viejos sigan entrando
-  durante la ventana; dar de alta a alguien nuevo con uno sería alargarla a mano.
+  asigna: 422. [T-9.81] Desde la baja, un token con uno de ellos es 401
+  ``rol_retirado``: dar de alta a alguien con uno sería crear a un usuario que no entra.
 - ``GET /users/assignable-roles`` publica la lista con su etiqueta, para que la
   web no la escriba a mano (``UsersCard.ROLES`` era un espejo sin guarda). Un rol
   de cliente no ve los internos: no puede otorgarlos (``PLATFORM_ROLES``).
@@ -17,7 +17,7 @@ from fastapi import FastAPI
 
 import auth_utils as au
 from takab_api.auth import deps
-from takab_api.auth.roles import ALIAS_HEREDADOS, CANONICAL_ROLES, ETIQUETA
+from takab_api.auth.roles import CANONICAL_ROLES, ETIQUETA, ROLES_RETIRADOS
 from takab_api.db.engine import get_engine
 from takab_api.main import create_app
 from takab_api.routers.users import get_user_directory
@@ -58,10 +58,10 @@ def _token(role: str) -> dict[str, str]:
 
 def test_asignables_son_los_canonicos_menos_occupant() -> None:
     assert set(ASSIGNABLE_ROLES) == set(CANONICAL_ROLES) - {"occupant"}
-    assert not set(ASSIGNABLE_ROLES) & set(ALIAS_HEREDADOS)
+    assert not set(ASSIGNABLE_ROLES) & set(ROLES_RETIRADOS)
 
 
-@pytest.mark.parametrize("viejo", sorted(ALIAS_HEREDADOS))
+@pytest.mark.parametrize("viejo", sorted(ROLES_RETIRADOS))
 async def test_crear_con_rol_viejo_es_422(app, base_data, viejo: str) -> None:
     async with au.client_for(app) as c:
         resp = await c.post(
@@ -72,7 +72,7 @@ async def test_crear_con_rol_viejo_es_422(app, base_data, viejo: str) -> None:
     assert resp.status_code == 422, resp.text
 
 
-@pytest.mark.parametrize("viejo", sorted(ALIAS_HEREDADOS))
+@pytest.mark.parametrize("viejo", sorted(ROLES_RETIRADOS))
 async def test_cambiar_a_rol_viejo_es_422(app, base_data, viejo: str) -> None:
     async with au.client_for(app) as c:
         resp = await c.patch("/users/u-x", headers=_token("tenant_admin"), json={"role": viejo})

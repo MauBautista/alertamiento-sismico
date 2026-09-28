@@ -3,8 +3,6 @@
 // default-deny; el backend re-valida cada acción vía la matriz (jamás se
 // confía en la UI). El gating FINO por allowed_actions llega con T-2.03,
 // cuando los roles móviles dejen de tener acciones vacías en matrix.py.
-import { canonizarRol } from "./roles";
-
 /** Grupos de rutas de la app (expo-router). */
 export type ProfileGroup = "occupant" | "tactical";
 
@@ -19,9 +17,9 @@ export type GateResult =
  * (`tenant_admin`) usa también la app táctica completa: recibe el aviso de
  * movimiento y tiene las acciones de campo del brigadista. Las pestañas siguen
  * gobernadas por sus `allowed_actions` (`pestanasTacticas`).
- * [T-9.20 · D-42] roles de 10 a 7: `security_guard` y `building_admin` ya no
- * llegan (el servidor canoniza a `brigadista`); si llegaran, `canonizarRol`
- * aplica el mismo alias que `api/src/takab_api/auth/roles.py`. */
+ * [T-9.81 · D-42] roles de 10 a 7 y baja de los alias: `security_guard` y
+ * `building_admin` ya no llegan (su token es 401 `rol_retirado`); si llegaran,
+ * no se traducen a su heredero y caen en el default-deny. */
 export const TACTICAL_ROLES: ReadonlySet<string> = new Set([
   "brigadista",
   "inspector",
@@ -38,7 +36,7 @@ export function gateFor(
   if (me.surface !== "mobile" && me.surface !== "both") {
     return { allowed: false, reason: "wrong_surface" };
   }
-  const role = canonizarRol(me.role);
+  const role = me.role;
   if (role === "occupant") {
     return { allowed: true, group: "occupant" };
   }

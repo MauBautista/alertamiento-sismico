@@ -1,12 +1,14 @@
-// [T-9.20 · D-42] Los roles de la app: siete canónicos y la ventana de alias.
-// La app NO decide permisos (el servidor revalida todo); solo tiene que
-// reconocer el rol que /me le manda. El servidor ya canoniza, pero si llegara
-// un rol viejo, la app lo trata con EL MISMO alias que la nube.
+// [T-9.20 · T-9.81 · D-42] Los roles de la app: siete canónicos y la BAJA de los
+// tres viejos. La app NO decide permisos (el servidor revalida todo); solo tiene
+// que reconocer el rol que /me le manda. Desde T-9.81 el servidor ni emite un rol
+// viejo (su token es 401 `rol_retirado` ⇒ fin de sesión, `rolRetirado.ts`), y la
+// app ya no traduce ninguno: solo guarda su rótulo para las filas históricas.
 /// <reference types="node" />
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { ALIAS_HEREDADOS, CANONICAL_ROLES, canonizarRol, etiquetaRol } from "./roles";
+import * as roles from "./roles";
+import { CANONICAL_ROLES, ROLES_RETIRADOS, etiquetaRol } from "./roles";
 
 describe("[D-42] roles de la app", () => {
   it("los siete canónicos son exactamente los de la matriz del servidor", () => {
@@ -17,26 +19,23 @@ describe("[D-42] roles de la app", () => {
     expect(CANONICAL_ROLES).toHaveLength(7);
   });
 
-  it("el alias es el MISMO que el de api/src/takab_api/auth/roles.py", () => {
-    // Se lee del fuente de la API: un solo mapa por lado y este test los ata.
+  it("los retirados son los MISMOS que `ROLES_RETIRADOS` de api/.../auth/roles.py", () => {
+    // Se lee del fuente de la API: un solo conjunto por lado y este test los ata.
     const fuente = readFileSync(
       resolve(process.cwd(), "..", "api", "src", "takab_api", "auth", "roles.py"),
       "utf8",
     );
-    const bloque = /ALIAS_HEREDADOS[^=]*=\s*\{([^}]*)\}/.exec(fuente)?.[1] ?? "";
-    const api = Object.fromEntries(
-      [...bloque.matchAll(/"([a-z_]+)"\s*:\s*"([a-z_]+)"/g)].map((m) => [m[1], m[2]]),
-    );
-    expect(Object.keys(api).length).toBeGreaterThan(0);
-    expect(ALIAS_HEREDADOS).toEqual(api);
+    const bloque = /\nROLES_RETIRADOS[^=]*=\s*frozenset\(\{([^}]*)\}\)/.exec(fuente)?.[1] ?? "";
+    const api = [...bloque.matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
+    expect(api).toHaveLength(3);
+    expect([...ROLES_RETIRADOS].sort()).toEqual(api);
+    for (const viejo of ROLES_RETIRADOS) expect(CANONICAL_ROLES).not.toContain(viejo);
   });
 
-  it("un rol viejo se canoniza; un canónico o desconocido pasa tal cual", () => {
-    expect(canonizarRol("soc_operator")).toBe("tenant_admin");
-    expect(canonizarRol("security_guard")).toBe("brigadista");
-    expect(canonizarRol("building_admin")).toBe("brigadista");
-    expect(canonizarRol("inspector")).toBe("inspector");
-    expect(canonizarRol("mystery")).toBe("mystery");
+  it("[T-9.81] la app ya no traduce un rol viejo a su heredero", () => {
+    const mod = roles as Record<string, unknown>;
+    expect(mod.canonizarRol).toBeUndefined();
+    expect(mod.ALIAS_HEREDADOS).toBeUndefined();
   });
 
   it("etiquetas: 7 canónicas + las históricas de filas viejas del roster", () => {

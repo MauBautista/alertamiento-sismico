@@ -133,7 +133,7 @@ takab/
 - **`takab-docs/BLUEPRINT-TECNICO-TAKAB.md`** — documento canónico: principios arquitectónicos,
   topología, módulos del edge, capa cloud, roadmap Edge→Cloud→Frontend. Ante cualquier
   ambigüedad de arquitectura, este documento gobierna.
-- **`takab-docs/RBAC-TAKAB.md`** — 7 roles (D-42; los 3 viejos, alias heredados en ventana), matrices de acceso web y móvil, mapeo a Cognito,
+- **`takab-docs/RBAC-TAKAB.md`** — 7 roles (D-42; los 3 viejos, retirados desde T-9.81: 401 `rol_retirado`), matrices de acceso web y móvil, mapeo a Cognito,
   claims del JWT, reglas de actuadores, tablas de auth. (Las identidades máquina — X.509 de
   gateway, M2M, rol DB de ingesta — no son roles RBAC.)
 - **`db/schema.sql`** — esquema de producción consolidado (aplícalo, no lo reinventes); es la

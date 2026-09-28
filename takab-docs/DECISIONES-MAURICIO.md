@@ -2065,6 +2065,10 @@ deshabilitar al usuario cierra sus sesiones al instante (`D-38`).
 **Cómo se revocaría.** Mientras dure la ventana de alias, basta con quitar el alias y reasignar
 usuarios. Después, crear de nuevo el rol en la matriz, el grupo en Cognito y los censos.
 
+**Ventana cerrada (2026-09-28, T-9.81).** La migración de Cognito verificó cero usuarios con rol o
+grupo viejo; la API rechaza desde entonces los tres roles viejos sin excepción. La decisión no
+cambia: se cumplió su condición de cierre.
+
 ---
 
 ## D-43 · El dictamen de reingreso se decide **solo en tres bandas**, con firma del sistema

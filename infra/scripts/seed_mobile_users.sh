@@ -83,7 +83,7 @@ for ROLE in "${ROLES[@]}"; do
   case "$ROLE" in
   occupant | brigadista) ;;
   *)
-    # [D-42] security_guard ya no se siembra: es alias heredado de brigadista.
+    # [D-42 · T-9.81] security_guard ya no existe: la API lo rechaza (401 rol_retirado).
     echo "rol no móvil: $ROLE (usa occupant|brigadista)" >&2
     exit 2
     ;;

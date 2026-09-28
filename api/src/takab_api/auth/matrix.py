@@ -14,8 +14,8 @@ ninguna pantalla que lo consumiera. La celda es EXACTAMENTE la acción
 una frontera nueva, se hace visible la que ya decidía el endpoint.
 
 [T-9.20 · D-42] SIETE roles. ``soc_operator``, ``security_guard`` y ``building_admin``
-salieron de la matriz: sus tokens entran canonizados a ``tenant_admin`` /
-``brigadista`` / ``brigadista`` durante la ventana de alias (``auth/roles.py``).
+salieron de la matriz; desde T-9.81 un token suyo es 401 ``rol_retirado``
+(``auth/roles.py``), y sus usuarios se migraron a ``tenant_admin`` / ``brigadista``.
 Nada de lo que tenían se perdió para su heredero (``tenant_admin`` ⊇ ``soc_operator``
 y ``brigadista`` == ``security_guard`` celda a celda, lo ancla
 ``tests/auth/test_roles_heredados.py``); el ``building_admin`` pierde la consola,
@@ -542,7 +542,7 @@ ROLE_ACTION_MATRIX: dict[str, dict[str, bool]] = {
 #:
 #: - campo (brigadista, inspector): 30 d — no se les pide contraseña ni código en
 #:   un mes [T-9.20 · D-42: el ex-guardia y el ex-administrador de inmueble,
-#:   canonizados a brigadista, heredan los 30 d]; el interruptor contra un
+#:   migrados a brigadista, heredan los 30 d]; el interruptor contra un
 #:   teléfono perdido es la baja, que cierra sus sesiones (``users/directory.py``).
 #: - occupant: 90 d — su pool, su cliente.
 #: - todo rol con poder de consola u operación: 24 h.

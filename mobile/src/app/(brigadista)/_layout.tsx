@@ -1,5 +1,5 @@
 // Perfil 2 · TÁCTICO (brigadista + inspector por D4d + tenant_admin por D-42;
-// los viejos security_guard/building_admin canonizan a brigadista, T-9.20) —
+// los viejos security_guard/building_admin se dieron de baja, T-9.81) —
 // la barra se DERIVA de `allowed_actions`, no de una lista por rol.
 // Guard de grupo server-driven: si el gate no dio "tactical", fuera.
 //

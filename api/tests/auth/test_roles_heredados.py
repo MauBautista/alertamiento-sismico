@@ -1,17 +1,16 @@
-"""T-9.20 · D-42 — siete roles y la VENTANA DE ALIAS de los tres viejos.
+"""T-9.81 · D-42 — la BAJA de los tres roles viejos (antes: su ventana de alias, T-9.20).
 
-Tres contratos, y cada uno tiene su test explícito aquí (no se prueban de rebote
-en los ~90 ficheros que usaban ``soc_operator`` como rol genérico):
+``migrar_roles_7.py --verify`` dio cero: nadie tiene ya rol ni grupo viejo. Con eso la
+ventana se cerró en el código, no con una fecha:
 
-1. Un token con rol VIEJO y su grupo VIEJO entra **canonizado**: ``Claims.role`` es
-   el canónico (matriz, sesión y RLS son las suyas) y ``Claims.role_raw`` guarda lo
-   que traía el token, para la bitácora.
-2. La antifalsificación se hace sobre lo CRUDO, exactamente como antes de D-42: un
-   ``custom:role`` que no está en ``cognito:groups`` es 401 aunque su alias sí esté
-   (o al revés). Canonizar antes de comparar abriría una escalada.
-3. Con ``roles_heredados_hasta`` en el pasado, el rol viejo es 401 ``rol_retirado``
-   — y ANTES que la edad de sesión: un cliente que viera ``sesion_expirada`` le
-   diría a la persona «vuelve a entrar», y volver a entrar no lo arregla.
+1. Un token con ``soc_operator``, ``security_guard`` o ``building_admin`` es SIEMPRE 401
+   ``rol_retirado`` (WS: 4401 con ese motivo, ``tests/ws/test_ws_rol_retirado.py``),
+   sin fecha que lo abra, y ANTES que la edad de sesión: un cliente que viera
+   ``sesion_expirada`` le diría a la persona «vuelve a entrar», y volver a entrar con
+   el mismo rol no lo arregla.
+2. La antifalsificación no cambia: un ``custom:role`` que no está en ``cognito:groups``
+   sigue siendo «role not in groups», se comprueba PRIMERO.
+3. La historia no se reescribe: ``ROL_HISTORICO`` sigue rotulando las filas viejas.
 """
 
 from __future__ import annotations
@@ -21,7 +20,7 @@ from datetime import date, timedelta
 import pytest
 
 import auth_utils as au
-from takab_api.auth import deps
+from takab_api.auth import deps, roles
 from takab_api.auth.claims import Claims
 from takab_api.auth.jwks import select_jwks
 from takab_api.auth.matrix import (
@@ -32,17 +31,17 @@ from takab_api.auth.matrix import (
     allowed_routes,
 )
 from takab_api.auth.roles import (
-    ALIAS_HEREDADOS,
     CANONICAL_ROLES,
     ETIQUETA,
+    HEREDERO_HISTORICO,
     ROL_HISTORICO,
     ROL_RETIRADO,
+    ROLES_RETIRADOS,
     RolRetirado,
-    canonizar,
-    enforce_rol_vigente,
     literales_de,
 )
 from takab_api.auth.tokens import AuthError, decode_verify
+from takab_api.settings import Settings
 
 DAY = 86_400
 
@@ -56,7 +55,8 @@ D42_CANONICOS = (
     "brigadista",
     "occupant",
 )
-D42_ALIAS = {
+D42_RETIRADOS = {"soc_operator", "security_guard", "building_admin"}
+D42_HEREDERO = {
     "soc_operator": "tenant_admin",
     "security_guard": "brigadista",
     "building_admin": "brigadista",
@@ -70,10 +70,18 @@ D42_ETIQUETAS = {
     "brigadista": "BRIGADISTA",
     "occupant": "OCUPANTE",
 }
+VIEJOS = sorted(D42_RETIRADOS)
 
 
 def _surface(role: str) -> str:
-    return "mobile" if canonizar(role) in {"brigadista", "occupant"} else "web"
+    return "mobile" if role in {"brigadista", "occupant", "security_guard"} else "web"
+
+
+def _verificado(role: str, **kw) -> dict:
+    kw.setdefault("surface", _surface(role))
+    return decode_verify(
+        au.make_token(role, **kw), au.test_settings(), select_jwks(au.test_settings())
+    )
 
 
 # --- el catálogo --------------------------------------------------------------------
@@ -81,8 +89,12 @@ def _surface(role: str) -> str:
 
 def test_los_canonicos_son_los_siete_de_D42() -> None:
     assert tuple(CANONICAL_ROLES) == D42_CANONICOS
-    assert dict(ALIAS_HEREDADOS) == D42_ALIAS
     assert dict(ETIQUETA) == D42_ETIQUETAS
+
+
+def test_los_retirados_son_los_tres_de_D42() -> None:
+    assert set(ROLES_RETIRADOS) == D42_RETIRADOS
+    assert not set(ROLES_RETIRADOS) & set(CANONICAL_ROLES)
 
 
 def test_la_matriz_y_la_sesion_tienen_EXACTAMENTE_los_siete() -> None:
@@ -91,20 +103,29 @@ def test_la_matriz_y_la_sesion_tienen_EXACTAMENTE_los_siete() -> None:
     assert set(SESSION_MAX_AGE_S) == set(D42_CANONICOS)
 
 
-def test_ningun_alias_apunta_a_otro_alias_ni_a_un_rol_inexistente() -> None:
-    for viejo, nuevo in ALIAS_HEREDADOS.items():
-        assert viejo not in CANONICAL_ROLES
-        assert nuevo in CANONICAL_ROLES
-
-
-def test_las_etiquetas_historicas_cubren_los_tres_viejos() -> None:
+def test_las_etiquetas_historicas_cubren_los_tres_retirados() -> None:
     """El papel de un reporte viejo sigue diciendo el rol con el que se firmó."""
-    assert set(ROL_HISTORICO) == set(D42_ALIAS)
+    assert set(ROL_HISTORICO) == D42_RETIRADOS
     assert all(v.strip() for v in ROL_HISTORICO.values())
 
 
+def test_la_traduccion_de_tokens_ya_no_existe() -> None:
+    """[T-9.81] Ni ``canonizar`` ni la palanca de fecha: si alguien las resucitara, un
+    token viejo volvería a entrar con los permisos de su heredero."""
+    for nombre in ("ALIAS_HEREDADOS", "canonizar", "es_heredado", "enforce_rol_vigente"):
+        assert not hasattr(roles, nombre), nombre
+    assert "role_raw" not in Claims.__dataclass_fields__
+    assert "roles_heredados_hasta" not in Settings.model_fields
+
+
+def test_el_heredero_historico_es_el_de_D42_y_solo_nombra_canonicos() -> None:
+    """Solo para FILTRAR filas guardadas (``literales_de``), jamás para un token."""
+    assert dict(HEREDERO_HISTORICO) == D42_HEREDERO
+    assert set(HEREDERO_HISTORICO.values()) <= set(CANONICAL_ROLES)
+
+
 def test_el_canonico_hereda_TODO_lo_de_soc_operator_y_security_guard() -> None:
-    """Copia A MANO de lo que tenían antes de D-42: nada se pierde para su canónico."""
+    """Copia A MANO de lo que tenían antes de D-42: nada se perdió para su canónico."""
     soc_rutas = {"/console", "/fleet", "/triage", "/building"}
     soc_acciones = {
         "classify_incident",
@@ -136,50 +157,38 @@ def test_tenant_admin_gana_generate_report() -> None:
     assert allowed_actions("tenant_admin")["generate_report"] is True
 
 
-def test_literales_de_brigadista_incluyen_sus_alias() -> None:
+def test_literales_de_brigadista_incluyen_sus_literales_viejos() -> None:
     assert set(literales_de("brigadista")) == {"brigadista", "security_guard", "building_admin"}
     assert set(literales_de("tenant_admin")) == {"tenant_admin", "soc_operator"}
     assert literales_de("inspector") == ("inspector",)
 
 
-# --- Claims.from_verified: canonizar DESPUÉS de comprobar -----------------------------
+# --- Claims.from_verified: el rol viejo es rol_retirado --------------------------------
 
 
-@pytest.mark.parametrize(("viejo", "nuevo"), sorted(D42_ALIAS.items()))
-def test_token_viejo_con_su_grupo_viejo_entra_canonizado(viejo: str, nuevo: str) -> None:
-    claims = Claims.from_verified(
-        decode_verify(
-            au.make_token(viejo, surface=_surface(viejo)),
-            au.test_settings(),
-            select_jwks(au.test_settings()),
-        )
-    )
-    assert claims.role == nuevo
-    assert claims.role_raw == viejo
+@pytest.mark.parametrize("viejo", VIEJOS)
+def test_token_viejo_con_su_grupo_viejo_es_rol_retirado(viejo: str) -> None:
+    with pytest.raises(RolRetirado) as exc:
+        Claims.from_verified(_verificado(viejo))
+    assert exc.value.reason == ROL_RETIRADO == "rol_retirado"
+    assert exc.value.status == 401
+    assert isinstance(exc.value, AuthError)
 
 
-def test_token_canonico_trae_role_raw_igual() -> None:
-    claims = Claims.from_verified(
-        decode_verify(
-            au.make_token("inspector"), au.test_settings(), select_jwks(au.test_settings())
-        )
-    )
-    assert claims.role == claims.role_raw == "inspector"
+def test_token_canonico_entra_con_su_rol() -> None:
+    assert Claims.from_verified(_verificado("inspector")).role == "inspector"
 
 
 @pytest.mark.parametrize(
     ("role", "groups"),
     [
-        # el ALIAS del rol crudo está en los grupos, pero el crudo no: es justo lo que
-        # se colaría si alguien canonizara ANTES de comparar (revisión de F2)
+        # el heredero del rol crudo está en los grupos, pero el crudo no
         ("soc_operator", ["tenant_admin"]),
         ("building_admin", ["brigadista"]),
-        # ni el crudo ni su alias están en los grupos
         ("soc_operator", ["brigadista"]),
         ("tenant_admin", ["soc_operator"]),
         ("security_guard", ["brigadista"]),
         ("brigadista", ["security_guard"]),
-        ("building_admin", ["brigadista"]),
     ],
 )
 def test_token_falsificado_es_401_role_not_in_groups(role: str, groups: list[str]) -> None:
@@ -190,42 +199,6 @@ def test_token_falsificado_es_401_role_not_in_groups(role: str, groups: list[str
         )
 
 
-# --- la baja: rol_retirado ------------------------------------------------------------
-
-
-def test_enforce_rol_vigente_ventana_abierta_por_defecto() -> None:
-    c = _claims_de("soc_operator")
-    enforce_rol_vigente(c, None, hoy=date(2030, 1, 1))  # no lanza
-
-
-def test_enforce_rol_vigente_el_dia_de_la_baja_aun_entra() -> None:
-    c = _claims_de("soc_operator")
-    enforce_rol_vigente(c, date(2026, 10, 1), hoy=date(2026, 10, 1))
-
-
-def test_enforce_rol_vigente_pasada_la_baja_es_rol_retirado() -> None:
-    c = _claims_de("security_guard")
-    with pytest.raises(RolRetirado) as exc:
-        enforce_rol_vigente(c, date(2026, 10, 1), hoy=date(2026, 10, 2))
-    assert exc.value.reason == ROL_RETIRADO == "rol_retirado"
-    assert exc.value.status == 401
-    assert isinstance(exc.value, AuthError)
-
-
-def test_enforce_rol_vigente_no_afecta_a_un_canonico() -> None:
-    enforce_rol_vigente(_claims_de("tenant_admin"), date(2020, 1, 1), hoy=date(2030, 1, 1))
-
-
-def _claims_de(role: str) -> Claims:
-    return Claims.from_verified(
-        decode_verify(
-            au.make_token(role, surface=_surface(role)),
-            au.test_settings(),
-            select_jwks(au.test_settings()),
-        )
-    )
-
-
 # --- HTTP: /me ------------------------------------------------------------------------
 
 
@@ -233,75 +206,54 @@ async def _me(client, token: str):
     return await client.get("/me", headers=au.bearer(token))
 
 
-async def test_me_con_soc_operator_devuelve_la_matriz_de_tenant_admin(client, db_engine) -> None:
-    resp = await _me(client, au.make_token("soc_operator", auth_age=60))
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert body["role"] == "tenant_admin"
-    assert body["allowed_routes"] == allowed_routes("tenant_admin")
-    assert body["allowed_actions"] == allowed_actions("tenant_admin")
-    assert body["session_max_age_s"] == SESSION_MAX_AGE_S["tenant_admin"]
-
-
-async def test_me_con_security_guard_tiene_la_sesion_de_30_dias(client, db_engine) -> None:
-    """D-42: el ex-guardia pasa a la sesión del brigadista. A los 2 días (antes, 24 h ⇒
-    caducada) sigue dentro."""
-    tok = au.make_token("security_guard", surface="mobile", auth_age=2 * DAY)
-    resp = await _me(client, tok)
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["role"] == "brigadista"
-    assert resp.json()["session_max_age_s"] == 30 * DAY
-
-
-async def test_me_falsificado_es_401(client, db_engine) -> None:
-    resp = await _me(client, au.make_token("soc_operator", **{"cognito:groups": ["brigadista"]}))
-    assert resp.status_code == 401
-    resp = await _me(client, au.make_token("tenant_admin", **{"cognito:groups": ["soc_operator"]}))
-    assert resp.status_code == 401
-
-
-def _baja_ayer(monkeypatch: pytest.MonkeyPatch) -> None:
-    ayer = (date.today() - timedelta(days=2)).isoformat()
-    monkeypatch.setenv("TAKAB_API_ROLES_HEREDADOS_HASTA", ayer)
-    deps._reset_caches()
-
-
-async def test_pasada_la_baja_el_rol_viejo_es_401_rol_retirado(
-    client, db_engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _baja_ayer(monkeypatch)
-    resp = await _me(client, au.make_token("soc_operator", auth_age=60))
+@pytest.mark.parametrize("viejo", VIEJOS)
+async def test_me_con_rol_viejo_es_401_rol_retirado(client, db_engine, viejo: str) -> None:
+    resp = await _me(client, au.make_token(viejo, surface=_surface(viejo), auth_age=60))
     assert resp.status_code == 401
     assert resp.json()["detail"] == "rol_retirado"
     assert 'error_description="rol_retirado"' in resp.headers["WWW-Authenticate"]
 
 
-async def test_rol_retirado_va_ANTES_que_la_edad_de_sesion(
-    client, db_engine, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("dias", [-3650, -1, 0, 1, 3650])
+async def test_rol_retirado_con_CUALQUIER_fecha_en_la_variable_vieja(
+    client, db_engine, monkeypatch: pytest.MonkeyPatch, dias: int
 ) -> None:
+    """La variable ``TAKAB_API_ROLES_HEREDADOS_HASTA`` que quede en un ``.env`` viejo ya
+    no abre nada, ni en el pasado ni en el futuro (ni tumba la API al arrancar)."""
+    monkeypatch.setenv(
+        "TAKAB_API_ROLES_HEREDADOS_HASTA", (date.today() + timedelta(days=dias)).isoformat()
+    )
+    deps._reset_caches()
+    resp = await _me(client, au.make_token("soc_operator", auth_age=60))
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "rol_retirado"
+
+
+async def test_rol_retirado_va_ANTES_que_la_edad_de_sesion(client, db_engine) -> None:
     """Sesión caducada Y rol retirado ⇒ el motivo es ``rol_retirado``: re-entrar con
     el mismo usuario no arregla nada; hay que cambiarle el rol."""
-    _baja_ayer(monkeypatch)
     resp = await _me(client, au.make_token("building_admin", surface="mobile", auth_age=40 * DAY))
     assert resp.status_code == 401
     assert resp.json()["detail"] == "rol_retirado"
 
 
-async def test_pasada_la_baja_el_canonico_sigue_entrando(
-    client, db_engine, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    _baja_ayer(monkeypatch)
+async def test_el_canonico_sigue_entrando(client, db_engine) -> None:
     resp = await _me(client, au.make_token("tenant_admin", auth_age=60))
     assert resp.status_code == 200, resp.text
+    assert resp.json()["role"] == "tenant_admin"
 
 
-def test_settings_roles_heredados_hasta_por_defecto_None() -> None:
-    assert au.test_settings().roles_heredados_hasta is None
+async def test_me_falsificado_es_401_generico(client, db_engine) -> None:
+    resp = await _me(client, au.make_token("soc_operator", **{"cognito:groups": ["brigadista"]}))
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "role not in groups"
+    resp = await _me(client, au.make_token("tenant_admin", **{"cognito:groups": ["soc_operator"]}))
+    assert resp.status_code == 401
 
 
-async def test_dev_token_con_rol_viejo_entra_canonizado(client, db_engine) -> None:
-    """``/dev/token`` sigue aceptando un rol viejo (con su grupo viejo): es como se
-    ensaya la ventana en local y en los E2E sin Cognito."""
+async def test_dev_token_con_rol_viejo_es_rol_retirado(client, db_engine) -> None:
+    """``/dev/token`` sigue firmando lo que se le pida (es como se ensaya en local sin
+    Cognito), pero el token que sale con un rol viejo ya no entra."""
     tok = (
         await client.post(
             "/dev/token",
@@ -309,38 +261,5 @@ async def test_dev_token_con_rol_viejo_entra_canonizado(client, db_engine) -> No
         )
     ).json()["id_token"]
     resp = await _me(client, tok)
-    assert resp.status_code == 200, resp.text
-    assert resp.json()["role"] == "brigadista"
-
-
-def test_la_fecha_de_baja_se_cuenta_en_hora_de_MEXICO(monkeypatch: pytest.MonkeyPatch) -> None:
-    """El día «hasta» lo escribe una persona en México. El 27 a las 20:00 hora local
-    ya es día 28 en UTC: con la fecha de UTC la baja se adelantaba seis horas."""
-    from datetime import UTC, datetime
-
-    from takab_api.auth import roles
-
-    instante = datetime(2026, 9, 28, 2, 0, tzinfo=UTC)  # 27-sep 20:00 en CDMX
-
-    class _Reloj(datetime):
-        @classmethod
-        def now(cls, tz=None):  # type: ignore[override]
-            return instante.astimezone(tz) if tz else instante
-
-    monkeypatch.setattr(roles, "datetime", _Reloj)
-    claims = Claims.from_verified(
-        decode_verify(
-            au.make_token("soc_operator"), au.test_settings(), select_jwks(au.test_settings())
-        )
-    )
-    roles.enforce_rol_vigente(claims, date(2026, 9, 27))  # todavía es el 27 en México
-    with pytest.raises(roles.RolRetirado):
-        roles.enforce_rol_vigente(claims, date(2026, 9, 26))
-
-
-def test_la_variable_de_baja_VACIA_es_ventana_abierta(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Presente pero vacía (plantilla .env, terraform) no puede tumbar la API al arrancar."""
-    from takab_api.settings import Settings
-
-    monkeypatch.setenv("TAKAB_API_ROLES_HEREDADOS_HASTA", "")
-    assert Settings().roles_heredados_hasta is None
+    assert resp.status_code == 401
+    assert resp.json()["detail"] == "rol_retirado"

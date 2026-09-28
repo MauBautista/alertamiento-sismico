@@ -68,13 +68,14 @@ else
 fi
 
 # 4. Grupos Cognito -------------------------------------------------------------
-EXPECTED_GROUPS="brigadista building_admin gov_operator inspector occupant security_guard soc_operator takab_superadmin takab_support tenant_admin"
+# [T-9.81 · D-42] los siete canónicos; los tres retirados ya no son grupos.
+EXPECTED_GROUPS="brigadista gov_operator inspector occupant takab_superadmin takab_support tenant_admin"
 POOL_ID="$(tf_out user_pool_id || true)"
 GROUPS_GOT="$("${AWS[@]}" cognito-idp list-groups --user-pool-id "$POOL_ID" --query 'Groups[].GroupName' --output text 2>/dev/null | tr '\t' '\n' | sort | xargs || true)"
 if [ "$GROUPS_GOT" = "$EXPECTED_GROUPS" ]; then
-  pass "cognito: exactamente los 10 grupos esperados"
+  pass "cognito: exactamente los 7 grupos esperados"
 else
-  fail "cognito: exactamente los 10 grupos esperados (got: '$GROUPS_GOT')"
+  fail "cognito: exactamente los 7 grupos esperados (got: '$GROUPS_GOT')"
 fi
 
 # 5. Thing gw-dev-0001 ----------------------------------------------------------
