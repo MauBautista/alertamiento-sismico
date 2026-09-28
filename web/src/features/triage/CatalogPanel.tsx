@@ -9,6 +9,7 @@
 import { BookOpen, ChevronDown } from "lucide-react";
 import { useState } from "react";
 
+import Button from "../../components/Button";
 import Table from "../../components/Table";
 import StateFrame from "../../components/StateFrame";
 import { useCatalog } from "./useCatalog";
@@ -84,6 +85,38 @@ export default function CatalogPanel() {
               ))}
             </tbody>
           </Table>
+          {/* [T-9.61] Paginado: la primera página y «CARGAR MÁS» con el cursor.
+              El conteo dice cuánto hay en pantalla y si es el final, para que
+              una lista corta no se lea como «el catálogo entero». */}
+          <div className="triage-catalog__more">
+            <span className="triage-catalog__count soc-mono" data-testid="catalog-count">
+              {catalog.items.length}{" "}
+              {catalog.items.length === 1 ? "SISMO CARGADO" : "SISMOS CARGADOS"}
+              {catalog.hayMas ? "" : " · FIN DEL CATÁLOGO"}
+            </span>
+            {catalog.errorMas !== null && (
+              <span
+                className="triage-catalog__more-err"
+                role="alert"
+                data-testid="catalog-more-error"
+              >
+                NO SE PUDO CARGAR LA PÁGINA SIGUIENTE · {catalog.errorMas}
+              </span>
+            )}
+            {catalog.hayMas && (
+              <Button
+                variant="secondary"
+                disabled={catalog.cargandoMas}
+                onClick={catalog.cargarMas}
+              >
+                {catalog.cargandoMas
+                  ? "CARGANDO…"
+                  : catalog.errorMas !== null
+                    ? "REINTENTAR CARGAR MÁS"
+                    : "CARGAR MÁS"}
+              </Button>
+            )}
+          </div>
         </StateFrame>
       )}
     </section>

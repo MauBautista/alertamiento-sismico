@@ -583,7 +583,9 @@ describe("censo · todo componente con dato de servidor tiene su prueba", () => 
       // [T-6.06] `sinMarcoPropio` baja de 3 a 2: `SiteCard` ya tiene el suyo.
       // [T-9.41] 25→26 y 15→16: `cierre/CierreWizard` nace con marco propio y
       // con su prueba de los cuatro estados (`CierreWizard.test.tsx`).
-    }).toEqual({ conDato: 26, conPrueba: 16, sinMarcoPropio: 2 });
+      // [T-9.66] 26→27 y 16→17: `building/HistorialSismicoCard` nace con marco
+      // propio y con su prueba de los cuatro estados.
+    }).toEqual({ conDato: 27, conPrueba: 17, sinMarcoPropio: 2 });
   });
 });
 

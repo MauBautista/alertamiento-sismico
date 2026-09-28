@@ -12,6 +12,9 @@ config.watchFolders = [
   ...(config.watchFolders ?? []),
   path.resolve(projectRoot, "../shared/sdk-ts"),
   path.resolve(projectRoot, "../shared/design-tokens"),
+  // [T-9.64] La escala de los sismos (tamaño por magnitud, color por MMI) la
+  // comparten consola y app: `src/features/sismos/escala.ts` importa el JSON.
+  path.resolve(projectRoot, "../shared/fixtures"),
 ];
 
 module.exports = config;

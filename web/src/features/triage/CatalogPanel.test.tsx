@@ -29,7 +29,18 @@ function eq(over: Partial<CatalogEarthquakeOut> = {}): CatalogEarthquakeOut {
 }
 
 function catalogData(over: Record<string, unknown> = {}) {
-  return { items: [eq()], loading: false, error: null, refetch: vi.fn(), ...over };
+  return {
+    items: [eq()],
+    primeraPagina: [eq()],
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+    hayMas: false,
+    cargandoMas: false,
+    errorMas: null,
+    cargarMas: vi.fn(),
+    ...over,
+  };
 }
 
 beforeEach(() => {
@@ -70,5 +81,42 @@ describe("CatalogPanel", () => {
     render(<CatalogPanel />);
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText(/CATÁLOGO SIN SEMBRAR/)).toBeInTheDocument();
+  });
+
+  it("[T-9.61] con más páginas hay «CARGAR MÁS» y pide la siguiente", () => {
+    const cargarMas = vi.fn();
+    mocks.useCatalog.mockReturnValue(catalogData({ hayMas: true, cargarMas }));
+    render(<CatalogPanel />);
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    fireEvent.click(screen.getByRole("button", { name: "CARGAR MÁS" }));
+    expect(cargarMas).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("catalog-count")).toHaveTextContent("1 SISMO CARGADO");
+  });
+
+  it("[T-9.61] sin más páginas no se ofrece «CARGAR MÁS» y se dice que es el final", () => {
+    render(<CatalogPanel />);
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.queryByRole("button", { name: "CARGAR MÁS" })).toBeNull();
+    expect(screen.getByTestId("catalog-count")).toHaveTextContent("FIN DEL CATÁLOGO");
+  });
+
+  it("[T-9.61] cargando la siguiente: botón deshabilitado con su rótulo", () => {
+    mocks.useCatalog.mockReturnValue(catalogData({ hayMas: true, cargandoMas: true }));
+    render(<CatalogPanel />);
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.getByRole("button", { name: "CARGANDO…" })).toBeDisabled();
+  });
+
+  it("[T-9.61] si falla la siguiente página, lo cargado sigue y el fallo se dice con reintentar", () => {
+    const cargarMas = vi.fn();
+    mocks.useCatalog.mockReturnValue(
+      catalogData({ hayMas: true, errorMas: "GET falló (502)", cargarMas }),
+    );
+    render(<CatalogPanel />);
+    fireEvent.click(screen.getByRole("button", { expanded: false }));
+    expect(screen.getByText("M 7.1")).toBeInTheDocument();
+    expect(screen.getByTestId("catalog-more-error")).toHaveTextContent("GET falló (502)");
+    fireEvent.click(screen.getByRole("button", { name: "REINTENTAR CARGAR MÁS" }));
+    expect(cargarMas).toHaveBeenCalledTimes(1);
   });
 });

@@ -304,7 +304,9 @@ function ConsoleWall() {
               sites={mapSites}
               epicenters={map.epicenters}
               onSelectSite={onMapSiteClick}
-              catalog={catalog.items}
+              // [T-9.61] El mapa pinta la PRIMERA página: el catálogo son
+              // cientos y la consola no pagina el mapa (eso es del triage).
+              catalog={catalog.primeraPagina}
               catalogError={catalog.error !== null}
               selectedCatalogId={catalogSel}
               onSelectCatalog={setCatalogSel}

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **419** · `[~]` **24** · `[ ]` **59**
+**Conteo de tareas:** total **502** · `[x]` **422** · `[~]` **26** · `[ ]` **54**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18075,24 +18075,33 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.6 · Sismos de México en la app
 
-### [ ] T-9.60 · **El catálogo de México se sincroniza** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.60 · **El catálogo de México se sincroniza** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · **Depende de:** — · **Prioridad:** F6 · alta · **Decisión:** `D-46`
 - **Objetivo:** tener los sismos de México desde magnitud 4.0 al día.
 - **Criterios de aceptación:**
-  - [ ] Worker `catalog-sync` cada 10 minutos; no pisa el catálogo sembrado; un fallo se declara
-    (migración 0075).
+  - [x] Worker `catalog-sync` cada 10 minutos; no pisa el catálogo sembrado; un fallo se declara
+    (migración **0076**: la 0075 la tomó F5). Lo cubren `api/tests/catalogo/test_sincroniza.py` (19).
+    El 2026-09-28 se corrió una vez contra el USGS real sobre una base de pruebas: 236 sismos M≥4
+    en 90 días, estado `ok`.
+  - [ ] Corriendo en la nube: requiere desplegar y `TAKAB_API_CATALOG_USGS_ENABLED=true`.
 
-### [ ] T-9.61 · **Los endpoints del catálogo** — `SOFTWARE`
+### [x] T-9.61 · **Los endpoints del catálogo** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.60 · **Prioridad:** F6 · alta
 - **Objetivo:** que la app lo pueda leer, con la intensidad estimada en el inmueble del usuario.
 - **Criterios de aceptación:**
-  - [ ] Endpoint móvil con atribución a USGS; el web, paginado.
+  - [x] Endpoint móvil con atribución a USGS; el web, paginado.
+    - El móvil es `GET /sites/{id}/sismos`, con la MMI ESTIMADA en el inmueble.
+    - El cursor del web es el par (hora, id): con la hora sola, dos sismos del mismo segundo (SSN
+      y USGS) perdían uno en el borde de página.
 
-### [ ] T-9.62 · **La pestaña SISMOS en la app** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.62 · **La pestaña SISMOS en la app** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · alta
 - **Objetivo:** lo que pidió el cliente para el ocupante.
 - **Criterios de aceptación:**
-  - [ ] Lista con magnitud, lugar, hora e intensidad estimada; probada en el Pixel.
+  - [x] Lista con magnitud, lugar, hora e intensidad estimada. `mobile/src/features/sismos/`,
+    con 55 tests y franja de «catálogo sin actualizar».
+  - [ ] Probada en el Pixel. Hay que mirar allí las 8 pestañas del táctico (~56 dp cada una):
+    «DIRECTORIO» puede cortarse.
 
 ### [ ] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media
@@ -18100,11 +18109,13 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 - **Criterios de aceptación:**
   - [ ] Prueba medida en el Pixel entre las dos opciones y la elegida implementada.
 
-### [ ] T-9.64 · **Una sola escala de tamaño y color** — `SOFTWARE`
+### [x] T-9.64 · **Una sola escala de tamaño y color** — `SOFTWARE`
 - **Componente:** shared · web · mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · media · **Decisión:** `D-46`
 - **Objetivo:** marcadores por magnitud y color por intensidad, iguales en consola y app.
 - **Criterios de aceptación:**
-  - [ ] `shared/fixtures/escala-sismos.json` y su test cruzado; la leyenda dice qué es el tamaño.
+  - [x] `shared/fixtures/escala-sismos.json` y su test cruzado; la leyenda dice qué es el tamaño.
+    - Color MMI con la paleta del ShakeMap del USGS.
+    - El redondeo es el de `gmice.romano`, cruzado desde la app y desde la web.
 
 ### [ ] T-9.65 · **El mapa de calor en la app** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-9.51, T-9.63 · **Prioridad:** F6 · media
@@ -18112,12 +18123,15 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 - **Criterios de aceptación:**
   - [ ] La superficie estimada del último evento, rotulada como estimación.
 
-### [ ] T-9.66 · **El historial sísmico de cada inmueble** — `SOFTWARE`
+### [x] T-9.66 · **El historial sísmico de cada inmueble** — `SOFTWARE`
 - **Componente:** api · web · mobile · **Depende de:** T-9.60 · **Prioridad:** F6 · media · **Decisión:** `D-48`
 - **Objetivo:** ver todo lo que afectó a un edificio.
 - **Criterios de aceptación:**
-  - [ ] Endpoint con los incidentes del sitio y los sismos del catálogo que lo sintieron.
-  - [ ] En la página del inmueble y en la app.
+  - [x] Endpoint con los incidentes del sitio y los sismos del catálogo que lo sintieron.
+    El umbral es el GRADO que se enseña (≥ III redondeado): con `≥ 3.0`, un 2.87 se pintaba «III»
+    y quedaba fuera.
+  - [x] En la página del inmueble y en la app (tarjeta en SISMOS, que comparten ocupante y
+    táctico).
 
 ## Fase 9.7 · Audios y animaciones
 

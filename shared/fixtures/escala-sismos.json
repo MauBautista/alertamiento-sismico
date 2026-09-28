@@ -1,0 +1,22 @@
+{
+  "_doc": "[T-9.64 · D-46] Tamaño por MAGNITUD y color por MMI ESTIMADA en el inmueble. La usan la consola y la app; la cruzan sus tests.",
+  "tamano": [
+    { "desde_mag": 4.0, "radio_px": 4 },
+    { "desde_mag": 5.0, "radio_px": 7 },
+    { "desde_mag": 6.0, "radio_px": 11 },
+    { "desde_mag": 7.0, "radio_px": 16 }
+  ],
+  "color_mmi": [
+    { "desde": 1, "romano": "I", "color": "#FFFFFF" },
+    { "desde": 2, "romano": "II", "color": "#BFCCFF" },
+    { "desde": 3, "romano": "III", "color": "#A0E6FF" },
+    { "desde": 4, "romano": "IV", "color": "#80FFFF" },
+    { "desde": 5, "romano": "V", "color": "#7AFF93" },
+    { "desde": 6, "romano": "VI", "color": "#FFFF00" },
+    { "desde": 7, "romano": "VII", "color": "#FFC800" },
+    { "desde": 8, "romano": "VIII", "color": "#FF9100" },
+    { "desde": 9, "romano": "IX", "color": "#FF0000" },
+    { "desde": 10, "romano": "X", "color": "#C80000" }
+  ],
+  "leyenda": "Tamaño = magnitud · color = intensidad ESTIMADA en el inmueble (MMI, Wald 1999)"
+}

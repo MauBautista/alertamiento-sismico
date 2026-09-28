@@ -12,6 +12,14 @@ const mocks = vi.hoisted(() => ({
   useSirenTest: vi.fn(),
   useSiteSoh: vi.fn(),
   getSite: vi.fn(),
+  useHistorialSismico: vi.fn(() => ({
+    eventos: [],
+    atribucion: null,
+    loading: false,
+    error: null,
+    dataUpdatedAt: Date.now(),
+    refetch: () => undefined,
+  })),
 }));
 
 vi.mock("../telemetry/useSiteChannels", () => ({
@@ -30,6 +38,11 @@ vi.mock("./useSiteIncidents", () => ({
   SITE_INCIDENTS_STALE_MS: 90_000,
 }));
 vi.mock("./useSirenTest", () => ({ useSirenTest: mocks.useSirenTest }));
+// [T-9.66] La tarjeta del historial sísmico tiene su propia suite; aquí, inerte.
+vi.mock("./useHistorialSismico", async () => ({
+  ...(await vi.importActual<typeof import("./useHistorialSismico")>("./useHistorialSismico")),
+  useHistorialSismico: mocks.useHistorialSismico,
+}));
 vi.mock("../console/useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
 // [T-6.01] El árbol real de rutas monta la franja de escena en el shell, y sus
 // cuatro fuentes irían a la red. Inertes aquí: este archivo mide la página del
@@ -186,6 +199,13 @@ describe("BuildingPage", () => {
     expect(screen.getByTestId("incidents-card")).toBeInTheDocument();
     expect(screen.getByTestId("multi-channel-strip")).toBeInTheDocument();
     expect(screen.getByTestId("history-chart")).toBeInTheDocument();
+  });
+
+  it("[T-9.66] monta el HISTORIAL SÍSMICO DEL INMUEBLE, consultado para ESTE sitio", () => {
+    seedAuthenticated(ME_FIXTURES.tenant_admin);
+    renderRoutesAt("/building/s-1");
+    expect(screen.getByTestId("historial-card")).toBeInTheDocument();
+    expect(mocks.useHistorialSismico).toHaveBeenCalledWith("s-1");
   });
 
   it("B-4: el subtítulo distingue cargar de fallar, con reintento real", async () => {

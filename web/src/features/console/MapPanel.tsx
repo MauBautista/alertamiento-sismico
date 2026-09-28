@@ -67,6 +67,7 @@ import {
   WAVE_MAX_AGE_S,
 } from "./wavefront";
 import { haversineKm } from "../fleet/geo";
+import { radioDeMagnitud } from "./escalaSismos";
 import {
   ATRIBUCION,
   LAYOUT_ROTULO_CDMX,
@@ -217,6 +218,16 @@ export const EPICENTER_COLOR = "#E040FB";
  * propios — jamás se confunde ni con un edificio ni con el ✳ de un incidente. */
 export const CATALOG_COLOR = "#7CE7FF";
 
+/**
+ * [T-9.64 · D-46] El ◇ es un GLIFO: su `text-size` es el em, y el rombo ocupa
+ * unos dos tercios del em. Con ×3 el rombo mide ≈ 2 × el radio de la escala
+ * compartida (`escalaSismos.ts`). El color NO cambia: en la consola no hay un
+ * inmueble del usuario para estimar la MMI, así que sólo el tamaño habla.
+ */
+export const CATALOG_EM_POR_RADIO = 3;
+/** El seleccionado crece lo mismo en todas las magnitudes: se ve, sin mentir la escala. */
+export const CATALOG_EM_SELECCION = 8;
+
 /** [T-2.47] Frentes de onda: la P (aviso) en cian, la S (la que daña) en ámbar. */
 export const WAVE_P_COLOR = "#7CE7FF";
 export const WAVE_S_COLOR = "#FFC107";
@@ -340,6 +351,8 @@ export function catalogToFeatureCollection(
         ref_id: q.ref_id,
         label: catalogLabel(q),
         selected: q.ref_id === selectedId,
+        // [T-9.64] Tamaño = magnitud, con la escala que comparte con la app.
+        radio: radioDeMagnitud(q.magnitude),
       },
     })),
   };
@@ -1261,7 +1274,12 @@ export default function MapPanel({
         layout: {
           "text-field": "◇",
           "text-font": TEXT_FONT,
-          "text-size": ["case", ["get", "selected"], 26, 18],
+          // [T-9.64] Tamaño = magnitud (antes fijo: un M 4 pesaba lo que un M 8).
+          "text-size": [
+            "+",
+            ["*", ["get", "radio"], CATALOG_EM_POR_RADIO],
+            ["case", ["get", "selected"], CATALOG_EM_SELECCION, 0],
+          ],
           "text-allow-overlap": true,
           "text-ignore-placement": true,
         },
@@ -1783,7 +1801,7 @@ export default function MapPanel({
             onClick={toggle("catalog")}
           >
             <span className="soc-map__sw" style={{ background: CATALOG_COLOR }} /> CATÁLOGO
-            HISTÓRICO 1985–2022 · {layers.catalog ? "ON" : "OFF"}
+            HISTÓRICO · TAMAÑO = MAGNITUD · {layers.catalog ? "ON" : "OFF"}
           </button>
           {layers.catalog && catalogError && (
             <div className="soc-map__legend-note" data-testid="catalog-error">

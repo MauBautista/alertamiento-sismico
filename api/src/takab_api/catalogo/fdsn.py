@@ -97,6 +97,15 @@ class EventoPublicado:
     #: nosotros entendimos.
     estado_en_la_fuente: str
     mag_type: str | None = None
+    #: [T-9.60 · D-46] Lo que el worker `catalog-sync` guarda además. Con default
+    #: para no romper a quien construye el evento sin ellos (la consulta, sus tests).
+    #: ``actualizado_en_fuente`` es el ``updated`` del feature: la marca de la que
+    #: cuelga la siguiente pregunta (``updatedafter``).
+    actualizado_en_fuente: datetime | None = None
+    #: La MMI que PUBLICA USGS (``properties.mmi``), si la hay. No es la nuestra.
+    mmi: float | None = None
+    #: La página del evento en USGS (``properties.url``).
+    url: str | None = None
 
     @property
     def review_status(self) -> str:
@@ -114,6 +123,10 @@ class Respuesta:
     url: str
     consultado_en: datetime
     eventos: tuple[EventoPublicado, ...]
+    #: [T-9.60] Cuántos features MANDÓ la fuente, antes de descartar los que no se
+    #: pueden leer. El truncado por ``limit`` se decide con esto: un evento sin
+    #: coordenadas no puede esconder que la página vino llena.
+    publicados: int | None = None
 
 
 def review_status(estado_en_la_fuente: str | None) -> str:
@@ -185,6 +198,9 @@ def parsea(payload: object) -> tuple[EventoPublicado, ...]:
                 place=str(props.get("place") or "sin lugar declarado por la fuente"),
                 estado_en_la_fuente=str(props.get("status") or ""),
                 mag_type=str(props.get("magType")) if props.get("magType") else None,
+                actualizado_en_fuente=_instante(props.get("updated")),
+                mmi=_numero(props.get("mmi")),
+                url=str(props["url"]) if props.get("url") else None,
             )
         )
     return tuple(eventos)
@@ -248,6 +264,111 @@ def consulta(
     Levanta :class:`SinRespuesta` y **nada más**: cualquier excepción del cliente
     HTTP se envuelve con su tipo en el motivo.
     """
+    url = url_de_consulta(
+        settings.catalog_usgs_url,
+        desde=desde,
+        hasta=hasta,
+        lat=lat,
+        lon=lon,
+        radio_km=radio_km,
+        limite=settings.catalog_usgs_limite,
+    )
+    return _pide(
+        settings,
+        url,
+        tope=settings.catalog_usgs_max_bytes,
+        plazo=settings.catalog_usgs_timeout_s,
+        transport=transport,
+        now=now,
+    )
+
+
+#: [T-9.60 · D-46] La caja de México que pide el worker `catalog-sync`:
+#: ``(min_lat, max_lat, min_lon, max_lon)``. Cubre el territorio y la costa del
+#: Pacífico donde nacen los sismos que se sienten aquí (la trinchera de
+#: Mesoamérica llega a 14° N frente a Chiapas).
+CAJA_MEXICO: tuple[float, float, float, float] = (14.0, 33.5, -118.5, -86.0)
+
+
+def url_de_sincronizacion(
+    base_url: str,
+    *,
+    desde_updated: datetime,
+    desde_origen: datetime,
+    min_mag: float,
+    caja: tuple[float, float, float, float],
+    limite: int,
+) -> str:
+    """[T-9.60 · D-46] La pregunta del worker: lo que CAMBIÓ en la caja desde la marca.
+
+    ``updatedafter`` trae los nuevos Y los revisados (una magnitud corregida
+    cambia ``updated``). ``starttime`` va SIEMPRE: sin él USGS asume «ahora − 30
+    días» y la ventana cambiaría en silencio. ``orderby=time-asc`` ordena por hora
+    de ORIGEN —USGS no ordena por ``updated``—, que es lo que obliga a paginar con
+    ``starttime`` y no con la marca cuando la respuesta viene truncada.
+    """
+    min_lat, max_lat, min_lon, max_lon = caja
+    params = {
+        "format": "geojson",
+        "minlatitude": f"{min_lat:g}",
+        "maxlatitude": f"{max_lat:g}",
+        "minlongitude": f"{min_lon:g}",
+        "maxlongitude": f"{max_lon:g}",
+        "minmagnitude": f"{min_mag:g}",
+        "updatedafter": _iso(desde_updated),
+        "starttime": _iso(desde_origen),
+        "orderby": "time-asc",
+        "limit": str(limite),
+    }
+    return f"{base_url}?{urlencode(params)}"
+
+
+def sincroniza(
+    settings: Settings,
+    *,
+    desde_updated: datetime,
+    desde_origen: datetime,
+    transport: Any | None = None,
+    now: datetime | None = None,
+) -> Respuesta:
+    """[T-9.60 · D-46] Pregunta por la caja de México. Mismo contrato que
+    :func:`consulta`: levanta :class:`SinRespuesta` y nada más, y apagada no abre
+    un socket. Topes propios (``catalog_sync_*``): la respuesta pesa más y no
+    corre dentro del bucle del motor de incidentes.
+    """
+    url = url_de_sincronizacion(
+        settings.catalog_usgs_url,
+        desde_updated=desde_updated,
+        desde_origen=desde_origen,
+        min_mag=settings.catalog_sync_min_mag,
+        caja=CAJA_MEXICO,
+        limite=settings.catalog_sync_limite,
+    )
+    return _pide(
+        settings,
+        url,
+        tope=settings.catalog_sync_max_bytes,
+        plazo=settings.catalog_sync_timeout_s,
+        transport=transport,
+        now=now,
+    )
+
+
+def _pide(
+    settings: Settings,
+    url: str,
+    *,
+    tope: int,
+    plazo: float,
+    transport: Any | None,
+    now: datetime | None,
+) -> Respuesta:
+    """El ÚNICO camino HTTP del catálogo, con las cuatro propiedades de la cabecera.
+
+    [T-9.60] Extraído de :func:`consulta` para que la sincronización no lo copie:
+    dos copias del tope de bytes y del plazo acabarían divergiendo, y la que se
+    quedara atrás sería la que un día tuviera al worker leyendo un goteo.
+    """
     if not settings.catalog_usgs_enabled:
         # Apagado NO devuelve una respuesta vacía: eso sería indistinguible de
         # «la fuente no tiene nada», que es una afirmación sobre el sismo.
@@ -265,20 +386,9 @@ def consulta(
     except ImportError as exc:
         raise SinRespuesta("no hay cliente HTTP instalado (httpx) para preguntar") from exc
 
-    url = url_de_consulta(
-        settings.catalog_usgs_url,
-        desde=desde,
-        hasta=hasta,
-        lat=lat,
-        lon=lon,
-        radio_km=radio_km,
-        limite=settings.catalog_usgs_limite,
-    )
-    tope = settings.catalog_usgs_max_bytes
     # El plazo de la llamada ENTERA (propiedad 4). Arranca antes del socket.
-    plazo = settings.catalog_usgs_timeout_s
     empezo = time.monotonic()
-    kwargs: dict[str, Any] = {"timeout": settings.catalog_usgs_timeout_s}
+    kwargs: dict[str, Any] = {"timeout": plazo}
     if transport is not None:
         kwargs["transport"] = transport
 
@@ -311,10 +421,12 @@ def consulta(
     except ValueError as exc:
         raise SinRespuesta("la respuesta de la fuente no es JSON") from exc
 
+    eventos = parsea(payload)
     return Respuesta(
         url=url,
         consultado_en=now or datetime.now(tz=UTC),
-        eventos=parsea(payload),
+        eventos=eventos,
+        publicados=len(payload["features"]),
     )
 
 

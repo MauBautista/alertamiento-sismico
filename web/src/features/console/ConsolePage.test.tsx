@@ -27,6 +27,19 @@ const mocks = vi.hoisted(() => ({
   useIncidentActions: vi.fn(),
   useSiteSoh: vi.fn(() => null),
   useShakemap: vi.fn(),
+  // [T-9.61] El catálogo paginado: `items` acumula, el mapa sólo pinta la
+  // PRIMERA página. Stub con las dos distintas para ver cuál llega al panel.
+  useCatalog: vi.fn(() => ({
+    items: [{ ref_id: "p1" }, { ref_id: "p2" }],
+    primeraPagina: [{ ref_id: "p1" }],
+    loading: false,
+    error: null,
+    refetch: () => undefined,
+    hayMas: true,
+    cargandoMas: false,
+    errorMas: null,
+    cargarMas: () => undefined,
+  })),
   MapPanel: vi.fn(({ onSelectSite }: { onSelectSite: (id: string) => void }) => (
     <div data-testid="map-mock">
       <button onClick={() => onSelectSite("s-1")}>pick-site</button>
@@ -51,6 +64,7 @@ vi.mock("./useSiteFeatures", () => ({ useSiteFeatures: mocks.useSiteFeatures }))
 vi.mock("./useIncidentActions", () => ({ useIncidentActions: mocks.useIncidentActions }));
 vi.mock("./useSiteSoh", () => ({ useSiteSoh: mocks.useSiteSoh }));
 vi.mock("./useShakemap", () => ({ useShakemap: mocks.useShakemap }));
+vi.mock("../triage/useCatalog", () => ({ useCatalog: mocks.useCatalog }));
 // T-1.60: el banner del drill usa react-query + SDK — stub inerte aquí.
 // [T-2.48] El stub declara el contrato COMPLETO a propósito: con `readError`
 // ausente (`undefined`) el banner leería "no sé si hay simulacro" y el estado
@@ -271,6 +285,11 @@ describe("ConsolePage", () => {
       expect(llamadas.length, "MapPanel no se montó").toBeGreaterThan(0);
       return llamadas[llamadas.length - 1][0] as Record<string, unknown>;
     }
+
+    it("[T-9.61] el mapa pinta la PRIMERA página del catálogo, no todo lo acumulado", () => {
+      render(page());
+      expect(propsDelMapa()["catalog"]).toEqual([{ ref_id: "p1" }]);
+    });
 
     it("se consulta el mapa DEL INCIDENTE enfocado y se le pasa al panel", () => {
       mocks.useShakemap.mockReturnValue(shakemapData({ data: SHAKEMAP }));

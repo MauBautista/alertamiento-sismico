@@ -511,6 +511,27 @@ class Settings(BaseSettings):
     # siguiente, que llega en segundos, y el corte queda en el log.
     catalog_usgs_presupuesto_s: float = 10.0
 
+    # --- Catálogo de México al día (T-9.60 · D-46) ---
+    #
+    # El worker `catalog-sync` (proceso APARTE: no corre en el bucle del motor de
+    # incidentes, así que su lentitud no retrasa nada del camino crítico). El gate
+    # es el mismo `catalog_usgs_enabled`: apagado se DECLARA en `catalog_sync_state`
+    # y no consulta.
+    catalog_sync_intervalo_s: float = 600.0
+    catalog_sync_min_mag: float = 4.0
+    # La primera corrida pide 90 días hacia atrás. Y TODAS mandan `starttime`: sin
+    # él, el FDSN de USGS asume «ahora − 30 días» y la ventana cambiaría en silencio.
+    catalog_sync_arranque_dias: int = 90
+    catalog_sync_limite: int = 2000
+    # Tope PROPIO de bytes: `catalog_usgs_max_bytes` (512 KB) se derivó para 200
+    # eventos. Con el peor peso archivado por evento (1097 B) 2000 eventos son
+    # ~2.2 MB; 4 MiB deja 1.9× de holgura. Lo re-deriva
+    # `tests/catalogo/test_sincroniza.py` de los mismos ficheros.
+    catalog_sync_max_bytes: int = 4 * 1024 * 1024
+    # Plazo de la llamada entera. Más largo que los 6 s de la consulta por incidente
+    # porque aquí no hay un bucle crítico esperando y la respuesta pesa más.
+    catalog_sync_timeout_s: float = 30.0
+
     # --- Mini-ShakeMap por evento (T-7.24 · D-08) ---
     #
     # ⚠️ EL RADIO DE REPRESENTATIVIDAD DE UN INMUEBLE INSTRUMENTADO, y de dónde

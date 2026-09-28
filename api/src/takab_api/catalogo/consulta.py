@@ -220,13 +220,21 @@ _MARCA_REINTENTO = " · REINTENTO SIN RESPUESTA"
 #: cosas: «se lo preguntamos hace un minuto» estampado sobre un número de antes.
 #: `catalog_key` y `created_at` no se tocan — la clave es nuestra y la fecha de
 #: alta es un hecho sobre la fila, no sobre el sismo.
+#:
+#: [T-9.60 · D-46] Una fila NUEVA nace con ``origen = 'catalogo'``: el worker
+#: `catalog-sync` sólo reescribe las suyas (``catalog_sync``), y ésta puede quedar
+#: citada por el dictamen del incidente. El ``DO UPDATE`` NO toca ``origen``: la
+#: consulta refresca las cifras de una fila que ya existía —las seis del seed, o
+#: una del worker— sin apropiársela.
 _CATALOGO_SQL = """
 INSERT INTO reference_earthquakes
        (catalog_key, origin_time, magnitude, place, epicenter, depth_km,
-        source, source_ref, consulted_at, review_status, provider_event_id)
+        source, source_ref, consulted_at, review_status, provider_event_id,
+        origen)
 VALUES (%(key)s, %(t0)s, %(mag)s, %(place)s,
         ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)::geography,
-        %(depth)s, %(source)s, %(ref)s, %(consultado)s, %(estado)s, %(pid)s)
+        %(depth)s, %(source)s, %(ref)s, %(consultado)s, %(estado)s, %(pid)s,
+        'catalogo')
 ON CONFLICT (source, provider_event_id) WHERE provider_event_id IS NOT NULL
 DO UPDATE SET origin_time   = EXCLUDED.origin_time,
               magnitude     = EXCLUDED.magnitude,

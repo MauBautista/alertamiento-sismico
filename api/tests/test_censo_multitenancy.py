@@ -128,6 +128,14 @@ SIN_TENANT_ID: dict[str, str] = {
         "T-2.24). Sismos históricos de referencia: dato público del país, no de "
         "un cliente. Solo lo escribe el dueño de la plataforma."
     ),
+    "catalog_sync_state": (
+        "[T-9.60 · D-46] Cómo va la sincronización del catálogo GLOBAL con USGS: una "
+        "fila por FUENTE, no por cliente. El catálogo que describe "
+        "(`reference_earthquakes`) es ya una excepción documentada, y su estado no "
+        "puede tener un dueño que la tabla de la que habla no tiene. Lectura para "
+        "cualquier rol autenticado; escritura solo del worker `catalog-sync` por "
+        "`takab_ingest` (BYPASSRLS), con `REVOKE` de escritura a `takab_app`."
+    ),
     "visibility_grants": (
         "Un grant tiene DOS tenants —`grantee_tenant_id` y `target_tenant_id`— y "
         "ningún dueño. Una columna `tenant_id` tendría que elegir uno de los dos "
