@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **422** · `[~]` **26** · `[ ]` **54**
+**Conteo de tareas:** total **502** · `[x]` **423** · `[~]` **25** · `[ ]` **54**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18022,15 +18022,15 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.5 · Mapa de calor, relieve y suelos
 
-### [~] T-9.50 · **El mapa de la sacudida siempre se calcula** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.50 · **El mapa de la sacudida siempre se calcula** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · **Depende de:** — · **Prioridad:** F5 · alta · **Decisión:** `D-44`
 - **Objetivo:** que ningún incidente se quede sin mapa.
 - **Criterios de aceptación:**
   - [x] Se calcula a los 120 s de abrir y no se declara completo antes de cerrar la ventana del pico
     (`tests/shakemap/test_mapa_de_calor.py`).
-  - [~] El PDF lo calcula si falta (`servicio.calcula_uno`, sin persistir): hecho. Falta correr el
-    relleno del histórico en la nube: `python -m takab_api.shakemap.rellena --desde …` DENTRO del
-    contenedor `incident-engine` (lo corre Mauricio con `!`).
+  - [x] El PDF lo calcula si falta (`servicio.calcula_uno`, sin persistir), y el relleno del
+    histórico ya corrió en la nube. Mauricio lo lanzó el 2026-09-28 con
+    `infra/scripts/rellena_mapas.sh 2026-07-01`: calculó 86 mapas, sin corte.
 
 ### [x] T-9.51 · **La superficie estimada** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.50 · **Prioridad:** F5 · alta · **Decisión:** `D-44`
