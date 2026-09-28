@@ -23,10 +23,13 @@
 //    por cada inmueble y lo MODELADO por la ley de atenuación, y nunca con la
 //    misma codificación: disco relleno con su valor vs anillo geográfico de
 //    trazo discontinuo, con la procedencia dentro de cada rasgo.
-//  · Sigue sin haber intensidad sísmica INTERPOLADA: ni isosistas, ni bandas
-//    MMI, ni una superficie continua entre estaciones. Lo que hay son puntos
-//    medidos, un modelo rotulado como modelo y el residuo entre los dos. Ver el
-//    comentario en la carga de capas.
+//  · [T-9.52 · D-44] Y, desde `D-44`, una SUPERFICIE ESTIMADA —la imagen que
+//    pinta la nube, pegada sobre su bbox— DEBAJO de los puntos y los anillos,
+//    rotulada «ESTIMADO a partir de N sensores (M calibrados)» y con la MMI
+//    siempre como «estimada, no observada». Sigue sin haber isosistas ni
+//    bandas MMI en píxeles de pantalla: ver el comentario en la carga de capas.
+//  · [T-9.54 · D-45] El FONDO: relieve y suelos, tenues y conmutables, debajo
+//    de todo lo del incidente y con su atribución (`capasDeFondo.ts`).
 //  · NO hay cuenta regresiva T-MINUS ni magnitud preliminar (`CLAUDE.md §8`).
 
 import maplibregl from "maplibre-gl";
@@ -64,6 +67,30 @@ import {
   WAVE_MAX_AGE_S,
 } from "./wavefront";
 import { haversineKm } from "../fleet/geo";
+import {
+  ATRIBUCION,
+  LAYOUT_ROTULO_CDMX,
+  PAINT_EDAFOLOGIA,
+  PAINT_RELIEVE,
+  PAINT_ROTULO_CDMX,
+  PAINT_SUELO_CDMX,
+  ROTULO_EDAFOLOGIA,
+  fuenteEdafologia,
+  fuenteRelieve,
+  fuenteSueloCdmx,
+  textoDelSuelo,
+} from "./capasDeFondo";
+import {
+  ALFA_AJUSTADA,
+  ALFA_MODELADA,
+  bandasSuperficie,
+  cortesDelSitio,
+  rotuloEstimado,
+  textoDelPunto,
+  tintaDeBanda,
+  vistaSuperficie,
+  type VistaSuperficie,
+} from "./superficie";
 import {
   PGA_SIN_COBERTURA,
   coberturaFeatureCollection,
@@ -390,6 +417,16 @@ export interface LayerToggles {
   waves: boolean;
   /** [T-7.24] El mini-ShakeMap del incidente: lo medido y lo modelado. */
   shakemap: boolean;
+  /**
+   * [T-9.52] La superficie ESTIMADA. Su mando vive en la leyenda del mapa de la
+   * sacudida y no en CAPAS: es parte de ese mapa, y sólo se enciende si SACUDIDA
+   * lo está.
+   */
+  superficie: boolean;
+  /** [T-9.54] Fondo: relieve y suelos. */
+  relieve: boolean;
+  sueloCdmx: boolean;
+  sueloInegi: boolean;
 }
 
 export const DEFAULT_LAYERS: LayerToggles = {
@@ -402,6 +439,14 @@ export const DEFAULT_LAYERS: LayerToggles = {
   // la prop no hay ni botón ni leyenda (igual que el catálogo histórico sin su
   // prop). Un interruptor que no conmuta nada es ruido en un wall operativo.
   shakemap: true,
+  superficie: true,
+  // [T-9.54] El relieve, ENCENDIDO: es un sombreado tenue bajo todo lo demás y
+  // devuelve la forma del terreno (la cuenca, la sierra) sin tapar un solo
+  // dato. Los suelos, APAGADOS: son contexto que se pide, como el catálogo, y
+  // un relleno más de color sobre el wall competiría con la sacudida.
+  relieve: true,
+  sueloCdmx: false,
+  sueloInegi: false,
 };
 
 const LAYERS_OF: Record<keyof LayerToggles, string[]> = {
@@ -417,6 +462,10 @@ const LAYERS_OF: Record<keyof LayerToggles, string[]> = {
     "shakemap-punto",
     "shakemap-punto-valor",
   ],
+  superficie: ["shakemap-superficie"],
+  relieve: ["relieve-sombra"],
+  sueloCdmx: ["suelo-cdmx-relleno", "suelo-cdmx-rotulo"],
+  sueloInegi: ["suelo-inegi-relleno"],
 };
 
 const LAYER_LABEL: Record<keyof LayerToggles, string> = {
@@ -426,7 +475,129 @@ const LAYER_LABEL: Record<keyof LayerToggles, string> = {
   link: "ENLACE",
   waves: "ONDAS",
   shakemap: "SACUDIDA",
+  superficie: "SUPERFICIE ESTIMADA",
+  relieve: "RELIEVE",
+  sueloCdmx: "SUELO CDMX",
+  sueloInegi: ROTULO_EDAFOLOGIA,
 };
+
+/** [T-9.52] El mando de la superficie vive en su leyenda, no en la fila de CAPAS. */
+const SOLO_EN_LEYENDA: ReadonlySet<keyof LayerToggles> = new Set(["superficie"]);
+
+/**
+ * [T-9.52 · T-9.54] EL ORDEN DEL FONDO, de abajo arriba, terminando en la
+ * primera capa del incidente (`wave-link`). Las capas que se cuelgan TARDE —la
+ * superficie cuando llega su PNG, los suelos cuando alguien los enciende— se
+ * insertan debajo de la primera de esta lista que ya exista por encima de
+ * ellas: así ninguna tapa un punto medido, un anillo o un edificio por
+ * haberse colgado la última.
+ */
+const ORDEN_DE_FONDO = [
+  "relieve-sombra",
+  "suelo-inegi-relleno",
+  "suelo-cdmx-relleno",
+  "suelo-cdmx-rotulo",
+  "shakemap-superficie",
+  "wave-link",
+];
+
+/** La capa bajo la que hay que insertar `id` para respetar `ORDEN_DE_FONDO`. */
+function debajoDe(map: maplibregl.Map, id: string): string | undefined {
+  const desde = ORDEN_DE_FONDO.indexOf(id) + 1;
+  return ORDEN_DE_FONDO.slice(desde).find((otra) => map.getLayer(otra) !== undefined);
+}
+
+/**
+ * [T-9.54] Cuelga los suelos ENCENDIDOS que aún no están en el mapa. Perezoso a
+ * propósito: la edafología pesa 5,9 MB y MapLibre la descarga en cuanto su
+ * fuente existe, así que la fuente no existe hasta que alguien la pide.
+ */
+function colgarSuelos(map: maplibregl.Map, layers: LayerToggles): void {
+  if (layers.sueloInegi && map.getSource("suelo-inegi") === undefined) {
+    map.addSource("suelo-inegi", fuenteEdafologia());
+    map.addLayer(
+      {
+        id: "suelo-inegi-relleno",
+        type: "fill",
+        source: "suelo-inegi",
+        paint: PAINT_EDAFOLOGIA as maplibregl.FillLayerSpecification["paint"],
+      },
+      debajoDe(map, "suelo-inegi-relleno"),
+    );
+  }
+  if (layers.sueloCdmx && map.getSource("suelo-cdmx") === undefined) {
+    map.addSource("suelo-cdmx", fuenteSueloCdmx());
+    map.addLayer(
+      {
+        id: "suelo-cdmx-relleno",
+        type: "fill",
+        source: "suelo-cdmx",
+        paint: PAINT_SUELO_CDMX as maplibregl.FillLayerSpecification["paint"],
+      },
+      debajoDe(map, "suelo-cdmx-relleno"),
+    );
+    map.addLayer(
+      {
+        id: "suelo-cdmx-rotulo",
+        type: "symbol",
+        source: "suelo-cdmx",
+        layout: {
+          ...(LAYOUT_ROTULO_CDMX as maplibregl.SymbolLayerSpecification["layout"]),
+          "text-font": TEXT_FONT,
+        },
+        paint: PAINT_ROTULO_CDMX as maplibregl.SymbolLayerSpecification["paint"],
+      },
+      debajoDe(map, "suelo-cdmx-rotulo"),
+    );
+  }
+}
+
+/**
+ * [T-9.52] Cuelga (o descuelga) la superficie ESTIMADA como fuente `image`.
+ *
+ * Devuelve la clave de lo que quedó colgado (`null` = nada). Con otra URL u
+ * otras esquinas se QUITA la vieja antes de poner la nueva: `updateImage`
+ * dejaría la imagen anterior en pantalla hasta que la nueva terminara de
+ * decodificarse, y eso es un sismo pintado bajo la leyenda de otro.
+ */
+function colgarSuperficie(
+  map: maplibregl.Map,
+  vista: VistaSuperficie,
+  colgada: string | null,
+  visible: boolean,
+): string | null {
+  const clave = vista.pinta ? `${vista.url}|${JSON.stringify(vista.esquinas)}` : null;
+  const existe = map.getSource("shakemap-superficie") !== undefined;
+  if (clave === colgada && (existe || clave === null)) return clave;
+  if (map.getLayer("shakemap-superficie") !== undefined) map.removeLayer("shakemap-superficie");
+  if (existe) map.removeSource("shakemap-superficie");
+  if (clave === null || vista.url === null || vista.esquinas === null) return null;
+  map.addSource("shakemap-superficie", {
+    type: "image",
+    url: vista.url,
+    coordinates: vista.esquinas,
+  });
+  map.addLayer(
+    {
+      id: "shakemap-superficie",
+      type: "raster",
+      source: "shakemap-superficie",
+      layout: { visibility: visible ? "visible" : "none" },
+      paint: {
+        // La opacidad YA viene en el PNG (ajustada vs modelada): aquí no se
+        // atenúa otra vez, o la zona ajustada dejaría de verse más que la otra.
+        "raster-opacity": 1,
+        // Una celda, un píxel (`raster.py`). Sin interpolar: suavizar mezclaría
+        // el rojo y el verde de dos celdas vecinas en un pardo que ninguna
+        // banda de la leyenda explica.
+        "raster-resampling": "nearest",
+        "raster-fade-duration": 0,
+      },
+    },
+    debajoDe(map, "shakemap-superficie"),
+  );
+  return clave;
+}
 
 export interface MapPanelProps {
   sites: MapSiteState[];
@@ -461,6 +632,16 @@ export interface MapPanelProps {
    * la petición y la respuesta se ve idéntico a un incidente que no tiene mapa.
    */
   shakemapLoading?: boolean;
+  /**
+   * [T-9.52] El `objectURL` del PNG de la superficie, ya descargado CON LA
+   * SESIÓN (`useSuperficiePng`): MapLibre no podría pedirlo por su cuenta porque
+   * su `fetch` no lleva el Bearer. `null` = no hay PNG que pintar.
+   */
+  superficiePng?: string | null;
+  /** `true` = el PNG está en vuelo. No se pinta nada viejo mientras tanto. */
+  superficiePngCargando?: boolean;
+  /** `true` = el PNG no llegó. Se declara en la leyenda. */
+  superficiePngError?: boolean;
 }
 
 export default function MapPanel({
@@ -475,6 +656,9 @@ export default function MapPanel({
   shakemap,
   shakemapError = false,
   shakemapLoading = false,
+  superficiePng = null,
+  superficiePngCargando = false,
+  superficiePngError = false,
 }: MapPanelProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -496,6 +680,11 @@ export default function MapPanel({
   // registra una sola vez dentro del `style.load` y no vería el snapshot de un
   // render posterior.
   const coberturaRef = useRef<ShakemapOut | undefined>(undefined);
+  // [T-9.52] Lo que la superficie tiene derecho a pintar ahora, y lo que quedó
+  // colgado en el mapa. En refs porque el `style.load` del fallback tiene que
+  // volver a colgarla sin esperar a un render.
+  const superficieRef = useRef<VistaSuperficie | null>(null);
+  const superficieColgadaRef = useRef<string | null>(null);
   // [T-2.28] capa de catálogo histórico: OFF por default (el wall es operativo).
   const [layers, setLayers] = useState<LayerToggles>(DEFAULT_LAYERS);
   const layersRef = useRef(layers);
@@ -547,6 +736,42 @@ export default function MapPanel({
     });
     mapRef.current = map;
     let raf = 0;
+
+    // [T-9.52 · T-9.54] Popups, registrados UNA vez por mapa y no en el
+    // `style.load` (que se repite tras el fallback y los duplicaría). MapLibre
+    // comprueba la capa en el momento del clic, así que valen también para las
+    // capas que se cuelgan tarde. `setText` y no HTML: el nombre del sitio es
+    // dato de un cliente.
+    const popup = (event: { lngLat?: maplibregl.LngLatLike }, texto: string): void => {
+      if (event.lngLat === undefined) return;
+      new maplibregl.Popup({ closeButton: true, maxWidth: "320px" })
+        .setLngLat(event.lngLat)
+        .setText(texto)
+        .addTo(map);
+    };
+    map.on("click", "shakemap-punto", (event) => {
+      const p = event.features?.[0]?.properties;
+      if (p === undefined || p === null) return;
+      // Los nulos NO sobreviven al teselado de MapLibre (la propiedad llega
+      // ausente): se restituyen, o `textoDelPunto` leería `undefined` como un
+      // valor y rompería en el `toFixed`.
+      const nulo = (k: string) => (p[k] === undefined ? null : p[k]);
+      popup(
+        event,
+        textoDelPunto({
+          ...(p as Record<string, unknown>),
+          site_name: String(p["site_name"] ?? p["site_code"] ?? "¿?"),
+          pga_g: nulo("pga_g"),
+          residuo_log10: nulo("residuo_log10"),
+          mmi_estimada: nulo("mmi_estimada"),
+          mmi_romano: nulo("mmi_romano"),
+        } as Parameters<typeof textoDelPunto>[0]),
+      );
+    });
+    map.on("click", "suelo-inegi-relleno", (event) => {
+      const p = event.features?.[0]?.properties;
+      if (p !== undefined && p !== null) popup(event, textoDelSuelo(p));
+    });
     // El contenedor puede asentarse DESPUÉS del constructor (grid del wall):
     // sin resize el canvas queda medido en 0×0 aunque el CSS ya esté bien.
     const stopResize = observeMapResize(map, containerRef.current);
@@ -591,10 +816,30 @@ export default function MapPanel({
       // inventar un radio y presentarlo como el área donde se sintió el sismo
       // (regla de oro 7).
       //
+      // [T-9.52 · D-44] ENMIENDA: ahora SÍ hay una superficie continua, pero no
+      // es aquello. La calcula la nube a partir de sensores y ley, llega como
+      // imagen pegada sobre su bbox EN GRADOS (no un radio en píxeles), va
+      // DEBAJO de lo medido y se rotula «ESTIMADO a partir de N sensores» con la
+      // MMI como «estimada, no observada» (`superficie.ts`).
+      //
       // [T-2.47] Los frentes P/S de abajo son otra cosa y por eso SÍ se dibujan:
       // no afirman intensidad ninguna, son la posición geométrica de un frente a
       // velocidad conocida desde un origen conocido (modelo de UNA CAPA, así
       // rotulado), y su radio es FÍSICO — se reconvierte a píxeles con el zoom.
+
+      // --- [T-9.54] Relieve ---------------------------------------------------
+      // Lo PRIMERO que se cuelga, o sea lo de más abajo: es la forma del
+      // terreno, no un dato. Si las teselas no llegan (sin internet, S3 caído)
+      // el mapa se queda sin sombreado y nada más: un fallo de tesela tras la
+      // carga no dispara el fallback (`map.on("error")` de arriba).
+      map.addSource("relieve", fuenteRelieve());
+      map.addLayer({
+        id: "relieve-sombra",
+        type: "hillshade",
+        source: "relieve",
+        layout: { visibility: layersRef.current.relieve ? "visible" : "none" },
+        paint: PAINT_RELIEVE,
+      });
 
       // --- [T-2.47] Ondas: líneas y frentes ---------------------------------
       // Van ABAJO del resto (se añaden primero) para no tapar ni estaciones ni
@@ -1044,6 +1289,20 @@ export default function MapPanel({
         },
       });
 
+      // [T-9.52 · T-9.54] Lo que se cuelga tarde, re-colgado aquí también:
+      // tras el fallback el estilo nuevo nace sin fuentes, y los efectos que
+      // las cuelgan no vuelven a correr solos (`styleReady` ya era `true`).
+      colgarSuelos(map, layersRef.current);
+      superficieColgadaRef.current = null;
+      if (superficieRef.current !== null) {
+        superficieColgadaRef.current = colgarSuperficie(
+          map,
+          superficieRef.current,
+          null,
+          layersRef.current.shakemap && layersRef.current.superficie,
+        );
+      }
+
       map.on("click", "site-core", (event) => {
         const feature = event.features?.[0];
         const siteId = feature?.properties?.["site_id"];
@@ -1267,6 +1526,30 @@ export default function MapPanel({
     );
   }, [shakemap, sacudida, styleReady]);
 
+  // [T-9.52] La superficie ESTIMADA: qué se pinta lo decide `vistaSuperficie`
+  // (superficie + esquinas legibles + PNG listo), nunca la mera presencia del
+  // campo. Mientras el PNG carga o si falla, se DESCUELGA: nada viejo en pantalla.
+  const superficie = useMemo(
+    () =>
+      vistaSuperficie(
+        shakemap,
+        { url: superficiePng, cargando: superficiePngCargando, error: superficiePngError },
+        shakemapError,
+      ),
+    [shakemap, superficiePng, superficiePngCargando, superficiePngError, shakemapError],
+  );
+  superficieRef.current = superficie;
+  useEffect(() => {
+    const map = mapRef.current;
+    if (map === null || !loadedRef.current) return;
+    superficieColgadaRef.current = colgarSuperficie(
+      map,
+      superficie,
+      superficieColgadaRef.current,
+      layersRef.current.shakemap && layersRef.current.superficie,
+    );
+  }, [superficie, styleReady]);
+
   // Visibilidad de capas (T-2.50) + estado de las ondas (T-2.47), en un solo sitio.
   useEffect(() => {
     const map = mapRef.current;
@@ -1276,9 +1559,15 @@ export default function MapPanel({
         map.setLayoutProperty?.(id, "visibility", on ? "visible" : "none");
       }
     };
+    // [T-9.54] Los suelos encendidos se cuelgan AQUÍ, al pedirlos: antes no
+    // existen, y la edafología no se descarga hasta este momento.
+    colgarSuelos(map, layers);
     for (const [key, ids] of Object.entries(LAYERS_OF) as [keyof LayerToggles, string[]][]) {
       if (key === "waves") continue;
-      for (const id of ids) show(id, layers[key]);
+      // [T-9.52] La superficie es parte del mapa de la sacudida: apagar
+      // SACUDIDA la apaga también, tenga su propio mando como lo tenga.
+      const on = key === "superficie" ? layers.shakemap && layers.superficie : layers[key];
+      for (const id of ids) show(id, on);
     }
     const waves = layers.waves && waveActive;
     show("wave-link", waves);
@@ -1382,6 +1671,7 @@ export default function MapPanel({
               // La clave existe SIEMPRE en las cuatro tablas —una capa a medias
               // es peor que ninguna—; lo que es condicional es el MANDO.
               .filter((key) => key !== "shakemap" || muestraSacudida)
+              .filter((key) => !SOLO_EN_LEYENDA.has(key))
               .map((key) => (
                 <button
                   key={key}
@@ -1550,6 +1840,60 @@ export default function MapPanel({
                 {nivel.pga_g.toFixed(3)} g · {nivel.umbral}
               </div>
             ))}
+            {/* [T-9.52 · D-44] LA SUPERFICIE ESTIMADA. Cuelga de que la
+                superficie EXISTA en el snapshot (no de que el PNG haya llegado):
+                mientras carga o si falla, el rótulo sigue diciendo qué es y la
+                nota de abajo dice por qué no se ve. */}
+            {superficie.superficie !== null && (
+              <div data-testid="superficie-leyenda">
+                <div className="soc-map__legend-row" data-testid="superficie-rotulo">
+                  {rotuloEstimado(superficie.superficie)}
+                </div>
+                {bandasSuperficie(
+                  superficie.superficie.verde_max_g,
+                  superficie.superficie.rojo_min_g,
+                ).map((b) => (
+                  <div className="soc-map__legend-row" key={b.banda}>
+                    <span
+                      className="soc-map__sw"
+                      style={{ background: tintaDeBanda(b, ALFA_AJUSTADA) }}
+                    />
+                    <span
+                      className="soc-map__sw"
+                      style={{ background: tintaDeBanda(b, ALFA_MODELADA) }}
+                    />
+                    {b.rotulo}
+                  </div>
+                ))}
+                <div className="soc-map__legend-note">ZONA AJUSTADA (OPACA) / MODELADA (TENUE)</div>
+                {/* [T-9.52] Los cortes son los DEL SITIO, los mismos con que la
+                    nube pinta el PNG. Si no llegaran, se pintan los de fábrica y
+                    se dice, en vez de presentarlos como los del edificio
+                    (`superficie.ts`). */}
+                <div className="soc-map__legend-note" data-testid="superficie-cortes">
+                  {cortesDelSitio(superficie.superficie)
+                    ? "CORTES DEL DICTAMEN DE ESTE INMUEBLE"
+                    : "CORTES DEL DICTAMEN POR DEFECTO · LA IMAGEN USA LOS DEL SITIO"}
+                </div>
+                <button
+                  type="button"
+                  className={`soc-map__legend-toggle${layers.superficie ? " soc-map__legend-toggle--on" : ""}`}
+                  data-testid="superficie-toggle"
+                  aria-pressed={layers.superficie}
+                  onClick={toggle("superficie")}
+                >
+                  SUPERFICIE ESTIMADA · {layers.superficie ? "ON" : "OFF"}
+                </button>
+              </div>
+            )}
+            {superficie.nota !== null && (
+              <div
+                className="soc-map__legend-note"
+                data-testid={superficie.notaTestId ?? undefined}
+              >
+                {superficie.nota}
+              </div>
+            )}
             {/* `SIN COBERTURA` cuelga de que HAYA HALOS DIBUJADOS, porque es
                 justo lo que explica. Colgaba de `shakemap !== undefined`, así
                 que un incidente sin snapshot calculado imprimía «SIN COBERTURA
@@ -1595,9 +1939,19 @@ export default function MapPanel({
         )}
       </div>
 
-      <div className="soc-map__attribution">
+      {/* [T-9.54] La atribución de cada capa de fondo ENCENDIDA, sacada de
+          `shared/geodatos/atribuciones.json`. Va aquí y no en el control nativo
+          de MapLibre porque éste está apagado a propósito (T-2.59: solapaba la
+          columna de leyendas); cada fuente la declara igualmente en su
+          `attribution`, que es lo que leería el nativo si volviera. */}
+      <div className="soc-map__attribution" data-testid="map-attribution">
         <span>◐ MapLibre GL · OpenFreeMap</span>
         <span>Map data © OpenStreetMap · Sensórica Raspberry Shake® RS4D</span>
+        {(["relieve", "sueloCdmx", "sueloInegi"] as const)
+          .filter((key) => layers[key])
+          .map((key) => (
+            <span key={key}>{ATRIBUCION[key]}</span>
+          ))}
       </div>
     </div>
   );

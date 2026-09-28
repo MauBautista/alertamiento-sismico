@@ -57,6 +57,12 @@ COPY shared/fixtures shared/fixtures
 # Lo cazó `consoleImageCensus` antes de gastar el build, que es justo para lo que
 # se escribió.
 COPY shared/glossary shared/glossary
+# [T-9.54 · D-45] Las ATRIBUCIONES de la cartografía (relieve, suelos), por la
+# misma razón: `web/src/features/console/capasDeFondo.ts` las importa de
+# `shared/geodatos/atribuciones.json` —la única fuente, que también leen el PDF y
+# la app— y sin este COPY la imagen muere con TS2307. Son dos JSON de 2 KB: los
+# geojson que pesan viven en `web/public/geodatos/` y ya entran con `COPY web web`.
+COPY shared/geodatos shared/geodatos
 COPY web web
 
 ARG VITE_COGNITO_AUTHORITY=""
