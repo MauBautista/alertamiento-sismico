@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **423** · `[~]` **27** · `[ ]` **52**
+**Conteo de tareas:** total **502** · `[x]` **423** · `[~]` **28** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18141,6 +18141,13 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 - **Criterios de aceptación:**
   - [ ] Nuevo id en el gabinete conservando el anterior; canal nuevo en la app con vibración.
   - [ ] Aprobado por Mauricio al escucharlo.
+- **Candidatos para escuchar (2026-09-28), también de T-9.71 y T-9.72:**
+  - están en `~/Música/TAKAB-candidatos-F7-2026-09-28/`, con su `LEEME.txt` y los scripts que los
+    generan;
+  - tres tonos originales;
+  - el simulacro hablado (voz sola 2,5 s y luego la frase sobre el tono a −15 dB);
+  - el «Himno a la alegría» sintetizado: dominio público, sin grabación de terceros.
+  - NO están conectados al gabinete ni a la app: se conectan cuando se aprueben.
 
 ### [ ] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-41`
@@ -18156,12 +18163,17 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [ ] Iniciar y detener con PIN; tope de 30 minutos; cualquier alerta la interrumpe.
   - [ ] Licencia de la grabación en el manifiesto; cota de tamaño de los audios.
 
-### [ ] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
+### [~] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
 - **Componente:** web · mobile · edge · **Depende de:** T-9.11 · **Prioridad:** F7 · media · **Decisión:** `D-47`
 - **Objetivo:** que la alerta confirmada se vea, sin mover el texto.
 - **Criterios de aceptación:**
-  - [ ] Toma de pantalla, ondas desde el epicentro, borde pulsante y anillos en la app.
-  - [ ] Todo con «reducir movimiento» y censado; el panel deja de hacer parpadear el texto.
+  - [x] Toma de pantalla, ondas desde el epicentro, borde pulsante y anillos en la app:
+    - consola: `AlertTakeover` (borde de 6 px y viñeta tenue, sin captar clics) y la entrada del
+      cartel en un `::before` detrás del titular; las ondas P/S ya existían (`wavefront.ts`);
+    - app: `AnillosAlerta`, sólo con SASMEX o cuórum.
+  - [x] Todo con «reducir movimiento» y censado. El panel deja de hacer parpadear el texto: el
+    pulso pasa a `#banner-alert::after` (`edge/tests/test_panel_movimiento_d30.py`).
+  - [ ] Visto en el Pixel y en el gabinete.
 
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
