@@ -375,6 +375,8 @@ describe("censo móvil · las rutas con dato tienen la PRUEBA de los cuatro esta
       "app/movimiento.tsx",
       // T-9.33 · confirmar el dictamen de la regla: nació con su prueba de cuatro estados.
       "app/confirmar-dictamen.tsx",
+      // T-9.62 · la pestaña SISMOS: nació con su prueba de cuatro estados.
+      "app/(occupant)/sismos.tsx",
     ];
     const desprotegidas = cerradas.filter((v) => !CON_PRUEBA.has(v));
     exigirIgual(

@@ -19,6 +19,15 @@
 //
 // Si algún día la app SÍ debe mostrarla, este test se cambia a propósito y con la
 // decisión escrita — que es exactamente la fricción que se busca.
+//
+// [T-9.62 · T-9.66 · D-46] ESE DÍA LLEGÓ, y sólo para la pestaña SISMOS. La
+// decisión: la app enseña los sismos de México que PUBLICÓ USGS —después del
+// sismo, nunca en la crisis— con la atribución que manda el servidor y la hora de
+// la última sincronización («con procedencia, o no se pinta»). Sigue prohibido en
+// todo lo demás: la crisis, el dictamen y la alerta no pintan magnitud. La
+// excepción es una LISTA CERRADA comparada por IGUALDAD: un fichero nuevo que
+// pinte magnitud pone esto rojo, y uno de la lista que deje de citar la fuente,
+// también.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -33,6 +42,17 @@ const PANTALLAS = globSync("src/**/*.{ts,tsx}", { cwd: RAIZ }).filter(
   (f) => !f.includes(".test.") && !f.endsWith(".d.ts"),
 );
 
+/**
+ * [D-46] Las ÚNICAS vistas que pintan una magnitud externa, y por qué:
+ *   · `SismosList.tsx` — la lista de la pestaña SISMOS (catálogo de USGS).
+ *   · `HistorialCard.tsx` — los sismos del catálogo en el historial del inmueble.
+ * Ninguna es de crisis: las dos viven en SISMOS, que es posterior al evento.
+ */
+const PINTAN_MAGNITUD_CON_PROCEDENCIA = [
+  "src/features/sismos/HistorialCard.tsx",
+  "src/features/sismos/SismosList.tsx",
+];
+
 describe("[T-5.10] la app no pinta cifras sísmicas externas", () => {
   it("el censo de pantallas no está vacío", () => {
     // Guarda de no-vacuidad: un glob que deje de casar convertiría todo lo de
@@ -40,7 +60,7 @@ describe("[T-5.10] la app no pinta cifras sísmicas externas", () => {
     expect(PANTALLAS.length).toBeGreaterThan(20);
   });
 
-  it("ninguna pantalla formatea una magnitud", () => {
+  it("ninguna pantalla formatea una magnitud, salvo las de SISMOS (D-46)", () => {
     // Se busca la FORMA de pintarla —`M 7.1`, `magnitude.toFixed`— y no la palabra
     // «magnitud», que aparece en los comentarios que PROHÍBEN pintarla.
     const culpables: string[] = [];
@@ -53,10 +73,10 @@ describe("[T-5.10] la app no pinta cifras sísmicas externas", () => {
         culpables.push(rel);
       }
     }
-    expect(culpables).toEqual([]);
+    expect(culpables.sort()).toEqual(PINTAN_MAGNITUD_CON_PROCEDENCIA);
   });
 
-  it("ninguna pantalla lee magnitud, epicentro ni profundidad de un evento", () => {
+  it("ninguna pantalla lee magnitud, epicentro ni profundidad de un evento, salvo SISMOS", () => {
     const culpables: string[] = [];
     for (const rel of PANTALLAS) {
       const src = readFileSync(join(RAIZ, rel), "utf8");
@@ -67,7 +87,26 @@ describe("[T-5.10] la app no pinta cifras sísmicas externas", () => {
         culpables.push(rel);
       }
     }
-    expect(culpables).toEqual([]);
+    // Subconjunto de la lista cerrada: leer la magnitud del evento sólo lo hace
+    // el historial, que pinta sismos del catálogo con su atribución.
+    expect(culpables.filter((c) => !PINTAN_MAGNITUD_CON_PROCEDENCIA.includes(c))).toEqual([]);
+  });
+
+  it("[D-46] las vistas de la excepción CITAN la fuente que manda el servidor", () => {
+    // «Con procedencia, o no se pinta»: la atribución del servidor, en el marcado.
+    for (const rel of PINTAN_MAGNITUD_CON_PROCEDENCIA) {
+      const src = readFileSync(join(RAIZ, rel), "utf8");
+      expect(src).toMatch(/\.atribucion\b/);
+    }
+    // Y la lista pinta además la hora de la última sincronización.
+    const lista = readFileSync(join(RAIZ, "src/features/sismos/SismosList.tsx"), "utf8");
+    expect(lista).toMatch(/Actualizado: /);
+  });
+
+  it("[D-46] ninguna vista de crisis entra en la excepción", () => {
+    for (const rel of PINTAN_MAGNITUD_CON_PROCEDENCIA) {
+      expect(rel.startsWith("src/features/sismos/")).toBe(true);
+    }
   });
 
   it("el vocabulario compartido existe y trae los cinco estados", () => {

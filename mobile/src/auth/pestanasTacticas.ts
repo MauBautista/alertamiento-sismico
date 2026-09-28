@@ -11,7 +11,15 @@
 // y nadie lo nota, que es justo como llegaron aquí LISTA y TRIAGE.
 
 /** Nombre de icono de `@expo/vector-icons/Feather`. */
-export type IconoPestana = "activity" | "clipboard" | "users" | "map" | "phone" | "refresh-cw" | "user";
+export type IconoPestana =
+  | "activity"
+  | "clipboard"
+  | "globe"
+  | "users"
+  | "map"
+  | "phone"
+  | "refresh-cw"
+  | "user";
 
 export interface PestanaTactica {
   /** Fichero de ruta dentro de `app/(brigadista)/`. */
@@ -21,13 +29,15 @@ export interface PestanaTactica {
   icon: IconoPestana;
   /**
    * Acción de `allowed_actions` que la habilita, o `null` si es de todo el
-   * perfil táctico. Las tres de `null` lo son por razones distintas y conviene
+   * perfil táctico. Las cuatro de `null` lo son por razones distintas y conviene
    * no confundirlas:
    *
    * · RUTAS y DIRECTORIO — `RBAC-TAKAB.md §3` las concede a los CINCO roles
    *   móviles, ocupante incluido. No hay acción que las gatee porque no hay
    *   nada que autorizar: son lectura del inmueble donde uno está.
    * · SYNC — es la cola de escritura de ESTA app, no un permiso del servidor.
+ * · SISMOS — lectura del inmueble (catálogo público + su historial); la nube
+ *   la concede a todo rol móvil.
    * · CUENTA — sin ella no hay forma de cerrar sesión ni de reintentar.
    */
   requiere: string | null;
@@ -45,6 +55,10 @@ export const PESTANAS_TACTICAS: readonly PestanaTactica[] = [
   { name: "rutas", title: "RUTAS", icon: "map", requiere: null },
   { name: "directorio", title: "DIRECTORIO", icon: "phone", requiere: null },
   { name: "sync", title: "SYNC", icon: "refresh-cw", requiere: null },
+  // [T-9.62 · D-46] La nube la sirve a los cuatro roles móviles
+  // (`_require_movil_del_sitio`): lectura del inmueble, como RUTAS. Icono
+  // `globe` y no `activity` porque `activity` ya es PANEL en esta barra.
+  { name: "sismos", title: "SISMOS", icon: "globe", requiere: null },
   { name: "cuenta", title: "CUENTA", icon: "user", requiere: null },
 ];
 

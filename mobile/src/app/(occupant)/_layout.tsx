@@ -1,4 +1,4 @@
-// Perfil 1 · OCUPANTE — tabs del diseño (inicio · rutas · directorio · cuenta).
+// Perfil 1 · OCUPANTE — tabs del diseño (inicio · rutas · directorio · sismos · cuenta).
 // Guard de grupo server-driven: si el gate no dio "occupant", fuera.
 import { Feather } from "@expo/vector-icons";
 import { Redirect, Tabs } from "expo-router";
@@ -49,6 +49,14 @@ export default function OccupantLayout() {
         options={{
           title: "DIRECTORIO",
           tabBarIcon: ({ color, size }) => <Feather color={color} name="phone" size={size} />,
+        }}
+      />
+      {/* [T-9.62] Sismos de México vistos desde el inmueble + su historial. */}
+      <Tabs.Screen
+        name="sismos"
+        options={{
+          title: "SISMOS",
+          tabBarIcon: ({ color, size }) => <Feather color={color} name="activity" size={size} />,
         }}
       />
       <Tabs.Screen
