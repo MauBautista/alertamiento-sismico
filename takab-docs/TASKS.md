@@ -17946,7 +17946,13 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   calibración del fabricante declarada.
 - **Criterios de aceptación:**
   - [x] Diagnóstico de solo lectura de los sensores por sitio.
-  - [ ] Los dos sensores sin datos ni calibración, retirados.
+  - [x] Los dos sensores sin datos ni calibración, retirados.
+    - Eran SIETE: 5 RS4D en `site-dev` y 2 en `pue-pruebas-01`, todos activos, sin
+      calibración y sin una sola fila.
+    - La consola no ofrece la baja de sensores. Los retiró Mauricio el 2026-09-28 con
+      `infra/scripts/retira_sensores_fantasma.sh --aplicar`, que deja una fila
+      `sensor_retire` en `audit_log` por cada uno.
+    - `site-dev` queda con el R4F74 calibrado como único activo.
   - [ ] El PDF de un evento nuevo ya no dice «sin fuente de calibración».
 
 ## Fase 9.4 · El cierre del evento, paso a paso
