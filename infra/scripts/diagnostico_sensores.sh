@@ -7,8 +7,8 @@
 # «fantasma») deja el sitio en AMARILLO para siempre sin que nadie vea por qué.
 # Esto enseña, por sitio, cada sensor con lo que el dictamen lee de él.
 #
-# Qué NO hace: no da de baja nada. La baja la hace una persona en la consola
-# (DAR DE BAJA → `queries/sensors.py::_RETIRE`), que deja auditoría. Aquí todo
+# Qué NO hace: no da de baja nada. La baja la hace `retira_sensores_fantasma.sh`
+# (la consola no ofrece la baja de sensores), que deja auditoría. Aquí todo
 # corre dentro de `BEGIN READ ONLY` y además con la sesión en solo lectura, así
 # que aunque se colara una escritura la rechazaría la base misma. La guarda del
 # texto está en `api/tests/test_diagnostico_sensores_solo_lectura.py`.

@@ -2,8 +2,8 @@
 
 `infra/scripts/diagnostico_sensores.sh` entra a la base de la NUBE por el túnel
 SSM con el superusuario. Con esas credenciales, lo único que impide que un
-diagnóstico escriba es el propio guion. La baja de un sensor la hace una persona
-desde la consola (DAR DE BAJA → `queries/sensors.py::_RETIRE`), nunca esto.
+diagnóstico escriba es el propio guion. La baja de un sensor la hace
+`retira_sensores_fantasma.sh` (con su auditoría), nunca esto.
 
 Se guarda en el TEXTO del guion, que es lo que corre:
 
