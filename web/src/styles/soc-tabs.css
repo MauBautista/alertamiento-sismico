@@ -1281,6 +1281,18 @@
   min-width: 0;
 }
 .bld__card--wide { grid-column: 1 / -1; }
+/* [T-9.66] Historial sísmico del inmueble: incidente (MEDIDO) y sismo (ESTIMADO) no se confunden. */
+.bld-hist__window { margin-left: auto; font-size: 10px; letter-spacing: 0.06em; color: var(--tk-fg-3); }
+.bld-hist__kind { font: 600 10px var(--tk-font-mono); letter-spacing: 0.06em; color: var(--tk-fg-2); }
+.bld-hist__kind--sismo { color: var(--tk-cyan); }
+.bld-hist__what { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bld-hist__mag { font-weight: 700; }
+.bld-hist__mmi { display: inline-flex; align-items: center; gap: 6px; }
+.bld-hist__chip {
+  display: inline-block; width: 10px; height: 10px;
+  border: 1px solid var(--tk-border); border-radius: var(--tk-radius-sm);
+}
+.bld-hist__attr { margin: 8px 0 0; font: 10px var(--tk-font-mono); color: var(--tk-fg-3); }
 .bld__cardhd { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--tk-fg-2); }
 .bld__cardhd h2 {
   font-family: var(--tk-font-ui);
@@ -1594,6 +1606,13 @@
 .triage-catalog__chev.is-open { transform: rotate(180deg); }
 .triage-catalog__table { margin: 0 12px 12px; width: calc(100% - 24px); }
 .triage-catalog__mag { font-weight: 700; }
+/* [T-9.61] Pie del catálogo paginado: conteo, fallo de la página siguiente y CARGAR MÁS. */
+.triage-catalog__more {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 12px 12px;
+}
+.triage-catalog__count { font-size: 10px; letter-spacing: 0.06em; color: var(--tk-fg-3); }
+.triage-catalog__more-err { color: var(--tk-status-critical-text); font: 600 10px var(--tk-font-mono); }
 .triage-catalog__src {
   font: 600 10px var(--tk-font-mono); letter-spacing: 0.06em;
   color: var(--tk-cyan); cursor: help;

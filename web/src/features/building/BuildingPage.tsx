@@ -25,6 +25,7 @@ import MultiChannelStrip from "../telemetry/MultiChannelStrip";
 import { CHANNELS_STALE_MS, useSiteChannels } from "../telemetry/useSiteChannels";
 import { METRICS_STALE_MS, useSiteMetrics } from "../telemetry/useSiteMetrics";
 import type { HistoryPreset } from "../telemetry/useSiteMetrics";
+import HistorialSismicoCard from "./HistorialSismicoCard";
 import SirenTestPanel from "./SirenTestPanel";
 import { SITE_INCIDENTS_STALE_MS, useSiteIncidents } from "./useSiteIncidents";
 import { useSirenTest } from "./useSirenTest";
@@ -267,6 +268,9 @@ function BuildingDashboard({ siteId }: { siteId: string }) {
             </Table>
           </StateFrame>
         </div>
+
+        {/* [T-9.66 · D-46] Lo que vivió el inmueble: lo MEDIDO y lo ESTIMADO. */}
+        <HistorialSismicoCard siteId={siteId} canTriage={canTriage} />
       </div>
     </section>
   );

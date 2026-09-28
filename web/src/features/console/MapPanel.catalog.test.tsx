@@ -32,6 +32,7 @@ vi.mock("maplibre-gl", () => ({ default: { Map: mocks.Map } }));
 vi.mock("maplibre-gl/dist/maplibre-gl.css", () => ({}));
 
 import MapPanel, { CATALOG_COLOR, catalogToFeatureCollection } from "./MapPanel";
+import { radioDeMagnitud } from "./escalaSismos";
 
 const QUAKES: CatalogEarthquakeOut[] = [
   {
@@ -80,6 +81,23 @@ describe("catalogToFeatureCollection", () => {
     expect(fc.features[1].properties["selected"]).toBe(false);
     expect(CATALOG_COLOR).toBe("#7CE7FF");
   });
+
+  it("[T-9.64] cada ◇ lleva el RADIO de su magnitud (escala compartida), no un tamaño fijo", () => {
+    const fc = catalogToFeatureCollection(
+      [
+        { ...QUAKES[0], ref_id: "m4", magnitude: 4.3 },
+        { ...QUAKES[0], ref_id: "m7", magnitude: 7.1 },
+      ],
+      null,
+    );
+    expect(fc.features.map((f) => f.properties["radio"])).toEqual([
+      radioDeMagnitud(4.3),
+      radioDeMagnitud(7.1),
+    ]);
+    expect(fc.features[0].properties["radio"]).toBeLessThan(
+      fc.features[1].properties["radio"] as number,
+    );
+  });
 });
 
 describe("MapPanel · capa catálogo", () => {
@@ -111,6 +129,15 @@ describe("MapPanel · capa catálogo", () => {
     const calls = mocks.sources.get("catalog")?.setData.mock.calls ?? [];
     const last = calls[calls.length - 1]?.[0] as ReturnType<typeof catalogToFeatureCollection>;
     expect(last.features).toHaveLength(2);
+  });
+
+  it("[T-9.64] el tamaño del ◇ sale de su radio y la leyenda dice «tamaño = magnitud»", () => {
+    renderPanel(null);
+    const capa = mocks.map.addLayer.mock.calls
+      .map((c) => c[0] as { id: string; layout: Record<string, unknown> })
+      .find((l) => l.id === "catalog-mark");
+    expect(JSON.stringify(capa?.layout["text-size"])).toContain('["get","radio"]');
+    expect(screen.getByTestId("catalog-toggle")).toHaveTextContent(/TAMAÑO = MAGNITUD/);
   });
 
   it("clic en un ◇ del catálogo emite su ref_id", () => {
