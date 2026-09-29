@@ -6,6 +6,7 @@ import { StyleSheet, View } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 import { SiteNotices } from "@/features/notices/SiteNotices";
+import { rotuloQueCabe } from "@/ui/rotuloQueCabe";
 import { fontSize, palette } from "@/ui/theme";
 
 export default function OccupantLayout() {
@@ -27,7 +28,8 @@ export default function OccupantLayout() {
         tabBarStyle: { backgroundColor: palette.card, borderTopColor: palette.border },
         tabBarActiveTintColor: palette.cyan,
         tabBarInactiveTintColor: palette.fg3,
-        tabBarLabelStyle: { fontSize: fontSize.xs, letterSpacing: 1 },
+        // [T-9.62] Cinco pestañas con SISMOS: el rótulo se encoge hasta caber.
+        tabBarLabel: rotuloQueCabe({ fontSize: fontSize.xs, letterSpacing: 1 }),
       }}
     >
       <Tabs.Screen

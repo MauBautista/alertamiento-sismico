@@ -20,6 +20,7 @@ import { PESTANAS_TACTICAS, pestanasVisibles } from "@/auth/pestanasTacticas";
 import { useSessionStore } from "@/auth/session.store";
 import { AlertaViva } from "@/features/alert/AlertaViva";
 import { SiteNotices } from "@/features/notices/SiteNotices";
+import { rotuloQueCabe } from "@/ui/rotuloQueCabe";
 import { fontSize, palette } from "@/ui/theme";
 
 export default function BrigadistaLayout() {
@@ -72,7 +73,11 @@ export default function BrigadistaLayout() {
           //
           // Se recorta el RÓTULO y nunca el objetivo táctil: cada pestaña sigue
           // midiendo 64 × 48.7 dp, por encima del mínimo de 48 de T-6.20.
-          tabBarLabelStyle: { fontSize: fontSize.xxs, letterSpacing: 0.4 },
+          //
+          // [T-9.62] Con SISMOS son OCHO, y en un A53 (~411 dp) el hueco baja a ~51 dp:
+          // «DIRECTORIO» volvía a leerse «DIREC…». El rótulo ahora se ENCOGE hasta
+          // caber (`ui/rotuloQueCabe`) en vez de cortarse.
+          tabBarLabel: rotuloQueCabe({ fontSize: fontSize.xxs, letterSpacing: 0.4 }),
         }}
       >
         {PESTANAS_TACTICAS.map((p) => (
