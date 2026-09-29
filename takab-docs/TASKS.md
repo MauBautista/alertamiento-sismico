@@ -18121,8 +18121,9 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     «DIRECTORIO» puede cortarse.
     - **Visto el 2026-09-29 en un Samsung A53 real (1080 px, sesión táctica), contra la nube:**
       lista, historial y VER EN EL MAPA funcionan.
-    - **«DIRECTORIO» SÍ se corta: se lee «DIREC…».** Falta decidir cómo: rótulo más corto o
-      icono solo.
+    - «DIRECTORIO» se cortaba: se leía «DIREC…». **Arreglado el 2026-09-29 sin renombrarlo:**
+      el rótulo de las dos barras se ENCOGE hasta caber en su hueco (`ui/rotuloQueCabe.tsx`,
+      piso 0,7). Visto en el A53: se lee completo, un poco más chico que sus vecinos.
     - Falta también verla con sesión de OCUPANTE.
 
 ### [x] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-29**

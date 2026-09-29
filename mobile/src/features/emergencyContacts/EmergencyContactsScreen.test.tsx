@@ -57,7 +57,7 @@ describe("CONTACTOS DE EMERGENCIA · lo que se lee", () => {
     expect(v.getByTestId("contactos-conteo")).toHaveTextContent("2 de 3");
     expect(
       v.getByText(
-        "Si marcas NECESITO AYUDA tras un sismo, les llega un correo con tu nombre, el inmueble y la zona. La ubicación, solo si la compartiste.",
+        "Si marca NECESITO AYUDA tras un sismo, les llega un correo con su nombre, el inmueble y la zona. La ubicación, solo si la compartió.",
       ),
     ).toBeTruthy();
   });
@@ -73,7 +73,7 @@ describe("CONTACTOS DE EMERGENCIA · lo que se lee", () => {
   it("sin contactos: el vacío dice qué significa, y AGREGAR sigue a mano", async () => {
     const { v } = await montar({ data: datos(0) });
     expect(v.getByTestId("state-empty")).toHaveTextContent(
-      "Sin contactos. Si marcas NECESITO AYUDA, nadie fuera del inmueble recibe aviso.",
+      "Sin contactos. Si marca NECESITO AYUDA, nadie fuera del inmueble recibe aviso.",
     );
     expect(v.getByTestId("contactos-agregar")).toBeTruthy();
   });

@@ -29,10 +29,10 @@ import {
 } from "./validacion";
 
 export const EXPLICACION =
-  "Si marcas NECESITO AYUDA tras un sismo, les llega un correo con tu nombre, el inmueble y la zona. La ubicación, solo si la compartiste.";
+  "Si marca NECESITO AYUDA tras un sismo, les llega un correo con su nombre, el inmueble y la zona. La ubicación, solo si la compartió.";
 
 export const SIN_CONTACTOS =
-  "Sin contactos. Si marcas NECESITO AYUDA, nadie fuera del inmueble recibe aviso.";
+  "Sin contactos. Si marca NECESITO AYUDA, nadie fuera del inmueble recibe aviso.";
 
 const AVISO_CAMBIO =
   "El aviso cambió mientras editaba. Lea el texto nuevo y vuelva a marcar la casilla para guardar.";

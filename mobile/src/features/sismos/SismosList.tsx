@@ -8,7 +8,7 @@
 // Cifras EXTERNAS con procedencia, o no se pintan (`shared/glossary/procedencia.json`):
 // la magnitud y el lugar son de USGS, y por eso el pie lleva SIEMPRE la
 // `atribucion` que manda el servidor y la hora de la última sincronización. Lo de
-// «en tu inmueble» es una ESTIMACIÓN nuestra y lo dice en cada fila. Sin cuenta
+// «en su inmueble» es una ESTIMACIÓN nuestra y lo dice en cada fila. Sin cuenta
 // regresiva y sin rótulo de «preliminar»: esto se publica después del sismo.
 import type { SismoCercanoOut, SismosDelSitioOut } from "@takab/sdk";
 import type { ReactNode } from "react";
@@ -28,12 +28,12 @@ function diametro(magnitud: number): number {
   return 40 + 2 * radioDeMagnitud(magnitud);
 }
 
-/** «En tu inmueble: IV (estimada) · 180 km» o «…: sin estimar · 612 km». */
+/** «En su inmueble: IV (estimada) · 180 km» o «…: sin estimar · 612 km». */
 export function lineaEnTuInmueble(s: SismoCercanoOut): string {
   const e = s.en_tu_inmueble;
   const romano = e.mmi_romano ?? romanoDeMmi(e.mmi_estimada);
   const grado = romano ? `${romano} (estimada)` : "sin estimar";
-  return `En tu inmueble: ${grado} · ${Math.round(e.dist_km)} km`;
+  return `En su inmueble: ${grado} · ${Math.round(e.dist_km)} km`;
 }
 
 export function FilaSismo(props: { sismo: SismoCercanoOut }) {
