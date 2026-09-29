@@ -10,6 +10,7 @@
 // `web/src/features/console/superficie.ts` (`esquinasDeBbox`, `rotuloEstimado`):
 // la consola y la app tienen que decir lo mismo del mismo sismo.
 import type { SismoCercanoOut, SuperficieMovilOut } from "@takab/sdk";
+import type { Feature, FeatureCollection, Point } from "geojson";
 
 import { colorDeMmi, radioDeMagnitud } from "@/features/sismos/escala";
 import { palette } from "@/ui/theme";
@@ -23,19 +24,21 @@ export const ESTILO_BASE = "https://tiles.openfreemap.org/styles/dark";
  */
 export const ATRIBUCION_BASE = "Mapa © OpenStreetMap · OpenFreeMap · MapLibre";
 
-export type PuntoSismo = {
-  type: "Feature";
-  geometry: { type: "Point"; coordinates: [number, number] };
-  properties: { mag: number; radio: number; color: string };
-};
+/**
+ * Lo que cada punto lleva ya resuelto. El punto y la colección son los tipos de
+ * GeoJSON (`@types/geojson`), no una forma escrita aquí: `sdkTypeParity` veta
+ * redeclarar a mano la forma de un tipo del SDK, y `{type, geometry, properties}`
+ * es la de `PuntoFeature`.
+ */
+type PropiedadesSismo = { mag: number; radio: number; color: string };
 
-export type ColeccionSismos = { type: "FeatureCollection"; features: PuntoSismo[] };
+export type ColeccionSismos = FeatureCollection<Point, PropiedadesSismo>;
 
 /** Los sismos como puntos, del más chico al más grande (el grande queda ENCIMA). */
 export function sismosGeoJSON(items: readonly SismoCercanoOut[]): ColeccionSismos {
   const features = items
     .map(
-      (s): PuntoSismo => ({
+      (s): Feature<Point, PropiedadesSismo> => ({
         type: "Feature",
         geometry: { type: "Point", coordinates: [s.lon, s.lat] },
         properties: {
