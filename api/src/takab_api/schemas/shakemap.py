@@ -220,6 +220,63 @@ class SuperficieOut(BaseModel):
     rojo_min_g: float | None
 
 
+class SuperficieMovilOut(BaseModel):
+    """[T-9.65 · D-44] La superficie ESTIMADA para la app, con el PNG DENTRO.
+
+    Los mismos datos que `SuperficieOut` salvo la ruta del PNG, que es de la
+    consola (superficie web): aquí viaja la imagen en base64 —unos KB, una celda
+    un píxel—, porque el SDK nativo del mapa no manda cabeceras por fuente y una
+    URL sin el token daría 401.
+    """
+
+    bbox: list[float]
+    ancho: int
+    alto: int
+    n_sensores: int
+    n_calibrados: int
+    escala_km: float
+    ley: str
+    metodo: str
+    cita_mmi: str
+    pga_max_g: float | None
+    mmi_max_estimada: float | None
+    #: Los cortes DEL SITIO con que se pintó el PNG, para que la leyenda diga los
+    #: mismos que la imagen.
+    verde_max_g: float
+    rojo_min_g: float
+    png_base64: str
+
+
+class IncidenteConSuperficieOut(BaseModel):
+    """El incidente del que sale la superficie: cuándo pasó, para rotularla."""
+
+    incident_id: str
+    opened_at: datetime
+    superficie: SuperficieMovilOut
+
+
+class SitioMapaOut(BaseModel):
+    """Dónde está el inmueble, en grados."""
+
+    lat: float
+    lon: float
+
+
+class MapaDeCalorMovilOut(BaseModel):
+    """[T-9.65] `disponible` con su incidente, o `sin_evento` —y entonces nada—.
+
+    `sin_evento` es un estado normal (un inmueble sin sismos sentidos), no un
+    error: la app lo DICE en vez de pintar un mapa vacío.
+    """
+
+    estado: Literal["disponible", "sin_evento"]
+    incidente: IncidenteConSuperficieOut | None
+    #: Dónde está el inmueble, siempre: el mapa de la app lo marca y lo centra
+    #: haya evento o no. Quien pide ya está en él (ocupante enrolado o táctico
+    #: con el sitio en su alcance).
+    sitio: SitioMapaOut
+
+
 class ShakemapOut(BaseModel):
     """El mapa entero de un incidente."""
 

@@ -6813,6 +6813,30 @@
         "title": "IncidentPage",
         "type": "object"
       },
+      "IncidenteConSuperficieOut": {
+        "description": "El incidente del que sale la superficie: cuándo pasó, para rotularla.",
+        "properties": {
+          "incident_id": {
+            "title": "Incident Id",
+            "type": "string"
+          },
+          "opened_at": {
+            "format": "date-time",
+            "title": "Opened At",
+            "type": "string"
+          },
+          "superficie": {
+            "$ref": "#/components/schemas/SuperficieMovilOut"
+          }
+        },
+        "required": [
+          "incident_id",
+          "opened_at",
+          "superficie"
+        ],
+        "title": "IncidenteConSuperficieOut",
+        "type": "object"
+      },
       "LiveHealthFrame": {
         "description": "[T-2.129] Estado del CANAL live de este socket, dicho SIN cerrarlo.\n\nEs la respuesta al defecto que dejó fichado ``T-2.121``: cuando el hub tenía\nalgo que entregar y no pudo leerlo, la única forma de avisar al operador era\ntumbarle la conexión (cierre 4503), porque el estado del transporte era el\nÚNICO canal servidor→pantalla que existía. Cerrar por un tropiezo de una\nconsulta es desproporcionado —arrastra re-handshake, re-subscribe y ventana\nde backoff— y además dice la verdad equivocada: la sesión estaba sana.\n\n``degraded: false`` es tan importante como el ``true``: un aviso que no sabe\napagarse es otra mentira en pantalla (regla de oro 7). ``topic`` acota el\ndaño — que falle ``features:<site>`` no es que el SOC esté ciego.\n\n``detail`` es el nombre TÉCNICO de lo que falló (``LockTimeout``,\n``OperationalError``…), para el soporte y el log. La pantalla no lo lee como\nfrase: rotula la degradación por su cuenta.",
         "properties": {
@@ -7470,6 +7494,39 @@
           "epicenters"
         ],
         "title": "MapState",
+        "type": "object"
+      },
+      "MapaDeCalorMovilOut": {
+        "description": "[T-9.65] `disponible` con su incidente, o `sin_evento` —y entonces nada—.\n\n`sin_evento` es un estado normal (un inmueble sin sismos sentidos), no un\nerror: la app lo DICE en vez de pintar un mapa vacío.",
+        "properties": {
+          "estado": {
+            "enum": [
+              "disponible",
+              "sin_evento"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "incidente": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IncidenteConSuperficieOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sitio": {
+            "$ref": "#/components/schemas/SitioMapaOut"
+          }
+        },
+        "required": [
+          "estado",
+          "incidente",
+          "sitio"
+        ],
+        "title": "MapaDeCalorMovilOut",
         "type": "object"
       },
       "MeActions": {
@@ -12848,6 +12905,25 @@
         "title": "SiteUpdate",
         "type": "object"
       },
+      "SitioMapaOut": {
+        "description": "Dónde está el inmueble, en grados.",
+        "properties": {
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "title": "SitioMapaOut",
+        "type": "object"
+      },
       "SubscribeFrame": {
         "description": "Alta a un topic: ``incidents`` | ``site_state`` | ``features:<site_id>``.",
         "properties": {
@@ -12866,6 +12942,102 @@
           "topic"
         ],
         "title": "SubscribeFrame",
+        "type": "object"
+      },
+      "SuperficieMovilOut": {
+        "description": "[T-9.65 · D-44] La superficie ESTIMADA para la app, con el PNG DENTRO.\n\nLos mismos datos que `SuperficieOut` salvo la ruta del PNG, que es de la\nconsola (superficie web): aquí viaja la imagen en base64 —unos KB, una celda\nun píxel—, porque el SDK nativo del mapa no manda cabeceras por fuente y una\nURL sin el token daría 401.",
+        "properties": {
+          "alto": {
+            "title": "Alto",
+            "type": "integer"
+          },
+          "ancho": {
+            "title": "Ancho",
+            "type": "integer"
+          },
+          "bbox": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Bbox",
+            "type": "array"
+          },
+          "cita_mmi": {
+            "title": "Cita Mmi",
+            "type": "string"
+          },
+          "escala_km": {
+            "title": "Escala Km",
+            "type": "number"
+          },
+          "ley": {
+            "title": "Ley",
+            "type": "string"
+          },
+          "metodo": {
+            "title": "Metodo",
+            "type": "string"
+          },
+          "mmi_max_estimada": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mmi Max Estimada"
+          },
+          "n_calibrados": {
+            "title": "N Calibrados",
+            "type": "integer"
+          },
+          "n_sensores": {
+            "title": "N Sensores",
+            "type": "integer"
+          },
+          "pga_max_g": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pga Max G"
+          },
+          "png_base64": {
+            "title": "Png Base64",
+            "type": "string"
+          },
+          "rojo_min_g": {
+            "title": "Rojo Min G",
+            "type": "number"
+          },
+          "verde_max_g": {
+            "title": "Verde Max G",
+            "type": "number"
+          }
+        },
+        "required": [
+          "bbox",
+          "ancho",
+          "alto",
+          "n_sensores",
+          "n_calibrados",
+          "escala_km",
+          "ley",
+          "metodo",
+          "cita_mmi",
+          "pga_max_g",
+          "mmi_max_estimada",
+          "verde_max_g",
+          "rojo_min_g",
+          "png_base64"
+        ],
+        "title": "SuperficieMovilOut",
         "type": "object"
       },
       "SuperficieOut": {
@@ -19349,6 +19521,47 @@
           }
         },
         "summary": "Panic Vote"
+      }
+    },
+    "/sites/{site_id}/mapa-de-calor": {
+      "get": {
+        "description": "[T-9.65 · D-44] La superficie ESTIMADA del último sismo sentido en el inmueble.",
+        "operationId": "mapa_de_calor_sites__site_id__mapa_de_calor_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "site_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Site Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapaDeCalorMovilOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Mapa De Calor"
       }
     },
     "/sites/{site_id}/mobile-state": {

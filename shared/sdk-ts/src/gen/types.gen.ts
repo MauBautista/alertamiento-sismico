@@ -1679,6 +1679,15 @@ export type IncidentPage = {
 };
 
 /**
+ * El incidente del que sale la superficie: cuándo pasó, para rotularla.
+ */
+export type IncidenteConSuperficieOut = {
+    incident_id: string;
+    opened_at: string;
+    superficie: SuperficieMovilOut;
+};
+
+/**
  * [T-2.129] Estado del CANAL live de este socket, dicho SIN cerrarlo.
  *
  * Es la respuesta al defecto que dejó fichado ``T-2.121``: cuando el hub tenía
@@ -1829,6 +1838,18 @@ export type MapSiteState = {
 export type MapState = {
     epicenters: Array<MapEpicenter>;
     sites: Array<MapSiteState>;
+};
+
+/**
+ * [T-9.65] `disponible` con su incidente, o `sin_evento` —y entonces nada—.
+ *
+ * `sin_evento` es un estado normal (un inmueble sin sismos sentidos), no un
+ * error: la app lo DICE en vez de pintar un mapa vacío.
+ */
+export type MapaDeCalorMovilOut = {
+    estado: 'disponible' | 'sin_evento';
+    incidente: IncidenteConSuperficieOut | null;
+    sitio: SitioMapaOut;
 };
 
 /**
@@ -3158,11 +3179,44 @@ export type SiteUpdate = {
 };
 
 /**
+ * Dónde está el inmueble, en grados.
+ */
+export type SitioMapaOut = {
+    lat: number;
+    lon: number;
+};
+
+/**
  * Alta a un topic: ``incidents`` | ``site_state`` | ``features:<site_id>``.
  */
 export type SubscribeFrame = {
     topic: string;
     type: 'subscribe';
+};
+
+/**
+ * [T-9.65 · D-44] La superficie ESTIMADA para la app, con el PNG DENTRO.
+ *
+ * Los mismos datos que `SuperficieOut` salvo la ruta del PNG, que es de la
+ * consola (superficie web): aquí viaja la imagen en base64 —unos KB, una celda
+ * un píxel—, porque el SDK nativo del mapa no manda cabeceras por fuente y una
+ * URL sin el token daría 401.
+ */
+export type SuperficieMovilOut = {
+    alto: number;
+    ancho: number;
+    bbox: Array<number>;
+    cita_mmi: string;
+    escala_km: number;
+    ley: string;
+    metodo: string;
+    mmi_max_estimada: number | null;
+    n_calibrados: number;
+    n_sensores: number;
+    pga_max_g: number | null;
+    png_base64: string;
+    rojo_min_g: number;
+    verde_max_g: number;
 };
 
 /**
@@ -6711,6 +6765,33 @@ export type PanicVoteSitesSiteIdManualActivationVotesPostResponses = {
 };
 
 export type PanicVoteSitesSiteIdManualActivationVotesPostResponse = PanicVoteSitesSiteIdManualActivationVotesPostResponses[keyof PanicVoteSitesSiteIdManualActivationVotesPostResponses];
+
+export type MapaDeCalorSitesSiteIdMapaDeCalorGetData = {
+    body?: never;
+    path: {
+        site_id: string;
+    };
+    query?: never;
+    url: '/sites/{site_id}/mapa-de-calor';
+};
+
+export type MapaDeCalorSitesSiteIdMapaDeCalorGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type MapaDeCalorSitesSiteIdMapaDeCalorGetError = MapaDeCalorSitesSiteIdMapaDeCalorGetErrors[keyof MapaDeCalorSitesSiteIdMapaDeCalorGetErrors];
+
+export type MapaDeCalorSitesSiteIdMapaDeCalorGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: MapaDeCalorMovilOut;
+};
+
+export type MapaDeCalorSitesSiteIdMapaDeCalorGetResponse = MapaDeCalorSitesSiteIdMapaDeCalorGetResponses[keyof MapaDeCalorSitesSiteIdMapaDeCalorGetResponses];
 
 export type MobileStateSitesSiteIdMobileStateGetData = {
     body?: never;
