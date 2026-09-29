@@ -266,6 +266,15 @@ def _base() -> dict:
             "enabled": True,
             "sounding": False,
             "profile": {"applied": {}, "rejected": {}, "test_tone": True},
+            # [T-9.72] La música de prueba de parlantes, en reposo y lista. Las
+            # ramas sonando / cortada / sin parlante las encienden escenas del censo.
+            "music": {
+                "disponible": True,
+                "activa": False,
+                "restante_s": None,
+                "motivo": None,
+                "ultimo_corte": None,
+            },
         },
         "events": [{"at": _NOW, "action": "boot", "via": "boot"}],
     }
@@ -4172,3 +4181,125 @@ def test_FICHADO_en_CONSOLA_de_900px_el_tierline_se_aplasta_y_no_se_ve_nada():
         '`node edge/tests/panel_barrido.mjs "" consola` y, si `#tierline` ya '
         "tiene alto, borra esta ficha."
     )
+
+
+# ------------------------------------- T-9.72 · prueba de audio continua (música)
+
+
+def _musica(**over) -> dict:
+    return {
+        "disponible": True,
+        "activa": False,
+        "restante_s": None,
+        "motivo": None,
+        "ultimo_corte": None,
+        **over,
+    }
+
+
+def _fila_prueba_de_audio(out: dict) -> str:
+    texto = _txt(out, "salud-grid")
+    assert "Prueba de audio" in texto, "la fila de la música de prueba no se pintó"
+    return texto
+
+
+def test_musica_lista_se_ofrece_y_no_se_ofrece_detenerla(tmp_path):
+    out = _render(tmp_path)
+    botones = _txt(out, "action-btns")
+    assert "PRUEBA DE AUDIO CONTINUA" in botones
+    assert "música por los parlantes · tope 30 min · cualquier alerta la corta" in botones
+    assert "DETENER PRUEBA DE AUDIO" not in botones
+    assert "EN SILENCIO" in _fila_prueba_de_audio(out)
+    assert _value_color(out, "salud-grid", "EN SILENCIO") == OK
+
+
+def test_musica_sonando_ofrece_detenerla_y_dice_cuanto_queda(tmp_path):
+    st = _base()
+    st["audio"]["music"] = _musica(activa=True, restante_s=1500)
+    out = _render(tmp_path, status=st)
+    botones = _txt(out, "action-btns")
+    assert "DETENER PRUEBA DE AUDIO" in botones
+    assert "PRUEBA DE AUDIO CONTINUA" not in botones
+    assert "MÚSICA DE PRUEBA SONANDO · quedan 25 min" in _fila_prueba_de_audio(out)
+    # Menos de un minuto se redondea ARRIBA: «quedan 0 min» con música sonando mentiría.
+    st["audio"]["music"] = _musica(activa=True, restante_s=20)
+    out = _render(tmp_path, status=st)
+    assert "quedan 1 min" in _fila_prueba_de_audio(out)
+
+
+def test_musica_no_disponible_dice_por_que_y_no_ofrece_boton(tmp_path):
+    st = _base()
+    st["audio"]["music"] = _musica(
+        disponible=False, motivo="sin música de prueba empaquetada en este gabinete"
+    )
+    out = _render(tmp_path, status=st)
+    botones = _txt(out, "action-btns")
+    assert "PRUEBA DE AUDIO CONTINUA" not in botones
+    assert "DETENER PRUEBA DE AUDIO" not in botones
+    assert (
+        "NO SE PUEDE PROBAR · sin música de prueba empaquetada en este gabinete"
+        in _fila_prueba_de_audio(out)
+    )
+
+
+def test_musica_ilegible_es_sd_y_no_ofrece_ningun_boton(tmp_path):
+    """`music: null` = el gabinete no pudo leerla: ni «lista» ni un botón sobre la nada."""
+    st = _base()
+    st["audio"]["music"] = None
+    out = _render(tmp_path, status=st)
+    botones = _txt(out, "action-btns")
+    assert "PRUEBA DE AUDIO" not in botones
+    assert _value_color(out, "salud-grid", "S/D") == WARN
+    assert "EN SILENCIO" not in _fila_prueba_de_audio(out)
+
+
+def test_el_ultimo_corte_se_dice_con_su_hora_y_en_ambar_si_fue_una_alerta(tmp_path):
+    st = _base()
+    st["audio"]["music"] = _musica(
+        ultimo_corte={
+            "motivo": "alerta",
+            "texto": "cortada: sonó una alerta o una prueba de sirena",
+            "at": "2026-09-29T14:03:07.123456+00:00",
+        }
+    )
+    out = _render(tmp_path, status=st)
+    fila = _fila_prueba_de_audio(out)
+    assert "ÚLTIMA: cortada: sonó una alerta o una prueba de sirena · 14:03:07 UTC" in fila
+    assert _value_color(out, "salud-grid", "ÚLTIMA:") == WARN
+    # Un fin normal (el tope) no es algo que mirar: no se pinta en ámbar.
+    st["audio"]["music"]["ultimo_corte"] = {
+        "motivo": "tope",
+        "texto": "terminó sola: tope de 30 min",
+        "at": "2026-09-29T14:03:07+00:00",
+    }
+    out = _render(tmp_path, status=st)
+    assert _value_color(out, "salud-grid", "ÚLTIMA:") == OK
+
+
+def test_arrancar_y_detener_la_musica_mandan_el_pin(tmp_path):
+    out = _render(tmp_path, pin="123456", clicks=["action:PRUEBA DE AUDIO CONTINUA"])
+    (post,) = _posts(out, "api/audio-musica")
+    assert post["headers"] == {"X-Takab-Pin": "123456"}
+
+    st = _base()
+    st["audio"]["music"] = _musica(activa=True, restante_s=600)
+    out = _render(tmp_path, status=st, pin="123456", clicks=["action:DETENER PRUEBA DE AUDIO"])
+    (post,) = _posts(out, "api/audio-musica/detener")
+    assert post["headers"] == {"X-Takab-Pin": "123456"}
+
+
+def test_un_409_de_la_musica_grita_el_motivo_del_gabinete(tmp_path):
+    """El gabinete dice POR QUÉ no arrancó; «ERROR 409» no le sirve a nadie."""
+    motivo = "hay una alerta, un enclavado o una prueba de sirena viva en el gabinete"
+    out = _render(
+        tmp_path,
+        pin="123456",
+        actionStatus={"api/audio-musica": 409},
+        actionBody={"api/audio-musica": {"error": motivo}},
+        clicks=["action:PRUEBA DE AUDIO CONTINUA"],
+    )
+    toast = _txt(out, "action-toast-txt")
+    assert "PRUEBA DE AUDIO CONTINUA" in toast
+    assert motivo in toast
+    assert motivo in _txt(out, "pin-msg")
+    assert "ERROR 409" not in toast

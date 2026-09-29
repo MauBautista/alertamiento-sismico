@@ -471,6 +471,9 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             "/api/reset": dashboard.reset_alert,
             "/api/drill-audio": dashboard.drill_audio,
             "/api/rose-zero": dashboard.set_rose_zero,  # T-2.29
+            # [T-9.72] Música de prueba de parlantes: con PIN, como el voceo de drill.
+            "/api/audio-musica": dashboard.start_music,
+            "/api/audio-musica/detener": dashboard.stop_music,
         }
         action = actions.get(self.path)
         if action is None:
@@ -639,6 +642,10 @@ class LocalDashboard(EdgeModule):
         self._config = config
         self._location = location
         self._audio = audio
+        # [T-9.72] Cada corte REAL de la música de prueba —del operador, del tope, de una
+        # alerta, del silencio— queda en la bitácora con su motivo, por UN solo camino.
+        if audio is not None and hasattr(audio, "set_music_listener"):
+            audio.set_music_listener(self._on_musica_cortada)
         self._drill = drill
         # [T-2.32] Fuente «QUÓRUM RED»: el dispatcher registra la actuación
         # comandada por la nube y CERRAR ALERTA la limpia.
@@ -1699,10 +1706,80 @@ class LocalDashboard(EdgeModule):
                 "enabled": bool(self._audio.enabled),
                 "sounding": bool(self._audio.sounding),
                 "profile": self._audio_profile(),
+                # [T-9.72] La música de prueba de parlantes: si se puede, si suena,
+                # cuánto le queda y por qué calló la última vez.
+                "music": self._audio_music(),
             }
         except Exception:  # noqa: BLE001
             log.warning("panel LAN: sección de audio no disponible", exc_info=True)
             return None
+
+    def _audio_music(self) -> dict | None:
+        try:
+            return dict(self._audio.music_status())
+        except Exception:  # noqa: BLE001 — el panel pinta S/D, jamás un 500
+            log.warning("panel LAN: estado de la música de prueba no disponible", exc_info=True)
+            return None
+
+    def start_music(self) -> None:
+        """[T-9.72 · D-40] PRUEBA DE AUDIO CONTINUA: música por los parlantes del jack.
+
+        409 (``ActionUnavailable``) con el motivo si hay una alerta, un enclavado, una
+        prueba de sirena, un silencio o un voceo: nada que tenga que oírse compite con
+        la música. Deja fila en la bitácora con el asset y su huella: suena hasta 30 min
+        en un edificio con gente, y «¿qué sonó?» se contesta sin SSH.
+        """
+        if self._audio is None:
+            raise ActionUnavailable("este gabinete no tiene módulo de audio")
+        motivo = self._audio.start_music()
+        if motivo is not None:
+            raise ActionUnavailable(motivo)
+        self._record_action("music_start")
+        evidencia: dict = {}
+        try:
+            evidencia = dict(self._audio.music_evidence())
+        except Exception:  # noqa: BLE001 — la evidencia no puede tumbar el botón
+            log.exception("no se pudo resolver la huella de la música de prueba (aislado)")
+        self._registrar_musica("music_start", evidencia)
+
+    def stop_music(self) -> None:
+        """[T-9.72] DETENER la prueba de audio. Idempotente.
+
+        La fila de la bitácora NO se escribe aquí: la escribe `_on_musica_cortada` sólo
+        si de verdad sonaba. Escrita aquí, un DETENER pulsado cuando la música ya había
+        callado sola (tope, alerta) le atribuía al operador un corte que no hizo."""
+        if self._audio is None:
+            return
+        self._audio.stop_music()
+        self._record_action("music_stop")
+
+    def _on_musica_cortada(self, motivo: str, texto: str) -> None:
+        self._registrar_musica("music_stop", {"motivo": motivo, "texto": texto})
+
+    def _registrar_musica(self, accion: str, evidencia: dict) -> None:
+        """[T-9.72] La fila persistida de la música, como la del voceo (T-5.17)."""
+        if self._ledger is None:
+            return
+        from takab_edge.audit import ACTOR_LAN
+        from takab_edge.contracts import ActuationCause
+
+        sha = evidencia.get("sha256")
+        detalle = (
+            f"sha256={sha[:16] if sha else 'S/D'} path={evidencia.get('path') or 'S/D'}"
+            if accion == "music_start"
+            else f"motivo={evidencia.get('motivo')} · {evidencia.get('texto')}"
+        )
+        try:
+            self._ledger.record(
+                cause=ActuationCause.LAN_MUSIC_TEST,
+                actor=ACTOR_LAN,
+                channel=ActuatorChannel.SYSTEM,
+                action=accion,
+                success=True,
+                detail=detalle,
+            )
+        except Exception:  # noqa: BLE001 — la bitácora jamás propaga
+            log.exception("no se pudo registrar la música de prueba (aislado)")
 
     def silence(self) -> None:
         """Comando de silencio por LAN: apaga los audibles YA (sin tocar el estrobo)."""

@@ -132,6 +132,10 @@ class ActuationCause(StrEnum):
     #: reinicio borra. La pregunta que responde: qué sonó, cuándo y por orden de
     #: quién, el día del macrosimulacro.
     LAN_DRILL_VOICE = "lan_drill_voice"
+    #: [T-9.72] MÚSICA de prueba de parlantes, pedida desde el panel con PIN. Cero
+    #: relés, pero suena hasta 30 min en un edificio con gente: queda constancia de
+    #: qué sonó (asset y huella), cuándo y por orden de quién.
+    LAN_MUSIC_TEST = "lan_music_test"
     #: Nadie declaró la causa. Se ESCRIBE así y se grita: un hueco visible es una
     #: pregunta para quien revisa; un hueco silencioso es el defecto `RO-4.e`.
     UNDECLARED = "undeclared"

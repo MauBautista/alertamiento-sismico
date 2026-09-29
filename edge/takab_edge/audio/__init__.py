@@ -28,6 +28,9 @@ import hashlib
 import logging
 import subprocess
 import threading
+import time
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
@@ -69,6 +72,31 @@ _SIREN_POLL_S = 0.05
 #: que fallara justo en la conciliación número 20 dejaba el altavoz sonando para
 #: siempre — el mismo defecto que la constante venía a cerrar.
 _SIREN_FALLOS_ANTES_DE_CALLAR = 20
+
+#: [T-9.72 · D-40] Tope de la MÚSICA de prueba de parlantes. Nadie deja un edificio
+#: con música toda la noche por olvidar el botón: a los 30 min calla sola.
+MUSICA_TOPE_S = 30 * 60
+
+#: [T-9.72] Una reproducción que acaba antes de esto NO terminó el archivo (dura ~33 s):
+#: el reproductor murió al arrancar (ALSA ocupado, sin tarjeta, WAV roto). Relanzarlo a
+#: 20 Hz durante 30 min diría «SONANDO» con los parlantes mudos: se corta con `fallo`.
+_MUSICA_MIN_REPRODUCCION_S = 1.0
+
+#: Marca de «lee el estado tú mismo» para los conciliadores (tests y llamadas sueltas);
+#: el vigilante les pasa UNA lectura por vuelta para que música y sirena decidan igual.
+_LEER = object()
+
+#: [T-9.72] Por qué calló la música, dicho para quien está frente al panel.
+_MUSICA_CORTES: dict[str, str] = {
+    "operador": "detenida desde el panel",
+    "tope": "terminó sola: tope de 30 min",
+    "alerta": "cortada: sonó una alerta o una prueba de sirena",
+    "silencio": "cortada: se silenciaron los audibles",
+    "voceo": "cortada: empezó un voceo de sismo o de simulacro",
+    "sin_estado": "cortada: no se pudo leer el estado del gabinete",
+    "parada": "cortada: se detuvo el módulo de audio",
+    "fallo": "cortada: el reproductor falló",
+}
 
 
 class AudioBackend(Protocol):
@@ -162,6 +190,8 @@ class AudioNotifier(EdgeModule):
         gpio: GpioLink,
         backend: AudioBackend | None = None,
         siren_backend: AudioBackend | None = None,
+        music_backend: AudioBackend | None = None,
+        reloj: Callable[[], float] = time.monotonic,
     ) -> None:
         super().__init__()
         self.settings = settings
@@ -203,6 +233,25 @@ class AudioNotifier(EdgeModule):
         self._siren_thread: threading.Thread | None = None
         #: [T-2.70.a·D2/P1] Conciliaciones seguidas que no pudieron leer el estado.
         self._siren_fallos = 0
+        # [T-9.72 · D-40] MÚSICA de prueba de parlantes. Canal PROPIO: el vigilante
+        # de la sirena calla cualquier cosa que suene en el suyo sin ser sirena, y la
+        # voz la corta el voceo. Sale por el mismo jack (son esos parlantes los que se
+        # prueban); por eso se CALLA antes de que suene cualquier otra cosa.
+        self._music_backend = music_backend if music_backend is not None else _default_backend()
+        music_path = settings.audio_music_path or str(
+            Path(__file__).parent / "assets" / "musica_prueba.wav"
+        )
+        self._music_path: str | None = music_path if Path(music_path).is_file() else None
+        self._reloj = reloj
+        self._music_lock = threading.Lock()
+        #: Instante (reloj monótono) en que la música calla sola; `None` = no suena.
+        self._music_until: float | None = None
+        #: Cuándo arrancó la reproducción EN CURSO (reloj monótono), para distinguir el
+        #: final del archivo de un reproductor que murió al arrancar.
+        self._music_play_at: float | None = None
+        self._music_ultimo_corte: dict | None = None
+        #: Quien quiere enterarse de cada corte REAL (la bitácora del panel).
+        self._music_listener: Callable[[str, str], None] | None = None
 
     @property
     def enabled(self) -> bool:
@@ -284,7 +333,219 @@ class AudioNotifier(EdgeModule):
 
     def _siren_watch_loop(self) -> None:
         while not self._siren_stop.wait(_SIREN_POLL_S):
-            self._reconcile_siren()
+            self._tick()
+
+    def _tick(self) -> None:
+        """Una vuelta del vigilante. La MÚSICA se concilia PRIMERO: en la vuelta en que
+        llega una alerta, la música calla antes de que la sirena empiece a sonar — dos
+        WAVs a la vez en el mismo jack se mezclarían.
+
+        Y con UNA sola lectura del gabinete para las dos: con dos, una alerta que llegara
+        entre ambas dejaba sonar la música (su lectura no la veía) con la sirena ya
+        arrancada (la suya sí), mezcladas hasta la vuelta siguiente."""
+        try:
+            snap: object = self._link.snapshot()
+        except Exception as exc:  # noqa: BLE001 — cada conciliador decide qué hace sin estado
+            snap = exc
+        self._reconcile_music(snap)
+        self._reconcile_siren(snap)
+
+    # ------------------------------------------------------------------ música
+    def music_status(self) -> dict:
+        """[T-9.72] Lo que el panel pinta: si se puede, si suena, cuánto le queda y por qué
+        calló la última vez. Nunca rutas de disco (el estado se lee abierto en la LAN)."""
+        motivo = self._music_no_disponible()
+        with self._music_lock:
+            until = self._music_until
+            ultimo = dict(self._music_ultimo_corte) if self._music_ultimo_corte else None
+        restante = None if until is None else max(0, round(until - self._reloj()))
+        return {
+            "disponible": motivo is None,
+            "activa": until is not None,
+            "restante_s": restante,
+            "motivo": motivo,
+            "ultimo_corte": ultimo,
+        }
+
+    def music_evidence(self) -> dict:
+        """[T-9.72] Qué música va a sonar, con su huella, para la bitácora del gabinete."""
+        if self._music_path is None:
+            return {"path": None, "sha256": None}
+        return {
+            "path": self._music_path,
+            "sha256": hashlib.sha256(Path(self._music_path).read_bytes()).hexdigest(),
+        }
+
+    def set_music_listener(self, listener: Callable[[str, str], None] | None) -> None:
+        """Quien se entera de cada corte REAL de la música: ``(motivo, texto)``."""
+        self._music_listener = listener
+
+    def _music_no_disponible(self) -> str | None:
+        if not self.siren_enabled:
+            return "sin parlante declarado en el jack (audio_siren_enabled=false)"
+        if self._music_path is None:
+            return "sin música de prueba empaquetada en este gabinete"
+        # Sin el vigilante nadie la callaría: ni una alerta, ni el silencio, ni el tope.
+        # Pasa si el módulo no arrancó (p. ej. falta un asset de voceo): no se promete.
+        if self._siren_thread is None or not self._siren_thread.is_alive():
+            return "el vigilante del audio no está corriendo: nada podría callar la música"
+        return None
+
+    def _music_bloqueo(self, snap: object) -> str | None:
+        """Qué impide que la música suene AHORA, o ``None``. Lo usan el arranque (409) y
+        el vigilante (corte): una sola lista de condiciones, no dos que diverjan."""
+        if (
+            getattr(snap, "siren_reason", None) is not None
+            or getattr(snap, "sasmex_active", False)
+            or getattr(snap, "alert_latched", False)
+            or getattr(snap, "actuation_test_active", False)
+        ):
+            return "alerta"
+        if getattr(snap, "audible_silenced", False):
+            return "silencio"
+        return None
+
+    def start_music(self) -> str | None:
+        """Arranca la música de prueba. ``None`` si arrancó; si no, POR QUÉ (el panel lo
+        devuelve como 409). Nunca encima de una alerta, una prueba de sirena, un
+        silencio o un voceo: lo que tiene que oírse no compite con un himno."""
+        motivo = self._music_no_disponible()
+        if motivo is not None:
+            return motivo
+        # Todo BAJO el candado, de la lectura al arranque: comprobado fuera, una alerta
+        # o un voceo que llegara en medio dejaba la música sonando encima de ellos.
+        with self._music_lock:
+            try:
+                snap = self._link.snapshot()
+            except Exception:  # noqa: BLE001 — advisory: sin estado, no se arranca
+                log.exception("música de prueba: no se pudo leer el estado del gabinete")
+                return "no se pudo leer el estado del gabinete: no se arranca a ciegas"
+            bloqueo = self._music_bloqueo(snap)
+            if bloqueo == "alerta":
+                return "hay una alerta, un enclavado o una prueba de sirena viva en el gabinete"
+            if bloqueo == "silencio":
+                return "los audibles están silenciados: cierre la alerta antes de probar parlantes"
+            if self.sounding:
+                return "hay un voceo en curso"
+            try:
+                self._music_backend.stop()
+                self._music_backend.play(self._music_path)  # type: ignore[arg-type]
+            except Exception:  # noqa: BLE001 — advisory
+                log.exception("música de prueba: el reproductor no arrancó")
+                return "el reproductor de audio no arrancó"
+            self._music_until = self._reloj() + MUSICA_TOPE_S
+            self._music_play_at = self._reloj()
+            self._music_ultimo_corte = None
+        log.warning("música de prueba de parlantes SONANDO (tope %d s)", MUSICA_TOPE_S)
+        return None
+
+    def stop_music(self) -> bool:
+        """Detenida por el operador. ``True`` si de verdad sonaba: detener lo que ya
+        calló no es un corte, y la bitácora no puede atribuirle al operador uno ajeno."""
+        return self._cortar_musica("operador")
+
+    def _cortar_musica(self, motivo: str, *, esperar: bool = True) -> bool:
+        """Calla la música; ``True`` si sonaba. El cambio de estado es O(1) bajo el
+        candado; el ``stop()`` del reproductor (hasta 2 s si aplay no muere) va FUERA.
+
+        ``esperar=False`` para quien no puede quedarse esperando a un subproceso —el
+        supervisor en ``play_sismo``, que después publica el evento y avisa a los
+        secundarios—: el corte se lanza en otro hilo y el vigilante lo reintenta."""
+        with self._music_lock:
+            activa = self._music_until is not None
+            self._music_until = None
+            self._music_play_at = None
+            texto = _MUSICA_CORTES.get(motivo, motivo)
+            if activa:
+                self._music_ultimo_corte = {
+                    "motivo": motivo,
+                    "texto": texto,
+                    "at": datetime.now(UTC).isoformat(),
+                }
+        if activa:
+            log.warning("música de prueba de parlantes CALLADA (%s)", motivo)
+
+            def _despues() -> None:
+                # Callar el reproductor y avisar a la bitácora (fsync en la SD) son las
+                # dos cosas lentas: van juntas, en línea o fuera del hilo que corta.
+                self._callar_reproductor_de_musica()
+                listener = self._music_listener
+                if listener is not None:
+                    try:
+                        listener(motivo, texto)
+                    except Exception:  # noqa: BLE001 — quien escucha jamás tumba el corte
+                        log.exception("música de prueba: el aviso del corte falló (aislado)")
+
+            if esperar:
+                _despues()
+            else:
+                threading.Thread(target=_despues, name="audio-musica-corte", daemon=True).start()
+        return activa
+
+    def _callar_reproductor_de_musica(self) -> None:
+        try:
+            self._music_backend.stop()
+        except Exception:  # noqa: BLE001 — advisory: el vigilante lo reintenta
+            log.exception("música de prueba: no se pudo callar el reproductor")
+
+    def _reconcile_music(self, snap: object = _LEER) -> None:
+        """Mientras la música esté pedida: la corta lo que tenga que oírse, el tope o un
+        estado ilegible (fail-CERRADO); si terminó el archivo, lo vuelve a empezar."""
+        with self._music_lock:
+            until = self._music_until
+        if until is None:
+            # Sin música pedida, el reproductor no puede quedarse sonando (p. ej. un
+            # `stop()` que falló): se reintenta aquí, sólo si suena, no a ciegas. Sin
+            # log por vuelta (regla de oro 10): el fallo del corte ya se registró.
+            try:
+                if self._music_backend.playing is not None:
+                    self._music_backend.stop()
+            except Exception:  # noqa: BLE001, S110 — advisory; se reintenta cada vuelta
+                pass
+            return
+        try:
+            if snap is _LEER:
+                snap = self._link.snapshot()
+            if isinstance(snap, BaseException):
+                raise snap
+            corte = self._music_bloqueo(snap)
+        except Exception:  # noqa: BLE001 — sin poder leer el gabinete, se CALLA
+            corte = "sin_estado"
+        if corte is None and self.sounding:
+            corte = "voceo"
+        if corte is None and self._reloj() >= until:
+            corte = "tope"
+        if corte is not None:
+            self._cortar_musica(corte)
+            return
+        fallo = False
+        with self._music_lock:
+            # Se vuelve a mirar BAJO el candado: entre la lectura de arriba y aquí el
+            # operador pudo haberla detenido, y reanudar sería desobedecerle.
+            if self._music_until is None:
+                return
+            try:
+                if self._music_backend.playing is None:
+                    arranque = self._music_play_at
+                    if (
+                        arranque is not None
+                        and self._reloj() - arranque < _MUSICA_MIN_REPRODUCCION_S
+                    ):
+                        log.error(
+                            "música de prueba: el reproductor terminó %.2f s después de "
+                            "arrancar —no llegó a sonar el archivo—; se corta en vez de "
+                            "relanzarlo en bucle",
+                            self._reloj() - arranque,
+                        )
+                        fallo = True
+                    else:
+                        self._music_backend.play(self._music_path)  # type: ignore[arg-type]
+                        self._music_play_at = self._reloj()
+            except Exception:  # noqa: BLE001 — advisory
+                log.exception("música de prueba: el bucle no pudo reanudar")
+                fallo = True
+        if fallo:
+            self._cortar_musica("fallo")
 
     def apply_audio_profile(self, profile: dict | None) -> dict:
         """[T-2.49] Aplica `config.edge.audio` de la nube. Devuelve lo que se reporta.
@@ -356,7 +617,7 @@ class AudioNotifier(EdgeModule):
             return self._test_path
         return self._siren_path
 
-    def _reconcile_siren(self) -> None:
+    def _reconcile_siren(self, snap: object = _LEER) -> None:
         """Enciende/apaga el WAV de la sirena según suene —y POR QUÉ— la de relé.
 
         [T-2.49] Antes se miraba solo `gpio.siren_sounding`, un booleano eléctrico, y
@@ -379,7 +640,11 @@ class AudioNotifier(EdgeModule):
         if not self.siren_enabled:
             return
         try:
-            reason = self._link.snapshot().siren_reason
+            if snap is _LEER:
+                snap = self._link.snapshot()
+            if isinstance(snap, BaseException):
+                raise snap
+            reason = snap.siren_reason  # type: ignore[attr-defined]
         except Exception:  # noqa: BLE001 — advisory: jamás propaga al camino de vida
             self._siren_fallos += 1
             if self._siren_fallos < _SIREN_FALLOS_ANTES_DE_CALLAR:
@@ -435,6 +700,10 @@ class AudioNotifier(EdgeModule):
             log.exception("sirena por audio: reconciliación falló (aislada)")
 
     def _on_stop(self) -> None:
+        self._cortar_musica("parada")
+        # Aunque no hubiera música PEDIDA: el vigilante, que reintenta callar un
+        # reproductor huérfano, está a punto de pararse.
+        self._callar_reproductor_de_musica()
         self.stop_playback()
         self._siren_stop.set()
         if self._siren_thread is not None:
@@ -452,6 +721,9 @@ class AudioNotifier(EdgeModule):
             self.play_sismo()
 
     def play_sismo(self) -> None:
+        # [T-9.72] La música calla ANTES de vocear, aunque el voceo esté apagado: una
+        # alerta audible en un edificio no compite con la música de prueba.
+        self._cortar_musica("voceo", esperar=False)
         self._play("sismo", self.settings.audio_sismo_path)
 
     @property
@@ -461,6 +733,7 @@ class AudioNotifier(EdgeModule):
 
     def play_simulacro(self) -> None:
         """Drill del panel LAN (con PIN): mensaje de SIMULACRO, sin tocar relés."""
+        self._cortar_musica("voceo")  # [T-9.72] antes de vocear, como en el sismo
         self._play("simulacro", self.simulacro_path)
 
     def simulacro_evidence(self) -> dict:
@@ -539,4 +812,5 @@ class AudioNotifier(EdgeModule):
 
     def _on_silence(self, silenced: bool) -> None:
         if silenced:
+            self._cortar_musica("silencio")
             self.stop_playback()

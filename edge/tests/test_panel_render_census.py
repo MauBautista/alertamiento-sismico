@@ -625,6 +625,48 @@ def _escena_lora_caido() -> dict:
     return st
 
 
+def _escena_musica_sonando() -> dict:
+    """[T-9.72] La música de prueba SONANDO: la única rama que pinta `restante_s`."""
+    st = _base()
+    st["audio"]["music"] = {
+        "disponible": True,
+        "activa": True,
+        "restante_s": 1500,
+        "motivo": None,
+        "ultimo_corte": None,
+    }
+    return st
+
+
+def _escena_musica_cortada() -> dict:
+    """[T-9.72] La música callada con su ÚLTIMO CORTE: texto, hora y motivo.
+
+    El motivo es `tope` —un fin normal— a propósito: el panel lo usa para decidir
+    si el corte se pinta en ámbar (alerta, fallo…) o no. Con un motivo raro aquí,
+    mutarlo a otro raro no movería nada y el censo lo leería como mudo.
+    """
+    st = _base()
+    st["audio"]["music"]["ultimo_corte"] = {
+        "motivo": "tope",
+        "texto": "terminó sola: tope de 30 min",
+        "at": _NOW,
+    }
+    return st
+
+
+def _escena_musica_sin_parlante() -> dict:
+    """[T-9.72] Gabinete sin parlante en el jack: la única rama que pinta `motivo`."""
+    st = _base()
+    st["audio"]["music"] = {
+        "disponible": False,
+        "activa": False,
+        "restante_s": None,
+        "motivo": "sin parlante declarado en el jack (audio_siren_enabled=false)",
+        "ultimo_corte": None,
+    }
+    return st
+
+
 def _escena_sin_calibrar() -> dict:
     st = _base()
     st["calibration"] = {
@@ -673,6 +715,9 @@ ESCENAS: dict[str, Any] = {
     "reles_parciales": _escena_reles_parciales,
     "lora_caido": _escena_lora_caido,
     "sin_calibrar": _escena_sin_calibrar,
+    "musica_sonando": _escena_musica_sonando,
+    "musica_cortada": _escena_musica_cortada,
+    "musica_sin_parlante": _escena_musica_sin_parlante,
     "sismografo": _escena_sismografo,
     "frio": _cold,
 }

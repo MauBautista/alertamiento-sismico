@@ -143,7 +143,14 @@ from takab_edge.contracts import (  # noqa: I001
 #: ADITIVO: tres claves opcionales nullables; un payload 1.16.0 sigue validando y
 #: su ausencia se lee como «no pude preguntar», que es lo correcto para un
 #: firmware que literalmente no sabe contestar.
-SCHEMA_VERSION = "1.17.0"
+#: 1.18.0 (T-9.72): ActuationRecord + `cause = lan_music_test` — la música de prueba
+#: de parlantes pedida desde el panel con PIN. Suena hasta 30 min por el jack en un
+#: edificio con gente, y la bitácora dice qué sonó (asset y huella) y cuándo.
+#:
+#: ADITIVO: un valor nuevo en el enum. ⚠️ El orden de despliegue SÍ importa: la nube
+#: valida `cause` contra este schema, así que va PRIMERO la nube y luego el edge; al
+#: revés, la nube rechazaría la fila del gabinete nuevo hasta desplegarse.
+SCHEMA_VERSION = "1.18.0"
 
 #: Familias de payload que cruzan edge→nube (features, eventos, health, ACK).
 MODELS: dict[str, type[BaseModel]] = {
@@ -205,6 +212,7 @@ HUELLA_POR_VERSION: dict[str, str] = {
     "1.15.0": "11d28237b98491a9eaaf1fb600ed88c74a38d31ae3d5c36bc9bb07c0f66a57b0",
     "1.16.0": "1c0bcb6f44a608b2f923f6b195b5bbd8e1f546bb9f8be611bc82c239db71bf17",
     "1.17.0": "98196dd4d7e1326a012466b88e0eb83b433449e2127b76db59eea3da0e09f7ad",
+    "1.18.0": "f23c0d1e9f150985ba4e0018804c8c7e38dfbd5329cd7748486f5242e7a2c4b8",
 }
 
 
