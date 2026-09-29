@@ -7,7 +7,7 @@
 // sismos o sin el inmueble no es el mapa que se prometió.
 import { MapaSismos } from "@/features/mapa/MapaSismos";
 import { useMapaDeCalor } from "@/features/mapa/useMapaDeCalor";
-import { useSismos } from "@/features/sismos/useSismos";
+import { useAhora, useSismos } from "@/features/sismos/useSismos";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
 
@@ -18,6 +18,7 @@ export default function MapaDeSismos() {
   const siteId = useWatchedSiteId();
   const sismos = useSismos(siteId);
   const mapa = useMapaDeCalor(siteId);
+  const ahora = useAhora();
 
   const staleSinceMs =
     sismos.staleSinceMs === null
@@ -39,7 +40,7 @@ export default function MapaDeSismos() {
       staleSinceMs={staleSinceMs}
     >
       {sismos.data !== null && mapa.data !== null ? (
-        <MapaSismos mapa={mapa.data} sismos={sismos.data} />
+        <MapaSismos mapa={mapa.data} nowMs={ahora} sismos={sismos.data} />
       ) : null}
     </StateFrame>
   );

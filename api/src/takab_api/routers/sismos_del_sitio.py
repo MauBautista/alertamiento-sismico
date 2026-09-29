@@ -154,15 +154,24 @@ def _filtro_del_ocupante(claims: Claims, settings: Settings) -> dict[str, object
 #: Los sismos del catálogo que YA son un incidente de ESTE sitio. Dos caminos lo
 #: dejan escrito: la consulta por incidente de T-7.25 (``correlacionado``) y el
 #: epicentro con el que se vistió el mapa de la sacudida (T-7.24).
+#:
+#: [D-39] Con el MISMO filtro del ocupante que `_INCIDENTES_SQL`: un sismo sólo se
+#: omite si se enseña el incidente que lo representa. Sin él, el sismo real que
+#: correlacionó un movimiento local oculto al ocupante desaparecía de su historial
+#: por partida doble —ni el incidente ni el sismo publicado—.
 _YA_SON_INCIDENTE_SQL = text(
     "SELECT cc.catalog_key AS k FROM catalog_consultations cc "
     "  JOIN incidents i ON i.incident_id = cc.incident_id "
+    "  LEFT JOIN seismic_events e ON e.event_id = i.event_id "
     " WHERE i.site_id = CAST(:site AS uuid) AND cc.outcome = 'correlacionado' "
     "   AND cc.catalog_key IS NOT NULL "
+    f"  AND {_SOLO_SI_ES_DEL_OCUPANTE}"
     "UNION "
     "SELECT sm.epicentro->>'catalog_key' AS k FROM incident_shakemap sm "
     "  JOIN incidents i ON i.incident_id = sm.incident_id "
-    " WHERE i.site_id = CAST(:site AS uuid) AND sm.epicentro->>'catalog_key' IS NOT NULL"
+    "  LEFT JOIN seismic_events e ON e.event_id = i.event_id "
+    " WHERE i.site_id = CAST(:site AS uuid) AND sm.epicentro->>'catalog_key' IS NOT NULL "
+    f"  AND {_SOLO_SI_ES_DEL_OCUPANTE}"
 )
 
 

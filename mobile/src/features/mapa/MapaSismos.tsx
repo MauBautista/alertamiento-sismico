@@ -17,8 +17,9 @@ import { Camera, GeoJSONSource, ImageSource, Layer, Map } from "@maplibre/maplib
 import { useMemo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { fechaLocal } from "@/features/sismos/fecha";
 import { LEYENDA_ESCALA } from "@/features/sismos/escala";
+import { fechaLocal } from "@/features/sismos/fecha";
+import { catalogoSinActualizar } from "@/features/sismos/frescura";
 import { fontSize, palette, space } from "@/ui/theme";
 
 import { ESTILO_BASE, esquinasDeBbox, pieDelMapa, rotuloEstimado, sismosGeoJSON } from "./capas";
@@ -30,8 +31,20 @@ export const ZOOM_INICIAL = 5;
 export const SIN_MAPA_DE_CALOR =
   "Sin mapa de calor: ningún sismo sentido en su inmueble lo tiene todavía.";
 
-export function MapaSismos(props: { sismos: SismosDelSitioOut; mapa: MapaDeCalorMovilOut }) {
+/** El vacío honesto, el mismo que la lista: sólo con el catálogo AL DÍA. */
+export const SIN_SISMOS_EN_EL_MAPA = "Sin sismos de M 4.0 o más en 90 días.";
+
+export function MapaSismos(props: {
+  sismos: SismosDelSitioOut;
+  mapa: MapaDeCalorMovilOut;
+  /** Reloj de la pantalla: la franja de catálogo sin actualizar aparece sola. */
+  nowMs: number;
+}) {
   const { sismos, mapa } = props;
+  // Una respuesta de hace un segundo puede describir un catálogo de hace tres días
+  // (`frescura.ts`): el mapa lo dice igual que la lista, o los puntos congelados se
+  // leerían como vigentes (regla de oro 7).
+  const franja = catalogoSinActualizar(sismos, props.nowMs);
   const puntos = useMemo(() => sismosGeoJSON(sismos.items), [sismos.items]);
   const inc = mapa.incidente;
   const bbox = inc?.superficie.bbox ?? null;
@@ -93,6 +106,15 @@ export function MapaSismos(props: { sismos: SismosDelSitioOut; mapa: MapaDeCalor
       <View pointerEvents="none" style={styles.leyenda} testID="mapa-leyenda">
         <Text style={styles.eyebrow}>SISMOS DE MÉXICO · ◉ SU INMUEBLE</Text>
         <Text style={styles.texto}>{LEYENDA_ESCALA}</Text>
+        {franja !== null ? (
+          <Text style={styles.aviso} testID="mapa-catalogo-sin-actualizar">
+            {franja}
+          </Text>
+        ) : sismos.items.length === 0 ? (
+          <Text style={styles.texto} testID="mapa-sin-sismos">
+            {SIN_SISMOS_EN_EL_MAPA}
+          </Text>
+        ) : null}
         {inc ? (
           <>
             <Text style={styles.eyebrow} testID="mapa-calor-titulo">

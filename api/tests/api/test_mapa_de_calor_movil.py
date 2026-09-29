@@ -27,12 +27,16 @@ import auth_utils as au
 from takab_api.db.engine import get_engine
 from takab_api.incident.classification import TERMINALES
 from takab_api.main import create_app
+from takab_api.shakemap import raster
 from takab_api.shakemap import superficie as SUP
 
 pytestmark = pytest.mark.usefixtures("base_data")
 
 AHORA = datetime.now(tz=UTC)
 OCUPANTE = str(uuid.uuid4())
+#: Un SEGUNDO inmueble del mismo cliente. Los sitios no entran en el TRUNCATE de
+#: teardown: lo crea y lo borra `otro_sitio`, para no cambiar el censo de otras suites.
+OTRO_SITIO = "7a000000-0000-0000-0000-0000000000a9"
 RUTA = f"/sites/{au.DB_SITE_PRIV}/mapa-de-calor"
 PNG_FIRMA = b"\x89PNG\r\n\x1a\n"
 
@@ -52,16 +56,35 @@ def _ocupante() -> dict[str, str]:
     return au.bearer(au.occupant_token(tenant=au.DB_TENANT_PRIV, user_id=OCUPANTE))
 
 
-def _tactico(role: str = "brigadista") -> dict[str, str]:
+def _tactico(
+    role: str = "brigadista", *, tenant: str = au.DB_TENANT_PRIV, alcance: str = au.DB_SITE_PRIV
+) -> dict[str, str]:
     return au.bearer(
         au.make_token(
             role,
-            tenant=au.DB_TENANT_PRIV,
+            tenant=tenant,
             user_id=str(uuid.uuid4()),
             surface="mobile",
-            site_scope=au.DB_SITE_PRIV,
+            site_scope=alcance,
         )
     )
+
+
+@pytest.fixture
+async def otro_sitio():
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO sites (site_id, tenant_id, code, name, geom) VALUES (:s, :t,"
+                " 'B2SA-OTRO', 'Otro inmueble', ST_SetSRID(ST_MakePoint(-98.2, 19.04), 4326)"
+                "::geography) ON CONFLICT DO NOTHING"
+            ),
+            {"s": OTRO_SITIO, "t": au.DB_TENANT_PRIV},
+        )
+    yield OTRO_SITIO
+    async with get_engine().begin() as conn:
+        await conn.execute(text("DELETE FROM incidents WHERE site_id = :s"), {"s": OTRO_SITIO})
+        await conn.execute(text("DELETE FROM sites WHERE site_id = :s"), {"s": OTRO_SITIO})
 
 
 async def _enrolar_ocupante() -> None:
@@ -94,8 +117,10 @@ async def _incidente(
     trigger: str = "sasmex",
     estado: str = "in_review",
     clasificacion: str | None = None,
+    corregida_a: str | None = None,
     con_superficie: bool = True,
     nodos: int | None = None,
+    sitio: str = au.DB_SITE_PRIV,
 ) -> str:
     inc = str(uuid.uuid4())
     evento = None
@@ -120,7 +145,7 @@ async def _incidente(
             {
                 "i": inc,
                 "t": au.DB_TENANT_PRIV,
-                "s": au.DB_SITE_PRIV,
+                "s": sitio,
                 "o": AHORA - hace,
                 "estado": estado,
                 "trigger": trigger,
@@ -128,13 +153,25 @@ async def _incidente(
             },
         )
         if clasificacion:
-            await conn.execute(
-                text(
-                    "INSERT INTO incident_classifications (tenant_id, incident_id,"
-                    " classification, classified_by) VALUES (:t, :i, :c, gen_random_uuid())"
-                ),
-                {"t": au.DB_TENANT_PRIV, "i": inc, "c": clasificacion},
-            )
+            primera = (
+                await conn.execute(
+                    text(
+                        "INSERT INTO incident_classifications (tenant_id, incident_id,"
+                        " classification, classified_by, classified_at) VALUES (:t, :i, :c,"
+                        " gen_random_uuid(), now() - interval '1 hour') RETURNING classification_id"
+                    ),
+                    {"t": au.DB_TENANT_PRIV, "i": inc, "c": clasificacion},
+                )
+            ).scalar_one()
+            if corregida_a:
+                await conn.execute(
+                    text(
+                        "INSERT INTO incident_classifications (tenant_id, incident_id,"
+                        " classification, classified_by, supersedes_id) VALUES (:t, :i, :c,"
+                        " gen_random_uuid(), :sup)"
+                    ),
+                    {"t": au.DB_TENANT_PRIV, "i": inc, "c": corregida_a, "sup": primera},
+                )
         await conn.execute(
             text(
                 "INSERT INTO incident_shakemap (incident_id, tenant_id, estado, cobertura_km,"
@@ -210,6 +247,53 @@ async def test_una_prueba_un_falso_positivo_o_una_reproduccion_no_son_como_se_si
     assert r.json()["incidente"]["incident_id"] == anterior
 
 
+@pytest.mark.parametrize(
+    ("primera", "vigente", "sale"),
+    [("prueba", "real", True), ("real", "falso_positivo", False)],
+)
+async def test_manda_la_clasificacion_VIGENTE_no_la_primera(
+    app_client, primera: str, vigente: str, sale: bool
+) -> None:
+    anterior = await _incidente(hace=timedelta(days=5))
+    corregido = await _incidente(hace=timedelta(days=1), clasificacion=primera, corregida_a=vigente)
+
+    r = await app_client.get(RUTA, headers=_tactico())
+    assert r.json()["incidente"]["incident_id"] == (corregido if sale else anterior)
+
+
+async def test_la_superficie_de_OTRO_inmueble_del_mismo_cliente_no_es_la_suya(
+    app_client, otro_sitio: str
+) -> None:
+    propio = await _incidente(hace=timedelta(days=5))
+    await _incidente(hace=timedelta(days=1), sitio=otro_sitio)
+
+    r = await app_client.get(RUTA, headers=_tactico())
+    assert r.json()["incidente"]["incident_id"] == propio
+
+
+async def test_el_png_se_pinta_con_los_cortes_DEL_SITIO_y_la_leyenda_dice_los_mismos(
+    app_client,
+) -> None:
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO rule_sets (tenant_id, scope_type, scope_id, version, is_active,"
+                " config) VALUES (:t, 'site', :s, 1, true, CAST(:c AS jsonb))"
+            ),
+            {
+                "t": au.DB_TENANT_PRIV,
+                "s": au.DB_SITE_PRIV,
+                "c": json.dumps({"dictamen_v2": {"verde_max_g": 0.02, "rojo_min_g": 0.05}}),
+            },
+        )
+    await _incidente(hace=timedelta(days=1))
+
+    sup = (await app_client.get(RUTA, headers=_tactico())).json()["incidente"]["superficie"]
+    assert (sup["verde_max_g"], sup["rojo_min_g"]) == (0.02, 0.05)
+    esperado = raster.png(_superficie(), verde_max_g=0.02, rojo_min_g=0.05)
+    assert base64.b64decode(sup["png_base64"]) == esperado
+
+
 async def test_el_ultimo_sin_superficie_no_tapa_al_que_la_tiene(app_client) -> None:
     anterior = await _incidente(hace=timedelta(days=5))
     await _incidente(hace=timedelta(days=1), con_superficie=False)
@@ -218,7 +302,10 @@ async def test_el_ultimo_sin_superficie_no_tapa_al_que_la_tiene(app_client) -> N
     assert r.json()["incidente"]["incident_id"] == anterior
 
 
-async def test_el_ocupante_no_ve_un_movimiento_local_sin_corroborar(app_client) -> None:
+@pytest.mark.parametrize("tactico", ["brigadista", "inspector", "tenant_admin"])
+async def test_el_ocupante_no_ve_un_movimiento_local_sin_corroborar(
+    app_client, tactico: str
+) -> None:
     await _enrolar_ocupante()
     sasmex = await _incidente(hace=timedelta(days=5))
     local = await _incidente(hace=timedelta(days=1), trigger="local_threshold")
@@ -226,9 +313,10 @@ async def test_el_ocupante_no_ve_un_movimiento_local_sin_corroborar(app_client) 
     del_ocupante = await app_client.get(RUTA, headers=_ocupante())
     assert del_ocupante.status_code == 200, del_ocupante.text
     assert del_ocupante.json()["incidente"]["incident_id"] == sasmex
-    # La brigada sí: D-39 le manda el movimiento a ella.
-    del_brigadista = await app_client.get(RUTA, headers=_tactico())
-    assert del_brigadista.json()["incidente"]["incident_id"] == local
+    # La brigada, el inspector y el administrador sí: D-39 les manda el movimiento.
+    del_tactico = await app_client.get(RUTA, headers=_tactico(tactico))
+    assert del_tactico.status_code == 200, del_tactico.text
+    assert del_tactico.json()["incidente"]["incident_id"] == local
 
 
 async def test_un_local_que_la_red_corroboro_si_es_del_ocupante(app_client) -> None:
@@ -242,6 +330,17 @@ async def test_un_local_que_la_red_corroboro_si_es_del_ocupante(app_client) -> N
 async def test_un_ocupante_no_enrolado_no_sabe_que_el_sitio_existe(app_client) -> None:
     r = await app_client.get(RUTA, headers=_ocupante())
     assert r.status_code == 404
+
+
+async def test_otro_cliente_no_sabe_que_el_sitio_existe(app_client) -> None:
+    await _incidente(hace=timedelta(days=1))
+    r = await app_client.get(RUTA, headers=_tactico(tenant=au.DB_TENANT_PRIV2, alcance="*"))
+    assert r.status_code == 404
+
+
+async def test_un_tactico_con_otro_sitio_en_su_alcance_es_403(app_client) -> None:
+    r = await app_client.get(RUTA, headers=_tactico(alcance=au.DB_SITE_PRIV2))
+    assert r.status_code == 403
 
 
 async def test_un_rol_sin_app_es_403(app_client) -> None:
@@ -266,3 +365,37 @@ async def test_el_historial_del_ocupante_no_trae_movimientos_locales(app_client)
 
     assert ids(await app_client.get(ruta, headers=_ocupante())) == [corroborado, sasmex]
     assert ids(await app_client.get(ruta, headers=_tactico())) == [local, corroborado, sasmex]
+
+
+async def test_el_sismo_que_correlaciono_un_local_oculto_SIGUE_en_el_historial_del_ocupante(
+    app_client,
+) -> None:
+    """Un sismo real que sólo disparó a esta estación: el incidente local se le oculta
+    al ocupante (D-39), pero el sismo PUBLICADO por USGS sigue siendo suyo. Antes se
+    omitía por «ya va como incidente» aunque ese incidente no se le enseñara."""
+    await _enrolar_ocupante()
+    local = await _incidente(hace=timedelta(days=1), trigger="local_threshold")
+    async with get_engine().begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO reference_earthquakes (catalog_key, origin_time, magnitude, place,"
+                " epicenter, depth_km, source, source_ref, provider_event_id, origen, usgs_url)"
+                " VALUES ('usCERCA', :t, 5.6, 'cerca', ST_SetSRID(ST_MakePoint(-99.0, 19.2),"
+                " 4326)::geography, 20, 'USGS', 'cita', 'usCERCA', 'catalog_sync', NULL)"
+            ),
+            {"t": AHORA - timedelta(days=1)},
+        )
+        await conn.execute(
+            text(
+                "INSERT INTO catalog_consultations (incident_id, provider, tenant_id, asked_at,"
+                " last_attempt_at, answered_at, outcome, catalog_key) VALUES (:i, 'USGS', :t,"
+                " :o, :o, :o, 'correlacionado', 'usCERCA')"
+            ),
+            {"i": local, "t": au.DB_TENANT_PRIV, "o": AHORA - timedelta(days=1)},
+        )
+    ruta = f"/sites/{au.DB_SITE_PRIV}/historial-sismico"
+
+    del_ocupante = (await app_client.get(ruta, headers=_ocupante())).json()["eventos"]
+    assert [(e["tipo"], e.get("place")) for e in del_ocupante] == [("sismo", "cerca")]
+    del_tactico = (await app_client.get(ruta, headers=_tactico())).json()["eventos"]
+    assert [(e["tipo"], e.get("incident_id")) for e in del_tactico] == [("incidente", local)]

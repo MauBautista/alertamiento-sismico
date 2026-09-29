@@ -3,7 +3,8 @@ import type { MapaDeCalorMovilOut, SismosDelSitioOut } from "@takab/sdk";
 import { render, within } from "@testing-library/react-native";
 
 import { ATRIBUCION_BASE } from "./capas";
-import { MapaSismos, SIN_MAPA_DE_CALOR } from "./MapaSismos";
+import { MapaSismos, SIN_MAPA_DE_CALOR, SIN_SISMOS_EN_EL_MAPA } from "./MapaSismos";
+import { huella } from "./pngEnDisco";
 
 let mockEscritura: "ok" | "falla" = "ok";
 jest.mock("expo-file-system", () => ({
@@ -45,6 +46,8 @@ const SISMOS: SismosDelSitioOut = {
 };
 
 const SITIO = { lat: 19.04, lon: -98.2 };
+/** El reloj: diez minutos después de la última sincronización (catálogo al día). */
+const AHORA = Date.parse("2026-09-28T10:10:00Z");
 
 function conEvento(bbox: number[] = [-99, 18, -97, 20]): MapaDeCalorMovilOut {
   return {
@@ -80,7 +83,7 @@ beforeEach(() => {
 });
 
 it("pega la superficie sobre sus cuatro esquinas, desde el fichero del incidente", async () => {
-  const v = await render(<MapaSismos mapa={conEvento()} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={conEvento()} nowMs={AHORA} sismos={SISMOS} />);
   const img = v.getByTestId("maplibre-ImageSource-superficie");
   expect(img.props.coordinates).toEqual([
     [-99, 20],
@@ -88,7 +91,7 @@ it("pega la superficie sobre sus cuatro esquinas, desde el fichero del incidente
     [-97, 18],
     [-99, 18],
   ]);
-  expect(img.props.url).toBe("file:///cache/mapa-de-calor-inc-1.png");
+  expect(img.props.url).toBe(`file:///cache/mapa-de-calor-inc-1-${huella("iVBORw0KGgo=")}.png`);
   expect(v.getByTestId("mapa-calor-rotulo").props.children).toBe(
     "ESTIMADO a partir de 3 sensores (2 calibrados) · MMI estimada (Wald 1999), no observada",
   );
@@ -96,7 +99,7 @@ it("pega la superficie sobre sus cuatro esquinas, desde el fichero del incidente
 });
 
 it("centra en el inmueble y lo marca", async () => {
-  const v = await render(<MapaSismos mapa={SIN_EVENTO} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={SISMOS} />);
   expect(v.getByTestId("maplibre-Camera-").props.initialViewState.center).toEqual([-98.2, 19.04]);
   expect(v.getByTestId("maplibre-GeoJSONSource-inmueble").props.data.coordinates).toEqual([
     -98.2, 19.04,
@@ -104,7 +107,7 @@ it("centra en el inmueble y lo marca", async () => {
 });
 
 it("los sismos van con el radio y el color de la escala compartida", async () => {
-  const v = await render(<MapaSismos mapa={SIN_EVENTO} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={SISMOS} />);
   const fc = v.getByTestId("maplibre-GeoJSONSource-sismos").props.data;
   expect(fc.features).toHaveLength(1);
   expect(v.getByTestId("maplibre-Layer-sismos").props.paint["circle-radius"]).toEqual([
@@ -114,28 +117,53 @@ it("los sismos van con el radio y el color de la escala compartida", async () =>
 });
 
 it("sin evento lo DICE y no pega ninguna imagen", async () => {
-  const v = await render(<MapaSismos mapa={SIN_EVENTO} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={SISMOS} />);
   expect(v.queryByTestId("maplibre-ImageSource-superficie")).toBeNull();
   expect(v.getByTestId("mapa-calor-sin-evento").props.children).toBe(SIN_MAPA_DE_CALOR);
 });
 
 it("un bbox ilegible no se pega volteado: se avisa", async () => {
-  const v = await render(<MapaSismos mapa={conEvento([-97, 18, -99, 20])} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={conEvento([-97, 18, -99, 20])} nowMs={AHORA} sismos={SISMOS} />);
   expect(v.queryByTestId("maplibre-ImageSource-superficie")).toBeNull();
   expect(v.getByTestId("mapa-calor-sin-pintar")).toBeTruthy();
 });
 
 it("si no se pudo escribir la imagen, se avisa en vez de un mapa sin calor callado", async () => {
   mockEscritura = "falla";
-  const v = await render(<MapaSismos mapa={conEvento()} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={conEvento()} nowMs={AHORA} sismos={SISMOS} />);
   expect(v.queryByTestId("maplibre-ImageSource-superficie")).toBeNull();
   expect(v.getByTestId("mapa-calor-sin-pintar")).toBeTruthy();
 });
 
 it("el crédito del mapa base y el de los sismos están A LA VISTA", async () => {
-  const v = await render(<MapaSismos mapa={SIN_EVENTO} sismos={SISMOS} />);
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={SISMOS} />);
   const pie = within(v.getByTestId("mapa-atribucion"));
   expect(pie.getByText(ATRIBUCION_BASE)).toBeTruthy();
   expect(pie.getByText(SISMOS.atribucion as string)).toBeTruthy();
   expect(v.getByTestId("mapa-sismos").props.attribution).toBe(false);
+});
+
+it("la MISMA superficie recalculada cambia de fichero: el nativo sólo recarga si cambia la url", async () => {
+  const v = await render(<MapaSismos mapa={conEvento()} nowMs={AHORA} sismos={SISMOS} />);
+  const antes = v.getByTestId("maplibre-ImageSource-superficie").props.url;
+  const recalculada = conEvento();
+  if (recalculada.incidente) recalculada.incidente.superficie.png_base64 = "iVBORw0KGgoAAAA=";
+  await v.rerender(<MapaSismos mapa={recalculada} nowMs={AHORA} sismos={SISMOS} />);
+  expect(v.getByTestId("maplibre-ImageSource-superficie").props.url).not.toBe(antes);
+});
+
+it("con el catálogo SIN ACTUALIZAR el mapa lo dice, como la lista", async () => {
+  const viejo = { ...SISMOS, sync_estado: "fallido" as const, actualizado: "2026-09-25T10:00:00Z" };
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={viejo} />);
+  expect(v.getByTestId("mapa-catalogo-sin-actualizar")).toBeTruthy();
+});
+
+it("sin sismos y con el catálogo al día, el vacío honesto; nunca sin actualizar", async () => {
+  const vacio = { ...SISMOS, items: [] };
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={vacio} />);
+  expect(v.getByTestId("mapa-sin-sismos").props.children).toBe(SIN_SISMOS_EN_EL_MAPA);
+  const nunca = { ...vacio, sync_estado: "nunca" as const, actualizado: null };
+  const w = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={nunca} />);
+  expect(w.queryByTestId("mapa-sin-sismos")).toBeNull();
+  expect(w.getByTestId("mapa-catalogo-sin-actualizar")).toBeTruthy();
 });
