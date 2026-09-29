@@ -255,6 +255,13 @@ class IncidenteConSuperficieOut(BaseModel):
     superficie: SuperficieMovilOut
 
 
+class SitioMapaOut(BaseModel):
+    """Dónde está el inmueble, en grados."""
+
+    lat: float
+    lon: float
+
+
 class MapaDeCalorMovilOut(BaseModel):
     """[T-9.65] `disponible` con su incidente, o `sin_evento` —y entonces nada—.
 
@@ -264,6 +271,10 @@ class MapaDeCalorMovilOut(BaseModel):
 
     estado: Literal["disponible", "sin_evento"]
     incidente: IncidenteConSuperficieOut | None
+    #: Dónde está el inmueble, siempre: el mapa de la app lo marca y lo centra
+    #: haya evento o no. Quien pide ya está en él (ocupante enrolado o táctico
+    #: con el sitio en su alcance).
+    sitio: SitioMapaOut
 
 
 class ShakemapOut(BaseModel):

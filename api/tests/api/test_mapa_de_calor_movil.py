@@ -157,7 +157,10 @@ async def _incidente(
 async def test_sin_evento_lo_dice(app_client) -> None:
     r = await app_client.get(RUTA, headers=_tactico())
     assert r.status_code == 200, r.text
-    assert r.json() == {"estado": "sin_evento", "incidente": None}
+    cuerpo = r.json()
+    assert (cuerpo["estado"], cuerpo["incidente"]) == ("sin_evento", None)
+    # El inmueble va SIEMPRE: el mapa de la app lo centra aunque no haya evento.
+    assert cuerpo["sitio"] == pytest.approx({"lat": 19.43, "lon": -99.13})
 
 
 async def test_la_ultima_superficie_viaja_con_su_png_y_lo_que_hace_falta_para_rotularla(

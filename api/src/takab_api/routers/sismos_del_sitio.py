@@ -37,7 +37,11 @@ from takab_api.schemas.catalog import (
     SismoEnTuInmuebleEstimado,
     SismosDelSitioOut,
 )
-from takab_api.schemas.shakemap import IncidenteConSuperficieOut, MapaDeCalorMovilOut
+from takab_api.schemas.shakemap import (
+    IncidenteConSuperficieOut,
+    MapaDeCalorMovilOut,
+    SitioMapaOut,
+)
 from takab_api.settings import Settings
 from takab_api.shakemap import gmice
 from takab_api.shakemap.lectura import superficie_movil
@@ -307,6 +311,8 @@ async def mapa_de_calor(
 ) -> MapaDeCalorMovilOut:
     """[T-9.65 · D-44] La superficie ESTIMADA del último sismo sentido en el inmueble."""
     await q.assert_site_access(conn, claims, site_id)
+    coords = await _coordenadas(conn, site_id)
+    sitio = SitioMapaOut(lat=coords.lat, lon=coords.lon)
     settings = Settings()
     fila = (
         await conn.execute(
@@ -319,7 +325,7 @@ async def mapa_de_calor(
         )
     ).first()
     if fila is None:
-        return MapaDeCalorMovilOut(estado="sin_evento", incidente=None)
+        return MapaDeCalorMovilOut(estado="sin_evento", incidente=None, sitio=sitio)
     return MapaDeCalorMovilOut(
         estado="disponible",
         incidente=IncidenteConSuperficieOut(
@@ -327,4 +333,5 @@ async def mapa_de_calor(
             opened_at=fila.opened_at,
             superficie=await superficie_movil(conn, fila, settings),
         ),
+        sitio=sitio,
     )

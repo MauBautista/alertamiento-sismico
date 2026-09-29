@@ -1849,6 +1849,7 @@ export type MapState = {
 export type MapaDeCalorMovilOut = {
     estado: 'disponible' | 'sin_evento';
     incidente: IncidenteConSuperficieOut | null;
+    sitio: SitioMapaOut;
 };
 
 /**
@@ -3175,6 +3176,14 @@ export type SiteUpdate = {
     name: string;
     status?: 'active' | 'retired';
     timezone?: string;
+};
+
+/**
+ * Dónde está el inmueble, en grados.
+ */
+export type SitioMapaOut = {
+    lat: number;
+    lon: number;
 };
 
 /**

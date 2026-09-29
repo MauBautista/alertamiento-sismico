@@ -7516,11 +7516,15 @@
                 "type": "null"
               }
             ]
+          },
+          "sitio": {
+            "$ref": "#/components/schemas/SitioMapaOut"
           }
         },
         "required": [
           "estado",
-          "incidente"
+          "incidente",
+          "sitio"
         ],
         "title": "MapaDeCalorMovilOut",
         "type": "object"
@@ -12899,6 +12903,25 @@
           "lon"
         ],
         "title": "SiteUpdate",
+        "type": "object"
+      },
+      "SitioMapaOut": {
+        "description": "Dónde está el inmueble, en grados.",
+        "properties": {
+          "lat": {
+            "title": "Lat",
+            "type": "number"
+          },
+          "lon": {
+            "title": "Lon",
+            "type": "number"
+          }
+        },
+        "required": [
+          "lat",
+          "lon"
+        ],
+        "title": "SitioMapaOut",
         "type": "object"
       },
       "SubscribeFrame": {
