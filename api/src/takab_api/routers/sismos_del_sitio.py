@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncConnection
 from takab_api.auth.claims import Claims
 from takab_api.auth.deps import get_claims, get_session, require_roles
 from takab_api.catalogo.en_el_sitio import METODO, estima
+from takab_api.incident.autoridad import autoriza_evacuacion_sql, params_autoriza_evacuacion_sql
+from takab_api.incident.classification import TERMINALES
 from takab_api.queries import mobile as q
 from takab_api.schemas.catalog import (
     HistorialIncidente,
@@ -35,7 +37,10 @@ from takab_api.schemas.catalog import (
     SismoEnTuInmuebleEstimado,
     SismosDelSitioOut,
 )
+from takab_api.schemas.shakemap import IncidenteConSuperficieOut, MapaDeCalorMovilOut
+from takab_api.settings import Settings
 from takab_api.shakemap import gmice
+from takab_api.shakemap.lectura import superficie_movil
 
 router = APIRouter()
 
@@ -83,10 +88,8 @@ _SISMOS_SQL = text(
     "ORDER BY origin_time DESC LIMIT :limite"
 )
 
-_INCIDENTES_SQL = text(
-    "SELECT i.incident_id, i.opened_at, i.severity, i.trigger, i.state AS estado, "
-    "c.classification AS clasificacion, i.max_pga_g::float8 AS pga_medida_g "
-    "FROM incidents i "
+#: La clasificación VIGENTE de cada incidente (la última que nadie sustituyó).
+_CLASIFICACION_VIGENTE = (
     "LEFT JOIN LATERAL ("
     "  SELECT cc.classification FROM incident_classifications cc "
     "   WHERE cc.incident_id = i.incident_id "
@@ -94,9 +97,55 @@ _INCIDENTES_SQL = text(
     "                      WHERE s.supersedes_id = cc.classification_id) "
     "   ORDER BY cc.classified_at DESC, cc.classification_id DESC LIMIT 1"
     ") c ON true "
+)
+
+#: [D-39] Lo que el OCUPANTE puede ver de un incidente: sólo si le ordenó algo
+#: (SASMEX, o una red que lo corroboró). Un movimiento local sin corroborar va a la
+#: brigada y al ocupante NO le llega —ni en vivo ni después, en el historial o en
+#: el mapa—. La MISMA regla que `mobile-state` (`autoriza_evacuacion_sql`), filtrada
+#: ANTES del `LIMIT`: cortar primero dejaría fuera justo el incidente que cuenta.
+_AUTORIZA_EVACUACION = autoriza_evacuacion_sql("i.trigger", "(e.meta->>'node_count')::int")
+_SOLO_SI_ES_DEL_OCUPANTE = f"(NOT CAST(:es_ocupante AS boolean) OR {_AUTORIZA_EVACUACION}) "
+
+_INCIDENTES_SQL = text(
+    "SELECT i.incident_id, i.opened_at, i.severity, i.trigger, i.state AS estado, "
+    "c.classification AS clasificacion, i.max_pga_g::float8 AS pga_medida_g "
+    "FROM incidents i "
+    "LEFT JOIN seismic_events e ON e.event_id = i.event_id "
+    f"{_CLASIFICACION_VIGENTE}"
     "WHERE i.site_id = CAST(:site AS uuid) AND i.opened_at >= :desde "
+    f"  AND {_SOLO_SI_ES_DEL_OCUPANTE}"
     "ORDER BY i.opened_at DESC LIMIT :limite"
 )
+
+#: [T-9.65 · D-44] La superficie del ÚLTIMO evento del inmueble que la tiene:
+#: * sólo DESPUÉS del evento (`in_review`/`closed`): D-44 limita la MMI estimada
+#:   al después, y mientras el pico sigue el worker la rehace cada minuto;
+#: * una prueba, un falso positivo o una reproducción no son «cómo se sintió»
+#:   (`TERMINALES`, derivadas de `CIERRA_EL_INCIDENTE`, nunca escritas aquí);
+#: * el ocupante, con el filtro de D-39.
+_ULTIMA_SUPERFICIE_SQL = text(
+    "SELECT i.incident_id::text AS incident_id, i.opened_at, "
+    "i.tenant_id::text AS tenant_id, i.site_id::text AS site_id, m.superficie "
+    "FROM incidents i "
+    "JOIN incident_shakemap m ON m.incident_id = i.incident_id "
+    "LEFT JOIN seismic_events e ON e.event_id = i.event_id "
+    f"{_CLASIFICACION_VIGENTE}"
+    "WHERE i.site_id = CAST(:site AS uuid) AND i.state IN ('in_review', 'closed') "
+    "  AND m.superficie IS NOT NULL "
+    "  AND (c.classification IS NULL "
+    "       OR NOT (c.classification = ANY(CAST(:terminales AS text[])))) "
+    f"  AND {_SOLO_SI_ES_DEL_OCUPANTE}"
+    "ORDER BY i.opened_at DESC, i.incident_id DESC LIMIT 1"
+)
+
+
+def _filtro_del_ocupante(claims: Claims, settings: Settings) -> dict[str, object]:
+    return {
+        "es_ocupante": claims.role == "occupant",
+        **params_autoriza_evacuacion_sql(settings.quorum_min_nodes),
+    }
+
 
 #: Los sismos del catálogo que YA son un incidente de ESTE sitio. Dos caminos lo
 #: dejan escrito: la consulta por incidente de T-7.25 (``correlacionado``) y el
@@ -197,7 +246,12 @@ async def historial_sismico(
     await q.assert_site_access(conn, claims, site_id)
     sitio = await _coordenadas(conn, site_id)
     desde = datetime.now(tz=UTC) - timedelta(days=dias)
-    params = {"site": str(site_id), "desde": desde, "limite": _MAX_FILAS}
+    params = {
+        "site": str(site_id),
+        "desde": desde,
+        "limite": _MAX_FILAS,
+        **_filtro_del_ocupante(claims, Settings()),
+    }
 
     eventos: list[tuple[datetime, HistorialIncidente | HistorialSismo]] = [
         (r["opened_at"], HistorialIncidente(**dict(r)))
@@ -243,3 +297,34 @@ async def historial_sismico(
         )
     eventos.sort(key=lambda par: par[0], reverse=True)
     return HistorialSismicoOut(eventos=[ev for _, ev in eventos])
+
+
+@router.get("/sites/{site_id}/mapa-de-calor", response_model=MapaDeCalorMovilOut)
+async def mapa_de_calor(
+    site_id: UUID,
+    claims: Claims = Depends(_require_movil_del_sitio),
+    conn: AsyncConnection = Depends(get_session),
+) -> MapaDeCalorMovilOut:
+    """[T-9.65 · D-44] La superficie ESTIMADA del último sismo sentido en el inmueble."""
+    await q.assert_site_access(conn, claims, site_id)
+    settings = Settings()
+    fila = (
+        await conn.execute(
+            _ULTIMA_SUPERFICIE_SQL,
+            {
+                "site": str(site_id),
+                "terminales": sorted(TERMINALES),
+                **_filtro_del_ocupante(claims, settings),
+            },
+        )
+    ).first()
+    if fila is None:
+        return MapaDeCalorMovilOut(estado="sin_evento", incidente=None)
+    return MapaDeCalorMovilOut(
+        estado="disponible",
+        incidente=IncidenteConSuperficieOut(
+            incident_id=fila.incident_id,
+            opened_at=fila.opened_at,
+            superficie=await superficie_movil(conn, fila, settings),
+        ),
+    )

@@ -46,6 +46,7 @@ píxeles, porque un marcador no afirma extensión: afirma un valor EN ESE PUNTO.
 
 from __future__ import annotations
 
+import base64
 import math
 import re
 from datetime import datetime
@@ -69,6 +70,7 @@ from takab_api.schemas.shakemap import (
     PuntoProps,
     PuntosOut,
     ShakemapOut,
+    SuperficieMovilOut,
     SuperficieOut,
 )
 from takab_api.settings import Settings
@@ -278,6 +280,27 @@ async def superficie_png(
         return SIN_SUPERFICIE
     verde, rojo = await _umbrales_del_sitio(conn, fila, settings)
     return raster.png(SUP.Superficie.from_json(fila.superficie), verde_max_g=verde, rojo_min_g=rojo)
+
+
+async def superficie_movil(
+    conn: AsyncConnection, fila, settings: Settings | None = None
+) -> SuperficieMovilOut:  # noqa: ANN001 - fila con incident_id, tenant_id, site_id, superficie
+    """[T-9.65 · D-44] La superficie del snapshot con su PNG DENTRO, para la app.
+
+    El MISMO PNG que sirve `superficie_png` a la consola —la misma malla, los
+    mismos cortes del sitio—, y los mismos metadatos que `_superficie`: dos
+    pantallas del mismo sitio no pueden pintar bandas distintas.
+    """
+    meta = _superficie(str(fila.incident_id), fila.superficie)
+    assert meta is not None  # quien llama filtra `superficie IS NOT NULL`
+    verde, rojo = await _umbrales_del_sitio(conn, fila, settings)
+    png = raster.png(SUP.Superficie.from_json(fila.superficie), verde_max_g=verde, rojo_min_g=rojo)
+    return SuperficieMovilOut(
+        **meta.model_dump(exclude={"png", "verde_max_g", "rojo_min_g"}),
+        verde_max_g=verde,
+        rojo_min_g=rojo,
+        png_base64=base64.b64encode(png).decode("ascii"),
+    )
 
 
 async def umbrales_de_banda(
