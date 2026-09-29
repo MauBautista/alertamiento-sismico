@@ -58,7 +58,7 @@ describe("[T-9.62] la fila de un sismo", () => {
     const fila = v.getByTestId("sismo-fila");
     expect(within(fila).getByText("5.4")).toBeTruthy();
     expect(within(fila).getByText("12 km al S de Pinotepa Nacional, Oax.")).toBeTruthy();
-    expect(within(fila).getByText("En tu inmueble: IV (estimada) · 180 km")).toBeTruthy();
+    expect(within(fila).getByText("En su inmueble: IV (estimada) · 180 km")).toBeTruthy();
     // La fecha sale de `Intl` en español de México: el año y el mes abreviado.
     expect(within(fila).getByTestId("sismo-fecha")).toHaveTextContent(/2026/);
     expect(within(fila).getByTestId("sismo-fecha")).toHaveTextContent(/sept?/i);
@@ -78,7 +78,7 @@ describe("[T-9.62] la fila de un sismo", () => {
         })}
       />,
     );
-    expect(v.getByText("En tu inmueble: sin estimar · 612 km")).toBeTruthy();
+    expect(v.getByText("En su inmueble: sin estimar · 612 km")).toBeTruthy();
     const circulo = v.getByTestId("sismo-circulo");
     for (let g = 1; g <= 10; g++) {
       expect(colorDeFondo(circulo)).not.toBe(colorDeMmi(g));
