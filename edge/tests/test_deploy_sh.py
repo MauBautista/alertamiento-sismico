@@ -1801,21 +1801,40 @@ def test_que_falle_la_publicacion_NO_tumba_el_despliegue_pero_se_DECLARA(
 # --- [T-9.72] contratos antes que código -------------------------------------------
 
 
-def _commit_con_otros_contratos() -> str:
-    """El padre del último commit que tocó `shared/schemas`: por construcción, sus
-    contratos difieren de los de HEAD y HEAD no es su ancestro."""
-    ultimo = subprocess.run(
-        ["git", "-C", str(_RAIZ), "rev-list", "-n1", "HEAD", "--", "shared/schemas"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    return subprocess.run(
-        ["git", "-C", str(_RAIZ), "rev-parse", "--short=8", f"{ultimo}^"],
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+def _commit_con_otros_contratos(tmp_path: pathlib.Path) -> str:
+    """Un commit HUÉRFANO con el árbol de HEAD salvo UN esquema cambiado: sus contratos
+    difieren de los de este edge y HEAD no es su ancestro, que es la nube vieja.
+
+    Se fabrica y no se busca en la historia: el CI clona SUPERFICIAL y el padre del
+    último cambio de `shared/schemas` no está (así falló la primera versión). Con un
+    índice temporal, el índice de verdad ni se toca.
+    """
+    env = {
+        **os.environ,
+        "GIT_INDEX_FILE": str(tmp_path / "indice-nube-vieja"),
+        # El runner del CI (y un clon recién hecho) no tienen identidad de git.
+        "GIT_AUTHOR_NAME": "test",
+        "GIT_AUTHOR_EMAIL": "test@invalid",
+        "GIT_COMMITTER_NAME": "test",
+        "GIT_COMMITTER_EMAIL": "test@invalid",
+    }
+
+    def git(*args: str, entrada: str | None = None) -> str:
+        return subprocess.run(
+            ["git", "-C", str(_RAIZ), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+            input=entrada,
+        ).stdout.strip()
+
+    git("read-tree", "HEAD")
+    esquema = "shared/schemas/actuation_record.schema.json"
+    blob = git("hash-object", "-w", "--stdin", entrada=git("show", f"HEAD:{esquema}") + "\n ")
+    git("update-index", "--cacheinfo", f"100644,{blob},{esquema}")
+    arbol = git("write-tree")
+    return git("commit-tree", arbol, "-m", "nube vieja (test)")[:8]
 
 
 def test_una_nube_con_OTROS_contratos_detiene_el_despliegue_antes_de_tocar_nada(
@@ -1823,7 +1842,9 @@ def test_una_nube_con_OTROS_contratos_detiene_el_despliegue_antes_de_tocar_nada(
 ) -> None:  # noqa: ANN001
     nube = tmp_path / "nube-vieja"
     (nube / "api").mkdir(parents=True)
-    (nube / "api" / "health").write_text(json.dumps({"build": _commit_con_otros_contratos()}))
+    (nube / "api" / "health").write_text(
+        json.dumps({"build": _commit_con_otros_contratos(tmp_path)})
+    )
     r = gabinete.desplegar(TAKAB_CONSOLA_URL=f"file://{nube}")
     assert r.returncode != 0
     assert "PRIMERO la nube" in r.stderr
