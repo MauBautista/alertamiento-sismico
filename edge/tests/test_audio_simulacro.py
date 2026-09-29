@@ -222,3 +222,164 @@ def test_el_boton_del_panel_deja_fila_PERSISTIDA_no_solo_en_memoria(tmp_path, se
         assert audio.simulacro_evidence()["sha256"][:16] in vocea[0]["detail"]
     finally:
         gpio.stop()
+
+
+# ── el simulacro HABLADO (T-9.71 · D-41) ───────────────────────────────────
+#
+# D-41 sustituye, para `takab-simulacro-v2`, la regla de T-5.17 («un simulacro nunca
+# suena a sismo»): ahora suena sobre el tono de ALERTA, y la voz es la única barrera
+# para quien llegue tarde. Por eso el invariante se MIDE por energía sobre el fichero
+# empaquetado, sin mirar cómo se generó: en las frecuencias del tono de alerta (se
+# sacan de `siren.wav`, no se escriben aquí) y en el resto del espectro, en ventanas
+# de 0,5 s cada 0,1 s. v1 sigue en el catálogo con su regla (arriba).
+#
+# ⚠️ El método supone un tono de alerta TONAL (el hi-lo de `takab-siren-v1`). Si
+# T-9.70 elige un barrido, su energía se reparte y estas pruebas fallan: hay que
+# regenerar el simulacro y rehacer la medida, no aflojar los umbrales.
+
+_VENTANA_S = 0.5
+_PASO_S = 0.1
+_VOZ_SOLA_S = 2.5  # D-41
+
+
+def _lee_wav(ruta: Path):  # noqa: ANN202
+    import wave
+
+    import numpy as np
+
+    with wave.open(str(ruta), "rb") as w:
+        assert w.getsampwidth() == 2 and w.getnchannels() == 1
+        sr = w.getframerate()
+        x = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2").astype(float) / 32768
+    return x, sr
+
+
+def _frecuencias_del_tono_de_alerta() -> list[float]:
+    import numpy as np
+
+    tono, sr = _lee_wav(catalog.resolve("takab-siren-v1"))
+    espectro = np.abs(np.fft.rfft(tono * np.hanning(len(tono))))
+    f = np.fft.rfftfreq(len(tono), 1 / sr)
+    picos: list[float] = []
+    for i in np.argsort(espectro)[::-1]:
+        if all(abs(f[i] - p) > 20 for p in picos):
+            picos.append(float(f[i]))
+        if len(picos) == 2:
+            return picos
+    raise AssertionError("el tono de alerta no tiene dos picos")
+
+
+@pytest.fixture(scope="module")
+def ventanas():  # noqa: ANN201
+    """(inicio_s, energía_en_el_tono_dB, energía_del_resto_dB) de cada ventana."""
+    import numpy as np
+
+    x, sr = _lee_wav(catalog.resolve("takab-simulacro-v2"))
+    n, paso = int(_VENTANA_S * sr), int(_PASO_S * sr)
+    f = np.fft.rfftfreq(4 * n, 1 / sr)
+    banda = np.zeros_like(f, dtype=bool)
+    for pico in _frecuencias_del_tono_de_alerta():
+        banda |= np.abs(f - pico) <= 4
+    filas = []
+    for k in range(0, len(x) - n + 1, paso):
+        p = np.abs(np.fft.rfft(x[k : k + n] * np.hanning(n), 4 * n)) ** 2
+        filas.append(
+            (
+                k / sr,
+                10 * np.log10(p[banda].sum() + 1e-20),
+                10 * np.log10(p[~banda].sum() + 1e-20),
+            )
+        )
+    return filas, len(x) / sr
+
+
+def _nivel_del_tono(ventanas) -> float:  # noqa: ANN001
+    import numpy as np
+
+    filas, _ = ventanas
+    return float(np.median([t for ini, t, _ in filas if ini >= _VOZ_SOLA_S]))
+
+
+def _con_voz(ventanas) -> list[tuple[float, bool]]:  # noqa: ANN001
+    """Hay voz donde el resto del espectro sobrepasa al tono en 6 dB o más."""
+    filas, _ = ventanas
+    tono = _nivel_del_tono(ventanas)
+    return [(ini, resto >= tono + 6) for ini, _, resto in filas]
+
+
+def _frases(ventanas) -> list[tuple[float, float]]:  # noqa: ANN001
+    """(inicio, fin) de cada tramo seguido de ventanas con voz."""
+    tramos: list[tuple[float, float]] = []
+    for ini, voz in _con_voz(ventanas):
+        if voz and tramos and ini - tramos[-1][1] <= _PASO_S + 1e-9:
+            tramos[-1] = (tramos[-1][0], ini)
+        elif voz:
+            tramos.append((ini, ini))
+    return tramos
+
+
+def test_el_simulacro_hablado_esta_en_el_catalogo_y_es_otro_binario():
+    ruta = catalog.resolve("takab-simulacro-v2")
+    assert ruta is not None and ruta.is_file()
+    digest = {
+        cid: hashlib.sha256(catalog.resolve(cid).read_bytes()).hexdigest()
+        for cid in ("takab-siren-v1", "takab-simulacro-v1", "takab-simulacro-v2")
+    }
+    assert len(set(digest.values())) == 3, f"dos tonos comparten binario: {digest}"
+
+
+def test_nada_lo_elige_por_defecto():
+    """Se enciende por la configuración firmada tras escucharlo (D-41), no solo."""
+    from takab_edge.config.settings import AudioProfile, EdgeSettings
+
+    assert AudioProfile().simulacro == ""
+    assert "simulacro_hablado" not in EdgeSettings().audio_simulacro_path
+
+
+def test_abre_con_VOZ_SOLA_sin_el_tono(ventanas):  # noqa: ANN001
+    filas, _ = ventanas
+    tono = _nivel_del_tono(ventanas)
+    antes = [t for ini, t, _ in filas if ini + _VENTANA_S <= _VOZ_SOLA_S]
+    assert antes, "no hay ventanas en la apertura"
+    assert max(antes) <= tono - 10, (
+        f"suena el tono en la apertura: {max(antes):.1f} dB frente a {tono:.1f} dB"
+    )
+    assert any(v for ini, v in _con_voz(ventanas) if ini + _VENTANA_S <= _VOZ_SOLA_S), (
+        "la apertura no tiene voz"
+    )
+
+
+def test_despues_el_tono_suena_SIN_CORTES_hasta_el_final(ventanas):  # noqa: ANN001
+    filas, duracion = ventanas
+    tono = _nivel_del_tono(ventanas)
+    # El último medio segundo se desvanece a propósito: termina en la voz.
+    durante = [t for ini, t, _ in filas if _VOZ_SOLA_S <= ini <= duracion - 2 * _VENTANA_S]
+    assert durante and min(durante) >= tono - 3, "el tono de alerta se corta a media pieza"
+
+
+def test_la_voz_se_repite_al_menos_cuatro_veces_ENCIMA_del_tono(ventanas):  # noqa: ANN001
+    sobre_el_tono = [f for f in _frases(ventanas) if f[0] >= _VOZ_SOLA_S]
+    assert len(sobre_el_tono) >= 4, f"frases sobre el tono: {sobre_el_tono}"
+
+
+def test_la_voz_va_15_dB_por_encima_del_tono(ventanas):  # noqa: ANN001
+    """D-41: tono atenuado 15 dB. Se mide contra la voz de cada frase (el pico de la
+    ventana, que es la que la cubre entera); 1,5 dB de tolerancia por el ventaneo."""
+    filas, _ = ventanas
+    tono = _nivel_del_tono(ventanas)
+    for ini, fin in _frases(ventanas):
+        if ini < _VOZ_SOLA_S:
+            continue
+        pico = max(resto for i, _, resto in filas if ini <= i <= fin)
+        assert pico - tono >= 13.5, f"frase en {ini:.1f} s: sólo {pico - tono:.1f} dB"
+
+
+def test_el_tono_nunca_suena_mas_de_3_5_s_sin_la_voz(ventanas):  # noqa: ANN001
+    """«El precio» de D-41: quien llegue tarde oye un tono de alerta, y la voz es la
+    única barrera. Ningún hueco entre frases, ni el final, lo deja solo más de 3,5 s."""
+    _, duracion = ventanas
+    frases = [f for f in _frases(ventanas)]
+    huecos = [b[0] - a[1] - _VENTANA_S for a, b in zip(frases, frases[1:], strict=False)]
+    huecos.append(duracion - frases[-1][1] - _VENTANA_S)
+    assert max(huecos) <= 3.5, f"huecos sin voz (s): {[round(h, 2) for h in huecos]}"
+    assert huecos[-1] <= 1.0, "no termina en la voz: lo último que se oye es el tono"

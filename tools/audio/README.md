@@ -24,6 +24,20 @@ uv run --no-project --python 3.12 --with numpy==2.5.3 --with scipy==1.18.1 \
 # …y después manifiesto.py en el mismo entorno
 ```
 
+El simulacro hablado (T-9.71 · D-41) es una MEZCLA: la voz `takab-voz-simulacro-v1` (que deja
+`gen_voces.sh` en `shared/audio/fuentes/`) sobre el tono de alerta vigente (`siren.wav`):
+
+```bash
+tools/audio/gen_voces.sh      # si cambia la voz
+uv run --no-project --python 3.12 --with numpy==2.5.3 --with scipy==1.18.1 \
+  --with pyloudnorm==0.2.0 python tools/audio/gen_simulacro_hablado.py
+# …y después manifiesto.py en el mismo entorno
+```
+
+Si T-9.70 cambia el tono de alerta, el simulacro se regenera con el nuevo (`TONO`). Si el tono
+nuevo deja de ser tonal (un barrido reparte su energía), hay que rehacer las pruebas de energía de
+`edge/tests/test_audio_simulacro.py`.
+
 ## Qué hace cada pieza
 
 | Fichero | Qué hace | Entorno |
@@ -33,6 +47,7 @@ uv run --no-project --python 3.12 --with numpy==2.5.3 --with scipy==1.18.1 \
 | `sintetiza.py` | Piper por su API con `onnxruntime.set_seed` (el CLI de piper mete ruido sin semilla: dos corridas daban bytes distintos) | `uv run --no-project --with piper-tts==1.3.0 --with onnxruntime==1.30.0` |
 | `normaliza.py` | Mono PCM16 a 22 050 o 44 100 Hz; recorta la cola (deja 100 ms + fundido de 10 ms); −16 LUFS integrados (`--lufs -14` para el edge), limitado para quedar en ≤ −1 dBTP de pico verdadero (×4 con `resample_poly`). `--mide` solo mide | `uv run --no-project --with numpy==2.5.3 --with scipy==1.18.1 --with pyloudnorm==0.2.0` |
 | `gen_musica.py` | «Himno a la alegría» (Beethoven, dominio público) sintetizado con numpy → `edge/takab_edge/audio/assets/musica_prueba.wav`, 22 050 Hz mono, normalizado a **−14 LUFS** (edge) con `normaliza.normaliza(..., objetivo_lufs=OBJETIVO_EDGE_LUFS)` | el mismo que `normaliza.py` |
+| `gen_simulacro_hablado.py` | Simulacro hablado (D-41) → `edge/takab_edge/audio/assets/simulacro_hablado.wav`: la voz sola 2,5 s y luego la frase 4 veces sobre el tono de alerta a −15 dB (voz igualada en RMS activo al tono); 22 050 Hz mono, normalizado para el edge. El pico de la voz limita la ganancia, así que queda por debajo de −14 LUFS | el mismo que `normaliza.py` |
 | `manifiesto.py` | Escribe el manifiesto. La procedencia se declara (tonos existentes en el código, voces en `voces.json`), las cifras se miden | el mismo que `normaliza.py` |
 | `verifica_manifiesto.py` | Solo stdlib. Sale ≠ 0 si una ruta no cuadra en sha256, duración (±5 ms), frecuencia o canales, o si algún `.wav/.mp3/.ogg/.caf` de `mobile/assets`, `edge/` o `shared/audio` falta en el manifiesto | `python3` |
 

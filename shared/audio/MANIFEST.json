@@ -88,6 +88,32 @@
       "notas": "Música para probar los parlantes del gabinete (T-9.72). Mismo contenido musical que el candidato F7 (candidatos_f7.py, 2026-09-28). gen_musica.py la reproduce byte a byte con las versiones fijadas."
     },
     {
+      "id": "takab-simulacro-v2",
+      "rutas": [
+        "edge/takab_edge/audio/assets/simulacro_hablado.wav"
+      ],
+      "sha256": "6a9e8aa463ec94a479ad0a583eb0d255ca899e8afaffe17349ca6dccc7039733",
+      "duracion_s": 18.7951,
+      "sample_rate": 22050,
+      "canales": 1,
+      "lufs_integrado": -16.6,
+      "pico_verdadero_dbtp": -1.1,
+      "fuente": {
+        "generador": "tools/audio/gen_simulacro_hablado.py (numpy) → normaliza.py",
+        "parametros": "voz «Esto es un simulacro.» sola en 0.2 s; desde 2.5 s el tono de alerta (edge/takab_edge/audio/assets/siren.wav) atenuado 15 dB y la voz encima 4 veces cada 4.5 s; voz igualada en RMS activo al tono; termina 0.4 s después de la última voz; 22050 Hz mono PCM16",
+        "ingredientes": [
+          "shared/audio/fuentes/voz_simulacro.wav",
+          "edge/takab_edge/audio/assets/siren.wav"
+        ],
+        "normalizacion": "-14.0 LUFS (edge), pico verdadero ≤ -1.0 dBTP (×4)"
+      },
+      "licencia": {
+        "audio": "TAKAB: mezcla propia de la voz takab-voz-simulacro-v1 (modelo apache-2.0) y del tono takab-siren-v1 (original de TAKAB)",
+        "fuente": "código del repo (tools/audio/gen_simulacro_hablado.py), propiedad de TAKAB"
+      },
+      "notas": "Simulacro HABLADO (T-9.71 · D-41): voz sola 2,5 s y luego la frase sobre el tono de ALERTA a −15 dB. Ninguna configuración lo elige por defecto. El pico verdadero de la voz limita la ganancia: queda por debajo del objetivo de LUFS (el valor medido está arriba). Si cambia el tono de alerta (T-9.70), se regenera. El candidato del 2026-09-28 usaba el carillón de v1 de fondo y NO cumple D-41."
+    },
+    {
       "id": "takab-voz-movimiento-v1",
       "rutas": [
         "mobile/assets/sounds/movimiento_inmueble.wav"
@@ -117,6 +143,37 @@
         "fuente": "modelo: apache-2.0 (declarada en el MODEL_CARD de rhasspy/piper-voices; dataset HirCoir/Piper-TTS-Spanish); herramienta: GPL-3.0-or-later (metadatos de piper-tts 1.3.0; OHF-Voice/piper1-gpl; incluye espeak-ng, GPL-3.0). Se invoca aislado con uv; NO es dependencia de ningún proyecto del repo."
       },
       "notas": "Alternativa de voz: es_MX-ald-medium (dataset con licencia Unlicense; onnx sha256 019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63, json sha256 5a71498158e04afc8099bfd019c7e87c68eb9d042505a2b1a87e5c1ac2b1a61d). Duración máxima exigida: 4.0 s."
+    },
+    {
+      "id": "takab-voz-simulacro-v1",
+      "rutas": [
+        "shared/audio/fuentes/voz_simulacro.wav"
+      ],
+      "sha256": "4309d532d07c8a523aed4acffa8cf99a3a6906cf9105269b4a926872dae54245",
+      "duracion_s": 1.6951,
+      "sample_rate": 22050,
+      "canales": 1,
+      "lufs_integrado": -16.11,
+      "pico_verdadero_dbtp": -1.1,
+      "fuente": {
+        "generador": "tools/audio/gen_voces.sh → sintetiza.py (Piper) → normaliza.py",
+        "piper": "piper-tts==1.3.0",
+        "onnxruntime": "onnxruntime==1.30.0",
+        "modelo": "es_MX-claude-high",
+        "modelo_onnx_sha256": "3ef40a71ea63852cd8ab7e6fa7d2ecdcfa67a0b47c9c48e3f10e02ee02083ea0",
+        "modelo_json_sha256": "1afc81f703c0e4cb3b4d7c0dca096b8b54a98806807f0170cf5eb5557723c12d",
+        "texto": "Esto es un simulacro.",
+        "semilla": 41,
+        "length_scale": 1.0,
+        "noise_scale": 0.667,
+        "noise_w_scale": 0.8,
+        "normalizacion": "-16.0 LUFS, pico verdadero ≤ -1.0 dBTP (×4), cola ≤ 100 ms"
+      },
+      "licencia": {
+        "audio": "TAKAB; generado localmente con un modelo apache-2.0",
+        "fuente": "modelo: apache-2.0 (declarada en el MODEL_CARD de rhasspy/piper-voices; dataset HirCoir/Piper-TTS-Spanish); herramienta: GPL-3.0-or-later (metadatos de piper-tts 1.3.0; OHF-Voice/piper1-gpl; incluye espeak-ng, GPL-3.0). Se invoca aislado con uv; NO es dependencia de ningún proyecto del repo."
+      },
+      "notas": "Alternativa de voz: es_MX-ald-medium (dataset con licencia Unlicense; onnx sha256 019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63, json sha256 5a71498158e04afc8099bfd019c7e87c68eb9d042505a2b1a87e5c1ac2b1a61d). Duración máxima exigida: 2.3 s."
     }
   ]
 }

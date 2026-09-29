@@ -41,6 +41,12 @@ CATALOG: dict[str, str] = {
     # carillón de tres pulsos con dos segundos de silencio — el patrón de la
     # megafonía, no el de una alarma. Ver `edge/scripts/gen_simulacro.py`.
     "takab-simulacro-v1": "simulacro.wav",
+    # [T-9.71 · D-41] Simulacro HABLADO: 2,5 s de «Esto es un simulacro.» sola y
+    # después la frase cada 4,5 s sobre el tono de ALERTA atenuado 15 dB. Sustituye,
+    # para este id, la regla de v1: ahora sí suena a alerta, y la voz es la barrera.
+    # Ninguna configuración lo elige por defecto; se enciende por la firmada tras
+    # escucharlo. Ver `tools/audio/gen_simulacro_hablado.py`.
+    "takab-simulacro-v2": "simulacro_hablado.wav",
 }
 
 #: IDs que existen como concepto pero NO se pueden servir. Se distinguen de un ID

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **22** · `[ ]` **48**
+**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **23** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18214,12 +18214,33 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - el «Himno a la alegría» sintetizado: dominio público, sin grabación de terceros.
   - NO están conectados al gabinete ni a la app: se conectan cuando se aprueben.
 
-### [ ] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-41`
 - **Objetivo:** que un simulacro suene a alerta sin que nadie lo confunda.
 - **Criterios de aceptación:**
-  - [ ] Voz sola al principio y repetida encima del tono atenuado; invariante medido por energía.
+  - [x] Voz sola al principio y repetida encima del tono atenuado; invariante medido por energía.
+    - Hecho el 2026-09-29. `takab-simulacro-v2` entra al catálogo del edge como
+      `simulacro_hablado.wav`. Ninguna configuración lo elige por defecto: se enciende por la
+      firmada (`config.edge.audio.simulacro`) tras escucharlo.
+    - Contenido: «Esto es un simulacro.» sola en los primeros 2,5 s, y después 4 veces cada
+      4,5 s sobre el tono de ALERTA (`siren.wav`) a −15 dB. Dura 18,8 s, 22,05 kHz, 829 KB, y
+      termina en la voz.
+    - Lo generan `tools/audio/gen_simulacro_hablado.py` (determinista) y la voz
+      `takab-voz-simulacro-v1` de `voces.json`. Los dos están en el manifiesto.
+    - `edge/tests/test_audio_simulacro.py` lo mide sobre el fichero empaquetado. Usa la energía
+      en las frecuencias del tono de alerta, que saca de `siren.wav`, y la del resto del
+      espectro. Comprueba:
+      - que la apertura no tiene tono;
+      - que el tono no se corta;
+      - que hay ≥ 4 frases sobre el tono, con la voz ≥ 13,5 dB por encima;
+      - que el tono nunca suena más de 3,5 s sin la voz, y que termina en la voz.
+    - Se probó con seis mutantes, cada uno cazado por la prueba que le toca.
   - [ ] Probado por el altavoz del gabinete.
+- **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
+  sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
+  oír de verdad»). Falla tres de las pruebas nuevas. Lo que hay que escuchar es el empaquetado.
+- **Queda más bajo que la alerta:** el pico de la voz limita la ganancia, y mide −16,6 LUFS frente
+  a los −7,7 de `siren.wav`. Se decide al escucharlo.
 
 ### [~] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`

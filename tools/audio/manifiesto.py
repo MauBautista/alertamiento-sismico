@@ -22,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import gen_musica  # noqa: E402
+import gen_simulacro_hablado  # noqa: E402
 import normaliza  # noqa: E402
 from verifica_manifiesto import MANIFIESTO, sha256  # noqa: E402
 
@@ -102,6 +103,30 @@ GENERADOS: list[dict] = [
         "notas": "Música para probar los parlantes del gabinete (T-9.72). Mismo contenido "
         "musical que el candidato F7 (candidatos_f7.py, 2026-09-28). "
         "gen_musica.py la reproduce byte a byte con las versiones fijadas.",
+    },
+    {
+        "id": "takab-simulacro-v2",
+        "rutas": [gen_simulacro_hablado.DESTINO.as_posix()],
+        "fuente": {
+            "generador": "tools/audio/gen_simulacro_hablado.py (numpy) → normaliza.py",
+            "parametros": gen_simulacro_hablado.PARAMETROS,
+            "ingredientes": [
+                gen_simulacro_hablado.VOZ.as_posix(),
+                gen_simulacro_hablado.TONO.as_posix(),
+            ],
+            "normalizacion": f"{normaliza.OBJETIVO_EDGE_LUFS} LUFS (edge), pico verdadero "
+            f"≤ {normaliza.PICO_MAX_DBTP} dBTP (×{normaliza.SOBREMUESTREO})",
+        },
+        "licencia": {
+            "audio": "TAKAB: mezcla propia de la voz takab-voz-simulacro-v1 (modelo "
+            "apache-2.0) y del tono takab-siren-v1 (original de TAKAB)",
+            "fuente": "código del repo (tools/audio/gen_simulacro_hablado.py), propiedad de TAKAB",
+        },
+        "notas": "Simulacro HABLADO (T-9.71 · D-41): voz sola 2,5 s y luego la frase sobre "
+        "el tono de ALERTA a −15 dB. Ninguna configuración lo elige por defecto. El pico "
+        "verdadero de la voz limita la ganancia: queda por debajo del objetivo de LUFS "
+        "(el valor medido está arriba). Si cambia el tono de alerta (T-9.70), se regenera. "
+        "El candidato del 2026-09-28 usaba el carillón de v1 de fondo y NO cumple D-41.",
     },
 ]
 

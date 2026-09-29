@@ -23,6 +23,17 @@
       "noise_w_scale": 0.8,
       "rutas": ["mobile/assets/sounds/movimiento_inmueble.wav"],
       "max_duracion_s": 4.0
+    },
+    {
+      "id": "takab-voz-simulacro-v1",
+      "fichero": "voz_simulacro.wav",
+      "texto": "Esto es un simulacro.",
+      "semilla": 41,
+      "length_scale": 1.0,
+      "noise_scale": 0.667,
+      "noise_w_scale": 0.8,
+      "rutas": ["shared/audio/fuentes/voz_simulacro.wav"],
+      "max_duracion_s": 2.3
     }
   ]
 }
