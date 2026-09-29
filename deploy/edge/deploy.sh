@@ -159,6 +159,33 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 . "${ROOT}/deploy/lib/guardas.sh"
 guarda_de_rama "edge" si
 
+# [T-9.72] CONTRATOS ANTES QUE CÓDIGO. La nube valida lo que el gabinete le manda
+# contra `shared/schemas` (api/…/contracts/loader.py). Un edge con un contrato que la
+# nube desplegada todavía no tiene —el caso medido: `cause=lan_music_test` en 1.18.0
+# contra una nube 1.17.0— PIERDE filas: la bitácora del gabinete avanza su marca de
+# agua con el PUBACK del broker y la nube manda la fila a la cola de muertos. Nadie
+# la reintenta. Por eso va PRIMERO la nube, y aquí se comprueba en vez de recordarlo.
+#
+# Se DERIVA de la etiqueta que declara `/api/health` (la nube no publica su OpenAPI),
+# como hace `deploy/demo/goal-presentacion.sh`. Vale si la nube es MÁS NUEVA que este
+# edge (contiene su commit) o si corre los MISMOS `shared/schemas`; un edge viejo
+# contra una nube nueva es el sentido seguro de un cambio aditivo.
+CONSOLA="${TAKAB_CONSOLA_URL:-https://16-58-11-196.sslip.io}"
+if [ "${TAKAB_DEPLOY_SIN_NUBE:-0}" = "1" ]; then
+  echo "⚠ TAKAB_DEPLOY_SIN_NUBE=1: NO se comprueba que la nube valide los contratos de este edge" >&2
+else
+  ETIQUETA_NUBE="$(curl -fsS --max-time 10 "${CONSOLA}/api/health" 2>/dev/null | jq -r '.build // empty' 2>/dev/null || true)"
+  [ -n "$ETIQUETA_NUBE" ] || guardas_fallo "no se pudo leer la etiqueta de la nube en ${CONSOLA}/api/health, así que no se sabe si valida los contratos de este edge. Si despliegas a propósito sin nube, repite con TAKAB_DEPLOY_SIN_NUBE=1."
+  git -C "$ROOT" cat-file -e "${ETIQUETA_NUBE}^{commit}" 2>/dev/null \
+    || guardas_fallo "la nube corre ${ETIQUETA_NUBE}, un commit que este repositorio no conoce: git fetch origin y repite."
+  if git -C "$ROOT" merge-base --is-ancestor HEAD "$ETIQUETA_NUBE" 2>/dev/null \
+    || git -C "$ROOT" diff --quiet "$ETIQUETA_NUBE" HEAD -- shared/schemas; then
+    echo "→ contratos: la nube (${ETIQUETA_NUBE}) ya valida los de este edge"
+  else
+    guardas_fallo "la nube (${ETIQUETA_NUBE}) NO valida los contratos de este edge: shared/schemas difiere. Despliega PRIMERO la nube (make cloud-images && make cloud-deploy) y luego el edge; al revés, las filas nuevas del gabinete se pierden en la cola de muertos."
+  fi
+fi
+
 # Raíz del gabinete. Es una VARIABLE y no un literal para que
 # edge/tests/test_deploy_sh.py pueda correr este script de verdad contra un
 # /opt/takab de mentira (con ssh/rsync/uv/systemctl falsos) y comprobar el ORDEN
