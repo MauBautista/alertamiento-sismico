@@ -31,7 +31,7 @@
 // No es un spec: Playwright sólo recoge `*.spec.ts`.
 import { execFileSync } from "node:child_process";
 
-import { expect, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /** Escenas que el arnés sabe forzar hoy. */
 export type ForcedScene = "normal" | "alert";
@@ -211,4 +211,28 @@ export async function expectScene(page: Page, scene: ForcedScene, path: string):
   const line = page.getByTestId("scene-alert");
   await expect(line, `sin línea de alerta en la franja de ${path}`).toBeVisible();
   await expect(line).toHaveAttribute("data-kind", "alert");
+}
+
+/**
+ * ¿Está el ARNÉS en pie? Se le pregunta al gabinete, que es lo último en arrancar.
+ *
+ * Sin arnés, el spec se OMITE —el CI no tiene gabinete—, salvo que quien lo corre lo
+ * EXIJA con `TAKAB_E2E_EXIGE_ARNES=1`: entonces FALLA diciendo qué falta.
+ *
+ * Por qué hace falta la segunda mitad: Playwright sale con 0 cuando TODO se omite.
+ * El 2026-09-29 el Goal de la fase F4 corrió `cierre_del_evento.spec.ts` y «pasó» en
+ * 4 s sin haber medido nada: `make soc-local` no había levantado. Una comprobación que
+ * no puede ponerse roja no comprueba; quien necesite la medición, que la exija.
+ */
+export async function arnesOSalto(request: APIRequestContext, motivo: string): Promise<void> {
+  let hay = false;
+  try {
+    hay = (await request.get(`${PANEL_URL}/api/status`, { timeout: 4000 })).ok();
+  } catch {
+    hay = false;
+  }
+  if (!hay && process.env.TAKAB_E2E_EXIGE_ARNES === "1") {
+    throw new Error(`TAKAB_E2E_EXIGE_ARNES=1 y el arnés no contesta en ${PANEL_URL}: ${motivo}`);
+  }
+  test.skip(!hay, motivo);
 }
