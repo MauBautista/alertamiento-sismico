@@ -18273,11 +18273,17 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     el que aplica terraform.
   - Lo prueba `api/tests/test_guarda_de_rama.py` corriendo la guardia y el `make` de verdad desde
     otro clon.
-- **Hallazgo aparte, sin arreglar aquí:** `MiniSeedBuffer` sin ruta configurada crea
-  `/tmp/takab-buffer-*` y NO lo borra. Sólo pasa en dev y en tests; el Pi tiene su ruta.
+- **Hallazgo aparte, arreglado después (2026-09-29):** sin ruta configurada, el anillo miniSEED
+  (`RingBuffer`) creaba `/tmp/takab-buffer-*` y NO lo borraba. Sólo pasa en dev y en tests; el Pi
+  tiene su ruta.
   - El 2026-09-29 había 2800 de esos directorios, más 2,1 GB de `pytest-of-*`, en un `/tmp`
     tmpfs de 3,6 GB.
   - La suite del edge falló con «Disk quota exceeded».
+  - Al arreglarlo salieron dos más: el spool de la nube (~2 900 `takab-cloud-spool-*`) y el
+    backfill (~2 900 `takab-backfill-*`, un `mkdtemp` del que sólo se usaba el PADRE).
+  - `takab_edge/efimero.py::directorio_efimero` borra el temporal cuando muere su dueño. Una ruta
+    configurada no pasa por ahí jamás. Lo prueba `edge/tests/test_directorios_efimeros.py`, que
+    también exige que ningún `mkdtemp` del paquete quede suelto.
 
 ### [~] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
 - **Componente:** web · mobile · edge · **Depende de:** T-9.11 · **Prioridad:** F7 · media · **Decisión:** `D-47`

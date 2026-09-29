@@ -13,13 +13,13 @@ from __future__ import annotations
 
 import json
 import logging
-import tempfile
 from datetime import UTC, date, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
 from takab_edge.config import BufferConfig
 from takab_edge.contracts import WaveformPacket
+from takab_edge.efimero import directorio_efimero
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.buffer")
@@ -96,7 +96,7 @@ class RingBuffer(EdgeModule):
         self.root = (
             Path(self.config.root)
             if self.config.root
-            else Path(tempfile.mkdtemp(prefix="takab-buffer-"))
+            else directorio_efimero("takab-buffer-", self)
         )
         self.root.mkdir(parents=True, exist_ok=True)
         self._appended = 0
