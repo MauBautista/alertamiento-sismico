@@ -3,7 +3,11 @@
 La consola local usa `POST /dev/token` (routers/dev_token.py), que solo se monta
 cuando `auth_jwks_json` no está vacío — señal inequívoca de entorno dev/test.
 Este script fabrica un keypair RSA efímero de DESARROLLO y escribe un archivo
-shell-sourceable con las 4 variables `TAKAB_API_AUTH_*` que la API necesita.
+shell-sourceable con las variables `TAKAB_API_AUTH_*` que la API necesita.
+
+[T-9.22] Declara también el pool de OCUPANTES (issuer + audience propios; su JWKS
+es el mismo, que `select_jwks_occupants` reutiliza). Sin él `/dev/token` da 503
+al rol `occupant` y el recorrido web por rol no podía medirlo en local.
 
 - Idempotente: si el archivo ya existe NO se regenera (los tokens vivos seguirían
   validando); `--force` lo rota.
@@ -30,6 +34,8 @@ _ENV_FILE = _REPO_ROOT / ".env.dev-auth"
 
 _ISSUER = "https://dev.local/takab"
 _AUDIENCE = "takab-dev-console"
+_OCCUPANTS_ISSUER = "https://dev.local/takab-ocupantes"
+_OCCUPANTS_AUDIENCE = "takab-dev-ocupantes"
 _KID = "takab-dev-local"
 
 
@@ -48,6 +54,8 @@ def _build_env() -> str:
         "# NO es material de producción; .gitignore lo cubre. Rotar: --force.\n"
         f"TAKAB_API_AUTH_ISSUER='{_ISSUER}'\n"
         f"TAKAB_API_AUTH_AUDIENCE='{_AUDIENCE}'\n"
+        f"TAKAB_API_AUTH_OCCUPANTS_ISSUER='{_OCCUPANTS_ISSUER}'\n"
+        f"TAKAB_API_AUTH_OCCUPANTS_AUDIENCE='{_OCCUPANTS_AUDIENCE}'\n"
         f"TAKAB_API_AUTH_JWKS_JSON='{jwks}'\n"
         f"TAKAB_API_AUTH_DEV_PRIVATE_KEY='{private_pem}'\n"
     )
