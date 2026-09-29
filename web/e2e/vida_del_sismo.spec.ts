@@ -39,6 +39,7 @@
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
+import { arnesOSalto } from "./escena";
 import { devLogin, gotoScreen } from "./helpers";
 
 /** El SOC local. Puertos fijos: los monta `demo/soc_local.sh`. */
@@ -101,15 +102,6 @@ async function limpiarLaMesa(request: APIRequestContext, jwt: string): Promise<v
   }
 }
 
-/** ¿Está el arnés en pie? Se pregunta al gabinete, que es lo último en arrancar. */
-async function hayArnes(request: APIRequestContext): Promise<boolean> {
-  try {
-    return (await request.get(`${PANEL}/api/status`, { timeout: 4000 })).ok();
-  } catch {
-    return false;
-  }
-}
-
 async function filaDelIncidente(page: Page) {
   return page.locator("tbody tr").first();
 }
@@ -124,7 +116,7 @@ test.describe("[T-7.20] la vida del sismo en el muro", () => {
     page,
     request,
   }) => {
-    test.skip(!(await hayArnes(request)), SIN_ARNES);
+    await arnesOSalto(request, SIN_ARNES);
 
     const jwt = await tokenSuperadmin(request);
     await limpiarLaMesa(request, jwt);

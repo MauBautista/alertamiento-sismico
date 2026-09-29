@@ -248,7 +248,7 @@ set -euo pipefail
 T=$CLAUDE_JOB_DIR/tmp; setsid nohup make soc-local >$T/soc-local.log 2>&1 & disown
 until curl -sf localhost:5173 >/dev/null; do sleep 2; done
 (cd web && setsid nohup npx vite preview --port 4173 >$T/preview.log 2>&1 & disown); until curl -sf localhost:4173 >/dev/null; do sleep 1; done
-(cd web && PW_BASE_URL=http://localhost:4173 npx playwright test e2e/cierre_del_evento.spec.ts)
+(cd web && TAKAB_E2E_EXIGE_ARNES=1 PW_BASE_URL=http://localhost:4173 npx playwright test e2e/cierre_del_evento.spec.ts)   # sin arnés FALLA: todo «skipped» salía 0
 pkill -f "[v]ite preview"; pkill -f "[s]oc_local.py"; pkill -f "[t]akab_api.incident"; true
 ```
 

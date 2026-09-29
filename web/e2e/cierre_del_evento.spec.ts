@@ -28,7 +28,7 @@
 
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
-import { forceScene } from "./escena";
+import { arnesOSalto, forceScene } from "./escena";
 import { devLogin, gotoScreen } from "./helpers";
 
 /** El SOC local. Puertos fijos: los monta `demo/soc_local.sh`. */
@@ -44,14 +44,6 @@ const SIN_ARNES =
   "DB :5433) y la consola servida por `vite preview`. Levántalo y vuelve a correrlo.";
 
 const MOTIVO = "e2e: el perito firmó el acta de inspección en papel";
-
-async function hayArnes(request: APIRequestContext): Promise<boolean> {
-  try {
-    return (await request.get(`${PANEL}/api/status`, { timeout: 4000 })).ok();
-  } catch {
-    return false;
-  }
-}
 
 async function tokenAdmin(request: APIRequestContext): Promise<string> {
   const r = await request.post(`${API}/dev/token`, {
@@ -84,7 +76,7 @@ test.describe("[T-9.41] el asistente «Cierre del evento»", () => {
   test.setTimeout(600_000);
 
   test("el administrador acusa, clasifica REAL y cierra con motivo", async ({ page, request }) => {
-    test.skip(!(await hayArnes(request)), SIN_ARNES);
+    await arnesOSalto(request, SIN_ARNES);
 
     // 0 · LA ESCENA: mesa limpia y UN incidente acusable (SASMEX, abierto).
     await forceScene("normal");
