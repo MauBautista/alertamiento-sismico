@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **423** · `[~]` **28** · `[ ]` **51**
+**Conteo de tareas:** total **502** · `[x]` **424** · `[~]` **27** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18195,7 +18195,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - Los correos de los contactos quedan copiados en `notification_jobs.target`, como los de
     cualquier correo existente, y ni ARCO ni la retención los cubren todavía.
 
-### [~] T-9.81 · **La baja de los roles viejos** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.81 · **La baja de los roles viejos** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · infra · **Depende de:** T-9.21 · **Prioridad:** F8 · baja · **Decisión:** `D-42`
 - **Objetivo:** cerrar la ventana de alias cuando nadie use un rol viejo.
 - **Criterios de aceptación:**
@@ -18203,7 +18203,8 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     `roles_heredados_hasta` desapareció.
   - [x] La verificación espera siete (`verify_infra.sh`, y `roles.tftest.hcl` lo deriva de
     `CANONICAL_ROLES`).
-  - [ ] Sin grupos viejos en Cognito: lo quita el `terraform apply` que corre Mauricio.
+  - [x] Sin grupos viejos en Cognito: el 2026-09-28 el pool (`us-east-2_WlAWpxvnn`) tiene exactamente
+    los siete canónicos, y `terraform plan` sale «No changes».
 
 ## RUTA CRÍTICA
 
