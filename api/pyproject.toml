@@ -22,7 +22,12 @@ dependencies = [
     # Ya venía por pyjwt[crypto]; se declara directa porque commands/intent.py
     # la importa a nivel de módulo.
     "cryptography>=43",
-    "fpdf2>=2.8.7",
+    # Con TECHO: el CI (`pip install -e ".[dev]"`) y `api/Dockerfile` instalan con pip y
+    # NO leen `uv.lock`. fpdf2 2.8.9 (2026-09-29) cambia los bytes del PDF y el drift
+    # gate de `shared/brand/membrete/carta.pdf` se puso rojo en `main` sin que nadie
+    # tocara el membrete — el mismo defecto que SQLAlchemy 2.1 (#281). Se sube el techo
+    # a propósito: regenerando el membrete y revisándolo, en el mismo commit.
+    "fpdf2>=2.8.7,<2.8.9",
     # [T-2.41] SOLO para la FFT del dictamen técnico. Se rechazó ObsPy —que sería la
     # opción obvia para leer miniSEED— porque arrastra matplotlib+scipy+lxml (>200 MB)
     # a una imagen co-locada con TimescaleDB en un EC2 pequeño; el lector STEIM2 vive
