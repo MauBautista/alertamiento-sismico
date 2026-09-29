@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **428** · `[~]` **23** · `[ ]` **51**
+**Conteo de tareas:** total **502** · `[x]` **429** · `[~]` **24** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18117,11 +18117,25 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [ ] Probada en el Pixel. Hay que mirar allí las 8 pestañas del táctico (~56 dp cada una):
     «DIRECTORIO» puede cortarse.
 
-### [ ] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media
 - **Objetivo:** ver los sismos y el último mapa de calor en el teléfono.
 - **Criterios de aceptación:**
-  - [ ] Prueba medida en el Pixel entre las dos opciones y la elegida implementada.
+  - [x] Prueba medida en el Pixel entre las dos opciones y la elegida implementada.
+    - Medido el 2026-09-29 en el Pixel 8 Pro: 6 vueltas intercaladas, el mismo mapa (236 sismos
+      reales de USGS y una superficie hecha con `shakemap/superficie.py`).
+
+      | | WebView + MapLibre GL JS | nativo · SurfaceView | nativo · TextureView |
+      |---|---|---|---|
+      | hasta pintar (mediana) | 981 ms | 387 ms | **341 ms** |
+      | memoria (PSS) | 497 + 131 MB del render = 628 MB | 460 MB | **429 MB** |
+      | fotogramas lentos al arrastrar | 0,7 % (p99 19 ms) | NO MEDIDO (fuera del HWUI) | **0 %** (p99 6 ms) |
+      | APK | +1,1 MB | +10,6 MB | +10,6 MB |
+    - Elegido: `@maplibre/maplibre-react-native` con `androidView="texture"`.
+    - El nativo esconde el crédito de OpenStreetMap tras un botón: la app lo pinta a la vista.
+    - El nativo no manda cabeceras por fuente, así que el PNG de la superficie viaja en el JSON.
+    - SISMOS → VER EN EL MAPA (`mobile/src/app/mapa-sismos.tsx`, `features/mapa/`).
+  - [ ] Visto en el Pixel contra la nube desplegada.
 
 ### [x] T-9.64 · **Una sola escala de tamaño y color** — `SOFTWARE`
 - **Componente:** shared · web · mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · media · **Decisión:** `D-46`
@@ -18131,11 +18145,20 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - Color MMI con la paleta del ShakeMap del USGS.
     - El redondeo es el de `gmice.romano`, cruzado desde la app y desde la web.
 
-### [ ] T-9.65 · **El mapa de calor en la app** — `SOFTWARE`
+### [x] T-9.65 · **El mapa de calor en la app** — `SOFTWARE` · **CERRADA 2026-09-29**
 - **Componente:** mobile · **Depende de:** T-9.51, T-9.63 · **Prioridad:** F6 · media
 - **Objetivo:** que el ocupante vea cómo se sintió el último sismo.
 - **Criterios de aceptación:**
-  - [ ] La superficie estimada del último evento, rotulada como estimación.
+  - [x] La superficie estimada del último evento, rotulada como estimación.
+    - `GET /sites/{id}/mapa-de-calor` devuelve el último incidente del inmueble ya pasado
+      (en revisión o cerrado) con superficie.
+    - Sin pruebas, falsos positivos ni reproducciones: manda la clasificación VIGENTE.
+    - Para el ocupante, sólo lo que le ordenó algo (D-39).
+    - El PNG va con los cortes del sitio, los mismos de la consola.
+    - La app lo rotula «ESTIMADO a partir de N sensores (M calibrados) · MMI estimada (Wald
+      1999), no observada».
+    - Lo prueba `api/tests/api/test_mapa_de_calor_movil.py`: 21 casos, y cada filtro se probó
+      quitándolo.
 
 ### [x] T-9.66 · **El historial sísmico de cada inmueble** — `SOFTWARE`
 - **Componente:** api · web · mobile · **Depende de:** T-9.60 · **Prioridad:** F6 · media · **Decisión:** `D-48`
@@ -18146,6 +18169,10 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     y quedaba fuera.
   - [x] En la página del inmueble y en la app (tarjeta en SISMOS, que comparten ocupante y
     táctico).
+- **Corregido el 2026-09-29 (al hacer T-9.65):** le enseñaba al ocupante TODOS los incidentes del
+  sitio, también el movimiento local sin corroborar que `D-39` le oculta. Ahora filtra con la
+  regla de autoridad de `mobile-state`, antes del `LIMIT`. El sismo que ese movimiento
+  correlacionó sigue en su historial, como sismo del catálogo.
 
 ## Fase 9.7 · Audios y animaciones
 
