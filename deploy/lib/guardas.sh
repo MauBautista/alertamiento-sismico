@@ -41,7 +41,9 @@ case "${BASH_SOURCE[0]}" in
 */*) _GUARDAS_DIR="${BASH_SOURCE[0]%/*}" ;;
 *) _GUARDAS_DIR="." ;;
 esac
-_GUARDAS_RAIZ="$(cd "${_GUARDAS_DIR}/../.." && pwd)"
+# `CDPATH=''`: con CDPATH exportado, `cd` a una ruta relativa IMPRIME el destino y la
+# raíz salía con dos líneas.
+_GUARDAS_RAIZ="$(CDPATH='' cd -- "${_GUARDAS_DIR}/../.." && pwd)"
 _guardas_git() { git -C "$_GUARDAS_RAIZ" "$@"; }
 
 # guarda_de_rama <componente> [tolera_arbol_sucio]
@@ -54,6 +56,11 @@ _guardas_git() { git -C "$_GUARDAS_RAIZ" "$@"; }
 guarda_de_rama() {
   local componente="${1:?componente}"
   local tolera_sucio="${2:-no}"
+
+  # Sin un repo en la raíz, cada `git` falla y el rechazo hablaba de una rama
+  # «DETACHED ()» que no existe. Se niega igual, pero diciendo lo que pasa.
+  _guardas_git rev-parse --show-toplevel >/dev/null 2>&1 \
+    || guardas_fallo "${componente}: no se pudo determinar el arbol que se despliega: ${_GUARDAS_RAIZ} no es un repositorio git."
 
   if [ "${TAKAB_DEPLOY_RAMA_LIBRE:-0}" = "1" ]; then
     # La escotilla NO es silenciosa: desplegar una rama a `dev` para probarla es
@@ -77,7 +84,7 @@ guarda_de_rama() {
   # mentira que persigue la regla de oro 7. Si no hay red, la guardia se niega en
   # vez de dar por bueno lo que no pudo comprobar.
   _guardas_git fetch -q origin main \
-    || guardas_fallo "${componente}: no se pudo hacer '_guardas_git fetch origin main'. Sin eso, comparar contra origin/main seria comparar contra una copia vieja; la guardia NO pasa por no poder mirar."
+    || guardas_fallo "${componente}: no se pudo hacer 'git -C ${_GUARDAS_RAIZ} fetch origin main'. Sin eso, comparar contra origin/main seria comparar contra una copia vieja; la guardia NO pasa por no poder mirar."
 
   local sin_pushear
   sin_pushear="$(_guardas_git log origin/main..main --oneline)"
@@ -90,7 +97,9 @@ guarda_de_rama() {
   # que es una decision mas grande que esta ficha— pero se dice.
   if command -v gh >/dev/null 2>&1; then
     local ci
-    ci="$(gh run list --branch main -L 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || echo "")"
+    # `gh` elige el repositorio por el git de SU directorio: se le pregunta desde la
+    # raíz juzgada, no desde donde se lanzó el despliegue.
+    ci="$(CDPATH='' cd -- "$_GUARDAS_RAIZ" && gh run list --branch main -L 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || echo "")"
     [ "$ci" = "success" ] \
       || guardas_fallo "${componente}: el ultimo CI de main no esta en verde (estado: ${ci:-desconocido}). A-1 pide main pusheado Y con CI verde."
   else

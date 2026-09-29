@@ -299,3 +299,119 @@ def test_cloud_apply_desde_otra_rama_SI_aplica_un_TF_DEV_en_main(repo_de_mentira
     r = _cloud_apply(desde_otra, tf)
     assert r.returncode == 0, r.stderr
     assert f"TERRAFORM-APLICADO -chdir={tf} apply" in r.stdout
+
+
+def test_cloud_deploy_lee_sus_artefactos_del_arbol_que_juzga(repo_de_mentira: Path) -> None:
+    """El reverso del hueco: la guardia ya juzga el árbol del script, así que lo que
+    el script ENVÍA (compose, unidades, seeds; rutas relativas) también tiene que salir
+    de ese árbol y no del directorio desde el que se lanza. Se corre el script de
+    verdad hasta su primer `terraform`, que deja constancia de dónde está."""
+    guion = repo_de_mentira / "deploy" / "cloud" / "deploy.sh"
+    guion.parent.mkdir(parents=True)
+    guion.write_text((REPO / "deploy" / "cloud" / "deploy.sh").read_text())
+    _git(repo_de_mentira, "add", "deploy/cloud/deploy.sh")
+    _git(repo_de_mentira, "commit", "-qm", "el guion de la nube")
+    _git(repo_de_mentira, "push", "-q", "origin", "main")
+    desde = _otro_clon_en_main(repo_de_mentira)
+    _git(desde, "checkout", "-q", "-b", "trabajo")
+
+    binario = _bin_minimo(repo_de_mentira.parent, con_gh="success")
+    for nombre in ("dirname",):
+        if not (binario / nombre).exists():
+            ruta = subprocess.run(["which", nombre], capture_output=True, text=True).stdout.strip()
+            (binario / nombre).symlink_to(ruta)
+    bitacora = repo_de_mentira.parent / "terraform.log"
+    # `aws` contesta (la cuenta) y `terraform` muere: el guion llega a los dos.
+    for nombre, cola in (("aws", "echo 123456789012"), ("terraform", "exit 1")):
+        falso = binario / nombre
+        falso.write_text(f'#!/bin/sh\necho "{nombre}|$PWD|$*" >> "$TF_LOG"\n{cola}\n')
+        falso.chmod(0o755)
+    entorno = {
+        "PATH": str(binario),
+        "HOME": os.environ.get("HOME", "/tmp"),
+        "TF_LOG": str(bitacora),
+        "AWS_PROFILE": "x",
+        "AWS_REGION": "x",
+        "TF_DEV": "infra/terraform/envs/dev",
+        "CLOUD_TAG": "abc1234",
+    }
+    r = subprocess.run(["bash", str(guion)], cwd=desde, capture_output=True, text=True, env=entorno)
+    assert r.returncode != 0  # muere en el terraform de mentira, a propósito
+    assert bitacora.exists(), f"no llegó a aws ni a terraform:\n{r.stderr}"
+    llamadas = [linea.split("|", 2) for linea in bitacora.read_text().splitlines()]
+    for nombre, pwd, _ in llamadas:
+        assert Path(pwd).resolve() == repo_de_mentira.resolve(), (
+            f"{nombre} corrió en {pwd}: el guion lee sus artefactos de otro árbol que el "
+            "que juzgó la guardia"
+        )
+    tf = [args for nombre, _, args in llamadas if nombre == "terraform"]
+    assert tf, f"no llegó al terraform: {llamadas}\n{r.stderr}"
+    # Un TF_DEV relativo conserva lo que significaba donde se tecleó.
+    assert f"-chdir={(desde / 'infra/terraform/envs/dev').resolve()}" in tf[0], tf[0]
+
+
+def _guardia_a_mano(
+    guardas: Path, *, cwd: Path, gh: str, extra_env: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
+    """La guardia con un `gh` a medida (un guion de sh, no un veredicto fijo)."""
+    binario = cwd.parent / f"bin-{cwd.name}"
+    binario.mkdir(exist_ok=True)
+    for nombre in _BINARIOS:
+        if not (binario / nombre).exists():
+            ruta = subprocess.run(["which", nombre], capture_output=True, text=True).stdout.strip()
+            (binario / nombre).symlink_to(ruta)
+    (binario / "gh").write_text(f"#!/bin/sh\n{gh}\n")
+    (binario / "gh").chmod(0o755)
+    entorno = dict(os.environ, PATH=str(binario), **(extra_env or {}))
+    entorno.pop("TAKAB_DEPLOY_RAMA_LIBRE", None)
+    return subprocess.run(
+        ["bash", "-c", f'. "{guardas}" && guarda_de_rama "prueba"'],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        env=entorno,
+    )
+
+
+def test_el_CI_se_pregunta_en_el_arbol_juzgado_no_en_el_cwd(
+    repo_de_mentira: Path, tmp_path: Path
+) -> None:
+    """`gh` decide el repositorio por el git de su directorio. Lanzada desde fuera de
+    un repo, la guardia bloqueaba un árbol bueno con «CI desconocido»; desde otro
+    repo, habría leído el CI de ESE repo."""
+    fuera = tmp_path / "fuera-de-git"
+    fuera.mkdir()
+    raiz = repo_de_mentira.resolve()
+    r = _guardia_a_mano(
+        repo_de_mentira / "deploy" / "lib" / "guardas.sh",
+        cwd=fuera,
+        gh=f'[ "$(pwd -P)" = "{raiz}" ] && echo success || echo "gh-en-$(pwd -P)"',
+    )
+    assert r.returncode == 0, r.stderr
+
+
+def test_un_CDPATH_exportado_no_desvia_la_raiz(repo_de_mentira: Path) -> None:
+    """El Makefile sourcea por ruta RELATIVA; con CDPATH, `cd` imprime el destino y la
+    raíz salía con dos líneas: la guardia bloqueaba diciendo «DETACHED ()»."""
+    r = subprocess.run(
+        ["bash", "-c", '. deploy/lib/guardas.sh && guarda_de_rama "prueba"'],
+        cwd=repo_de_mentira,
+        capture_output=True,
+        text=True,
+        env=dict(
+            os.environ,
+            PATH=str(_bin_minimo(repo_de_mentira.parent, con_gh="success")),
+            CDPATH=".",
+        ),
+    )
+    assert r.returncode == 0, r.stderr
+
+
+def test_una_guardia_fuera_de_un_repo_se_niega_DICIENDO_por_que(tmp_path: Path) -> None:
+    suelto = tmp_path / "suelto" / "deploy" / "lib"
+    suelto.mkdir(parents=True)
+    (suelto / "guardas.sh").write_text(GUARDAS.read_text())
+    r = _guardia_a_mano(suelto / "guardas.sh", cwd=tmp_path, gh="echo success")
+    assert r.returncode != 0
+    assert "no es un repositorio git" in r.stderr, r.stderr
+    assert "DETACHED" not in r.stderr

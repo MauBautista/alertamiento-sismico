@@ -30,6 +30,13 @@ guarda_de_rama "cloud"
 
 : "${AWS_PROFILE:?}" "${AWS_REGION:?}" "${TF_DEV:?}" "${CLOUD_TAG:?}"
 
+# La guardia juzga el arbol de ESTE guion; los artefactos que se envian (compose,
+# unidades, seeds) son rutas relativas, asi que se leen de ese mismo arbol y no del
+# directorio desde el que se lanzo. Un TF_DEV relativo conserva lo que significaba
+# donde se tecleo.
+case "$TF_DEV" in /*) ;; *) TF_DEV="${PWD}/${TF_DEV}" ;; esac
+CDPATH='' cd -- "${_AQUI}/../.."
+
 tf() { terraform -chdir="$TF_DEV" output -raw "$1"; }
 
 # [T-7.26] La salida del terraform que el despliegue NO puede inventarse: si falta o
