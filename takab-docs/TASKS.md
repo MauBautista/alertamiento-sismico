@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **429** · `[~]` **24** · `[ ]` **49**
+**Conteo de tareas:** total **502** · `[x]` **431** · `[~]` **22** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18089,7 +18089,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.6 · Sismos de México en la app
 
-### [~] T-9.60 · **El catálogo de México se sincroniza** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.60 · **El catálogo de México se sincroniza** — `SOFTWARE` + `GATE-AWS` · **CERRADA 2026-09-29**
 - **Componente:** api · **Depende de:** — · **Prioridad:** F6 · alta · **Decisión:** `D-46`
 - **Objetivo:** tener los sismos de México desde magnitud 4.0 al día.
 - **Criterios de aceptación:**
@@ -18097,7 +18097,10 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     (migración **0076**: la 0075 la tomó F5). Lo cubren `api/tests/catalogo/test_sincroniza.py` (19).
     El 2026-09-28 se corrió una vez contra el USGS real sobre una base de pruebas: 236 sismos M≥4
     en 90 días, estado `ok`.
-  - [ ] Corriendo en la nube: requiere desplegar y `TAKAB_API_CATALOG_USGS_ENABLED=true`.
+  - [x] Corriendo en la nube. `deploy/cloud/deploy.sh` fija `TAKAB_API_CATALOG_USGS_ENABLED=true`
+    y el despliegue `91740d8b` levanta `catalog-sync`. Visto el 2026-09-29 en la app contra la
+    nube, en un Samsung A53 real: la pestaña SISMOS trae sismos de USGS hasta el 28-sep (M 4.4,
+    El Colomo).
 
 ### [x] T-9.61 · **Los endpoints del catálogo** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.60 · **Prioridad:** F6 · alta
@@ -18116,8 +18119,13 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     con 55 tests y franja de «catálogo sin actualizar».
   - [ ] Probada en el Pixel. Hay que mirar allí las 8 pestañas del táctico (~56 dp cada una):
     «DIRECTORIO» puede cortarse.
+    - **Visto el 2026-09-29 en un Samsung A53 real (1080 px, sesión táctica), contra la nube:**
+      lista, historial y VER EN EL MAPA funcionan.
+    - **«DIRECTORIO» SÍ se corta: se lee «DIREC…».** Falta decidir cómo: rótulo más corto o
+      icono solo.
+    - Falta también verla con sesión de OCUPANTE.
 
-### [~] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-29**
 - **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media
 - **Objetivo:** ver los sismos y el último mapa de calor en el teléfono.
 - **Criterios de aceptación:**
@@ -18135,7 +18143,14 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - El nativo esconde el crédito de OpenStreetMap tras un botón: la app lo pinta a la vista.
     - El nativo no manda cabeceras por fuente, así que el PNG de la superficie viaja en el JSON.
     - SISMOS → VER EN EL MAPA (`mobile/src/app/mapa-sismos.tsx`, `features/mapa/`).
-  - [ ] Visto en el Pixel contra la nube desplegada.
+  - [x] Visto en un teléfono real contra la nube desplegada (`91740d8b`), el 2026-09-29, en un
+    Samsung A53 (Android 16, 1080 px, gama media): el Pixel no estaba disponible.
+    - Pinta los sismos de USGS, el inmueble (Puebla) y la leyenda; el crédito de OpenStreetMap y
+      de USGS está a la vista.
+    - Dice «Sin mapa de calor…», que es lo correcto: los cinco incidentes del sitio están
+      clasificados PRUEBA.
+    - SISMOS → VER EN EL MAPA → atrás regresa a SISMOS.
+    - Al arrastrar: 0,92 % de fotogramas lentos, p99 10 ms; 295 MB de PSS.
 
 ### [x] T-9.64 · **Una sola escala de tamaño y color** — `SOFTWARE`
 - **Componente:** shared · web · mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · media · **Decisión:** `D-46`
