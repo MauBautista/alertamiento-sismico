@@ -17,6 +17,9 @@ const hace = (ms: number) => new Date(AHORA - ms).toISOString();
 
 // ------------------------------------------------------------------ mocks
 
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
+
 let mockSitio: string | null = SITE;
 jest.mock("@/services/mySite", () => ({
   useWatchedSiteId: () => mockSitio,
@@ -143,5 +146,17 @@ describe("SISMOS · contrato de 4 estados (regla de oro 7)", () => {
       },
       { asentar },
     );
+  });
+});
+
+describe("SISMOS · VER EN EL MAPA (T-9.63)", () => {
+  it("abre la pantalla del mapa", async () => {
+    mockPush.mockReset();
+    const v = await render(<Sismos />);
+    await asentar();
+    await act(async () => {
+      fireEvent.press(v.getByTestId("sismos-ver-mapa"));
+    });
+    expect(mockPush).toHaveBeenCalledWith("/mapa-sismos");
   });
 });

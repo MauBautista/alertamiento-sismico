@@ -379,6 +379,8 @@ describe("censo móvil · las rutas con dato tienen la PRUEBA de los cuatro esta
       "app/(occupant)/sismos.tsx",
       // T-9.80 · contactos de emergencia: nació con su prueba de cuatro estados.
       "app/contactos-emergencia.tsx",
+      // T-9.63 · el mapa de sismos: nació con su prueba de cuatro estados.
+      "app/mapa-sismos.tsx",
     ];
     const desprotegidas = cerradas.filter((v) => !CON_PRUEBA.has(v));
     exigirIgual(

@@ -14,7 +14,8 @@ import type { SismoCercanoOut, SismosDelSitioOut } from "@takab/sdk";
 import type { ReactNode } from "react";
 import { FlatList, StyleSheet, Text, View } from "react-native";
 
-import { fontSize, palette, radius, space } from "@/ui/theme";
+import { Pulsable } from "@/ui/Pulsable";
+import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
 import { colorDeMmi, LEYENDA_ESCALA, radioDeMagnitud, romanoDeMmi, tintaSobre } from "./escala";
 import { fechaLocal } from "./fecha";
@@ -72,6 +73,8 @@ export function SismosList(props: {
   onRefrescar: () => void;
   /** Lo que va encima de la lista (el historial del inmueble). */
   cabecera?: ReactNode;
+  /** [T-9.63] Abre el mapa (sismos + mapa de calor del inmueble). */
+  onVerMapa?: () => void;
 }) {
   const r = props.respuesta;
   const franja = catalogoSinActualizar(r, props.nowMs);
@@ -89,6 +92,19 @@ export function SismosList(props: {
         <View style={styles.cabecera}>
           <Text style={styles.eyebrow}>{TITULO_SISMOS}</Text>
           <Text style={styles.leyenda}>{LEYENDA_ESCALA}</Text>
+          {props.onVerMapa ? (
+            <Pulsable
+              accessibilityRole="button"
+              onPress={props.onVerMapa}
+              style={styles.verMapa}
+              testID="sismos-ver-mapa"
+            >
+              <Text style={styles.verMapaTexto}>VER EN EL MAPA</Text>
+              <Text style={styles.verMapaDetalle}>
+                Los sismos y el mapa de calor del último que sintió su inmueble →
+              </Text>
+            </Pulsable>
+          ) : null}
           {franja !== null ? (
             <View style={styles.franja} testID="catalogo-sin-actualizar">
               <Text style={styles.franjaTexto}>{franja}</Text>
@@ -123,6 +139,19 @@ const styles = StyleSheet.create({
   cabecera: { gap: space[2] },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2 },
   leyenda: { color: palette.fg3, fontSize: fontSize.xs },
+  verMapa: {
+    minHeight: touch.min,
+    justifyContent: "center",
+    backgroundColor: palette.card,
+    borderColor: palette.cyan,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingVertical: space[3],
+    paddingHorizontal: space[3],
+    gap: 2,
+  },
+  verMapaTexto: { color: palette.cyan, fontSize: fontSize.sm, fontWeight: "700", letterSpacing: 1 },
+  verMapaDetalle: { color: palette.fg3, fontSize: fontSize.xs },
   franja: {
     backgroundColor: palette.card,
     borderColor: palette.warn,

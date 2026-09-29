@@ -6,6 +6,8 @@
 //
 // Sin `@takab/sdk` en el cuerpo del módulo: expo-router barre `src/app` y el SDK
 // se queda en los hooks (`features/sismos/useSismos.ts`).
+import { useRouter } from "expo-router";
+
 import { HistorialCard } from "@/features/sismos/HistorialCard";
 import { catalogoSinActualizar } from "@/features/sismos/frescura";
 import { SismosList } from "@/features/sismos/SismosList";
@@ -20,6 +22,7 @@ const SIN_SITIO =
 const SIN_SISMOS = "Sin sismos de M 4.0 o más en 90 días";
 
 export default function Sismos() {
+  const router = useRouter();
   const siteId = useWatchedSiteId();
   const sismos = useSismos(siteId);
   const historial = useHistorialSismico(siteId);
@@ -46,6 +49,7 @@ export default function Sismos() {
           cabecera={<HistorialCard lectura={historial} nowMs={ahora} />}
           nowMs={ahora}
           onRefrescar={() => void sismos.refrescar()}
+          onVerMapa={() => router.push("/mapa-sismos")}
           refrescando={sismos.refrescando}
           respuesta={data}
         />

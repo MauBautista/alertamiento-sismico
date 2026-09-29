@@ -15,3 +15,35 @@ jest.mock("react-native-safe-area-context", () => ({
   SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
   useSafeAreaInsets: () => ({ top: 42, bottom: 0, left: 0, right: 0 }),
 }));
+
+// [T-9.63] El SDK nativo del mapa no carga bajo jest (es un módulo nativo). Cada
+// componente se vuelve una `View` que conserva sus props —`coordinates`, `url`,
+// `data`, `paint`…—, así las pruebas miden QUÉ se le pide al mapa sin mapa.
+jest.mock("@maplibre/maplibre-react-native", () => {
+  const React = jest.requireActual<typeof import("react")>("react");
+  const { View } = jest.requireActual<typeof import("react-native")>("react-native");
+  const componente = (nombre: string) => {
+    const Falso = ({
+      children,
+      ...props
+    }: {
+      children?: React.ReactNode;
+      id?: string;
+      testID?: string;
+    }) =>
+      React.createElement(
+        View,
+        { ...props, testID: props.testID ?? `maplibre-${nombre}-${props.id ?? ""}` },
+        children,
+      );
+    Falso.displayName = `MapLibre${nombre}`;
+    return Falso;
+  };
+  return {
+    Map: componente("Map"),
+    Camera: componente("Camera"),
+    GeoJSONSource: componente("GeoJSONSource"),
+    ImageSource: componente("ImageSource"),
+    Layer: componente("Layer"),
+  };
+});
