@@ -46,8 +46,9 @@ CÓMO SOBREVIVE AL REINICIO (y por qué no repite la trampa de `T-2.67.b`)
 -------------------------------------------------------------------------
 Aquella cola «durable» se perdía entera al reiniciar porque nadie fijaba su
 directorio: sin `TAKAB_EDGE_CLOUD_SPOOL_DIR` —que `provision_gateway.sh` **no
-escribe**— `_tmp_spool()`/`_default_pending_dir()` hacen un **`mkdtemp` NUEVO en cada
-arranque**. Aquí el directorio se **deriva** y es estable:
+escribe**— `_tmp_spool()` hace un **temporal NUEVO en cada arranque** (desde el
+2026-09-29 se borra al apagar: `takab_edge/efimero.py`), y la evidencia pendiente del
+backfill cae al temporal del sistema. Aquí el directorio se **deriva** y es estable:
 
 * con `cloud_spool_dir` → hermano del spool, y **durable de verdad** (NVMe del Pi);
 * sin él → `<tmp>/takab-audit-<uid>-<gateway_id>`, que es el MISMO patrón que

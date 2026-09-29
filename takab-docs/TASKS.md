@@ -18222,9 +18222,9 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - Hecho el 2026-09-29. `takab-simulacro-v2` entra al catálogo del edge como
       `simulacro_hablado.wav`. Ninguna configuración lo elige por defecto: se enciende por la
       firmada (`config.edge.audio.simulacro`) tras escucharlo.
-    - Contenido: «Esto es un simulacro.» sola en los primeros 2,5 s, y después 4 veces cada
-      4,5 s sobre el tono de ALERTA (`siren.wav`) a −15 dB. Dura 18,8 s, 22,05 kHz, 829 KB, y
-      termina en la voz.
+    - Contenido: «Esto es un simulacro.» (1,7 s) sin tono en los primeros 2,5 s. Después, 4 veces
+      cada 4,5 s sobre el tono de ALERTA (`siren.wav`), 15 dB por debajo de la voz. Dura 18,8 s,
+      22,05 kHz, 829 KB, y termina en la voz.
     - Lo generan `tools/audio/gen_simulacro_hablado.py` (determinista) y la voz
       `takab-voz-simulacro-v1` de `voces.json`. Los dos están en el manifiesto.
     - `edge/tests/test_audio_simulacro.py` lo mide sobre el fichero empaquetado. Usa la energía
@@ -18234,13 +18234,22 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       - que el tono no se corta;
       - que hay ≥ 4 frases sobre el tono, con la voz ≥ 13,5 dB por encima;
       - que el tono nunca suena más de 3,5 s sin la voz, y que termina en la voz.
-    - Se probó con seis mutantes, cada uno cazado por la prueba que le toca.
+    - Además, cada frase se busca por correlación contra la voz auditada: tiene que estar ENTERA
+      y AL DERECHO. La frase real da 0,98; la truncada, 0,81; la invertida y el ruido, < 0,5.
+    - Se probó con seis mutantes propios y cuatro de la revisión, cada uno cazado por la prueba
+      que le toca.
   - [ ] Probado por el altavoz del gabinete.
 - **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
   sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
   oír de verdad»). Falla tres de las pruebas nuevas. Lo que hay que escuchar es el empaquetado.
 - **Queda más bajo que la alerta:** el pico de la voz limita la ganancia, y mide −16,6 LUFS frente
-  a los −7,7 de `siren.wav`. Se decide al escucharlo.
+  a los −7,7 de `siren.wav`. El tono de fondo queda 15 dB bajo la VOZ, pero ~23 dB bajo la alerta
+  real. D-41 dice «atenuado 15 dB» sin decir respecto de qué. Se decide al escucharlo.
+- **La revisión adversaria (2026-09-29) encontró que la ranura de la SIRENA aceptaba este id.**
+  Una config con las ranuras cruzadas habría dicho «Esto es un simulacro» durante una alerta real.
+  - El hueco ya existía con v1: un carillón en una alerta.
+  - Ahora cada id declara su ranura (`catalog.RANURAS`). Uno fuera de la suya conserva el tono
+    anterior y lo dice en `wrong_slot`.
 
 ### [~] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`

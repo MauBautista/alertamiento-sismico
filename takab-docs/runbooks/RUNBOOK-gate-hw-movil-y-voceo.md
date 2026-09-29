@@ -185,8 +185,9 @@ TAKAB_EDGE_AUDIO_SIREN_ENABLED=true   en /etc/takab/edge.env
 > antes.
 
 > ### El simulacro ya no necesita grabación (T-9.71 · D-41)
-> El catálogo trae `takab-simulacro-v2`: 2,5 s de «Esto es un simulacro.» sola y después la
-> frase cuatro veces sobre el tono de **alerta** atenuado 15 dB. Se elige por la configuración
+> El catálogo trae `takab-simulacro-v2`: «Esto es un simulacro.» sin tono en los primeros 2,5 s,
+> y después la frase cuatro veces sobre el tono de **alerta**, 15 dB por debajo de la voz. Sólo
+> puede sonar en la ranura del simulacro: en la de la sirena se rechaza. Se elige por la configuración
 > firmada (`config.edge.audio.simulacro`, T-2.49), no copiando un WAV al gabinete, y **ninguna
 > configuración lo elige por defecto**. Sustituye, para ese id, la regla de T-5.17 («un simulacro
 > nunca suena a sismo»): ahora sí suena a alerta, y lo que lo distingue es la voz. Lo mide

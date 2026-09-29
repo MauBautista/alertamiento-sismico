@@ -126,7 +126,8 @@ def test_la_evidencia_se_calcula_DE_LO_QUE_SONARIA_AHORA_no_de_lo_del_arranque(a
     audio.apply_audio_profile({"simulacro": "takab-simulacro-v1"})
     primero = audio.simulacro_evidence()["sha256"]
 
-    audio.apply_audio_profile({"simulacro": "takab-prueba-v1"})
+    # [T-9.71] Antes cambiaba al tono de PRUEBA, que ya no puede sonar en esta ranura.
+    audio.apply_audio_profile({"simulacro": "takab-simulacro-v2"})
     segundo = audio.simulacro_evidence()["sha256"]
     assert primero != segundo, "la evidencia se quedó congelada en el asset del arranque"
 
@@ -383,3 +384,92 @@ def test_el_tono_nunca_suena_mas_de_3_5_s_sin_la_voz(ventanas):  # noqa: ANN001
     huecos.append(duracion - frases[-1][1] - _VENTANA_S)
     assert max(huecos) <= 3.5, f"huecos sin voz (s): {[round(h, 2) for h in huecos]}"
     assert huecos[-1] <= 1.0, "no termina en la voz: lo último que se oye es el tono"
+
+
+# ── cada tono, en SU ranura ────────────────────────────────────────────────
+#
+# La revisión adversaria de T-9.71: una config firmada con las ranuras cruzadas
+# (`siren: takab-simulacro-v2`) se aplicaba sin queja, y en una alerta REAL el jack
+# habría dicho «Esto es un simulacro». El hueco ya existía con v1 (un carillón en
+# una alerta); con la voz, el audio equivocado niega la alerta en voz alta.
+
+
+def test_todo_tono_del_catalogo_declara_su_ranura():
+    """Sin ranura declarada no suena en ninguna: un id nuevo no puede colarse."""
+    assert set(catalog.RANURAS) == set(catalog.CATALOG)
+
+
+@pytest.mark.parametrize(
+    ("ranura", "tono"),
+    [
+        ("siren", "takab-simulacro-v2"),
+        ("siren", "takab-simulacro-v1"),
+        ("simulacro", "takab-siren-v1"),
+        ("test", "takab-simulacro-v2"),
+    ],
+)
+def test_un_tono_en_la_ranura_equivocada_conserva_el_anterior_y_dice_por_que(audio, ranura, tono):  # noqa: ANN001
+    antes = audio.apply_audio_profile({})
+    reporte = audio.apply_audio_profile({ranura: tono})
+    assert reporte["applied"] == {}
+    assert reporte["rejected"] == {ranura: tono}
+    assert ranura in reporte["wrong_slot"], reporte
+    assert reporte[f"{ranura}_path"] == antes[f"{ranura}_path"]
+
+
+def test_la_sirena_de_una_alerta_nunca_es_el_simulacro_hablado(audio):
+    audio.apply_audio_profile({"siren": "takab-simulacro-v2", "simulacro": "takab-simulacro-v2"})
+    reporte = audio.profile_report
+    assert not reporte["siren_path"].endswith("simulacro_hablado.wav")
+    assert reporte["simulacro_path"].endswith("simulacro_hablado.wav")
+
+
+# ── la voz ES la voz auditada: entera y al derecho ─────────────────────────
+#
+# La energía no distingue una frase de un ruido con su misma envolvente, ni «Esto es
+# un…» de «Esto es un simulacro.» (la revisión adversaria hizo pasar las cinco pruebas
+# de arriba con la voz al revés, con ruido de banda vocal y con la frase truncada a
+# 1 s). Aquí cada frase se busca por correlación normalizada contra el ingrediente
+# del manifiesto: la frase real correlaciona 0,98 sobre el tono; la truncada, 0,81;
+# la invertida y el ruido, menos de 0,5.
+
+_VOZ_AUDITADA = Path(__file__).resolve().parents[2] / "shared/audio/fuentes/voz_simulacro.wav"
+_CORRELACION_MIN = 0.95
+
+
+def test_la_voz_auditada_es_la_frase_que_D41_pide():
+    import json
+
+    manifiesto = json.loads(
+        (_VOZ_AUDITADA.parents[1] / "MANIFEST.json").read_text(encoding="utf-8")
+    )
+    (voz,) = [a for a in manifiesto["audios"] if a["id"] == "takab-voz-simulacro-v1"]
+    assert voz["fuente"]["texto"] == "Esto es un simulacro."
+    assert voz["sha256"] == hashlib.sha256(_VOZ_AUDITADA.read_bytes()).hexdigest()
+
+
+def test_cada_frase_ES_la_voz_auditada_entera_y_al_derecho():
+    import numpy as np
+
+    x, sr = _lee_wav(catalog.resolve("takab-simulacro-v2"))
+    v, sr_voz = _lee_wav(_VOZ_AUDITADA)
+    assert sr == sr_voz, "el simulacro y su voz no comparten frecuencia de muestreo"
+    n = len(v)
+    largo = 1 << int(np.ceil(np.log2(len(x) + n)))
+    cruce = np.fft.irfft(np.fft.rfft(x, largo) * np.fft.rfft(v[::-1], largo), largo)
+    cruce = cruce[n - 1 : len(x)]
+    acumulada = np.concatenate([[0.0], np.cumsum(x * x)])
+    energia = acumulada[n:] - acumulada[: len(x) - n + 1]
+    rho = cruce / (np.linalg.norm(v) * np.sqrt(np.maximum(energia, 1e-20)))
+
+    inicios: list[float] = []
+    while True:
+        k = int(np.argmax(rho))
+        if rho[k] < _CORRELACION_MIN:
+            break
+        inicios.append(k / sr)
+        rho[max(0, k - n // 2) : k + n // 2] = 0.0
+    inicios.sort()
+    sola = [t for t in inicios if t + n / sr <= _VOZ_SOLA_S]
+    encima = [t for t in inicios if t >= _VOZ_SOLA_S]
+    assert sola and len(encima) >= 4, f"frases enteras encontradas en {inicios} s"

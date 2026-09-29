@@ -12,8 +12,8 @@ Borrar es peligroso, así que la mitad de estas pruebas comprueba lo contrario:
 
 from __future__ import annotations
 
+import ast
 import gc
-import re
 import tempfile
 from pathlib import Path
 
@@ -93,14 +93,48 @@ def test_el_backfill_sin_ruta_no_deja_un_temporal_huerfano(
     assert not list(tmp_propio.glob("takab-backfill-*"))
 
 
-def test_ningun_mkdtemp_del_paquete_queda_suelto() -> None:
-    """El censo lo pone el árbol: un `mkdtemp` nuevo en el paquete tiene que pasar
-    por `directorio_efimero`, o vuelve a llenar `/tmp` sin que nadie lo vea."""
+#: Lo que deja un temporal en disco si nadie lo borra. `TemporaryFile` a secas se borra
+#: solo; los demás, no (o sólo si se acuerdan de `delete=True`).
+_CREAN_TEMPORALES = {"mkdtemp", "mkstemp", "TemporaryDirectory", "NamedTemporaryFile"}
+
+
+def _usos_de_temporales(codigo: str) -> list[int]:
+    """Líneas que NOMBRAN un creador de temporales: por atributo, por nombre o al
+    importarlo (con o sin alias). Por AST, no por texto: `mkdtemp (…)`, un alias o
+    `from tempfile import mkdtemp as t` no se le escapan."""
+    lineas = []
+    for nodo in ast.walk(ast.parse(codigo)):
+        if isinstance(nodo, ast.Attribute) and nodo.attr in _CREAN_TEMPORALES:
+            lineas.append(nodo.lineno)
+        elif isinstance(nodo, ast.Name) and nodo.id in _CREAN_TEMPORALES:
+            lineas.append(nodo.lineno)
+        elif isinstance(nodo, ast.ImportFrom) and any(
+            a.name in _CREAN_TEMPORALES for a in nodo.names
+        ):
+            lineas.append(nodo.lineno)
+    return sorted(set(lineas))
+
+
+def test_el_censo_ve_las_formas_que_la_regex_no_veia() -> None:
+    """Las cinco que la revisión adversaria coló por la primera versión (una regex)."""
+    fugas = (
+        "import tempfile\n"
+        "from tempfile import mkdtemp as hacer_temporal\n"
+        "hacer_temporal()\n"
+        "tempfile.mkdtemp (prefix='x')\n"
+        "tempfile.TemporaryDirectory(delete=False)\n"
+        "tempfile.mkstemp()\n"
+    )
+    assert _usos_de_temporales(fugas) == [2, 4, 5, 6]
+
+
+def test_ningun_creador_de_temporales_del_paquete_queda_suelto() -> None:
+    """El censo lo pone el árbol: un temporal nuevo en el paquete tiene que pasar por
+    `directorio_efimero`, o vuelve a llenar `/tmp` sin que nadie lo vea."""
     sueltos = [
         f"{py.relative_to(PAQUETE)}:{n}"
         for py in sorted(PAQUETE.rglob("*.py"))
         if py.name != "efimero.py"
-        for n, linea in enumerate(py.read_text(encoding="utf-8").splitlines(), 1)
-        if re.search(r"\bmkdtemp\(", linea)
+        for n in _usos_de_temporales(py.read_text(encoding="utf-8"))
     ]
-    assert not sueltos, f"mkdtemp sin dueño: {sueltos}"
+    assert not sueltos, f"temporales sin dueño: {sueltos}"

@@ -3,6 +3,7 @@
 
 D-41: el audio abre con **2,5 s de voz sola** («Esto es un simulacro.») y después la
 voz se repite **al menos cuatro veces** encima del **tono de alerta** atenuado 15 dB.
+La frase dura 1,7 s: «voz sola» es que en esos 2,5 s NO hay tono, con la frase dentro.
 Se ensaya con el sonido que la gente va a oír de verdad; la voz primero y encima es lo
 que impide confundirlo con una alerta real.
 
@@ -11,11 +12,14 @@ simulacro v1: el candidato del 2026-09-28 (``simulacro_hablado_v2.wav``) usó el
 carillón, y eso no es lo que D-41 decidió. Si T-9.70 cambia el tono de alerta, este
 fichero se regenera con el nuevo (``TONO``).
 
-Niveles: la voz se iguala en RMS activo al tono, y el tono se atenúa 15 dB; así el
-tono queda 15 dB por debajo de su nivel propio Y de la voz. Luego la mezcla entera se
+Niveles: la voz se iguala en RMS activo al tono y el tono se atenúa 15 dB, así que el
+tono queda **15 dB por debajo de la voz**. Luego la mezcla entera se
 normaliza para el edge (``normaliza.OBJETIVO_EDGE_LUFS``, pico verdadero ≤ −1 dBTP),
-que escala todo por igual y no toca esa relación. El fichero termina con la voz: lo
-último que se oye es «simulacro», no el tono.
+que escala todo por igual y no toca esa relación. Pero el pico de la voz limita la
+ganancia: respecto de ``siren.wav`` tal como suena en una alerta, el tono de fondo
+queda ~23 dB más bajo, no 15. D-41 dice «atenuado 15 dB» sin decir respecto de qué;
+aquí se cumple respecto de la voz, y el nivel absoluto se decide al escucharlo. El
+fichero termina con la voz: lo último que se oye es «simulacro», no el tono.
 
 Corre en el mismo entorno aislado que ``normaliza.py``::
 

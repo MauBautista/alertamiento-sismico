@@ -122,8 +122,9 @@ GENERADOS: list[dict] = [
             "apache-2.0) y del tono takab-siren-v1 (original de TAKAB)",
             "fuente": "código del repo (tools/audio/gen_simulacro_hablado.py), propiedad de TAKAB",
         },
-        "notas": "Simulacro HABLADO (T-9.71 · D-41): voz sola 2,5 s y luego la frase sobre "
-        "el tono de ALERTA a −15 dB. Ninguna configuración lo elige por defecto. El pico "
+        "notas": "Simulacro HABLADO (T-9.71 · D-41): 2,5 s sin tono con la frase (1,7 s) "
+        "dentro, y luego la frase sobre el tono de ALERTA a −15 dB de la voz (~23 dB bajo "
+        "siren.wav tras normalizar). Ninguna configuración lo elige por defecto. El pico "
         "verdadero de la voz limita la ganancia: queda por debajo del objetivo de LUFS "
         "(el valor medido está arriba). Si cambia el tono de alerta (T-9.70), se regenera. "
         "El candidato del 2026-09-28 usaba el carillón de v1 de fondo y NO cumple D-41.",
