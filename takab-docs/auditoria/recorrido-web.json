@@ -1,35 +1,25 @@
 {
-  "base_url": "http://localhost:5173",
+  "base_url": "http://localhost:4173",
   "roles": [
     "brigadista",
-    "building_admin",
     "gov_operator",
     "inspector",
     "occupant",
-    "security_guard",
-    "soc_operator",
     "takab_superadmin",
     "takab_support",
     "tenant_admin"
   ],
   "resumen": {
-    "controles": 268,
+    "controles": 259,
     "por_resultado": {
-      "efecto": 201,
-      "deshabilitado": 42,
-      "mutante_no_pulsado": 19,
-      "no_visible": 6
+      "efecto": 165,
+      "deshabilitado": 35,
+      "no_visible": 41,
+      "mutante_no_pulsado": 18
     },
-    "hallazgos": 1
+    "hallazgos": 0
   },
-  "hallazgos": [
-    {
-      "tipo": "no_medido",
-      "rol": "occupant",
-      "ruta": "/",
-      "detalle": "el login dev no emitió token para este rol en este entorno (¿pool de ocupantes sin configurar?)"
-    }
-  ],
+  "hallazgos": [],
   "detalle": [
     {
       "rol": "brigadista",
@@ -37,209 +27,6 @@
         "/"
       ],
       "controles": [],
-      "hallazgos": []
-    },
-    {
-      "rol": "building_admin",
-      "rutas": [
-        "/console",
-        "/triage",
-        "/building/d1000000-0000-0000-0000-000000000000"
-      ],
-      "controles": [
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "BUILDING_ADMIN",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "LEER EL AVISO COMPLETO",
-          "resultado": "efecto",
-          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ACEPTO ESTE AVISO",
-          "resultado": "efecto",
-          "detalle": "aria ||→|| · 4 peticiones · 11 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "HISTORIAL",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "OCULTAR SIN ENLACE",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ESTACIONES",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "EPICENTROS",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "CATÁLOGO",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ENLACE",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ONDAS",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "select",
-          "rotulo": "Orden de la cola de incidentes",
-          "resultado": "efecto",
-          "detalle": "5 opciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "REUBICAR EPICENTRO",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "CONFIRMAR ACUSE",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "BUILDING_ADMIN",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "TODOS",
-          "resultado": "efecto",
-          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "CRÍTICOS",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "ADVERTENCIA",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "VIGILANCIA",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "NORMAL",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
-          "resultado": "efecto",
-          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "BUILDING_ADMIN",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "1H",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "6H",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "24H",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "7D",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "PROBAR SIRENA",
-          "resultado": "mutante_no_pulsado"
-        }
-      ],
       "hallazgos": []
     },
     {
@@ -255,7 +42,7 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "GOV_OPERATOR",
+          "rotulo": "GOBIERNO",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -271,7 +58,7 @@
           "tipo": "button",
           "rotulo": "ACEPTO ESTE AVISO",
           "resultado": "efecto",
-          "detalle": "aria ||→|| · 4 peticiones · 11 mutaciones"
+          "detalle": "aria ||→|| · 2 peticiones · 11 mutaciones"
         },
         {
           "ruta": "/console",
@@ -285,7 +72,7 @@
           "tipo": "button",
           "rotulo": "OCULTAR SIN ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
+          "detalle": "aria ||false→||true · 6 peticiones · 7 mutaciones"
         },
         {
           "ruta": "/console",
@@ -299,7 +86,7 @@
           "tipo": "button",
           "rotulo": "EPICENTROS",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+          "detalle": "aria ||true→||false · 2 peticiones · 2 mutaciones"
         },
         {
           "ruta": "/console",
@@ -313,7 +100,7 @@
           "tipo": "button",
           "rotulo": "ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
         },
         {
           "ruta": "/console",
@@ -325,7 +112,28 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "rotulo": "RELIEVE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 40 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SUELO CDMX",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TIPO DE SUELO (INEGI) · no es zonificación sísmica",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO · TAMAÑO = MAGNITUD · OFF",
           "resultado": "efecto",
           "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
         },
@@ -357,7 +165,7 @@
         {
           "ruta": "/fleet",
           "tipo": "button",
-          "rotulo": "GOV_OPERATOR",
+          "rotulo": "GOBIERNO",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -377,7 +185,7 @@
         {
           "ruta": "/triage",
           "tipo": "button",
-          "rotulo": "GOV_OPERATOR",
+          "rotulo": "GOBIERNO",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -419,14 +227,49 @@
         {
           "ruta": "/triage",
           "tipo": "button",
+          "rotulo": "2026-09-28 · 10:37 UTC094e6600-bcbd",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
           "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
           "resultado": "efecto",
           "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
         },
         {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "SIN MINISEED ARCHIVADO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "DICTAMEN PDF",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "select",
+          "rotulo": "Status del dictamen a firmar",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FIRMAR DICTAMEN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
           "ruta": "/audit",
           "tipo": "button",
-          "rotulo": "GOV_OPERATOR",
+          "rotulo": "GOBIERNO",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -445,7 +288,7 @@
         {
           "ruta": "/building/d1000000-0000-0000-0000-000000000000",
           "tipo": "button",
-          "rotulo": "GOV_OPERATOR",
+          "rotulo": "GOBIERNO",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -507,7 +350,7 @@
           "tipo": "button",
           "rotulo": "ACEPTO ESTE AVISO",
           "resultado": "efecto",
-          "detalle": "aria ||→|| · 3 peticiones · 11 mutaciones"
+          "detalle": "aria ||→|| · 2 peticiones · 11 mutaciones"
         },
         {
           "ruta": "/console",
@@ -521,7 +364,7 @@
           "tipo": "button",
           "rotulo": "OCULTAR SIN ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||false→||true · 2 peticiones · 6 mutaciones"
+          "detalle": "aria ||false→||true · 3 peticiones · 7 mutaciones"
         },
         {
           "ruta": "/console",
@@ -549,7 +392,7 @@
           "tipo": "button",
           "rotulo": "ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 4 mutaciones"
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
         },
         {
           "ruta": "/console",
@@ -561,7 +404,28 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "rotulo": "RELIEVE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 36 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SUELO CDMX",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 3 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TIPO DE SUELO (INEGI) · no es zonificación sísmica",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO · TAMAÑO = MAGNITUD · OFF",
           "resultado": "efecto",
           "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
         },
@@ -635,9 +499,44 @@
         {
           "ruta": "/triage",
           "tipo": "button",
+          "rotulo": "2026-09-28 · 10:37 UTC094e6600-bcbd",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
           "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
           "resultado": "efecto",
           "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "SIN MINISEED ARCHIVADO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "DICTAMEN PDF",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "select",
+          "rotulo": "Status del dictamen a firmar",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FIRMAR DICTAMEN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
         },
         {
           "ruta": "/building/d1000000-0000-0000-0000-000000000000",
@@ -683,239 +582,6 @@
         "/"
       ],
       "controles": [],
-      "hallazgos": [
-        {
-          "tipo": "no_medido",
-          "rol": "occupant",
-          "ruta": "/",
-          "detalle": "el login dev no emitió token para este rol en este entorno (¿pool de ocupantes sin configurar?)"
-        }
-      ]
-    },
-    {
-      "rol": "security_guard",
-      "rutas": [
-        "/"
-      ],
-      "controles": [],
-      "hallazgos": []
-    },
-    {
-      "rol": "soc_operator",
-      "rutas": [
-        "/console",
-        "/fleet",
-        "/triage",
-        "/building/d1000000-0000-0000-0000-000000000000"
-      ],
-      "controles": [
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "SOC_OPERATOR",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "LEER EL AVISO COMPLETO",
-          "resultado": "efecto",
-          "detalle": "aria ||→|| · 0 peticiones · 10 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ACEPTO ESTE AVISO",
-          "resultado": "efecto",
-          "detalle": "aria ||→|| · 3 peticiones · 11 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "HISTORIAL",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "OCULTAR SIN ENLACE",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 0 peticiones · 6 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ESTACIONES",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "EPICENTROS",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "CATÁLOGO",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 0 peticiones · 5 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ENLACE",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "ONDAS",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
-          "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "select",
-          "rotulo": "Orden de la cola de incidentes",
-          "resultado": "efecto",
-          "detalle": "5 opciones"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "REUBICAR EPICENTRO",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "SOLICITAR DICTAMEN TÉCNICO",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/console",
-          "tipo": "button",
-          "rotulo": "CONFIRMAR ACUSE",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/fleet",
-          "tipo": "button",
-          "rotulo": "SOC_OPERATOR",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/fleet",
-          "tipo": "select",
-          "rotulo": "Orden de la flota",
-          "resultado": "efecto",
-          "detalle": "4 opciones"
-        },
-        {
-          "ruta": "/fleet",
-          "tipo": "button",
-          "rotulo": "AUTODIAGNÓSTICO SILENCIOSO",
-          "resultado": "deshabilitado"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "SOC_OPERATOR",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "TODOS",
-          "resultado": "efecto",
-          "detalle": "ya estaba activo: volver a pulsarlo no cambia nada, y es lo correcto"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "CRÍTICOS",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "ADVERTENCIA",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "VIGILANCIA",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "NORMAL",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 20 mutaciones"
-        },
-        {
-          "ruta": "/triage",
-          "tipo": "button",
-          "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
-          "resultado": "efecto",
-          "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "SOC_OPERATOR",
-          "resultado": "efecto",
-          "detalle": "abre diálogo"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "1H",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 18 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "6H",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "24H",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 4 mutaciones"
-        },
-        {
-          "ruta": "/building/d1000000-0000-0000-0000-000000000000",
-          "tipo": "button",
-          "rotulo": "7D",
-          "resultado": "efecto",
-          "detalle": "aria ||false→||true · 1 peticiones · 16 mutaciones"
-        }
-      ],
       "hallazgos": []
     },
     {
@@ -932,7 +598,7 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPERADMIN",
+          "rotulo": "SUPERADMIN TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -968,7 +634,7 @@
           "tipo": "button",
           "rotulo": "OCULTAR SIN ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||false→||true · 2 peticiones · 6 mutaciones"
+          "detalle": "aria ||false→||true · 7 peticiones · 6 mutaciones"
         },
         {
           "ruta": "/console",
@@ -996,7 +662,7 @@
           "tipo": "button",
           "rotulo": "ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 4 mutaciones"
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
         },
         {
           "ruta": "/console",
@@ -1008,7 +674,28 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "rotulo": "RELIEVE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 41 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SUELO CDMX",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TIPO DE SUELO (INEGI) · no es zonificación sísmica",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO · TAMAÑO = MAGNITUD · OFF",
           "resultado": "efecto",
           "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
         },
@@ -1040,7 +727,7 @@
         {
           "ruta": "/fleet",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPERADMIN",
+          "rotulo": "SUPERADMIN TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1082,7 +769,7 @@
           "tipo": "button",
           "rotulo": "NUEVA ESTACIÓN",
           "resultado": "efecto",
-          "detalle": "aria ||→|| · 10 peticiones · 74 mutaciones"
+          "detalle": "aria ||→|| · 10 peticiones · 45 mutaciones"
         },
         {
           "ruta": "/fleet",
@@ -1108,7 +795,7 @@
         {
           "ruta": "/triage",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPERADMIN",
+          "rotulo": "SUPERADMIN TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1150,14 +837,84 @@
         {
           "ruta": "/triage",
           "tipo": "button",
+          "rotulo": "2026-09-28 · 10:37 UTC094e6600-bcbd",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
           "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
           "resultado": "efecto",
           "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
         },
         {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "REAL",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FALSO POSITIVO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "PRUEBA",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "INDETERMINADO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "REPRODUCCIÓN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "SIN MINISEED ARCHIVADO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "DICTAMEN PDF",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "select",
+          "rotulo": "Status del dictamen a firmar",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FIRMAR DICTAMEN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
           "ruta": "/tenants",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPERADMIN",
+          "rotulo": "SUPERADMIN TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1254,7 +1011,7 @@
         {
           "ruta": "/audit",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPERADMIN",
+          "rotulo": "SUPERADMIN TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1273,7 +1030,7 @@
         {
           "ruta": "/building/d1000000-0000-0000-0000-000000000000",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPERADMIN",
+          "rotulo": "SUPERADMIN TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1328,7 +1085,7 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPPORT",
+          "rotulo": "SOPORTE TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1344,7 +1101,7 @@
           "tipo": "button",
           "rotulo": "ACEPTO ESTE AVISO",
           "resultado": "efecto",
-          "detalle": "aria ||→|| · 4 peticiones · 11 mutaciones"
+          "detalle": "aria ||→|| · 2 peticiones · 11 mutaciones"
         },
         {
           "ruta": "/console",
@@ -1365,7 +1122,7 @@
           "tipo": "button",
           "rotulo": "ESTACIONES",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 2 mutaciones"
+          "detalle": "aria ||true→||false · 2 peticiones · 2 mutaciones"
         },
         {
           "ruta": "/console",
@@ -1386,19 +1143,40 @@
           "tipo": "button",
           "rotulo": "ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 2 peticiones · 4 mutaciones"
+          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
         },
         {
           "ruta": "/console",
           "tipo": "button",
           "rotulo": "ONDAS",
           "resultado": "efecto",
-          "detalle": "aria ||true→||false · 0 peticiones · 3 mutaciones"
+          "detalle": "aria ||true→||false · 5 peticiones · 4 mutaciones"
         },
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "rotulo": "RELIEVE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 36 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SUELO CDMX",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TIPO DE SUELO (INEGI) · no es zonificación sísmica",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 3 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO · TAMAÑO = MAGNITUD · OFF",
           "resultado": "efecto",
           "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
         },
@@ -1430,7 +1208,7 @@
         {
           "ruta": "/fleet",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPPORT",
+          "rotulo": "SOPORTE TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1450,7 +1228,7 @@
         {
           "ruta": "/triage",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPPORT",
+          "rotulo": "SOPORTE TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1492,14 +1270,49 @@
         {
           "ruta": "/triage",
           "tipo": "button",
+          "rotulo": "2026-09-28 · 10:37 UTC094e6600-bcbd",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
           "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
           "resultado": "efecto",
           "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
         },
         {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "EXPORTAR MINISEED",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "DICTAMEN PDF",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "select",
+          "rotulo": "Status del dictamen a firmar",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FIRMAR DICTAMEN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
           "ruta": "/tenants",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPPORT",
+          "rotulo": "SOPORTE TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1549,7 +1362,7 @@
         {
           "ruta": "/audit",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPPORT",
+          "rotulo": "SOPORTE TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1566,16 +1379,9 @@
           "resultado": "deshabilitado"
         },
         {
-          "ruta": "/audit",
-          "tipo": "button",
-          "rotulo": "CARGAR MÁS",
-          "resultado": "efecto",
-          "detalle": "aria ||→|| · 1 peticiones · 8 mutaciones"
-        },
-        {
           "ruta": "/building/d1000000-0000-0000-0000-000000000000",
           "tipo": "button",
-          "rotulo": "TAKAB_SUPPORT",
+          "rotulo": "SOPORTE TAKAB",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1624,7 +1430,7 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "TENANT_ADMIN",
+          "rotulo": "ADMINISTRADOR",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1660,7 +1466,7 @@
           "tipo": "button",
           "rotulo": "OCULTAR SIN ENLACE",
           "resultado": "efecto",
-          "detalle": "aria ||false→||true · 2 peticiones · 6 mutaciones"
+          "detalle": "aria ||false→||true · 5 peticiones · 6 mutaciones"
         },
         {
           "ruta": "/console",
@@ -1700,7 +1506,28 @@
         {
           "ruta": "/console",
           "tipo": "button",
-          "rotulo": "CATÁLOGO HISTÓRICO 1985–2022 · OFF",
+          "rotulo": "RELIEVE",
+          "resultado": "efecto",
+          "detalle": "aria ||true→||false · 36 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "SUELO CDMX",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 3 peticiones · 4 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "TIPO DE SUELO (INEGI) · no es zonificación sísmica",
+          "resultado": "efecto",
+          "detalle": "aria ||false→||true · 1 peticiones · 3 mutaciones"
+        },
+        {
+          "ruta": "/console",
+          "tipo": "button",
+          "rotulo": "CATÁLOGO HISTÓRICO · TAMAÑO = MAGNITUD · OFF",
           "resultado": "efecto",
           "detalle": "aria ||true→||false · 0 peticiones · 5 mutaciones"
         },
@@ -1732,7 +1559,7 @@
         {
           "ruta": "/fleet",
           "tipo": "button",
-          "rotulo": "TENANT_ADMIN",
+          "rotulo": "ADMINISTRADOR",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1774,7 +1601,7 @@
           "tipo": "button",
           "rotulo": "NUEVA ESTACIÓN",
           "resultado": "efecto",
-          "detalle": "aria ||→|| · 10 peticiones · 74 mutaciones"
+          "detalle": "aria ||→|| · 10 peticiones · 45 mutaciones"
         },
         {
           "ruta": "/fleet",
@@ -1800,7 +1627,7 @@
         {
           "ruta": "/triage",
           "tipo": "button",
-          "rotulo": "TENANT_ADMIN",
+          "rotulo": "ADMINISTRADOR",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1842,14 +1669,84 @@
         {
           "ruta": "/triage",
           "tipo": "button",
+          "rotulo": "2026-09-28 · 10:37 UTC094e6600-bcbd",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
           "rotulo": "CATÁLOGO DE REFERENCIA · SSN/USGS REFERENCIA SISMOS HISTÓRICOS OFICIALES · NO SO",
           "resultado": "efecto",
           "detalle": "aria false||→true|| · 0 peticiones · 3 mutaciones"
         },
         {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "REAL",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FALSO POSITIVO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "PRUEBA",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "INDETERMINADO",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "REPRODUCCIÓN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "EXPORTAR MINISEED",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "DICTAMEN PDF",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "select",
+          "rotulo": "Status del dictamen a firmar",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
+          "ruta": "/triage",
+          "tipo": "button",
+          "rotulo": "FIRMAR DICTAMEN",
+          "resultado": "no_visible",
+          "detalle": "re-renderizado"
+        },
+        {
           "ruta": "/tenants",
           "tipo": "button",
-          "rotulo": "TENANT_ADMIN",
+          "rotulo": "ADMINISTRADOR",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1906,7 +1803,7 @@
         {
           "ruta": "/audit",
           "tipo": "button",
-          "rotulo": "TENANT_ADMIN",
+          "rotulo": "ADMINISTRADOR",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
@@ -1925,7 +1822,7 @@
         {
           "ruta": "/building/d1000000-0000-0000-0000-000000000000",
           "tipo": "button",
-          "rotulo": "TENANT_ADMIN",
+          "rotulo": "ADMINISTRADOR",
           "resultado": "efecto",
           "detalle": "abre diálogo"
         },
