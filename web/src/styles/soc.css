@@ -654,6 +654,72 @@ body {
   letter-spacing: 0.12em;
   padding: 9px 14px;
   display: flex; align-items: center; gap: 8px;
+  /* [T-9.73 · D-47] Contexto de apilamiento propio para la entrada del cartel:
+     su `::before` va en `z-index: -1`, que así queda ENCIMA del fondo rojo de la
+     tira y DEBAJO del titular. Ni el flujo ni la caja cambian. */
+  position: relative;
+  isolation: isolate;
+}
+/* [T-9.73 · D-47, que enmienda D-30] LA ENTRADA DEL CARTEL. Un barrido de rojo
+   claro cruza la tira UNA vez al aparecer la alerta que autoriza y se desvanece;
+   el reposo es invisible, así que la tira queda en su rojo anclado.
+   - Anima `transform` y `opacity` de un pseudo-elemento DETRÁS del titular: el
+     texto no se mueve (condición 1 de D-30).
+   - Rojo CLARO y no oscuro a propósito: navy sobre #FF8A80 contrasta MÁS que
+     sobre el rojo anclado (5.01:1), así que el barrido nunca baja la lectura.
+   - Sólo con `data-alive` + `data-authorizes`: la pone el estado del servidor,
+     y un aviso o una revisión no entran (U-28, D-33).
+   - La duración es el token de entrada (`--tk-dur-row-in`) y está en el grupo
+     `animation: none` de la reducción. */
+.soc-alert[data-alive="true"][data-authorizes="true"] .soc-alert__strip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--tk-status-critical-text);
+  transform-origin: left center;
+  opacity: 0;
+  animation: soc-alert-entrada var(--tk-dur-row-in) var(--tk-ease) 1;
+}
+@keyframes soc-alert-entrada {
+  0% {
+    transform: scaleX(0);
+    opacity: 0.8;
+  }
+  60% {
+    transform: scaleX(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scaleX(1);
+    opacity: 0;
+  }
+}
+
+/* [T-9.73 · D-47] LA TOMA DE PANTALLA (`AlertTakeover`, por portal a <body>).
+   Una capa fija a pantalla completa que NO captura un clic: el operador sigue
+   trabajando. Lleva una viñeta roja muy tenue en las orillas (≤ 0.08 de alfa) y
+   un borde interior de 6 px que pulsa en `opacity` con el mismo latido que el
+   halo de la tarjeta. Con la lectura vieja (`data-stale="true"`) el borde se
+   queda puesto y deja de latir; con «reducir movimiento», igual. */
+.soc-takeover {
+  position: fixed;
+  inset: 0;
+  z-index: var(--tk-z-alert);
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 62%, var(--tk-status-critical-08) 100%);
+}
+.soc-takeover::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 6px solid var(--tk-status-critical);
+  pointer-events: none;
+  opacity: 0.6;
+}
+.soc-takeover[data-stale="false"]::before {
+  animation: soc-alert-pulse var(--tk-dur-alerta) ease-in-out infinite;
 }
 /* [T-6.01 · U-28] Un AVISO no viste la carcasa de la alerta. `.soc-alert` era
    una sola clase: «AVISO SÍSMICO · SOLO AVISO, SIN ACTUACIÓN» salía en rojo
@@ -1864,7 +1930,9 @@ body {
   .soc-drill--fresca,
   .soc-table__row--nueva,
   .soc-reveal,
-  .soc-alert[data-alive="true"][data-authorizes="true"]::after {
+  .soc-alert[data-alive="true"][data-authorizes="true"]::after,
+  .soc-alert[data-alive="true"][data-authorizes="true"] .soc-alert__strip::before,
+  .soc-takeover[data-stale="false"]::before {
     animation: none !important;
   }
   .soc-dot--pulse::after {
@@ -1876,6 +1944,9 @@ body {
   .soc-alert[data-alive="true"][data-authorizes="true"]::after {
     opacity: 0.5;
   }
+  /* [T-9.73 · D-47] Reposo de lo nuevo: la entrada del cartel NO se pinta (su
+     reposo ya es invisible, `opacity: 0`) y el borde de la toma de pantalla se
+     QUEDA fijo en su opacidad base — no desaparece, deja de latir. */
 }
 
 /* =====================================================================

@@ -1029,18 +1029,19 @@ def test_el_parpadeo_del_banner_CESA_al_cambiar_de_escena(tmp_path):
 
 def test_el_parpadeo_vive_en_el_BANNER_y_no_en_el_texto(tmp_path):
     """[T-7.19 · D-30] Condición 1: la instrucción es legible desde el primer
-    frame. El `tk-blink` está en `#banner-alert`, la carcasa; si estuviera en
-    `.big` —que es donde va «ALERTA SÍSMICA · PROTÉJASE»— la letra parpadearía
-    justo cuando hay que leerla."""
+    frame. [T-9.73] Ni siquiera la carcasa: el `tk-blink` de `#banner-alert`
+    bajaba la opacidad de la caja ENTERA —y la heredaba «ALERTA SÍSMICA ·
+    PROTÉJASE»—. El pulso vive ahora en `#banner-alert::after`, una capa sin
+    texto; la guarda general está en `test_panel_movimiento_d30.py`."""
     hoja = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
-    conBlink = [
+    conPulso = [
         sel
         for sel, cuerpo in re.findall(r"([^{}]+)\{([^{}]*)\}", hoja)
-        if "animation:tk-blink" in cuerpo.replace(" ", "")
+        if "animation:tk-halo" in cuerpo.replace(" ", "")
     ]
-    assert conBlink, "el panel dejó de parpadear: la negación pasaría vacía"
-    for sel in conBlink:
-        assert sel.strip() == "#banner-alert", f"el parpadeo se mudó al texto: {sel.strip()}"
+    assert conPulso, "el panel dejó de pulsar: la negación pasaría vacía"
+    for sel in conPulso:
+        assert sel.strip() == "#banner-alert::after", f"el pulso se mudó al texto: {sel.strip()}"
 
 
 def test_enclave_sin_alerta_viva_se_declara(tmp_path):
@@ -2323,11 +2324,13 @@ def test_el_movimiento_del_panel_es_exactamente_el_declarado():
     """
     hoja = re.sub(r"/\*[\s\S]*?\*/", "", _INDEX.read_text("utf-8"))
 
-    assert set(re.findall(r"@keyframes ([a-z-]+)", hoja)) == {"tk-blink", "tk-pulse"}, (
+    assert set(re.findall(r"@keyframes ([a-z-]+)", hoja)) == {"tk-halo", "tk-pulse"}, (
         "cambió el inventario de keyframes del panel"
     )
     animaciones = re.findall(r"animation:\s*([a-z-]+)", hoja)
-    assert sorted(animaciones) == ["none", "tk-blink", "tk-pulse"], (
+    # [T-9.73] Dos `none`: el global `*` y el de `#banner-alert::after`, porque
+    # `*` no selecciona pseudo-elementos.
+    assert sorted(animaciones) == ["none", "none", "tk-halo", "tk-pulse"], (
         f"el panel anima algo que no está declarado: {animaciones}"
     )
     assert re.findall(r"transition:\s*([a-z-]+)", hoja) == ["none"], (

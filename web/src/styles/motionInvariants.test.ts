@@ -228,6 +228,32 @@ describe("[T-6.10 · U-23] un latido es una AFIRMACIÓN, y nunca se escribe a fu
   });
 });
 
+describe("[T-9.73 · D-47] con reducción, la toma de pantalla se QUEDA, quieta", () => {
+  // Apagar bien es que siga leyéndose como estado: el borde de la alerta
+  // confirmada no desaparece con «reducir movimiento», deja de latir.
+  const reduccion = bloquesDeReduccion();
+  const apagados = reduccion
+    .split("}")
+    .filter((b) => /animation:\s*none/.test(b))
+    .flatMap((b) => (b.split("{")[0] ?? "").split(",").map((s) => s.trim()));
+
+  it.each([
+    '.soc-takeover[data-stale="false"]::before',
+    '.soc-alert[data-alive="true"][data-authorizes="true"] .soc-alert__strip::before',
+  ])("`%s` está en el grupo `animation: none`", (selector) => {
+    expect(apagados).toContain(selector);
+  });
+
+  it("el borde en reposo es VISIBLE: su opacidad base no es cero", () => {
+    const css = hoja("soc.css");
+    const m = /(?:^|\})\s*\.soc-takeover::before\s*\{([^}]*)\}/.exec(css);
+    expect(m, "falta la regla base de `.soc-takeover::before`").not.toBeNull();
+    const op = /(?:^|[;\s])opacity:\s*([\d.]+)/.exec(m![1]);
+    expect(op, "el borde no declara su opacidad de reposo").not.toBeNull();
+    expect(Number(op![1])).toBeGreaterThanOrEqual(0.5);
+  });
+});
+
 describe("[T-7.18] la ráfaga de arribo del mapa sale del MISMO token", () => {
   it("`ARRIVAL_BURST_S` y `--tk-dur-arrival` no pueden divergir", () => {
     // El anillo lo pinta MapLibre sobre un canvas, así que su duración no

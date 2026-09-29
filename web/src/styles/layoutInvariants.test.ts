@@ -1464,12 +1464,22 @@ describe("[T-7.19 · D-30] la alerta respira sin mover una letra", () => {
     // Condición 1 de `D-30`: la instrucción y el sitio son legibles desde el
     // primer frame. Si la animación viviera en `.soc-alert` o en `__strip`, el
     // titular más importante que pinta la consola se movería mientras se lee.
+    // [T-9.73 · D-47] Se excluye el grupo `animation: none` de la reducción: eso
+    // APAGA, no anima, y con él dentro esta prueba se evaluaba sobre una lista
+    // de selectores cuyo último elemento decidía el resultado.
     const anima = [...ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(
-      ([, sel, body]) => /\.soc-alert\b/.test(sel) && /\banimation\s*:/.test(body),
+      ([, sel, body]) =>
+        /\.soc-alert\b/.test(sel) &&
+        /\banimation\s*:/.test(body) &&
+        !/\banimation\s*:\s*none\b/.test(body),
     );
     expect(anima.length, "la alerta dejó de animar: la negación pasaría vacía").toBeGreaterThan(0);
     for (const [, sel] of anima) {
-      expect(sel, `${sel.trim()} anima la caja del texto`).toMatch(/::after/);
+      // `::before` entra con la entrada del cartel; lo que se exige es que el
+      // SUJETO de CADA selector sea un pseudo-elemento, no cuál de los dos.
+      for (const parte of sel.split(",").map((s) => s.trim())) {
+        expect(parte, `${parte} anima la caja del texto`).toMatch(/::(?:before|after)$/);
+      }
     }
   });
 
@@ -1496,6 +1506,116 @@ describe("[T-7.19 · D-30] la alerta respira sin mover una letra", () => {
     expect(reglas.length).toBeGreaterThan(0);
     for (const [, sel, body] of reglas) {
       expect(body, `${sel.trim()} anima`).not.toMatch(/\b(animation|transition)\b/);
+    }
+  });
+});
+
+/**
+ * [T-9.73 · D-47, que enmienda D-30] LA ALERTA CONFIRMADA TOMA LA PANTALLA sin
+ * tapar nada ni mover una letra.
+ *
+ *  · `.soc-takeover` es una capa fija a pantalla completa con un borde interior
+ *    rojo y una viñeta tenue. NO es un modal: el operador tiene que poder seguir
+ *    trabajando, así que no captura un clic y no le quita contraste al contenido.
+ *  · El cartel de la tarjeta entra con un barrido en `::before` de la tira, UNA
+ *    vez, DETRÁS del titular — que no se mueve.
+ *
+ * jsdom no pinta ni mide: la mitad que se ve se fija aquí, sobre la hoja; la de
+ * cuándo se monta, en `SceneStrip.test.tsx`.
+ */
+describe("[T-9.73 · D-47] la toma de pantalla y la entrada del cartel", () => {
+  const capa = rulesFor(ALL_BASE, ".soc-takeover");
+  const borde = rulesFor(ALL_BASE, ".soc-takeover::before");
+  const ENTRADA = '.soc-alert[data-alive="true"][data-authorizes="true"] .soc-alert__strip::before';
+
+  it("la capa existe (sin esto, lo de abajo afirma sobre vacíos)", () => {
+    expect(capa, ".soc-takeover no tiene regla").not.toBe("");
+    expect(borde, ".soc-takeover::before no tiene regla").not.toBe("");
+  });
+
+  it("cubre la pantalla entera y NO captura un solo clic", () => {
+    expect(declValue(capa, "position")).toBe("fixed");
+    expect(declValue(capa, "inset")).toBe("0");
+    expect(declValue(capa, "pointer-events")).toBe("none");
+    expect(declValue(borde, "pointer-events")).toBe("none");
+    // Encima de todo lo que se sobrepone, con el token de la alerta.
+    expect(declValue(capa, "z-index")).toBe("var(--tk-z-alert)");
+  });
+
+  it("el borde es rojo crítico y mide 6 px como mucho: no se come el contenido", () => {
+    const b = declValue(borde, "border") ?? "";
+    const m = /^(\d+(?:\.\d+)?)px solid var\(--tk-status-critical\)$/.exec(b);
+    expect(m, `borde inesperado: «${b}»`).not.toBeNull();
+    expect(Number(m![1])).toBeGreaterThan(0);
+    expect(Number(m![1])).toBeLessThanOrEqual(6);
+  });
+
+  it("la viñeta es tenue: ningún rojo de la capa pasa de 0.12 de opacidad", () => {
+    const fondo = declValue(capa, "background") ?? "";
+    expect(fondo).toMatch(/^radial-gradient\(/);
+    const tokens = [...fondo.matchAll(/var\((--tk-[a-z0-9-]+)\)/g)].map((m) => m[1]);
+    expect(tokens.length, "la viñeta no cita ningún token").toBeGreaterThan(0);
+    for (const t of tokens) {
+      const valor = (cssVariables as Record<string, string>)[t] ?? "";
+      const alfa = /rgba\([^)]*,\s*([\d.]+)\)$/.exec(valor);
+      expect(alfa, `${t} no es un color con alfa: la viñeta sería opaca`).not.toBeNull();
+      expect(Number(alfa![1])).toBeLessThanOrEqual(0.12);
+    }
+    // Y ningún color literal colado por fuera de los tokens.
+    expect(fondo).not.toMatch(/#[0-9a-f]{3,8}|rgba?\(/i);
+  });
+
+  it("pulsa SOLO opacidad, y solo mientras el dato es fresco", () => {
+    const pulsan = [...ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(
+      ([, sel, body]) =>
+        /\.soc-takeover\b/.test(sel) &&
+        /\banimation\s*:/.test(body) &&
+        !/\banimation\s*:\s*none\b/.test(body),
+    );
+    expect(pulsan.length, "la toma dejó de pulsar: lo de abajo pasaría vacío").toBeGreaterThan(0);
+    for (const [, sel, body] of pulsan) {
+      expect(sel.trim()).toBe('.soc-takeover[data-stale="false"]::before');
+      expect(body).toMatch(/animation:\s*soc-alert-pulse\b/);
+    }
+  });
+
+  it("la entrada del cartel es un `::before` DETRÁS del titular, y el titular no se mueve", () => {
+    const entrada = rulesFor(ALL_BASE, ENTRADA);
+    expect(entrada, "la entrada del cartel no tiene regla").not.toBe("");
+    expect(declValue(entrada, "z-index")).toBe("-1");
+    expect(declValue(entrada, "pointer-events")).toBe("none");
+    expect(declValue(entrada, "animation") ?? "").toMatch(
+      /^soc-alert-entrada var\(--tk-dur-[a-z-]+\) /,
+    );
+    // La tira crea su propio contexto de apilamiento: sin él, `z-index: -1` manda
+    // el barrido DEBAJO del fondo rojo de la tira y no se ve.
+    const tira = rulesFor(ALL_BASE, ".soc-alert__strip");
+    expect(declValue(tira, "isolation")).toBe("isolate");
+    expect(declValue(tira, "position")).toBe("relative");
+    // Ninguna regla de la tira misma (sin pseudo-elemento) anima ni transiciona.
+    for (const [, sel, body] of ALL.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      if (!/\.soc-alert__strip(?![\w-])(?!::)/.test(sel)) continue;
+      expect(body, `${sel.trim()} anima el titular`).not.toMatch(/\b(animation|transition)\b/);
+    }
+  });
+
+  it("los keyframes nuevos animan SOLO `transform` y `opacity`", () => {
+    const cuerpo = (nombre: string): string => {
+      const i = SOC.indexOf(`@keyframes ${nombre}`);
+      expect(i, `faltan los keyframes ${nombre}`).toBeGreaterThanOrEqual(0);
+      const abre = SOC.indexOf("{", i);
+      let nivel = 0;
+      let j = abre;
+      for (; j < SOC.length; j += 1) {
+        if (SOC[j] === "{") nivel += 1;
+        else if (SOC[j] === "}" && --nivel === 0) break;
+      }
+      return SOC.slice(abre + 1, j);
+    };
+    for (const nombre of ["soc-alert-entrada", "soc-alert-pulse"]) {
+      const props = [...cuerpo(nombre).matchAll(/([a-z-]+)\s*:/g)].map((m) => m[1]);
+      expect(props.length).toBeGreaterThan(0);
+      expect(props.filter((p) => p !== "transform" && p !== "opacity")).toEqual([]);
     }
   });
 });

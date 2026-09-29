@@ -461,6 +461,103 @@ describe("SceneStrip · la precedencia y la excepción escrita", () => {
   });
 });
 
+/**
+ * [T-9.73 · D-47] LA TOMA DE PANTALLA: un borde rojo que pulsa alrededor de la
+ * consola entera mientras el SERVIDOR sostiene una alerta que AUTORIZA evacuar.
+ * Lo decide la misma tabla que la franja (`alertKind` + `alertaViva`), no un
+ * cronómetro del cliente — y nunca un aviso, una revisión, un cierre, un
+ * simulacro o el movimiento de un solo inmueble.
+ */
+describe("[T-9.73 · D-47] la toma de pantalla sale del ESTADO del servidor", () => {
+  const capa = () => document.querySelector<HTMLElement>(".soc-takeover");
+
+  it("aparece con una alerta VIVA que autoriza (SASMEX), en cualquier ruta", () => {
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [incidente()] }));
+    pintar("/fleet");
+    const toma = screen.getByTestId("soc-takeover");
+    expect(toma).toHaveClass("soc-takeover");
+    // Decorativa: el titular lo dicen la franja y la tarjeta, no esta capa.
+    expect(toma).toHaveAttribute("aria-hidden", "true");
+    expect(toma).toHaveAttribute("data-stale", "false");
+  });
+
+  it("también en el MURO, donde la franja no pinta su línea", () => {
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [incidente()] }));
+    pintar("/console");
+    expect(screen.getByTestId("soc-takeover")).toBeInTheDocument();
+  });
+
+  it("aparece con el cuórum y con un aviso que la RED corroboró (misma regla que el teléfono)", () => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ trigger: "quorum" })] }),
+    );
+    pintar();
+    expect(screen.getByTestId("soc-takeover")).toBeInTheDocument();
+  });
+
+  it("es un hermano de la franja, NO un hijo: la franja sigue sin animar y sin crecer", () => {
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [incidente()] }));
+    pintar();
+    expect(capa()?.closest(".soc-scene")).toBeNull();
+    expect(capa()?.closest(".soc-main")).toBeNull();
+  });
+
+  it.each([
+    ["un AVISO instrumental de un solo inmueble", { trigger: "local_threshold" }],
+    ["una activación manual", { trigger: "manual" }],
+    ["un origen desconocido", { trigger: "otro" }],
+    ["una alerta en REVISIÓN", { state: "in_review" }],
+    ["una alerta CERRADA", { state: "closed" }],
+    ["un incidente que no es crítico", { severity: "warning" }],
+  ] as const)("NO aparece con %s", (_caso, over) => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente(over as Partial<LiveIncident>)] }),
+    );
+    pintar();
+    expect(capa()).toBeNull();
+  });
+
+  it("NO aparece con un simulacro en curso ni con nada vivo", () => {
+    mocks.useActiveDrill.mockReturnValue(drillData({ drill: DRILL }));
+    pintar();
+    expect(capa()).toBeNull();
+    mocks.useActiveDrill.mockReturnValue(drillData());
+    pintar();
+    expect(capa()).toBeNull();
+  });
+
+  it("con la lectura VIEJA el borde se queda puesto pero deja de afirmar «en vivo»", () => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente()], dataUpdatedAt: NOW - SCENE_ALERT_STALE_MS - 1 }),
+    );
+    pintar();
+    expect(screen.getByTestId("soc-takeover")).toHaveAttribute("data-stale", "true");
+  });
+
+  it("con la lectura en ERROR, igual: el dato de la caché no es un latido", () => {
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente()], error: "GET /incidents falló (503)" }),
+    );
+    pintar();
+    expect(screen.getByTestId("soc-takeover")).toHaveAttribute("data-stale", "true");
+  });
+
+  it("se DESMONTA cuando el servidor pasa la alerta a revisión (no la apaga un cronómetro)", () => {
+    mocks.useLiveIncidents.mockReturnValue(incidentsData({ incidents: [incidente()] }));
+    const { rerender } = pintar();
+    expect(capa()).not.toBeNull();
+    mocks.useLiveIncidents.mockReturnValue(
+      incidentsData({ incidents: [incidente({ state: "in_review" })] }),
+    );
+    rerender(
+      <MemoryRouter initialEntries={["/fleet"]}>
+        <SceneStrip />
+      </MemoryRouter>,
+    );
+    expect(capa()).toBeNull();
+  });
+});
+
 describe("SceneStrip · los cuatro estados de cada fuente (regla de oro 7)", () => {
   it("la línea de alerta materializa los cuatro estados sobre /incidents", () => {
     const byState: Record<UiState, Partial<LiveIncidentsData>> = {

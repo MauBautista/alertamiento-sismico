@@ -65,4 +65,19 @@ describe("[T-6.23] la crisis se lee desde el primer frame", () => {
     // Reanimated sigue fuera: lo que falta aquí no es una librería (§5.4).
     expect(fuente).not.toMatch(/useSharedValue|withTiming|withSpring|entering=/);
   });
+
+  it("[T-9.73 · D-47] los anillos no pintan texto y sólo mueven opacidad y escala", () => {
+    // Los anillos viven en su propio fichero para que la guarda de arriba siga
+    // contando UN `Animated.View` en la vista. Ésta es su mitad: si alguien mete
+    // un `Text` aquí dentro, el texto pasaría a moverse con ellos.
+    const fuente = readFileSync(resolve(__dirname, "AnillosAlerta.tsx"), "utf8");
+    expect(fuente).not.toMatch(/<(Animated\.)?Text\b/);
+    expect(fuente).not.toMatch(/useSharedValue|withTiming|withSpring|entering=/);
+    // Lo único que se interpola: `opacity` y `scale`. Nada de layout.
+    const interpolados = [...fuente.matchAll(/(\w+): v\.interpolate/g)].map((m) => m[1]);
+    expect(interpolados.sort()).toEqual(["opacity", "scale"]);
+    // Y la vista lo monta SOLO con alerta viva que autoriza.
+    const vista = readFileSync(resolve(__dirname, "CrisisView.tsx"), "utf8");
+    expect(vista).toMatch(/autoriza && viva \? \(\s*<AnillosAlerta/);
+  });
 });

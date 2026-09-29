@@ -245,7 +245,14 @@ const FUERA_DEL_MARCO: Record<string, string[]> = {
     "visible",
   ],
   "features/fleet/SiteCard.tsx::SiteCard": ["selfTest"],
-  "features/scene/SceneStrip.tsx::SceneStrip": ["demo", "drill", "maintenance", "scene"],
+  "features/scene/SceneStrip.tsx::SceneStrip": [
+    "demo",
+    "drill",
+    "maintenance",
+    "scene",
+    "takeover",
+    "takeoverStale",
+  ],
   "features/tenants/ComplianceLabelsCard.tsx::ComplianceLabelsCard": [
     "available",
     "doc",
@@ -351,7 +358,12 @@ const RAZONES: Record<string, string> = {
     "(lo censa C-3; los cuatro estados de cada uno los ejercen sus tests y " +
     "`SceneStrip.test.tsx`). Lo único que se calcula aquí es `scene`, sobre la tabla de " +
     "`features/scene/scene.ts`, y viaja como prop para que el banner del simulacro sepa si " +
-    "lo real manda. La alerta sí va dentro de su marco, en esta misma franja.",
+    "lo real manda. La alerta sí va dentro de su marco, en esta misma franja. " +
+    "[T-9.73 · D-47] `takeover`/`takeoverStale` montan la TOMA DE PANTALLA, una capa " +
+    "decorativa (`aria-hidden`) FUERA del marco a propósito: es un borde alrededor de la " +
+    "consola entera, no una caja con dato. Sus cuatro estados están escritos a mano y los " +
+    "mide `SceneStrip.test.tsx`: cargando y vacío = no se monta; viejo o en error = el borde " +
+    "se queda y deja de latir (`data-stale`), porque un latido afirma «llega ahora».",
   "features/fleet/SiteCard.tsx::SiteCard":
     "(a) EL BOTÓN. [T-6.06] La tarjeta YA tiene su StateFrame: la máquina de fases del " +
     "autodiagnóstico (idle/issued/acked/expired/rejected) se traduce a los cuatro estados en " +
