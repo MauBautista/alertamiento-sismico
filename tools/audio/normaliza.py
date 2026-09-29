@@ -14,10 +14,10 @@ Qué hace, en orden (y nada más):
    se remuestrea a 22 050 Hz con ``resample_poly``.
 2. Recorta el silencio de COLA: lo último por encima de ``UMBRAL_REL_DB`` bajo la
    trama más fuerte, más ``COLA_S`` (≤ 100 ms) con un desvanecido de ``FUNDIDO_S``.
-3. Ganancia hacia ``-16 LUFS`` integrados (BS.1770 vía pyloudnorm), limitada para
-   que el pico verdadero (sobremuestreo ×4) quede ≤ ``-1 dBTP``. Sin limitador ni
-   compresor: si el pico manda, la sonoridad queda por debajo del objetivo y la
-   medición final lo dice.
+3. Ganancia hacia ``-16 LUFS`` integrados (BS.1770 vía pyloudnorm; ``--lufs -14``
+   para el edge), limitada para que el pico verdadero (sobremuestreo ×4) quede
+   ≤ ``-1 dBTP``. Sin limitador ni compresor: si el pico manda, la sonoridad queda
+   por debajo del objetivo y la medición final lo dice.
 
 Determinista: aritmética float64 sin aleatoriedad ni dither ⇒ misma entrada, mismos
 bytes (con las versiones fijadas arriba).
@@ -36,6 +36,8 @@ import pyloudnorm
 from scipy.signal import resample_poly
 
 OBJETIVO_LUFS = -16.0
+#: El parlante del gabinete (T-9.72) va más fuerte que el teléfono: −14 LUFS.
+OBJETIVO_EDGE_LUFS = -14.0
 PICO_MAX_DBTP = -1.0
 MARGEN_PICO_DB = 0.1  # el redondeo a PCM16 puede subir el pico unas centésimas
 SOBREMUESTREO = 4
@@ -94,11 +96,13 @@ def a_pcm16(x: np.ndarray) -> np.ndarray:
     return np.clip(np.round(x * 32767.0), -32768, 32767).astype(np.int16)
 
 
-def normaliza(x: np.ndarray, sr: int) -> tuple[np.ndarray, int]:
+def normaliza(
+    x: np.ndarray, sr: int, objetivo_lufs: float = OBJETIVO_LUFS
+) -> tuple[np.ndarray, int]:
     if sr not in FRECUENCIAS:
         x, sr = resample_poly(x, 22050, sr), 22050
     x = recorta_cola(x, sr)
-    ganancia = OBJETIVO_LUFS - sonoridad_lufs(x, sr)
+    ganancia = objetivo_lufs - sonoridad_lufs(x, sr)
     techo = PICO_MAX_DBTP - MARGEN_PICO_DB - pico_verdadero_dbtp(x)
     ganancia = min(ganancia, techo)
     while True:
@@ -125,6 +129,12 @@ def mide(ruta: Path) -> dict:
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--mide", nargs="+", type=Path, help="solo medir y emitir JSON")
+    p.add_argument(
+        "--lufs",
+        type=float,
+        default=OBJETIVO_LUFS,
+        help=f"sonoridad objetivo (por omisión {OBJETIVO_LUFS}; el edge usa {OBJETIVO_EDGE_LUFS})",
+    )
     p.add_argument("entrada", nargs="?", type=Path)
     p.add_argument("salida", nargs="?", type=Path)
     a = p.parse_args(argv)
@@ -133,7 +143,7 @@ def main(argv: list[str]) -> int:
         return 0
     if not (a.entrada and a.salida):
         p.error("hacen falta ENTRADA y SALIDA (o --mide)")
-    pcm, sr = normaliza(*leer(a.entrada))
+    pcm, sr = normaliza(*leer(a.entrada), objetivo_lufs=a.lufs)
     escribir(a.salida, pcm, sr)
     print(json.dumps(mide(a.salida), ensure_ascii=False))
     return 0

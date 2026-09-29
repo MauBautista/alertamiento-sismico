@@ -66,6 +66,28 @@
       "notas": "Es un TONO, no el mensaje hablado de simulacro (D-41 / T-9.71). Medido 2026-09-27: gen_simulacro.py reproduce este sha256 byte a byte."
     },
     {
+      "id": "takab-musica-prueba-v1",
+      "rutas": [
+        "edge/takab_edge/audio/assets/musica_prueba.wav"
+      ],
+      "sha256": "43507f7565c5a61d6ea58d49535d991b326c8830032e25b659b248193c3c6407",
+      "duracion_s": 32.6061,
+      "sample_rate": 22050,
+      "canales": 1,
+      "lufs_integrado": -14.0,
+      "pico_verdadero_dbtp": -3.9,
+      "fuente": {
+        "generador": "tools/audio/gen_musica.py (numpy) → normaliza.py",
+        "parametros": "«Himno a la alegría», melodía en Do mayor (28 notas, negra = 0.5 s) con armónicos 2.º (0.3) y 3.º (0.1) y caída exp(-1.8 t); bajo de blancas (16 notas, 0.35, exp(-1.2 t)); 2 vueltas con 0.5 s de silencio; 22050 Hz mono PCM16",
+        "normalizacion": "-14.0 LUFS (edge), pico verdadero ≤ -1.0 dBTP (×4), cola ≤ 100 ms"
+      },
+      "licencia": {
+        "audio": "composición de dominio público (Ludwig van Beethoven, Sinfonía n.º 9, 1824, «Himno a la alegría»); síntesis propia de TAKAB, sin grabación de terceros",
+        "fuente": "código del repo (tools/audio/gen_musica.py), propiedad de TAKAB"
+      },
+      "notas": "Música para probar los parlantes del gabinete (T-9.72). Mismo contenido musical que el candidato F7 (candidatos_f7.py, 2026-09-28). gen_musica.py la reproduce byte a byte con las versiones fijadas."
+    },
+    {
       "id": "takab-voz-movimiento-v1",
       "rutas": [
         "mobile/assets/sounds/movimiento_inmueble.wav"

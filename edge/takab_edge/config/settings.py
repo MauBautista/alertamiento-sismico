@@ -535,6 +535,10 @@ class EdgeSettings(BaseSettings):
     #: [T-2.49] Tono del SELF-TEST de sirena. Vacío ⇒ `assets/prueba.wav` empaquetado.
     #: Si tampoco existe, una prueba CALLA: jamás cae al tono de alerta real.
     audio_test_path: str = ""
+    #: [T-9.72 · D-40] Música para PROBAR LOS PARLANTES del jack. Vacío ⇒
+    #: `assets/musica_prueba.wav` empaquetado. Sale por el jack de la sirena por audio,
+    #: así que sólo existe con `audio_siren_enabled` (ver `AudioNotifier.music_status`).
+    audio_music_path: str = ""
 
     # --- gpio / camino de vida (blueprint §4.3; presupuesto SASMEX→actuación <100 ms) ---
     debounce_ms: int = 50  # rebote del contacto WR-1 (parte del presupuesto)

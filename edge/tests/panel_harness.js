@@ -479,7 +479,10 @@ async function render(cfg) {
       if (method === 'POST') {
         const st = (cfg.actionStatus || {})[path];
         if (st === 'network') throw new Error('sin red');
-        return jsonResponse(st || 200, { ok: true });
+        /* [T-9.72] `actionBody` deja al test fijar el cuerpo de la respuesta (el
+           `{error}` legible de un 409); sin él, el `{ok:true}` de siempre. */
+        const cuerpo = (cfg.actionBody || {})[path];
+        return jsonResponse(st || 200, cuerpo || { ok: true });
       }
       if (path === 'api/status') {
         if (cfg.statusStatus && cfg.statusStatus !== 200) return jsonResponse(cfg.statusStatus, {});

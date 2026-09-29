@@ -979,7 +979,8 @@ function baseStatus(){
       durable:true, uploaded_total:6, discarded_no_data_total:0, failed_total:0,
       extract_failed_total:0, last_result:'uploaded', last_result_age_s:1830, stale_after_s:3600},
     drill: null, actuation_test: {active:false, results:null, finished_at:null, age_s:null},
-    test_mode: {active:false, remaining_s:0}, audio: {enabled:true, sounding:false},
+    test_mode: {active:false, remaining_s:0}, audio: {enabled:true, sounding:false,
+      music: {disponible:true, activa:false, restante_s:null, motivo:null, ultimo_corte:null}},
     events: [ {at: now, action:'boot', via:'boot'} ],
   };
 }
@@ -1854,6 +1855,33 @@ function renderSalud(st){
                  : (prof.test_tone ? 'alerta + prueba' : 'alerta · SIN TONO DE PRUEBA'),
       rej.length ? C.crit : (prof.test_tone ? C.ok : C.warn)]);
   }
+  /* [T-9.72] La música de prueba de parlantes. Texto fijo, sin animación (D-30).
+     `music` null = el gabinete no pudo leerla: S/D, nunca «lista» ni «en silencio»
+     afirmados sobre un dato que nadie midió. El último corte lleva su HORA del Pi
+     (no «hace …»: restar el reloj del navegador al del Pi ya costó una corrección
+     en esta pantalla) y se pinta en ámbar si no fue un fin normal —operador o
+     tope—: una música que calló por una alerta o por un fallo es algo que mirar. */
+  if (st.audio){
+    const mu = st.audio.music;
+    if (!mu){
+      rows.push(['Prueba de audio', 'S/D', C.warn]);
+    } else {
+      const uc = mu.ultimo_corte;
+      const corte = uc
+        ? ' · ÚLTIMA: ' + (uc.texto || uc.motivo || 'S/D') + ' · ' +
+          (uc.at ? String(uc.at).slice(11,19) + ' UTC' : 'hora S/D')
+        : '';
+      const corteRaro = !!uc && uc.motivo !== 'operador' && uc.motivo !== 'tope';
+      if (mu.activa){
+        const quedan = mu.restante_s == null ? 'S/D' : (Math.ceil(mu.restante_s/60) + ' min');
+        rows.push(['Prueba de audio', 'MÚSICA DE PRUEBA SONANDO · quedan ' + quedan, C.cyan]);
+      } else if (!mu.disponible){
+        rows.push(['Prueba de audio', 'NO SE PUEDE PROBAR · ' + (mu.motivo || 'S/D') + corte, corteRaro ? C.warn : C.fg3]);
+      } else {
+        rows.push(['Prueba de audio', 'EN SILENCIO' + corte, corteRaro ? C.warn : C.ok]);
+      }
+    }
+  }
   rows.forEach(([lbl, val, color]) => {
     const r = document.createElement('div'); r.className = 'kv';
     const d = document.createElement('span'); d.className = 'statdot'; d.style.background = color;
@@ -2410,6 +2438,16 @@ async function doAction(label, endpoint, twoStep){
       setPinMsg('BLOQUEADO POR INTENTOS · ESPERA 60 s', 'crit');
       shoutRejection('ORDEN RECHAZADA · ' + label + ' — BLOQUEADO POR INTENTOS · ESPERA 60 s');
     }
+    else if (r.status === 409){
+      /* [T-9.72] 409 = `ActionUnavailable`: la orden es válida y el gabinete dice
+         POR QUÉ no la hizo («hay una alerta…», «los audibles están silenciados…»).
+         Ese motivo es lo que el operador necesita leer; sin él, se cae al código. */
+      let motivo = null;
+      try { const cuerpo = await r.json(); motivo = cuerpo && typeof cuerpo.error === 'string' && cuerpo.error ? cuerpo.error : null; }
+      catch (err) { /* cuerpo ilegible: se dice el código */ }
+      const why = motivo ? ('NO SE HIZO · ' + motivo) : 'ERROR 409';
+      setPinMsg(why, 'crit'); shoutRejection('ORDEN RECHAZADA · ' + label + ' — ' + why);
+    }
     else { setPinMsg('ERROR ' + r.status, 'crit'); shoutRejection('ORDEN RECHAZADA · ' + label + ' — ERROR ' + r.status); }
   } catch (err){
     setPinMsg('SIN CONEXIÓN CON EL GABINETE', 'crit');
@@ -2443,6 +2481,14 @@ function renderActions(st){
   const wr1 = st.test_mode && st.test_mode.active;
   defs.push([wr1 ? 'SALIR DE PRUEBA WR-1' : 'MODO PRUEBA WR-1', wr1 ? 'la nube vuelve a recibir' : 'ventana de 120 s · la nube no recibe', 'api/test-mode', false, '']);
   if (st.audio && st.audio.enabled) defs.push(['SIMULACRO DE VOCEO', 'voceo de drill · sin tocar relés', 'api/drill-audio', false, '']);
+  /* [T-9.72 · D-40] Música para probar los parlantes. Se ofrece lo que se PUEDE
+     hacer: arrancarla si el gabinete la tiene y está callada, detenerla si suena.
+     Con `music` null (lectura fallida) no se ofrece ninguna de las dos: un botón
+     sobre un estado que nadie leyó es una promesa sin respaldo. Por qué no está
+     disponible lo dice la fila «Prueba de audio» de SALUD, no un botón muerto. */
+  const mu = st.audio && st.audio.music;
+  if (mu && mu.activa) defs.push(['DETENER PRUEBA DE AUDIO', 'calla la música de prueba de los parlantes', 'api/audio-musica/detener', false, '']);
+  else if (mu && mu.disponible) defs.push(['PRUEBA DE AUDIO CONTINUA', 'música por los parlantes · tope 30 min · cualquier alerta la corta', 'api/audio-musica', false, '']);
   const orden = [];
   defs.forEach(([label, sub, endpoint, twoStep, kind]) => {
     const armed = S.armed === endpoint;

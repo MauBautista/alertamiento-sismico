@@ -34,6 +34,7 @@ Cómo funciona el sandbox
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import pathlib
 import shutil
@@ -380,11 +381,17 @@ def gabinete(tmp_path: pathlib.Path):
     # [T-2.70] `curl` falso: el panel local del gabinete, que es una de las
     # cuatro señales de salud que el canary sostiene durante el remojo.
     # `PANEL_MUERTO=1` lo calla — un supervisor que arranca y no llega a servir.
+    # [T-9.72] Lo que llega por `file://` es la NUBE de mentira de la guarda de
+    # contratos (su `/api/health`): va al curl de verdad, que sabe leer ficheros.
+    curl_real = shutil.which("curl") or "/usr/bin/curl"
     _escribir_ejecutable(
         binarios / "curl",
-        """
-        if [ -n "${PANEL_MUERTO:-}" ]; then exit 22; fi
-        echo '{"ok":true}'
+        f"""
+        for arg in "$@"; do
+          case "$arg" in file://*) exec "{curl_real}" "$@" ;; esac
+        done
+        if [ -n "${{PANEL_MUERTO:-}}" ]; then exit 22; fi
+        echo '{{"ok":true}}'
         """,
     )
 
@@ -521,6 +528,20 @@ def gabinete(tmp_path: pathlib.Path):
             # sitio donde no aplica no es debilitarla; confundir los dos sitios,
             # sí lo sería.
             env["TAKAB_DEPLOY_RAMA_LIBRE"] = "1"
+            # [T-9.72] La guarda de CONTRATOS lee la etiqueta de la nube en
+            # `/api/health`. Aquí la nube es un fichero que declara el MISMO commit que
+            # se despliega (curl lee `file://`): pasa, y la guarda corre de verdad.
+            # Sus dos caminos rojos tienen tests propios abajo.
+            nube = tmp_path / "nube"
+            (nube / "api").mkdir(parents=True, exist_ok=True)
+            cabeza = subprocess.run(
+                ["git", "-C", str(_RAIZ), "rev-parse", "--short=8", "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout.strip()
+            (nube / "api" / "health").write_text(json.dumps({"build": cabeza}))
+            env["TAKAB_CONSOLA_URL"] = f"file://{nube}"
             env.update(entorno_extra)
             return subprocess.run(
                 ["bash", str(_DEPLOY), "gabinete-falso", *args],
@@ -1775,3 +1796,66 @@ def test_que_falle_la_publicacion_NO_tumba_el_despliegue_pero_se_DECLARA(
     assert "make cloud-publish-release VERSION=62f3f1e" in r.stderr, (
         "declarar el fallo sin el comando exacto para repararlo es medio aviso"
     )
+
+
+# --- [T-9.72] contratos antes que código -------------------------------------------
+
+
+def _commit_con_otros_contratos(tmp_path: pathlib.Path) -> str:
+    """Un commit HUÉRFANO con el árbol de HEAD salvo UN esquema cambiado: sus contratos
+    difieren de los de este edge y HEAD no es su ancestro, que es la nube vieja.
+
+    Se fabrica y no se busca en la historia: el CI clona SUPERFICIAL y el padre del
+    último cambio de `shared/schemas` no está (así falló la primera versión). Con un
+    índice temporal, el índice de verdad ni se toca.
+    """
+    env = {
+        **os.environ,
+        "GIT_INDEX_FILE": str(tmp_path / "indice-nube-vieja"),
+        # El runner del CI (y un clon recién hecho) no tienen identidad de git.
+        "GIT_AUTHOR_NAME": "test",
+        "GIT_AUTHOR_EMAIL": "test@invalid",
+        "GIT_COMMITTER_NAME": "test",
+        "GIT_COMMITTER_EMAIL": "test@invalid",
+    }
+
+    def git(*args: str, entrada: str | None = None) -> str:
+        return subprocess.run(
+            ["git", "-C", str(_RAIZ), *args],
+            capture_output=True,
+            text=True,
+            check=True,
+            env=env,
+            input=entrada,
+        ).stdout.strip()
+
+    git("read-tree", "HEAD")
+    esquema = "shared/schemas/actuation_record.schema.json"
+    blob = git("hash-object", "-w", "--stdin", entrada=git("show", f"HEAD:{esquema}") + "\n ")
+    git("update-index", "--cacheinfo", f"100644,{blob},{esquema}")
+    arbol = git("write-tree")
+    return git("commit-tree", arbol, "-m", "nube vieja (test)")[:8]
+
+
+def test_una_nube_con_OTROS_contratos_detiene_el_despliegue_antes_de_tocar_nada(
+    gabinete, tmp_path
+) -> None:  # noqa: ANN001
+    nube = tmp_path / "nube-vieja"
+    (nube / "api").mkdir(parents=True)
+    (nube / "api" / "health").write_text(
+        json.dumps({"build": _commit_con_otros_contratos(tmp_path)})
+    )
+    r = gabinete.desplegar(TAKAB_CONSOLA_URL=f"file://{nube}")
+    assert r.returncode != 0
+    assert "PRIMERO la nube" in r.stderr
+    assert "sincronizando edge/" not in r.stdout
+
+
+def test_sin_poder_leer_la_nube_no_se_despliega_salvo_que_se_declare(gabinete, tmp_path) -> None:  # noqa: ANN001
+    sin_nube = f"file://{tmp_path / 'no-existe'}"
+    r = gabinete.desplegar(TAKAB_CONSOLA_URL=sin_nube)
+    assert r.returncode != 0
+    assert "TAKAB_DEPLOY_SIN_NUBE=1" in r.stderr
+    assert "sincronizando edge/" not in r.stdout
+    r = gabinete.desplegar(TAKAB_CONSOLA_URL=sin_nube, TAKAB_DEPLOY_SIN_NUBE="1")
+    assert "sincronizando edge/" in r.stdout

@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import gen_musica  # noqa: E402
 import normaliza  # noqa: E402
 from verifica_manifiesto import MANIFIESTO, sha256  # noqa: E402
 
@@ -81,6 +82,30 @@ EXISTENTES: list[dict] = [
 ]
 
 
+#: Audio que genera un script de ``tools/audio`` distinto de las voces (T-9.72).
+GENERADOS: list[dict] = [
+    {
+        "id": "takab-musica-prueba-v1",
+        "rutas": [gen_musica.DESTINO.as_posix()],
+        "fuente": {
+            "generador": "tools/audio/gen_musica.py (numpy) → normaliza.py",
+            "parametros": gen_musica.PARAMETROS,
+            "normalizacion": f"{normaliza.OBJETIVO_EDGE_LUFS} LUFS (edge), pico verdadero "
+            f"≤ {normaliza.PICO_MAX_DBTP} dBTP (×{normaliza.SOBREMUESTREO}), cola "
+            f"≤ {int(normaliza.COLA_S * 1000)} ms",
+        },
+        "licencia": {
+            "audio": "composición de dominio público (Ludwig van Beethoven, Sinfonía n.º 9, "
+            "1824, «Himno a la alegría»); síntesis propia de TAKAB, sin grabación de terceros",
+            "fuente": "código del repo (tools/audio/gen_musica.py), propiedad de TAKAB",
+        },
+        "notas": "Música para probar los parlantes del gabinete (T-9.72). Mismo contenido "
+        "musical que el candidato F7 (candidatos_f7.py, 2026-09-28). "
+        "gen_musica.py la reproduce byte a byte con las versiones fijadas.",
+    },
+]
+
+
 def _voces() -> list[dict]:
     cfg = json.loads(VOCES.read_text(encoding="utf-8"))
     piper, modelo = cfg["piper"], cfg["modelo"]
@@ -119,7 +144,7 @@ def _voces() -> list[dict]:
 
 def construir() -> dict:
     audios = []
-    for e in EXISTENTES + _voces():
+    for e in EXISTENTES + GENERADOS + _voces():
         primera = RAIZ / e["rutas"][0]
         m = normaliza.mide(primera)
         audios.append(
