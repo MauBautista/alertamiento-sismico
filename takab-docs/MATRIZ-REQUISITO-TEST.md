@@ -189,10 +189,10 @@ Y **10 gates físicos / de despliegue** que ningún test de software puede cerra
 
 | # | Afirmación | Veredicto | Prueba (`archivo:línea`) | Qué demuestra |
 |---|---|---|---|---|
-| RO-11.a | Una regla de retención que borre filas de una tabla de compliance se rechaza, y se rechaza ANTES de borrar nada. | `CUBIERTO` | `api/tests/test_privacy_retention.py:546`<br>`test_una_regla_que_borra_filas_de_una_tabla_protegida_es_rechazada`<br>`api/tests/test_privacy_retention.py:560`<br>`test_el_rechazo_ocurre_en_el_preflight_antes_de_cualquier_conteo` | Parametrizado sobre las cinco tablas protegidas: `RetentionUnsafe` y conteo idéntico antes/después.<br>El plan entero aborta en el preflight. |
-| RO-11.b | Ni saltándose el guard puede el job borrar evidencia: lo impide la propia base. | `CUBIERTO` | `api/tests/test_privacy_retention.py:571`<br>`test_ni_saltandose_el_guard_puede_el_job_borrar_evidencia` | `DELETE` crudo en la sesión del job ⇒ 42501 o P0001 (trigger append-only). |
-| RO-11.c | ARCO anonimiza al titular sin perder una sola fila. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:373`<br>`test_arco_anonimiza_al_titular_sin_perder_una_sola_fila` | Censo de filas sobre 9 tablas idéntico antes y después. |
-| RO-11.d | El hecho sobrevive a la anonimización: el check-in sigue contando. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:415`<br>`test_el_checkin_anonimizado_sigue_contando_para_el_incidente` | El conteo del incidente no cambia; la geometría precisa sí se anula. |
+| RO-11.a | Una regla de retención que borre filas de una tabla de compliance se rechaza, y se rechaza ANTES de borrar nada. | `CUBIERTO` | `api/tests/test_privacy_retention.py:622`<br>`test_una_regla_que_borra_filas_de_una_tabla_protegida_es_rechazada`<br>`api/tests/test_privacy_retention.py:636`<br>`test_el_rechazo_ocurre_en_el_preflight_antes_de_cualquier_conteo` | Parametrizado sobre las cinco tablas protegidas: `RetentionUnsafe` y conteo idéntico antes/después.<br>El plan entero aborta en el preflight. |
+| RO-11.b | Ni saltándose el guard puede el job borrar evidencia: lo impide la propia base. | `CUBIERTO` | `api/tests/test_privacy_retention.py:647`<br>`test_ni_saltandose_el_guard_puede_el_job_borrar_evidencia` | `DELETE` crudo en la sesión del job ⇒ 42501 o P0001 (trigger append-only). |
+| RO-11.c | ARCO anonimiza al titular sin perder una sola fila. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:385`<br>`test_arco_anonimiza_al_titular_sin_perder_una_sola_fila` | Censo de filas sobre 9 tablas idéntico antes y después. |
+| RO-11.d | El hecho sobrevive a la anonimización: el check-in sigue contando. | `CUBIERTO` | `api/tests/test_privacy_erasure.py:427`<br>`test_el_checkin_anonimizado_sigue_contando_para_el_incidente` | El conteo del incidente no cambia; la geometría precisa sí se anula. |
 
 ## Invariantes (`BLUEPRINT §14`)
 

@@ -172,6 +172,23 @@ async def submit_checkin(
         response.status_code = 200
         return CheckinOut(**dict(row._mapping))
 
+    # [T-9.80 · D-48] El aviso a los contactos de emergencia, en la MISMA
+    # transacción que el check-in. Sólo el PROPIO: si marca el brigadista, la
+    # persona no pidió nada con su teléfono, y avisar a su familia es algo que
+    # sólo decide ella. Sin contactos, la sentencia no inserta nada.
+    if body.status == "need_help" and not delegated:
+        await conn.execute(
+            q.INSERT_NEED_HELP_CONTACTS,
+            {
+                "incident": str(incident_id),
+                "tenant": str(incident.tenant_id),
+                "actor": f"user:{claims.sub}",
+                "subject": subject,
+                "checkin": str(row.checkin_id),
+                "con_ubicacion": body.location is not None,
+            },
+        )
+
     await audit_async(
         conn,
         tenant_id=str(incident.tenant_id),

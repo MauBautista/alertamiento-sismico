@@ -58,17 +58,20 @@ describe("gateFor — default-deny server-driven", () => {
     expect([...TACTICAL_ROLES].sort()).toEqual(["brigadista", "inspector", "tenant_admin"]);
   });
 
-  // [T-9.20 · D-42] el servidor ya canoniza; si aun así llegara un rol viejo, la
-  // app aplica el MISMO alias que la nube (`auth/roles.ts`), no una lista aparte.
-  it.each([
-    ["security_guard", "tactical"],
-    ["building_admin", "tactical"],
-    ["soc_operator", "tactical"],
-  ])("rol viejo %s ⇒ se trata como su canónico (%s)", (role, group) => {
-    expect(gateFor({ role, surface: "mobile" })).toEqual({ allowed: true, group });
-  });
+  // [T-9.81 · D-42] los alias se dieron de baja: el servidor responde 401
+  // `rol_retirado` (fin de sesión) y no emite un rol viejo en /me. Si aun así
+  // llegara uno, la app NO lo traduce a su heredero: default-deny.
+  it.each(["security_guard", "building_admin", "soc_operator"])(
+    "rol retirado %s ⇒ fuera (ya no se trata como su heredero)",
+    (role) => {
+      expect(gateFor({ role, surface: "mobile" })).toEqual({
+        allowed: false,
+        reason: "role_not_mobile",
+      });
+    },
+  );
 
-  it("un rol viejo con superficie web sigue fuera: el alias no salta la superficie", () => {
+  it("un rol viejo con superficie web sigue fuera por la superficie", () => {
     expect(gateFor({ role: "security_guard", surface: "web" })).toEqual({
       allowed: false,
       reason: "wrong_surface",

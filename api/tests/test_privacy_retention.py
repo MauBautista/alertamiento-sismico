@@ -417,11 +417,87 @@ def test_la_baja_no_se_puede_BORRAR_desde_la_api(seeded: psycopg.Connection) -> 
     assert exc.value.sqlstate == "42501"
 
 
-def test_el_plan_que_se_despacha_no_borra_ni_una_fila() -> None:
-    """Hoy no hay ninguna PII prunable que no esté dentro de una fila que debe
-    sobrevivir. El día que la haya, este test obliga a razonarlo."""
+def test_el_plan_que_se_despacha_solo_borra_los_contactos_de_emergencia() -> None:
+    """Hasta T-9.80 no había PII prunable fuera de una fila que debe sobrevivir, y
+    este test exigía la lista vacía «para obligar a razonarlo el día que la hubiera».
+
+    [T-9.80] Ese día llegó y el razonamiento es éste: un contacto de emergencia es
+    un dato de un TERCERO que sólo sirve para avisarle; no documenta ningún hecho
+    (el aviso enviado vive en `notification_jobs`/`incident_actions`), así que
+    anonimizarlo dejaría una fila que no significa nada. Se borra la fila, y sólo
+    esa: cualquier otra regla que borre filas vuelve a poner esto en rojo."""
     borradoras = [r.key for r in retention.RETENTION_PLAN if r.mode == retention.DELETE_ROWS]
-    assert borradoras == [], f"el plan despacha reglas que BORRAN filas: {borradoras}"
+    assert borradoras == ["emergency_contacts.rows"], (
+        f"el plan despacha reglas que BORRAN filas: {borradoras}"
+    )
+
+
+def _contactos(conn: psycopg.Connection, *, tenant: str = TENANT_A, user: str = USER_A) -> None:
+    for posicion in (1, 2):
+        conn.execute(
+            "INSERT INTO emergency_contacts (tenant_id, user_sub, posicion, display_name, "
+            "email, consent_version, consented_at) "
+            "VALUES (%s,%s,%s,'Contacto','c@example.mx','contactos-v1-2026-09',now())",
+            (tenant, user, posicion),
+        )
+
+
+def _cuantos_contactos(conn: psycopg.Connection, user: str = USER_A) -> int:
+    reset(conn)
+    return conn.execute(
+        "SELECT count(*) FROM emergency_contacts WHERE user_sub = %s", (user,)
+    ).fetchone()[0]
+
+
+def test_la_regla_de_los_contactos_cuelga_de_la_baja_del_titular() -> None:
+    regla = next(r for r in retention.RETENTION_PLAN if r.table == "emergency_contacts")
+    assert "user_deactivations" in regla.clock and "deactivated_at" in regla.clock
+    assert "consented_at" not in regla.clock and "updated_at" not in regla.clock
+
+
+def test_poda_los_contactos_de_quien_se_fue_y_respeta_los_de_quien_sigue(
+    seeded: psycopg.Connection,
+) -> None:
+    """[T-9.80] Mismo reloj que el nombre: la BAJA de la cuenta. Un contacto que el
+    titular dio hace años sigue vigente si el titular sigue dentro."""
+    _perfil(seeded)  # la baja cuelga del padrón (`fk_baja_del_padron_del_tenant`)
+    _contactos(seeded)
+    _contactos(seeded, user=USER_A2)
+    _baja(seeded, dias=400)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _cuantos_contactos(seeded) == 0
+    assert _cuantos_contactos(seeded, USER_A2) == 2
+
+
+def test_los_contactos_no_se_podan_con_un_incidente_ABIERTO(seeded: psycopg.Connection) -> None:
+    _perfil(seeded)
+    _contactos(seeded)
+    _baja(seeded, dias=400)  # `seeded` deja INC_A abierto
+
+    informe = prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _cuantos_contactos(seeded) == 2
+    assert informe.total_applied == 0
+
+
+def test_una_baja_en_OTRO_tenant_no_poda_los_contactos(seeded: psycopg.Connection) -> None:
+    """El reloj se une por `(tenant_id, user_sub)`: una baja registrada en B no
+    alcanza a unos contactos con ese mismo `sub` que viven en A (regla de oro 5).
+
+    La baja tiene que vivir donde vive el perfil (FK compuesta contra el padrón),
+    así que el cruce se monta con los CONTACTOS en el otro tenant —`emergency_contacts`
+    no cuelga del padrón—, que es lo que un reloj unido sólo por `user_sub` podaría."""
+    _perfil(seeded, tenant=TENANT_B, user=USER_B, nombre="Beto B")
+    _contactos(seeded, tenant=TENANT_A, user=USER_B)
+    _baja(seeded, tenant=TENANT_B, user=USER_B, dias=400)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _cuantos_contactos(seeded, USER_B) == 2
 
 
 def test_toda_regla_es_consciente_del_tenant(conn: psycopg.Connection) -> None:
@@ -1045,3 +1121,20 @@ def test_el_tope_de_lock_no_se_queda_pegado_a_la_conexion(conn: psycopg.Connecti
 
     assert dentro == f"{session.JOB_LOCK_TIMEOUT_MS // 1000}s"
     assert fuera == "0", "el tope del job se quedó pegado a la conexión del llamador"
+
+
+def test_el_terraform_admite_EXACTAMENTE_las_claves_del_plan() -> None:
+    """[T-9.80] La validación de `pii_retention_windows_days` enumeraba las claves A MANO
+    y la regla de los contactos de emergencia nació sin poder configurarse: el job la
+    habría dejado apagada para siempre. Aquí se deriva del plan, en las dos direcciones."""
+    import re
+    from pathlib import Path
+
+    tf = (
+        Path(__file__).resolve().parents[2] / "infra/terraform/modules/database/variables.tf"
+    ).read_text()
+    bloque = tf[tf.index('variable "pii_retention_windows_days"') :]
+    lista = re.search(r"contains\(\[([^\]]+)\], k\)", bloque)
+    assert lista, "no encontré la validación de claves en variables.tf"
+    admitidas = set(re.findall(r'"([^"]+)"', lista.group(1)))
+    assert admitidas == {r.key for r in retention.RETENTION_PLAN}

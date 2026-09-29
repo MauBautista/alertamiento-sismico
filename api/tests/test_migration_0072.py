@@ -122,8 +122,9 @@ def test_0072_deja_el_contexto_de_app_como_lo_encontro(seeded: psycopg.Connectio
 
 
 def test_0072_el_mapeo_es_el_de_D42() -> None:
-    """Copia congelada en la migración (T-9.81 quitará los alias del código, y una
-    migración no puede cambiar de significado cuando cambia la app)."""
-    from takab_api.auth.roles import ALIAS_HEREDADOS
+    """Copia congelada en la migración (T-9.81 quitó los alias del código, y una
+    migración no puede cambiar de significado cuando cambia la app). Queda atada al
+    registro histórico de a dónde fue cada rol retirado."""
+    from takab_api.auth.roles import HEREDERO_HISTORICO
 
-    assert _mig().MAPEO == ALIAS_HEREDADOS
+    assert _mig().MAPEO == HEREDERO_HISTORICO

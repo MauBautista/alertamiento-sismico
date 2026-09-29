@@ -100,6 +100,13 @@ PROVISIONAL = "PROVISIONAL"
 #: CHECK de ``privacy_notices.purpose``/``privacy_consents.purpose``.
 PURPOSES: tuple[str, ...] = ("privacy_notice", "whatsapp_alerts")
 
+#: [T-9.80 · D-48] Propósitos que sólo existen como artefacto del REPO y NO pasan
+#: por ``privacy_notices``/``privacy_consents`` (por eso no entran en ``PURPOSES``,
+#: que es espejo de un CHECK). ``emergency_contacts`` es el aviso que el titular
+#: acepta al registrar a sus contactos; su versión se sella en cada fila de
+#: ``emergency_contacts.consent_version``.
+REPO_ONLY_PURPOSES: tuple[str, ...] = ("emergency_contacts",)
+
 TEXTS_DIR = Path(__file__).resolve().parent / "texts"
 
 
@@ -207,8 +214,11 @@ class NoticeSpec:
 
 def _defect_of(spec: NoticeSpec) -> str:
     """Lo que hace inservible a un artefacto ANTES de mirar su revisión legal."""
-    if spec.purpose not in PURPOSES:
-        return f"purpose {spec.purpose!r} desconocido (esperado uno de {PURPOSES})"
+    if spec.purpose not in PURPOSES + REPO_ONLY_PURPOSES:
+        return (
+            f"purpose {spec.purpose!r} desconocido "
+            f"(esperado uno de {PURPOSES + REPO_ONLY_PURPOSES})"
+        )
     if len(spec.locale) != 5 or spec.locale[2] != "-":
         return f"locale {spec.locale!r} inválido (esperado ll-CC, p. ej. es-MX)"
     if not spec.version.strip():

@@ -9,7 +9,8 @@ import { AccountScreen } from "./AccountScreen";
 const mockLogout = jest.fn(async () => ({ push: "skipped", refresh: "none", hostedUi: "skipped" }));
 jest.mock("@/auth/logout", () => ({ logout: () => mockLogout() }));
 
-jest.mock("expo-router", () => ({ useRouter: () => ({ push: jest.fn() }) }));
+const mockPush = jest.fn();
+jest.mock("expo-router", () => ({ useRouter: () => ({ push: mockPush }) }));
 
 jest.mock("@/services/onboarding", () => ({
   getGpsConsent: async () => null,
@@ -24,6 +25,7 @@ jest.mock("@tanstack/react-query", () => ({
 
 beforeEach(() => {
   mockLogout.mockClear();
+  mockPush.mockClear();
   mockRefetch.mockClear();
   mockPerfil = {
     data: undefined,
@@ -50,5 +52,13 @@ describe("1.8 · CUENTA con el perfil caído", () => {
     await fireEvent.press(v.getByTestId("logout"));
 
     expect(mockLogout).toHaveBeenCalledTimes(1);
+  });
+
+  it("[T-9.80] la fila CONTACTOS DE EMERGENCIA abre su pantalla, aun con el perfil caído", async () => {
+    const v = await render(<AccountScreen />);
+
+    await fireEvent.press(v.getByTestId("contactos-row"));
+
+    expect(mockPush).toHaveBeenCalledWith("/contactos-emergencia");
   });
 });

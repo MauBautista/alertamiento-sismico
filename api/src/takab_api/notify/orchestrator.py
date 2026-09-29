@@ -100,6 +100,7 @@ from takab_api.notify.push import (
 )
 from takab_api.notify.state import PgNotifyState
 from takab_api.privacy import store as privacy_store
+from takab_api.privacy.erasure import ERASED_DISPLAY_NAME
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
@@ -313,6 +314,51 @@ ORDER BY a.ts, a.action_id
 """
 _POST_EVENT_REPORT_EMAIL_SQL = _POST_EVENT_REPORT_SQL.format(canal="email")
 _POST_EVENT_REPORT_PUSH_SQL = _POST_EVENT_REPORT_SQL.format(canal="push")
+
+# [T-9.80 · D-48] Alguien pidió ayuda con su teléfono y tiene contactos de
+# emergencia (la acción la deja `submit_checkin`, UNA por persona e incidente) ⇒ UN
+# correo a esos contactos. Nada de consola ni de cascada: el destinatario no es
+# usuario de TAKAB.
+_NEED_HELP_CONTACTS_SQL = """
+SELECT a.action_id, a.incident_id, a.ts, a.actor, a.payload,
+       i.tenant_id, i.site_id
+FROM incident_actions a
+JOIN incidents i ON i.incident_id = a.incident_id
+WHERE a.kind = 'need_help_contacts'
+  AND a.ts >= %(since)s
+  AND a.ts <= %(now)s
+  AND NOT EXISTS (
+    SELECT 1 FROM notification_jobs j
+    WHERE j.action_id = a.action_id AND j.channel = 'email'
+  )
+ORDER BY a.ts, a.action_id
+"""
+
+# Los correos se leen AL ENCOLAR (como `takab_ingest`, que salta la RLS `ec_self`):
+# la lista que vale es la que el titular tenía cuando pidió ayuda.
+_CONTACT_EMAILS_SQL = """
+SELECT email FROM emergency_contacts
+WHERE tenant_id = %(tenant)s AND user_sub = %(user)s
+ORDER BY posicion
+"""
+
+# Quién, dónde y —si viajó— el punto, resueltos al DESPACHAR de la fila VIVA del
+# check-in y no del payload: la acción es append-only y ARCO no podría borrar de
+# ella un nombre o una coordenada. La zona es la del check-in o, si no la trajo, la
+# asignada al titular en ese inmueble. Si ARCO ya anuló `geom`, no hay punto.
+_NEED_HELP_DETALLE_SQL = """
+SELECT p.display_name AS titular,
+       z.name AS zona,
+       CASE WHEN c.geom IS NOT NULL THEN ST_Y(c.geom::geometry) END AS lat,
+       CASE WHEN c.geom IS NOT NULL THEN ST_X(c.geom::geometry) END AS lon
+FROM life_checkins c
+LEFT JOIN user_profiles p
+       ON p.tenant_id = c.tenant_id AND p.user_sub = c.user_id
+LEFT JOIN user_zone_assignments uza
+       ON uza.tenant_id = c.tenant_id AND uza.user_id = c.user_id AND uza.site_id = c.site_id
+LEFT JOIN zones z ON z.zone_id = COALESCE(c.zone_id, uza.zone_id)
+WHERE c.checkin_id = %(checkin)s AND c.tenant_id = %(tenant)s
+"""
 
 # 1 push por (action_id, channel): el índice único parcial de 0014 (action) lo
 # hace idempotente. El target lleva site_id + clase OPS (el _dispatch_push
@@ -771,6 +817,8 @@ def run_notify_pass(
         lookback_s=lookback,
         roles=roles_with_action("movement_alert"),
     )
+    # [T-9.80 · D-48] Quien pidió ayuda avisa a SUS contactos de emergencia.
+    counts["enqueued"] += _enqueue_need_help_contacts(conn, now=now, lookback_s=lookback)
     # [T-2.147.a] El pánico va en su propia función y no por `_enqueue_push_for_actions`:
     # aquel encola por ACCIÓN de incidente (`action_id`), y un pánico no genera
     # ninguna — el hecho es el incidente mismo.
@@ -1274,6 +1322,70 @@ def _enqueue_post_event_report(
     return inserted
 
 
+def _enqueue_need_help_contacts(
+    conn: psycopg.Connection, *, now: datetime, lookback_s: float
+) -> int:
+    """[T-9.80 · D-48] UN correo por cada petición de ayuda, a los contactos del titular.
+
+    ``to`` = los correos de sus contactos, en su orden, leídos AHORA. Sin contactos
+    no se inventa un destinatario, pero se DICE: la acción sólo nace si había al
+    menos uno, así que un vacío aquí es que el titular los borró entre el check-in y
+    esta pasada (o un escritor nuevo que no los comprobó).
+
+    TODO(D-48): el SMS a ``emergency_contacts.phone`` cuando se contrate el
+    proveedor. Hoy sólo correo: no se encola un canal que no se puede entregar.
+    """
+    rows = conn.execute(
+        _NEED_HELP_CONTACTS_SQL, {"since": now - timedelta(seconds=lookback_s), "now": now}
+    ).fetchall()
+    inserted = 0
+    for row in rows:
+        payload = row["payload"] or {}
+        correos = [
+            f["email"]
+            for f in conn.execute(
+                _CONTACT_EMAILS_SQL,
+                {"tenant": row["tenant_id"], "user": payload.get("user_sub")},
+            ).fetchall()
+        ]
+        if not correos:
+            logger.warning(
+                "need_help_contacts %s sin contactos de emergencia al encolar: nadie "
+                "recibirá el aviso de que esta persona pidió ayuda",
+                row["action_id"],
+            )
+            continue
+        result = conn.execute(
+            _INSERT_ACTION_JOB_SQL,
+            {
+                "tenant": row["tenant_id"],
+                "incident": row["incident_id"],
+                "target": json.dumps({"to": correos}),
+                "due_at": row["ts"],  # vence YA: paralelo, sin cascada
+                "action": row["action_id"],
+            },
+        )
+        inserted += result.rowcount
+    return inserted
+
+
+def _need_help_detalle(conn: psycopg.Connection, row: dict) -> dict:
+    """[T-9.80] Nombre, zona y punto de quien pidió ayuda, de la fila VIVA del
+    check-in. El punto sólo si ese check-in lo trajo (``con_ubicacion``)."""
+    payload = row.get("action_payload") or {}
+    fila = conn.execute(
+        _NEED_HELP_DETALLE_SQL,
+        {"checkin": payload.get("checkin_id"), "tenant": row["tenant_id"]},
+    ).fetchone()
+    if fila is None:
+        return {}
+    detalle = {"ayuda_titular": fila["titular"], "ayuda_zona": fila["zona"]}
+    if payload.get("con_ubicacion") and fila["lat"] is not None:
+        detalle["ayuda_lat"] = fila["lat"]
+        detalle["ayuda_lon"] = fila["lon"]
+    return detalle
+
+
 def _enqueue_panic_ack_timeout(
     conn: psycopg.Connection,
     settings: Settings,
@@ -1525,6 +1637,8 @@ def _dispatch_one(
     # no) exactamente como antes; lo único que cambia es que el recuerdo se
     # escribe en la fila del job y no en la RAM de esta instancia.
     state.enter_job(row["job_id"])
+    if row.get("action_kind") == "need_help_contacts":
+        row = {**row, **_need_help_detalle(conn, row)}
     try:
         message = _message(row, base_url=base_url)
     except ValueError as exc:
@@ -2131,17 +2245,43 @@ def _msg_post_event_report(message: dict, row: dict, payload: dict) -> str:
     return f"/triage/{row['incident_id']}/cierre"
 
 
+#: Lo que ve el contacto donde había un nombre que ya no está (sin perfil, o
+#: anonimizado por ARCO). Un hueco declarado, no un nombre inventado.
+_PERSONA_SIN_NOMBRE = "Una persona"
+
+
+def _msg_need_help_contacts(message: dict, row: dict, payload: dict) -> None:
+    """[T-9.80 · D-48] Aviso a los contactos de emergencia de quien pidió ayuda.
+
+    Devuelve ``None``: **sin enlace**, ni con base pública. El contacto no es
+    usuario de TAKAB, y un enlace que no puede abrir sólo le haría creer que hay
+    algo más que ver. El nombre, la zona y el punto los añade el despacho
+    (``_need_help_detalle``); sin ellos se dice «Una persona» y «sin zona».
+    """
+    titular = row.get("ayuda_titular")
+    if not titular or titular == ERASED_DISPLAY_NAME:
+        titular = _PERSONA_SIN_NOMBRE
+    message["headline"] = f"TAKAB Ailert · {titular} pidió ayuda · {row['site_name']}"
+    message["titular"] = titular
+    message["zona"] = row.get("ayuda_zona")
+    if row.get("ayuda_lat") is not None and row.get("ayuda_lon") is not None:
+        message["lat"] = round(float(row["ayuda_lat"]), 5)
+        message["lon"] = round(float(row["ayuda_lon"]), 5)
+    return None
+
+
 #: [T-9.43] El mensaje de un job anclado a una acción, por `kind`. Tabla CERRADA:
 #: un kind que no esté aquí LANZA. Antes toda acción que no fuera «personas en
 #: riesgo» caía en la rama del dictamen, y el aviso de que la brigada no acusó
 #: llegaba al SOC como «Solicitud de dictamen · Solicitado por: system». El censo
 #: (`tests/notify/test_mensaje_por_kind.py`) deriva de las SQL de este módulo qué
 #: kinds anclan un correo y exige que esta tabla tenga exactamente esos.
-MENSAJE_POR_KIND: dict[str, Callable[[dict, dict, dict], str]] = {
+MENSAJE_POR_KIND: dict[str, Callable[[dict, dict, dict], str | None]] = {
     "dictamen_request": _msg_dictamen_request,
     "damage_people_at_risk": _msg_people_at_risk,
     "tactical_ack_timeout": _msg_tactical_ack_timeout,
     "post_event_report": _msg_post_event_report,
+    "need_help_contacts": _msg_need_help_contacts,
 }
 
 
@@ -2172,6 +2312,7 @@ def _message(row: dict, *, base_url: str = "") -> dict:
             raise ValueError(f"acción de kind {kind!r} sin mensaje en MENSAJE_POR_KIND")
         message["kind"] = kind
         ruta = rama(message, row, row.get("action_payload") or {})
-        if base_url:
+        # [T-9.80] Una rama sin ruta (`None`) no lleva enlace ni con base pública.
+        if base_url and ruta:
             message["link"] = f"{base_url.rstrip('/')}{ruta}"
     return message

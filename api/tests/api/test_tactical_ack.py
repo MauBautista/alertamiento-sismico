@@ -138,9 +138,9 @@ async def test_un_tactico_puede_acusar(client, incidente) -> None:
     assert acuses[0]["kind"] == "tactical_ack"
 
 
-async def test_el_acuse_de_un_EX_GUARDIA_guarda_el_rol_que_traia(client, incidente) -> None:
-    """[T-9.20 · D-42] Durante la ventana de alias el acuse se hace como `brigadista`, pero
-    la historia nueva no pierde el rol con el que se firmó: `role_raw`."""
+async def test_el_acuse_de_un_EX_GUARDIA_es_rol_retirado(client, incidente) -> None:
+    """[T-9.81 · D-42] Cerrada la ventana de alias, un token `security_guard` ya no acusa
+    como `brigadista`: 401 `rol_retirado` y ningún acuse escrito."""
     token = au.make_token(
         "security_guard",
         surface="mobile",
@@ -149,13 +149,13 @@ async def test_el_acuse_de_un_EX_GUARDIA_guarda_el_rol_que_traia(client, inciden
         tenant=au.DB_TENANT_PRIV,
     )
     resp = await _ack(client, token)
-    assert resp.status_code == 200, resp.text
-    [acuse] = await _acuses()
-    assert acuse["payload"]["role"] == "brigadista"
-    assert acuse["payload"]["role_raw"] == "security_guard"
+    assert resp.status_code == 401, resp.text
+    assert resp.json()["detail"] == "rol_retirado"
+    assert await _acuses() == []
 
 
 async def test_el_acuse_con_rol_canonico_NO_repite_el_rol(client, incidente) -> None:
+    """[T-9.81] `role_raw` salió con la ventana de alias: el acuse guarda solo `role`."""
     resp = await _ack(client, _tactico("70000000-0000-0000-0000-0000000ac0f3"))
     assert resp.status_code == 200, resp.text
     [acuse] = await _acuses()

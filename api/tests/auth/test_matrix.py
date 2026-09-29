@@ -30,7 +30,7 @@ COLS = (CONSOLE, FLEET, TRIAGE, TENANTS, AUDIT, BUILDING)
 
 # Copiado A MANO de RBAC-TAKAB.md §2 (matriz web), celda por celda.
 # [T-9.20 · D-42] Siete filas: soc_operator, building_admin y security_guard salieron
-# (sus tokens entran canonizados; ver tests/auth/test_roles_heredados.py).
+# (T-9.81: sus tokens son 401 rol_retirado; ver tests/auth/test_roles_heredados.py).
 RBAC_SECTION_2 = {
     #                    console fleet triage tenants audit building
     "takab_superadmin": (True, True, True, True, True, True),

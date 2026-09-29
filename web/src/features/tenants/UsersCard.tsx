@@ -6,7 +6,7 @@ import Button from "../../components/Button";
 import Card from "../../components/Card";
 import ConfirmButton from "../../components/ConfirmButton";
 import StateFrame from "../../components/StateFrame";
-import { esRolHeredado, etiquetaDeRol } from "../../auth/rolesHistoricos";
+import { esRolRetirado, etiquetaDeRol } from "../../auth/rolesHistoricos";
 import { useSessionStore } from "../../auth/session.store";
 import { useNow } from "../../lib/useNow";
 import {
@@ -100,7 +100,7 @@ export default function UsersCard({ tenant, sites }: UsersCardProps) {
   const tenantSites = (sites ?? []).filter((s) => s.tenant_id === tenant.tenant_id);
   const asignables = useAssignableRoles(true);
   // Un rol retirado no se ofrece aunque llegara: asignarlo es un 422 seguro.
-  const assignable = asignables.roles.filter((r) => !esRolHeredado(r.role));
+  const assignable = asignables.roles.filter((r) => !esRolRetirado(r.role));
   const etiquetaAsignable = (role: string): string =>
     assignable.find((r) => r.role === role)?.label ?? etiquetaDeRol(role);
   const busy = create.isPending || update.isPending || remove.isPending || action.isPending;

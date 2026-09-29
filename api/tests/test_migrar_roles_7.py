@@ -1,8 +1,11 @@
-"""El script de migración de Cognito a los siete roles (D-42 · T-9.21).
+"""El script de migración de Cognito a los siete roles (D-42 · T-9.21 · T-9.81).
 
-NUNCA toca AWS: el cliente de ``cognito-idp`` es un doble en memoria que imita las
-seis operaciones que el script usa (y registra el ORDEN en que se llaman, porque el
-orden es parte del contrato: grupo nuevo → atributos → grupo viejo).
+[T-9.81] La migración ya se hizo (``--verify`` dio cero) y los grupos viejos se borran
+por terraform: del script queda ``--verify``. ``--apply`` y ``--dry-run`` lo DICEN y
+salen 2 sin tocar el pool.
+
+NUNCA toca AWS: el cliente de ``cognito-idp`` es un doble en memoria; registra toda
+escritura, y aquí ninguna prueba admite una sola.
 """
 
 from __future__ import annotations
@@ -108,135 +111,66 @@ def _pool() -> FakeCognito:
     return fake
 
 
-# -- --dry-run -----------------------------------------------------------------
+# -- los modos retirados -------------------------------------------------------
 
 
-def test_dry_run_lista_los_viejos_y_no_escribe(capsys) -> None:
+@pytest.mark.parametrize("modo", ["--apply", "--dry-run"])
+def test_los_modos_de_migrar_se_retiraron_y_salen_2(capsys, modo: str) -> None:
     fake = _pool()
-    assert _run(fake, "--dry-run") == 0
-    out = capsys.readouterr().out
-    assert "soc" in out and "soc_operator" in out and "tenant_admin" in out
-    assert "guardia" in out and "security_guard" in out
-    # el building_admin NO tiene destino por defecto: se le exige un --map
-    assert "edif" in out and "--map" in out
-    # los ya canónicos no aparecen como pendientes
-    assert "admin <admin@example.com>" not in out
-    assert "brig <brig@example.com>" not in out
+    assert _run(fake, modo) == 2
+    assert fake.calls == [], "un modo retirado no escribe NADA"
+    err = capsys.readouterr().err
+    assert "T-9.81" in err and "--verify" in err
+
+
+def test_apply_con_map_tampoco_escribe() -> None:
+    fake = _pool()
+    with pytest.raises(SystemExit) as exc:
+        _run(fake, "--apply", "--map", "edif=tenant_admin")
+    assert exc.value.code == 2
     assert fake.calls == []
-
-
-# -- --apply -------------------------------------------------------------------
-
-
-def test_apply_se_niega_si_un_building_admin_no_tiene_mapeo(capsys) -> None:
-    fake = _pool()
-    assert _run(fake, "--apply") != 0
-    assert fake.calls == [], "no debe escribir NADA si se niega"
-    assert "edif" in capsys.readouterr().err
-
-
-def test_apply_rechaza_un_mapeo_que_no_corresponde_a_nadie(capsys) -> None:
-    fake = _pool()
-    rc = _run(fake, "--apply", "--map", "edif=tenant_admin", "--map", "nadie=tenant_admin")
-    assert rc != 0
-    assert fake.calls == []
-    assert "nadie" in capsys.readouterr().err
-
-
-def test_apply_rechaza_un_destino_no_canonico_o_interno() -> None:
-    for destino in ("soc_operator", "takab_superadmin", "rey"):
-        fake = _pool()
-        assert _run(fake, "--apply", "--map", f"edif={destino}") != 0
-        assert fake.calls == []
-
-
-def test_apply_orden_grupo_nuevo_atributos_grupo_viejo() -> None:
-    fake = _pool()
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
-    soc = [c for c in fake.calls if c[1] == "soc"]
-    kinds = [c[0] for c in soc]
-    assert kinds[0] == "add_group" and soc[0][2] == "tenant_admin"
-    assert kinds[-1] == "remove_group" and soc[-1][2] == "soc_operator"
-    assert all(k == "attr" for k in kinds[1:-1]) and len(kinds) > 2
-    assert fake.users["soc"]["custom:role"] == "tenant_admin"
-    assert fake.groups["soc"] == {"tenant_admin"}
-
-
-def test_apply_tenant_admin_recibe_alcance_de_todo_el_cliente() -> None:
-    fake = _pool()
-    fake.users["edif"]["custom:site_scope"] = "s9"
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
-    assert fake.users["edif"]["custom:role"] == "tenant_admin"
-    assert fake.users["edif"]["custom:site_scope"] == "*"
-    assert fake.groups["edif"] == {"tenant_admin"}
-
-
-def test_apply_brigadista_conserva_su_inmueble_y_nunca_queda_web() -> None:
-    fake = _pool()
-    fake.users["guardia"]["custom:surface"] = "web"
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
-    g = fake.users["guardia"]
-    assert g["custom:role"] == "brigadista"
-    assert g["custom:site_scope"] == "s1"
-    assert g["custom:surface"] in {"mobile", "both"}
-    assert fake.groups["guardia"] == {"brigadista"}
-
-
-def test_apply_building_admin_a_brigadista_con_todo_el_cliente_se_niega(capsys) -> None:
-    """building_admin con '*' → brigadista = manual_activate en TODOS los inmuebles:
-    una escalada que el script no hace por su cuenta."""
-    fake = _pool()
-    assert _run(fake, "--apply", "--map", "edif=brigadista") != 0
-    assert fake.calls == []
-    assert "edif" in capsys.readouterr().err
-
-
-def test_apply_building_admin_a_brigadista_con_inmueble_acotado() -> None:
-    fake = _pool()
-    fake.users["edif"]["custom:site_scope"] = "s3"
-    assert _run(fake, "--apply", "--map", "edif=brigadista") == 0
-    assert fake.users["edif"]["custom:role"] == "brigadista"
-    assert fake.users["edif"]["custom:site_scope"] == "s3"
-    assert fake.users["edif"]["custom:surface"] == "both"
-
-
-def test_map_por_email() -> None:
-    fake = _pool()
-    assert _run(fake, "--apply", "--map", "EDIF@example.com=tenant_admin") == 0
-    assert fake.users["edif"]["custom:role"] == "tenant_admin"
-
-
-def test_apply_es_idempotente_y_reejecutable() -> None:
-    fake = _pool()
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
-    fake.calls.clear()
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
-    assert fake.calls == [], "la segunda pasada no debe escribir nada"
-
-
-def test_apply_completa_una_migracion_a_medias() -> None:
-    """custom:role ya nuevo pero sigue en el grupo viejo (corte a mitad): se remata."""
-    fake = FakeCognito()
-    fake.add("soc", "tenant_admin", groups=["tenant_admin", "soc_operator"])
-    assert _run(fake, "--apply") == 0
-    assert fake.groups["soc"] == {"tenant_admin"}
-    assert ("remove_group", "soc", "soc_operator") in fake.calls
 
 
 # -- --verify ------------------------------------------------------------------
 
 
-def test_verify_falla_con_viejos_y_pasa_tras_migrar() -> None:
+def test_verify_falla_con_viejos(capsys) -> None:
     fake = _pool()
-    assert _run(fake, "--verify") != 0
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
+    assert _run(fake, "--verify") == 1
+    out = capsys.readouterr().out
+    for u in ("soc", "guardia", "edif"):
+        assert f"{u} <{u}@example.com>" in out
+    assert "admin <admin@example.com>" not in out
+    assert "brig <brig@example.com>" not in out
+    assert fake.calls == []
+
+
+def test_verify_pasa_sin_viejos(capsys) -> None:
+    fake = FakeCognito()
+    fake.add("admin", "tenant_admin")
+    fake.add("brig", "brigadista", scope="s2", surface="mobile")
     assert _run(fake, "--verify") == 0
+    assert "ningún usuario" in capsys.readouterr().out
 
 
 def test_verify_falla_si_solo_queda_el_grupo_viejo() -> None:
     fake = FakeCognito()
     fake.add("x", "tenant_admin", groups=["tenant_admin", "soc_operator"])
-    assert _run(fake, "--verify") != 0
+    assert _run(fake, "--verify") == 1
+
+
+def test_verify_falla_si_solo_queda_el_atributo_viejo() -> None:
+    """Grupo ya canónico pero ``custom:role`` viejo: su token sería «role not in groups»,
+    y sigue siendo una migración a medias."""
+    fake = FakeCognito()
+    fake.add("x", "building_admin", groups=["brigadista"])
+    assert _run(fake, "--verify") == 1
+
+
+def test_verify_se_apoya_en_ROLES_RETIRADOS() -> None:
+    from takab_api.auth.roles import ROLES_RETIRADOS
+
+    assert mig.ROLES_RETIRADOS is ROLES_RETIRADOS
 
 
 def test_verify_pagina_todo_el_pool() -> None:
@@ -244,7 +178,7 @@ def test_verify_pagina_todo_el_pool() -> None:
     for i in range(130):
         fake.add(f"u{i:03d}", "tenant_admin")
     fake.add("zz-ultimo", "security_guard", scope="s1", surface="mobile")
-    assert _run(fake, "--verify") != 0
+    assert _run(fake, "--verify") == 1
 
 
 def test_modos_excluyentes() -> None:
@@ -254,24 +188,5 @@ def test_modos_excluyentes() -> None:
         _run(_pool())
 
 
-def test_el_docstring_trae_los_tres_comandos() -> None:
-    doc = mig.__doc__ or ""
-    for modo in ("--dry-run", "--apply --map", "--verify"):
-        assert modo in doc
-
-
-def test_apply_soc_operator_a_brigadista_con_todo_el_cliente_se_niega(capsys) -> None:
-    """[revisión F2] soc_operator no tenía manual_activate ni siren_silence: pasarlo a
-    brigadista con '*' le daría los dos en TODOS los inmuebles."""
-    fake = _pool()
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin", "--map", "soc=brigadista") != 0
-    assert fake.calls == []
-    assert "soc" in capsys.readouterr().err
-
-
-def test_apply_un_guardia_con_todo_el_cliente_NO_se_bloquea() -> None:
-    """security_guard ya tenía los permisos de campo con ese mismo alcance: no gana nada."""
-    fake = _pool()
-    fake.users["guardia"]["custom:site_scope"] = "*"
-    assert _run(fake, "--apply", "--map", "edif=tenant_admin") == 0
-    assert fake.users["guardia"]["custom:role"] == "brigadista"
+def test_el_docstring_trae_el_comando_de_verify() -> None:
+    assert "migrar_roles_7.py --verify" in (mig.__doc__ or "")

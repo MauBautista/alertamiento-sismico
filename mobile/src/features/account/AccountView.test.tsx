@@ -22,6 +22,8 @@ function props(over: Partial<Parameters<typeof AccountView>[0]> = {}) {
     onOpenPermisos: jest.fn(),
     onOpenPrivacidad: jest.fn(),
     onOpenVincular: jest.fn(),
+    onOpenContactos: jest.fn(),
+    contactosCount: 2 as number | null,
     onLogout: jest.fn(),
     ...over,
   };
@@ -64,5 +66,24 @@ describe("AccountView (1.8)", () => {
     expect(onToggleConsent).toHaveBeenCalledWith(true);
     await fireEvent.press(v.getByTestId("logout"));
     expect(onLogout).toHaveBeenCalled();
+  });
+
+  it("[T-9.80] CONTACTOS DE EMERGENCIA: la fila está para ocupante Y táctico, con N de 3", async () => {
+    const onOpenContactos = jest.fn();
+    const occ = await render(<AccountView {...props({ onOpenContactos })} />);
+    expect(occ.getByTestId("contactos-row")).toHaveTextContent(/CONTACTOS DE EMERGENCIA/);
+    expect(occ.getByTestId("contactos-row")).toHaveTextContent(/2 de 3/);
+    await fireEvent.press(occ.getByTestId("contactos-row"));
+    expect(onOpenContactos).toHaveBeenCalledTimes(1);
+
+    const brig = await render(
+      <AccountView {...props({ isOccupant: false, role: "brigadista", contactosCount: 0 })} />,
+    );
+    expect(brig.getByTestId("contactos-row")).toHaveTextContent(/0 de 3/);
+  });
+
+  it("[T-9.80] sin saber cuántos hay, la fila NO inventa un «0 de 3»", async () => {
+    const v = await render(<AccountView {...props({ contactosCount: null })} />);
+    expect(v.getByTestId("contactos-row")).not.toHaveTextContent(/de 3/);
   });
 });

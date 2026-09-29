@@ -700,6 +700,25 @@ INSERT_CHECKIN = text(
     "ts_device, created_at"
 )
 
+# [T-9.80 · D-48] Quien pide ayuda avisa a SUS contactos: la acción que el
+# orquestador convierte en UN correo. Sólo si el titular (la SESIÓN: la política
+# `ec_self` no deja ver otra lista) tiene al menos un contacto, y UNA por persona e
+# incidente: `uq_need_help_contacts` + `ON CONFLICT DO NOTHING`, así que reenviar el
+# check-in no manda un segundo aviso. El payload no lleva PII —la acción es
+# append-only y ARCO no la reescribe—: el nombre, la zona y el punto se resuelven
+# al DESPACHAR, de la fila viva del check-in.
+INSERT_NEED_HELP_CONTACTS = text(
+    "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
+    "SELECT CAST(:incident AS uuid), CAST(:tenant AS uuid), 'need_help_contacts', :actor, "
+    "       jsonb_build_object('user_sub', CAST(:subject AS text), "
+    "                          'checkin_id', CAST(:checkin AS text), "
+    "                          'con_ubicacion', CAST(:con_ubicacion AS boolean)) "
+    "WHERE EXISTS (SELECT 1 FROM emergency_contacts "
+    "              WHERE tenant_id = app_tenant_id() AND user_sub = app_user_id()) "
+    "ON CONFLICT (incident_id, (payload->>'user_sub')) WHERE kind = 'need_help_contacts' "
+    "DO NOTHING"
+)
+
 # Replay legítimo = MISMO incidente y MISMO portador; un id ajeno no devuelve
 # nada (⇒ 409 en el router) — jamás la fila de otro usuario.
 CHECKIN_REPLAY = text(

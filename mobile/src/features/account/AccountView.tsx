@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import { etiquetaRol } from "@/auth/roles";
+import { MAX_CONTACTOS } from "@/features/emergencyContacts/validacion";
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -35,6 +36,10 @@ export function AccountView(props: {
   onOpenPermisos: () => void;
   onOpenPrivacidad: () => void;
   onOpenVincular: () => void;
+  /** [T-9.80 · D-48] Abre CONTACTOS DE EMERGENCIA (ocupante y tácticos). */
+  onOpenContactos: () => void;
+  /** Cuántos tiene guardados; `null` = todavía no se sabe (no se inventa un 0). */
+  contactosCount: number | null;
   onLogout: () => void;
   /**
    * [T-8.11 · A-021] Envuelve SOLO la tarjeta de perfil (la única que depende del
@@ -134,6 +139,25 @@ export function AccountView(props: {
           <Text style={styles.link}>Aviso de privacidad →</Text>
         </Pulsable>
       </View>
+
+      {/* [T-9.80 · D-48] Fuera del bloque del ocupante: la pantalla de CUENTA
+          es compartida y los tácticos también piden ayuda. */}
+      <Pulsable
+        accessibilityRole="button"
+        onPress={props.onOpenContactos}
+        style={[styles.card, styles.row]}
+        testID="contactos-row"
+      >
+        <View style={styles.rowInfo}>
+          <Text style={styles.cardTitle}>CONTACTOS DE EMERGENCIA</Text>
+          <Text style={styles.rowDetail}>
+            {props.contactosCount === null
+              ? "Personas fuera del inmueble a las que avisar si pide ayuda."
+              : `${props.contactosCount} de ${MAX_CONTACTOS} · les llega un correo si pide ayuda.`}
+          </Text>
+        </View>
+        <Text style={styles.link}>→</Text>
+      </Pulsable>
 
       {props.isOccupant ? (
         <View style={styles.card} testID="totp-row">

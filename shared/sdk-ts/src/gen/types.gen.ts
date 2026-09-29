@@ -96,6 +96,15 @@ export type AuthFrame = {
 };
 
 /**
+ * El texto que el titular acepta. ``provisional`` viaja hasta la pantalla.
+ */
+export type AvisoContactos = {
+    provisional: boolean;
+    texto: string;
+    version: string;
+};
+
+/**
  * El catálogo entero, y la declaración de que solo SUGIERE.
  *
  * `resuelve_umbrales` viaja en el cuerpo y no en un comentario porque la
@@ -580,6 +589,37 @@ export type ConsentStatusOut = {
     consent: ConsentOut | null;
     notice: NoticeOut | null;
     state: 'missing' | 'current' | 'stale' | 'withdrawn';
+};
+
+/**
+ * Un contacto tal como lo teclea el titular.
+ */
+export type ContactoIn = {
+    display_name: string;
+    email: string;
+    phone?: string | null;
+};
+
+export type ContactoOut = {
+    consent_version: string;
+    consented_at: string;
+    display_name: string;
+    email: string;
+    phone: string | null;
+    posicion: number;
+};
+
+/**
+ * ``PUT``: la lista ENTERA, que reemplaza a la anterior. Vacía = borrarlos.
+ */
+export type ContactosIn = {
+    consentimiento_version: string;
+    contactos?: Array<ContactoIn>;
+};
+
+export type ContactosOut = {
+    aviso: AvisoContactos;
+    contactos: Array<ContactoOut>;
 };
 
 export type DamageCategoryIn = {
@@ -5400,6 +5440,63 @@ export type RegisterDeviceKeyMeDeviceKeysPostResponses = {
 };
 
 export type RegisterDeviceKeyMeDeviceKeysPostResponse = RegisterDeviceKeyMeDeviceKeysPostResponses[keyof RegisterDeviceKeyMeDeviceKeysPostResponses];
+
+export type DeleteEmergencyContactsMeEmergencyContactsDeleteData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me/emergency-contacts';
+};
+
+export type DeleteEmergencyContactsMeEmergencyContactsDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteEmergencyContactsMeEmergencyContactsDeleteResponse = DeleteEmergencyContactsMeEmergencyContactsDeleteResponses[keyof DeleteEmergencyContactsMeEmergencyContactsDeleteResponses];
+
+export type GetEmergencyContactsMeEmergencyContactsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/me/emergency-contacts';
+};
+
+export type GetEmergencyContactsMeEmergencyContactsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContactosOut;
+};
+
+export type GetEmergencyContactsMeEmergencyContactsGetResponse = GetEmergencyContactsMeEmergencyContactsGetResponses[keyof GetEmergencyContactsMeEmergencyContactsGetResponses];
+
+export type PutEmergencyContactsMeEmergencyContactsPutData = {
+    body: ContactosIn;
+    path?: never;
+    query?: never;
+    url: '/me/emergency-contacts';
+};
+
+export type PutEmergencyContactsMeEmergencyContactsPutErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PutEmergencyContactsMeEmergencyContactsPutError = PutEmergencyContactsMeEmergencyContactsPutErrors[keyof PutEmergencyContactsMeEmergencyContactsPutErrors];
+
+export type PutEmergencyContactsMeEmergencyContactsPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: ContactosOut;
+};
+
+export type PutEmergencyContactsMeEmergencyContactsPutResponse = PutEmergencyContactsMeEmergencyContactsPutResponses[keyof PutEmergencyContactsMeEmergencyContactsPutResponses];
 
 export type EnrollMeEnrollmentPostData = {
     body: EnrollmentIn;

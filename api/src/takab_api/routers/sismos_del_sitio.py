@@ -40,7 +40,7 @@ from takab_api.shakemap import gmice
 router = APIRouter()
 
 #: Los roles móviles con acceso a un sitio (D-42): ocupante, brigadista, inspector
-#: y administrador. Los alias heredados entran ya canonizados por ``Claims``.
+#: y administrador. Un rol retirado ni llega aquí: ``Claims`` lo rechaza (T-9.81).
 _require_movil_del_sitio = require_roles("occupant", "brigadista", "inspector", "tenant_admin")
 
 #: [T-9.66] El umbral del historial: III es la primera intensidad que la gente

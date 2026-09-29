@@ -107,6 +107,10 @@ INSERT INTO _conservar (t) VALUES
   ('user_profiles'), ('user_zone_assignments'), ('user_deactivations'),
   ('device_keys'), ('push_tokens'), ('site_enrollment_codes'),
   ('visibility_grants'), ('tenant_retire_codes'), ('ops_oncall_contacts'),
+  -- [T-9.80 · D-48] Los contactos de emergencia son de la PERSONA, no de un
+  -- incidente de las pruebas: purgarlos dejaría sin aviso a quien pida ayuda el día
+  -- de la demostración. Su caducidad es la de retención (baja del titular) y ARCO.
+  ('emergency_contacts'),
   -- plantillas de simulacro (lo EJECUTADO se purga, el molde no)
   ('drill_templates'), ('drill_template_sites'),
   -- el catálogo, con la procedencia que T-7.12 consultó a la fuente

@@ -257,7 +257,9 @@ variable "pii_retention_windows_days" {
   description = <<-EOT
     Plazo de cada regla de retencion de PII, en dias, con la CLAVE DE LA REGLA
     (`api/src/takab_api/privacy/retention.RETENTION_PLAN`) como llave del mapa:
-    `push_tokens.token`, `life_checkins.geom`, `user_profiles.identity`.
+    `push_tokens.token`, `life_checkins.geom`, `user_profiles.identity`,
+    `emergency_contacts.rows` (T-9.80: los contactos de emergencia de un titular
+    dado de baja; vacio = no se borran por retencion, solo por ARCO).
 
     VACIO POR DEFECTO Y ESO ES LA DECISION, no un hueco: sin plazo la regla queda
     DESHABILITADA y la corrida no toca una sola fila. Cuanto tiempo se guarda el
@@ -275,9 +277,9 @@ variable "pii_retention_windows_days" {
   validation {
     condition = alltrue([
       for k in keys(var.pii_retention_windows_days) :
-      contains(["push_tokens.token", "life_checkins.geom", "user_profiles.identity"], k)
+      contains(["push_tokens.token", "life_checkins.geom", "user_profiles.identity", "emergency_contacts.rows"], k)
     ])
-    error_message = "pii_retention_windows_days solo admite claves del plan de retencion: push_tokens.token, life_checkins.geom, user_profiles.identity."
+    error_message = "pii_retention_windows_days solo admite claves del plan de retencion: push_tokens.token, life_checkins.geom, user_profiles.identity, emergency_contacts.rows."
   }
 
   validation {

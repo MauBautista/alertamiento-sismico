@@ -348,17 +348,16 @@ async def test_rol_de_consola_sin_self_test_no_autodiagnostica(client, gateway) 
     assert r.status_code == 403
 
 
-async def test_building_admin_heredado_ya_no_autodiagnostica(client, gateway, publisher) -> None:
-    """[T-9.20 · D-42] El rol ``building_admin`` (que autodiagnosticaba sin actuar)
-    desaparece: su token entra canonizado a ``brigadista``, que NO porta
-    ``self_test``. D-42 acepta la pérdida; quien la necesite se migra a
-    ``tenant_admin``. Ya no existe un rol canónico con self_test y sin siren_test,
-    así que la intención vieja no tiene sustituto: se prueba el alias."""
+async def test_building_admin_retirado_ya_no_autodiagnostica(client, gateway, publisher) -> None:
+    """[T-9.81 · D-42] El rol ``building_admin`` (que autodiagnosticaba sin actuar) se dio
+    de baja: su token ya ni entra (401 ``rol_retirado``), y nada se publica al gabinete.
+    Quien necesite ``self_test`` se migró a ``tenant_admin``."""
     tok = au.make_token("building_admin", tenant=au.DB_TENANT_PRIV)
     st = await client.post(
         f"/sites/{au.DB_SITE_PRIV}/commands",
         json={"channel": "system", "action": "self_test", "event_id": None},
         headers=au.bearer(tok),
     )
-    assert st.status_code == 403, st.text
+    assert st.status_code == 401, st.text
+    assert st.json()["detail"] == "rol_retirado"
     assert publisher.published == []

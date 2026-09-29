@@ -58,6 +58,12 @@ web, `rolesHistoricos.ts`).
 | `security_guard` | `brigadista` | SEGURIDAD | Mismos permisos exactos. Su sesión pasa de 24 h a 30 d (§5.4). |
 | `building_admin` | `brigadista` | ADMINISTRACIÓN DEL INMUEBLE | `brigadista` NO tiene consola: quien la necesite se mapea a `tenant_admin` con el script de migración (el de la demostración, así). |
 
+> **[T-9.81 · 2026-09-28] VENTANA CERRADA.** `migrar_roles_7.py --verify` dio cero y la API ya no
+> traduce ningún alias: un token con `soc_operator`, `security_guard` o `building_admin` es
+> **siempre** 401 `rol_retirado` (4401 en WS), sin fecha; `roles_heredados_hasta` desapareció.
+> Los grupos viejos salen de Cognito con el siguiente `terraform apply` (lo corre Mauricio). Las
+> reglas de abajo describen cómo funcionó la ventana y se conservan como historia.
+
 Reglas de la ventana (no se reinterpretan):
 
 1. **Antifalsificación sobre lo crudo.** `Claims.from_verified` comprueba `custom:role` ∈

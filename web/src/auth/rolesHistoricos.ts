@@ -1,15 +1,15 @@
 /**
- * [T-9.20 · D-42] Rótulos de los roles — el ÚNICO sitio de la web que los escribe.
+ * [T-9.20 · T-9.81 · D-42] Rótulos de los roles — el ÚNICO sitio de la web que los escribe.
  *
- * D-42 bajó los roles de 10 a 7 (`shared/fixtures/rbac-matrix.json`). Los tres
- * viejos (`soc_operator`, `building_admin`, `security_guard`) ya no se asignan,
- * pero siguen apareciendo en lo HISTÓRICO: la bitácora, las acciones firmadas y
- * los usuarios que el script de T-9.21 todavía no migró. Esa historia no se
- * reescribe (tampoco en pantalla): un rol viejo se pinta con SU rótulo, marcado
- * como retirado, nunca con el de su heredero.
+ * D-42 bajó los roles de 10 a 7 (`shared/fixtures/rbac-matrix.json`) y T-9.81 dio
+ * de baja los tres viejos (`soc_operator`, `building_admin`, `security_guard`): su
+ * token es 401 `rol_retirado` y nadie los tiene ya. Siguen apareciendo solo en lo
+ * HISTÓRICO: la bitácora y las acciones firmadas. Esa historia no se reescribe
+ * (tampoco en pantalla): un rol viejo se pinta con SU rótulo, marcado como
+ * retirado, nunca con el de su heredero. Aquí no se traduce nada a un heredero.
  *
  * Espejo de `api/src/takab_api/auth/roles.py` (`ETIQUETA`, `ROL_HISTORICO`,
- * `ALIAS_HEREDADOS`); `rolesHistoricos.test.ts` lo ata celda a celda. Para ASIGNAR
+ * `ROLES_RETIRADOS`); `rolesHistoricos.test.ts` lo ata celda a celda. Para ASIGNAR
  * un rol, la web no usa esta tabla: pide `GET /users/assignable-roles`.
  */
 
@@ -31,10 +31,10 @@ export const ROL_HISTORICO: Readonly<Record<string, string>> = {
   security_guard: "SEGURIDAD",
 };
 
-/** Los ids retirados (claves de `roles.ALIAS_HEREDADOS`). */
-export const ROLES_HEREDADOS: readonly string[] = Object.keys(ROL_HISTORICO);
+/** Los ids retirados (`roles.ROLES_RETIRADOS`). */
+export const ROLES_RETIRADOS: readonly string[] = Object.keys(ROL_HISTORICO);
 
-export function esRolHeredado(role: string): boolean {
+export function esRolRetirado(role: string): boolean {
   return Object.prototype.hasOwnProperty.call(ROL_HISTORICO, role);
 }
 
@@ -45,6 +45,6 @@ export function esRolHeredado(role: string): boolean {
  */
 export function etiquetaDeRol(role: string): string {
   if (Object.prototype.hasOwnProperty.call(ETIQUETA_ROL, role)) return ETIQUETA_ROL[role];
-  if (esRolHeredado(role)) return `${ROL_HISTORICO[role]} (ROL RETIRADO)`;
+  if (esRolRetirado(role)) return `${ROL_HISTORICO[role]} (ROL RETIRADO)`;
   return role;
 }

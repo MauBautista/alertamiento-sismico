@@ -201,16 +201,9 @@ async def tactical_ack(
                 "incident": str(incident_id),
                 "tenant": str(row["tenant_id"]),
                 "actor": actor,
-                # [T-9.20] `role_raw` sólo si difiere: durante la ventana de alias, un
-                # acuse de un ex-guardia dice qué rol traía de verdad (la historia nueva no
-                # pierde el rol con el que se firmó).
-                "payload": json.dumps(
-                    {
-                        "role": claims.role,
-                        "surface": claims.surface,
-                        **({"role_raw": claims.role_raw} if claims.role_raw != claims.role else {}),
-                    }
-                ),
+                # [T-9.81] Sin `role_raw`: tras la baja de los alias el rol del token ES el
+                # que decide, y un rol viejo ni llega aquí (401 `rol_retirado`).
+                "payload": json.dumps({"role": claims.role, "surface": claims.surface}),
             },
         )
     ).first()

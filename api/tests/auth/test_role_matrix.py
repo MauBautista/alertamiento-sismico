@@ -3,8 +3,8 @@
 Si el código diverge de esta tabla (p. ej. otro rol gana acuse), el test FALLA.
 ``/me`` es identidad genérica → 200 con token válido para todo rol.
 ``ack`` (Consola C4I ∈ {Total, "Lectura + ack"}) solo lo tienen superadmin,
-tenant_admin y gov_operator; el resto → 403. Los roles viejos
-(soc_operator/building_admin/security_guard) se prueban en test_roles_heredados.py.
+tenant_admin y gov_operator; el resto → 403. Los roles retirados
+(soc_operator/building_admin/security_guard) son 401: test_roles_heredados.py (T-9.81).
 """
 
 from __future__ import annotations

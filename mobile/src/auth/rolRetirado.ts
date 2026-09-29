@@ -1,7 +1,7 @@
-// [F2 · D-42] EL ROL RETIRADO, visto desde la app.
+// [F2 · T-9.81 · D-42] EL ROL RETIRADO, visto desde la app.
 //
-// Pasada la fecha de baja de los alias, la API responde a un token que aún trae
-// un rol viejo con 401 `rol_retirado` (cabecera `WWW-Authenticate …
+// Desde la baja de los alias (T-9.81, sin fecha que la reabra), la API responde a
+// un token que aún trae un rol viejo con 401 `rol_retirado` (cabecera `WWW-Authenticate …
 // error_description="rol_retirado"` y cuerpo `{"detail": "rol_retirado"}`), y el
 // canal live cierra con 4401 y ese motivo. Es FIN de sesión, NO un token vencido:
 // renovar con Cognito devolvería el mismo rol y la API rechazaría en bucle.

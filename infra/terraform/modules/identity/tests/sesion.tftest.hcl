@@ -3,8 +3,8 @@
 # D-38 (2026-09-22) fija la duracion de la sesion POR ROL: brigadista e inspector
 # 30 dias, ocupante 90, el resto 24 h. Cognito no puede expresarlo: la validez del
 # refresh es POR APP CLIENT, y los clientes se comparten entre roles con duraciones
-# distintas (el tactico lo usan brigadista, inspector, security_guard y
-# building_admin; el web, los siete roles de consola). Por eso el reparto es:
+# distintas (el tactico lo usan brigadista, inspector y tenant_admin; el web, los
+# roles de consola). Por eso el reparto es:
 #
 #   - cada cliente declara el MAXIMO de los roles que lo usan (este archivo);
 #   - la API impone el tope por rol contando desde `auth_time`, la hora del login
@@ -57,7 +57,7 @@ run "cada_cliente_declara_el_maximo_de_los_roles_que_lo_usan" {
   # --- 3. Tactico movil: 30 dias (brigadista e inspector) ---------------------
   assert {
     condition     = aws_cognito_user_pool_client.mobile_tactical.refresh_token_validity == 30 && aws_cognito_user_pool_client.mobile_tactical.token_validity_units[0].refresh_token == "days"
-    error_message = "El refresh del cliente tactico dejo de ser 30 dias. Brigadista e inspector lo usan y D-38 les da un mes sin volver a autenticarse; security_guard y building_admin comparten el cliente y su tope de 24 h lo impone la API."
+    error_message = "El refresh del cliente tactico dejo de ser 30 dias. Brigadista e inspector lo usan y D-38 les da un mes sin volver a autenticarse; el tope de un rol mas corto que lo comparta lo impone la API."
   }
 
   # --- 4. Ocupantes: 90 dias, igual que su tope en la API ---------------------

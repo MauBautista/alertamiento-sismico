@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **423** · `[~]` **25** · `[ ]` **54**
+**Conteo de tareas:** total **502** · `[x]` **423** · `[~]` **27** · `[ ]` **52**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18165,18 +18165,33 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
-### [ ] T-9.80 · **Contactos de emergencia del ocupante** — `SOFTWARE` + `DECISIÓN`
+### [~] T-9.80 · **Contactos de emergencia del ocupante** — `SOFTWARE` + `DECISIÓN`
 - **Componente:** api · mobile · **Depende de:** — · **Prioridad:** F8 · media · **Decisión:** `D-48`
 - **Objetivo:** que al pedir ayuda se avise a las personas de confianza del ocupante.
 - **Criterios de aceptación:**
-  - [ ] Hasta tres contactos con consentimiento, borrables por derechos ARCO (migración 0076).
-  - [ ] Correo al pulsar NECESITO AYUDA; SMS cuando haya proveedor.
+  - [x] Hasta tres contactos con consentimiento, borrables por derechos ARCO (migración **0077**:
+    la 0076 la tomó F6). `emergency_contacts` con RLS por TITULAR, no sólo por tenant: ni el
+    administrador los lee por la API. Pantalla CUENTA → CONTACTOS DE EMERGENCIA en la app.
+  - [~] Correo al pulsar NECESITO AYUDA: hecho, uno por persona e incidente. La ubicación va sólo
+    si viajó en el check-in. SMS cuando haya proveedor (TODO nombrado en el orquestador).
+  - [ ] El texto del aviso (`privacy/texts/contactos_es_mx.json`) es un BORRADOR PROVISIONAL:
+    falta la revisión legal.
+  - [ ] Probado en el Pixel.
+- **Huecos declarados:**
+  - La retención de los contactos nace APAGADA. Su plazo es una decisión de privacidad:
+    `pii_retention_windows_days["emergency_contacts.rows"]` en el terraform de la base.
+  - Los correos de los contactos quedan copiados en `notification_jobs.target`, como los de
+    cualquier correo existente, y ni ARCO ni la retención los cubren todavía.
 
-### [ ] T-9.81 · **La baja de los roles viejos** — `SOFTWARE` + `GATE-AWS`
+### [~] T-9.81 · **La baja de los roles viejos** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · infra · **Depende de:** T-9.21 · **Prioridad:** F8 · baja · **Decisión:** `D-42`
 - **Objetivo:** cerrar la ventana de alias cuando nadie use un rol viejo.
 - **Criterios de aceptación:**
-  - [ ] Sin alias en la API; sin grupos viejos en Cognito; la verificación espera siete.
+  - [x] Sin alias en la API: un rol viejo es siempre 401 `rol_retirado` (4401 en WS), y
+    `roles_heredados_hasta` desapareció.
+  - [x] La verificación espera siete (`verify_infra.sh`, y `roles.tftest.hcl` lo deriva de
+    `CANONICAL_ROLES`).
+  - [ ] Sin grupos viejos en Cognito: lo quita el `terraform apply` que corre Mauricio.
 
 ## RUTA CRÍTICA
 

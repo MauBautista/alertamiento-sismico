@@ -257,6 +257,8 @@ def cuerpo_email(message: dict) -> str:
     lineas: list[str] = []
     sitio = message.get("site_name") or message.get("site_code") or "inmueble sin nombre"
     kind = message.get("kind")
+    if kind == "need_help_contacts":
+        return _cuerpo_a_contactos(message, sitio)
 
     # 1. QUÉ pasa. Primero y en una línea: es lo que se lee de pie y con prisa.
     if kind == "damage_people_at_risk":
@@ -327,6 +329,33 @@ def cuerpo_email(message: dict) -> str:
         "Este aviso lo genera TAKAB Ailert para el personal que su organización",
         "registró en la consola. Para dejar de recibirlo, solicite su baja al",
         "administrador de su organización.",
+    ]
+    return "\n".join(lineas)
+
+
+def _cuerpo_a_contactos(message: dict, sitio: str) -> str:
+    """[T-9.80 · D-48] El correo a los contactos de emergencia de quien pidió ayuda.
+
+    Cuerpo PROPIO y no una rama más del de arriba, porque el lector es otro: un
+    familiar que no es usuario de TAKAB. Por eso NO lleva lo que a él no le sirve y
+    a un tercero no se le enseña —«atienda desde la consola», el pie de soporte con
+    los identificadores internos, el origen técnico de la alerta—, y sí dice por
+    qué le llega. La ubicación, sólo si ese check-in la trajo.
+    """
+    titular = message.get("titular") or "Una persona"
+    zona = message.get("zona") or "sin zona"
+    lineas = [f"{titular} indicó que NECESITA AYUDA tras un sismo en {sitio}. Zona: {zona}."]
+    lat, lon = message.get("lat"), message.get("lon")
+    if lat is not None and lon is not None:
+        lineas += [
+            "",
+            "Ubicación que compartió al pedir ayuda:",
+            f"  https://www.openstreetmap.org/?mlat={lat}&mlon={lon}",
+        ]
+    lineas += [
+        "",
+        f"Este aviso lo manda TAKAB Ailert porque {titular} lo registró como su "
+        "contacto de emergencia.",
     ]
     return "\n".join(lineas)
 

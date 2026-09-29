@@ -299,6 +299,30 @@
         "title": "AuthFrame",
         "type": "object"
       },
+      "AvisoContactos": {
+        "description": "El texto que el titular acepta. ``provisional`` viaja hasta la pantalla.",
+        "properties": {
+          "provisional": {
+            "title": "Provisional",
+            "type": "boolean"
+          },
+          "texto": {
+            "title": "Texto",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "texto",
+          "provisional"
+        ],
+        "title": "AvisoContactos",
+        "type": "object"
+      },
       "BuildingTypeCatalog": {
         "description": "El catálogo entero, y la declaración de que solo SUGIERE.\n\n`resuelve_umbrales` viaja en el cuerpo y no en un comentario porque la\nconsola tiene que poder escribirlo en pantalla: un catálogo que llegara\npelado invitaría a que la siguiente pantalla lo aplicara sola.",
         "properties": {
@@ -2211,6 +2235,132 @@
           "blocks_emergency_actions"
         ],
         "title": "ConsentStatusOut",
+        "type": "object"
+      },
+      "ContactoIn": {
+        "additionalProperties": false,
+        "description": "Un contacto tal como lo teclea el titular.",
+        "properties": {
+          "display_name": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "maxLength": 254,
+            "minLength": 3,
+            "title": "Email",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          }
+        },
+        "required": [
+          "display_name",
+          "email"
+        ],
+        "title": "ContactoIn",
+        "type": "object"
+      },
+      "ContactoOut": {
+        "properties": {
+          "consent_version": {
+            "title": "Consent Version",
+            "type": "string"
+          },
+          "consented_at": {
+            "format": "date-time",
+            "title": "Consented At",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phone"
+          },
+          "posicion": {
+            "title": "Posicion",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "posicion",
+          "display_name",
+          "email",
+          "phone",
+          "consent_version",
+          "consented_at"
+        ],
+        "title": "ContactoOut",
+        "type": "object"
+      },
+      "ContactosIn": {
+        "additionalProperties": false,
+        "description": "``PUT``: la lista ENTERA, que reemplaza a la anterior. Vacía = borrarlos.",
+        "properties": {
+          "consentimiento_version": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Consentimiento Version",
+            "type": "string"
+          },
+          "contactos": {
+            "items": {
+              "$ref": "#/components/schemas/ContactoIn"
+            },
+            "maxItems": 3,
+            "title": "Contactos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "consentimiento_version"
+        ],
+        "title": "ContactosIn",
+        "type": "object"
+      },
+      "ContactosOut": {
+        "properties": {
+          "aviso": {
+            "$ref": "#/components/schemas/AvisoContactos"
+          },
+          "contactos": {
+            "items": {
+              "$ref": "#/components/schemas/ContactoOut"
+            },
+            "title": "Contactos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "contactos",
+          "aviso"
+        ],
+        "title": "ContactosOut",
         "type": "object"
       },
       "DamageCategoryIn": {
@@ -17199,6 +17349,72 @@
           }
         },
         "summary": "Register Device Key"
+      }
+    },
+    "/me/emergency-contacts": {
+      "delete": {
+        "description": "Borra la lista PROPIA. Idempotente: sin contactos también es 204.",
+        "operationId": "delete_emergency_contacts_me_emergency_contacts_delete",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Delete Emergency Contacts"
+      },
+      "get": {
+        "description": "La lista PROPIA, en orden, y el aviso vigente que hay que aceptar para\ncambiarla. Sin contactos, ``contactos`` es ``[]`` (no un 404).",
+        "operationId": "get_emergency_contacts_me_emergency_contacts_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactosOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Emergency Contacts"
+      },
+      "put": {
+        "description": "REEMPLAZA la lista entera: ``posicion`` = el orden en que llegan.\n\nBorrar y volver a insertar, en la transacción del request: una lista a medias\nno es un estado alcanzable, y el ``UNIQUE (tenant, user, posicion)`` no puede\nchocar con la lista vieja.",
+        "operationId": "put_emergency_contacts_me_emergency_contacts_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContactosIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactosOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Emergency Contacts"
       }
     },
     "/me/enrollment": {

@@ -9,8 +9,6 @@
 // quedaba en 'no-site').
 import type { MeResponse } from "@takab/sdk";
 
-import { canonizarRol } from "@/auth/roles";
-
 export const ROLES_DE_TODO_EL_CLIENTE: ReadonlySet<string> = new Set(["tenant_admin"]);
 
 /** ¿La sesión es de un rol de todo el cliente? Exige las DOS cosas: el rol y el
@@ -20,7 +18,7 @@ export function esDeTodoElCliente(me: MeResponse | null | undefined): boolean {
   if (!me) {
     return false;
   }
-  // [T-9.20 · D-42] un `soc_operator` viejo (no debería llegar: el servidor
-  // canoniza) es un `tenant_admin`, igual que para la nube.
-  return ROLES_DE_TODO_EL_CLIENTE.has(canonizarRol(me.role)) && me.site_scope === "*";
+  // [T-9.81 · D-42] el rol se lee TAL CUAL: un `soc_operator` viejo ya no es un
+  // `tenant_admin` (ni llega: su token es 401 `rol_retirado`).
+  return ROLES_DE_TODO_EL_CLIENTE.has(me.role) && me.site_scope === "*";
 }

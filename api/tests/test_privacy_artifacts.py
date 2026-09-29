@@ -142,7 +142,8 @@ def test_los_parrafos_salen_del_cuerpo_y_no_de_un_resumen_aparte() -> None:
 def test_los_avisos_del_repo_son_servibles_y_declaran_su_provisionalidad() -> None:
     cat = NoticeCatalog.load(TEXTS_DIR)
     por_proposito = {n.purpose: n for n in cat.notices}
-    assert set(por_proposito) == {"privacy_notice", "whatsapp_alerts"}
+    # [T-9.80] + el aviso de los contactos de emergencia (propósito sólo de repo).
+    assert set(por_proposito) == {"privacy_notice", "whatsapp_alerts", "emergency_contacts"}
     for spec in cat.notices:
         assert spec.usable, f"{spec.source}: {spec.defect}"
         assert spec.provisional, f"{spec.source} se declara revisado por LEGAL y no lo está"
