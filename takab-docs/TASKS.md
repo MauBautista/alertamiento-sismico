@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **21** · `[ ]` **49**
+**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **22** · `[ ]` **48**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18221,12 +18221,55 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [ ] Voz sola al principio y repetida encima del tono atenuado; invariante medido por energía.
   - [ ] Probado por el altavoz del gabinete.
 
-### [ ] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
 - **Objetivo:** una prueba de audio continua desde el panel.
 - **Criterios de aceptación:**
-  - [ ] Iniciar y detener con PIN; tope de 30 minutos; cualquier alerta la interrumpe.
-  - [ ] Licencia de la grabación en el manifiesto; cota de tamaño de los audios.
+  - [x] Iniciar y detener con PIN; tope de 30 minutos; cualquier alerta la interrumpe.
+    - Hecho el 2026-09-29 en `AudioNotifier` (`edge/takab_edge/audio/__init__.py`): canal PROPIO
+      sobre el jack de la sirena por audio. Existe sólo con `audio_siren_enabled`, porque son esos
+      parlantes los que se prueban.
+    - En cada vuelta del vigilante (20 Hz) la música se concilia ANTES que la sirena, para que dos
+      WAV no se mezclen en el mismo jack. La cortan:
+      - una alerta, un enclavado o una prueba de sirena;
+      - el silencio;
+      - el voceo de sismo o de simulacro;
+      - el tope de 30 min;
+      - no poder leer el gabinete (fail-cerrado).
+    - `POST /api/audio-musica` y `/api/audio-musica/detener` llevan PIN. Arrancar da 409 con el
+      motivo si hay algo que tiene que oírse.
+    - Deja una fila `lan_music_test` en la bitácora con la huella del asset.
+    - El panel pinta `status.audio.music`. Lo prueba `edge/tests/test_audio_musica.py`.
+  - [x] Licencia de la grabación en el manifiesto; cota de tamaño de los audios.
+    - `edge/takab_edge/audio/assets/musica_prueba.wav`: «Himno a la alegría» (Beethoven,
+      dominio público) SINTETIZADO por `tools/audio/gen_musica.py`, sin grabación de terceros.
+      22,05 kHz mono, −14 LUFS, 1,37 MB, determinista.
+    - Su licencia va en `shared/audio/MANIFEST.json` (`takab-musica-prueba-v1`).
+    - `edge/tests/test_cota_de_assets.py` fija ≤ 6 MB por archivo y ≤ 12 MB en total, y que el
+      `rsync` del despliegue no deje un asset fuera.
+  - [ ] Escuchada y aprobada por Mauricio en el parlante del gabinete, tras desplegar el edge.
+- **La revisión adversaria (3 lentes, 2026-09-29) encontró 9 defectos; los 9 arreglados:**
+  - La música exige el vigilante VIVO: si el módulo de audio no arrancó, nada la callaría.
+  - Una reproducción de menos de 1 s es un reproductor muerto, y se corta con `fallo`. Antes lo
+    relanzaba a 20 Hz durante 30 min con el panel diciendo «SONANDO».
+  - UNA lectura del gabinete por vuelta para música y sirena, y el arranque se comprueba bajo
+    candado: antes cabía una mezcla de un tic.
+  - `play_sismo` no espera a que muera `aplay`. El supervisor avisa después a los secundarios.
+  - La bitácora registra cada corte REAL con su motivo, por un solo camino. Un DETENER pulsado
+    tarde ya no se le atribuye al operador.
+  - Cada condición de corte tiene su prueba POR SEPARADO; se probaron quitándolas.
+- **⚠️ ORDEN DE DESPLIEGUE: primero la nube, luego el edge.** El contrato sube a **1.18.0**
+  (`cause = lan_music_test`), y la nube valida contra `shared/schemas`.
+  - Un edge nuevo con una nube vieja PERDÍA las filas en la cola de muertos: la bitácora avanza
+    con el PUBACK.
+  - `deploy/edge/deploy.sh` ahora lo impide. Deriva de la etiqueta de `/api/health` si la nube
+    valida estos contratos, y si no, se niega antes del `rsync`. `TAKAB_DEPLOY_SIN_NUBE=1` lo
+    salta a propósito.
+- **Hallazgo aparte, sin arreglar aquí:** `MiniSeedBuffer` sin ruta configurada crea
+  `/tmp/takab-buffer-*` y NO lo borra. Sólo pasa en dev y en tests; el Pi tiene su ruta.
+  - El 2026-09-29 había 2800 de esos directorios, más 2,1 GB de `pytest-of-*`, en un `/tmp`
+    tmpfs de 3,6 GB.
+  - La suite del edge falló con «Disk quota exceeded».
 
 ### [~] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
 - **Componente:** web · mobile · edge · **Depende de:** T-9.11 · **Prioridad:** F7 · media · **Decisión:** `D-47`
