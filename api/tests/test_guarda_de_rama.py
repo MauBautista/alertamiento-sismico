@@ -48,7 +48,11 @@ def repo_de_mentira(tmp_path: Path) -> Path:
     _git(clon, "config", "user.name", "test")
     _git(clon, "checkout", "-q", "-b", "main")
     (clon / "a.txt").write_text("uno\n")
-    _git(clon, "add", "a.txt")
+    # Cada repo lleva SU guardas.sh, comiteado: la guardia deduce de su propia
+    # ubicación qué árbol se despliega (y un fichero sin comitear lo ensuciaría).
+    (clon / "deploy" / "lib").mkdir(parents=True)
+    (clon / "deploy" / "lib" / "guardas.sh").write_text(GUARDAS.read_text())
+    _git(clon, "add", "a.txt", "deploy/lib/guardas.sh")
     _git(clon, "commit", "-qm", "uno")
     _git(clon, "push", "-q", "-u", "origin", "main")
     return clon
@@ -84,14 +88,19 @@ def _correr(
     rama_libre: bool = False,
     sucio: str = "no",
     gh: str | None = "success",
+    desde: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     entorno = dict(os.environ)
     entorno["PATH"] = str(_bin_minimo(repo.parent, con_gh=gh))
     if rama_libre:
         entorno["TAKAB_DEPLOY_RAMA_LIBRE"] = "1"
     return subprocess.run(
-        ["bash", "-c", f'. "{GUARDAS}" && guarda_de_rama "prueba" {sucio}'],
-        cwd=repo,
+        [
+            "bash",
+            "-c",
+            f'. "{repo / "deploy" / "lib" / "guardas.sh"}" && guarda_de_rama "prueba" {sucio}',
+        ],
+        cwd=desde or repo,
         capture_output=True,
         text=True,
         env=entorno,
@@ -200,3 +209,93 @@ def test_con_el_CI_de_main_en_rojo_la_guardia_se_niega(repo_de_mentira: Path) ->
     res = _correr(repo_de_mentira, gh="failure")
     assert res.returncode != 0
     assert "CI de main no esta en verde" in res.stderr
+
+
+# --- la guardia mira el árbol que se DESPLIEGA, no el directorio desde el que se lanza --
+
+
+def _otro_clon_en_main(repo: Path) -> Path:
+    """Otro clon del mismo remoto, en `main`, limpio y al día: desde aquí se LANZA."""
+    otro = repo.parent / "otro-clon"
+    subprocess.run(
+        ["git", "clone", "-q", "-b", "main", str(repo.parent / "remoto.git"), str(otro)],
+        check=True,
+    )
+    return otro
+
+
+def test_lanzada_desde_main_NO_aprueba_un_arbol_en_otra_rama(repo_de_mentira: Path) -> None:
+    """El hueco medido el 2026-09-29: `deploy.sh` despliega el árbol donde vive, y la
+    guardia miraba el directorio desde el que se lanzaba. Lanzado desde un clon en
+    `main`, el despliegue de un árbol en una rama de trabajo PASABA."""
+    _git(repo_de_mentira, "checkout", "-q", "-b", "trabajo")
+    desde_main = _otro_clon_en_main(repo_de_mentira)
+    r = _correr(repo_de_mentira, desde=desde_main)
+    assert r.returncode != 0, r.stderr
+    assert "trabajo" in r.stderr
+
+
+def test_lanzada_desde_otra_rama_SI_aprueba_un_arbol_en_main(repo_de_mentira: Path) -> None:
+    """Y al revés: el árbol que se despliega está en `main`; que la terminal esté en
+    otra carpeta u otra rama no es asunto de la guardia (el 2026-09-29 lo bloqueó)."""
+    desde_otra = _otro_clon_en_main(repo_de_mentira)
+    _git(desde_otra, "checkout", "-q", "-b", "cualquier-cosa")
+    r = _correr(repo_de_mentira, desde=desde_otra)
+    assert r.returncode == 0, r.stderr
+
+
+def _cloud_apply(lanza: Path, tf_dev: Path) -> subprocess.CompletedProcess[str]:
+    """`make cloud-apply` de VERDAD (el Makefile del repo), con un `terraform` de
+    mentira que sólo deja constancia de que se le llamó."""
+    binario = _bin_minimo(lanza.parent, con_gh="success")
+    for nombre in ("make", "sh"):
+        if not (binario / nombre).exists():
+            ruta = subprocess.run(["which", nombre], capture_output=True, text=True).stdout.strip()
+            (binario / nombre).symlink_to(ruta)
+    terraform = binario / "terraform"
+    terraform.write_text('#!/bin/sh\necho "TERRAFORM-APLICADO $*"\n')
+    terraform.chmod(0o755)
+    (tf_dev / "local.auto.tfvars").write_text("")
+    entorno = dict(os.environ, PATH=str(binario))
+    entorno.pop("TAKAB_DEPLOY_RAMA_LIBRE", None)
+    return subprocess.run(
+        ["make", "-s", "-f", str(REPO / "Makefile"), "cloud-apply", f"TF_DEV={tf_dev}"],
+        cwd=lanza,
+        capture_output=True,
+        text=True,
+        env=entorno,
+    )
+
+
+def _tf_dev(repo: Path) -> Path:
+    tf = repo / "infra" / "terraform" / "envs" / "dev"
+    tf.mkdir(parents=True)
+    # `local.auto.tfvars` va en .gitignore en el repo real: aquí también, o
+    # ensuciaría el árbol y la guardia se negaría por la razón equivocada.
+    (repo / ".gitignore").write_text("local.auto.tfvars\n")
+    _git(repo, "add", ".gitignore")
+    _git(repo, "commit", "-qm", "ignora los tfvars")
+    _git(repo, "push", "-q", "origin", "HEAD:main")
+    return tf
+
+
+def test_cloud_apply_desde_main_NO_aplica_un_TF_DEV_en_otra_rama(repo_de_mentira: Path) -> None:
+    """El mismo hueco en el terraform: `TF_DEV` apunta a la carpeta de siempre (la
+    única con `local.auto.tfvars`), y la guardia miraba el directorio del `make`.
+    Con la carpeta de siempre en una rama vieja, el `apply` de ESE árbol pasaba."""
+    tf = _tf_dev(repo_de_mentira)
+    desde_main = _otro_clon_en_main(repo_de_mentira)
+    _git(repo_de_mentira, "checkout", "-q", "-b", "rama-vieja")
+    r = _cloud_apply(desde_main, tf)
+    assert "TERRAFORM-APLICADO" not in r.stdout, "aplicó el terraform de un árbol fuera de main"
+    assert r.returncode != 0
+    assert "rama-vieja" in r.stderr
+
+
+def test_cloud_apply_desde_otra_rama_SI_aplica_un_TF_DEV_en_main(repo_de_mentira: Path) -> None:
+    tf = _tf_dev(repo_de_mentira)
+    desde_otra = _otro_clon_en_main(repo_de_mentira)
+    _git(desde_otra, "checkout", "-q", "-b", "cualquier-cosa")
+    r = _cloud_apply(desde_otra, tf)
+    assert r.returncode == 0, r.stderr
+    assert f"TERRAFORM-APLICADO -chdir={tf} apply" in r.stdout

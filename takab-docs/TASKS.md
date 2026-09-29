@@ -18265,6 +18265,14 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - `deploy/edge/deploy.sh` ahora lo impide. Deriva de la etiqueta de `/api/health` si la nube
     valida estos contratos, y si no, se niega antes del `rsync`. `TAKAB_DEPLOY_SIN_NUBE=1` lo
     salta a propósito.
+- **Hallazgo del despliegue (2026-09-29), arreglado:** la guardia de rama (`deploy/lib/guardas.sh`)
+  juzgaba el directorio desde el que se LANZABA, no el árbol que se despliega.
+  - Bloqueó el despliegue de `takab-wt-deploy` (en `main`) lanzado desde la carpeta de siempre (en
+    otra rama). Al revés, habría aprobado un árbol de trabajo lanzado desde un clon en `main`.
+  - Ahora deduce el árbol de su propia ubicación. `make cloud-apply` juzga el de `TF_DEV`, que es
+    el que aplica terraform.
+  - Lo prueba `api/tests/test_guarda_de_rama.py` corriendo la guardia y el `make` de verdad desde
+    otro clon.
 - **Hallazgo aparte, sin arreglar aquí:** `MiniSeedBuffer` sin ruta configurada crea
   `/tmp/takab-buffer-*` y NO lo borra. Sólo pasa en dev y en tests; el Pi tiene su ruta.
   - El 2026-09-29 había 2800 de esos directorios, más 2,1 GB de `pytest-of-*`, en un `/tmp`
