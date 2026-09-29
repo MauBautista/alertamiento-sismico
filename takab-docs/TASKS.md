@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **424** · `[~]` **27** · `[ ]` **51**
+**Conteo de tareas:** total **502** · `[x]` **427** · `[~]` **24** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17800,14 +17800,15 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] `push_tokens.role` guardado al registrar.
   - [x] El test que se guardó el 24-sep pasa.
 
-### [~] T-9.06 · **El teléfono vibra en crisis y la app no se queda muda ante una fase nueva** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.06 · **El teléfono vibra en crisis y la app no se queda muda ante una fase nueva** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · **Depende de:** T-9.04 · **Prioridad:** F0 · alta
 - **Objetivo:** que la crisis vibre (medido: solo sonó) y que una APK vieja no se rompa.
 - **Criterios de aceptación:**
   - [x] Vibración en bucle mientras dura la crisis; se cancela al salir.
   - [x] `deriveAlertState` con caso por defecto.
   - [x] Cartel rojo para `no_habitable` y franja ámbar para los pendientes.
-  - [ ] Verificado en el Pixel.
+  - [x] Verificado en el Pixel el 2026-09-28: la crisis de la prueba C vibró en bucle y la
+    vibración se cortó con el cierre del incidente (`dumpsys vibrator_manager`).
 
 ## Fase 9.1 · Antipánico y voz de la brigada
 
@@ -17826,7 +17827,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   censa los 4 audios del edificio y del teléfono; lo vigilan `verifica_manifiesto.py` y
   `api/tests/test_censo_audio.py`. Falta que Mauricio escuche la voz (F7 la aprueba junto con el resto).
 
-### [~] T-9.11 · **Un movimiento del inmueble despierta solo a su brigada** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.11 · **Un movimiento del inmueble despierta solo a su brigada** — `SOFTWARE` + `FÍSICO`
 - **Componente:** api · mobile · web · **Depende de:** T-9.05, T-9.10 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
 - **Objetivo:** el pedido del cliente: sin pánico para el ocupante.
 - **Criterios de aceptación:**
@@ -17835,14 +17836,20 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Local en DISPARO ⇒ push solo a esos roles; en CAUTELA ⇒ ninguno; SASMEX o cuórum ⇒ a todos.
   - [x] `mobile-state` por rol: el táctico ve `building_movement`, el ocupante nunca.
   - [x] El administrador entra en la app táctica.
-  - [ ] Probado en el Pixel con el gabinete real.
+  - [x] Probado en el Pixel con el gabinete real el 2026-09-28, cruzando el teléfono con la nube:
+    - **A:** brigadista, golpe hasta DISPARO → push MOVEMENT solo a brigadista, inspector y
+      administrador, que llegó en 2 s por `building_movement_v2` con su voz.
+    - **B:** con la sesión de ocupante, el golpe no hizo sonar ni aparecer nada.
+    - **C:** el WR-1 cayó en el mismo episodio → el disparador subió de umbral local a `sasmex`
+      (T-9.02) y la escalada mandó CRISIS a todos (T-9.03), que llegó en 1 s por
+      `seismic_alert_v3`.
 - **Lo que añadió la revisión de F1:** el movimiento solo es «vivo» mientras el incidente sigue
   `open`/`acked`; con él viaja la alarma de pánico, para que la brigada la vea y la acuse. El teléfono
   del administrador (alcance `*`) va sin inmueble y lo alcanza cualquier aviso de su cliente. Las
   subidas y escaladas miran 24 h, no 1 h. Y un pánico manual con teléfonos salía como «ALERTA
   SÍSMICA» a todo el edificio: ya sale una sola vez como PANIC.
 
-### [~] T-9.12 · **Los canales que despiertan suenan también con «No molestar»** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.12 · **Los canales que despiertan suenan también con «No molestar»** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · api · **Depende de:** T-9.11 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
 - **Objetivo:** que la alerta sísmica, la alarma del inmueble y la voz del movimiento suenen en un
   teléfono con «No molestar» en modo prioridad, que es como viene el «Hora de dormir» de Android.
@@ -17857,7 +17864,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     `building_alarm_v2` y `building_movement_v2`, y los cuatro viejos se retiran tras crearlos.
   - [x] La app declara `ACCESS_NOTIFICATION_POLICY`, así que `bypassDnd` vale si el usuario concede
     el acceso (y entonces pasa también el modo silencio total).
-  - [ ] Verificado en el Pixel con «No molestar» encendido: la voz del movimiento y la crisis suenan
+  - [x] Verificado en el Pixel con «No molestar» encendido (2026-09-28): la voz del movimiento y la crisis suenan
     con la pantalla apagada.
 - **Nota para F7:** el tono v2 de `T-9.70` estrenará `seismic_alert_v4`, porque `_v3` lo ocupa
   esta ficha.
