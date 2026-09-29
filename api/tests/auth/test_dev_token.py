@@ -96,3 +96,45 @@ async def test_dev_token_auth_age_s_admite_el_tope_de_100_dias() -> None:
     async with au.client_for(create_app()) as client:
         status, body = await _forge(client, auth_age_s=100 * _DAY)
     assert status == 200, body
+
+
+# --- [T-9.22] el `.env.dev-auth` del SOC local trae TAMBIÉN el pool de ocupantes ---
+
+
+def _env_de_dev_auth() -> dict[str, str]:
+    """Las variables que escribe ``scripts/dev_auth_env.py``, leídas como las lee
+    ``bash`` al hacer ``source`` (el PEM de la clave ocupa varias líneas)."""
+    import importlib.util
+    import shlex
+    from pathlib import Path
+
+    ruta = Path(__file__).resolve().parents[2] / "scripts" / "dev_auth_env.py"
+    spec = importlib.util.spec_from_file_location("dev_auth_env", ruta)
+    assert spec is not None and spec.loader is not None
+    modulo = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modulo)
+    pares = (p.partition("=") for p in shlex.split(modulo._build_env(), comments=True))
+    return {clave: valor for clave, _, valor in pares}
+
+
+async def test_el_soc_local_emite_y_acepta_tokens_de_ocupante(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Sin issuer de ocupantes ``/dev/token`` da 503 al ``occupant`` y el recorrido
+    web por rol lo declaraba ``no_medido``: el único rol que no se ensayaba en local.
+    Se prueba con el fichero TAL CUAL lo genera el script, no con el de los tests."""
+    for clave, valor in _env_de_dev_auth().items():
+        monkeypatch.setenv(clave, valor)
+    app = create_app()
+    async with au.client_for(app) as client:
+        resp = await client.post(
+            "/dev/token",
+            json={"role": "occupant", "tenant_id": au.TENANT_A, "surface": "mobile"},
+        )
+        assert resp.status_code == 200, resp.text
+        token = resp.json()["id_token"]
+        assert _payload(token)["iss"] != _env_de_dev_auth()["TAKAB_API_AUTH_ISSUER"]
+
+        me = await client.get("/me", headers=au.bearer(token))
+        assert me.status_code == 200, me.text
+        assert me.json()["role"] == "occupant"

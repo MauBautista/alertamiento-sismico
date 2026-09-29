@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **427** · `[~]` **24** · `[ ]` **51**
+**Conteo de tareas:** total **502** · `[x]` **428** · `[~]` **23** · `[ ]` **51**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17896,12 +17896,19 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Mauricio lo corre y la verificación da cero miembros en los grupos viejos (2026-09-27:
     `soc_operator` y el `building_admin` de la demo pasaron a `tenant_admin`).
 
-### [~] T-9.22 · **Los censos cuentan siete** — `SOFTWARE`
+### [x] T-9.22 · **Los censos cuentan siete** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · web · mobile · **Depende de:** T-9.20 · **Prioridad:** F2 · alta
 - **Objetivo:** que ningún test siga afirmando diez.
 - **Criterios de aceptación:**
   - [x] Todos los censos de roles actualizados; las etiquetas históricas en un solo sitio.
-  - [ ] El recorrido web por rol pasa con los siete.
+  - [x] El recorrido web por rol pasa con los siete: 7 de 7, 259 controles, **0 hallazgos**
+    (`takab-docs/auditoria/recorrido-web.json`, contra `vite preview` + `make soc-local`).
+    - La primera corrida dejó al ocupante `no_medido`: el `.env.dev-auth` que genera
+      `api/scripts/dev_auth_env.py` no declaraba el pool de ocupantes y `/dev/token` le
+      respondía 503. Ahora lo declara (mismo JWKS); lo prueba
+      `test_el_soc_local_emite_y_acepta_tokens_de_ocupante` con el fichero tal cual sale del
+      script.
+    - Quien ya tenga el fichero lo regenera con `--force`: sin ese flag el script no lo toca.
 
 ## Fase 9.3 · Dictamen automático
 
