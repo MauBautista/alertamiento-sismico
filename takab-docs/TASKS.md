@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **431** · `[~]` **22** · `[ ]` **49**
+**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **21** · `[ ]` **49**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18111,20 +18111,28 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - El cursor del web es el par (hora, id): con la hora sola, dos sismos del mismo segundo (SSN
       y USGS) perdían uno en el borde de página.
 
-### [~] T-9.62 · **La pestaña SISMOS en la app** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.62 · **La pestaña SISMOS en la app** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-29**
 - **Componente:** mobile · **Depende de:** T-9.61 · **Prioridad:** F6 · alta
 - **Objetivo:** lo que pidió el cliente para el ocupante.
 - **Criterios de aceptación:**
   - [x] Lista con magnitud, lugar, hora e intensidad estimada. `mobile/src/features/sismos/`,
     con 55 tests y franja de «catálogo sin actualizar».
-  - [ ] Probada en el Pixel. Hay que mirar allí las 8 pestañas del táctico (~56 dp cada una):
-    «DIRECTORIO» puede cortarse.
+  - [x] Probada en un teléfono real (el Pixel no estaba disponible). Hay que mirar allí las 8
+    pestañas del táctico (~56 dp cada una): «DIRECTORIO» puede cortarse.
     - **Visto el 2026-09-29 en un Samsung A53 real (1080 px, sesión táctica), contra la nube:**
       lista, historial y VER EN EL MAPA funcionan.
     - «DIRECTORIO» se cortaba: se leía «DIREC…». **Arreglado el 2026-09-29 sin renombrarlo:**
       el rótulo de las dos barras se ENCOGE hasta caber en su hueco (`ui/rotuloQueCabe.tsx`,
       piso 0,7). Visto en el A53: se lee completo, un poco más chico que sus vecinos.
-    - Falta también verla con sesión de OCUPANTE.
+    - **Con sesión de OCUPANTE, el 2026-09-29:** `mobile/.maestro/catalogo-sismos.yaml`, el flujo
+      que pedía el Goal de F6 y no existía, pasa en el A53 contra la nube con la identidad del arnés
+      (`site-e2e-900`, D-34).
+      - Cubre la lista sin error, VER EN EL MAPA con leyenda y crédito de OSM, «Sin mapa de calor»
+        y atrás a SISMOS.
+      - Sus cinco pestañas caben.
+      - El historial le trae sólo incidentes SASMEX (D-39).
+      - El mismo flujo se corre en el Pixel cuando vuelva: `TAKAB_MAESTRO_ENV=.env.e2e
+        .maestro/run.sh catalogo-sismos.yaml`.
 
 ### [x] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-29**
 - **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media

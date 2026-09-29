@@ -90,6 +90,7 @@ make cloud-staging-incident PHASE=reentry
 make cloud-staging-incident PHASE=reset     # ← los recorridos, SIN incidente
 .maestro/run.sh recorrido-ocupante.yaml     # sin TOTP: corre solo
 .maestro/run.sh recorrido-tactico.yaml      # pide el TOTP del táctico
+.maestro/run.sh catalogo-sismos.yaml        # sin TOTP: SISMOS y su mapa, como ocupante
 ```
 
 **Los recorridos (`T-8.11`) no acreditan un camino: pasan por TODAS las pantallas** y pulsan
@@ -175,6 +176,7 @@ done
 | Offline-first (3 partes) | `05a-offline-preparar.yaml` → `05b` → `05c`, por `run-offline.sh` | **sí** | declara MODO OFFLINE, deja el check-in delegado PENDIENTE **en su tarjeta** (`sync-<id>`), la cola lo drena sola | `PHASE=crisis` → `conclude` → `roster` |
 | Recorrido del ocupante | `recorrido-ocupante.yaml` | no | pulsa cada pestaña y cada botón que no muta; una captura por pantalla | `PHASE=reset` |
 | Recorrido del táctico | `recorrido-tactico.yaml` | **sí** | pulsa las siete pestañas y cada botón que no muta; una captura por pantalla | `PHASE=reset` |
+| SISMOS y su mapa (`T-9.62`/`T-9.63`) | `catalogo-sismos.yaml` | no | lista sin error; VER EN EL MAPA con leyenda y crédito de OSM a la vista; mapa de calor rotulado ESTIMADO o «sin mapa de calor»; atrás vuelve a SISMOS | ninguna |
 
 ### La columna TOTP es la que decide si hace falta una persona
 

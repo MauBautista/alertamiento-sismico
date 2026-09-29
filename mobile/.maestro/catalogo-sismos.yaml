@@ -1,0 +1,61 @@
+# [T-9.62 · T-9.63 · T-9.65 · D-46] SISMOS y su MAPA, como OCUPANTE, en un teléfono real.
+#
+# El Goal de F6 lo pedía y no existía: la pestaña se había visto sólo con sesión TÁCTICA
+# (Samsung A53, 2026-09-29), y a T-9.62 le faltaba verla como ocupante.
+#
+# Qué afirma, y por qué así:
+#   · la lista trae su título y NO un error (`state-error`); si el catálogo está sin
+#     actualizar se ve su franja, y eso es un estado válido, no un fallo;
+#   · VER EN EL MAPA abre el mapa con su LEYENDA y el crédito de OpenStreetMap A LA VISTA
+#     (el SDK nativo lo esconde tras un botón; la app lo pinta);
+#   · el mapa de calor sale rotulado como ESTIMADO, o dice que no lo hay: las dos son
+#     respuestas honestas, un mapa en blanco sin explicación no;
+#   · atrás regresa a SISMOS.
+#
+# Como todos los flujos: contra el SITIO DEL ARNÉS (`.env.e2e`, D-34), nunca Puebla.
+#   TAKAB_MAESTRO_ENV=.env.e2e .maestro/run.sh catalogo-sismos.yaml
+appId: com.takab.ailert
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+- runFlow: shared/enrolar-sitio.yaml
+- extendedWaitUntil:
+    visible: "SISMOS"
+    timeout: 30000
+- tapOn: "SISMOS"
+- extendedWaitUntil:
+    visible: "Sismos de México desde M 4.0 · últimos 90 días"
+    timeout: 20000
+- assertNotVisible:
+    id: "state-error"
+- takeScreenshot: sismos-01-lista-ocupante
+- assertVisible:
+    id: "sismos-ver-mapa"
+- tapOn:
+    id: "sismos-ver-mapa"
+- extendedWaitUntil:
+    visible:
+      id: "mapa-leyenda"
+    timeout: 20000
+- assertNotVisible:
+    id: "state-error"
+- assertVisible: "SISMOS DE MÉXICO · ◉ SU INMUEBLE"
+- assertVisible: "Mapa © OpenStreetMap · OpenFreeMap · MapLibre"
+- assertVisible:
+    text: "MAPA DE CALOR · .*|Sin mapa de calor: ningún sismo sentido en su inmueble lo tiene todavía."
+- runFlow:
+    when:
+      visible:
+        id: "mapa-calor-titulo"
+    commands:
+      - assertVisible:
+          id: "mapa-calor-rotulo"
+      - assertVisible: "ESTIMADO a partir de .*no observada"
+- takeScreenshot: sismos-02-mapa-ocupante
+- back
+- extendedWaitUntil:
+    visible:
+      id: "sismos-ver-mapa"
+    timeout: 15000
+- takeScreenshot: sismos-03-de-vuelta-en-sismos
