@@ -12,6 +12,9 @@
 #     respuestas honestas, un mapa en blanco sin explicación no;
 #   · atrás regresa a SISMOS.
 #
+# NO PIDE TOTP: `login-occupant.yaml` entra por el pool de OCUPANTES, cuyo MFA
+# es opcional. Corre solo.
+#
 # Como todos los flujos: contra el SITIO DEL ARNÉS (`.env.e2e`, D-34), nunca Puebla.
 #   TAKAB_MAESTRO_ENV=.env.e2e .maestro/run.sh catalogo-sismos.yaml
 appId: com.takab.ailert
