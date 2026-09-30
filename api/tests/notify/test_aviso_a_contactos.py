@@ -238,3 +238,198 @@ def test_ni_con_base_publica_lleva_enlace() -> None:
     assert "link" not in mensaje
     assert "need_help_contacts" in MENSAJE_POR_KIND
     assert "sin zona" in cuerpo_email(mensaje)
+
+
+# ---------------------------------------------------------------------------
+# [T-9.80 · 0078] Al DESPACHAR sólo salen los contactos que SIGUEN en la lista.
+#
+# El aviso guarda los correos al encolar. Si el titular retira un contacto, o ejerce
+# ARCO (que borra la lista entera y no toca un aviso aún `pending`), antes de que el
+# aviso salga —el worker estaba caído, o el aviso esperaba un reintento—, el correo
+# NO puede llegarle a quien ya no está, ni quedarse guardado en la fila.
+# ---------------------------------------------------------------------------
+
+
+def _encolado_sin_salir(e: _Escena, incidente: str, accion: str) -> str:
+    """El job tal como lo deja el encolado, aún sin despachar."""
+    fila = _como_superusuario(
+        e,
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+        "target, due_at, action_id) VALUES (%s,%s,'email','parallel','pending',%s::jsonb,%s,%s) "
+        "RETURNING job_id",
+        (e.sc.tenant, incidente, json.dumps({"to": CORREOS}), BASE, accion),
+    )
+    return str(fila["job_id"])
+
+
+def _retira(e: _Escena, correo: str | None = None) -> None:
+    donde, params = "tenant_id = %s", (e.sc.tenant,)
+    if correo is not None:
+        donde, params = donde + " AND email = %s", (e.sc.tenant, correo)
+    _como_superusuario(e, f"DELETE FROM emergency_contacts WHERE {donde}", params)
+
+
+def _job(e: _Escena, job: str) -> dict:
+    return e.conn.execute(
+        "SELECT status, target, error FROM notification_jobs WHERE job_id = %s", (job,)
+    ).fetchone()
+
+
+def test_un_contacto_retirado_antes_de_salir_no_recibe_el_aviso(esc: _Escena) -> None:
+    incidente, accion = _pide_ayuda(esc)
+    job = _encolado_sin_salir(esc, incidente, accion)
+    _retira(esc, CORREOS[0])
+    proveedores = {**_providers(), "push": esc.push}
+    _pasada(esc, proveedores)
+
+    [(destino, _)] = _correos(proveedores)
+    assert destino["to"] == CORREOS[1:]
+    fila = _job(esc, job)
+    assert fila["status"] == "sent"
+    assert fila["target"] == {"to": CORREOS[1:]}, "la fila guarda a quién fue DE VERDAD"
+
+
+def test_sin_contactos_vigentes_el_aviso_se_omite_y_queda_borrado(esc: _Escena) -> None:
+    """El caso de ARCO: la lista entera desapareció con el aviso aún en vuelo."""
+    from takab_api.privacy.erasure import ERASED_NOTICE_TARGET
+
+    incidente, accion = _pide_ayuda(esc)
+    job = _encolado_sin_salir(esc, incidente, accion)
+    _retira(esc)
+    proveedores = {**_providers(), "push": esc.push}
+    _pasada(esc, proveedores)
+
+    assert _correos(proveedores) == [], "no le llega a quien ya no está en la lista"
+    fila = _job(esc, job)
+    assert fila["status"] == "skipped"
+    assert fila["target"] == ERASED_NOTICE_TARGET
+    assert "sin contactos vigentes" in fila["error"]
+
+
+def test_el_error_del_proveedor_no_guarda_los_correos_de_los_contactos(esc: _Escena) -> None:
+    """SES en sandbox rechaza citando a los destinatarios. El error se escribe en el job
+    y, si es terminal, en `incident_actions` (append-only: ni ARCO lo borraría)."""
+    from datetime import timedelta
+
+    from takab_api.notify.providers import NotifyError
+
+    class _SesQueCita:
+        simulated = False  # un proveedor REAL: quien no lo declara se trata como simulado
+        sent: list = []
+
+        def send(self, target: dict, message: dict) -> None:
+            raise NotifyError(
+                "ses: MessageRejected: Email address is not verified. The following "
+                f"identities failed the check in region US-EAST-2: {', '.join(target['to'])}"
+            )
+
+    incidente, accion = _pide_ayuda(esc)
+    proveedores = {**_providers(), "push": esc.push, "email": _SesQueCita()}
+    run_notify_pass(
+        esc.conn, Settings(notify_max_attempts=1), proveedores, now=BASE + timedelta(seconds=0)
+    )
+
+    fila = esc.conn.execute(
+        "SELECT status, error FROM notification_jobs WHERE action_id = %s", (accion,)
+    ).fetchone()
+    assert fila["status"] == "failed"
+    assert "@" not in fila["error"] and "<correo>" in fila["error"]
+    evidencia = esc.conn.execute(
+        "SELECT payload FROM incident_actions WHERE incident_id = %s AND payload ? 'error'",
+        (incidente,),
+    ).fetchall()
+    assert evidencia, "el fallo terminal deja evidencia"
+    assert all("@" not in json.dumps(e["payload"]) for e in evidencia)
+
+
+def test_el_recorte_no_devuelve_los_correos_si_arco_los_borro_entretanto(esc: _Escena) -> None:
+    """La carrera que midió la segunda revisión. La pasada leyó el aviso con sus
+    correos; entre esa lectura y el recorte, ARCO lo dejó borrado. El envío en curso
+    ya no se puede parar, pero la fila no puede recuperar los correos."""
+    from takab_api.notify.orchestrator import _recorta_a_contactos_vigentes
+    from takab_api.privacy.erasure import ERASED_NOTICE_TARGET
+
+    incidente, accion = _pide_ayuda(esc)
+    job = _encolado_sin_salir(esc, incidente, accion)
+    _retira(esc, CORREOS[0])  # para que el recorte QUIERA escribir
+    fila_leida = {
+        "job_id": job,
+        "channel": "email",
+        "tenant_id": esc.sc.tenant,
+        "target": {"to": CORREOS},
+        "action_payload": esc.conn.execute(
+            "SELECT payload FROM incident_actions WHERE action_id = %s", (accion,)
+        ).fetchone()["payload"],
+    }
+    _como_superusuario(  # ARCO, entre la lectura y el recorte
+        esc,
+        "UPDATE notification_jobs SET target = %s::jsonb WHERE job_id = %s",
+        (json.dumps(ERASED_NOTICE_TARGET), job),
+    )
+    counts: dict[str, int] = {"skipped": 0, "failed": 0, "retried": 0}
+    sale_con = _recorta_a_contactos_vigentes(esc.conn, counts, fila_leida, now=BASE, max_attempts=3)
+    assert sale_con == {"to": CORREOS[1:]}
+    assert _job(esc, job)["target"] == ERASED_NOTICE_TARGET
+
+
+@pytest.mark.parametrize("rama", ["simulado", "sin_proveedor"])
+def test_el_recorte_va_ANTES_de_las_ramas_que_no_envian(esc: _Escena, rama: str) -> None:
+    """Un aviso simulado, o sin proveedor, también deja su desenlace en la fila. Si el
+    recorte fuera después, se quedaría con los correos de quien ya no está."""
+    from datetime import timedelta
+
+    from takab_api.privacy.erasure import ERASED_NOTICE_TARGET
+
+    incidente, accion = _pide_ayuda(esc)
+    job = _encolado_sin_salir(esc, incidente, accion)
+    _retira(esc)
+    proveedores = {**_providers(), "push": esc.push}
+    if rama == "simulado":
+        proveedores["email"] = object()  # sin `simulated = False`: se trata como simulado
+    else:
+        del proveedores["email"]
+    run_notify_pass(
+        esc.conn, Settings(notify_max_attempts=1), proveedores, now=BASE + timedelta(seconds=0)
+    )
+    fila = _job(esc, job)
+    assert fila["status"] == "skipped"
+    assert fila["target"] == ERASED_NOTICE_TARGET
+
+
+def test_un_aviso_a_contactos_por_otro_canal_FALLA_con_su_causa(esc: _Escena) -> None:
+    """Sólo se sabe recortar correos. El SMS de D-48 tendrá que comparar teléfonos:
+    hasta entonces no sale, ni se omite en silencio."""
+    from datetime import timedelta
+
+    incidente, accion = _pide_ayuda(esc)
+    fila = _como_superusuario(
+        esc,
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+        "target, due_at, action_id) VALUES (%s,%s,'sms','parallel','pending', "
+        "jsonb_build_object('to', '+525550001111'), %s, %s) RETURNING job_id",
+        (esc.sc.tenant, incidente, BASE, accion),
+    )
+    proveedores = {**_providers(), "push": esc.push}
+    run_notify_pass(
+        esc.conn, Settings(notify_max_attempts=1), proveedores, now=BASE + timedelta(seconds=0)
+    )
+    job = _job(esc, str(fila["job_id"]))
+    assert job["status"] == "failed"
+    assert "sin recorte" in job["error"]
+    assert proveedores["sms"].sent == []
+
+
+def test_si_no_se_puede_leer_la_lista_el_aviso_falla_y_la_pasada_sigue(
+    esc: _Escena, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un error de base al leer los contactos no puede envenenar la transacción de la
+    pasada entera, la de todos los clientes: savepoint, y el job falla con su causa."""
+    from takab_api.notify import orchestrator
+
+    incidente, accion = _pide_ayuda(esc)
+    job = _encolado_sin_salir(esc, incidente, accion)
+    monkeypatch.setattr(orchestrator, "_CONTACT_EMAILS_SQL", "SELECT email FROM no_existe")
+    _pasada(esc, {**_providers(), "push": esc.push})
+    fila = _job(esc, job)
+    assert fila["status"] in ("pending", "failed")
+    assert "no se pudo leer la lista" in fila["error"]

@@ -59,6 +59,12 @@ dato del contacto—, así que anonimizarlo dejaría una fila que no significa n
 se borra la fila, y sólo esa. El test que exigía la lista vacía exige ahora
 exactamente ésta, y cualquier otra regla que borre filas lo vuelve a poner rojo.
 
+**[T-9.80 · 0078] Y los correos de esos contactos en los avisos YA enviados.** El
+aviso de NECESITO AYUDA guarda el destinatario en ``notification_jobs.target``. Ahí
+la fila SÍ es un hecho (hubo un aviso, a tal hora), así que se REDACTA: su ``target``
+pasa al estado borrado, con el mismo reloj que los contactos y el mismo valor que
+escribe ARCO.
+
 EL PLAZO, Y QUÉ PASA SI NADIE LO CONFIGURA
 ──────────────────────────────────────────
 No hay plazo por defecto. Cada regla lo lee de su variable de entorno y, si no
@@ -90,12 +96,18 @@ siguiente columna de PII sin reloj tendrá que declararse en vez de colarse.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .erasure import ERASED_DISPLAY_NAME, ERASED_TOKEN_PREFIX, PII_INVENTORY
+from .erasure import (
+    ERASED_DISPLAY_NAME,
+    ERASED_NOTICE_TARGET,
+    ERASED_TOKEN_PREFIX,
+    PII_INVENTORY,
+)
 
 # ---------------------------------------------------------------------------
 # Errores. Los dos son ruidosos a propósito (criterio 2 de la ficha).
@@ -311,6 +323,43 @@ NOT EXISTS (
 )
 """
 
+_AVISO_BORRADO = json.dumps(ERASED_NOTICE_TARGET)
+
+#: [T-9.80 · 0078] El mismo reloj, para los avisos que ya les llegaron a esos contactos.
+#: Unido por ``(tenant_id, user_sub)`` como el anterior. La idempotencia compara el
+#: ``target`` ENTERO con el estado borrado, y no con ``jsonb_array_length``: WhatsApp y
+#: SMS guardan ``to`` como cadena en la misma tabla, y el filtro se evalúa sobre ellas
+#: antes del ``EXISTS``.
+_AVISO_DE_UN_TITULAR_DADO_DE_BAJA = f"""
+target <> '{_AVISO_BORRADO}'::jsonb
+AND status <> 'pending'
+AND EXISTS (
+  SELECT 1 FROM incident_actions a
+    JOIN user_deactivations d
+      ON d.tenant_id = a.tenant_id AND d.user_sub::text = a.payload->>'user_sub'
+   WHERE a.action_id = notification_jobs.action_id
+     AND a.tenant_id = notification_jobs.tenant_id
+     AND a.kind = 'need_help_contacts'
+     AND d.reactivated_at IS NULL
+     AND d.deactivated_at < %(cutoff)s
+)
+"""
+
+_SIN_INCIDENTE_ABIERTO_PARA_AVISOS = """
+NOT EXISTS (
+  SELECT 1 FROM incidents i
+   WHERE i.tenant_id = notification_jobs.tenant_id
+     AND i.state <> 'closed' AND i.closed_at IS NULL
+)
+"""
+
+_R_AVISOS = (
+    "Los correos de los contactos de emergencia en los avisos que ya se les "
+    "mandaron, de alguien que ya no está. Mismo reloj que los contactos (la BAJA del "
+    "titular). Se REDACTA y no se borra: la fila documenta que hubo un aviso, a tal "
+    "hora. Un aviso aún `pending` está en vuelo y no se toca."
+)
+
 _R_CONTACTOS = (
     "Contactos de emergencia de alguien que ya no está: datos de TERCEROS que "
     "sólo servían para avisarles si el titular pedía ayuda. Caducan con la BAJA "
@@ -384,6 +433,19 @@ RETENTION_PLAN: tuple[RetentionRule, ...] = (
         # hereda este borrado.
         clock=_BAJA_DEL_TITULAR_HACE_MAS_DE + "AND " + _SIN_INCIDENTE_ABIERTO_PARA_CONTACTOS,
         why=_R_CONTACTOS,
+    ),
+    RetentionRule(
+        key="notification_jobs.target",
+        table="notification_jobs",
+        columns=("target",),
+        mode=REDACT,
+        # El MISMO estado final que escribe `privacy_erase_subject` (0078): ARCO
+        # después de la poda, o al revés, encuentra el aviso ya borrado y no lo toca.
+        # Sólo `target`, y sólo este valor: es lo único que `takab_app` puede
+        # escribir aquí (`nj_solo_borrar_avisos`).
+        set_clause=f"target = '{_AVISO_BORRADO}'::jsonb",
+        clock=_AVISO_DE_UN_TITULAR_DADO_DE_BAJA + "AND " + _SIN_INCIDENTE_ABIERTO_PARA_AVISOS,
+        why=_R_AVISOS,
     ),
 )
 

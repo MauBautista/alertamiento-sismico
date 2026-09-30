@@ -35,7 +35,12 @@ export function desenlace(job: NotificationJobOut): { label: string; tone: strin
     case "blocked_demo":
       return { label: "INHIBIDO POR MODO DEMOSTRACIÓN", tone: "bad" };
     case "skipped":
-      return { label: "OMITIDO · LA CASCADA YA ESTABA SATISFECHA", tone: "muted" };
+      // Dos razones distintas para no enviar, y cada una se dice. En una cascada,
+      // un canal anterior ya llegó; en un aviso paralelo (el de los contactos de
+      // emergencia, T-9.80), su destinatario dejó de existir antes de salir.
+      return job.mode === "cascade"
+        ? { label: "OMITIDO · LA CASCADA YA ESTABA SATISFECHA", tone: "muted" }
+        : { label: "OMITIDO · SIN DESTINATARIO VIGENTE", tone: "muted" };
     default:
       // El estado que alguien añada mañana NO cae en «entregado»: se declara.
       return { label: `${job.status.toUpperCase()} · SIN CLASIFICAR`, tone: "muted" };

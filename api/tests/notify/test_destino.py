@@ -122,3 +122,18 @@ def test_ningun_resumen_repite_un_dato_de_contacto_completo():
     for canal, target, secreto in casos:
         r = resumen_destino(canal, target)
         assert secreto not in r.hint, f"{canal} filtra el dato completo"
+
+
+def test_un_destinatario_BORRADO_por_privacidad_no_es_uno_no_reconocido() -> None:
+    """[T-9.80 · 0078] ARCO, la retención o un aviso omitido dejan el destino en el
+    estado borrado. La consola tiene que decir que hubo a quién y se borró, no
+    «destinatario no reconocido»."""
+    from takab_api.privacy.erasure import ERASED_NOTICE_TARGET
+
+    r = resumen_destino("email", dict(ERASED_NOTICE_TARGET))
+    assert r.kind == "borrado"
+    assert not r.unrecognised
+    assert "BORRADO" in r.hint and "@" not in r.hint
+    # La marca de `destino.py` y la de `privacy/erasure.py` son la misma: si una se
+    # renombra, esto se pone rojo antes que la consola.
+    assert resumen_destino("email", {"to": []}).unrecognised, "sin la marca, no se presume"

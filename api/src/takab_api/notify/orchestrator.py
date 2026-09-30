@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -100,7 +101,7 @@ from takab_api.notify.push import (
 )
 from takab_api.notify.state import PgNotifyState
 from takab_api.privacy import store as privacy_store
-from takab_api.privacy.erasure import ERASED_DISPLAY_NAME
+from takab_api.privacy.erasure import ERASED_DISPLAY_NAME, ERASED_NOTICE_TARGET
 from takab_api.settings import Settings
 
 logger = logging.getLogger("takab_api.notify")
@@ -341,6 +342,27 @@ SELECT email FROM emergency_contacts
 WHERE tenant_id = %(tenant)s AND user_sub = %(user)s
 ORDER BY posicion
 """
+
+# [T-9.80 · 0078] Al DESPACHAR, el aviso sólo sale para los correos que SIGUEN en
+# la lista del titular: entre el encolado y el envío pudo retirar alguno, o ejercer
+# ARCO, que borra la lista entera y no toca un aviso aún `pending` (sigue en vuelo).
+# Sin ninguno vigente se OMITE, con su destino ya en el estado borrado. Nunca se
+# añade a nadie que no estuviera al encolar. El recorte sólo escribe si el destino
+# sigue siendo el que se LEYÓ: si ARCO lo borró entretanto, no se le devuelven los
+# correos (el envío en curso ya no se puede parar; la fila, sí).
+_NARROW_NEED_HELP_TARGET_SQL = """
+UPDATE notification_jobs SET target = jsonb_set(target, '{to}', %(to)s::jsonb)
+WHERE job_id = %(job)s AND target = %(leido)s::jsonb
+"""
+
+_OMIT_NEED_HELP_SQL = """
+UPDATE notification_jobs SET status = 'skipped', target = %(target)s::jsonb, error = %(error)s
+WHERE job_id = %(job)s
+"""
+
+_SIN_CONTACTOS_VIGENTES = (
+    "sin contactos vigentes al despachar: el titular los retiró o ejerció ARCO"
+)
 
 # Quién, dónde y —si viajó— el punto, resueltos al DESPACHAR de la fila VIVA del
 # check-in y no del payload: la acción es append-only y ARCO no podría borrar de
@@ -1369,6 +1391,96 @@ def _enqueue_need_help_contacts(
     return inserted
 
 
+def _contactos_vigentes(conn: psycopg.Connection, row: dict, target: dict) -> list[str]:
+    """[T-9.80 · 0078] Los correos del aviso que SIGUEN en la lista del titular, en
+    el orden del aviso. Nunca uno nuevo: el destinatario sale de lo encolado."""
+    user = (row.get("action_payload") or {}).get("user_sub")
+    to = target.get("to")
+    if not user or not isinstance(to, list):
+        return []
+    vivos = {
+        f["email"]
+        for f in conn.execute(
+            _CONTACT_EMAILS_SQL, {"tenant": row["tenant_id"], "user": user}
+        ).fetchall()
+    }
+    return [correo for correo in to if correo in vivos]
+
+
+def _recorta_a_contactos_vigentes(
+    conn: psycopg.Connection,
+    counts: dict[str, int],
+    row: dict,
+    *,
+    now: datetime,
+    max_attempts: int,
+) -> dict | None:
+    """El `target` con el que sale el aviso, o ``None`` si este job ya terminó aquí
+    (omitido por no quedar nadie, o fallido con su causa escrita)."""
+    if row["channel"] != "email":
+        # Sólo se sabe recortar correos. El SMS de D-48 tendrá que comparar
+        # teléfonos: hasta entonces falla con su causa, y no sale ni se omite en
+        # silencio con el número de alguien que quizá ya no está en la lista.
+        _fail(
+            conn,
+            counts,
+            row,
+            f"need_help_contacts por {row['channel']}: sin recorte a los contactos "
+            "vigentes para este canal (T-9.80); no se envía",
+            now=now,
+            max_attempts=max_attempts,
+        )
+        return None
+    target = dict(row["target"])
+    try:
+        # SAVEPOINT, como el opt-in de WhatsApp: un error aquí envenenaría la
+        # transacción de la pasada entera, la de todos los clientes.
+        with conn.transaction():
+            vigentes = _contactos_vigentes(conn, row, target)
+            if vigentes and vigentes != target.get("to"):
+                conn.execute(
+                    _NARROW_NEED_HELP_TARGET_SQL,
+                    {
+                        "job": row["job_id"],
+                        "to": json.dumps(vigentes),
+                        "leido": json.dumps(row["target"]),
+                    },
+                )
+    except Exception as exc:  # noqa: BLE001 - ante la duda NO se envía, y se escribe
+        logger.exception("need_help_contacts: no se pudo leer la lista (job %s)", row["job_id"])
+        _fail(
+            conn,
+            counts,
+            row,
+            f"need_help_contacts: no se pudo leer la lista de contactos ({type(exc).__name__}); "
+            "sin ella no se sabe a quién se puede avisar",
+            now=now,
+            max_attempts=max_attempts,
+        )
+        return None
+    if not vigentes:
+        _omit_need_help(conn, counts, row)
+        return None
+    target["to"] = vigentes
+    return target
+
+
+def _omit_need_help(conn: psycopg.Connection, counts: dict[str, int], row: dict) -> None:
+    """Sin contactos vigentes el aviso no sale, y su destino queda BORRADO: el mismo
+    estado que dejarían ARCO o la retención, para que el correo del contacto que ya
+    no está no sobreviva en la fila."""
+    conn.execute(
+        _OMIT_NEED_HELP_SQL,
+        {
+            "job": row["job_id"],
+            "target": json.dumps(ERASED_NOTICE_TARGET),
+            "error": _SIN_CONTACTOS_VIGENTES,
+        },
+    )
+    counts["skipped"] += 1
+    logger.warning("need_help_contacts %s: se omite, %s", row["action_id"], _SIN_CONTACTOS_VIGENTES)
+
+
 def _need_help_detalle(conn: psycopg.Connection, row: dict) -> dict:
     """[T-9.80] Nombre, zona y punto de quien pidió ayuda, de la fila VIVA del
     check-in. El punto sólo si ese check-in lo trajo (``con_ubicacion``)."""
@@ -1580,6 +1692,19 @@ def _dispatch_one(
     base_url = settings.notify_web_base_url if settings.notify_web_public else ""
     max_attempts = settings.notify_max_attempts
     incident_id = row["incident_id"]
+
+    # [T-9.80 · 0078] El aviso a los contactos se recorta a los que SIGUEN en la
+    # lista ANTES de cualquier otra rama. Un aviso simulado, bloqueado por el modo
+    # demostración o sin proveedor también deja la fila en su desenlace: si el
+    # recorte fuera después, se quedaría con los correos de quien ya no está.
+    if row.get("action_kind") == "need_help_contacts":
+        recortado = _recorta_a_contactos_vigentes(
+            conn, counts, row, now=now, max_attempts=max_attempts
+        )
+        if recortado is None:
+            return
+        row = {**row, "target": recortado}
+
     if row["mode"] == "cascade":
         satisfied = conn.execute(_CASCADE_SATISFIED_SQL, {"incident": incident_id}).fetchone()
         if satisfied is not None:
@@ -1612,7 +1737,7 @@ def _dispatch_one(
         _dispatch_push(conn, counts, row, provider, now=now, max_attempts=max_attempts)
         return
 
-    target = dict(row["target"])
+    target = dict(row["target"])  # el recortado, si era un aviso a los contactos
     if row["channel"] == "webhook":
         # El secret vive en el rule_set, jamás en el job: se re-resuelve aquí.
         destinations = resolve_destinations(_config_for(conn, config_cache, row))
@@ -2041,6 +2166,19 @@ def _record_no_recipients(
     return detail
 
 
+#: [T-9.80] Un error se escribe en `notification_jobs.error` y, si es terminal, en
+#: `incident_actions`, que es append-only y exenta de poda: lo que entre ahí no lo
+#: borra ni ARCO. Y los proveedores meten el destinatario en su mensaje (SES en
+#: sandbox: «The following identities failed the check…: <direcciones>»). Se tapan
+#: correos y teléfonos internacionales ANTES de persistir nada.
+_CORREO_EN_TEXTO = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+_TELEFONO_EN_TEXTO = re.compile(r"\+\d[\d\s().-]{6,}\d")
+
+
+def _sin_contacto(texto: str) -> str:
+    return _TELEFONO_EN_TEXTO.sub("<teléfono>", _CORREO_EN_TEXTO.sub("<correo>", texto))
+
+
 def _fail(
     conn: psycopg.Connection,
     counts: dict[str, int],
@@ -2059,6 +2197,7 @@ def _fail(
     se convertía en lápida, y un AccessDenied de SES bastó para dejar un dictamen
     real sin correo y sin forma de re-pedirlo (T-1.62).
     """
+    error = _sin_contacto(error)
     escalated = 0
     if row["mode"] == "cascade":
         escalated = conn.execute(

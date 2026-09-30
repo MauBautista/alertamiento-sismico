@@ -735,6 +735,47 @@ def test_sobre_una_base_sana_la_rendija_esta_donde_tiene_que_estar(
     assert _check(report, "column_grant_enforced").status == PASS, render(report)
 
 
+def test_la_rendija_de_los_avisos_se_deriva_y_es_exactamente_target() -> None:
+    """[T-9.80 · 0078] La segunda rendija, y entró sola: nadie la tecleó aquí."""
+    exp = declared_expectations()
+    assert exp.column_grants[("takab_app", "notification_jobs")] == frozenset({"target"})
+    assert "notification_jobs" not in exp.append_only, (
+        "si la tabla de avisos fuera append-only, el notificador no podría escribirla"
+    )
+    # Y la de evidencia SÍ, aunque su guarda canónica sea sólo `BEFORE DELETE`: es la
+    # que `column_grant_enforced` tiene que seguir ejerciendo.
+    assert {"life_checkins", "cctv_clips", "cctv_stills"} <= exp.append_only
+
+
+def test_con_avisos_en_la_base_la_rendija_sigue_en_PASS(seeded: psycopg.Connection) -> None:
+    """[T-9.80 · 0078] Lo que la revisión midió: con una fila en `notification_jobs`,
+    `column_grant_enforced` le exigía a su guarda append-only —que no tiene, porque el
+    notificador la escribe— rechazar un UPDATE, y daba FALLO sobre una base SANA. Un
+    restore real siempre tiene avisos: el swap de DR habría quedado bloqueado."""
+    seeded.execute(
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, target, "
+        "  due_at) SELECT tenant_id, incident_id, 'email', 'parallel', 'sent', "
+        "  jsonb_build_object('to', jsonb_build_array('c@example.mx')), now() "
+        "  FROM incidents LIMIT 1"
+    )
+    assert seeded.execute("SELECT count(*) FROM notification_jobs").fetchone()[0] == 1
+    report = verify(seeded)
+    assert _check(report, "column_grants").status == PASS, render(report)
+    enforced = _check(report, "column_grant_enforced")
+    assert enforced.status == PASS, render(report)
+    assert "life_checkins" in enforced.detail, "la tabla de evidencia se sigue ejerciendo"
+    assert "notification_jobs" in enforced.detail, "la que NO se ejerce se nombra"
+
+
+def test_una_rendija_de_avisos_que_CRECIO_es_ROJA(seeded: psycopg.Connection) -> None:
+    """Su frontera es el privilegio: `status` escribible desde la API dejaría marcar
+    como enviado un aviso que nunca salió."""
+    seeded.execute("GRANT UPDATE (status) ON notification_jobs TO takab_app")
+    check = _check(verify(seeded), "column_grants")
+    assert check.status == FAIL
+    assert "notification_jobs" in check.detail and "status" in check.detail
+
+
 def test_una_base_restaurada_con_el_GRANT_A_NIVEL_DE_TABLA_es_ROJA(
     seeded: psycopg.Connection,
 ) -> None:

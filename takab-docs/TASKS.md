@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **503** · `[x]` **434** · `[~]` **22** · `[ ]` **47**
+**Conteo de tareas:** total **503** · `[x]` **435** · `[~]` **21** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18047,14 +18047,21 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     `web/e2e/cierre_del_evento.spec.ts`, en verde el 2026-09-28 contra `vite preview` +
     `soc-local`: acusa, clasifica REAL y cierra con motivo.
 
-### [~] T-9.42 · **El reporte posterior al evento, solo** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.42 · **El reporte posterior al evento, solo** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · **Depende de:** T-9.40 · **Prioridad:** F4 · alta · **Decisión:** `D-48`
 - **Objetivo:** el reporte llega en 30 minutos o menos sin que nadie pulse «generar».
 - **Criterios de aceptación:**
   - [x] Worker `informes` idempotente; un fallo queda declarado, nunca como éxito (migración
     **0074**: la 0073 la tomó F3). Lo prueban `api/tests/informes/`.
-  - [~] Correo al cliente y aviso al administrador y a los tácticos: encolados y probados
-    (`tests/notify/test_informe_avisa.py`). Falta ver el correo llegar desde la nube.
+  - [x] Correo al cliente y aviso al administrador y a los tácticos: encolados y probados
+    (`tests/notify/test_informe_avisa.py`). Visto llegar desde la nube el 2026-09-30, incidente
+    `d30beb36`:
+    - el primer correo del incidente salió a las 11:59:18 (la hora de apertura no se anotó);
+    - la firma de confirmación pidió el informe a las 12:10:09 y quedó listo a las 12:10:12, al
+      primer intento;
+    - el correo salió a las 12:10:12 y Mauricio lo recibió.
+    - El aviso al administrador y a los tácticos lo prueban los tests; no se vio en un
+      dispositivo, porque el Pixel tenía sesión de ocupante.
 - **Hallazgo al correrlo de verdad (2026-09-28):**
   - Contra la base local migrada paso a paso, el worker murió con «permission denied for table
     compliance_labels» y el informe quedó `fallido`, que es lo que debía declarar.
@@ -18404,11 +18411,73 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       había guardado. Lo mueve el FOCO, no el texto: con el teléfono vaciado antes saltaba igual.
     - Ahora la confirmación pide, al aparecer, que la lista baje hasta ella, y GUARDAR baja el
       teclado, que la tapaba. El flujo, que fallaba en ese paso, pasa.
+  - [x] ARCO y la retención alcanzan también los correos de los contactos en los avisos YA
+    enviados (migración **0078**). Antes se quedaban en `notification_jobs.target`: el barrido de
+    toda la base de `tests/test_privacy_erasure.py` lo encontró.
+    - La FILA del aviso se conserva (hubo un aviso, a tal hora). Su `target` pasa a ser
+      exactamente `{"to": [], "pii_borrada": true}`, el mismo valor en ARCO, en la retención y
+      en el notificador. La consola lo pinta «DESTINATARIO BORRADO POR PRIVACIDAD», no «no
+      reconocido».
+    - Frontera en la base, que obliga también a las sesiones internas. `takab_app` sólo puede
+      escribir la columna `target`, sin INSERT ni DELETE. La política RESTRICTIVA
+      `nj_solo_borrar_avisos` sólo le deja escribir ese estado borrado, en avisos
+      `need_help_contacts` de su cliente y de un incidente CERRADO (como ARCO, que con uno abierto
+      se difiere), y si el titular es borrable por esa sesión: él mismo o un responsable con
+      constancia, aunque el aviso siga pendiente; o el job de retención, sólo si ya salió. Entre
+      dos titulares borrables por el mismo responsable, la política no distingue: lo hace el
+      `WHERE` del acto ARCO, y tiene su prueba.
+    - Se descartó una función SECURITY DEFINER: habría obligado a devolverle a `takab_ingest` la
+      lectura de las constancias ARCO, que se le niega a propósito.
+    - ARCO borra también el aviso aún `pending`. El notificador, al despacharlo y ANTES de
+      cualquier otra rama (simulado, modo demostración, sin proveedor), sólo manda a los contactos
+      que SIGUEN en la lista; sin ninguno lo omite (`skipped`), ya borrado, y la consola lo rotula
+      «SIN DESTINATARIO VIGENTE». El recorte sólo escribe si el destino sigue como lo leyó, lee la
+      lista dentro de un savepoint y sólo sabe hacerlo con correos: un aviso a contactos por otro
+      canal falla con su causa.
+    - El `user_sub` del aviso se escribe en forma canónica: ARCO, la política y la retención lo
+      comparan como texto, y la acción es append-only.
+    - El texto de error de un proveedor se guarda sin correos ni teléfonos. SES en sandbox
+      rechaza citando a los destinatarios, y el error terminal va a `incident_actions`, donde ni
+      ARCO lo borraría.
+  - **Lo que encontró la revisión adversarial**, cada punto con prueba y mutación que la tumba:
+    - La 0001 da a `takab_app` UPDATE sobre toda la tabla en una base nueva. No lo tapaba la
+      falta de política: `notification_jobs_admin` (FOR ALL) dejaba a una sesión interna
+      reescribir cualquier aviso, pendientes incluidos (medido con `SET status`).
+    - Un predicado con `jsonb_array_length` reventaba ARCO entero desde una sesión interna,
+      porque WhatsApp y SMS guardan `to` como cadena.
+    - Un cast a uuid sin guarda en la política dejaba a TODO el cliente sin ARCO en cuanto un
+      aviso ajeno trajera un `user_sub` que no fuera UUID.
+    - El verificador de restauraciones (`ops/restore_check.py`) trataba la rendija nueva como la
+      de una tabla de evidencia. Con avisos en la base daba FALLO sobre una base sana; con la
+      tabla vacía, SALTADA.
+    - El runbook de retención seguía nombrando tres claves con cinco en el plan. Ahora lo
+      vigila un test.
+  - **Lo que encontró la segunda revisión**, también con prueba y mutación:
+    - Una CARRERA: una pasada del notificador que leyó los contactos antes del acto ARCO marcaba
+      `sent` el aviso pendiente con los correos dentro, y la lápida decía `notification_jobs: 0`.
+    - El recorte llegaba tarde: un aviso simulado o sin proveedor se quedaba con los correos.
+    - Con INSERT y DELETE, una sesión interna borraba un aviso y lo volvía a meter PENDIENTE con
+      otro destinatario, en una base nueva (en la nube la tabla nació con sólo SELECT).
+    - La frontera no conocía el incidente abierto: un UPDATE directo del titular vaciaba su aviso
+      en pleno rescate, sin lápida.
+    - `restore_check` omitía en silencio la rendija que no ejerce; ahora la nombra.
 - **Huecos declarados:**
-  - La retención de los contactos nace APAGADA. Su plazo es una decisión de privacidad:
-    `pii_retention_windows_days["emergency_contacts.rows"]` en el terraform de la base.
-  - Los correos de los contactos quedan copiados en `notification_jobs.target`, como los de
-    cualquier correo existente, y ni ARCO ni la retención los cubren todavía.
+  - La retención de los contactos, y la de sus correos en los avisos, nace APAGADA. Su plazo es
+    una decisión de privacidad: `pii_retention_windows_days["emergency_contacts.rows"]` y
+    `["notification_jobs.target"]` en el terraform de la base. Van juntas: un plazo en una sola
+    deja viva la otra copia.
+  - El detector de PII (`privacy/erasure.detect_pii_columns`) busca por NOMBRE de columna y no
+    ve dentro de un `jsonb`: `notification_jobs.target` entró al inventario a mano. Los
+    destinatarios de la cascada del SOC también viven ahí; no son del titular y ARCO no los toca.
+  - Cualquier sesión interna SIN portador pasa por la rama del job de retención, igual que en
+    `ec_retention_*` (0077). La API sólo abre sesiones así para leer (hub de WebSocket,
+    publicación de releases); un GUC propio del job lo cerraría.
+  - El tapado del error va por forma: correos y teléfonos con `+`. Un número sin `+` en el
+    mensaje de un proveedor no se tapa.
+  - Los errores de proveedor escritos ANTES de este cambio pueden llevar correos. No se midió si
+    hay alguno en la nube, y `incident_actions` no se puede reescribir.
+  - Un contacto cuyo correo se EDITA entre el encolado y el despacho hace que el aviso lo omita:
+    nunca se manda a un correo que no estaba al encolar.
 
 ### [x] T-9.81 · **La baja de los roles viejos** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** api · infra · **Depende de:** T-9.21 · **Prioridad:** F8 · baja · **Decisión:** `D-42`

@@ -313,6 +313,26 @@ async def test_need_help_propio_con_contactos_deja_UNA_accion_aunque_se_repita(
 
 
 @pytest.mark.anyio
+async def test_el_user_sub_del_aviso_va_en_forma_CANONICA(base_data, make_incident) -> None:
+    """[T-9.80 · 0078] ARCO, la política de borrado y la retención comparan el
+    `user_sub` del aviso como TEXTO con `app_user_id()::text`. Un sub escrito tal cual
+    llegó —en mayúsculas— dejaría el aviso fuera de su alcance para siempre: la acción
+    es append-only y no se puede corregir después."""
+    incidente = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
+    mayusculas = _occ(OCC.upper())
+    async with au.client_for(create_app()) as client:
+        await _enrolar(client, mayusculas, "EC-CODE-9")
+        await client.put("/me/emergency-contacts", json=_cuerpo(ANA), headers=mayusculas)
+        r = await client.post(
+            f"/incidents/{incidente}/checkins", json=_checkin("need_help"), headers=mayusculas
+        )
+        assert r.status_code == 201, r.text
+
+    [aviso] = await _avisos(incidente)
+    assert aviso["payload"]["user_sub"] == OCC.lower()
+
+
+@pytest.mark.anyio
 async def test_safe_no_avisa_a_nadie(base_data, make_incident) -> None:
     incidente = await make_incident(au.DB_TENANT_PRIV, au.DB_SITE_PRIV)
     async with au.client_for(create_app()) as client:

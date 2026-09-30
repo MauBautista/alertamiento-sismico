@@ -82,6 +82,15 @@ describe("desenlace", () => {
     expect(labels.some((l) => l === "ENTREGADO")).toBe(false);
   });
 
+  it("OMITIDO dice por qué: la cascada satisfecha no es un aviso sin destinatario", () => {
+    expect(desenlace(job({ status: "skipped", mode: "cascade" }) as never).label).toContain(
+      "CASCADA",
+    );
+    expect(desenlace(job({ status: "skipped", mode: "parallel" }) as never).label).toBe(
+      "OMITIDO · SIN DESTINATARIO VIGENTE",
+    );
+  });
+
   it("un estado NUEVO no cae en «entregado»: se declara sin clasificar", () => {
     expect(desenlace(job({ status: "teletransportado" }) as never).label).toContain(
       "SIN CLASIFICAR",

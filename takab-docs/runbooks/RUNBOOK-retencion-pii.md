@@ -39,15 +39,20 @@ cliente. Se declaran en `infra/terraform/envs/dev` con la **clave de la regla**:
 module "database" {
   # ...
   pii_retention_windows_days = {
-    "push_tokens.token"      = 400   # token de dispositivo sin verse
-    "life_checkins.geom"     = 90    # ubicación GPS de un check-in cerrado
-    "user_profiles.identity" = 365   # nombre y teléfono TRAS LA BAJA de la cuenta
+    "push_tokens.token"        = 400   # token de dispositivo sin verse
+    "life_checkins.geom"       = 90    # ubicación GPS de un check-in cerrado
+    "user_profiles.identity"   = 365   # nombre y teléfono TRAS LA BAJA de la cuenta
+    "emergency_contacts.rows"  = 365   # contactos de emergencia TRAS LA BAJA del titular
+    "notification_jobs.target" = 365   # sus correos en los avisos YA enviados, mismo reloj
   }
 }
 ```
 
-Las tres reglas del plan de hoy son exactamente esas tres claves; cualquier otra la rechaza la
-validación de la variable (un plural de más no puede salir verde y no podar nada).
+Las cinco reglas del plan de hoy son exactamente esas cinco claves; cualquier otra la rechaza la
+validación de la variable (un plural de más no puede salir verde y no podar nada). Las dos últimas
+van juntas: los contactos y los avisos que les llegaron son el mismo dato de un tercero, y un plazo
+en una sola dejaría la otra copia viva. Que el runbook nombre todas las del plan lo vigila
+`api/tests/test_privacy_retention.py::test_el_runbook_nombra_TODAS_las_claves_del_plan`.
 
 **LATENCIA, y aquí importa más que en el PITR:** cambiar esta variable crea una **versión nueva**
 del documento SSM pero **no modifica ningún atributo de la asociación**, así que Terraform informa
