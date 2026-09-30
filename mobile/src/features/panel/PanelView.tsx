@@ -2,6 +2,7 @@
 // (site_health de mobile-state + frames del /ws + groupActions COMPARTIDA de
 // @takab/sdk — cero transformaciones divergentes). Features de 1 s: pga/pgv/
 // rms/stalta — JAMÁS forma de onda (regla de oro 9).
+import type { ReactNode } from "react";
 import type { ActuatorGroup, FeatureRow, MobileSiteHealthOut } from "@takab/sdk";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 
@@ -58,6 +59,9 @@ export function PanelView(props: {
    *  perfil táctico «/» es ESTE panel: sin esto, la brigada —que es quien
    *  controla la puerta— era la única que no veía el NO HABITAR. */
   avisoReingreso?: AvisoReingreso | null;
+  /** [T-9.13] El aviso del TELÉFONO (no sonará con «No molestar», sin notificaciones…):
+   *  va arriba de todo, antes que el estado del edificio. */
+  avisoTelefono?: ReactNode;
   /** [F3·r3] Reingreso pendiente de CONFIRMACIÓN y un perfil con
    *  `confirm_dictamen` ⇒ entrada a CONFIRMAR DICTAMEN. Ausente ⇒ sin botón. */
   onOpenConfirmar?: () => void;
@@ -72,6 +76,7 @@ export function PanelView(props: {
   const pill = estadoPill(props.live, props.featuresAtMs, props.nowMs);
   return (
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
+      {props.avisoTelefono}
       <View style={styles.headerRow}>
         <Text style={styles.eyebrow}>{props.siteName.toUpperCase()} · DASHBOARD</Text>
         <View style={[styles.pill, { borderColor: TONE_PILL[pill.tone] }]}>

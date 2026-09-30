@@ -4,6 +4,7 @@
 // [T-6.19] Las franjas de SIMULACRO y de MODO DEMOSTRACIÓN ya no viven aquí:
 // las pinta `features/notices/SiteNoticeStrip` desde el layout de las
 // pestañas, para que se vean igual en INICIO, RUTAS, DIRECTORIO y CUENTA.
+import type { ReactNode } from "react";
 import { Feather } from "@expo/vector-icons";
 import type { DirectoryEntryOut, MobileStateOut } from "@takab/sdk";
 import {
@@ -87,6 +88,9 @@ export function HomeView(props: {
   /** [F3·r3 · D-43] La firma vigente que autorizó el reingreso (tipo, banda,
    *  rol que confirma). Ausente ⇒ el cartel no le atribuye la firma a nadie. */
   firmaReingreso?: Firma | null;
+  /** [T-9.13] El aviso del TELÉFONO (no sonará con «No molestar», sin notificaciones…):
+   *  va arriba de todo, antes que el estado del edificio. */
+  avisoTelefono?: ReactNode;
 }) {
   const { data } = props;
   // [T-9.04] El veredicto que sobrevive al cierre del incidente. Lo decide el
@@ -114,6 +118,7 @@ export function HomeView(props: {
   const tono = retenido !== null ? "warn" : banner.tone;
   return (
     <ScrollView contentContainerStyle={styles.wrap} style={styles.scroll}>
+      {props.avisoTelefono}
       <Text style={styles.eyebrow}>{data.site_name.toUpperCase()}</Text>
 
       {/* [T-6.19] Relleno SÓLIDO + glifo de visto: es la única franja con

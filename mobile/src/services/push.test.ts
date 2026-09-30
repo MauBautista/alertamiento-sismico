@@ -1,5 +1,5 @@
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 
 import {
   listPushTokensMePushTokensGet,
@@ -8,7 +8,9 @@ import {
 } from "@takab/sdk";
 
 import {
+  abrirAccesoNoMolestar,
   configureAndroidChannels,
+  getAlertabilitySnapshot,
   MOVEMENT_CHANNEL_ID,
   MOVEMENT_SOUND,
   OPS_CHANNEL_ID,
@@ -32,6 +34,7 @@ jest.mock("expo-notifications", () => ({
   getPermissionsAsync: jest.fn(),
   requestPermissionsAsync: jest.fn(),
   getDevicePushTokenAsync: jest.fn(),
+  getNotificationChannelAsync: jest.fn(),
 }));
 
 jest.mock("@takab/sdk", () => ({
@@ -411,5 +414,84 @@ describe("unregisterOwnPushToken", () => {
     mockedList.mockResolvedValue({ data: [fila("este", "fcm-mio")] });
     mockedRevoke.mockResolvedValue({ error: { detail: "404" } });
     await expect(unregisterOwnPushToken()).resolves.toBe("error");
+  });
+});
+
+// [T-9.13] ¿Sonará con «No molestar»? Lo dice el `bypassDnd` del canal sísmico, que
+// sólo se fija si la app TIENE el acceso cuando crea o reaplica el canal. Por eso
+// el lector reaplica los canales ANTES de leer: sin eso, un acceso recién concedido
+// en los ajustes no se vería hasta reinstalar.
+describe("[T-9.13] getAlertabilitySnapshot · la alerta y «No molestar»", () => {
+  const concedido = { status: "granted", canAskAgain: true } as never;
+
+  it("android con permiso: reaplica los canales ANTES de leer la marca del sísmico", async () => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue(concedido);
+    const orden: string[] = [];
+    mocked.setNotificationChannelAsync.mockImplementation(async (id: string) => {
+      orden.push(`crea:${id}`);
+      return null;
+    });
+    mocked.getNotificationChannelAsync.mockImplementation(async (id: string) => {
+      orden.push(`lee:${id}`);
+      return { id, bypassDnd: false } as never;
+    });
+    const s = await getAlertabilitySnapshot();
+    expect(s.androidDndBypass).toBe(false);
+    // Las dos cosas pasan, y en ese orden: sin reaplicar, `indexOf` de la creación
+    // daría -1 y «leer después de -1» pasaría sin que nada se reaplicara.
+    expect(orden).toContain(`crea:${SEISMIC_CHANNEL_ID}`);
+    expect(orden).toContain(`lee:${SEISMIC_CHANNEL_ID}`);
+    expect(orden.indexOf(`lee:${SEISMIC_CHANNEL_ID}`)).toBeGreaterThan(
+      orden.indexOf(`crea:${SEISMIC_CHANNEL_ID}`),
+    );
+  });
+
+  it("el canal rompe «No molestar» ⇒ true", async () => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue(concedido);
+    mocked.getNotificationChannelAsync.mockResolvedValue({ bypassDnd: true } as never);
+    expect((await getAlertabilitySnapshot()).androidDndBypass).toBe(true);
+  });
+
+  it("sin canal sísmico ⇒ null: no se inventa ni un sí ni un no", async () => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue(concedido);
+    mocked.getNotificationChannelAsync.mockResolvedValue(null);
+    expect((await getAlertabilitySnapshot()).androidDndBypass).toBeNull();
+  });
+
+  it("sin permiso de notificaciones ⇒ ni crea canales ni lee la marca", async () => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: false } as never);
+    const s = await getAlertabilitySnapshot();
+    expect(s.granted).toBe(false);
+    expect(s.androidDndBypass ?? null).toBeNull();
+    expect(mocked.setNotificationChannelAsync).not.toHaveBeenCalled();
+    expect(mocked.getNotificationChannelAsync).not.toHaveBeenCalled();
+  });
+
+  it("iOS ⇒ no aplica (null) y no toca canales", async () => {
+    setPlatform("ios");
+    mocked.getPermissionsAsync.mockResolvedValue(concedido);
+    const s = await getAlertabilitySnapshot();
+    expect(s.androidDndBypass ?? null).toBeNull();
+    expect(mocked.getNotificationChannelAsync).not.toHaveBeenCalled();
+  });
+
+  it("la lectura falla ⇒ null, jamás una excepción que tumbe la pantalla", async () => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue(concedido);
+    mocked.getNotificationChannelAsync.mockRejectedValue(new Error("nativo"));
+    expect((await getAlertabilitySnapshot()).androidDndBypass).toBeNull();
+  });
+});
+
+describe("[T-9.13] abrirAccesoNoMolestar", () => {
+  it("abre el ajuste de Android del ACCESO a «No molestar»", async () => {
+    const intent = jest.spyOn(Linking, "sendIntent").mockResolvedValue(undefined);
+    await abrirAccesoNoMolestar();
+    expect(intent).toHaveBeenCalledWith("android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS");
+    intent.mockRestore();
   });
 });

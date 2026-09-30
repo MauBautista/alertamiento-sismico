@@ -6,7 +6,8 @@ import { useEffect, useState } from "react";
 import { AppState, Linking, StyleSheet, Text, View } from "react-native";
 
 import { deriveAlertability, type PermissionSnapshot } from "@/services/alertability";
-import { getPermissionSnapshot, requestPermissions } from "@/services/push";
+import { ejecutarAccionDelTelefono } from "@/features/alert/useAlertabilidad";
+import { getAlertabilitySnapshot, requestPermissions } from "@/services/push";
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
@@ -18,7 +19,9 @@ export default function Permisos() {
     let alive = true;
     // setState solo en la continuación async (regla react-hooks v6).
     const load = () => {
-      void getPermissionSnapshot().then((s) => {
+      // [T-9.13] Incluye si la alerta rompe «No molestar» (Android): con el uso
+      // ALARMA ya no basta, hace falta el acceso a «No molestar».
+      void getAlertabilitySnapshot().then((s) => {
         if (alive) {
           setSnapshot(s);
         }
@@ -79,7 +82,10 @@ export default function Permisos() {
             accessibilityRole="button"
             onPress={() => {
               void (async () => {
-                setSnapshot(await requestPermissions());
+                await requestPermissions();
+                // Se relee todo: con el permiso recién dado ya se sabe si falta el
+                // acceso a «No molestar», y el aviso sale aquí mismo.
+                setSnapshot(await getAlertabilitySnapshot());
               })();
             }}
             style={styles.primaryBtn}
@@ -94,6 +100,16 @@ export default function Permisos() {
             style={styles.primaryBtn}
           >
             <Text style={styles.primaryBtnText}>ABRIR AJUSTES DEL SISTEMA</Text>
+          </Pulsable>
+        ) : null}
+        {alertability?.accion === "permitir_no_molestar" ? (
+          <Pulsable
+            accessibilityRole="button"
+            onPress={() => ejecutarAccionDelTelefono("permitir_no_molestar")}
+            style={styles.primaryBtn}
+            testID="permisos-no-molestar"
+          >
+            <Text style={styles.primaryBtnText}>PERMITIR «NO MOLESTAR»</Text>
           </Pulsable>
         ) : null}
         <Pulsable
