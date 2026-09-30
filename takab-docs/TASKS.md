@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **23** · `[ ]` **47**
+**Conteo de tareas:** total **503** · `[x]` **434** · `[~]` **22** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17868,6 +17868,40 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     con la pantalla apagada.
 - **Nota para F7:** el tono v2 de `T-9.70` estrenará `seismic_alert_v4`, porque `_v3` lo ocupa
   esta ficha.
+- **⚠️ DESMENTIDO en el Pixel el 2026-09-30 (Android 17, `CP3A.260905.009`):** el uso ALARMA ya
+  no basta. Android rebaja a NOTIFICACIÓN el audio de la notificación al publicarla: el canal
+  guardado dice `USAGE_ALARM` y el «efectivo» de la notificación, `USAGE_NOTIFICATION`. La ALERTA
+  SÍSMICA llegó interceptada (`mIntercept=true`), muda, con «No molestar» en prioridad. Lo que la
+  deja pasar es el acceso a «No molestar», y la app lo pide y lo vigila desde `T-9.13`.
+
+### [x] T-9.13 · **La app pide el acceso a «No molestar» y avisa si falta** — `SOFTWARE` + `FÍSICO`
+- **Componente:** mobile · **Depende de:** T-9.12 · **Prioridad:** F1 · crítica · **Decisión:** `D-39`
+- **Objetivo:** que la alerta sísmica suene con «No molestar» en Android reciente, y que el
+  teléfono diga en voz alta cuando no va a sonar.
+- **Medido en el Pixel 8 Pro el 2026-09-30:**
+  - Sin el acceso, la crisis del arnés llegó con `mIntercept=true`: muda.
+  - Con el acceso concedido y la app reaplicando sus canales (`bypassDnd=true`), llegó con
+    `mIntercept=false`, y Mauricio la oyó y la sintió vibrar.
+  - Android fija `bypassDnd` sólo si la app TIENE el acceso al crear o reaplicar el canal. Y lo
+    RESPETA aunque luego se retire el acceso: retirado, la marca seguía y la alerta pasó igual.
+    La marca del canal, no el acceso, es lo que decide.
+  - El canal que tenía el Pixel era viejo: lo había creado una compilación intermedia de T-9.12
+    sin el uso ALARMA, y sobrevivía al `install -r` y al `clearState` de Maestro. Instalada
+    desde cero, la app lo crea bien.
+- **Criterios de aceptación:**
+  - [x] La app sabe si la alerta rompe «No molestar»: reaplica sus canales y lee el `bypassDnd`
+    del canal sísmico (`push.ts::getAlertabilitySnapshot`, `leerPasoNoMolestar`).
+  - [x] Si no lo rompe, lo dice arriba de INICIO y del PANEL (`AvisoTelefono`) y en el alta:
+    «Con «No molestar» activado, la alerta sísmica llegará en SILENCIO». El botón PERMITIR «NO
+    MOLESTAR» abre el ajuste de Android.
+  - [x] Al volver de los ajustes se vuelve a comprobar, y el aviso se va solo
+    (`useAlertabilidad`). Las notificaciones denegadas también se dicen, con ABRIR AJUSTES.
+  - [x] Probado en el Pixel el 2026-09-30, con la app instalada desde cero (canal sin la marca):
+    - el aviso sale arriba de INICIO y en el alta;
+    - PERMITIR abre «Acceso a los modos», que es como Android 17 llama al acceso a «No molestar»;
+    - Mauricio lo concede, vuelve, y el aviso se va solo: los tres canales quedan con
+      `bypassDnd=true`;
+    - con esa marca, la crisis del arnés sonó y vibró con «No molestar» (`mIntercept=false`).
 
 ## Fase 9.2 · Roles de 10 a 7
 
@@ -17939,13 +17973,27 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Dictamen firmado de cualquier tipo y clasificación ⇒ cierre; las otras vías se conservan.
   - [x] El cierre por vencimiento declara lo que faltaba.
 
-### [~] T-9.33 · **El brigadista confirma desde la app** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.33 · **El brigadista confirma desde la app** — `SOFTWARE` + `FÍSICO`
 - **Componente:** mobile · api · **Depende de:** T-9.31 · **Prioridad:** F3 · alta · **Decisión:** `D-43`
 - **Objetivo:** que un AMARILLO no espere a que alguien se siente en la consola.
 - **Criterios de aceptación:**
   - [x] Aviso a los tácticos al salir un AMARILLO; pantalla con lista de revisión, CONFIRMAR o
     ESCALAR AL INSPECTOR.
-  - [ ] Probado en el Pixel.
+  - [x] Probado en el Pixel el 2026-09-30, con el brigadista del arnés (TOTP de Mauricio):
+    - la crisis abrió el incidente;
+    - el sistema dictó AMARILLO («sin aceleración medida, sin sensores calibrados») y avisó a
+      la brigada;
+    - el panel pidió esperar la calma (D-49); con la calma, REVISAR Y CONFIRMAR llevó a la lista
+      de revisión, y CONFIRMAR DICTAMEN dejó «CONFIRMADO POR BRIGADISTA»;
+    - en la base: `band=amarillo`, `signature_kind=confirmation`.
+- **Hallazgo de esa prueba, sin arreglar aquí:** tras confirmar, el panel dijo «REINGRESO NO
+  AUTORIZADO — NO HABITAR» mientras el certificado decía «REINGRESO APROBADO · BAJO MONITOREO».
+  - No es un fallo del reingreso, es D-49: un incidente viejo del arnés (`9d7525e3`) conserva un
+    NO HABITAR firmado que nadie levantó, y ese bloqueo del EDIFICIO manda.
+  - Quedan dos cosas por decidir:
+    - el certificado de un evento no avisa de que el inmueble sigue bloqueado por otro;
+    - `PHASE=crisis` del arnés cierra lo abierto SIN clasificarlo como `prueba`, así que los
+      bloqueos de pruebas viejas siguen vinculando.
 
 ### [x] T-9.34 · **El papel dice quién firmó** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · web · **Depende de:** T-9.31 · **Prioridad:** F3 · alta
@@ -18326,6 +18374,9 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Todo con «reducir movimiento» y censado. El panel deja de hacer parpadear el texto: el
     pulso pasa a `#banner-alert::after` (`edge/tests/test_panel_movimiento_d30.py`).
   - [ ] Visto en el Pixel y en el gabinete.
+    - El Pixel, hecho el 2026-09-30: toma de crisis con los anillos (7 % de píxeles cambian entre
+      dos capturas) y el titular quieto (52 576 contra 52 581 píxeles blancos), más 2 min 31 s de
+      vibración en la app. Falta el gabinete.
 
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 

@@ -10,7 +10,7 @@ import {
   revokePushTokenMePushTokensPushTokenIdDelete,
 } from "@takab/sdk";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { Linking, Platform } from "react-native";
 
 import { useSessionStore } from "@/auth/session.store";
 
@@ -167,11 +167,53 @@ function toSnapshot(
     canAskAgain: p.canAskAgain,
     iosCriticalAllowed:
       Platform.OS === "ios" ? (p.ios?.allowsCriticalAlerts ?? false) : null,
+    androidDndBypass: null,
   };
 }
 
 export async function getPermissionSnapshot(): Promise<PermissionSnapshot> {
   return toSnapshot(await Notifications.getPermissionsAsync());
+}
+
+/** [T-9.13] ¿El canal sísmico rompe «No molestar»? Lo dice su `bypassDnd`.
+ *
+ * Medido en un Pixel 8 Pro con Android 17 (2026-09-30): el uso ALARMA del canal
+ * (T-9.12) ya NO basta —Android lo rebaja a NOTIFICACIÓN al publicar y la ALERTA
+ * SÍSMICA llegó interceptada—, y lo que decide es `bypassDnd`. Android sólo lo
+ * fija si la app tiene el acceso a «No molestar» al crear o reaplicar el canal, y
+ * lo RESPETA aunque luego se retire el acceso: la marca, no el acceso, es la verdad.
+ * `null` = sin canal todavía, o no se pudo leer. */
+export async function leerPasoNoMolestar(): Promise<boolean | null> {
+  if (Platform.OS !== "android") {
+    return null;
+  }
+  try {
+    const canal = await Notifications.getNotificationChannelAsync(SEISMIC_CHANNEL_ID);
+    return canal ? canal.bypassDnd === true : null;
+  } catch {
+    return null;
+  }
+}
+
+/** [T-9.13] Los permisos + si la alerta rompe «No molestar». Reaplica los canales
+ * ANTES de leer: un acceso recién concedido en los ajustes sólo fija la marca
+ * cuando la app vuelve a aplicar el canal, y sin esto no se vería hasta reinstalar. */
+export async function getAlertabilitySnapshot(): Promise<PermissionSnapshot> {
+  const base = await getPermissionSnapshot();
+  if (Platform.OS !== "android" || !base.granted) {
+    return base;
+  }
+  try {
+    await configureAndroidChannels();
+  } catch (err) {
+    console.warn("push: no se pudieron reaplicar los canales de Android", err);
+  }
+  return { ...base, androidDndBypass: await leerPasoNoMolestar() };
+}
+
+/** [T-9.13] Abre el ajuste de Android donde se concede el acceso a «No molestar». */
+export async function abrirAccesoNoMolestar(): Promise<void> {
+  await Linking.sendIntent("android.settings.NOTIFICATION_POLICY_ACCESS_SETTINGS");
 }
 
 /** Pide permisos (incluye Critical Alerts en iOS: sin entitlement, el sistema

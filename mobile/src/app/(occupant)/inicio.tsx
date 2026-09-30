@@ -16,11 +16,15 @@ import { HomeView } from "@/features/home/HomeView";
 import { useCachedQuery } from "@/offline/useCachedQuery";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
+import { AvisoTelefono } from "@/features/alert/AvisoTelefono";
+import { ejecutarAccionDelTelefono, useAlertabilidad } from "@/features/alert/useAlertabilidad";
 
 /** Cada cuánto se re-pide el certificado del cartel (el poll del reposo). */
 const CERTIFICADO_POLL_MS = 30_000;
 
 export default function Inicio() {
+  // [T-9.13] ¿Sonará este teléfono como debe? Si no, lo dice arriba de todo.
+  const alertabilidad = useAlertabilidad();
   const router = useRouter();
   const siteId = useWatchedSiteId();
   const { data, loading, error, staleSinceMs, dataUpdatedAt, refetch } = useAlertState(siteId);
@@ -92,6 +96,9 @@ export default function Inicio() {
     >
       {data !== null ? (
         <HomeView
+          avisoTelefono={
+            <AvisoTelefono alertabilidad={alertabilidad} onAccion={ejecutarAccionDelTelefono} />
+          }
           brigadistas={brigadistas}
           data={data}
           firmaReingreso={firmaReingreso}

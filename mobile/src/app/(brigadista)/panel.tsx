@@ -37,8 +37,12 @@ import { getLiveSocket } from "@/live/socket";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
 import { emergency, space } from "@/ui/theme";
+import { AvisoTelefono } from "@/features/alert/AvisoTelefono";
+import { ejecutarAccionDelTelefono, useAlertabilidad } from "@/features/alert/useAlertabilidad";
 
 export default function Panel() {
+  // [T-9.13] ¿Sonará este teléfono como debe? Si no, lo dice arriba de todo.
+  const alertabilidad = useAlertabilidad();
   const router = useRouter();
   const siteId = useWatchedSiteId();
   const { data, loading, error, staleSinceMs, refetch } = useAlertState(siteId);
@@ -216,6 +220,9 @@ export default function Panel() {
       {data !== null && health !== null ? (
         <>
           <PanelView
+            avisoTelefono={
+              <AvisoTelefono alertabilidad={alertabilidad} onAccion={ejecutarAccionDelTelefono} />
+            }
             avisoReingreso={avisoDeReingreso(data)}
             canActivate={canActivate}
             canSilence={canSilence}
