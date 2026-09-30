@@ -243,14 +243,40 @@ else
   false) rojo "el gabinete no publica: habría sirena pero no incidente" ;;
   *) no_medido_a "el panel no declara cloud.online: no se midió si el gabinete publica" ;;
   esac
+  # >>> juicio de seedlink
+  # ⚠️ `seedlink.gaps` es un ACUMULADO desde que arrancó el edge. El 2026-09-29 el Shake
+  # entregó con retraso de 18:00 a 23:47 (746 huecos); reiniciado, volvió a 0,4 s y dejó
+  # de sumar, pero aquí seguía el ✗ hasta el siguiente reinicio del edge. Y al revés: un
+  # sensor PARADO no suma huecos, y con 0 salía ✓. Se juzga el PRESENTE con dos lecturas
+  # separadas VENTANA_SEEDLINK_S: paquetes que no avanzan, huecos nuevos o un retraso de
+  # entrega por encima de 15 s (LAG_WARN_S del edge) son ✗; el acumulado se dice.
   g="$(campo .seedlink.gaps)"; pk="$(campo .seedlink.packets_seen)"
-  case "$g" in
-  0) verde "SeedLink: $pk paquetes, 0 huecos" ;;
   # Antes: `${g:-1}` convertía el ausente en un suspenso y lo explicaba con «SeedLink
   # con ? huecos» — un ✗ cuya propia evidencia decía que no la tenía.
-  "") no_medido_a "el panel no declara la sección seedlink (S/D): el flujo del sensor NO se midió" ;;
-  *) rojo "SeedLink con $g huecos" ;;
-  esac
+  if [ -z "$g" ] || [ -z "$pk" ]; then
+    no_medido_a "el panel no declara la sección seedlink (S/D): el flujo del sensor NO se midió"
+  else
+    ventana="${VENTANA_SEEDLINK_S:-60}"
+    sleep "$ventana"
+    ESTADO2="$(curl -fsS --max-time 10 "$PANEL/api/status" 2>/dev/null)"
+    g2="$(printf '%s' "$ESTADO2" | jq -r '.seedlink.gaps // empty' 2>/dev/null)"
+    pk2="$(printf '%s' "$ESTADO2" | jq -r '.seedlink.packets_seen // empty' 2>/dev/null)"
+    lag="$(printf '%s' "$ESTADO2" | jq -r '.health.seedlink_lag_s // empty' 2>/dev/null)"
+    if [ -z "$g2" ] || [ -z "$pk2" ]; then
+      no_medido_a "la segunda lectura del panel no llegó: el flujo del sensor NO se midió"
+    elif [ "$pk2" -le "$pk" ]; then
+      rojo "SeedLink PARADO: ni un paquete en ${ventana} s"
+    elif [ "$g2" -gt "$g" ]; then
+      rojo "SeedLink con $((g2 - g)) huecos NUEVOS en ${ventana} s (acumulado: $g2)"
+    elif [ -n "$lag" ] && awk -v l="$lag" 'BEGIN { exit !(l > 15) }'; then
+      rojo "SeedLink llega con ${lag} s de retraso (sano: < 4 s)"
+    elif [ "$g2" = 0 ]; then
+      verde "SeedLink: $((pk2 - pk)) paquetes en ${ventana} s, 0 huecos"
+    else
+      verde "SeedLink: $((pk2 - pk)) paquetes en ${ventana} s y ningún hueco nuevo; los $g2 acumulados son de antes (journalctl -u takab-edge)"
+    fi
+  fi
+  # <<< juicio de seedlink
   # ⚠️ UNA LISTA VACÍA NO DICE «NADA SE MOVIÓ». El edge documenta que `relays: []`
   # significaba cuatro cosas distintas bajo un solo rótulo —módulo parado, lectura
   # reventada en marcha, el DUEÑO DE LOS PINES que no contesta, o nadie sabe— y por eso
