@@ -143,6 +143,17 @@ ERASED_DISPLAY_NAME = "(titular anonimizado)"
 #: hubo un dispositivo registrado— y muere el identificador que lo enruta.
 ERASED_TOKEN_PREFIX = "arco:"
 
+#: [T-9.80 · 0078] La marca de un aviso cuyo destinatario se borró. Se conserva la
+#: FILA —hubo un aviso, a tal hora— y `to` queda vacío; esta clave lo DECLARA, para
+#: que no se lea como un aviso que nunca tuvo a quién ir (`notify/destino.py`).
+ERASED_NOTICE_FLAG = "pii_borrada"
+
+#: El `target` ENTERO de un aviso borrado. Lo escriben igual ARCO (migración 0078),
+#: la retención y el notificador cuando omite un aviso sin contactos vigentes: el
+#: dato muerto se ve igual lo haya matado quien lo haya matado. Es también lo ÚNICO
+#: que la política `nj_solo_borrar_avisos` deja escribir.
+ERASED_NOTICE_TARGET: dict = {"to": [], ERASED_NOTICE_FLAG: True}
+
 #: Firma de la función de borrado. Anclada en un test, y el ancla YA hizo su
 #: trabajo: la T-2.80 la fijó en ``("p_right", "p_via")`` para que "un tercero
 #: ejerce ARCO por otro" no se colara sin razonarse, y T-2.80.b tuvo que venir
@@ -167,6 +178,9 @@ ERASED_TABLES: tuple[str, ...] = (
     # de emergencia es dato de un TERCERO que sólo sirve para avisarle; no queda
     # ningún hecho que conservar.
     "emergency_contacts",
+    # [T-9.80 · 0078] Aquí la fila SÍ se queda (el aviso existió, a tal hora): se
+    # vacía su destinatario, los correos de esos mismos contactos.
+    "notification_jobs",
 )
 
 #: Tablas donde ARCO no destruye nada: REVOCA una capacidad hacia adelante.
@@ -182,6 +196,7 @@ TOUCHED_TABLES: tuple[str, ...] = (
     "device_keys",
     "life_checkins",
     "emergency_contacts",
+    "notification_jobs",
 )
 
 Right = Literal["cancelacion", "oposicion"]
@@ -325,7 +340,8 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
     # [T-9.80 · D-48] Los contactos de emergencia: la fila ENTERA se borra
     # (`privacy_erase_subject`), también el `user_sub` que la ata al titular. No
     # hay hecho que conservar: el aviso enviado vive en `incident_actions` sin un
-    # solo dato del contacto, y en `notification_jobs.target` (ver retención).
+    # solo dato del contacto, y en `notification_jobs.target`, que desde la 0078
+    # ARCO también vacía (entrada propia, abajo).
     ("emergency_contacts", "display_name"): PiiColumn(
         _ERASE,
         "Nombre de un TERCERO que el titular declaró. Sólo sirve para avisarle si "
@@ -341,6 +357,15 @@ PII_INVENTORY: dict[tuple[str, str], PiiColumn] = {
         _ERASE,
         "El titular de la lista. No es clave de conteo de ningún hecho: se va con "
         "la fila, porque conservarlo sin la fila no significa nada.",
+    ),
+    # [T-9.80 · 0078] El detector no la ve (busca por NOMBRE de columna y `target` es
+    # un jsonb), pero el aviso de NECESITO AYUDA guarda ahí los correos de los contactos.
+    ("notification_jobs", "target"): PiiColumn(
+        _ERASE,
+        "Destinatarios del aviso: en los `need_help_contacts` del titular, los correos de "
+        "sus contactos de emergencia. ARCO y la retención lo dejan en el estado borrado "
+        "(`to` vacío y `pii_borrada: true`); la fila queda, porque el aviso existió. Los "
+        "destinatarios de la cascada del SOC no son del titular y no se tocan.",
     ),
     # --- lo que se conserva porque es la clave del hecho ----------------------
     ("life_checkins", "user_id"): PiiColumn(_KEEP, _R_SUB_OPACO),

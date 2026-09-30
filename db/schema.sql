@@ -3162,6 +3162,32 @@ BEGIN
   GET DIAGNOSTICS v_n = ROW_COUNT;
   v_af := v_af || jsonb_build_object('emergency_contacts', v_n);
 
+  -- [T-9.80 · 0078] Los correos de SUS contactos en los avisos YA enviados: el aviso
+  -- de NECESITO AYUDA guarda el destinatario en `notification_jobs.target.to`. La
+  -- FILA se conserva (hubo un aviso, a tal hora: es un hecho del incidente) y su
+  -- destino queda en el estado borrado, el MISMO que escribe la retención. También
+  -- el de un aviso aún `pending` (esperaba un reintento con el incidente ya
+  -- cerrado): si no, una pasada del notificador que leyó los contactos ANTES de este
+  -- acto lo marcaría `sent` con los correos dentro, y nadie volvería a barrerlo. El
+  -- notificador, que no manda a contactos que ya no están, lo omitiría igual.
+  -- La base pone la frontera (`nj_solo_borrar_avisos`: sólo ese estado, sólo avisos
+  -- de un incidente cerrado de un titular que esta sesión puede borrar); este WHERE
+  -- elige, además, los de ESTE titular, que la política no distingue de otro igual
+  -- de borrable.
+  UPDATE notification_jobs j
+     SET target = '{"to": [], "pii_borrada": true}'::jsonb
+    FROM incident_actions a
+   WHERE a.action_id = j.action_id
+     AND a.tenant_id = v_tenant
+     AND j.tenant_id = v_tenant
+     AND a.kind = 'need_help_contacts'
+     AND a.payload->>'user_sub' = v_user::text
+     -- Idempotencia, comparando el jsonb ENTERO y no con `jsonb_array_length`:
+     -- WhatsApp y SMS guardan `to` como CADENA en la misma tabla.
+     AND j.target <> '{"to": [], "pii_borrada": true}'::jsonb;
+  GET DIAGNOSTICS v_n = ROW_COUNT;
+  v_af := v_af || jsonb_build_object('notification_jobs', v_n);
+
   SELECT coalesce(max(audit_id), 0) INTO v_wm FROM audit_log WHERE tenant_id = v_tenant;
 
   INSERT INTO privacy_erasures
@@ -3242,6 +3268,67 @@ GRANT EXECUTE ON FUNCTION privacy_erase_phone_subject(
 REVOKE ALL ON FUNCTION privacy_erase_subject(text,text,uuid) FROM PUBLIC;
 REVOKE ALL ON FUNCTION privacy_audit_digest(uuid,bigint) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION privacy_erase_subject(text,text,uuid) TO takab_app;
+
+-- [T-9.80 · 0078] ARCO y la retención borran los correos de los contactos en los
+-- avisos YA enviados. La fila se conserva; su `target` pasa al estado borrado.
+-- Va AQUÍ y no junto a las otras políticas de `notification_jobs`: usa
+-- `app_can_erase_subject`, que se define más arriba en esta sección, y Postgres
+-- analiza la expresión de una política al crearla. Razones en la migración 0078.
+-- La 0001 concede a `takab_app` UPDATE sobre TODA la tabla (`ALL TABLES`) en una
+-- base nueva. Lo acotaba la RLS, y a medias: las sesiones de cliente no tenían
+-- política de UPDATE, pero las INTERNAS sí (`notification_jobs_admin`, FOR ALL) y
+-- podían reescribir cualquier columna de cualquier aviso, pendientes incluidos
+-- (medido: `SET status` como `takab_support`). Queda UNA columna, y la restrictiva
+-- de abajo dice qué se puede escribir en ella. Ninguna ruta de la API escribe aquí:
+-- el notificador conecta como `takab_ingest`.
+--
+-- Y sin INSERT ni DELETE, que la 0001 también concede: con ellos, una sesión interna
+-- borraba un aviso y lo volvía a meter PENDIENTE con otro destinatario (medido), y el
+-- notificador lo mandaba. En la nube la tabla nació en la 0005 con sólo SELECT; así
+-- las dos bases quedan iguales.
+REVOKE INSERT, UPDATE, DELETE ON notification_jobs FROM takab_app;
+GRANT UPDATE (target) ON notification_jobs TO takab_app;
+
+-- QUIÉN: el propio cliente. Las sesiones internas ya entraban por
+-- `notification_jobs_admin`.
+DROP POLICY IF EXISTS nj_arco_vaciar ON notification_jobs;
+CREATE POLICY nj_arco_vaciar ON notification_jobs FOR UPDATE TO takab_app
+  USING (tenant_id = app_tenant_id())
+  WITH CHECK (tenant_id = app_tenant_id());
+
+-- QUÉ: RESTRICTIVA, para que obligue también a las sesiones internas (una
+-- permisiva se suma con OR a `notification_jobs_admin` y no las frenaría). Lo ÚNICO
+-- que la API puede escribir en esta tabla es el estado borrado de un aviso a los
+-- contactos, de su cliente y de un incidente CERRADO (como ARCO, que con uno
+-- abierto se difiere: TK409), cuyo titular esta sesión puede borrar: él mismo o un
+-- responsable con constancia (`app_can_erase_subject`), aunque el aviso siga
+-- pendiente; o el job de retención (sesión interna SIN portador, como
+-- `ec_retention_*`), sólo si ya salió.
+DROP POLICY IF EXISTS nj_solo_borrar_avisos ON notification_jobs;
+CREATE POLICY nj_solo_borrar_avisos ON notification_jobs AS RESTRICTIVE FOR UPDATE TO takab_app
+  USING (
+    tenant_id = app_tenant_id()
+    -- Sólo `state`, y no también `closed_at` como TK409: un estado a medias bloquea
+    -- en vez de permitir, y la política no ata una columna más de `incidents`.
+    AND NOT EXISTS (
+      SELECT 1 FROM incidents i
+       WHERE i.incident_id = notification_jobs.incident_id
+         AND i.state <> 'closed')
+    AND EXISTS (
+      SELECT 1 FROM incident_actions a
+       WHERE a.action_id = notification_jobs.action_id
+         AND a.tenant_id = notification_jobs.tenant_id
+         AND a.kind = 'need_help_contacts'
+         AND (   (app_is_takab_internal() AND app_user_id() IS NULL
+                  AND notification_jobs.status <> 'pending')
+              OR a.payload->>'user_sub' = app_user_id()::text
+              -- El cast, sólo sobre un UUID bien formado: un `user_sub` basura en
+              -- el aviso de OTRA persona tumbaría ARCO para todo el cliente.
+              OR CASE WHEN a.payload->>'user_sub'
+                           ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                      THEN app_can_erase_subject(a.tenant_id, (a.payload->>'user_sub')::uuid)
+                      ELSE false END)))
+  WITH CHECK (target = '{"to": [], "pii_borrada": true}'::jsonb);
 GRANT EXECUTE ON FUNCTION privacy_audit_digest(uuid,bigint) TO takab_app;
 -- `app_can_erase_subject` NO se revoca de PUBLIC, y es a propósito: se evalúa
 -- DENTRO de políticas RLS, y una política que llama a una función sin EXECUTE

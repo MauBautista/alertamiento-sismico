@@ -704,13 +704,17 @@ INSERT_CHECKIN = text(
 # orquestador convierte en UN correo. Sólo si el titular (la SESIÓN: la política
 # `ec_self` no deja ver otra lista) tiene al menos un contacto, y UNA por persona e
 # incidente: `uq_need_help_contacts` + `ON CONFLICT DO NOTHING`, así que reenviar el
-# check-in no manda un segundo aviso. El payload no lleva PII —la acción es
+# check-in no manda un segundo aviso. [T-9.80 · 0078] El `user_sub` va en su forma
+# CANÓNICA (el cast a uuid la fija): ARCO, la política de borrado y la retención lo
+# comparan como texto con `app_user_id()::text`, y un sub en mayúsculas o sin guiones
+# dejaría el aviso fuera de su alcance para siempre (la acción es append-only).
+# El payload no lleva PII —la acción es
 # append-only y ARCO no la reescribe—: el nombre, la zona y el punto se resuelven
 # al DESPACHAR, de la fila viva del check-in.
 INSERT_NEED_HELP_CONTACTS = text(
     "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload) "
     "SELECT CAST(:incident AS uuid), CAST(:tenant AS uuid), 'need_help_contacts', :actor, "
-    "       jsonb_build_object('user_sub', CAST(:subject AS text), "
+    "       jsonb_build_object('user_sub', CAST(CAST(:subject AS uuid) AS text), "
     "                          'checkin_id', CAST(:checkin AS text), "
     "                          'con_ubicacion', CAST(:con_ubicacion AS boolean)) "
     "WHERE EXISTS (SELECT 1 FROM emergency_contacts "

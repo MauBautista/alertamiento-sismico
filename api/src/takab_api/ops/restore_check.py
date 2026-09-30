@@ -201,9 +201,10 @@ class Expectations:
     #: compresión y refresco de caggs. Se pierden sin dejar hueco visible.
     timescale_policies: frozenset[tuple[str, str]] = frozenset()
     #: [T-2.80.c] LA RENDIJA. ``(rol, tabla) → columnas`` sobre las que el esquema
-    #: concede ``UPDATE`` **por columna**. Hoy solo hay una —``life_checkins.geom``,
-    #: la anonimización de ARCO— y por eso mismo hace falta declararla: es la
-    #: única excepción al «esta tabla no se toca», y su TAMAÑO es lo que nadie
+    #: concede ``UPDATE`` **por columna**. Hay dos: ``life_checkins.geom`` (la
+    #: anonimización de ARCO en una tabla de EVIDENCIA, la única excepción a su
+    #: «esta tabla no se toca») y, desde la 0078, ``notification_jobs.target`` (el
+    #: borrado de los correos de los contactos). Su TAMAÑO es lo que nadie
     #: comprobaba tras un restore. Ver ``_check_column_grants``.
     column_grants: Mapping[tuple[str, str], frozenset[str]] = field(default_factory=dict)
 
@@ -294,6 +295,18 @@ def declared_expectations(repo_root: Path | None = None) -> Expectations:
     ):
         append_only.add(table)
         guards.add(guard)
+    # [T-9.80 · 0078] Y las que abrieron una rendija de UPDATE y conservan la guarda
+    # canónica sólo para el DELETE (`life_checkins`, y las de CCTV). El catálogo ya las
+    # contaba así —`_Q_APPEND_ONLY` busca por la FUNCIÓN, no por el evento— y la huella
+    # de la nube también; sólo esta derivación se las saltaba. La función guarda se
+    # sigue deduciendo únicamente de `BEFORE UPDATE OR DELETE` (ver `_Q_GUARD_FUNCTION`).
+    for table, guard in re.findall(
+        r"CREATE TRIGGER\s+\w+\s+BEFORE DELETE ON (\w+)\s+"
+        r"FOR EACH ROW EXECUTE FUNCTION (\w+)\(\)",
+        schema,
+    ):
+        if guard in guards:
+            append_only.add(table)
 
     enabled = set(re.findall(r"ALTER TABLE (\w+) ENABLE ROW LEVEL SECURITY", schema))
     forced = set(re.findall(r"ALTER TABLE (\w+) FORCE\s+ROW LEVEL SECURITY", schema))
@@ -1050,7 +1063,14 @@ def _check_column_grant_enforced(conn: psycopg.Connection, exp: Expectations) ->
     ejercidas: list[str] = []
     sin_columna: list[str] = []
 
-    for tabla in sorted({t for _, t in exp.column_grants}):
+    # [T-9.80 · 0078] Sólo las rendijas en tablas APPEND-ONLY. En ellas hay una guarda
+    # que ejercer, y es lo que esta comprobación mide. `notification_jobs` no lo es
+    # (el notificador la escribe a diario): exigirle que su guarda rechace un UPDATE
+    # daba FALLO sobre una base sana con avisos, y SALTADA sobre una vacía. Su
+    # frontera es el privilegio, que ya mide `_check_column_grants`. La lista sale de
+    # la expectativa y no del catálogo: una guarda BORRADA tras el restore tiene que
+    # seguir ejerciéndose, y fallar.
+    for tabla in sorted({t for _, t in exp.column_grants} & exp.append_only):
         if not _scalar(
             conn, "SELECT count(*) FROM pg_class WHERE relname = %s AND relkind = 'r'", (tabla,)
         ):
@@ -1094,6 +1114,13 @@ def _check_column_grant_enforced(conn: psycopg.Connection, exp: Expectations) ->
         )
     detalle = f"{len(ejercidas)} tabla(s) siguen rechazando el UPDATE que no cambia nada y el "
     detalle += f"DELETE: {', '.join(ejercidas)}"
+    # Lo que NO se ejerce se nombra: una rendija omitida en silencio se leería como
+    # comprobada. Su frontera es el privilegio (lo mide `column_grants`) y su RLS.
+    if sin_guarda := sorted({t for _, t in exp.column_grants} - exp.append_only):
+        detalle += (
+            " · sin guarda append-only que ejercer (tabla que no es de evidencia; su "
+            f"rendija la mide `column_grants`): {', '.join(sin_guarda)}"
+        )
     if vacias:
         return Check(
             "column_grant_enforced",

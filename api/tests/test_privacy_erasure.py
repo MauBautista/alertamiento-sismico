@@ -87,6 +87,7 @@ def _persona(
     incidente: str | None = INC_A,
     checkins: int = 2,
     contactos: int = 2,
+    estado_aviso: str | None = "sent",
 ) -> None:
     """Un titular con TODA su superficie de PII, como en producción."""
     conn.execute(
@@ -120,6 +121,27 @@ def _persona(
             "email, phone, consent_version, consented_at) "
             "VALUES (%s,%s,%s,%s,%s,'+525500001111','contactos-v1-2026-09',now())",
             (tenant, user, posicion, f"{CONTACTO} {posicion}", f"{posicion}.{CORREO_CONTACTO}"),
+        )
+    # [T-9.80] El aviso que les llegó cuando marcó NECESITO AYUDA: sus correos quedan
+    # en el destinatario del job (`target.to`). Es superficie suya como el resto, y
+    # hasta la 0078 ARCO la dejaba intacta porque nadie la sembraba aquí.
+    if incidente is not None and contactos and estado_aviso is not None:
+        accion = conn.execute(
+            # `clock_timestamp()`: dos titulares en la misma transacción compartirían
+            # `now()` y chocarían en `uq_incident_actions_ack` (incidente, tipo, actor, hora).
+            "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload, ts) "
+            "VALUES (%s,%s,'need_help_contacts','system:checkin', "
+            "        jsonb_build_object('user_sub', %s::text), clock_timestamp()) "
+            "RETURNING action_id",
+            (incidente, tenant, user),
+        ).fetchone()[0]
+        correos = [f"{p}.{CORREO_CONTACTO}" for p in range(1, contactos + 1)]
+        conn.execute(
+            "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+            "  target, due_at, sent_at, action_id) "
+            "VALUES (%s,%s,'email','parallel',%s, jsonb_build_object('to', %s::jsonb), "
+            "        now(), now(), %s)",
+            (tenant, incidente, estado_aviso, json.dumps(correos), accion),
         )
 
 
@@ -1198,6 +1220,7 @@ def test_la_lapida_no_guarda_copia_de_lo_borrado(seeded: psycopg.Connection) -> 
         "device_keys": 1,
         "life_checkins": 2,
         "emergency_contacts": 2,
+        "notification_jobs": 1,
     }
     assert set(lapida["affected"]) == set(erasure.TOUCHED_TABLES)
 
@@ -1255,3 +1278,392 @@ def test_los_contactos_de_otro_titular_no_caen_por_arrastre(
         ).fetchall()
     )
     assert por_titular == {USER_A2: 2}
+
+
+# ---------------------------------------------------------------------------
+# [T-9.80 · 0078] Los correos de sus contactos en los avisos YA enviados
+# ---------------------------------------------------------------------------
+#
+# ARCO borraba la lista de contactos (0077), pero el aviso que les llegó cuando el
+# titular marcó NECESITO AYUDA guarda sus correos en `notification_jobs.target.to`,
+# y ahí se quedaban. La fila se CONSERVA (hubo un aviso, a tal hora: es un hecho del
+# incidente); lo que se vacía es el destinatario.
+
+
+def _aviso_de(conn: psycopg.Connection, user: str) -> tuple[str, dict]:
+    fila = conn.execute(
+        "SELECT j.status, j.target FROM notification_jobs j "
+        "JOIN incident_actions a ON a.action_id = j.action_id "
+        "WHERE a.kind = 'need_help_contacts' AND a.payload->>'user_sub' = %s",
+        (user,),
+    ).fetchone()
+    return fila[0], fila[1] if isinstance(fila[1], dict) else json.loads(fila[1])
+
+
+def test_arco_vacia_los_correos_de_sus_contactos_en_los_avisos_ya_enviados(
+    seeded: psycopg.Connection,
+) -> None:
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    antes = seeded.execute("SELECT count(*) FROM notification_jobs").fetchone()[0]
+    _titular(seeded)
+    lapida = _arco(seeded)
+    reset(seeded)
+    assert lapida["affected"]["notification_jobs"] == 1
+    estado, destino = _aviso_de(seeded, USER_A)
+    assert estado == "sent", "el HECHO del aviso se conserva"
+    # El estado borrado ENTERO, el mismo que escribe la retención: el dato muerto se
+    # ve igual lo haya matado el titular o el reloj, y el vacío se declara (no es un
+    # aviso que nunca tuvo destinatario).
+    assert destino == erasure.ERASED_NOTICE_TARGET, destino
+    assert CORREO_CONTACTO not in json.dumps(destino)
+    assert seeded.execute("SELECT count(*) FROM notification_jobs").fetchone()[0] == antes
+
+
+def _otra_persona(conn: psycopg.Connection) -> None:
+    """Un segundo titular de A, con su propio aviso ya enviado a sus contactos."""
+    _persona(
+        conn,
+        user=USER_A2,
+        nombre="Otra Persona De A",
+        telefono="+525500000002",
+        token="ExponentPushToken[a2a2]",
+        llave="-----BEGIN PUBLIC KEY-----A2-----END PUBLIC KEY-----",
+    )
+
+
+def test_arco_no_toca_los_avisos_de_otro_titular_ni_los_de_la_cascada(
+    seeded: psycopg.Connection,
+) -> None:
+    reset(seeded)
+    _persona(seeded)
+    _otra_persona(seeded)
+    # Un correo de la cascada del SOC del mismo incidente: no es de sus contactos.
+    seeded.execute(
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, target, "
+        "  due_at, sent_at) VALUES (%s,%s,'email','cascade','sent', "
+        "  jsonb_build_object('to', jsonb_build_array('soc@cliente.example')), now(), now())",
+        (TENANT_A, INC_A),
+    )
+    _cierra_incidentes(seeded)
+    _titular(seeded)
+    _arco(seeded)
+    reset(seeded)
+    _, del_otro = _aviso_de(seeded, USER_A2)
+    assert del_otro["to"] == [f"1.{CORREO_CONTACTO}", f"2.{CORREO_CONTACTO}"]
+    soc = seeded.execute(
+        "SELECT target FROM notification_jobs WHERE action_id IS NULL AND mode = 'cascade'"
+    ).fetchone()[0]
+    assert (soc if isinstance(soc, dict) else json.loads(soc))["to"] == ["soc@cliente.example"]
+
+
+def test_arco_borra_TAMBIEN_el_aviso_aun_pendiente(seeded: psycopg.Connection) -> None:
+    """Un aviso atascado (esperaba un reintento) de un incidente ya cerrado —con uno
+    abierto ARCO se difiere, TK409—. Si ARCO lo saltara, una pasada del notificador que
+    leyó los contactos ANTES del acto lo marcaría `sent` con los correos dentro, y nadie
+    volvería a barrerlo (lo midió la segunda revisión). El notificador sólo toca su
+    `status`: el destino queda borrado."""
+    reset(seeded)
+    _persona(seeded, estado_aviso="pending")
+    _cierra_incidentes(seeded)
+    _titular(seeded)
+    lapida = _arco(seeded)
+    reset(seeded)
+    assert lapida["affected"]["notification_jobs"] == 1
+    estado, destino = _aviso_de(seeded, USER_A)
+    assert estado == "pending" and destino == erasure.ERASED_NOTICE_TARGET
+    # La transición del notificador que llega tarde: sólo `status`.
+    seeded.execute("UPDATE notification_jobs SET status = 'sent', sent_at = now()")
+    assert _aviso_de(seeded, USER_A)[1] == erasure.ERASED_NOTICE_TARGET
+
+
+def test_por_cuenta_de_otro_tambien_vacia_sus_avisos(seeded: psycopg.Connection) -> None:
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    _responsable(seeded)
+    solicitud = _constancia(seeded)
+    lapida = _arco_por_cuenta_de(seeded, solicitud)
+    reset(seeded)
+    assert lapida["affected"]["notification_jobs"] == 1
+    assert _aviso_de(seeded, USER_A)[1]["to"] == []
+
+
+@pytest.mark.parametrize("actor", ["titular", "superadmin_con_constancia"])
+def test_un_aviso_con_to_de_CADENA_en_el_cliente_no_rompe_arco(
+    seeded: psycopg.Connection, actor: str
+) -> None:
+    """WhatsApp y SMS guardan `to` como cadena (`notify/config.py`). Un predicado que
+    sólo vale para arreglos (`jsonb_array_length`) revienta ARCO entero en cuanto se
+    evalúa sobre esa fila: el titular se queda sin su derecho por un aviso que ni
+    siquiera es suyo.
+
+    Con el TITULAR no se ve: la RLS de `takab_app` es security barrier y descarta la
+    fila antes. Con una sesión INTERNA sí, porque `notification_jobs_admin` le deja
+    pasar todas; y se fuerza el plan de una tabla grande (barrido + hash join), en el
+    que el filtro se evalúa sobre todas las filas del cliente antes de unir."""
+    reset(seeded)
+    _persona(seeded)
+    for canal, estado in (("whatsapp", "sent"), ("sms", "failed")):
+        seeded.execute(
+            "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+            "  target, due_at, sent_at) "
+            "VALUES (%s,%s,%s,'cascade',%s, jsonb_build_object('to', '+525550009999'), "
+            "        now(), now())",
+            (TENANT_A, INC_A, canal, estado),
+        )
+    _cierra_incidentes(seeded)
+    for ajuste in ("enable_indexscan", "enable_bitmapscan", "enable_nestloop", "enable_mergejoin"):
+        seeded.execute(f"SET LOCAL {ajuste} = off")
+    if actor == "titular":
+        _titular(seeded)
+        lapida = _arco(seeded)
+    else:
+        use(seeded, "takab_app", tenant=TENANT_A, app_role="takab_superadmin", user_id=ADMIN_A)
+        lapida = _arco_por_cuenta_de(seeded, _constancia(seeded))
+    assert lapida["affected"]["notification_jobs"] == 1
+    reset(seeded)
+    cadenas = seeded.execute(
+        "SELECT count(*) FROM notification_jobs WHERE target->>'to' = '+525550009999'"
+    ).fetchone()[0]
+    assert cadenas == 2, "el aviso de la cascada no es del titular: no se toca"
+
+
+# La frontera es la BASE, no el WHERE de `privacy_erase_subject`: la API sólo puede
+# escribir `target`, y sólo para dejar `to` vacío en un aviso de alguien borrable.
+
+_VACIAR = (
+    "UPDATE notification_jobs SET target = "
+    "jsonb_build_object('to', '[]'::jsonb, 'pii_borrada', true) WHERE job_id = %s"
+)
+
+
+def _job_de(conn: psycopg.Connection, user: str) -> str:
+    return conn.execute(
+        "SELECT j.job_id FROM notification_jobs j "
+        "JOIN incident_actions a ON a.action_id = j.action_id "
+        "WHERE a.kind = 'need_help_contacts' AND a.payload->>'user_sub' = %s",
+        (user,),
+    ).fetchone()[0]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        # Redirigir el aviso a otro destinatario: lo impide el WITH CHECK.
+        "UPDATE notification_jobs SET target = "
+        "jsonb_build_object('to', jsonb_build_array('atacante@x.example')) WHERE job_id = %s",
+        # Dejar `to` vacío pero COLAR otras claves: el WITH CHECK exige el estado
+        # borrado entero, no sólo su marca.
+        "UPDATE notification_jobs SET target = jsonb_build_object('to', '[]'::jsonb, "
+        "'pii_borrada', true, 'cc', jsonb_build_array('atacante@x.example')) WHERE job_id = %s",
+        # Tocar otra columna: la API sólo tiene UPDATE sobre `target` (la 0001 le había
+        # dado la tabla entera; la 0078 se la quita).
+        "UPDATE notification_jobs SET status = 'failed' WHERE job_id = %s",
+    ],
+)
+def test_la_api_solo_puede_VACIAR_el_destinatario_de_un_aviso(
+    seeded: psycopg.Connection, sql: str
+) -> None:
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    job = _job_de(seeded, USER_A)
+    _titular(seeded)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute(sql, (job,))
+    seeded.rollback()
+
+
+def test_la_api_solo_tiene_update_sobre_la_columna_target(seeded: psycopg.Connection) -> None:
+    """El censo del privilegio REAL, no de la intención: una mutación (WITH CHECK
+    abierto) demostró que `SET status` pasaba porque la 0001 dio UPDATE de tabla."""
+    reset(seeded)
+    de_tabla = seeded.execute(
+        "SELECT has_table_privilege('takab_app', 'notification_jobs', 'UPDATE')"
+    ).fetchone()[0]
+    assert de_tabla is False, "takab_app conserva UPDATE sobre toda notification_jobs"
+    # Ni INSERT ni DELETE: con ellos una sesión interna borraba un aviso y lo volvía a
+    # meter PENDIENTE con otro destinatario, y el notificador lo mandaba.
+    for verbo in ("INSERT", "DELETE"):
+        tiene = seeded.execute(
+            "SELECT has_table_privilege('takab_app', 'notification_jobs', %s)", (verbo,)
+        ).fetchone()[0]
+        assert tiene is False, f"takab_app conserva {verbo} sobre notification_jobs"
+    columnas = {
+        c
+        for (c,) in seeded.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema = 'public' AND table_name = 'notification_jobs' "
+            "AND has_column_privilege('takab_app', 'notification_jobs', column_name, 'UPDATE')"
+        ).fetchall()
+    }
+    assert columnas == {"target"}, columnas
+
+
+def test_nadie_vacia_los_avisos_de_quien_no_puede_borrar(seeded: psycopg.Connection) -> None:
+    """Otro titular del mismo cliente, o un responsable SIN constancia: 0 filas. No es
+    un error que delate el aviso: para esa sesión, ese aviso no es vaciable."""
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    job = _job_de(seeded, USER_A)
+    _titular(seeded, user=USER_A2)
+    assert seeded.execute(_VACIAR, (job,)).rowcount == 0
+    reset(seeded)
+    _responsable(seeded)
+    assert seeded.execute(_VACIAR, (job,)).rowcount == 0
+    reset(seeded)
+    assert _aviso_de(seeded, USER_A)[1]["to"] != []
+
+
+# --- las sesiones INTERNAS también pasan por la frontera ---------------------------
+# `notification_jobs_admin` (FOR ALL, sesiones internas) es permisiva y se suma con
+# OR: sin la restrictiva `nj_solo_borrar_avisos`, un superadministrador o soporte
+# podía reescribir cualquier aviso de cualquier cliente, pendientes incluidos.
+
+_REDIRIGIR = (
+    "UPDATE notification_jobs SET target = "
+    "jsonb_build_object('to', jsonb_build_array('atacante@x.example')) WHERE job_id = %s"
+)
+
+
+def _interna(conn: psycopg.Connection, rol: str, *, portador: str | None = ADMIN_A) -> None:
+    use(conn, "takab_app", tenant=TENANT_A, app_role=rol, user_id=portador)
+
+
+@pytest.mark.parametrize("sesion", ["superadmin_con_constancia", "job_de_retencion"])
+def test_una_sesion_interna_que_PUEDE_borrar_tampoco_puede_redirigir(
+    seeded: psycopg.Connection, sesion: str
+) -> None:
+    """Las dos sesiones internas para las que el aviso SÍ es borrable: lo único que
+    pueden escribir es el estado borrado (WITH CHECK de `nj_solo_borrar_avisos`)."""
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    job = _job_de(seeded, USER_A)
+    if sesion == "superadmin_con_constancia":
+        _interna(seeded, "takab_superadmin")
+        _constancia(seeded)
+    else:
+        _interna(seeded, "takab_support", portador=None)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        seeded.execute(_REDIRIGIR, (job,))
+    seeded.rollback()
+
+
+def test_soporte_con_portador_ni_redirige_ni_borra(seeded: psycopg.Connection) -> None:
+    """Para él el aviso no es borrable: el UPDATE no alcanza la fila."""
+    reset(seeded)
+    _persona(seeded)
+    _cierra_incidentes(seeded)
+    job = _job_de(seeded, USER_A)
+    _interna(seeded, "takab_support")
+    assert seeded.execute(_REDIRIGIR, (job,)).rowcount == 0
+    assert seeded.execute(_VACIAR, (job,)).rowcount == 0
+    seeded.rollback()
+
+
+def _sesion_que_puede_borrar(conn: psycopg.Connection, sesion: str) -> None:
+    if sesion == "titular":
+        _titular(conn)
+    elif sesion == "superadmin_con_constancia":
+        _interna(conn, "takab_superadmin")
+        _constancia(conn)
+    else:
+        _interna(conn, "takab_support", portador=None)
+
+
+def test_el_job_de_retencion_no_toca_un_aviso_PENDIENTE(seeded: psycopg.Connection) -> None:
+    """El reloj sólo borra lo que ya salió: uno en vuelo es una petición de ayuda que
+    aún no llegó. Lo decide la BASE, no el reloj: aquí el UPDATE va directo."""
+    reset(seeded)
+    _persona(seeded, estado_aviso="pending")
+    _cierra_incidentes(seeded)
+    job = _job_de(seeded, USER_A)
+    _sesion_que_puede_borrar(seeded, "job_de_retencion")
+    assert seeded.execute(_VACIAR, (job,)).rowcount == 0
+    seeded.rollback()
+
+
+@pytest.mark.parametrize("sesion", ["titular", "superadmin_con_constancia", "job_de_retencion"])
+def test_con_su_incidente_ABIERTO_nadie_borra_el_aviso(
+    seeded: psycopg.Connection, sesion: str
+) -> None:
+    """Como ARCO, que con un incidente abierto se difiere (TK409): el aviso es parte del
+    rescate en curso. Lo decide la BASE: ni un UPDATE directo lo alcanza."""
+    reset(seeded)
+    _persona(seeded)  # `seeded` deja INC_A abierto
+    job = _job_de(seeded, USER_A)
+    _sesion_que_puede_borrar(seeded, sesion)
+    assert seeded.execute(_VACIAR, (job,)).rowcount == 0
+    seeded.rollback()
+
+
+def test_con_la_constancia_de_A_el_superadmin_no_borra_el_aviso_de_A2(
+    seeded: psycopg.Connection,
+) -> None:
+    """La frontera de la BASE: aunque el WHERE de `privacy_erase_subject` se
+    equivocara, A2 no tiene constancia y su aviso no es borrable por esta sesión."""
+    reset(seeded)
+    _persona(seeded)
+    _otra_persona(seeded)
+    _cierra_incidentes(seeded)
+    job = _job_de(seeded, USER_A2)
+    _interna(seeded, "takab_superadmin")
+    _constancia(seeded)
+    assert seeded.execute(_VACIAR, (job,)).rowcount == 0
+    lapida = _arco_por_cuenta_de(seeded, _constancia(seeded, proof="expediente ARCO-2026-015"))
+    reset(seeded)
+    assert lapida["affected"]["notification_jobs"] == 1
+    assert _aviso_de(seeded, USER_A2)[1]["to"] == [f"1.{CORREO_CONTACTO}", f"2.{CORREO_CONTACTO}"]
+
+
+def test_con_constancias_de_A_y_de_A2_el_arco_de_A_solo_borra_los_de_A(
+    seeded: psycopg.Connection,
+) -> None:
+    """Lo que la política NO distingue —dos titulares igual de borrables por el mismo
+    responsable— lo distingue el WHERE del acto ARCO."""
+    reset(seeded)
+    _persona(seeded)
+    _otra_persona(seeded)
+    _cierra_incidentes(seeded)
+    _responsable(seeded)
+    _constancia(seeded, user=USER_A2, proof="expediente ARCO-2026-016")
+    lapida = _arco_por_cuenta_de(seeded, _constancia(seeded))
+    reset(seeded)
+    assert lapida["affected"]["notification_jobs"] == 1
+    assert _aviso_de(seeded, USER_A2)[1]["to"] == [f"1.{CORREO_CONTACTO}", f"2.{CORREO_CONTACTO}"]
+
+
+@pytest.mark.parametrize("actor", ["titular", "responsable_con_constancia"])
+def test_un_user_sub_que_no_es_uuid_en_OTRO_aviso_no_tumba_arco(
+    seeded: psycopg.Connection, actor: str
+) -> None:
+    """La política se evalúa sobre CADA aviso del cliente antes del WHERE. Un cast a
+    uuid sin guarda sobre un `user_sub` basura —`incident_actions` es append-only: no
+    se puede corregir— dejaría a todo el cliente sin ARCO."""
+    reset(seeded)
+    _persona(seeded)
+    accion = seeded.execute(
+        "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload, ts) "
+        "VALUES (%s,%s,'need_help_contacts','system:checkin', "
+        "        jsonb_build_object('user_sub', 'no-es-uuid'), clock_timestamp()) "
+        "RETURNING action_id",
+        (INC_A, TENANT_A),
+    ).fetchone()[0]
+    seeded.execute(
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+        "  target, due_at, sent_at, action_id) VALUES (%s,%s,'email','parallel','sent', "
+        "  jsonb_build_object('to', jsonb_build_array('x@example.mx')), now(), now(), %s)",
+        (TENANT_A, INC_A, accion),
+    )
+    _cierra_incidentes(seeded)
+    if actor == "titular":
+        _titular(seeded)
+        lapida = _arco(seeded)
+    else:
+        _responsable(seeded)
+        lapida = _arco_por_cuenta_de(seeded, _constancia(seeded))
+    assert lapida["affected"]["notification_jobs"] == 1

@@ -472,6 +472,29 @@ def test_poda_los_contactos_de_quien_se_fue_y_respeta_los_de_quien_sigue(
     assert _cuantos_contactos(seeded, USER_A2) == 2
 
 
+def test_a_quien_VOLVIO_no_se_le_borran_los_contactos(seeded: psycopg.Connection) -> None:
+    """[T-9.80] La readmisión detiene el reloj, igual que con el nombre."""
+    _perfil(seeded)
+    _contactos(seeded)
+    _baja(seeded, dias=400, vuelta_dias=390)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _cuantos_contactos(seeded) == 2
+
+
+def test_una_baja_RECIENTE_no_poda_los_contactos(seeded: psycopg.Connection) -> None:
+    _perfil(seeded)
+    _contactos(seeded)
+    _baja(seeded, dias=10)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _cuantos_contactos(seeded) == 2
+
+
 def test_los_contactos_no_se_podan_con_un_incidente_ABIERTO(seeded: psycopg.Connection) -> None:
     _perfil(seeded)
     _contactos(seeded)
@@ -498,6 +521,142 @@ def test_una_baja_en_OTRO_tenant_no_poda_los_contactos(seeded: psycopg.Connectio
     prune_pii.run(seeded, apply=True, days=_plazos(30))
 
     assert _cuantos_contactos(seeded, USER_B) == 2
+
+
+# [T-9.80 · 0078] Los correos de esos mismos contactos en los avisos YA enviados. La
+# fila del aviso sobrevive (el aviso existió); se vacía el destinatario, con el MISMO
+# estado final que escribe ARCO.
+
+
+def _aviso(
+    conn: psycopg.Connection,
+    *,
+    tenant: str = TENANT_A,
+    user: str = USER_A,
+    incidente: str = INC_A,
+    estado: str = "sent",
+) -> None:
+    accion = conn.execute(
+        "INSERT INTO incident_actions (incident_id, tenant_id, kind, actor, payload, ts) "
+        "VALUES (%s,%s,'need_help_contacts','system:checkin', "
+        "        jsonb_build_object('user_sub', %s::text), clock_timestamp()) "
+        "RETURNING action_id",
+        (incidente, tenant, user),
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+        "  target, due_at, sent_at, action_id) "
+        "VALUES (%s,%s,'email','parallel',%s, "
+        "        jsonb_build_object('to', jsonb_build_array('c@example.mx')), now(), now(), %s)",
+        (tenant, incidente, estado, accion),
+    )
+
+
+def _destino_del_aviso(conn: psycopg.Connection, user: str = USER_A) -> dict:
+    reset(conn)
+    return conn.execute(
+        "SELECT j.target FROM notification_jobs j "
+        "JOIN incident_actions a ON a.action_id = j.action_id "
+        "WHERE a.kind = 'need_help_contacts' AND a.payload->>'user_sub' = %s",
+        (user,),
+    ).fetchone()[0]
+
+
+def test_la_regla_de_los_avisos_cuelga_de_la_baja_del_titular() -> None:
+    regla = next(r for r in retention.RETENTION_PLAN if r.table == "notification_jobs")
+    assert regla.mode == retention.REDACT, "la fila del aviso es un hecho: no se borra"
+    assert regla.columns == ("target",)
+    assert "user_deactivations" in regla.clock and "deactivated_at" in regla.clock
+    assert "need_help_contacts" in regla.clock
+
+
+def test_poda_los_correos_de_los_avisos_de_quien_se_fue(seeded: psycopg.Connection) -> None:
+    """El job corre con sesión INTERNA: la RLS le deja ver también los WhatsApp de la
+    cascada, cuyo `to` es una CADENA. El reloj no puede reventar con ellos."""
+    _perfil(seeded)
+    _aviso(seeded)
+    _aviso(seeded, user=USER_A2)
+    seeded.execute(
+        "INSERT INTO notification_jobs (tenant_id, incident_id, channel, mode, status, "
+        "  target, due_at, sent_at) "
+        "VALUES (%s,%s,'whatsapp','cascade','sent', jsonb_build_object('to', '+525550009999'), "
+        "        now(), now())",
+        (TENANT_A, INC_A),
+    )
+    _baja(seeded, dias=400)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _destino_del_aviso(seeded) == erasure.ERASED_NOTICE_TARGET, (
+        "el MISMO estado borrado que escribe ARCO"
+    )
+    assert _destino_del_aviso(seeded, USER_A2)["to"] == ["c@example.mx"]
+    reset(seeded)
+    assert seeded.execute("SELECT count(*) FROM notification_jobs").fetchone()[0] == 3
+    cascada = seeded.execute(
+        "SELECT target->>'to' FROM notification_jobs WHERE channel = 'whatsapp'"
+    ).fetchone()[0]
+    assert cascada == "+525550009999", "el aviso de la cascada no es del titular"
+    segunda = prune_pii.run(seeded, apply=True, days=_plazos(30))
+    assert segunda.total_applied == 0, "una segunda corrida no vuelve a tocar nada"
+
+
+def test_a_quien_VOLVIO_no_se_le_borran_los_avisos(seeded: psycopg.Connection) -> None:
+    _perfil(seeded)
+    _aviso(seeded)
+    _baja(seeded, dias=400, vuelta_dias=390)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _destino_del_aviso(seeded)["to"] == ["c@example.mx"]
+
+
+def test_una_baja_RECIENTE_no_poda_los_avisos(seeded: psycopg.Connection) -> None:
+    """El plazo cuenta desde la baja: diez días con un plazo de treinta no llegan."""
+    _perfil(seeded)
+    _aviso(seeded)
+    _baja(seeded, dias=10)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _destino_del_aviso(seeded)["to"] == ["c@example.mx"]
+
+
+def test_los_avisos_no_se_podan_con_un_incidente_ABIERTO(seeded: psycopg.Connection) -> None:
+    _perfil(seeded)
+    _aviso(seeded)
+    _baja(seeded, dias=400)  # `seeded` deja INC_A abierto
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _destino_del_aviso(seeded)["to"] == ["c@example.mx"]
+
+
+def test_un_aviso_aun_PENDIENTE_no_se_poda(seeded: psycopg.Connection) -> None:
+    _perfil(seeded)
+    _aviso(seeded, estado="pending")
+    _baja(seeded, dias=400)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _destino_del_aviso(seeded)["to"] == ["c@example.mx"]
+
+
+def test_una_baja_en_OTRO_tenant_no_poda_los_avisos(seeded: psycopg.Connection) -> None:
+    """Mismo cruce que el de los contactos: la baja vive en B, el aviso con ese mismo
+    `sub` vive en A. Un reloj unido sólo por `user_sub` lo podaría."""
+    _perfil(seeded, tenant=TENANT_B, user=USER_B, nombre="Beto B")
+    _aviso(seeded, tenant=TENANT_A, user=USER_B)
+    _baja(seeded, tenant=TENANT_B, user=USER_B, dias=400)
+    _cierra_incidentes(seeded)
+
+    prune_pii.run(seeded, apply=True, days=_plazos(30))
+
+    assert _destino_del_aviso(seeded, USER_B)["to"] == ["c@example.mx"]
 
 
 def test_toda_regla_es_consciente_del_tenant(conn: psycopg.Connection) -> None:
@@ -1121,6 +1280,19 @@ def test_el_tope_de_lock_no_se_queda_pegado_a_la_conexion(conn: psycopg.Connecti
 
     assert dentro == f"{session.JOB_LOCK_TIMEOUT_MS // 1000}s"
     assert fuera == "0", "el tope del job se quedó pegado a la conexión del llamador"
+
+
+def test_el_runbook_nombra_TODAS_las_claves_del_plan() -> None:
+    """[T-9.80 · 0078] El runbook seguía diciendo «exactamente esas tres claves» con
+    cinco en el plan: quien declarara los plazos siguiéndolo dejaba dos reglas
+    apagadas sin que nada lo avisara. Se deriva del plan, como el terraform."""
+    from pathlib import Path
+
+    runbook = (
+        Path(__file__).resolve().parents[2] / "takab-docs/runbooks/RUNBOOK-retencion-pii.md"
+    ).read_text(encoding="utf-8")
+    faltan = [r.key for r in retention.RETENTION_PLAN if f'"{r.key}"' not in runbook]
+    assert not faltan, f"el runbook no nombra estas claves del plan: {faltan}"
 
 
 def test_el_terraform_admite_EXACTAMENTE_las_claves_del_plan() -> None:

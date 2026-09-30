@@ -37,7 +37,7 @@ _MIN_TELEFONO = 8
 class DestinoResumen:
     """Lo que la consola puede decir del destinatario de un job."""
 
-    #: `correo` | `telefono` | `webhook` | `dispositivos` | `desconocido`.
+    #: `correo` | `telefono` | `webhook` | `dispositivos` | `borrado` | `desconocido`.
     kind: str
     #: Cuántos destinatarios, o `None` cuando la forma no permite contarlos.
     count: int | None
@@ -86,10 +86,22 @@ def _host(url: str) -> str:
     return partes.hostname or "•••"
 
 
+#: [T-9.80 · 0078] Un destinatario BORRADO por privacidad (ARCO, la retención o un
+#: aviso omitido porque sus contactos ya no existen) no es uno «no reconocido»:
+#: hubo a quién, y se borró. Se reconoce por la marca, no por el `to` vacío.
+#: El literal es `ERASED_NOTICE_FLAG` de `privacy/erasure.py`; lo ata un test.
+_MARCA_BORRADO = "pii_borrada"
+
+_BORRADO = DestinoResumen(kind="borrado", count=None, hint="DESTINATARIO BORRADO POR PRIVACIDAD")
+
+
 def resumen_destino(channel: str, target: object) -> DestinoResumen:
     """Resumen publicable del destinatario de un job, o el cajón de lo no reconocido."""
     if not isinstance(target, dict) or not target:
         return _NADA
+
+    if target.get(_MARCA_BORRADO) is True:
+        return _BORRADO
 
     if channel == "email":
         to = target.get("to")
