@@ -8,6 +8,7 @@
 // AGREGA— y el vacío del marco se comería el formulario. El vacío lo pinta la
 // vista (`state-empty`, con el texto que explica qué significa no tener a nadie).
 import { useRouter } from "expo-router";
+import { useRef } from "react";
 import { ScrollView, StyleSheet } from "react-native";
 
 import { EmergencyContactsScreen } from "@/features/emergencyContacts/EmergencyContactsScreen";
@@ -17,6 +18,7 @@ import { palette, space } from "@/ui/theme";
 
 export default function ContactosEmergencia() {
   const router = useRouter();
+  const lista = useRef<ScrollView>(null);
   const contactos = useEmergencyContacts();
   const data = contactos.data;
 
@@ -32,10 +34,13 @@ export default function ContactosEmergencia() {
       {data !== null ? (
         <ScrollView
           contentContainerStyle={styles.contenido}
+          ref={lista}
           keyboardShouldPersistTaps="handled"
           style={styles.scroll}
         >
           <EmergencyContactsScreen
+            // La confirmación va al final, debajo de GUARDAR: se baja hasta ella.
+            alConfirmarGuardado={() => lista.current?.scrollToEnd({ animated: true })}
             borrarTodos={contactos.borrarTodos}
             data={data}
             guardar={contactos.guardar}
