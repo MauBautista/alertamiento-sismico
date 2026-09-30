@@ -13,11 +13,65 @@
 -- seguía abierto. Se midieron TRES así en la nube dev el 2026-09-17, y una de
 -- ellas era un incidente REAL ingerido de `gw-dev-0001`.
 --
--- ⚠️ Y LO QUE ESTO SIGUE HACIENDO, que el software no puede decidir solo: el
--- `SITE_ID` por defecto del arnés es `d1000000-…-0000` = `site-dev`, **el sitio
--- del gabinete real de Puebla**. Así que esta línea cierra incidentes de
--- OPERACIÓN, no sólo los que el arnés abre. Separar el sitio del arnés está
--- fichado; hasta entonces, al menos el cierre queda fechado.
+-- [T-7.52] El sitio por defecto ya NO es el de Puebla: es `site-e2e-900`, y
+-- `guarda.sql` aborta contra cualquier sitio que tenga gabinete. Esta línea ya no
+-- puede cerrar incidentes de operación.
+--
+-- ⚠️ [T-9.33] `INCIDENT_ID` fijado a un incidente que YA es terminal (lo clasificó un
+-- `crisis` o un `reset` anterior) no se puede reabrir: el motor lo cerraría en su
+-- siguiente pasada «por clasificación» y la fase caería a `idle` sin decir por qué.
+-- Tampoco se puede desclasificar: la tabla es append-only, y una clase no terminal
+-- sería falsa. Así que se ABORTA, con la salida escrita. Mismo patrón que
+-- `guarda.sql`: el valor entra por `set_config`, porque psql no sustituye dentro de
+-- un bloque, y el mensaje va sin marcadores de formato.
+SELECT set_config('takab.arnes_iid', :'iid', false);
+
+DO $reabrir$
+DECLARE
+  objetivo uuid := current_setting('takab.arnes_iid')::uuid;
+  clase text;
+BEGIN
+  SELECT cc.classification INTO clase FROM incident_classifications cc
+   WHERE cc.incident_id = objetivo
+     AND NOT EXISTS (SELECT 1 FROM incident_classifications s
+                      WHERE s.supersedes_id = cc.classification_id)
+   ORDER BY cc.classified_at DESC, cc.classification_id DESC LIMIT 1;
+  IF clase IN ('falso_positivo', 'prueba', 'reproduccion') THEN
+    RAISE EXCEPTION USING MESSAGE =
+      'ARNÉS ABORTADO: el incidente ' || objetivo || ' ya está clasificado como '
+      || clase || ', y el motor lo cerraría al reabrirlo. Corre `crisis` sin '
+      || 'INCIDENT_ID para abrir uno nuevo.';
+  END IF;
+END
+$reabrir$;
+
+-- ⚠️ [T-9.33] Y ANTES DE CERRAR, SE CLASIFICA, como hace `reset`. Cerrar a secas
+-- dejaba vinculando lo que las corridas anteriores firmaron: un NO HABITAR no
+-- caduca (`T-9.04`), y por D-49 el bloqueo persistente de OTRO incidente del sitio
+-- manda. Medido en el Pixel el 2026-09-30: la corrida confirmó un dictamen
+-- habitable y el panel siguió diciendo «NO HABITAR» por el `9d7525e3` de una
+-- corrida vieja. En el sitio del arnés todo incidente ES una prueba; la
+-- clasificación terminal `prueba` lo dice, y un terminal no dice nada del
+-- edificio. El incidente que se va a abrir queda fuera (y uno que se REABRE con
+-- `INCIDENT_ID` ya pasó la comprobación de arriba). Es el MISMO bloque que
+-- `reset.sql`: lo compara `test_crisis_clasifica_como_reset`.
+INSERT INTO incident_classifications
+       (tenant_id, incident_id, classification, note, classified_by, supersedes_id)
+SELECT i.tenant_id, i.incident_id, 'prueba', 'crisis del arnés e2e (T-9.33)',
+       gen_random_uuid(), v.classification_id
+  FROM incidents i
+  LEFT JOIN LATERAL (
+    SELECT cc.classification_id, cc.classification FROM incident_classifications cc
+     WHERE cc.incident_id = i.incident_id
+       AND NOT EXISTS (SELECT 1 FROM incident_classifications s
+                        WHERE s.supersedes_id = cc.classification_id)
+     ORDER BY cc.classified_at DESC, cc.classification_id DESC LIMIT 1
+  ) v ON true
+ WHERE i.site_id = :'site'::uuid
+   AND i.incident_id <> :'iid'::uuid
+   AND (v.classification IS NULL
+        OR v.classification NOT IN ('falso_positivo', 'prueba', 'reproduccion'));
+
 UPDATE incidents SET state = 'closed', closed_at = now()
  WHERE site_id = :'site'::uuid AND state <> 'closed';
 

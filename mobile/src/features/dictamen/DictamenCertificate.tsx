@@ -1,15 +1,22 @@
 // 2.7 · Certificado de reingreso — presentacional. Folio, firmante, vigencia y
 // sello del tipo de firma (T-9.33). El PDF (mismo artefacto de la consola) se
 // descarga y cachea offline; sin PDF aún, se declara (no se finge).
+//
+// [T-9.33 · D-49] Con el inmueble BLOQUEADO (por otro evento, o sin la calma), lo
+// grande es el bloqueo y el veredicto de este dictamen pasa a ser un dato más: la
+// persona lee la grande, y «REINGRESO APROBADO» no puede serlo si no se puede
+// entrar.
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
 
-import type { CertificateView } from "./dictamenView";
+import type { BloqueoDelInmueble, CertificateView } from "./dictamenView";
 
 export function DictamenCertificate(props: {
   cert: CertificateView;
+  /** Lo que el servidor dice del INMUEBLE ahora; `null` si no hay bloqueo. */
+  bloqueo?: BloqueoDelInmueble | null;
   downloading: boolean;
   /** Motivo de la última descarga fallida; `null` si no la hubo. */
   downloadError?: string | null;
@@ -17,12 +24,32 @@ export function DictamenCertificate(props: {
   onDownloadPdf: () => void;
   onOpenPdf: () => void;
 }) {
-  const accent = props.cert.habitable ? palette.ok : palette.warn;
+  const bloqueo = props.bloqueo ?? null;
+  const accent =
+    bloqueo !== null
+      ? bloqueo.tono === "crit"
+        ? palette.crit
+        : palette.warn
+      : props.cert.habitable
+        ? palette.ok
+        : palette.warn;
   return (
     <View style={styles.wrap}>
       <View style={[styles.card, { borderColor: accent }]} testID="certificate">
         <Text style={styles.eyebrow}>DICTAMEN TÉCNICO DE REINGRESO</Text>
-        <Text style={[styles.title, { color: accent }]}>{props.cert.title}</Text>
+        {bloqueo !== null ? (
+          <View accessibilityRole="alert" style={styles.bloqueo} testID="certificado-bloqueo">
+            <Text style={[styles.title, { color: accent }]}>{bloqueo.titulo}</Text>
+            <Text style={styles.bloqueoDetalle}>{bloqueo.detalle}</Text>
+          </View>
+        ) : (
+          <Text style={[styles.title, { color: accent }]}>{props.cert.title}</Text>
+        )}
+        {bloqueo !== null ? (
+          <View style={styles.row}>
+            <Field label="ESTE DICTAMEN" value={props.cert.title} />
+          </View>
+        ) : null}
 
         <View style={styles.row}>
           <Field label="FOLIO" value={props.cert.folio} />
@@ -65,8 +92,9 @@ export function DictamenCertificate(props: {
         )
       ) : (
         <Text style={styles.noPdf} testID="no-pdf">
-          El certificado en PDF aún no está disponible. Su reingreso ya está autorizado por la
-          firma del inspector.
+          {props.cert.habitable && bloqueo === null
+            ? "El certificado en PDF aún no está disponible. Su reingreso ya está autorizado por la firma de este dictamen."
+            : "El certificado en PDF aún no está disponible."}
         </Text>
       )}
       {props.downloadError ? (
@@ -98,6 +126,8 @@ const styles = StyleSheet.create({
   },
   eyebrow: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 2 },
   title: { fontSize: fontSize.lg, fontWeight: "800", letterSpacing: 1 },
+  bloqueo: { gap: space[1] },
+  bloqueoDetalle: { color: palette.fg, fontSize: fontSize.sm, lineHeight: 20 },
   row: { flexDirection: "row", gap: space[4] },
   field: { gap: 2 },
   fieldLabel: { color: palette.fg3, fontSize: fontSize.xs, letterSpacing: 1 },

@@ -17986,14 +17986,32 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - el panel pidió esperar la calma (D-49); con la calma, REVISAR Y CONFIRMAR llevó a la lista
       de revisión, y CONFIRMAR DICTAMEN dejó «CONFIRMADO POR BRIGADISTA»;
     - en la base: `band=amarillo`, `signature_kind=confirmation`.
-- **Hallazgo de esa prueba, sin arreglar aquí:** tras confirmar, el panel dijo «REINGRESO NO
-  AUTORIZADO — NO HABITAR» mientras el certificado decía «REINGRESO APROBADO · BAJO MONITOREO».
+- **Hallazgo de esa prueba:** tras confirmar, el panel dijo «REINGRESO NO AUTORIZADO — NO
+  HABITAR» mientras el certificado decía «REINGRESO APROBADO · BAJO MONITOREO».
   - No es un fallo del reingreso, es D-49: un incidente viejo del arnés (`9d7525e3`) conserva un
     NO HABITAR firmado que nadie levantó, y ese bloqueo del EDIFICIO manda.
-  - Quedan dos cosas por decidir:
-    - el certificado de un evento no avisa de que el inmueble sigue bloqueado por otro;
-    - `PHASE=crisis` del arnés cierra lo abierto SIN clasificarlo como `prueba`, así que los
-      bloqueos de pruebas viejas siguen vinculando.
+  - Arreglado después, en software; falta verlo en el Pixel:
+    - el certificado lee el MISMO aviso que pinta INICIO (`avisoDeReingreso`). Con el inmueble
+      bloqueado, lo grande es el bloqueo («Lo bloquea OTRO evento del inmueble…») y el veredicto
+      pasa a un dato, «ESTE DICTAMEN». Sin PDF ya no afirma «autorizado» con el inmueble
+      bloqueado ni con un NO HABITAR (`mobile/src/features/dictamen/dictamen.test.tsx`);
+    - `PHASE=crisis` del arnés clasifica ahora como `prueba` lo que cierra, con el mismo bloque
+      que `reset` y el incidente que va a abrir fuera
+      (`api/tests/api/test_seed_staging_incident.py`, que reproduce el caso del 30-sep).
+  - **Lo que encontró la revisión adversarial de ese arreglo**, cada punto con su prueba:
+    - con una escalada al inspector sobre el propio evento, el certificado decía «aún no hay un
+      dictamen técnico firmado» junto a uno firmado: ahora lleva su propio detalle por motivo, uno
+      para este evento y otro para OTRO;
+    - «OTRO evento» se afirmaba también sin motivo (sin la calma, D-49 R1), cuando el incidente
+      que viaja es el que autorizaría: ahora sólo con un motivo;
+    - el dictamen en caché no se volvía a pedir tras una firma nueva: su clave lleva ahora la
+      huella del reingreso, como INICIO, y el marco declara retenido el MÁS VIEJO de sus dos
+      datos (el dictamen y el estado del inmueble);
+    - `crisis` con `INCIDENT_ID` sobre un incidente que ya es `prueba` lo dejaba abierto y
+      terminal, y el motor lo cerraba: ahora se niega, con la salida escrita.
+  - Queda declarado, anterior a este cambio y sin medir: en `building_movement` con la fase
+    sísmica en `reentry_approved`, el certificado de un VERDE del movimiento sigue diciendo
+    «APROBADO»; y el PDF del certificado no sabe del bloqueo del inmueble.
 
 ### [x] T-9.34 · **El papel dice quién firmó** — `SOFTWARE` · **CERRADA 2026-09-28**
 - **Componente:** api · web · **Depende de:** T-9.31 · **Prioridad:** F3 · alta
