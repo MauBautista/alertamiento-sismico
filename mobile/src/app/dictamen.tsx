@@ -9,7 +9,12 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useAlertState } from "@/features/alert/useAlertState";
 import { DictamenCertificate } from "@/features/dictamen/DictamenCertificate";
-import { certificateView } from "@/features/dictamen/dictamenView";
+import { huellaDelReingreso } from "@/features/dictamen/confirmacion";
+import {
+  antiguedadDelCertificado,
+  bloqueoDelInmueble,
+  certificateView,
+} from "@/features/dictamen/dictamenView";
 import { useWatchedSiteId } from "@/services/mySite";
 import { StateFrame } from "@/ui/StateFrame";
 import { useStaleSince } from "@/ui/useStaleSince";
@@ -20,7 +25,7 @@ const DICTAMEN_STALE_MS = 60_000;
 
 export default function Dictamen() {
   const siteId = useWatchedSiteId();
-  const { data: state } = useAlertState(siteId);
+  const { data: state, staleSinceMs: estadoStaleSinceMs } = useAlertState(siteId);
   // [T-8.11 · A-022] Desde D-33 el motor cierra el incidente segundos después de
   // la firma: `incident` vuelve a null y el dictamen sigue vigente. Su incidente
   // viaja en `reentry.incident_id`; sin él, esta pantalla decía «Sin incidente
@@ -28,7 +33,10 @@ export default function Dictamen() {
   const incidentId = state?.incident?.incident_id ?? state?.reentry?.incident_id ?? null;
 
   const dictamen = useQuery({
-    queryKey: ["dictamen", incidentId],
+    // [T-9.33] Con la HUELLA del reingreso, como INICIO (F3·r4): una firma nueva
+    // sobre este incidente cambia el estado, y el dictamen se vuelve a pedir en vez
+    // de pintar el veredicto sustituido junto al bloqueo que lo sustituyó.
+    queryKey: ["dictamen", incidentId, huellaDelReingreso(state)],
     enabled: incidentId != null,
     queryFn: async () => {
       const res = await readDictamenIncidentsIncidentIdDictamenGet({
@@ -87,6 +95,9 @@ export default function Dictamen() {
   }, [localPdf, folio]);
 
   const cert = dictamen.data ? certificateView(dictamen.data) : null;
+  // [T-9.33 · D-49] El MISMO estado del inmueble que pinta el panel: si allí está
+  // bloqueado, el certificado no puede decir «aprobado» en grande.
+  const bloqueo = dictamen.data ? bloqueoDelInmueble(dictamen.data, state) : null;
 
   const download = () => {
     if (!dictamen.data?.pdf_url || localPdf === null || folio === null) {
@@ -129,10 +140,11 @@ export default function Dictamen() {
       }
       error={dictamen.isError && !dictamen.data ? "No se pudo cargar el dictamen." : null}
       loading={dictamen.isLoading && incidentId !== null}
-      staleSinceMs={dictamenStaleSinceMs}
+      staleSinceMs={antiguedadDelCertificado(dictamenStaleSinceMs, estadoStaleSinceMs)}
     >
       {cert ? (
         <DictamenCertificate
+          bloqueo={bloqueo}
           cert={cert}
           downloading={downloading}
           downloadError={downloadError}
