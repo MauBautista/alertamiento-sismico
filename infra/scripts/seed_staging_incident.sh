@@ -39,7 +39,8 @@
 # se pudre en silencio, que es exactamente lo que pasó aquí.
 #
 # Subcomandos (idempotentes; imprimen la fase derivada resultante):
-#   crisis    (default) CIERRA lo abierto y abre uno NUEVO + tier `evacuate_or_hold`
+#   crisis    (default) CLASIFICA `prueba` y CIERRA lo del sitio (T-9.33) y abre
+#             uno NUEVO + tier `evacuate_or_hold`
 #   conclude  tier `normal` (ts posterior)                          ⇒ shaking_concluded
 #   reentry   dictamen firmado `inhabit_monitor`                    ⇒ reentry_approved
 #   roster    N ocupantes sintéticos NO reportados (headcount 2.6 / flujo 05)

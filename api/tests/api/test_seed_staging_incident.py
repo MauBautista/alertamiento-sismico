@@ -620,3 +620,91 @@ def test_los_terminales_de_reset_son_los_de_TERMINALES() -> None:
     assert en_el_sql == set(TERMINALES), (
         f"`reset.sql` salta {sorted(en_el_sql)} y `TERMINALES` es {sorted(TERMINALES)}"
     )
+
+
+def test_los_terminales_que_crisis_no_reabre_son_los_de_TERMINALES() -> None:
+    """[T-9.33] El mismo censo a mano, en la comprobación de `INCIDENT_ID`."""
+    from takab_api.incident.classification import TERMINALES
+
+    crisis = (SQL_DIR / "crisis.sql").read_text("utf-8")
+    m = re.search(r"IF clase IN \(([^)]*)\)", crisis)
+    assert m, "`crisis.sql` dejó de negarse a reabrir un incidente terminal"
+    assert set(re.findall(r"'([a-z_]+)'", m.group(1))) == set(TERMINALES)
+
+
+async def test_crisis_se_niega_a_REABRIR_un_incidente_que_ya_es_prueba(
+    client, sitio_del_occupant, variables
+) -> None:
+    """[T-9.33] Reabrirlo con `INCIDENT_ID` lo dejaba abierto y terminal a la vez: el
+    motor lo cerraba en su pasada «por clasificación» y la fase caía a `idle` sin
+    decir por qué. Ahora se aborta, con la salida escrita."""
+    primera = await _crisis(variables)
+    await _crisis(variables)  # clasifica la primera como `prueba`
+    with pytest.raises(Exception) as exc:
+        await _correr("crisis.sql", primera)
+    # La PRIMERA línea: el error cita el SQL entero (la trampa de `_aborta`).
+    primera_linea = str(exc.value).splitlines()[0]
+    assert "ARNÉS ABORTADO" in primera_linea and "prueba" in primera_linea, primera_linea
+
+
+async def test_crisis_no_hereda_el_NO_HABITAR_de_una_corrida_anterior(
+    client, sitio_del_occupant, variables
+) -> None:
+    """[T-9.33] EL CASO DEL PIXEL DEL 2026-09-30, en una prueba.
+
+    Una corrida anterior del arnés firmó un NO HABITAR, que no caduca (`T-9.04`), y
+    `crisis` cerró su incidente SIN clasificarlo. La siguiente corrida confirmó un
+    dictamen habitable y el panel siguió diciendo «NO HABITAR»: por D-49, el bloqueo
+    persistente de OTRO incidente del sitio manda. En el sitio del arnés todo
+    incidente es una prueba, y `crisis` ahora lo dice al cerrarlo, como `reset`."""
+    primera = await _crisis(variables)
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO dictamens (tenant_id, incident_id, status, basis, signed_by) "
+                "VALUES (:t, :i, 'no_inhabit_inspect', '{}'::jsonb, gen_random_uuid())"
+            ),
+            {"t": primera["tenant"], "i": primera["iid"]},
+        )
+    await _cerrar_como_lo_hace_D33(primera)
+    assert await _fase(client) == "reentry_blocked"
+
+    segunda = await _crisis(variables)
+    await _correr("conclude.sql", segunda)
+    await _correr("reentry.sql", segunda)
+    assert await _fase(client) == "reentry_approved", (
+        "el NO HABITAR de una corrida anterior del arnés sigue bloqueando el sitio"
+    )
+    async with engine.begin() as conn:
+        clases = dict(
+            (
+                await conn.execute(
+                    text(
+                        "SELECT DISTINCT ON (incident_id) incident_id::text, classification "
+                        "FROM incident_classifications WHERE incident_id IN (:a, :b) "
+                        "ORDER BY incident_id, classified_at DESC"
+                    ),
+                    {"a": primera["iid"], "b": segunda["iid"]},
+                )
+            ).all()
+        )
+    assert clases == {primera["iid"]: "prueba"}, (
+        "la corrida anterior queda como PRUEBA, y la que se abre ahora no se clasifica"
+    )
+
+
+def _bloque_de_clasificacion(fichero: str) -> str:
+    """El `INSERT INTO incident_classifications … ;` de un subcomando, sin su nota."""
+    sql = (SQL_DIR / fichero).read_text("utf-8")
+    m = re.search(r"INSERT INTO incident_classifications.*?;", sql, re.S)
+    assert m, f"`{fichero}` no clasifica los incidentes del sitio"
+    return re.sub(r"'[^']*\(T-9\.\d+\)'", "'<nota>'", m.group(0))
+
+
+def test_crisis_clasifica_como_reset() -> None:
+    """Dos copias del mismo SQL (psql no importa uno de otro): se comparan aquí, y la
+    única diferencia admitida es que `crisis` no toca el incidente que va a abrir."""
+    crisis = _bloque_de_clasificacion("crisis.sql")
+    reset = _bloque_de_clasificacion("reset.sql")
+    assert crisis.replace("\n   AND i.incident_id <> :'iid'::uuid", "") == reset
