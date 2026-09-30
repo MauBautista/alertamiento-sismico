@@ -1,0 +1,181 @@
+# [T-9.80 · D-48] CUENTA → CONTACTOS DE EMERGENCIA, como OCUPANTE, en un teléfono real.
+#
+# La ficha pedía «probado en el Pixel» y ningún flujo pasaba por aquí: los recorridos
+# sólo leen el directorio DEL INMUEBLE, que es otra cosa.
+#
+# Qué afirma, y por qué así:
+#   · sin marcar la casilla, GUARDAR no hace nada: el consentimiento se sella contra
+#     la versión del aviso que la persona tuvo delante;
+#   · un correo mal escrito se rechaza EN EL TELÉFONO, en su campo, sin ir al servidor;
+#   · lo guardado VIVE en el servidor: se sale a CUENTA (que cuenta «1 de 3») y al
+#     volver, el contacto sigue ahí;
+#   · BORRAR TODOS pide confirmación y deja la pantalla en su vacío honesto.
+#
+# ESTE FLUJO ESCRIBE en la nube (un contacto del ocupante del arnés) y lo BORRA al
+# final; también borra al empezar lo que dejara una corrida que muriera a medias.
+# El correo es `@example.com` (RFC 2606, nunca recibe), y guardar no envía nada:
+# sólo NECESITO AYUDA manda correo.
+#
+# NO PIDE TOTP: `login-occupant.yaml` entra por el pool de OCUPANTES, cuyo MFA
+# es opcional. Corre solo.
+#
+# Como todos los flujos: contra el SITIO DEL ARNÉS (`.env.e2e`, D-34), nunca Puebla.
+#   TAKAB_MAESTRO_ENV=.env.e2e .maestro/run.sh contactos-emergencia.yaml
+appId: com.takab.ailert
+---
+- launchApp:
+    clearState: true
+- runFlow: shared/login-occupant.yaml
+- runFlow: shared/enrolar-sitio.yaml
+- extendedWaitUntil:
+    visible: "CUENTA"
+    timeout: 30000
+- tapOn: "CUENTA"
+- scrollUntilVisible:
+    element:
+      id: "contactos-row"
+    direction: DOWN
+- tapOn:
+    id: "contactos-row"
+- extendedWaitUntil:
+    visible: "CUENTA · CONTACTOS DE EMERGENCIA"
+    timeout: 20000
+- assertNotVisible:
+    id: "state-error"
+
+# Una corrida anterior que muriera a medias pudo dejar contactos: se empieza del vacío.
+# BORRAR TODOS vive debajo de GUARDAR, fuera de la vista, y `when: visible` sólo mira lo
+# que hay en pantalla: sin bajar primero, esta limpieza no corría nunca (medido).
+- scrollUntilVisible:
+    element:
+      id: "contactos-guardar"
+    direction: DOWN
+- runFlow:
+    when:
+      visible:
+        id: "contactos-borrar"
+    commands:
+      - tapOn:
+          id: "contactos-borrar"
+      - tapOn:
+          id: "contactos-borrar-confirmar"
+- scrollUntilVisible:
+    element:
+      id: "state-empty"
+    direction: UP
+    timeout: 20000
+- assertVisible: "0 de 3"
+- takeScreenshot: contactos-01-vacio
+
+# Uno válido.
+- tapOn:
+    id: "contactos-agregar"
+- tapOn:
+    id: "contacto-nombre-0"
+- inputText: "Contacto de Prueba"
+- tapOn:
+    id: "contacto-email-0"
+- inputText: "prueba-e2e@example.com"
+- hideKeyboard
+
+# Sin la casilla, GUARDAR está deshabilitado: pulsarlo no guarda nada.
+- scrollUntilVisible:
+    element:
+      id: "contactos-guardar"
+    direction: DOWN
+- assertVisible:
+    id: "aviso-texto"
+- tapOn:
+    id: "contactos-guardar"
+- assertNotVisible:
+    id: "contactos-guardado"
+- takeScreenshot: contactos-02-sin-consentimiento-no-guarda
+
+- tapOn:
+    id: "contactos-acepto"
+- scrollUntilVisible:
+    element:
+      id: "contactos-guardar"
+    direction: DOWN
+    centerElement: true
+- tapOn:
+    id: "contactos-guardar"
+# La confirmación tiene que VERSE sin desplazar nada. El correo sigue ENFOCADO
+# (`hideKeyboard` esconde el teclado, no quita el foco), que es como queda quien lo
+# teclea: antes del arreglo, Android devolvía la vista al campo enfocado —arriba del
+# todo— y «Contactos guardados» quedaba fuera de la pantalla (medido 2026-09-30).
+- extendedWaitUntil:
+    visible:
+      id: "contactos-guardado"
+    timeout: 20000
+- assertNotVisible:
+    id: "contactos-fallo"
+- takeScreenshot: contactos-03-guardado
+
+# Un correo mal escrito se rechaza en su campo, antes del servidor.
+- scrollUntilVisible:
+    element:
+      id: "contactos-agregar"
+    direction: UP
+- tapOn:
+    id: "contactos-agregar"
+- tapOn:
+    id: "contacto-nombre-1"
+- inputText: "Sin Correo"
+- tapOn:
+    id: "contacto-email-1"
+- inputText: "esto-no-es-un-correo"
+- hideKeyboard
+- scrollUntilVisible:
+    element:
+      id: "contactos-guardar"
+    direction: DOWN
+- tapOn:
+    id: "contactos-guardar"
+- scrollUntilVisible:
+    element:
+      id: "contacto-error-email-1"
+    direction: UP
+- takeScreenshot: contactos-04-correo-invalido
+- tapOn:
+    id: "contacto-quitar-1"
+- assertNotVisible:
+    id: "contacto-nombre-1"
+
+# Lo guardado vive en el SERVIDOR: se sale a CUENTA y se vuelve.
+- scrollUntilVisible:
+    element:
+      text: "← Cuenta"
+    direction: UP
+- tapOn: "← Cuenta"
+- scrollUntilVisible:
+    element:
+      id: "contactos-row"
+    direction: DOWN
+- assertVisible: "1 de 3 · les llega un correo si pide ayuda."
+- tapOn:
+    id: "contactos-row"
+- extendedWaitUntil:
+    visible: "Contacto de Prueba"
+    timeout: 20000
+- assertVisible: "prueba-e2e@example.com"
+- assertVisible: "1 de 3"
+- takeScreenshot: contactos-05-persiste-en-el-servidor
+
+# Se deja como estaba: BORRAR TODOS pide confirmación.
+- scrollUntilVisible:
+    element:
+      id: "contactos-borrar"
+    direction: DOWN
+- tapOn:
+    id: "contactos-borrar"
+- assertVisible:
+    id: "contactos-borrar-confirmacion"
+- tapOn:
+    id: "contactos-borrar-confirmar"
+- scrollUntilVisible:
+    element:
+      id: "state-empty"
+    direction: UP
+- assertVisible: "0 de 3"
+- takeScreenshot: contactos-06-borrados

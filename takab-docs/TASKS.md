@@ -18340,7 +18340,19 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     si viajó en el check-in. SMS cuando haya proveedor (TODO nombrado en el orquestador).
   - [ ] El texto del aviso (`privacy/texts/contactos_es_mx.json`) es un BORRADOR PROVISIONAL:
     falta la revisión legal.
-  - [ ] Probado en el Pixel.
+  - [x] Probado en el Pixel.
+    - Hecho el 2026-09-30 con `mobile/.maestro/contactos-emergencia.yaml` (ocupante, sin TOTP).
+      El flujo ESCRIBE en la nube y lo borra al final. Comprueba:
+      - que sin la casilla GUARDAR no guarda;
+      - que un correo inválido se rechaza en su campo;
+      - que la confirmación se ve sin desplazar;
+      - que lo guardado sigue ahí al volver de CUENTA («1 de 3»);
+      - que BORRAR TODOS pide confirmación.
+    - **Encontró un defecto:** en el PRIMER guardado, con un campo tocado, la lista saltaba
+      arriba del todo y «Contactos guardados» quedaba fuera de la pantalla. Parecía que no se
+      había guardado. Lo mueve el FOCO, no el texto: con el teléfono vaciado antes saltaba igual.
+    - Ahora la confirmación pide, al aparecer, que la lista baje hasta ella, y GUARDAR baja el
+      teclado, que la tapaba. El flujo, que fallaba en ese paso, pasa.
 - **Huecos declarados:**
   - La retención de los contactos nace APAGADA. Su plazo es una decisión de privacidad:
     `pii_retention_windows_days["emergency_contacts.rows"]` en el terraform de la base.

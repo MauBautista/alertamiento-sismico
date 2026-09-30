@@ -2,6 +2,7 @@
 // sale hacia la nube cuando pulsa GUARDAR o BORRAR TODOS.
 import type { ContactosOut } from "@takab/sdk";
 import { act, fireEvent, render } from "@testing-library/react-native";
+import { Keyboard } from "react-native";
 
 import { EmergencyContactsScreen } from "./EmergencyContactsScreen";
 import type { Desenlace } from "./useEmergencyContacts";
@@ -210,5 +211,54 @@ describe("CONTACTOS DE EMERGENCIA · BORRAR TODOS", () => {
   it("sin nada guardado no hay BORRAR TODOS", async () => {
     const { v } = await montar({ data: datos(0) });
     expect(v.queryByTestId("contactos-borrar")).toBeNull();
+  });
+});
+
+describe("CONTACTOS DE EMERGENCIA · la confirmación se VE", () => {
+  // Medido en un Pixel 8 Pro (2026-09-30): en el PRIMER guardado, con un campo tocado,
+  // la lista saltaba arriba del todo y «Contactos guardados» —debajo del botón— quedaba
+  // fuera de la pantalla: parecía que no se había guardado. El salto no era del texto
+  // del teléfono (vaciado antes, saltaba igual) sino del FOCO: Android devuelve la
+  // lista al campo enfocado, o al primero que tome el foco si se lo quitan. En vez de
+  // perseguir el mecanismo, la confirmación pide que la muestren al aparecer.
+  it("la confirmación avisa UNA vez al aparecer, para que la lista la traiga a la vista", async () => {
+    const alConfirmarGuardado = jest.fn();
+    const guardar = jest.fn(async (): Promise<Desenlace> => ({ tipo: "ok" }));
+    const v = await render(
+      <EmergencyContactsScreen
+        alConfirmarGuardado={alConfirmarGuardado}
+        borrarTodos={jest.fn(async (): Promise<Desenlace> => ({ tipo: "ok" }))}
+        data={datos(1)}
+        guardar={guardar}
+      />,
+    );
+    await pulsar(v, "contactos-acepto");
+    await pulsar(v, "contactos-guardar");
+    const layout = { nativeEvent: { layout: { x: 0, y: 1800, width: 300, height: 20 } } };
+    await act(async () => {
+      fireEvent(v.getByTestId("contactos-guardado"), "layout", layout);
+    });
+    expect(alConfirmarGuardado).toHaveBeenCalledTimes(1);
+    // Otro relayout mientras sigue a la vista no vuelve a arrastrar la lista.
+    await act(async () => {
+      fireEvent(v.getByTestId("contactos-guardado"), "layout", layout);
+    });
+    expect(alConfirmarGuardado).toHaveBeenCalledTimes(1);
+  });
+
+  it("GUARDAR baja el teclado ANTES de mandar: abierto, tapaba la confirmación", async () => {
+    const orden: string[] = [];
+    const dismiss = jest.spyOn(Keyboard, "dismiss").mockImplementation(() => {
+      orden.push("teclado-abajo");
+    });
+    const guardar = jest.fn(async (): Promise<Desenlace> => {
+      orden.push("guardar");
+      return { tipo: "ok" };
+    });
+    const { v } = await montar({ guardar });
+    await pulsar(v, "contactos-acepto");
+    await pulsar(v, "contactos-guardar");
+    expect(orden).toEqual(["teclado-abajo", "guardar"]);
+    dismiss.mockRestore();
   });
 });

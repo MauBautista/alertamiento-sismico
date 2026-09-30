@@ -91,6 +91,7 @@ make cloud-staging-incident PHASE=reset     # ← los recorridos, SIN incidente
 .maestro/run.sh recorrido-ocupante.yaml     # sin TOTP: corre solo
 .maestro/run.sh recorrido-tactico.yaml      # pide el TOTP del táctico
 .maestro/run.sh catalogo-sismos.yaml        # sin TOTP: SISMOS y su mapa, como ocupante
+.maestro/run.sh contactos-emergencia.yaml   # sin TOTP: CUENTA → CONTACTOS; ESCRIBE y lo BORRA al final
 ```
 
 **Los recorridos (`T-8.11`) no acreditan un camino: pasan por TODAS las pantallas** y pulsan
@@ -177,6 +178,7 @@ done
 | Recorrido del ocupante | `recorrido-ocupante.yaml` | no | pulsa cada pestaña y cada botón que no muta; una captura por pantalla | `PHASE=reset` |
 | Recorrido del táctico | `recorrido-tactico.yaml` | **sí** | pulsa las siete pestañas y cada botón que no muta; una captura por pantalla | `PHASE=reset` |
 | SISMOS y su mapa (`T-9.62`/`T-9.63`) | `catalogo-sismos.yaml` | no | lista sin error; VER EN EL MAPA con leyenda y crédito de OSM a la vista; mapa de calor rotulado ESTIMADO o «sin mapa de calor»; atrás vuelve a SISMOS | ninguna |
+| Contactos de emergencia (`T-9.80`) | `contactos-emergencia.yaml` | no | sin la casilla GUARDAR no guarda; un correo inválido se rechaza en su campo; la confirmación se VE sin desplazar; lo guardado sigue ahí al volver de CUENTA («1 de 3»); BORRAR TODOS pide confirmación. **Escribe** en la nube y lo borra | ninguna |
 
 ### La columna TOTP es la que decide si hace falta una persona
 

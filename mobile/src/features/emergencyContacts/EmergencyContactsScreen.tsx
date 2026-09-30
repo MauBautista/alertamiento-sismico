@@ -12,8 +12,8 @@
 // porque el aviso cambió, la versión recargada ya no es la aceptada y la casilla
 // se desmarca SOLA (estado derivado, sin efecto que la limpie).
 import type { ContactoIn, ContactosIn, ContactosOut } from "@takab/sdk";
-import { useState } from "react";
-import { StyleSheet, Text, TextInput, View } from "react-native";
+import { useRef, useState } from "react";
+import { Keyboard, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Pulsable } from "@/ui/Pulsable";
 import { fontSize, palette, radius, space, touch } from "@/ui/theme";
@@ -59,6 +59,8 @@ export function EmergencyContactsScreen(props: {
   guardar: (body: ContactosIn) => Promise<Desenlace>;
   borrarTodos: () => Promise<Desenlace>;
   onVolver?: () => void;
+  /** La confirmación acaba de aparecer: quien tenga la lista, que la traiga a la vista. */
+  alConfirmarGuardado?: () => void;
 }) {
   const { data } = props;
   // Estado DERIVADO: mientras la persona no edite, el formulario refleja al
@@ -106,6 +108,8 @@ export function EmergencyContactsScreen(props: {
     if (!acepto || ocupado) {
       return;
     }
+    // Con el teclado abierto, la confirmación (debajo del botón) queda tapada.
+    Keyboard.dismiss();
     setGeneral(null);
     setGuardadoOk(false);
     const locales = validarContactos(borrador);
@@ -304,11 +308,7 @@ export function EmergencyContactsScreen(props: {
       >
         <Text style={styles.guardarText}>{ocupado ? "GUARDANDO…" : "GUARDAR"}</Text>
       </Pulsable>
-      {guardadoOk ? (
-        <Text style={styles.guardado} testID="contactos-guardado">
-          Contactos guardados en el servidor.
-        </Text>
-      ) : null}
+      {guardadoOk ? <ConfirmacionGuardado alAparecer={props.alConfirmarGuardado} /> : null}
 
       {!guardadoVacio && !confirmando ? (
         <Pulsable
@@ -350,6 +350,30 @@ export function EmergencyContactsScreen(props: {
         </View>
       ) : null}
     </View>
+  );
+}
+
+// Medido en un Pixel 8 Pro (2026-09-30): en el PRIMER guardado, con un campo tocado,
+// la lista saltaba arriba del todo y esta confirmación quedaba fuera de la pantalla.
+// Lo mueve el FOCO (Android devuelve la lista al campo enfocado, o al primero que lo
+// tome si se lo quitan), no el texto. En vez de perseguir el mecanismo, la confirmación
+// pide UNA vez, al aparecer, que la traigan a la vista: su `onLayout` llega después del
+// salto nativo.
+function ConfirmacionGuardado(props: { alAparecer?: () => void }) {
+  const avisada = useRef(false);
+  return (
+    <Text
+      onLayout={() => {
+        if (!avisada.current) {
+          avisada.current = true;
+          props.alAparecer?.();
+        }
+      }}
+      style={styles.guardado}
+      testID="contactos-guardado"
+    >
+      Contactos guardados en el servidor.
+    </Text>
   );
 }
 
