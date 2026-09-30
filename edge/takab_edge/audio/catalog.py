@@ -41,7 +41,40 @@ CATALOG: dict[str, str] = {
     # carillón de tres pulsos con dos segundos de silencio — el patrón de la
     # megafonía, no el de una alarma. Ver `edge/scripts/gen_simulacro.py`.
     "takab-simulacro-v1": "simulacro.wav",
+    # [T-9.71 · D-41] Simulacro HABLADO: «Esto es un simulacro.» sin tono en los
+    # primeros 2,5 s, y después la frase cada 4,5 s sobre el tono de ALERTA, 15 dB
+    # por debajo de la voz. Sólo en la ranura `simulacro` (ver RANURAS). Sustituye,
+    # para este id, la regla de v1: ahora sí suena a alerta, y la voz es la barrera.
+    # Ninguna configuración lo elige por defecto; se enciende por la firmada tras
+    # escucharlo. Ver `tools/audio/gen_simulacro_hablado.py`.
+    "takab-simulacro-v2": "simulacro_hablado.wav",
 }
+
+#: [T-9.71] En qué ranura puede sonar cada id. Sin esto, una config con las ranuras
+#: cruzadas (`siren: takab-simulacro-v2`) se aplicaba sin queja, y en una alerta
+#: REAL el jack habría dicho «Esto es un simulacro». Un id sin ranura declarada no
+#: suena en ninguna: el censo de las pruebas exige que todo el catálogo esté aquí.
+RANURAS: dict[str, frozenset[str]] = {
+    "takab-siren-v1": frozenset({"siren"}),
+    "takab-prueba-v1": frozenset({"test"}),
+    "takab-simulacro-v1": frozenset({"simulacro"}),
+    "takab-simulacro-v2": frozenset({"simulacro"}),
+}
+
+
+def reason_wrong_slot(asset_id: str, slot: str) -> str | None:
+    """Por qué `asset_id` no puede sonar en `slot`, o ``None`` si puede.
+
+    Como un id desconocido, conserva el tono anterior; pero se dice aparte, porque
+    un cruce de ranuras no es un tecleo: es una alerta que sonaría a simulacro.
+    """
+    ranuras = RANURAS.get(asset_id, frozenset())
+    if slot in ranuras:
+        return None
+    if not ranuras:
+        return f"el tono {asset_id!r} no declara ranura"
+    return f"el tono {asset_id!r} es de la ranura {', '.join(sorted(ranuras))}, no de {slot!r}"
+
 
 #: IDs que existen como concepto pero NO se pueden servir. Se distinguen de un ID
 #: inventado para poder decir POR QUÉ no suena, en vez de un "desconocido" opaco.

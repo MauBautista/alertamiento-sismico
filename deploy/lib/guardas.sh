@@ -26,6 +26,26 @@
 
 guardas_fallo() { echo "ERROR: $*" >&2; exit 1; }
 
+# QUÉ ÁRBOL se juzga: el que CONTIENE este fichero, no el directorio desde el que se
+# lanzó el despliegue. Cada `deploy.sh` sourcea el `guardas.sh` de su propio árbol
+# —el que va a desplegar—, así que su ubicación es la respuesta, sin depender de cómo
+# se llame la variable de cada llamador.
+#
+# Con `git` a secas se juzgaba el DIRECTORIO ACTUAL. El 2026-09-29, lanzando
+# `../takab-wt-deploy/deploy/edge/deploy.sh` desde otra carpeta, se negó a desplegar
+# un worktree que SÍ estaba en `main`; y el caso inverso —lanzar desde un clon en
+# `main` el `deploy.sh` de un árbol en una rama de trabajo— lo APROBABA, que es
+# exactamente lo que esta guardia existe para impedir.
+# Sólo builtins de bash (sin `dirname`): la guardia corre también con un PATH mínimo.
+case "${BASH_SOURCE[0]}" in
+*/*) _GUARDAS_DIR="${BASH_SOURCE[0]%/*}" ;;
+*) _GUARDAS_DIR="." ;;
+esac
+# `CDPATH=''`: con CDPATH exportado, `cd` a una ruta relativa IMPRIME el destino y la
+# raíz salía con dos líneas.
+_GUARDAS_RAIZ="$(CDPATH='' cd -- "${_GUARDAS_DIR}/../.." && pwd)"
+_guardas_git() { git -C "$_GUARDAS_RAIZ" "$@"; }
+
 # guarda_de_rama <componente> [tolera_arbol_sucio]
 #
 # `tolera_arbol_sucio` existe por el EDGE y por nada mas: `deploy/edge/deploy.sh`
@@ -37,20 +57,25 @@ guarda_de_rama() {
   local componente="${1:?componente}"
   local tolera_sucio="${2:-no}"
 
+  # Sin un repo en la raíz, cada `git` falla y el rechazo hablaba de una rama
+  # «DETACHED ()» que no existe. Se niega igual, pero diciendo lo que pasa.
+  _guardas_git rev-parse --show-toplevel >/dev/null 2>&1 \
+    || guardas_fallo "${componente}: no se pudo determinar el arbol que se despliega: ${_GUARDAS_RAIZ} no es un repositorio git."
+
   if [ "${TAKAB_DEPLOY_RAMA_LIBRE:-0}" = "1" ]; then
     # La escotilla NO es silenciosa: desplegar una rama a `dev` para probarla es
     # legitimo y frecuente, pero tiene que quedar dicho en voz alta y en el log.
-    echo "⚠️  ${componente}: --desde-esta-rama declarado. Se despliega '$(git branch --show-current || echo DETACHED)'" >&2
-    echo "    ($(git rev-parse --short HEAD)), que NO es main. Esto no es un despliegue reproducible." >&2
+    echo "⚠️  ${componente}: --desde-esta-rama declarado. Se despliega '$(_guardas_git branch --show-current || echo DETACHED)'" >&2
+    echo "    ($(_guardas_git rev-parse --short HEAD)), que NO es main. Esto no es un despliegue reproducible." >&2
     return 0
   fi
 
   local rama
-  rama="$(git branch --show-current || true)"
+  rama="$(_guardas_git branch --show-current || true)"
   [ "$rama" = "main" ] || guardas_fallo "$(_guardas_por_que_no_main "$componente" "$rama")"
 
   if [ "$tolera_sucio" != "si" ]; then
-    [ -z "$(git status --porcelain)" ] \
+    [ -z "$(_guardas_git status --porcelain)" ] \
       || guardas_fallo "${componente}: el arbol no esta limpio. Lo que se despliega tiene que ser EXACTAMENTE lo que el CI vio; commitea o descarta primero."
   fi
 
@@ -58,11 +83,11 @@ guarda_de_rama() {
   # `origin/main` rancia, y eso es un dato viejo disfrazado de dato — la clase de
   # mentira que persigue la regla de oro 7. Si no hay red, la guardia se niega en
   # vez de dar por bueno lo que no pudo comprobar.
-  git fetch -q origin main \
-    || guardas_fallo "${componente}: no se pudo hacer 'git fetch origin main'. Sin eso, comparar contra origin/main seria comparar contra una copia vieja; la guardia NO pasa por no poder mirar."
+  _guardas_git fetch -q origin main \
+    || guardas_fallo "${componente}: no se pudo hacer 'git -C ${_GUARDAS_RAIZ} fetch origin main'. Sin eso, comparar contra origin/main seria comparar contra una copia vieja; la guardia NO pasa por no poder mirar."
 
   local sin_pushear
-  sin_pushear="$(git log origin/main..main --oneline)"
+  sin_pushear="$(_guardas_git log origin/main..main --oneline)"
   [ -z "$sin_pushear" ] || guardas_fallo "$(printf '%s: main tiene commits SIN PUSHEAR, asi que el CI no los ha visto:\n%s' "$componente" "$sin_pushear")"
 
   # A-1 pide main pusheado Y CON CI VERDE. La mitad del CI depende de `gh`, y sin
@@ -72,7 +97,9 @@ guarda_de_rama() {
   # que es una decision mas grande que esta ficha— pero se dice.
   if command -v gh >/dev/null 2>&1; then
     local ci
-    ci="$(gh run list --branch main -L 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || echo "")"
+    # `gh` elige el repositorio por el git de SU directorio: se le pregunta desde la
+    # raíz juzgada, no desde donde se lanzó el despliegue.
+    ci="$(CDPATH='' cd -- "$_GUARDAS_RAIZ" && gh run list --branch main -L 1 --json conclusion -q '.[0].conclusion' 2>/dev/null || echo "")"
     [ "$ci" = "success" ] \
       || guardas_fallo "${componente}: el ultimo CI de main no esta en verde (estado: ${ci:-desconocido}). A-1 pide main pusheado Y con CI verde."
   else
@@ -85,10 +112,10 @@ guarda_de_rama() {
 # arbol no, que es exactamente lo que no se habria desplegado.
 _guardas_por_que_no_main() {
   local componente="$1" rama="$2" falta
-  git fetch -q origin main 2>/dev/null || true
-  falta="$(git log --oneline HEAD..origin/main 2>/dev/null | head -10)"
+  _guardas_git fetch -q origin main 2>/dev/null || true
+  falta="$(_guardas_git log --oneline HEAD..origin/main 2>/dev/null | head -10)"
   printf '%s: se despliega desde main, y el arbol esta en %s (%s).\n' \
-    "$componente" "${rama:-DETACHED}" "$(git rev-parse --short HEAD)"
+    "$componente" "${rama:-DETACHED}" "$(_guardas_git rev-parse --short HEAD)"
   if [ -n "$falta" ]; then
     printf '  Lo que main tiene y esta rama NO —o sea, lo que este despliegue se dejaria fuera—:\n%s\n' "$falta"
   else

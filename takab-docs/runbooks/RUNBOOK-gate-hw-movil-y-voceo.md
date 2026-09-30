@@ -184,6 +184,16 @@ TAKAB_EDGE_AUDIO_SIREN_ENABLED=true   en /etc/takab/edge.env
 > grabaciones deja al gabinete fallando al arranque. Enciéndelo **después** de copiar los WAV, no
 > antes.
 
+> ### El simulacro ya no necesita grabación (T-9.71 · D-41)
+> El catálogo trae `takab-simulacro-v2`: «Esto es un simulacro.» sin tono en los primeros 2,5 s,
+> y después la frase cuatro veces sobre el tono de **alerta**, 15 dB por debajo de la voz. Sólo
+> puede sonar en la ranura del simulacro: en la de la sirena se rechaza. Se elige por la configuración
+> firmada (`config.edge.audio.simulacro`, T-2.49), no copiando un WAV al gabinete, y **ninguna
+> configuración lo elige por defecto**. Sustituye, para ese id, la regla de T-5.17 («un simulacro
+> nunca suena a sismo»): ahora sí suena a alerta, y lo que lo distingue es la voz. Lo mide
+> `edge/tests/test_audio_simulacro.py` por energía. Antes de elegirlo hay que escucharlo en el
+> parlante del gabinete. Sigue faltando la grabación del **sismo**.
+
 **Y el criterio de aceptación que importa, del `T-2.95`:** el mensaje de sismo y el de simulacro
 tienen que ser **distinguibles a oído**, no solo por `sha256`. Una persona bajo una sacudida no
 compara hashes: oye una frase y decide si sale del edificio. Grábalos con textos claramente

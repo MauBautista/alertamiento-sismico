@@ -202,8 +202,11 @@ class BackfillManager(EdgeModule):
     def _default_pending_dir(self) -> str:
         import tempfile
 
-        base = self._settings.cloud_spool_dir or tempfile.mkdtemp(prefix="takab-backfill-")
-        return str(Path(base).parent / "backfill-pending")
+        # Hermano del spool. Sin spool, en el temporal del sistema: antes salía del
+        # PADRE de un `mkdtemp` que no se usaba nunca, y cada arranque dejaba uno.
+        if self._settings.cloud_spool_dir:
+            return str(Path(self._settings.cloud_spool_dir).parent / "backfill-pending")
+        return str(Path(tempfile.gettempdir()) / "backfill-pending")
 
     # ------------------------------------------------ router del flush (T-1.25)
 

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **22** · `[ ]` **48**
+**Conteo de tareas:** total **502** · `[x]` **432** · `[~]` **23** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18214,12 +18214,42 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - el «Himno a la alegría» sintetizado: dominio público, sin grabación de terceros.
   - NO están conectados al gabinete ni a la app: se conectan cuando se aprueben.
 
-### [ ] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
+### [~] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-41`
 - **Objetivo:** que un simulacro suene a alerta sin que nadie lo confunda.
 - **Criterios de aceptación:**
-  - [ ] Voz sola al principio y repetida encima del tono atenuado; invariante medido por energía.
+  - [x] Voz sola al principio y repetida encima del tono atenuado; invariante medido por energía.
+    - Hecho el 2026-09-29. `takab-simulacro-v2` entra al catálogo del edge como
+      `simulacro_hablado.wav`. Ninguna configuración lo elige por defecto: se enciende por la
+      firmada (`config.edge.audio.simulacro`) tras escucharlo.
+    - Contenido: «Esto es un simulacro.» (1,7 s) sin tono en los primeros 2,5 s. Después, 4 veces
+      cada 4,5 s sobre el tono de ALERTA (`siren.wav`), 15 dB por debajo de la voz. Dura 18,8 s,
+      22,05 kHz, 829 KB, y termina en la voz.
+    - Lo generan `tools/audio/gen_simulacro_hablado.py` (determinista) y la voz
+      `takab-voz-simulacro-v1` de `voces.json`. Los dos están en el manifiesto.
+    - `edge/tests/test_audio_simulacro.py` lo mide sobre el fichero empaquetado. Usa la energía
+      en las frecuencias del tono de alerta, que saca de `siren.wav`, y la del resto del
+      espectro. Comprueba:
+      - que la apertura no tiene tono;
+      - que el tono no se corta;
+      - que hay ≥ 4 frases sobre el tono, con la voz ≥ 13,5 dB por encima;
+      - que el tono nunca suena más de 3,5 s sin la voz, y que termina en la voz.
+    - Además, cada frase se busca por correlación contra la voz auditada: tiene que estar ENTERA
+      y AL DERECHO. La frase real da 0,98; la truncada, 0,81; la invertida y el ruido, < 0,5.
+    - Se probó con seis mutantes propios y cuatro de la revisión, cada uno cazado por la prueba
+      que le toca.
   - [ ] Probado por el altavoz del gabinete.
+- **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
+  sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
+  oír de verdad»). Falla tres de las pruebas nuevas. Lo que hay que escuchar es el empaquetado.
+- **Queda más bajo que la alerta:** el pico de la voz limita la ganancia, y mide −16,6 LUFS frente
+  a los −7,7 de `siren.wav`. El tono de fondo queda 15 dB bajo la VOZ, pero ~23 dB bajo la alerta
+  real. D-41 dice «atenuado 15 dB» sin decir respecto de qué. Se decide al escucharlo.
+- **La revisión adversaria (2026-09-29) encontró que la ranura de la SIRENA aceptaba este id.**
+  Una config con las ranuras cruzadas habría dicho «Esto es un simulacro» durante una alerta real.
+  - El hueco ya existía con v1: un carillón en una alerta.
+  - Ahora cada id declara su ranura (`catalog.RANURAS`). Uno fuera de la suya conserva el tono
+    anterior y lo dice en `wrong_slot`.
 
 ### [~] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
@@ -18265,11 +18295,25 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - `deploy/edge/deploy.sh` ahora lo impide. Deriva de la etiqueta de `/api/health` si la nube
     valida estos contratos, y si no, se niega antes del `rsync`. `TAKAB_DEPLOY_SIN_NUBE=1` lo
     salta a propósito.
-- **Hallazgo aparte, sin arreglar aquí:** `MiniSeedBuffer` sin ruta configurada crea
-  `/tmp/takab-buffer-*` y NO lo borra. Sólo pasa en dev y en tests; el Pi tiene su ruta.
+- **Hallazgo del despliegue (2026-09-29), arreglado:** la guardia de rama (`deploy/lib/guardas.sh`)
+  juzgaba el directorio desde el que se LANZABA, no el árbol que se despliega.
+  - Bloqueó el despliegue de `takab-wt-deploy` (en `main`) lanzado desde la carpeta de siempre (en
+    otra rama). Al revés, habría aprobado un árbol de trabajo lanzado desde un clon en `main`.
+  - Ahora deduce el árbol de su propia ubicación. `make cloud-apply` juzga el de `TF_DEV`, que es
+    el que aplica terraform.
+  - Lo prueba `api/tests/test_guarda_de_rama.py` corriendo la guardia y el `make` de verdad desde
+    otro clon.
+- **Hallazgo aparte, arreglado después (2026-09-29):** sin ruta configurada, el anillo miniSEED
+  (`RingBuffer`) creaba `/tmp/takab-buffer-*` y NO lo borraba. Sólo pasa en dev y en tests; el Pi
+  tiene su ruta.
   - El 2026-09-29 había 2800 de esos directorios, más 2,1 GB de `pytest-of-*`, en un `/tmp`
     tmpfs de 3,6 GB.
   - La suite del edge falló con «Disk quota exceeded».
+  - Al arreglarlo salieron dos más: el spool de la nube (~2 900 `takab-cloud-spool-*`) y el
+    backfill (~2 900 `takab-backfill-*`, un `mkdtemp` del que sólo se usaba el PADRE).
+  - `takab_edge/efimero.py::directorio_efimero` borra el temporal cuando muere su dueño. Una ruta
+    configurada no pasa por ahí jamás. Lo prueba `edge/tests/test_directorios_efimeros.py`, que
+    también exige que ningún `mkdtemp` del paquete quede suelto.
 
 ### [~] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
 - **Componente:** web · mobile · edge · **Depende de:** T-9.11 · **Prioridad:** F7 · media · **Decisión:** `D-47`

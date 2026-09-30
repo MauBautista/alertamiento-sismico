@@ -225,6 +225,7 @@ class AudioNotifier(EdgeModule):
             "applied": {},
             "rejected": {},
             "reserved": {},
+            "wrong_slot": {},
             "siren_path": self._siren_path,
             "test_path": self._test_path,
             "simulacro_path": self._simulacro_path,
@@ -560,6 +561,7 @@ class AudioNotifier(EdgeModule):
         applied: dict[str, str] = {}
         rejected: dict[str, str] = {}
         reserved: dict[str, str] = {}
+        wrong_slot: dict[str, str] = {}
         if isinstance(profile, dict):
             for slot, attr in (
                 ("siren", "_siren_path"),
@@ -582,12 +584,21 @@ class AudioNotifier(EdgeModule):
                     if razon is not None:
                         reserved[slot] = razon
                     continue
+                # [T-9.71] Un tono EXISTENTE en la ranura equivocada también conserva
+                # el anterior: el simulacro hablado en la sirena diría «Esto es un
+                # simulacro» durante una alerta real.
+                razon = catalog.reason_wrong_slot(asset_id, slot)
+                if razon is not None:
+                    rejected[slot] = asset_id
+                    wrong_slot[slot] = razon
+                    continue
                 setattr(self, attr, str(path))
                 applied[slot] = asset_id
         self._audio_profile = {
             "applied": applied,
             "rejected": rejected,
             "reserved": reserved,
+            "wrong_slot": wrong_slot,
             "siren_path": self._siren_path,
             "test_path": self._test_path,
             "simulacro_path": self._simulacro_path,

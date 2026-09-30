@@ -398,13 +398,17 @@ cloud-medir-latencia-ia:
 #     `count` evalue a cero. Aquel dia el plan proponia DESTRUIR los tres
 #     registros DKIM, DMARC, MAIL FROM y la consola. Lo caza un `plan` que
 #     alguien mire, y eso no es una guardia: es suerte. Aqui se niega antes.
+#   · La guardia juzga el arbol de TF_DEV, que es lo que se aplica, y no el
+#     directorio del `make`: desde un worktree en main con TF_DEV apuntando a la
+#     carpeta de siempre en otra rama, aplicaba ESA rama (hueco del 2026-09-29).
 cloud-apply:
 	@test -f $(TF_DEV)/local.auto.tfvars || { \
 		echo "ERROR: falta $(TF_DEV)/local.auto.tfvars (esta en .gitignore)."; \
 		echo "  Sin el, todo lo que lleva 'count' evalua a CERO y el plan propone DESTRUIR"; \
 		echo "  SES, los tres DKIM, DMARC, MAIL FROM y la consola. Aplica desde tu arbol"; \
 		echo "  de siempre, o copia ese fichero antes de planificar."; exit 1; }
-	@bash -c '. deploy/lib/guardas.sh && guarda_de_rama "terraform"'
+	@bash -c 'raiz="$$(git -C "$(TF_DEV)" rev-parse --show-toplevel)" && cd "$$raiz" && \
+		. deploy/lib/guardas.sh && guarda_de_rama "terraform"'
 	@AWS_PROFILE=$(AWS_PROFILE) AWS_REGION=$(AWS_REGION) \
 		terraform -chdir=$(TF_DEV) apply
 

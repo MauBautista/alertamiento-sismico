@@ -29,6 +29,7 @@ from pydantic import BaseModel
 from takab_edge.cloud.continuo import serie_de_muestras
 from takab_edge.config import EdgeSettings
 from takab_edge.durable import escribir_durable
+from takab_edge.efimero import directorio_efimero
 from takab_edge.module import EdgeModule
 
 log = logging.getLogger("takab_edge.cloud")
@@ -204,7 +205,7 @@ class CloudConnector(EdgeModule):
         self.settings = settings
         self._transport = transport
         self._status_topic = status_topic  # vacío → sin beacon de presencia (tests T-1.11)
-        self._spool = DurableSpool(spool_dir or settings.cloud_spool_dir or _tmp_spool())
+        self._spool = DurableSpool(spool_dir or settings.cloud_spool_dir or _tmp_spool(self))
         self._queue: deque[tuple[str, dict]] = deque()  # (spool_name, record)
         #: Cota por topic de telemetría REPONIBLE (features/health): offline
         #: prolongado no debe crecer sin límite. Eventos/ACKs no llevan cota.
@@ -769,7 +770,5 @@ class AwsIotMqttTransport:
         return self._conn is not None and self._connected
 
 
-def _tmp_spool() -> str:
-    import tempfile
-
-    return tempfile.mkdtemp(prefix="takab-cloud-spool-")
+def _tmp_spool(dueno: object) -> Path:
+    return directorio_efimero("takab-cloud-spool-", dueno)
