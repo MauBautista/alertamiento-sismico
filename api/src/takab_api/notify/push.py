@@ -103,7 +103,9 @@ _DELIVERY_STYLE = {
         # el dict `critical` queda listo para cuando Apple apruebe (GATE-STORE).
         "interruption_level": "time-sensitive",
         # [D-19] El tono es PROPIO de TAKAB, no el oficial del SASMEX, y es el mismo
-        # que sale por el altavoz del gabinete. Hasta el 2026-08-22 esto nombraba un
+        # que sale por el altavoz del gabinete (en iOS, también con SASMEX: `D-50`
+        # sólo cambió el canal Android, ver CRISIS_TONO_OFICIAL). Hasta el
+        # 2026-08-22 esto nombraba un
         # `seismic_alert.caf` que NO ESTABA EN EL REPO: iOS caía al sonido por
         # defecto en silencio, o sea que el sistema afirmaba un sonido crítico que
         # no podía sonar. El fichero viaja en el bundle por el `sounds` de
