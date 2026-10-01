@@ -1824,6 +1824,17 @@ def _dispatch_one(
     )
 
 
+def _tono_oficial(push_class: str, target: dict) -> bool:
+    """[T-9.70 · D-50] ¿Este push suena con el sonido OFICIAL del SASMEX?
+
+    Sólo la CRISIS que AUTORIZA evacuar: SASMEX o el cuórum de red. Se lee de
+    ``target.autoriza``, que el encolado escribe con ``autoriza_evacuacion`` y la
+    escalada siempre en verdadero, y NO del ``trigger``: el cuórum real deja el
+    incidente en ``local_threshold`` con su ``node_count``. Un job sin la clave no
+    se adivina: tono propio."""
+    return push_class == PUSH_CLASS_CRISIS and target.get("autoriza") is True
+
+
 def _dispatch_push(
     conn: psycopg.Connection,
     counts: dict[str, int],
@@ -1889,6 +1900,7 @@ def _dispatch_push(
         site_id=site_id,
         incident_id=str(row["incident_id"]),
         phase=phase,
+        tono_oficial=_tono_oficial(push_class, target),
     )
     outcome = provider.deliver(devices, payload)
 
