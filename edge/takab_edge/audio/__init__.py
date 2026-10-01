@@ -29,6 +29,7 @@ import logging
 import subprocess
 import threading
 import time
+import wave
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -72,6 +73,41 @@ _SIREN_POLL_S = 0.05
 #: que fallara justo en la conciliación número 20 dejaba el altavoz sonando para
 #: siempre — el mismo defecto que la constante venía a cerrar.
 _SIREN_FALLOS_ANTES_DE_CALLAR = 20
+
+#: [T-9.70 · D-50] Cuánto ANTES del arranque de este episodio de alerta puede estar la
+#: marca del cuórum y seguir contando como suya. El despachador marca justo antes de
+#: energizar el relé (milisegundos); una marca de un episodio anterior —el despachador
+#: sólo la olvida con CERRAR ALERTA o un DEACTIVATE— queda fuera por horas, no por esto.
+_MARGEN_CUORUM_S = 5.0
+
+
+def _valida_oficial(ruta: str) -> tuple[str | None, str | None]:
+    """[T-9.70 · D-50] ``(ruta, None)`` si el sonido oficial se puede sonar; si no,
+    ``(None, motivo)``. NUNCA lanza: sin el oficial, SASMEX y el cuórum suenan con el
+    tono propio — una alerta jamás calla por esto.
+
+    Se valida AL ARRANCAR y no en cada alerta: un fichero roto lo mataría aplay al
+    empezar y el vigilante lo relanzaría a 20 Hz, mudo, toda la alerta. Y sólo vale el
+    fichero AUDITADO (``catalog.OFICIAL_SHA256``): uno cambiado en el disco del gabinete
+    no es el oficial. El motivo nombra el fichero, nunca la ruta (viaja en la salud).
+    """
+    p = Path(ruta)
+    try:
+        if not p.is_file():
+            return None, f"no existe {p.name}: esta release no lo trae (se inyecta fuera de git)"
+        huella = hashlib.sha256(p.read_bytes()).hexdigest()
+        if huella != catalog.OFICIAL_SHA256:
+            return None, (
+                f"la huella de {p.name} ({huella[:16]}) no es la auditada "
+                f"({catalog.OFICIAL_SHA256[:16]})"
+            )
+        with wave.open(str(p), "rb") as w:
+            if w.getsampwidth() != 2 or w.getnframes() < w.getframerate():
+                return None, f"{p.name} no es un WAV PCM16 de al menos 1 s"
+    except (OSError, wave.Error, EOFError) as exc:
+        return None, f"{p.name} no es un WAV PCM legible ({type(exc).__name__})"
+    return str(p), None
+
 
 #: [T-9.72 · D-40] Tope de la MÚSICA de prueba de parlantes. Nadie deja un edificio
 #: con música toda la noche por olvidar el botón: a los 30 min calla sola.
@@ -215,6 +251,20 @@ class AudioNotifier(EdgeModule):
         # barrido de la sirena. `None` si no existe ⇒ la prueba calla (ver `asset_for`).
         test_path = settings.audio_test_path or str(Path(__file__).parent / "assets" / "prueba.wav")
         self._test_path: str | None = test_path if Path(test_path).is_file() else None
+        # [T-9.70 · D-50] El sonido OFICIAL del SASMEX: suena con SASMEX y con el cuórum,
+        # nunca con el umbral local. Viaja FUERA de git (lo inyecta deploy.sh): sin él, o
+        # con otra huella, esas alertas suenan con el tono propio y el reporte lo dice.
+        self._oficial_path, self._oficial_motivo = _valida_oficial(
+            settings.audio_oficial_path
+            or str(Path(__file__).parent / "assets" / catalog.OFICIAL_ARCHIVO)
+        )
+        #: Quién sabe si la sirena la pidió el CUÓRUM: devuelve el instante (reloj
+        #: monótono) de su última activación, o None. Lo enlaza el supervisor con el
+        #: despachador de comandos firmados, que se construye después que este módulo.
+        self._quorum_source: Callable[[], float | None] | None = None
+        #: Desde cuándo suena ESTE episodio de alerta (reloj monótono); None = no suena.
+        self._episodio_desde: float | None = None
+        self._quorum_fallo_avisado = False
         # [T-5.17] El voceo de simulacro deja de leerse de `settings` en cada
         # reproducción y pasa a ser ESTADO del módulo, como la sirena y el tono de
         # prueba: es lo que permite que la nube lo elija por id de catálogo. El
@@ -229,6 +279,7 @@ class AudioNotifier(EdgeModule):
             "siren_path": self._siren_path,
             "test_path": self._test_path,
             "simulacro_path": self._simulacro_path,
+            "oficial": self._oficial_report(),
         }
         self._siren_stop = threading.Event()
         self._siren_thread: threading.Thread | None = None
@@ -313,6 +364,18 @@ class AudioNotifier(EdgeModule):
             self._siren_path,
             hashlib.sha256(p.read_bytes()).hexdigest(),
         )
+        # [T-9.70 · D-50] El oficial, auditado igual: o su huella, o por qué no suena.
+        if self._oficial_path is not None:
+            log.info(
+                "sonido OFICIAL (SASMEX y cuórum): %s sha256=%s",
+                self._oficial_path,
+                catalog.OFICIAL_SHA256,
+            )
+        else:
+            log.warning(
+                "sin el sonido OFICIAL: SASMEX y el cuórum sonarán con el tono propio (%s)",
+                self._oficial_motivo,
+            )
         # [T-2.49] El tono de prueba se audita igual que la sirena: hay que poder
         # decir QUÉ sonido exacto puede salir por el altavoz de un inmueble.
         if self._test_path is not None:
@@ -602,6 +665,7 @@ class AudioNotifier(EdgeModule):
             "siren_path": self._siren_path,
             "test_path": self._test_path,
             "simulacro_path": self._simulacro_path,
+            "oficial": self._oficial_report(),
         }
         if rejected:
             log.warning("audio: perfil parcialmente aplicado; tonos conservados: %s", rejected)
@@ -612,12 +676,56 @@ class AudioNotifier(EdgeModule):
         """Lo que `health` publica en `device_health.meta.audio`."""
         return dict(self._audio_profile)
 
-    def asset_for(self, reason: SirenReason) -> str | None:
+    def _oficial_report(self) -> dict:
+        """[T-9.70 · D-50] Si este gabinete puede sonar el oficial, y si no, POR QUÉ.
+        Sin ruta: el reporte sale del gabinete."""
+        disponible = self._oficial_path is not None
+        return {
+            "disponible": disponible,
+            "sha256": catalog.OFICIAL_SHA256[:16] if disponible else None,
+            "motivo": self._oficial_motivo,
+        }
+
+    def set_quorum_source(self, fuente: Callable[[], float | None] | None) -> None:
+        """[T-9.70 · D-50] Enlace tardío con el despachador de comandos firmados: el
+        único del gabinete que sabe que una actuación vino del CUÓRUM de red."""
+        self._quorum_source = fuente
+
+    def _suena_oficial(self, snap: object) -> bool:
+        """¿Esta alerta es de SASMEX o del cuórum, y hay oficial que sonar?
+
+        SASMEX viaja en la MISMA instantánea que la razón de la sirena (enclave y relé
+        se escriben bajo el mismo candado). El cuórum lo dice el despachador, y su marca
+        sólo cuenta si es de ESTE episodio. Advisory: un fallo al preguntar suena el
+        tono propio, nunca silencio.
+        """
+        if self._oficial_path is None:
+            return False
+        if getattr(snap, "sasmex_active", False) is True:
+            return True
+        fuente = self._quorum_source
+        if fuente is None:
+            return False
+        try:
+            marca = fuente()
+        except Exception:  # noqa: BLE001 — advisory: jamás propaga al camino de vida
+            if not self._quorum_fallo_avisado:
+                self._quorum_fallo_avisado = True
+                log.exception("sirena por audio: no se pudo preguntar por el cuórum")
+            return False
+        self._quorum_fallo_avisado = False
+        desde = self._episodio_desde
+        return marca is not None and desde is not None and marca >= desde - _MARGEN_CUORUM_S
+
+    def asset_for(self, reason: SirenReason, *, oficial: bool = False) -> str | None:
         """[T-2.49] Qué WAV corresponde a cada razón, o ``None`` si no debe sonar.
 
         Una prueba SIN su tono no cae al tono de alerta: **calla**. Sonar la sirena
         real por un self-test es precisamente la falsa alarma que esta tarea elimina,
         y un edificio en silencio durante una prueba no corre ningún riesgo.
+
+        [T-9.70 · D-50] Una ALERTA de SASMEX o del cuórum (``oficial``) suena el sonido
+        oficial si este gabinete lo tiene; cualquier otra razón, nunca.
         """
         if reason is SirenReason.TEST:
             if self._test_path is None:
@@ -626,6 +734,8 @@ class AudioNotifier(EdgeModule):
                     "de sonar la alerta real (una prueba no puede sonar a sismo)"
                 )
             return self._test_path
+        if reason is SirenReason.ALERT and oficial and self._oficial_path is not None:
+            return self._oficial_path
         return self._siren_path
 
     def _reconcile_siren(self, snap: object = _LEER) -> None:
@@ -695,7 +805,15 @@ class AudioNotifier(EdgeModule):
             return
         self._siren_fallos = 0
         try:
-            wanted = self.asset_for(reason) if reason is not None else None
+            if reason is None:
+                self._episodio_desde = None
+            elif self._episodio_desde is None:
+                self._episodio_desde = self._reloj()
+            wanted = (
+                self.asset_for(reason, oficial=self._suena_oficial(snap))
+                if reason is not None
+                else None
+            )
             playing = self._siren_backend.playing
             if wanted is None:
                 if playing is not None:

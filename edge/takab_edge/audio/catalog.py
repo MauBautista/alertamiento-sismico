@@ -12,12 +12,17 @@ manda binarios ni rutas:
 Los IDs se resuelven contra archivos que viajan EMPAQUETADOS con la release del edge,
 así que el gabinete solo puede sonar lo que se auditó antes de desplegarlo.
 
-**``sasmex-oficial-v1`` está reservado y AUSENTE a propósito.** El tono oficial de la
-Alerta Sísmica Mexicana es propiedad de CIRES; reproducirlo sin licencia escrita es un
-problema legal, y hacerlo sonar en un edificio ajeno además confunde a la población
-sobre quién está alertando. Que el ID no exista en el catálogo es lo que lo hace seguro:
-la ruta "ID desconocido ⇒ conservar el asset anterior" impide que se cuele por descuido.
-Bloquea GATE-STORE y GATE-LEGAL.
+**``sasmex-oficial-v1`` NO se elige por ranura.** El tono oficial de la Alerta
+Sísmica Mexicana es propiedad del CIRES. Hasta el 2026-10-01 estaba reservado y ausente
+(D-19); desde D-50 suena, decidido por Mauricio, pero **sólo con SASMEX y con el cuórum
+de red** — lo elige el módulo de audio según POR QUÉ suena la sirena, no la nube. La
+ranura ``siren`` también suena con el umbral local, donde la decisión deja el tono
+propio, así que el ID sigue fuera de ``CATALOG`` y pedirlo en una ranura se rechaza.
+
+El fichero viaja FUERA de git: ``deploy/edge/deploy.sh`` lo inyecta en la release como
+``assets/OFICIAL_ARCHIVO``, y el gabinete sólo lo suena si su huella es
+``OFICIAL_SHA256`` (la de ``tools/audio/oficial.py`` y ``shared/audio/MANIFEST.json``).
+Sin él, o con otra huella, suena el tono propio y se declara. Pendiente de GATE-LEGAL.
 """
 
 from __future__ import annotations
@@ -76,12 +81,18 @@ def reason_wrong_slot(asset_id: str, slot: str) -> str | None:
     return f"el tono {asset_id!r} es de la ranura {', '.join(sorted(ranuras))}, no de {slot!r}"
 
 
-#: IDs que existen como concepto pero NO se pueden servir. Se distinguen de un ID
-#: inventado para poder decir POR QUÉ no suena, en vez de un "desconocido" opaco.
+#: [T-9.70 · D-50] El sonido oficial: su id, el nombre con el que la release lo trae y
+#: la huella del ÚNICO fichero que el gabinete acepta sonar como tal.
+OFICIAL_ID = "sasmex-oficial-v1"
+OFICIAL_ARCHIVO = "sasmex_oficial.wav"
+OFICIAL_SHA256 = "9b5e81de233a5736f0838f93550c5f03dffee1a5f0419aa194168d196a602896"
+
+#: IDs que existen como concepto pero NO se pueden servir POR RANURA. Se distinguen de
+#: un ID inventado para poder decir POR QUÉ no suena, en vez de un "desconocido" opaco.
 RESERVED: dict[str, str] = {
-    "sasmex-oficial-v1": (
-        "el tono oficial de SASMEX es propiedad de CIRES y no se empaqueta sin "
-        "licencia escrita (GATE-LEGAL)"
+    OFICIAL_ID: (
+        "el tono oficial de SASMEX (propiedad de CIRES) no se elige por ranura: suena "
+        "sólo con SASMEX y con el cuórum de red, y viaja fuera de git (D-50)"
     ),
 }
 

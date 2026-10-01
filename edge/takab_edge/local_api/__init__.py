@@ -1672,6 +1672,9 @@ class LocalDashboard(EdgeModule):
                 "applied": dict(report.get("applied") or {}),
                 "rejected": dict(report.get("rejected") or {}),
                 "test_tone": bool(report.get("test_path")),
+                # [T-9.70 · D-50] Si esta release trae el sonido OFICIAL (viaja fuera
+                # de git): sin él, SASMEX y el cuórum suenan con el tono propio.
+                "tono_oficial": bool((report.get("oficial") or {}).get("disponible")),
             }
         except Exception:  # noqa: BLE001 — sección no-crítica del panel
             log.warning("panel LAN: perfil de tonos no disponible", exc_info=True)

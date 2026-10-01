@@ -1854,6 +1854,12 @@ function renderSalud(st){
       rej.length ? (rej.length + ' RECHAZADO(S) · ' + rej.map(k => prof.rejected[k]).join(', '))
                  : (prof.test_tone ? 'alerta + prueba' : 'alerta · SIN TONO DE PRUEBA'),
       rej.length ? C.crit : (prof.test_tone ? C.ok : C.warn)]);
+    /* [T-9.70 · D-50] El sonido OFICIAL viaja fuera de git: una release sin él suena el
+       tono propio también con SASMEX, y eso sólo lo ve quien está aquí. */
+    rows.push(['Sonido de alerta',
+      prof.tono_oficial ? 'oficial con SASMEX y cuórum · propio con el umbral'
+                        : 'tono propio en todas · sin el sonido oficial en esta release',
+      prof.tono_oficial ? C.ok : C.warn]);
   }
   /* [T-9.72] La música de prueba de parlantes. Texto fijo, sin animación (D-30).
      `music` null = el gabinete no pudo leerla: S/D, nunca «lista» ni «en silencio»

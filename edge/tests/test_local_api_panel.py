@@ -265,7 +265,7 @@ def _base() -> dict:
         "audio": {
             "enabled": True,
             "sounding": False,
-            "profile": {"applied": {}, "rejected": {}, "test_tone": True},
+            "profile": {"applied": {}, "rejected": {}, "test_tone": True, "tono_oficial": True},
             # [T-9.72] La música de prueba de parlantes, en reposo y lista. Las
             # ramas sonando / cortada / sin parlante las encienden escenas del censo.
             "music": {
@@ -1593,6 +1593,20 @@ def test_un_tono_rechazado_por_el_catalogo_se_declara(tmp_path):
     assert "RECHAZADO(S)" in _txt(out, "salud-grid")
     assert "sasmex-oficial-v1" in _txt(out, "salud-grid")
     assert _value_color(out, "salud-grid", "RECHAZADO(S)") == CRIT
+
+
+def test_el_panel_dice_con_que_sonido_suena_una_alerta(tmp_path):
+    """[T-9.70 · D-50] El oficial viaja FUERA de git: una release sin él suena el tono
+    propio también con SASMEX. Quien está frente al gabinete tiene que poder verlo."""
+    st = _base()
+    out = _render(tmp_path, status=st)
+    assert "oficial con SASMEX y cuórum" in _txt(out, "salud-grid")
+    assert _value_color(out, "salud-grid", "oficial con SASMEX y cuórum") == OK
+
+    st["audio"]["profile"]["tono_oficial"] = False
+    out = _render(tmp_path, status=st)
+    assert "sin el sonido oficial" in _txt(out, "salud-grid")
+    assert _value_color(out, "salud-grid", "sin el sonido oficial") == WARN
 
 
 def test_sin_tono_de_prueba_el_boton_lo_advierte_antes_del_clic(tmp_path):
