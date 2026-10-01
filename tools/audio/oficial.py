@@ -24,10 +24,11 @@ from __future__ import annotations
 
 ID = "sasmex-oficial-v1"
 
-#: Dónde aterriza al inyectarse. Ninguna ruta existe en un clon limpio.
+#: Dónde aterriza al inyectarse en el gabinete; no existe en un clon limpio. En la app
+#: va a `mobile/android/.../res/raw/alerta_oficial.wav`, que NO se declara aquí: ese
+#: recurso lleva el tono PROPIO cuando se compila sin el oficial (`plugins/tonoOficial.js`).
 RUTAS = [
     "edge/takab_edge/audio/assets/sasmex_oficial.wav",
-    "mobile/android/app/src/main/res/raw/alerta_oficial.wav",
 ]
 
 #: El derivado que se inyecta, en el checkout principal (fuera de git).
