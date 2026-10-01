@@ -21,7 +21,7 @@
         "audio": "original de TAKAB (tono propio, D-19; sintetizado por gen_siren.py)",
         "fuente": "código del repo (edge/scripts/gen_siren.py), propiedad de TAKAB"
       },
-      "notas": "El mismo fichero, byte a byte, es la sirena del gabinete (catálogo del edge) y el sonido de alerta y de notificación de la app (sound.ts, push.ts). El tono oficial SASMEX (CIRES) está reservado y ausente (sasmex-oficial-v1). Medido 2026-09-27: gen_siren.py reproduce este sha256 byte a byte."
+      "notas": "El mismo fichero, byte a byte, es la sirena del gabinete (catálogo del edge) y el sonido de alerta y de notificación de la app (sound.ts, push.ts). Desde D-50 suena con el umbral local y donde falte el oficial; con SASMEX y con el cuórum suena sasmex-oficial-v1 (fuera de git). Medido 2026-09-27: gen_siren.py reproduce este sha256 byte a byte."
     },
     {
       "id": "takab-prueba-v1",
@@ -174,6 +174,31 @@
         "fuente": "modelo: apache-2.0 (declarada en el MODEL_CARD de rhasspy/piper-voices; dataset HirCoir/Piper-TTS-Spanish); herramienta: GPL-3.0-or-later (metadatos de piper-tts 1.3.0; OHF-Voice/piper1-gpl; incluye espeak-ng, GPL-3.0). Se invoca aislado con uv; NO es dependencia de ningún proyecto del repo."
       },
       "notas": "Alternativa de voz: es_MX-ald-medium (dataset con licencia Unlicense; onnx sha256 019b3803293c93e34a206dd2e53a3889209a514e786fd7144f7b70196c579b63, json sha256 5a71498158e04afc8099bfd019c7e87c68eb9d042505a2b1a87e5c1ac2b1a61d). Duración máxima exigida: 2.3 s."
+    },
+    {
+      "id": "sasmex-oficial-v1",
+      "fuera_de_git": true,
+      "rutas": [
+        "edge/takab_edge/audio/assets/sasmex_oficial.wav",
+        "mobile/android/app/src/main/res/raw/alerta_oficial.wav"
+      ],
+      "sha256": "9b5e81de233a5736f0838f93550c5f03dffee1a5f0419aa194168d196a602896",
+      "duracion_s": 59.5244,
+      "sample_rate": 22050,
+      "canales": 1,
+      "lufs_integrado": -11.14,
+      "pico_verdadero_dbtp": -1.1,
+      "fuente": {
+        "original": "audios/Sonido_Alerta_Sismica_Oficial.mp3 (fuera de git)",
+        "original_sha256": "4e2f5e6f5075c5aa1e69f91377b7153831b8ed3779d6cfe431957bec0ddc61ca",
+        "generador": "ffmpeg (mp3 → PCM16) → tools/audio/normaliza.py --lufs -8; el pico verdadero ≤ -1 dBTP limita la ganancia",
+        "derivado_local": "audios/sasmex_oficial.wav (fuera de git)"
+      },
+      "licencia": {
+        "audio": "sonido oficial del SASMEX, propiedad del CIRES; se usa SIN licencia escrita por decisión de Mauricio (D-50, 2026-10-01), que revoca en parte D-19 y D-40; pendiente de GATE-LEGAL",
+        "fuente": "fichero entregado por Mauricio; no se redistribuye en el repositorio"
+      },
+      "notas": "Suena con SASMEX (WR-1) y con el cuórum de red; con el umbral local sigue takab-siren-v1. Se inyecta al publicar la release del gabinete y al compilar la APK; sin él, el gabinete y la app usan el tono propio y lo declaran."
     }
   ]
 }
