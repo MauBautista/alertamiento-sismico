@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **503** · `[x]` **436** · `[~]` **20** · `[ ]` **47**
+**Conteo de tareas:** total **503** · `[x]` **436** · `[~]` **21** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17867,7 +17867,8 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Verificado en el Pixel con «No molestar» encendido (2026-09-28): la voz del movimiento y la crisis suenan
     con la pantalla apagada.
 - **Nota para F7:** el tono v2 de `T-9.70` estrenará `seismic_alert_v4`, porque `_v3` lo ocupa
-  esta ficha.
+  esta ficha. (No hizo falta: `D-50` eligió el sonido oficial, que va por su propio canal,
+  `alerta_oficial_v1`; `seismic_alert_v4` sigue libre.)
 - **⚠️ DESMENTIDO en el Pixel el 2026-09-30 (Android 17, `CP3A.260905.009`):** el uso ALARMA ya
   no basta. Android rebaja a NOTIFICACIÓN el audio de la notificación al publicarla: el canal
   guardado dice `USAGE_ALARM` y el «efectivo» de la notificación, `USAGE_NOTIFICATION`. La ALERTA
@@ -18294,19 +18295,43 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
 ## Fase 9.7 · Audios y animaciones
 
-### [ ] T-9.70 · **El tono propio v2** — `SOFTWARE` + `FÍSICO`
-- **Componente:** edge · mobile · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
-- **Objetivo:** un tono de alerta parecido al oficial, sin serlo.
+### [~] T-9.70 · **El sonido de la alerta: el OFICIAL del SASMEX con SASMEX y cuórum** — `SOFTWARE` + `FÍSICO` + `GATE-LEGAL`
+- **Componente:** edge · api · mobile · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-50` (revoca en parte `D-19` y `D-40`)
+- **Objetivo:** que la alerta de SASMEX y la del cuórum suenen como la que la población ya obedece.
+- **Lo que pasó (2026-10-01).** Mauricio escuchó en el parlante del gabinete los tres candidatos
+  del tono propio v2 (A, B, C) y otros tres sintetizados sobre el contorno medido del oficial
+  (D, E, F: un motivo descendente que cae de ~1225 Hz a una meseta de ~618 Hz unas 2,7 veces por
+  segundo). No eligió ninguno: **suena el oficial** con SASMEX y con el cuórum; con el umbral local,
+  el tono propio. El fichero viaja **fuera de git**.
 - **Criterios de aceptación:**
-  - [ ] Nuevo id en el gabinete conservando el anterior; canal nuevo en la app con vibración.
-  - [ ] Aprobado por Mauricio al escucharlo.
-- **Candidatos para escuchar (2026-09-28), también de T-9.71 y T-9.72:**
-  - están en `~/Música/TAKAB-candidatos-F7-2026-09-28/`, con su `LEEME.txt` y los scripts que los
-    generan;
-  - tres tonos originales;
-  - el simulacro hablado (voz sola 2,5 s y luego la frase sobre el tono a −15 dB);
-  - el «Himno a la alegría» sintetizado: dominio público, sin grabación de terceros.
-  - NO están conectados al gabinete ni a la app: se conectan cuando se aprueben.
+  - [x] Gabinete: el audio elige el oficial con SASMEX (`sasmex_active`) y con el cuórum (la marca
+    del despachador, sólo si es del episodio en curso); lo valida al arrancar por huella y formato,
+    y sin él suena el tono propio y lo declara en la salud y en el panel. `deploy.sh` lo inyecta en
+    la release (`edge/tests/test_audio_oficial.py`, `test_dispatch.py`, `test_deploy_sh.py`).
+  - [x] Nube: la CRISIS que autoriza evacuar (`target.autoriza`, no el `trigger` literal: el cuórum
+    real es `local_threshold` con 3 o más nodos) entrega por `alerta_oficial_v1`
+    (`api/tests/notify/test_tono_oficial.py`).
+  - [x] App: canal `alerta_oficial_v1` (MAX, salta «No molestar», audio ALARMA) y bucle de la alerta
+    por el recurso `raw/alerta_oficial`, que el plugin de prebuild llena con el oficial o con el
+    propio (`mobile/plugins/tonoOficial.js`, `tests/tonoOficial.plugin.test.ts`).
+  - [x] El fichero nunca entra al repositorio: `.gitignore`, y el censo lo busca por nombre y por
+    huella (`api/tests/test_censo_audio.py`).
+  - [ ] Escuchado en el gabinete con una alerta SASMEX (prueba del WR-1) y en el Pixel con una
+    CRISIS del arnés, tras desplegar en este orden: APK → nube → edge.
+  - [ ] GATE-LEGAL: el uso sin licencia escrita del CIRES (`D-50`, el precio declarado).
+- **Huecos declarados:** iOS sigue con el tono propio; en primer plano la app puede sonar dos veces
+  a la vez (notificación y bucle) durante el minuto del oficial; el oficial suena ~3,4 dB por debajo
+  de la sirena propia; un teléfono sin el canal nuevo (APK anterior, o la nueva sin abrir) recibe
+  la alerta en el canal de reserva de FCM, de ahí el orden APK → abrir la app → nube; y si
+  `takab-edge` se reinicia con la sirena del cuórum sonando, el jack pasa al tono propio.
+- **Revisión adversarial (2026-10-01), arreglado:** silenciar y re-armar un cuórum vivo lo
+  degradaba al tono propio (el episodio se ataba al sonido y no al enclave); un acuse fallido
+  borraba la marca del cuórum aunque el relé de un gabinete D3 se hubiera movido; con el jack
+  apagado el panel prometía el oficial; un `android/` anterior al plugin compilaba una APK que
+  creaba el canal oficial con el tono propio para siempre (ahora Gradle se cae); y ninguna prueba
+  reproducía el orden real marca → episodio (el margen a cero pasaba la suite).
+- **Candidatos descartados**, para quien quiera retomarlos: `~/Música/TAKAB-candidatos-F7-2026-09-28/`
+  (A, B, C y el generador `candidatos_def.py` de D, E, F).
 
 ### [~] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-41`
@@ -18332,7 +18357,11 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       y AL DERECHO. La frase real da 0,98; la truncada, 0,81; la invertida y el ruido, < 0,5.
     - Se probó con seis mutantes propios y cuatro de la revisión, cada uno cazado por la prueba
       que le toca.
-  - [ ] Probado por el altavoz del gabinete.
+  - [x] Probado por el altavoz del gabinete: Mauricio lo escuchó y lo **aprobó** el 2026-10-01,
+    nivel incluido (−16,6 LUFS).
+  - [ ] Encendido en la configuración firmada de cada sitio (`config.edge.audio.simulacro =
+    takab-simulacro-v2`). Es una escritura en la configuración de producción: la hace Mauricio,
+    o se pone por defecto en una ficha aparte.
 - **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
   sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
   oír de verdad»). Falla tres de las pruebas nuevas. Lo que hay que escuchar es el empaquetado.

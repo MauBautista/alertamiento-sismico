@@ -12,11 +12,11 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-09-27 · **49 decisiones** · 43 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-10-01 · **50 decisiones** · 44 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
 > 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
-> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 3 el 2026-09-27), 6 delegadas (3 el 2026-08-12,
-> 2 el 2026-09-02, 1 el 2026-09-11).
+> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 3 el 2026-09-27, 1 el 2026-10-01), 6 delegadas
+> (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
 > tomadas por Mauricio» mientras su propia lista de fechas sumaba **27**, y contaba «7 delegadas»
@@ -106,6 +106,7 @@
 | [D-47](#d-47) | Animaciones más vistosas con sismo confirmado **sin que el texto se mueva** *(enmienda `D-30`)* | 2026-09-26 | Mauricio |
 | [D-48](#d-48) | De SeismicAI se toma el **reporte automático**, los **contactos de emergencia** y el **historial por inmueble**; no la cuenta regresiva ni la MMI observada | 2026-09-26 | Mauricio |
 | [D-49](#d-49) | Reglas finas del dictamen automático: **sin calma no hay reingreso** ni confirmación, un **AMARILLO sin confirmar bloquea sin caducidad**, la escalada no frena a la brigada y **la firma humana vale para los daños que vio** | 2026-09-27 | Mauricio |
+| [D-50](#d-50) | El **sonido oficial del SASMEX** suena con SASMEX y con el cuórum (gabinete y app); el umbral local sigue con el tono propio; el fichero viaja **fuera de git**. Revoca en parte `D-19` y `D-40` | 2026-10-01 | Mauricio |
 
 ---
 
@@ -861,6 +862,12 @@ nombra el origen.
 confirmara que usarla no debilita el deslinde, se puede añadir como tono **alternativo por sitio**.
 Nunca como sustituto silencioso: cambiar el sonido de una alarma que la gente ya aprendió es un
 cambio de producto, no de configuración.
+
+> **REVOCADA EN PARTE · 2026-10-01 · por [`D-50`](#d-50).** Mauricio decidió que la alerta de
+> SASMEX y la del cuórum de red suenen con el sonido OFICIAL, en el gabinete y en la app, SIN la
+> licencia escrita ni el visto bueno legal que esta decisión ponía como condición. El umbral local
+> sigue con el tono propio. El texto de arriba se conserva entero: sus tres razones son ahora el
+> precio de la nueva.
 
 ---
 
@@ -2012,6 +2019,12 @@ preparado para el día que haya permiso escrito.
 **Cómo se revocaría.** Cada audio es una entrada del catálogo con id versionado (`takab-siren-v2`,
 canal `seismic_alert_v3`): volver al anterior es cambiar el id en la configuración firmada.
 
+
+> **REVOCADA EN PARTE · 2026-10-01 · por [`D-50`](#d-50).** El punto (1), el tono propio
+> «parecido»: escuchados en el gabinete seis candidatos (A, B y C, y después D, E y F sintetizados
+> sobre el contorno medido del oficial), Mauricio eligió el OFICIAL para SASMEX y el cuórum. Los
+> puntos (2), (3) y (4) —la voz de la brigada, el simulacro hablado y la música de prueba— siguen
+> vigentes.
 ---
 
 ## D-41 · El simulacro **habla**: «Esto es un simulacro» antes y durante el tono
@@ -2274,5 +2287,59 @@ es determinista y sin IA (regla de oro 1).
 `reingreso.bloqueo_persistente`, `ESCALADA_PENDIENTE_VIGENTES` y `sistema.ESCALADA_PENDIENTE_SQL`. R4: `sistema.danos_no_vistos`
 (una copia, la usan el worker, el 409 y el papel). Sus pruebas: `test_reglas_finas_d49.py`,
 `test_reingreso_d49.py`, `test_worker_danos_vistos_d49.py`, `test_papel_danos_vistos_d49.py`.
+
+---
+
+<a id="d-50"></a>
+## D-50 · El **sonido oficial del SASMEX** suena con SASMEX y con el cuórum
+
+**Fecha:** 2026-10-01 · **Decide:** Mauricio · **Ficha:** `T-9.70` · **Toca:** `edge/takab_edge/audio`
+(`asset_for`, `catalog.OFICIAL_*`), `dispatch.quorum_siren_desde`, `deploy/edge/deploy.sh`,
+`notify/push.py` (`CANAL_TONO_OFICIAL`), `notify/orchestrator._tono_oficial`,
+`mobile/plugins/tonoOficial.js`, `mobile/src/services/push.ts`, `mobile/src/features/alert/sound.ts`,
+`tools/audio/oficial.py` · **Revoca en parte:** `D-19`, `D-40`
+
+**Lo que se decidió.** Escuchando en el gabinete los candidatos del tono propio v2 —A, B y C, y
+después D, E y F, sintetizados sobre el contorno medido del oficial—, Mauricio no eligió ninguno:
+suena el sonido OFICIAL del SASMEX (`audios/Sonido_Alerta_Sismica_Oficial.mp3`, el que él entregó).
+- Con la alerta del receptor **WR-1 (SASMEX)** y con el **cuórum de red de 3 o más inmuebles**: el
+  oficial, por el jack del gabinete y en la app (canal `alerta_oficial_v1` y bucle de la pantalla de
+  alerta).
+- Con el **umbral local**: el tono propio de siempre (`takab-siren-v1`). Igual con la prueba de
+  sirena, el simulacro y los comandos manuales.
+- El fichero viaja **fuera de git**: se inyecta al publicar la release del gabinete y al compilar
+  la APK, y sólo suena si su huella es la auditada.
+
+**Por qué.** El oficial es el que la población ya reconoce y obedece. Es el precio que `D-19` declaró
+al elegir un tono propio, y ninguno de los seis candidatos lo sustituyó al oírlo en el gabinete.
+
+**El precio, declarado.**
+- **Se usa sin la licencia escrita del CIRES** y sin el visto bueno legal que `D-19` ponía como
+  condición. GATE-LEGAL queda abierto y lleva este riesgo.
+- **Con el cuórum suena a SASMEX algo que SASMEX no emitió.** Es la razón 1 de `D-19` y el
+  precedente `T-2.104`. El texto en pantalla sigue nombrando el origen real.
+- **Sin el fichero suena el tono propio**: en CI, en un clon, o en una release publicada desde una
+  máquina sin `audios/`. El gabinete lo dice en su salud y en el panel («Sonido de alerta»).
+- **iOS sigue con el tono propio**: un sonido de notificación no puede pasar de 30 s, y APNs aún
+  no está vivo (GATE-STORE).
+- **Suena más bajo que la sirena propia**: normalizado al máximo sin saturar queda en −11,1 LUFS,
+  unos 3,4 dB por debajo de los −7,7 LUFS de `siren.wav`.
+- **En primer plano la app puede sonar dos veces a la vez** —la notificación y el bucle— durante
+  el minuto que dura el oficial. No se tocó: callar uno arriesga dejar el teléfono mudo si el otro
+  falla. Se decide al oírlo.
+- **Un teléfono sin el canal nuevo recibe la alerta en el canal de reserva de FCM**, que no salta
+  «No molestar»: una APK anterior, o la nueva instalada y todavía sin abrir (los canales se crean
+  al abrirla). La nube no puede distinguirlo: `push_tokens` no guarda la versión de la app. Por
+  eso el orden es **APK → abrir la app → nube**. Con una flota de un teléfono basta; antes de
+  una flota real, cambiar de canal pide una bandera en la nube que se encienda cuando la flota
+  ya tenga la APK. Se descartó un `defaultChannel` sísmico en la app: un aviso de operación con
+  un canal desconocido sonaría a sismo, que es lo que `D-39` prohíbe.
+- **La marca del cuórum vive en la memoria del gabinete.** Si `takab-edge` se reinicia con la
+  sirena del cuórum sonando, el relé sigue y el jack pasa al tono propio hasta CERRAR ALERTA.
+
+**Cómo se revocaría.** Para volver al tono propio basta con **no inyectar el fichero**: sin él, todo
+suena con el propio. Para quitarlo del todo: `AudioNotifier.asset_for` (parámetro `oficial`),
+`orchestrator._tono_oficial` y el canal `alerta_oficial_v1`. Con licencia escrita del CIRES, el
+fichero podría entrar al repositorio y la entrada del manifiesto perdería `fuera_de_git`.
 
 ---

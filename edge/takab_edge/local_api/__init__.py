@@ -566,6 +566,13 @@ class _DashboardServer(ThreadingHTTPServer):
         super().__init__(address, _DashboardHandler)
 
 
+def _tono_oficial(oficial: dict) -> str:
+    """[T-9.70 · D-50] «oficial», «propio» o «sin_jack», para la fila del panel."""
+    if oficial.get("jack") is False:
+        return "sin_jack"
+    return "oficial" if oficial.get("disponible") else "propio"
+
+
 class LocalDashboard(EdgeModule):
     """Mini-consola LAN del inmueble: estado vivo + acciones con PIN (T-1.53)."""
 
@@ -1672,6 +1679,10 @@ class LocalDashboard(EdgeModule):
                 "applied": dict(report.get("applied") or {}),
                 "rejected": dict(report.get("rejected") or {}),
                 "test_tone": bool(report.get("test_path")),
+                # [T-9.70 · D-50] Con qué suenan SASMEX y el cuórum por el jack: el
+                # «oficial» (viaja fuera de git), el «propio» si esta release no lo trae,
+                # o nada («sin_jack») si el gabinete no tiene parlante en el jack.
+                "tono_oficial": _tono_oficial(report.get("oficial") or {}),
             }
         except Exception:  # noqa: BLE001 — sección no-crítica del panel
             log.warning("panel LAN: perfil de tonos no disponible", exc_info=True)

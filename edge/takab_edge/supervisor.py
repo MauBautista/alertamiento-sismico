@@ -366,6 +366,9 @@ class EdgeSupervisor:
             catalog=self.catalog,
             lora=self.lora,  # T-2.33: comando de red → espejo a secundarios
         )
+        # [T-9.70 · D-50] El audio se creó ANTES que el despachador: enlace tardío con
+        # el único que sabe que la sirena la pidió el CUÓRUM (sonido oficial).
+        self.audio.set_quorum_source(self.dispatch.quorum_siren_desde)
         # Backfill S3 + evidencia offline (T-1.25): se auto-cablea al conector
         # (router del flush, on_online, suscripción al grant).
         self.backfill = BackfillManager(s, self.cloud, buffer=self.buffer)

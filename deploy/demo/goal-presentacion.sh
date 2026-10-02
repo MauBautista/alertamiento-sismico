@@ -322,8 +322,9 @@ cat <<'NO'
   · VOCEO HABLADO: no existe ni una grabación. El gabinete puede sonar por sirena y
     estrobo; el voceo por altavoz está apagado. ⚠️ Y el PDF del reporte de simulacro
     lo IMPRIME por sitio («SIN VOCEO»): desmiente por escrito lo que se prometa en voz alta.
-  · TONO OFICIAL DEL SASMEX: reservado y ausente a propósito — es de CIRES y reproducirlo
-    sin licencia no es un detalle estético.
+  · LICENCIA DEL TONO OFICIAL DEL SASMEX: no la hay. Suena con SASMEX y con el cuórum
+    (D-50, 2026-10-01) sin licencia escrita del CIRES; con el umbral local, el tono propio.
+    Si preguntan, se dice así: es una decisión con riesgo legal abierto, no un permiso.
   · SISMOLÓGICO NACIONAL: no se consulta para correlacionar. La atribución de sus cifras
     sigue sin cerrar (D-06 / T-2.149) y el dictamen lo declara.
   · SIRENA POR HARDWARE CON EL GABINETE APAGADO: diseñada y decidida, NO construida (G-04).

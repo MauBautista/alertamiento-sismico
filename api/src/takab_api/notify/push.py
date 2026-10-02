@@ -88,13 +88,24 @@ _ALERT_TEXT = {
 #: `sound` es el campo que separa el sismo del resto: el `critical` de Apple se
 #: solicitó para alertamiento sísmico (GATE-STORE) y gastarlo en otra cosa es la
 #: clase de uso que hace que Apple lo revoque.
+#:
+#: [T-9.70 · D-50] La CRISIS que AUTORIZA evacuar (SASMEX o cuórum de red) suena con
+#: el sonido OFICIAL del SASMEX, decidido por Mauricio el 2026-10-01. No es una clase
+#: nueva —mismos textos, misma fase— sino otro ESTILO de la misma: en Android el
+#: sonido lo decide el canal, que es inmutable, así que el oficial va por uno propio.
+#: iOS sigue con el tono de TAKAB (≤ 30 s por notificación; APNs aún no vive).
+CANAL_TONO_OFICIAL = "alerta_oficial_v1"
+ESTILO_CRISIS_TONO_OFICIAL = "CRISIS_TONO_OFICIAL"
+
 _DELIVERY_STYLE = {
     PUSH_CLASS_CRISIS: {
         # Base honesta pre-entitlement: time-sensitive suena aun en foco/atención;
         # el dict `critical` queda listo para cuando Apple apruebe (GATE-STORE).
         "interruption_level": "time-sensitive",
         # [D-19] El tono es PROPIO de TAKAB, no el oficial del SASMEX, y es el mismo
-        # que sale por el altavoz del gabinete. Hasta el 2026-08-22 esto nombraba un
+        # que sale por el altavoz del gabinete (en iOS, también con SASMEX: `D-50`
+        # sólo cambió el canal Android, ver CRISIS_TONO_OFICIAL). Hasta el
+        # 2026-08-22 esto nombraba un
         # `seismic_alert.caf` que NO ESTABA EN EL REPO: iOS caía al sonido por
         # defecto en silencio, o sea que el sistema afirmaba un sonido crítico que
         # no podía sonar. El fichero viaja en el bundle por el `sounds` de
@@ -110,6 +121,12 @@ _DELIVERY_STYLE = {
         # sonó ni vibró hasta encender la pantalla; `bypassDnd` no hace nada sin el
         # acceso que el usuario concede a mano. El uso ALARMA sí pasa ese modo.
         "channel_id": "seismic_alert_v3",
+    },
+    ESTILO_CRISIS_TONO_OFICIAL: {
+        "interruption_level": "time-sensitive",
+        "sound": {"critical": 1, "name": "alerta_sismica.wav", "volume": 1.0},
+        "android_priority": "high",
+        "channel_id": CANAL_TONO_OFICIAL,
     },
     PUSH_CLASS_OPS: {
         "interruption_level": "active",
@@ -159,11 +176,13 @@ def build_push_payload(
     site_id: str,
     incident_id: str | None,
     phase: str,
+    tono_oficial: bool = False,
 ) -> dict[str, str]:
     """Estructura ``MessageStructure=json`` de SNS: default + APNS(+SANDBOX) + GCM.
 
     Datos mínimos idénticos en todas las plataformas; el estilo de entrega
-    (sonido crítico / canal Android) depende de la CLASE.
+    (sonido crítico / canal Android) depende de la CLASE — y, en la CRISIS, de
+    ``tono_oficial`` (T-9.70 · D-50): la que autoriza evacuar suena con el oficial.
     """
     if push_class not in _ALERT_TEXT:
         raise ValueError(f"clase de push desconocida: {push_class!r}")
@@ -175,7 +194,12 @@ def build_push_payload(
         "phase": phase,
     }
     text = _ALERT_TEXT[push_class]
-    style = _DELIVERY_STYLE[push_class]
+    estilo = (
+        ESTILO_CRISIS_TONO_OFICIAL
+        if push_class == PUSH_CLASS_CRISIS and tono_oficial
+        else push_class
+    )
+    style = _DELIVERY_STYLE[estilo]
 
     aps: dict = {
         "alert": dict(text),
