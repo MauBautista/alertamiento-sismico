@@ -122,9 +122,11 @@ class CommandDispatcher(EdgeModule):
     def quorum_siren_desde(self) -> float | None:
         """[T-9.70 · D-50] Instante (reloj monótono) en que el cuórum activó la SIRENA,
         o ``None``. Se marca ANTES de energizar el relé —si no, el vigilante del audio
-        arrancaría el tono propio esos milisegundos— y se olvida si la actuación falla,
-        con un DEACTIVATE de la sirena o con CERRAR ALERTA. El audio, además, sólo la
-        acepta si es del episodio de alerta en curso."""
+        arrancaría el tono propio esos milisegundos— y se olvida con un DEACTIVATE de la
+        sirena o con CERRAR ALERTA (no con un acuse fallido: el relé pudo moverse). El
+        audio, además, sólo la acepta si es del episodio de alerta en curso. Vive en
+        memoria: si takab-edge se reinicia con la sirena del cuórum sonando, el jack
+        sigue con el tono propio (precio declarado en `D-50`)."""
         return self._quorum_siren_desde
 
     # ------------------------------------------------------------- comandos
@@ -354,13 +356,13 @@ class CommandDispatcher(EdgeModule):
             and action is ActuatorAction.ACTIVATE
             and channel is ActuatorChannel.SIREN
         )
-        marca_previa = self._quorum_siren_desde
+        # Un acuse FALLIDO no la borra: el cuórum es real, y en un gabinete D3 el relé
+        # pudo moverse con el acuse perdido (`pinlink/client.py`). Fuera de su episodio
+        # la marca no cuenta: eso lo decide el audio.
         if sirena_del_cuorum:
             self._quorum_siren_desde = _mono()
         result = self._actuators.execute(command)
-        if sirena_del_cuorum and not result.success:
-            self._quorum_siren_desde = marca_previa
-        elif (
+        if (
             result.success
             and action is ActuatorAction.DEACTIVATE
             and channel is ActuatorChannel.SIREN

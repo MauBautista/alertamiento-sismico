@@ -151,6 +151,75 @@ def test_una_alerta_local_que_ESCALA_a_cuorum_conmuta_al_oficial(cfg, gpio, ofic
         notifier.stop()
 
 
+def test_en_el_orden_REAL_la_marca_es_anterior_al_episodio(cfg, gpio, oficial) -> None:  # noqa: ANN001
+    """El despachador marca ANTES de energizar y el vigilante abre el episodio DESPUÉS:
+    la marca siempre es unos milisegundos más vieja. Con un margen de cero, todo cuórum
+    sonaría con el tono propio (revisión adversarial de T-9.70)."""
+    reloj = _Reloj()
+    marca = reloj.t
+    notifier, siren = _notifier(_con_oficial(cfg, oficial), gpio, reloj)
+    try:
+        notifier.set_quorum_source(lambda: marca)
+        gpio.activate(ActuatorChannel.SIREN)
+        reloj.t += 0.05  # el relé tarda; el vigilante concilia después
+        notifier._reconcile_siren()
+        assert siren.playing == str(oficial)
+    finally:
+        notifier.stop()
+
+
+def test_silenciar_y_rearmar_un_cuorum_vivo_no_lo_degrada_al_propio(cfg, gpio, oficial) -> None:  # noqa: ANN001
+    """El silencio calla el relé pero NO suelta el enclave: el episodio es el mismo y al
+    re-armar sigue siendo el cuórum. Antes el episodio se cerraba con el sonido y el
+    re-armado abría uno nuevo, más joven que la marca: sonaba el propio."""
+    reloj = _Reloj()
+    marca = reloj.t
+    notifier, siren = _notifier(_con_oficial(cfg, oficial), gpio, reloj)
+    try:
+        notifier.set_quorum_source(lambda: marca)
+        gpio.activate(ActuatorChannel.SIREN)
+        notifier._reconcile_siren()
+        assert siren.playing == str(oficial)
+
+        reloj.t += 30
+        gpio.silence_audibles(True)
+        notifier._reconcile_siren()
+        assert siren.playing is None
+
+        reloj.t += 60
+        gpio.silence_audibles(False)
+        notifier._reconcile_siren()
+        assert siren.playing == str(oficial)
+    finally:
+        notifier.stop()
+
+
+def test_cerrar_la_alerta_cierra_el_episodio(cfg, gpio, oficial) -> None:  # noqa: ANN001
+    """Una marca que nadie borró (p. ej. el despachador reiniciado no la conoce, o un
+    CERRAR ALERTA que no la alcanzó) no cuenta en la alerta LOCAL siguiente: el
+    episodio se cierra cuando se suelta el enclave."""
+    reloj = _Reloj()
+    marca = reloj.t
+    notifier, siren = _notifier(_con_oficial(cfg, oficial), gpio, reloj)
+    try:
+        notifier.set_quorum_source(lambda: marca)
+        gpio.activate(ActuatorChannel.SIREN)
+        notifier._reconcile_siren()
+        assert siren.playing == str(oficial)
+
+        reloj.t += 120
+        gpio.reset()
+        notifier._reconcile_siren()
+        assert siren.playing is None
+
+        reloj.t += 10
+        gpio.activate(ActuatorChannel.SIREN)  # el umbral local, ya sin cuórum
+        notifier._reconcile_siren()
+        assert siren.playing == cfg.audio_siren_path
+    finally:
+        notifier.stop()
+
+
 def test_la_prueba_de_sirena_jamas_suena_el_oficial(cfg, gpio, oficial) -> None:  # noqa: ANN001
     reloj = _Reloj()
     notifier, siren = _notifier(_con_oficial(cfg, oficial), gpio, reloj)
@@ -228,7 +297,27 @@ def test_el_reporte_dice_que_hay_oficial_sin_dar_su_ruta(cfg, gpio, oficial) -> 
     notifier, _siren = _notifier(_con_oficial(cfg, oficial), gpio)
     try:
         r = notifier.profile_report["oficial"]
-        assert r == {"disponible": True, "sha256": catalog.OFICIAL_SHA256[:16], "motivo": None}
+        assert r == {
+            "disponible": True,
+            "jack": True,
+            "sha256": catalog.OFICIAL_SHA256[:16],
+            "motivo": None,
+        }
+    finally:
+        notifier.stop()
+
+
+def test_sin_parlante_en_el_jack_el_reporte_no_promete_el_oficial(cfg, gpio, oficial) -> None:  # noqa: ANN001
+    """Con `audio_siren_enabled=false` (el valor por defecto) por el jack no sale nada:
+    el fichero puede estar, pero decir «suena el oficial» sería afirmar un sonido que
+    nadie emite (regla de oro 7)."""
+    sin_jack = _con_oficial(cfg, oficial).model_copy(update={"audio_siren_enabled": False})
+    notifier, siren = _notifier(sin_jack, gpio)
+    try:
+        gpio.simulate_sasmex(active=True)
+        notifier._reconcile_siren()
+        assert siren.playing is None
+        assert notifier.profile_report["oficial"]["jack"] is False
     finally:
         notifier.stop()
 

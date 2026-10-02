@@ -682,6 +682,9 @@ class AudioNotifier(EdgeModule):
         disponible = self._oficial_path is not None
         return {
             "disponible": disponible,
+            # Con el jack apagado no suena nada por él, haya o no fichero: quien lo
+            # pinte no puede prometer el oficial (regla de oro 7).
+            "jack": self.siren_enabled,
             "sha256": catalog.OFICIAL_SHA256[:16] if disponible else None,
             "motivo": self._oficial_motivo,
         }
@@ -805,7 +808,12 @@ class AudioNotifier(EdgeModule):
             return
         self._siren_fallos = 0
         try:
-            if reason is None:
+            # [T-9.70 · D-50] El episodio es el del ENCLAVE de alerta, no el del sonido:
+            # silenciar y re-armar (o una prueba durante un cuórum silenciado) no puede
+            # abrir uno nuevo, más joven que la marca del cuórum. Sólo `reset()` —CERRAR
+            # ALERTA— suelta el enclave y cierra el episodio.
+            vivo = reason is not None or getattr(snap, "alert_latched", False) is True
+            if not vivo:
                 self._episodio_desde = None
             elif self._episodio_desde is None:
                 self._episodio_desde = self._reloj()

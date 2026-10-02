@@ -265,7 +265,12 @@ def _base() -> dict:
         "audio": {
             "enabled": True,
             "sounding": False,
-            "profile": {"applied": {}, "rejected": {}, "test_tone": True, "tono_oficial": True},
+            "profile": {
+                "applied": {},
+                "rejected": {},
+                "test_tone": True,
+                "tono_oficial": "oficial",
+            },
             # [T-9.72] La música de prueba de parlantes, en reposo y lista. Las
             # ramas sonando / cortada / sin parlante las encienden escenas del censo.
             "music": {
@@ -1603,10 +1608,16 @@ def test_el_panel_dice_con_que_sonido_suena_una_alerta(tmp_path):
     assert "oficial con SASMEX y cuórum" in _txt(out, "salud-grid")
     assert _value_color(out, "salud-grid", "oficial con SASMEX y cuórum") == OK
 
-    st["audio"]["profile"]["tono_oficial"] = False
+    st["audio"]["profile"]["tono_oficial"] = "propio"
     out = _render(tmp_path, status=st)
     assert "sin el sonido oficial" in _txt(out, "salud-grid")
     assert _value_color(out, "salud-grid", "sin el sonido oficial") == WARN
+
+    # Sin parlante en el jack no se promete ningún sonido: ni el oficial ni el propio.
+    st["audio"]["profile"]["tono_oficial"] = "sin_jack"
+    out = _render(tmp_path, status=st)
+    assert "sin sirena por el jack" in _txt(out, "salud-grid")
+    assert "oficial con SASMEX" not in _txt(out, "salud-grid")
 
 
 def test_sin_tono_de_prueba_el_boton_lo_advierte_antes_del_clic(tmp_path):

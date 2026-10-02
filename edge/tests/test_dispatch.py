@@ -755,7 +755,11 @@ def test_la_sirena_del_cuorum_queda_marcada_ANTES_de_energizar() -> None:
     assert dispatcher.quorum_siren_desde() is not None
 
 
-def test_si_la_actuacion_del_cuorum_FALLA_no_queda_marca() -> None:
+def test_un_acuse_FALLIDO_del_cuorum_no_borra_la_marca() -> None:
+    """El cuórum es real aunque el acuse diga «falló»: en un gabinete D3 el relé pudo
+    moverse con el acuse perdido (`pinlink/client.py`). Borrar la marca haría sonar el
+    tono propio en una sirena de cuórum. Fuera de su episodio la marca no cuenta: eso
+    lo decide el audio, no el despachador."""
     dispatcher, signer, _cloud, _store, actuators = _dispatcher()
 
     def falla(command):  # noqa: ANN001, ANN202
@@ -770,7 +774,7 @@ def test_si_la_actuacion_del_cuorum_FALLA_no_queda_marca() -> None:
 
     actuators.execute = falla  # type: ignore[method-assign]
     dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-qf", NOW))
-    assert dispatcher.quorum_siren_desde() is None
+    assert dispatcher.quorum_siren_desde() is not None
 
 
 def test_un_cuorum_SOLO_de_estrobo_no_marca_la_sirena() -> None:

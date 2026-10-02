@@ -288,7 +288,7 @@ def test_status_expone_audio(panel) -> None:  # noqa: ANN001
     assert section == {
         "enabled": True,
         "sounding": False,
-        "profile": {"applied": {}, "rejected": {}, "test_tone": True, "tono_oficial": False},
+        "profile": {"applied": {}, "rejected": {}, "test_tone": True, "tono_oficial": "sin_jack"},
         # [T-9.72] Sin parlante en el jack no hay música de prueba, y se DICE por qué.
         "music": {
             "disponible": False,
