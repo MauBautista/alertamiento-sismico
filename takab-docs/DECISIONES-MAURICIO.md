@@ -2327,6 +2327,15 @@ al elegir un tono propio, y ninguno de los seis candidatos lo sustituyó al oír
 - **En primer plano la app puede sonar dos veces a la vez** —la notificación y el bucle— durante
   el minuto que dura el oficial. No se tocó: callar uno arriesga dejar el teléfono mudo si el otro
   falla. Se decide al oírlo.
+- **Un teléfono sin el canal nuevo recibe la alerta en el canal de reserva de FCM**, que no salta
+  «No molestar»: una APK anterior, o la nueva instalada y todavía sin abrir (los canales se crean
+  al abrirla). La nube no puede distinguirlo: `push_tokens` no guarda la versión de la app. Por
+  eso el orden es **APK → abrir la app → nube**. Con una flota de un teléfono basta; antes de
+  una flota real, cambiar de canal pide una bandera en la nube que se encienda cuando la flota
+  ya tenga la APK. Se descartó un `defaultChannel` sísmico en la app: un aviso de operación con
+  un canal desconocido sonaría a sismo, que es lo que `D-39` prohíbe.
+- **La marca del cuórum vive en la memoria del gabinete.** Si `takab-edge` se reinicia con la
+  sirena del cuórum sonando, el relé sigue y el jack pasa al tono propio hasta CERRAR ALERTA.
 
 **Cómo se revocaría.** Para volver al tono propio basta con **no inyectar el fichero**: sin él, todo
 suena con el propio. Para quitarlo del todo: `AudioNotifier.asset_for` (parámetro `oficial`),

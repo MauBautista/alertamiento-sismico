@@ -18321,7 +18321,15 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [ ] GATE-LEGAL: el uso sin licencia escrita del CIRES (`D-50`, el precio declarado).
 - **Huecos declarados:** iOS sigue con el tono propio; en primer plano la app puede sonar dos veces
   a la vez (notificación y bucle) durante el minuto del oficial; el oficial suena ~3,4 dB por debajo
-  de la sirena propia.
+  de la sirena propia; un teléfono sin el canal nuevo (APK anterior, o la nueva sin abrir) recibe
+  la alerta en el canal de reserva de FCM, de ahí el orden APK → abrir la app → nube; y si
+  `takab-edge` se reinicia con la sirena del cuórum sonando, el jack pasa al tono propio.
+- **Revisión adversarial (2026-10-01), arreglado:** silenciar y re-armar un cuórum vivo lo
+  degradaba al tono propio (el episodio se ataba al sonido y no al enclave); un acuse fallido
+  borraba la marca del cuórum aunque el relé de un gabinete D3 se hubiera movido; con el jack
+  apagado el panel prometía el oficial; un `android/` anterior al plugin compilaba una APK que
+  creaba el canal oficial con el tono propio para siempre (ahora Gradle se cae); y ninguna prueba
+  reproducía el orden real marca → episodio (el margen a cero pasaba la suite).
 - **Candidatos descartados**, para quien quiera retomarlos: `~/Música/TAKAB-candidatos-F7-2026-09-28/`
   (A, B, C y el generador `candidatos_def.py` de D, E, F).
 
