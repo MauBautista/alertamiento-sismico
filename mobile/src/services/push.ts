@@ -16,7 +16,7 @@ import { useSessionStore } from "@/auth/session.store";
 
 import { esDeTodoElCliente } from "./alcanceCliente";
 import { type PermissionSnapshot } from "./alertability";
-import { tonoOficialDeLaCompilacion } from "./tonoOficial";
+import { RECURSO_OFICIAL, tonoOficialDeLaCompilacion } from "./tonoOficial";
 
 /** Fichero empaquetado por el plugin `expo-notifications` de `app.json`. Es el
  * MISMO tono que sale por el altavoz del gabinete (`edge/takab_edge/audio/assets/
@@ -36,7 +36,7 @@ export const SEISMIC_SOUND = "alerta_sismica.wav";
  * llena con el oficial o, sin él, con el tono propio. El canal guarda la referencia y
  * no una copia: una APK posterior que traiga el oficial lo cambia sin reinstalar. */
 export const OFFICIAL_CHANNEL_ID = "alerta_oficial_v1";
-export const OFFICIAL_SOUND = "alerta_oficial.wav";
+export const OFFICIAL_SOUND = RECURSO_OFICIAL;
 
 /** ⚠️ El sufijo `_v2` NO es cosmético y no se puede quitar.
  *

@@ -6,6 +6,10 @@ import Constants from "expo-constants";
 
 export type TonoDeLaCompilacion = "oficial" | "propio" | null;
 
+/** El recurso `res/raw` que suenan el canal `alerta_oficial_v1` y el bucle de la alerta.
+ *  El plugin (`plugins/tonoOficial.js`, `RECURSO`) escribe este mismo nombre. */
+export const RECURSO_OFICIAL = "alerta_oficial.wav";
+
 export function tonoOficialDeLaCompilacion(): TonoDeLaCompilacion {
   const valor: unknown = Constants.expoConfig?.extra?.tonoOficial;
   return valor === "oficial" || valor === "propio" ? valor : null;

@@ -3,10 +3,16 @@
 // el plugin que mete el sonido OFICIAL del SASMEX en la APK sin que entre al
 // repositorio, y lo que la compilación trae de verdad (`extra.tonoOficial`).
 /* global __dirname */
-const { tonoEmpaquetado } = require("./plugins/tonoOficial");
+const { compilacionSinRecurso, tonoEmpaquetado } = require("./plugins/tonoOficial");
 
-module.exports = ({ config }) => ({
-  ...config,
-  plugins: [...(config.plugins ?? []), "./plugins/tonoOficial"],
-  extra: { ...(config.extra ?? {}), tonoOficial: tonoEmpaquetado(__dirname) },
-});
+module.exports = ({ config }) => {
+  const frena = compilacionSinRecurso(__dirname);
+  if (frena) {
+    throw new Error(frena);
+  }
+  return {
+    ...config,
+    plugins: [...(config.plugins ?? []), "./plugins/tonoOficial"],
+    extra: { ...(config.extra ?? {}), tonoOficial: tonoEmpaquetado(__dirname) },
+  };
+};

@@ -21,6 +21,8 @@ const path = require("path");
 /** La huella del ÚNICO fichero que se empaqueta como oficial (la del manifiesto y la
  *  del gabinete: `tools/audio/oficial.py`). La comprueba `tests/tonoOficial.plugin.test.ts`. */
 const SHA256_OFICIAL = "9b5e81de233a5736f0838f93550c5f03dffee1a5f0419aa194168d196a602896";
+/** El MISMO nombre que `RECURSO_OFICIAL` de `src/services/tonoOficial.ts` (canal y bucle);
+ *  la prueba del plugin los ata. */
 const RECURSO = "alerta_oficial.wav";
 
 function sha256(ruta) {
@@ -57,6 +59,26 @@ function tonoEmpaquetado(raizDelProyecto, esperado = SHA256_OFICIAL) {
   return sha256(ruta) === esperado ? "oficial" : "propio";
 }
 
+/** Al COMPILAR (Gradle evalúa `app.config.js` con `expo-constants/scripts/getAppConfig.js`)
+ *  el recurso no puede faltar: un `android/` generado antes del plugin haría que la app
+ *  creara `alerta_oficial_v1` con el tono propio, y el sonido de un canal es inmutable.
+ *  Devuelve el motivo para frenar, o `null`. Fuera de Gradle —el propio prebuild, que es
+ *  quien lo crea, `expo config`, CI— nunca frena. */
+function compilacionSinRecurso(raizDelProyecto, script = process.argv[1]) {
+  if (path.basename(script || "") !== "getAppConfig.js") {
+    return null;
+  }
+  if (tonoEmpaquetado(raizDelProyecto) !== null) {
+    return null;
+  }
+  return (
+    `[tono oficial] android/ no trae res/raw/${RECURSO}: se generó antes del plugin. ` +
+    "Repite el prebuild (TAKAB_TONO_OFICIAL=<ruta> npx expo prebuild --platform android) " +
+    "antes de compilar: si no, el canal alerta_oficial_v1 nacería con el tono propio y " +
+    "ninguna APK posterior podría cambiarlo."
+  );
+}
+
 function withTonoOficial(config) {
   const { withDangerousMod } = require("expo/config-plugins");
   return withDangerousMod(config, [
@@ -84,5 +106,6 @@ function withTonoOficial(config) {
 module.exports = withTonoOficial;
 module.exports.resolverTono = resolverTono;
 module.exports.tonoEmpaquetado = tonoEmpaquetado;
+module.exports.compilacionSinRecurso = compilacionSinRecurso;
 module.exports.SHA256_OFICIAL = SHA256_OFICIAL;
 module.exports.RECURSO = RECURSO;

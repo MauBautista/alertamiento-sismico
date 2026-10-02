@@ -11,12 +11,12 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
 import { Platform } from "react-native";
 
-import { tonoOficialDeLaCompilacion } from "@/services/tonoOficial";
+import { RECURSO_OFICIAL, tonoOficialDeLaCompilacion } from "@/services/tonoOficial";
 
 /** Lo que suena en bucle: el recurso de la compilación en Android, si lo hay. */
 function fuenteDelBucle(): number | { uri: string } {
   if (Platform.OS === "android" && tonoOficialDeLaCompilacion() !== null) {
-    return { uri: "alerta_oficial" };
+    return { uri: RECURSO_OFICIAL.replace(/\.wav$/, "") };
   }
   return require("../../../assets/sounds/alerta_sismica.wav");
 }

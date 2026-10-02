@@ -6,6 +6,8 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
+import { RECURSO_OFICIAL } from "../src/services/tonoOficial";
+
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const plugin = require("../plugins/tonoOficial");
 
@@ -67,5 +69,41 @@ describe("tonoEmpaquetado", () => {
     fichero(raw, "alerta_oficial.wav", "OFICIAL");
     expect(plugin.tonoEmpaquetado(raiz, huella("OFICIAL"))).toBe("oficial");
     expect(plugin.tonoEmpaquetado(raiz, huella("OTRA"))).toBe("propio");
+  });
+});
+
+// [T-9.70] Un `android/` generado ANTES del plugin no trae el recurso, y Gradle volvía a
+// evaluar `app.config.js` con `tonoOficial: null`: la app creaba `alerta_oficial_v1`
+// con el tono propio y, como el sonido de un canal es inmutable, ninguna APK posterior
+// lo arreglaba sin desinstalar (revisión adversarial). Al COMPILAR no puede faltar.
+describe("compilacionSinRecurso", () => {
+  function proyecto(conRecurso: boolean): string {
+    const raiz = mkdtempSync(join(tmpdir(), "compila-"));
+    const raw = join(raiz, "android", "app", "src", "main", "res", "raw");
+    mkdirSync(raw, { recursive: true });
+    if (conRecurso) {
+      fichero(raw, "alerta_oficial.wav", "PROPIO");
+    }
+    return raiz;
+  }
+  const gradle = "/x/node_modules/expo-constants/scripts/getAppConfig.js";
+
+  it("Gradle sobre un android/ sin el recurso ⇒ lo dice y manda repetir el prebuild", () => {
+    expect(plugin.compilacionSinRecurso(proyecto(false), gradle)).toMatch(/expo prebuild/);
+  });
+
+  it("Gradle con el recurso (oficial o propio) ⇒ compila", () => {
+    expect(plugin.compilacionSinRecurso(proyecto(true), gradle)).toBeNull();
+  });
+
+  it("fuera de Gradle (el propio prebuild, `expo config`, CI) ⇒ nunca frena", () => {
+    expect(plugin.compilacionSinRecurso(proyecto(false), "/x/expo/bin/cli")).toBeNull();
+    expect(plugin.compilacionSinRecurso(proyecto(false), undefined)).toBeNull();
+  });
+});
+
+describe("un solo nombre de recurso", () => {
+  it("el plugin escribe el mismo recurso que nombran el canal y el bucle", () => {
+    expect(plugin.RECURSO).toBe(RECURSO_OFICIAL);
   });
 });

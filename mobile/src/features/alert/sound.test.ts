@@ -19,6 +19,7 @@ jest.mock("expo-audio", () => ({
 }));
 
 jest.mock("@/services/tonoOficial", () => ({
+  ...jest.requireActual("@/services/tonoOficial"),
   tonoOficialDeLaCompilacion: jest.fn(() => null),
 }));
 

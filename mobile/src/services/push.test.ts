@@ -44,6 +44,7 @@ jest.mock("expo-notifications", () => ({
 // [T-9.70 · D-50] Qué trae la compilación en `res/raw/alerta_oficial` (lo decide el
 // plugin de prebuild): por defecto, una APK hecha con el plugin.
 jest.mock("./tonoOficial", () => ({
+  ...jest.requireActual("./tonoOficial"),
   tonoOficialDeLaCompilacion: jest.fn(() => "oficial"),
 }));
 
@@ -168,6 +169,9 @@ describe("configureAndroidChannels", () => {
     });
   });
 
+  // En una APK no puede pasar: la compilación se cae sin el recurso
+  // (`plugins/tonoOficial.js` · `compilacionSinRecurso`). Queda para jest y Expo Go:
+  // un canal que apunta a un recurso inexistente sonaría el del sistema para siempre.
   it("android: sin el recurso en la compilación, el canal oficial suena el propio", async () => {
     setPlatform("android");
     jest.mocked(tonoOficialDeLaCompilacion).mockReturnValueOnce(null);

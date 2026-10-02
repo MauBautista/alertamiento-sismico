@@ -5,7 +5,7 @@ red de 3 o más inmuebles; con el umbral local sigue el tono propio. El fichero 
 CIRES y se usa sin licencia escrita (D-50 revoca en parte D-19 y D-40, pendiente de
 GATE-LEGAL), así que **nunca entra al repositorio**: vive en ``audios/`` del checkout
 principal y se inyecta al publicar la release del gabinete (``deploy/edge/deploy.sh``)
-y al compilar la APK (``mobile/plugins/withTonoOficial.js``).
+y al compilar la APK (``mobile/plugins/tonoOficial.js``).
 
 Estas cifras se midieron UNA vez sobre el WAV derivado, generado así desde la raíz::
 
