@@ -228,6 +228,14 @@ describe("bloqueoDelInmueble (T-9.33 · D-49)", () => {
     expect(b.detalle).not.toMatch(/OTRO evento/);
   });
 
+  // Visto en el Pixel el 2026-10-01: el detalle de INICIO va tras un guion
+  // («REINGRESO BLOQUEADO — consulte…») y en el certificado es una frase suelta.
+  it("el detalle del certificado es una frase: empieza en mayúscula también sin motivo", () => {
+    for (const e of [estado(null, "i-1", "alert_active"), estado("no_habitable", "i-otro")]) {
+      expect(bloqueoDelInmueble(dictamen(), e)!.detalle).toMatch(/^[A-ZÁÉÍÓÚÑ]/);
+    }
+  });
+
   it("cada motivo del servidor tiene su detalle, distinto para este evento y para otro", () => {
     for (const motivo of ["no_habitable", "pendiente_dictamen", "pendiente_confirmacion"] as const) {
       const otro = bloqueoDelInmueble(dictamen(), estado(motivo, "i-otro"))!;

@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **503** · `[x]` **435** · `[~]` **21** · `[ ]` **47**
+**Conteo de tareas:** total **503** · `[x]` **436** · `[~]` **20** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -17990,7 +17990,16 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   HABITAR» mientras el certificado decía «REINGRESO APROBADO · BAJO MONITOREO».
   - No es un fallo del reingreso, es D-49: un incidente viejo del arnés (`9d7525e3`) conserva un
     NO HABITAR firmado que nadie levantó, y ese bloqueo del EDIFICIO manda.
-  - Arreglado después, en software; falta verlo en el Pixel:
+  - Arreglado después, en software, y visto en el Pixel el 2026-10-01 con el brigadista del
+    arnés (TOTP de Mauricio):
+    - `crisis` + `reentry` sin `conclude` (dictamen habitable firmado con la alerta viva): el
+      certificado dijo en grande «REINGRESO BLOQUEADO», igual que el panel, y «ESTE DICTAMEN:
+      REINGRESO APROBADO · BAJO MONITOREO» como dato;
+    - tras `conclude`, el certificado pasó solo a «REINGRESO APROBADO · BAJO MONITOREO» en verde,
+      sin salir de la pantalla;
+    - la frase del detalle empezaba en minúscula (es el texto que en INICIO va tras un guion):
+      corregido.
+  - Lo que se arregló:
     - el certificado lee el MISMO aviso que pinta INICIO (`avisoDeReingreso`). Con el inmueble
       bloqueado, lo grande es el bloqueo («Lo bloquea OTRO evento del inmueble…») y el veredicto
       pasa a un dato, «ESTE DICTAMEN». Sin PDF ya no afirma «autorizado» con el inmueble
@@ -18020,7 +18029,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Rótulo del firmante por tipo de firma, nunca un identificador interno.
   - [x] El desplegable de firma arranca en el estado vigente.
 
-### [~] T-9.35 · **Los sensores fantasma de Puebla** — `SOFTWARE` + `GATE-AWS`
+### [x] T-9.35 · **Los sensores fantasma de Puebla** — `SOFTWARE` + `GATE-AWS`
 - **Componente:** infra · **Depende de:** T-9.30 · **Prioridad:** F3 · alta
 - **Objetivo:** que el sitio de la demostración mida con su sensor real, que ya tiene la
   calibración del fabricante declarada.
@@ -18033,7 +18042,14 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       `infra/scripts/retira_sensores_fantasma.sh --aplicar`, que deja una fila
       `sensor_retire` en `audit_log` por cada uno.
     - `site-dev` queda con el R4F74 calibrado como único activo.
-  - [ ] El PDF de un evento nuevo ya no dice «sin fuente de calibración».
+  - [x] El PDF de un evento nuevo ya no dice «sin fuente de calibración». Comprobado el
+    2026-10-01 sobre los tres eventos de `site-dev` posteriores a la baja (`225f5a66`,
+    `88d42268`, `64fad2c2`), leyendo sus PDF del bucket de evidencia:
+    - ninguno lo dice;
+    - el técnico del sismo SASMEX del 28-sep cita el sensor real: «RS4D · serie R4F74 ·
+      calibración StationXML AM.R4F74 · FDSN raspberryshake.org»;
+    - el diagnóstico de solo lectura da `site-dev` con 1 activo calibrado y 5 retirados:
+      «puede salir VERDE».
 
 ## Fase 9.4 · El cierre del evento, paso a paso
 
@@ -18135,6 +18151,11 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - [x] Capa censada; leyenda «ESTIMADO a partir de N sensores», con los cortes del sitio.
   - [ ] Vista en un navegador real contra la nube: el orden de capas y el solape del pie de
     atribución sólo los vigila un Playwright.
+    - **No se puede ver todavía, por falta de DATO (medido el 2026-10-01):** en la nube no hay
+      ni un incidente con superficie (`incident_shakemap.superficie` nula en todos). La
+      superficie se ajusta con estaciones activas y CALIBRADAS: Puebla tiene una sola, y los
+      sitios simulados (`site-sim-*`) no declaran calibración, así que todo mapa sale
+      `solo_observado`. Hace falta un evento con varias estaciones calibradas.
 
 ### [x] T-9.53 · **La superficie en el PDF, sobre cartografía embebida** — `SOFTWARE`
 - **Componente:** api · **Depende de:** T-9.51 · **Prioridad:** F5 · alta · **Decisión:** `D-44`

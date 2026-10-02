@@ -128,9 +128,15 @@ export function bloqueoDelInmueble(
       ? deOtro
         ? DETALLE_DEL_CERTIFICADO[motivo].otro
         : DETALLE_DEL_CERTIFICADO[motivo].propio
-      : aviso.detalle,
+      : comoFrase(aviso.detalle),
     deOtroEvento: deOtro,
   };
+}
+
+/** El detalle de INICIO va tras un guion («REINGRESO BLOQUEADO — consulte…»); en el
+ *  certificado es una frase suelta, y empieza en mayúscula. */
+function comoFrase(texto: string): string {
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
 /** Desde cuándo el certificado muestra algo retenido: el MÁS VIEJO de sus dos datos.
