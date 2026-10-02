@@ -125,9 +125,11 @@ def test_ningun_fichero_del_repositorio_es_el_oficial() -> None:
 
     e = _oficial()
     prohibidas = {e["sha256"], e["fuente"]["original_sha256"]}
-    rastreados = subprocess.run(
-        ["git", "-C", str(RAIZ), "ls-files", "-z"], capture_output=True, check=True
-    ).stdout.decode().split("\0")
+    rastreados = (
+        subprocess.run(["git", "-C", str(RAIZ), "ls-files", "-z"], capture_output=True, check=True)
+        .stdout.decode()
+        .split("\0")
+    )
     nombres = {Path(r).name for r in e["rutas"]} | {"Sonido_Alerta_Sismica_Oficial.mp3"}
     for rel in filter(None, rastreados):
         ruta = RAIZ / rel
@@ -141,7 +143,8 @@ def test_las_rutas_del_oficial_estan_ignoradas_por_git() -> None:
     import subprocess
 
     e = _oficial()
-    for rel in [*e["rutas"], "audios/Sonido_Alerta_Sismica_Oficial.mp3", "audios/sasmex_oficial.wav"]:
+    locales = ["audios/Sonido_Alerta_Sismica_Oficial.mp3", "audios/sasmex_oficial.wav"]
+    for rel in [*e["rutas"], *locales]:
         r = subprocess.run(["git", "-C", str(RAIZ), "check-ignore", "-q", rel])
         assert r.returncode == 0, f"{rel} no está en .gitignore: un `git add -A` lo subiría"
 
