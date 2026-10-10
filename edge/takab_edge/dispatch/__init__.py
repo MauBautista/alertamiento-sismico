@@ -119,6 +119,12 @@ class CommandDispatcher(EdgeModule):
         self._network_alert = None
         self._quorum_siren_desde = None
 
+    def _abortar_simulacro_por_cuorum(self) -> None:
+        try:
+            self._drill.abort("alerta de red (cuórum)")
+        except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+            log.exception("no se pudo abortar el simulacro ante el cuórum (aislado)")
+
     def quorum_siren_desde(self) -> float | None:
         """[T-9.70 · D-50] Instante (reloj monótono) en que el cuórum activó la SIRENA,
         o ``None``. Se marca ANTES de energizar el relé —si no, el vigilante del audio
@@ -362,6 +368,20 @@ class CommandDispatcher(EdgeModule):
         if sirena_del_cuorum:
             self._quorum_siren_desde = _mono()
         result = self._actuators.execute(command)
+        # [T-9.71 · D-51] Lo real gana: una alerta de red confirmada ABORTA el simulacro,
+        # como SASMEX y el escalón instrumental. En OTRO hilo: abortar calla la voz (aplay,
+        # hasta 2 s) y publica un segundo acuse (fsync y PUBACK, hasta 10 s), y en línea
+        # retrasaba el espejo LoRa, el acuse de esta actuación y los comandos que siguen.
+        if (
+            payload.get("origin") == "quorum"
+            and action is ActuatorAction.ACTIVATE
+            and self._drill is not None
+        ):
+            threading.Thread(
+                target=self._abortar_simulacro_por_cuorum,
+                name="drill-aborto-cuorum",
+                daemon=True,
+            ).start()
         if (
             result.success
             and action is ActuatorAction.DEACTIVATE

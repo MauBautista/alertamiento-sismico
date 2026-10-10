@@ -132,7 +132,18 @@ def test_la_evidencia_se_calcula_DE_LO_QUE_SONARIA_AHORA_no_de_lo_del_arranque(a
     assert primero != segundo, "la evidencia se quedó congelada en el asset del arranque"
 
 
-def test_sin_asset_la_evidencia_lo_DICE_en_vez_de_inventar_un_hash(audio):
+def test_sin_asset_la_evidencia_lo_DICE_en_vez_de_inventar_un_hash(settings, monkeypatch):  # noqa: ANN001
+    """[T-9.71 · D-51] Sin grabación del sitio suena el hablado del catálogo: el «sin
+    asset» queda para un gabinete al que le falta también ese fichero."""
+    from takab_edge.audio import AudioNotifier, SimulatedAudioBackend
+
+    monkeypatch.setattr(catalog, "resolve", lambda _id: None)
+    audio = AudioNotifier(
+        settings.model_copy(update={"audio_simulacro_path": ""}),
+        gpio=GpioController(settings),
+        backend=SimulatedAudioBackend(),
+        siren_backend=SimulatedAudioBackend(),
+    )
     ev = audio.simulacro_evidence()
     assert ev["sha256"] is None
     assert ev["asset_id"] is None
@@ -329,12 +340,17 @@ def test_el_simulacro_hablado_esta_en_el_catalogo_y_es_otro_binario():
     assert len(set(digest.values())) == 3, f"dos tonos comparten binario: {digest}"
 
 
-def test_nada_lo_elige_por_defecto():
-    """Se enciende por la configuración firmada tras escucharlo (D-41), no solo."""
+def test_por_defecto_suena_el_hablado_y_la_config_sigue_vacia(audio):  # noqa: ANN001
+    """[T-9.71 · D-51] Mauricio lo aprobó al escucharlo (2026-10-01) y decidió que suene
+    por el jack (2026-10-10): es el simulacro cuando nadie elige otro. La configuración
+    no cambia —el perfil y el ajuste local siguen vacíos—, así que una grabación del
+    sitio o un id de la nube lo siguen sustituyendo."""
     from takab_edge.config.settings import AudioProfile, EdgeSettings
 
     assert AudioProfile().simulacro == ""
-    assert "simulacro_hablado" not in EdgeSettings().audio_simulacro_path
+    assert EdgeSettings().audio_simulacro_path == ""
+    assert audio.simulacro_path == str(catalog.resolve(catalog.SIMULACRO_POR_DEFECTO))
+    assert catalog.SIMULACRO_POR_DEFECTO == "takab-simulacro-v2"
 
 
 def test_abre_con_VOZ_SOLA_sin_el_tono(ventanas):  # noqa: ANN001

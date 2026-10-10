@@ -10,6 +10,8 @@ Todo se verifica ANTES de tocar actuadores/config (regla de oro 8):
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import UTC, datetime, timedelta
 
 from takab_edge.config import ConfigStore, EdgeSettings
@@ -382,6 +384,8 @@ class _FakeDrill:
     def __init__(self) -> None:
         self.started: list[tuple[str, float]] = []
         self.ended: list[str] = []
+        self.abortos: list[str] = []
+        self.abortado = threading.Event()
         self.start_result: tuple[bool, str] = (True, "simulacro iniciado")
 
     audio_evidence: dict = {
@@ -404,6 +408,10 @@ class _FakeDrill:
     def end_drill(self, drill_id: str | None = None, reason: str = "") -> bool:
         self.ended.append(drill_id or "")
         return True
+
+    def abort(self, reason: str) -> None:
+        self.abortos.append(reason)
+        self.abortado.set()
 
     def status(self) -> dict:
         """[T-5.17] El controlador real resuelve la evidencia de audio AL
@@ -802,3 +810,49 @@ def test_apagar_la_sirena_o_CERRAR_ALERTA_olvidan_el_cuorum() -> None:
     assert dispatcher.quorum_siren_desde() is not None
     dispatcher.clear_network_alert()
     assert dispatcher.quorum_siren_desde() is None
+
+
+def test_una_actuacion_del_cuorum_ABORTA_el_simulacro() -> None:
+    """[T-9.71 · D-51] Lo real gana: el drill se abortaba con SASMEX y con el escalón
+    instrumental, pero la alerta de red no pasaba por él. Con el simulacro sonando por
+    el jack, el panel seguiría diciendo SIMULACRO durante una alerta confirmada."""
+    dispatcher, signer, _cloud, actuators, drill = _drill_dispatcher()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-qd1", NOW))
+    assert drill.abortado.wait(2), "el cuórum no abortó el simulacro"
+    assert "cuórum" in drill.abortos[0]
+    assert actuators.executed, "la actuación va PRIMERO: el aborto no la retrasa"
+
+
+def test_un_comando_que_no_es_del_cuorum_no_aborta_el_simulacro() -> None:
+    dispatcher, signer, _cloud, _actuators, drill = _drill_dispatcher()
+    payload = {"channel": "siren", "action": "activate", "event_id": "EVT-M"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-qd2", NOW))
+    assert drill.abortos == []
+
+
+def test_el_aborto_por_cuorum_NO_retrasa_la_actuacion_ni_su_acuse() -> None:
+    """[T-9.71] El aborto corta la voz (aplay, hasta 2 s) y publica un segundo acuse
+    (fsync y PUBACK, hasta 10 s). En línea, retrasaba el espejo LoRa a los secundarios y
+    los comandos del cuórum que vienen detrás, e inflaba el `latency_s` del acuse."""
+    dispatcher, signer, cloud, actuators, drill = _drill_dispatcher()
+    orden: list[str] = []
+    original = actuators.execute
+
+    def execute(command):  # noqa: ANN001, ANN202
+        orden.append("execute")
+        return original(command)
+
+    def lento(reason: str) -> None:
+        time.sleep(0.3)
+        orden.append("abort")
+        drill.abortado.set()
+
+    actuators.execute = execute  # type: ignore[method-assign]
+    drill.abort = lento  # type: ignore[method-assign]
+    t0 = time.monotonic()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-qd3", NOW))
+    assert time.monotonic() - t0 < 0.2, "el aborto bloqueó el comando del cuórum"
+    acuse = _acks(cloud)[-1]
+    assert acuse["latency_s"] < 0.2
+    assert drill.abortado.wait(2)
+    assert orden == ["execute", "abort"]
