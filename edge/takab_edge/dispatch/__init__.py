@@ -362,6 +362,17 @@ class CommandDispatcher(EdgeModule):
         if sirena_del_cuorum:
             self._quorum_siren_desde = _mono()
         result = self._actuators.execute(command)
+        # [T-9.71 · D-51] Lo real gana: una alerta de red confirmada ABORTA el simulacro,
+        # como SASMEX y el escalón instrumental. Después de actuar, para no retrasarla.
+        if (
+            payload.get("origin") == "quorum"
+            and action is ActuatorAction.ACTIVATE
+            and self._drill is not None
+        ):
+            try:
+                self._drill.abort("alerta de red (cuórum)")
+            except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
+                log.exception("no se pudo abortar el simulacro ante el cuórum (aislado)")
         if (
             result.success
             and action is ActuatorAction.DEACTIVATE

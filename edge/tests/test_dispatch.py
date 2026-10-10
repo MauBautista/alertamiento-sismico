@@ -382,6 +382,7 @@ class _FakeDrill:
     def __init__(self) -> None:
         self.started: list[tuple[str, float]] = []
         self.ended: list[str] = []
+        self.abortos: list[str] = []
         self.start_result: tuple[bool, str] = (True, "simulacro iniciado")
 
     audio_evidence: dict = {
@@ -404,6 +405,9 @@ class _FakeDrill:
     def end_drill(self, drill_id: str | None = None, reason: str = "") -> bool:
         self.ended.append(drill_id or "")
         return True
+
+    def abort(self, reason: str) -> None:
+        self.abortos.append(reason)
 
     def status(self) -> dict:
         """[T-5.17] El controlador real resuelve la evidencia de audio AL
@@ -802,3 +806,21 @@ def test_apagar_la_sirena_o_CERRAR_ALERTA_olvidan_el_cuorum() -> None:
     assert dispatcher.quorum_siren_desde() is not None
     dispatcher.clear_network_alert()
     assert dispatcher.quorum_siren_desde() is None
+
+
+def test_una_actuacion_del_cuorum_ABORTA_el_simulacro() -> None:
+    """[T-9.71 · D-51] Lo real gana: el drill se abortaba con SASMEX y con el escalón
+    instrumental, pero la alerta de red no pasaba por él. Con el simulacro sonando por
+    el jack, el panel seguiría diciendo SIMULACRO durante una alerta confirmada."""
+    dispatcher, signer, _cloud, actuators, drill = _drill_dispatcher()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-qd1", NOW))
+    assert drill.abortos, "el cuórum no abortó el simulacro"
+    assert "cuórum" in drill.abortos[0]
+    assert actuators.executed, "la actuación va PRIMERO: el aborto no la retrasa"
+
+
+def test_un_comando_que_no_es_del_cuorum_no_aborta_el_simulacro() -> None:
+    dispatcher, signer, _cloud, _actuators, drill = _drill_dispatcher()
+    payload = {"channel": "siren", "action": "activate", "event_id": "EVT-M"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, payload, "n-qd2", NOW))
+    assert drill.abortos == []

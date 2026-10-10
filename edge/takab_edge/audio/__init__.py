@@ -213,6 +213,12 @@ class AplayBackend:
             return None
 
 
+def _simulacro_por_defecto() -> str | None:
+    """[T-9.71 · D-51] La ruta del simulacro hablado del catálogo, o None si falta."""
+    ruta = catalog.resolve(catalog.SIMULACRO_POR_DEFECTO)
+    return str(ruta) if ruta is not None else None
+
+
 class AudioNotifier(EdgeModule):
     """Vocea SISMO en el tier audible y SIMULACRO bajo demanda (drill del panel)."""
 
@@ -270,7 +276,14 @@ class AudioNotifier(EdgeModule):
         # prueba: es lo que permite que la nube lo elija por id de catálogo. El
         # valor inicial sigue siendo el asset local (la grabación del sitio, si la
         # hay); un id del catálogo lo sustituye.
-        self._simulacro_path: str | None = settings.audio_simulacro_path or None
+        #
+        # [T-9.71 · D-51] Sin grabación del sitio, el simulacro HABLADO del catálogo:
+        # Mauricio lo aprobó al escucharlo y decidió que suene por el jack.
+        self._simulacro_path: str | None = settings.audio_simulacro_path or _simulacro_por_defecto()
+        #: Qué voz suena AHORA en el canal del voceo («sismo», «simulacro» o None): el
+        #: vigilante sólo corta la del simulacro, nunca la de una alerta real.
+        self._voz_actual: str | None = None
+        self._voz_corte_avisado = False
         self._audio_profile: dict = {
             "applied": {},
             "rejected": {},
@@ -326,6 +339,19 @@ class AudioNotifier(EdgeModule):
         # grabados (A-6, aún apagado); la sirena arranca con su asset empaquetado.
         self._start_voice()
         self._start_siren()
+        self._start_watcher()
+
+    def _start_watcher(self) -> None:
+        """El vigilante de 20 Hz arranca si hay sirena O voz que vigilar. [T-9.71] Con
+        voceo y sin sirena por el jack no arrancaba, y nadie callaba la voz de un
+        simulacro ante una alerta real."""
+        if not (self.siren_enabled or self.enabled) or self._siren_thread is not None:
+            return
+        self._siren_stop.clear()
+        self._siren_thread = threading.Thread(
+            target=self._siren_watch_loop, name="audio-siren", daemon=True
+        )
+        self._siren_thread.start()
 
     def _start_voice(self) -> None:
         if not self.enabled:
@@ -389,11 +415,6 @@ class AudioNotifier(EdgeModule):
                 "sin tono de PRUEBA empaquetado: los self-test de sirena sonarán en "
                 "silencio (nunca con el tono de alerta real)"
             )
-        self._siren_stop.clear()
-        self._siren_thread = threading.Thread(
-            target=self._siren_watch_loop, name="audio-siren", daemon=True
-        )
-        self._siren_thread.start()
 
     def _siren_watch_loop(self) -> None:
         while not self._siren_stop.wait(_SIREN_POLL_S):
@@ -411,8 +432,35 @@ class AudioNotifier(EdgeModule):
             snap: object = self._link.snapshot()
         except Exception as exc:  # noqa: BLE001 — cada conciliador decide qué hace sin estado
             snap = exc
+        self._reconcile_voz(snap)
         self._reconcile_music(snap)
         self._reconcile_siren(snap)
+
+    def _reconcile_voz(self, snap: object) -> None:
+        """[T-9.71 · D-51] El jack jamás dice «Esto es un simulacro» con una alerta viva.
+
+        El drill se aborta con SASMEX y con el escalón instrumental, pero una sirena
+        pedida por el cuórum o por una regla no pasa por él. Lo que corta la música
+        —alerta, prueba de sirena, silencio o un estado ilegible— corta también la voz
+        del SIMULACRO, en la misma vuelta en que arranca la sirena. La voz de SISMO
+        suena durante la alerta y no se toca."""
+        if self._voz_actual != "simulacro":
+            return
+        try:
+            if self._backend.playing is None:
+                self._voz_actual = None
+                return
+            if isinstance(snap, BaseException):
+                raise snap
+            corte = self._music_bloqueo(snap)
+        except Exception:  # noqa: BLE001 — fail-cerrado: sin saber, no se dice «simulacro»
+            corte = "sin_estado"
+        if corte is None:
+            return
+        if not self._voz_corte_avisado:
+            self._voz_corte_avisado = True
+            log.warning("voz del SIMULACRO callada (%s): lo real gana en el jack", corte)
+        self.stop_playback()
 
     # ------------------------------------------------------------------ música
     def music_status(self) -> dict:
@@ -896,6 +944,8 @@ class AudioNotifier(EdgeModule):
                 "reason": "sin asset de voceo de simulacro configurado ni elegido por catálogo",
             }
         asset_id = self._audio_profile.get("applied", {}).get("simulacro")
+        if asset_id is None and ruta == _simulacro_por_defecto():
+            asset_id = catalog.SIMULACRO_POR_DEFECTO
         p = Path(ruta)
         if not p.is_file():
             return {
@@ -910,9 +960,12 @@ class AudioNotifier(EdgeModule):
             "path": ruta,
             "sha256": hashlib.sha256(p.read_bytes()).hexdigest(),
             # El voceo puede estar apagado (gate de hardware A-6) y el asset
-            # existir igual: son dos hechos y se declaran por separado.
-            "will_sound": bool(self.enabled),
-            "reason": "" if self.enabled else "voceo por audio deshabilitado (audio_enabled=false)",
+            # existir igual: son dos hechos y se declaran por separado. [T-9.71 · D-51]
+            # Con la sirena por el jack, el simulacro suena aunque no haya voceo.
+            "will_sound": bool(self.enabled or self.siren_enabled),
+            "reason": ""
+            if self.enabled or self.siren_enabled
+            else "sin voceo ni sirena por el jack (audio_enabled y audio_siren_enabled en false)",
         }
 
     def stop_playback(self) -> None:
@@ -920,6 +973,7 @@ class AudioNotifier(EdgeModule):
         de EdgeModule): este método solo calla la bocina."""
         try:
             self._backend.stop()
+            self._voz_actual = None
         except Exception:  # noqa: BLE001 — advisory: jamás propagar
             log.exception("audio.stop_playback() falló (aislado)")
 
@@ -935,7 +989,8 @@ class AudioNotifier(EdgeModule):
         Fail-CERRADO en el advisory: sin poder comprobar si el operador silenció,
         NO se vocea. La sirena de RELÉ es la alerta primaria y no depende de esto.
         """
-        if not self.enabled:
+        # [T-9.71 · D-51] El SIMULACRO también suena por el jack sin voceo; el sismo no.
+        if not (self.enabled or (kind == "simulacro" and self.siren_enabled)):
             return
         try:
             if self._link.snapshot().audible_silenced:
@@ -943,6 +998,8 @@ class AudioNotifier(EdgeModule):
                 return
             self._backend.stop()
             self._backend.play(path)
+            self._voz_actual = kind
+            self._voz_corte_avisado = False
             log.warning("voceo %s reproduciendo (%s)", kind, path)
         except Exception:  # noqa: BLE001 — la sirena de relé es la primaria; esto jamás propaga
             log.exception("el voceo %s falló — canal advisory aislado", kind)

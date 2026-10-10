@@ -107,6 +107,11 @@ def reason_reserved(asset_id: str) -> str | None:
     return RESERVED.get(asset_id)
 
 
+#: [T-9.71 · D-51] El simulacro que suena si ni la nube ni el sitio eligen otro: el
+#: hablado, que Mauricio aprobó al escucharlo en el gabinete (2026-10-01).
+SIMULACRO_POR_DEFECTO = "takab-simulacro-v2"
+
+
 def resolve(asset_id: str) -> Path | None:
     """Ruta del tono, o ``None`` si el ID no se puede servir.
 
