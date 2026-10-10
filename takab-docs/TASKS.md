@@ -18316,8 +18316,22 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     propio (`mobile/plugins/tonoOficial.js`, `tests/tonoOficial.plugin.test.ts`).
   - [x] El fichero nunca entra al repositorio: `.gitignore`, y el censo lo busca por nombre y por
     huella (`api/tests/test_censo_audio.py`).
-  - [ ] Escuchado en el gabinete con una alerta SASMEX (prueba del WR-1) y en el Pixel con una
-    CRISIS del arnés, tras desplegar en este orden: APK → nube → edge.
+  - [x] Desplegado el 2026-10-10 en el orden APK → abrir la app → nube → edge:
+    - APK en el Pixel: el sistema muestra `alerta_oficial_v1` con importancia 5, salto de
+      «No molestar», uso ALARMA y sonido `raw/alerta_oficial`. En la APK, el recurso lleva la
+      huella auditada y `app.config` dice `tonoOficial: "oficial"`.
+    - Nube en `f4559055`, con el esquema en la 0078 y todos los servicios arriba. El goal de la
+      presentación da 13 ✓ · 0 ✗; su censo marca en ámbar la APK porque compara horas: se
+      instaló antes del commit del merge squash, pero con el mismo árbol (`18e8e984…`).
+    - Gabinete en `gf455905`: `takab-edge` validó el oficial al arrancar y el panel dice «oficial
+      con SASMEX y cuórum». **`takab-gpio` (dueño de los pines) sigue con el código anterior**:
+      de lo suyo sólo cambió `settings.py`, con un campo que lee el audio y no él. Reiniciarlo
+      mueve gas y retenedores (`deploy.sh takab-pi5 --ventana-de-mantenimiento`): lo decide
+      Mauricio, con el edificio avisado.
+  - [x] Escuchado en el Pixel el 2026-10-10. La CRISIS SASMEX del arnés llegó con el teléfono
+    bloqueado por `alerta_oficial_v1`, y Mauricio confirmó que sonó el oficial.
+  - [ ] Escuchado en el gabinete con una alerta SASMEX (prueba del WR-1): sirena de relé, oficial
+    por el jack y aviso a los teléfonos. Es actuación física, con el edificio avisado.
   - [ ] GATE-LEGAL: el uso sin licencia escrita del CIRES (`D-50`, el precio declarado).
 - **Huecos declarados:** iOS sigue con el tono propio; en primer plano la app puede sonar dos veces
   a la vez (notificación y bucle) durante el minuto del oficial; el oficial suena ~3,4 dB por debajo
