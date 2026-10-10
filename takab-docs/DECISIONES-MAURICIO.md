@@ -2372,7 +2372,15 @@ mudos.
   Antes, una sirena pedida por el cuórum no pasaba por el simulacro y se habrían mezclado.
 - El silencio calla el simulacro aunque no haya voceo. Antes sólo se suscribía el voceo.
 - Una actuación del **cuórum aborta el simulacro**, como ya lo hacían SASMEX y el escalón
-  instrumental: el panel deja de decir SIMULACRO durante una alerta de red confirmada.
+  instrumental, en un hilo aparte para no retrasar la actuación ni el espejo a los secundarios.
+  El banner del panel ya se ocultaba con la alerta de red; lo que cambia es el estado del
+  simulacro, el acuse a la nube y el PDF («ABORTADO POR UNA ALERTA REAL»).
+- Un simulacro **no arranca** con una alerta viva aunque no sea SASMEX (cuórum, regla o comando,
+  hasta CERRAR ALERTA) ni con una prueba de sirena en curso. La voz tampoco arranca con los
+  audibles silenciados o sin el vigilante que la callaría, y la evidencia del acuse y del PDF lo
+  dice en vez de prometer que sonó.
+- Terminar o abortar un simulacro calla **sólo** su voz: con el voceo completo, la voz de sismo de
+  la alerta que lo abortó sigue sonando.
 
 **El precio, declarado.**
 - Suena en **todo gabinete con sirena por el jack**. El que no la tiene sigue mudo en un simulacro,

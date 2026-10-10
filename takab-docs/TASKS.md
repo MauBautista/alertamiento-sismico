@@ -18383,6 +18383,19 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 
     Las pruebas están en `edge/tests/test_audio_simulacro_jack.py` y `test_dispatch.py`, y cazan
     sus mutantes: quitar el corte tumba 6, y dejar hablar al sismo por el jack tumba 1.
+    - **Revisión adversarial (2026-10-10), arreglado:**
+      - El aborto por cuórum iba en línea y retrasaba el espejo LoRa (de 0,2 ms a 800 ms con un
+        PUBACK lento): ahora va en otro hilo.
+      - Un simulacro arrancaba con una alerta de cuórum o de regla enclavada, o con una prueba de
+        sirena: ahora se rechaza.
+      - La evidencia prometía que sonaba con los audibles silenciados o con una alerta viva.
+      - El simulacro sonaba sin el vigilante que lo callaría.
+      - Una carrera entre hilos dejaba un simulacro sin vigilar: ahora hay generación con
+        candado.
+      - Un corte fallido dejaba 20 trazas por segundo.
+      - El aborto callaba también la voz de sismo: ahora existe `stop_simulacro`.
+      - El panel decía «en curso» toda la ventana.
+      - Tres comentarios quedaron desfasados.
   - [ ] Escuchado en un simulacro de verdad en el gabinete, tras desplegar el edge.
 - **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
   sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
