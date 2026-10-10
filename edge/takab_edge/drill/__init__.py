@@ -22,7 +22,7 @@ import threading
 from collections.abc import Callable
 from datetime import datetime
 
-from takab_edge.contracts import SasmexSignal, Tier, TierDecision, utcnow
+from takab_edge.contracts import SasmexSignal, SirenReason, Tier, TierDecision, utcnow
 from takab_edge.gpio_link import as_link
 from takab_edge.module import EdgeModule
 
@@ -151,7 +151,8 @@ class DrillController(EdgeModule):
         nube se quedaba SIN ACK — esperando el TTL sin saber por qué.
         """
         try:
-            alerta_real = self._link.snapshot().sasmex_active
+            snap = self._link.snapshot()
+            alerta_real = snap.sasmex_active
         except Exception:  # noqa: BLE001 — fail-closed: sin poder comprobar, no hay simulacro
             log.exception("no se pudo comprobar el enclave SASMEX; simulacro RECHAZADO")
             return False, (
@@ -160,6 +161,17 @@ class DrillController(EdgeModule):
             )
         if alerta_real:
             return False, "alerta SASMEX real en curso; simulacro rechazado"
+        # [T-9.71 · D-51] Con el simulacro AUDIBLE por el jack, lo real gana también al
+        # arrancar: un enclave del cuórum, de una regla o de un comando es una alerta viva
+        # aunque no sea SASMEX, y una prueba de sirena ocupa el jack.
+        razon = getattr(snap, "siren_reason", None)
+        if razon is SirenReason.TEST or getattr(snap, "actuation_test_active", False):
+            return False, "hay una prueba de sirena en curso; simulacro rechazado"
+        if getattr(snap, "alert_latched", False) or razon is not None:
+            return False, (
+                "hay una alerta viva en el gabinete (cuórum, regla o comando); "
+                "simulacro rechazado hasta CERRAR ALERTA"
+            )
         duration = max(1.0, float(duration_s))
         started = utcnow()
         with self._lock:
@@ -185,9 +197,10 @@ class DrillController(EdgeModule):
         timer.start()
         if self._audio is not None:
             try:
-                # Voceo condicional al hardware (A-6): sin audio el drill vive
-                # igual — banner + registro. play_simulacro ya es no-op si
-                # audio_enabled=false.
+                # [T-9.71 · D-51] Suena por el jack aunque no haya voceo. Sin jack ni
+                # voceo, con una alerta o con los audibles silenciados no suena, y la
+                # evidencia de arriba ya lo declara: el drill vive igual (banner +
+                # registro).
                 self._audio.play_simulacro()
             except Exception:  # noqa: BLE001 — advisory, jamás al camino de vida
                 log.exception("voceo de simulacro falló (aislado)")
@@ -264,10 +277,13 @@ class DrillController(EdgeModule):
         self.end_drill(reason="fin de ventana")
 
     def _stop_voice(self) -> None:
+        """[T-9.71] Sólo la voz del SIMULACRO: la de sismo de una alerta que acaba de
+        llegar no es del drill."""
         if self._audio is None:
             return
         try:
-            self._audio.stop_playback()
+            parar = getattr(self._audio, "stop_simulacro", None) or self._audio.stop_playback
+            parar()
         except Exception:  # noqa: BLE001 — advisory
             log.exception("no se pudo cortar el voceo del drill (aislado)")
 

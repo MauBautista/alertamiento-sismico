@@ -1353,9 +1353,13 @@ function render(){
     /* [T-6.28] El voceo se afirma solo si el controlador dice que sonará: un gabinete
        sin asset corre el simulacro igual (banner + registro) y aquí se dice. */
     const voz = st.drill.audio;
+    /* [T-9.71 · D-51] «En curso» sólo mientras la voz suena de verdad: dura 18,8 s y
+       suena una vez, y lo real o el silencio la cortan. */
     $('amber-sub').textContent = (voz && voz.will_sound === false
       ? 'SIN VOCEO · ' + (voz.reason || 'el gabinete no tiene audio de simulacro')
-      : 'Voceo de simulacro en curso') + ' · aborta solo si entra una alerta real';
+      : (st.audio && st.audio.sounding ? 'Voceo de simulacro en curso'
+                                       : 'El aviso del simulacro sonó al iniciar'))
+      + ' · aborta solo si entra una alerta real';
     /* [T-6.28] La cuenta sale de lo que el controlador EMITE (`elapsed_s` derivado en el
        Pi y `duration_s`), no de `elapsed_s`/`total_s` de la demo, que no existían. */
     $('amber-meta').textContent = (st.drill.drill_id||'') +

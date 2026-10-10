@@ -1097,6 +1097,12 @@ def test_simulacro_activo_se_anuncia_como_no_real_con_su_cuenta(tmp_path):
     # [T-6.28] La cuenta sale de `elapsed_s`/`duration_s` (lo que el gabinete emite).
     meta = _txt(out, "amber-meta")
     assert "DRILL-1 · 60 s / 8 m · INICIADO 09:55:00 UTC" == meta
+    # [T-9.71] «En curso» sólo mientras la voz suena de verdad: dura 18,8 s y suena una
+    # vez, y lo real o el silencio la cortan. Antes se afirmaba toda la ventana.
+    assert "Voceo de simulacro en curso" not in _txt(out, "amber-sub")
+    assert "sonó al iniciar" in _txt(out, "amber-sub")
+    st["audio"]["sounding"] = True
+    out = _render(tmp_path, status=st)
     assert "Voceo de simulacro en curso" in _txt(out, "amber-sub")
 
 

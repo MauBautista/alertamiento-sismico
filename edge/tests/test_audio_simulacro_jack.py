@@ -11,6 +11,7 @@ sirena, silencio o estado ilegible, y una actuación del cuórum aborta el simul
 
 from __future__ import annotations
 
+import logging
 import wave
 from pathlib import Path
 
@@ -224,5 +225,146 @@ def test_con_voceo_y_SIN_jack_el_vigilante_tambien_vigila(jack, gpio, tmp_path) 
         gpio.activate(ActuatorChannel.SIREN)
         notifier._tick()
         assert voz.playing is None
+    finally:
+        notifier.stop()
+
+
+# --- la revisión adversarial (2026-10-10) -------------------------------------------
+
+
+def test_con_una_alerta_viva_el_simulacro_NI_ARRANCA(jack, gpio) -> None:  # noqa: ANN001
+    """El botón del panel (con PIN) llama a play_simulacro sin pasar por el drill: no
+    puede decir «simulacro» ni una vuelta del vigilante con una alerta viva."""
+    notifier, voz, _sirena = _notifier(jack, gpio)
+    try:
+        gpio.activate(ActuatorChannel.SIREN)
+        notifier.play_simulacro()
+        assert voz.plays == []
+    finally:
+        notifier.stop()
+
+
+def test_sin_el_vigilante_el_simulacro_no_suena_y_se_declara(jack, gpio) -> None:  # noqa: ANN001
+    """La única guarda del jack es el vigilante: un módulo que no arrancó (p. ej. con la
+    ruta de la sirena rota) no puede sonar un simulacro que nadie callaría."""
+    voz = SimulatedAudioBackend()
+    notifier = AudioNotifier(jack, gpio=gpio, backend=voz, siren_backend=SimulatedAudioBackend())
+    notifier.play_simulacro()  # sin start(): no hay vigilante
+    assert voz.plays == []
+    ev = notifier.simulacro_evidence()
+    assert ev["will_sound"] is False
+    assert "vigilante" in ev["reason"]
+
+
+@pytest.mark.parametrize(
+    ("preparar", "razon"),
+    [
+        (lambda g: g.silence_audibles(True), "silenciados"),
+        (lambda g: g.activate(ActuatorChannel.SIREN), "alerta"),
+    ],
+)
+def test_la_evidencia_no_promete_lo_que_no_va_a_sonar(jack, gpio, preparar, razon) -> None:  # noqa: ANN001
+    """El acuse a la nube y el PDF imprimían el asset y su huella como lo que sonó."""
+    notifier, _voz, _sirena = _notifier(jack, gpio)
+    try:
+        preparar(gpio)
+        ev = notifier.simulacro_evidence()
+        assert ev["will_sound"] is False
+        assert razon in ev["reason"]
+    finally:
+        notifier.stop()
+
+
+def test_parar_el_simulacro_no_calla_la_voz_de_SISMO(jack, gpio, tmp_path) -> None:  # noqa: ANN001
+    completo = jack.model_copy(
+        update={"audio_enabled": True, "audio_sismo_path": str(_wav(tmp_path / "sismo.wav"))}
+    )
+    notifier, voz, _sirena = _notifier(completo, gpio)
+    try:
+        notifier.play_sismo()
+        notifier.stop_simulacro()
+        assert voz.playing == completo.audio_sismo_path
+        notifier.play_simulacro()
+        notifier.stop_simulacro()
+        assert voz.playing is None
+    finally:
+        notifier.stop()
+
+
+def test_la_voz_se_corta_ANTES_de_que_arranque_la_sirena(jack, gpio) -> None:  # noqa: ANN001
+    """En la vuelta en que llega la alerta, el jack no puede llevar las dos a la vez."""
+    voz = SimulatedAudioBackend()
+
+    class _Sirena(SimulatedAudioBackend):
+        def play(self, path: str) -> None:
+            self.voz_al_arrancar = voz.playing
+            super().play(path)
+
+    sirena = _Sirena()
+    notifier = AudioNotifier(jack, gpio=gpio, backend=voz, siren_backend=sirena)
+    notifier.start()
+    try:
+        notifier.play_simulacro()
+        gpio.activate(ActuatorChannel.SIREN)
+        notifier._tick()
+        assert sirena.playing == jack.audio_siren_path
+        assert sirena.voz_al_arrancar is None
+    finally:
+        notifier.stop()
+
+
+def test_un_simulacro_que_arranca_mientras_el_vigilante_mira_no_se_pierde(jack, gpio) -> None:  # noqa: ANN001
+    """Carrera: el vigilante lee «sin voz» justo cuando otro hilo arranca un simulacro
+    nuevo. Si después borrara la marca, ese simulacro quedaría sin vigilar."""
+    notifier = None
+
+    class _Voz(SimulatedAudioBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.interferir = False
+
+        @property
+        def playing(self):  # noqa: ANN202
+            if self.interferir:
+                self.interferir = False
+                notifier.play_simulacro()  # otro hilo, entre la lectura y la decisión
+                return None
+            return self._playing
+
+    voz = _Voz()
+    notifier = AudioNotifier(jack, gpio=gpio, backend=voz, siren_backend=SimulatedAudioBackend())
+    notifier.start()
+    try:
+        notifier.play_simulacro()
+        voz.interferir = True
+        notifier._tick()
+        assert notifier._voz_actual == "simulacro", "el simulacro nuevo quedó sin vigilar"
+        gpio.activate(ActuatorChannel.SIREN)
+        notifier._tick()
+        assert voz._playing is None
+    finally:
+        notifier.stop()
+
+
+def test_un_corte_que_falla_no_inunda_el_registro(jack, gpio, caplog) -> None:  # noqa: ANN001
+    """Regla de oro 10: si `stop()` falla, se reintenta cada vuelta pero sin una traza
+    por vuelta (20 por segundo durante toda la alerta)."""
+
+    class _VozTerca(SimulatedAudioBackend):
+        def stop(self) -> None:
+            raise OSError("aplay no muere")
+
+    voz = _VozTerca()
+    notifier = AudioNotifier(jack, gpio=gpio, backend=voz, siren_backend=SimulatedAudioBackend())
+    notifier.start()
+    try:
+        voz.play(str(HABLADO))
+        notifier._voz_actual = "simulacro"
+        gpio.activate(ActuatorChannel.SIREN)
+        with caplog.at_level(logging.WARNING, logger="takab_edge.audio"):
+            for _ in range(20):
+                notifier._tick()
+        trazas = [r for r in caplog.records if "no se pudo callar" in r.getMessage()]
+        assert 1 <= len(trazas) <= 2
     finally:
         notifier.stop()

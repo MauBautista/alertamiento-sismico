@@ -50,8 +50,8 @@ CATALOG: dict[str, str] = {
     # primeros 2,5 s, y después la frase cada 4,5 s sobre el tono de ALERTA, 15 dB
     # por debajo de la voz. Sólo en la ranura `simulacro` (ver RANURAS). Sustituye,
     # para este id, la regla de v1: ahora sí suena a alerta, y la voz es la barrera.
-    # Ninguna configuración lo elige por defecto; se enciende por la firmada tras
-    # escucharlo. Ver `tools/audio/gen_simulacro_hablado.py`.
+    # Es el simulacro POR DEFECTO desde `D-51` (2026-10-10; ver SIMULACRO_POR_DEFECTO):
+    # Mauricio lo aprobó al escucharlo. Ver `tools/audio/gen_simulacro_hablado.py`.
     "takab-simulacro-v2": "simulacro_hablado.wav",
 }
 

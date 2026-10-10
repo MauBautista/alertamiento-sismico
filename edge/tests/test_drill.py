@@ -204,3 +204,50 @@ def test_sin_callback_el_aborto_sigue_siendo_visible(drill):
     controller.start_drill("DRILL-D", 300)
     controller.abort("SASMEX real")
     assert controller.status()["abort_reason"] == "SASMEX real"
+
+
+# [T-9.71 · D-51] Con el simulacro AUDIBLE por el jack, «lo real gana» también al
+# arrancar: start_drill sólo miraba SASMEX, y aceptaba un simulacro encima de una
+# alerta de cuórum o de regla enclavada, o de una prueba de sirena.
+
+
+def test_no_arranca_con_una_alerta_enclavada_que_no_es_SASMEX(drill) -> None:  # noqa: ANN001
+    controller, audio, gpio = drill
+    gpio.activate(ActuatorChannel.SIREN)
+    ok, motivo = controller.start_drill("DRILL-q", 60)
+    assert ok is False
+    assert "alerta" in motivo
+    assert not controller.active
+    assert audio.played == []
+
+
+def test_no_arranca_con_una_prueba_de_sirena_en_curso(drill) -> None:  # noqa: ANN001
+    controller, _audio, gpio = drill
+    gpio.run_siren_test(duration_s=5.0)
+    ok, motivo = controller.start_drill("DRILL-p", 60)
+    assert ok is False
+    assert "prueba" in motivo
+
+
+class _AudioConSimulacro(_FakeAudio):
+    def __init__(self) -> None:
+        super().__init__()
+        self.simulacros_parados = 0
+
+    def stop_simulacro(self) -> None:
+        self.simulacros_parados += 1
+
+
+def test_el_fin_del_simulacro_solo_calla_la_voz_del_SIMULACRO(settings, gpio) -> None:  # noqa: ANN001
+    """El aborto llamaba a stop_playback, que calla cualquier voz: con el voceo completo,
+    un SASMEX a mitad de simulacro dejaba la alerta real sin su voz de sismo."""
+    audio = _AudioConSimulacro()
+    controller = DrillController(settings, gpio=gpio, audio=audio)
+    controller.start()
+    try:
+        assert controller.start_drill("DRILL-s", 60)[0]
+        controller.abort("SASMEX real")
+        assert audio.simulacros_parados == 1
+        assert audio.stopped == 0
+    finally:
+        controller.stop()
