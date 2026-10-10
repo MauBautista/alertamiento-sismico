@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-09-22 · **31 puntos abiertos** (§2: 12 · §3: 9 · §4: 7 · §5: 3),
+> **Última actualización:** 2026-10-10 · **32 puntos abiertos** (§2: 12 · §3: 10 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -953,6 +953,19 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
   tácticos lo tecleas tú).
 - **Ensayo 2** con el gabinete y el WR-1: es la segunda corrida de `T-7.28`. Antes, clasificar
   como `reproduccion` los dos incidentes del ensayo 1 (`d5af54e5`, `b420daaa`).
+
+### 3.9 · [`T-9.70`](TASKS.md) · El sonido oficial en el gabinete: el WR-1 y el dueño de los pines
+
+[`D-50`](DECISIONES-MAURICIO.md#d-50) quedó desplegado el 2026-10-10 y **escuchado en el Pixel**.
+Faltan dos cosas, las dos físicas:
+
+- **Escucharlo con el WR-1.** Es la cadena completa: sirena de relé, oficial por el jack y aviso a
+  los teléfonos. Va con el edificio avisado y con el modo prueba del WR-1 desarmado. El panel ya
+  dice «oficial con SASMEX y cuórum».
+- **Reiniciar a `takab-gpio`.** Corre el código anterior a `gf455905`. De lo suyo sólo cambió
+  `settings.py`, con un campo que no lee, así que **protege igual**. Reiniciarlo mueve gas y
+  retenedores y abre una ventana sin sirena: `deploy/edge/deploy.sh takab-pi5
+  --ventana-de-mantenimiento`. Puede ir en la misma visita, antes de la prueba del WR-1.
 
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 
