@@ -18373,9 +18373,17 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       que le toca.
   - [x] Probado por el altavoz del gabinete: Mauricio lo escuchó y lo **aprobó** el 2026-10-01,
     nivel incluido (−16,6 LUFS).
-  - [ ] Encendido en la configuración firmada de cada sitio (`config.edge.audio.simulacro =
-    takab-simulacro-v2`). Es una escritura en la configuración de producción: la hace Mauricio,
-    o se pone por defecto en una ficha aparte.
+  - [x] Suena en un simulacro real (`D-51`, 2026-10-10). Hasta hoy no sonaba: sólo se
+    reproducía con el «voceo» encendido, que exige una grabación de «sismo» que no existe.
+    Ahora suena por el jack sin voceo, y es el de por defecto (`catalog.SIMULACRO_POR_DEFECTO`),
+    sin escribir en la configuración de producción. Lo real lo calla:
+    - el vigilante del jack corta la voz ante una alerta, un SASMEX, una prueba, el silencio o un
+      estado ilegible;
+    - una actuación del cuórum aborta el simulacro.
+
+    Las pruebas están en `edge/tests/test_audio_simulacro_jack.py` y `test_dispatch.py`, y cazan
+    sus mutantes: quitar el corte tumba 6, y dejar hablar al sismo por el jack tumba 1.
+  - [ ] Escuchado en un simulacro de verdad en el gabinete, tras desplegar el edge.
 - **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
   sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
   oír de verdad»). Falla tres de las pruebas nuevas. Lo que hay que escuchar es el empaquetado.

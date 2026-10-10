@@ -319,9 +319,10 @@ cat <<'NO'
     su instante y su umbral con procedencia (§5 del dictamen). La magnitud, si aparece,
     es de CATÁLOGO EXTERNO, post-hoc, y se pinta con su fuente y su hora de consulta.
   · INTENSIDAD MACROSÍSMICA (MMI): no se reporta, a propósito, y el papel lo declara.
-  · VOCEO HABLADO: no existe ni una grabación. El gabinete puede sonar por sirena y
-    estrobo; el voceo por altavoz está apagado. ⚠️ Y el PDF del reporte de simulacro
-    lo IMPRIME por sitio («SIN VOCEO»): desmiente por escrito lo que se prometa en voz alta.
+  · VOZ EN UNA ALERTA REAL: no existe. Una alerta suena con la sirena de relé y, por el
+    jack, con el sonido oficial (SASMEX y cuórum) o el tono propio (umbral). El SIMULACRO
+    sí habla por el jack (D-51): «Esto es un simulacro» sobre el tono atenuado. Un gabinete
+    sin sirena por el jack no lo suena, y el PDF lo IMPRIME por sitio («SIN VOCEO»).
   · LICENCIA DEL TONO OFICIAL DEL SASMEX: no la hay. Suena con SASMEX y con el cuórum
     (D-50, 2026-10-01) sin licencia escrita del CIRES; con el umbral local, el tono propio.
     Si preguntan, se dice así: es una decisión con riesgo legal abierto, no un permiso.

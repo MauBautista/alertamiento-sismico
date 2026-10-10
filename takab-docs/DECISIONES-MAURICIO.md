@@ -12,10 +12,11 @@
 > **Identificadores estables (`D-nn`).** Cítalos desde el código y desde `TASKS.md` en vez de citar
 > el `§` de la lista de pendientes: aquellos números se reciclan cuando la lista encoge, éstos no.
 >
-> **Última actualización:** 2026-10-01 · **50 decisiones** · 44 tomadas por Mauricio (6 el
+> **Última actualización:** 2026-10-10 · **51 decisiones** · 45 tomadas por Mauricio (6 el
 > 2026-08-15, 2 el 2026-08-16, **10 el 2026-08-17**, 2 el 2026-08-22, 2 el 2026-08-29, 1 el
 > 2026-08-30, 1 el 2026-09-07, **3 el 2026-09-11**, 1 el 2026-09-17, 1 el 2026-09-18, 1 el
-> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 3 el 2026-09-27, 1 el 2026-10-01), 6 delegadas
+> 2026-09-19, 2 el 2026-09-22, **8 el 2026-09-26**, 3 el 2026-09-27, 1 el 2026-10-01, 1 el
+> 2026-10-10), 6 delegadas
 > (3 el 2026-08-12, 2 el 2026-09-02, 1 el 2026-09-11).
 >
 > ⚠️ **Y volvió a mentir, en el reparto.** Al registrar `D-34` (2026-09-17) el titular decía «26
@@ -107,6 +108,7 @@
 | [D-48](#d-48) | De SeismicAI se toma el **reporte automático**, los **contactos de emergencia** y el **historial por inmueble**; no la cuenta regresiva ni la MMI observada | 2026-09-26 | Mauricio |
 | [D-49](#d-49) | Reglas finas del dictamen automático: **sin calma no hay reingreso** ni confirmación, un **AMARILLO sin confirmar bloquea sin caducidad**, la escalada no frena a la brigada y **la firma humana vale para los daños que vio** | 2026-09-27 | Mauricio |
 | [D-50](#d-50) | El **sonido oficial del SASMEX** suena con SASMEX y con el cuórum (gabinete y app); el umbral local sigue con el tono propio; el fichero viaja **fuera de git**. Revoca en parte `D-19` y `D-40` | 2026-10-01 | Mauricio |
+| [D-51](#d-51) | El **simulacro suena por el jack**, sin voceo: el simulacro hablado aprobado es el de por defecto, y lo real lo calla | 2026-10-10 | Mauricio |
 
 ---
 
@@ -2341,5 +2343,46 @@ al elegir un tono propio, y ninguno de los seis candidatos lo sustituyó al oír
 suena con el propio. Para quitarlo del todo: `AudioNotifier.asset_for` (parámetro `oficial`),
 `orchestrator._tono_oficial` y el canal `alerta_oficial_v1`. Con licencia escrita del CIRES, el
 fichero podría entrar al repositorio y la entrada del manifiesto perdería `fuera_de_git`.
+
+---
+
+<a id="d-51"></a>
+## D-51 · El **simulacro suena por el jack**, sin voceo
+
+**Fecha:** 2026-10-10 · **Decide:** Mauricio · **Ficha:** `T-9.71` · **Toca:** `edge/takab_edge/audio`
+(`_play`, `_reconcile_voz`, `simulacro_evidence`, `_start_watcher`), `audio/catalog.SIMULACRO_POR_DEFECTO`,
+`dispatch` (el cuórum aborta el simulacro) · **Afina:** `D-41`
+
+**Lo que se decidió.** Hasta hoy un simulacro no sonaba en el gabinete. El simulacro hablado de
+`D-41`, que Mauricio aprobó al escucharlo el 2026-10-01, sólo se reproducía con el «voceo»
+encendido, y el voceo exige además una grabación de «sismo» que nunca existió. Mauricio eligió:
+- El simulacro suena **por el jack**, con la sirena por audio encendida, **sin exigir el voceo**.
+- Es el simulacro **por defecto**, `takab-simulacro-v2`. Una grabación del sitio o un id elegido por
+  la nube lo siguen sustituyendo.
+- Las alertas reales **no ganan voz**: siguen con la sirena de relé y, por el jack, el oficial o el
+  tono propio (`D-50`).
+
+**Por qué.** La propia grabación dice «Esto es un simulacro», así que no se confunde con una
+alerta. Exigir una grabación de «sismo» sólo para poder sonar el simulacro dejaba los simulacros
+mudos.
+
+**Lo que se añadió para que lo real gane.**
+- El vigilante del jack (20 Hz) **calla la voz del simulacro** ante una alerta, un SASMEX, una
+  prueba de sirena, el silencio o un estado ilegible, en la misma vuelta en que arranca la sirena.
+  Antes, una sirena pedida por el cuórum no pasaba por el simulacro y se habrían mezclado.
+- El silencio calla el simulacro aunque no haya voceo. Antes sólo se suscribía el voceo.
+- Una actuación del **cuórum aborta el simulacro**, como ya lo hacían SASMEX y el escalón
+  instrumental: el panel deja de decir SIMULACRO durante una alerta de red confirmada.
+
+**El precio, declarado.**
+- Suena en **todo gabinete con sirena por el jack**. El que no la tiene sigue mudo en un simulacro,
+  y el PDF lo imprime («SIN VOCEO»).
+- La grabación dura 18,8 s y suena **una vez** al arrancar el simulacro, no en bucle durante toda
+  la ventana.
+- Queda más bajo que la alerta: −16,6 LUFS frente a los −7,7 de `siren.wav` (`T-9.71`).
+
+**Cómo se revocaría.** `_play` vuelve a exigir `audio_enabled` para el simulacro y
+`SIMULACRO_POR_DEFECTO` se retira. El corte del vigilante y el aborto por cuórum se quedan:
+protegen también al voceo completo.
 
 ---
