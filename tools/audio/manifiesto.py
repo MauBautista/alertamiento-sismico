@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gen_musica  # noqa: E402
 import gen_simulacro_hablado  # noqa: E402
 import normaliza  # noqa: E402
+import oficial  # noqa: E402
 from verifica_manifiesto import MANIFIESTO, sha256  # noqa: E402
 
 RAIZ = Path(__file__).resolve().parents[2]
@@ -50,7 +51,8 @@ EXISTENTES: list[dict] = [
         },
         "notas": "El mismo fichero, byte a byte, es la sirena del gabinete (catálogo del "
         "edge) y el sonido de alerta y de notificación de la app (sound.ts, push.ts). "
-        "El tono oficial SASMEX (CIRES) está reservado y ausente (sasmex-oficial-v1). "
+        "Desde D-50 suena con el umbral local y donde falte el oficial; con SASMEX y con "
+        "el cuórum suena sasmex-oficial-v1 (fuera de git). "
         "Medido 2026-09-27: gen_siren.py reproduce este sha256 byte a byte.",
     },
     {
@@ -168,6 +170,44 @@ def _voces() -> list[dict]:
     return salida
 
 
+def _fuera_de_git() -> list[dict]:
+    """[T-9.70 · D-50] El oficial: sus cifras NO se miden aquí (el fichero no está en el
+    repo) sino que se fijaron en ``oficial.py``. Si el derivado local existe, se
+    comprueba que sigue siendo ESE: un manifiesto que declarara otra huella haría que el
+    gabinete y la app rechazaran el fichero que sí se inyecta."""
+    local = RAIZ / oficial.LOCAL
+    if local.is_file():
+        m = normaliza.mide(local)
+        real = {"sha256": sha256(local), **{k: m[k] for k in ("sample_rate", "canales")}}
+        esperado = {k: oficial.MEDIDO[k] for k in real}
+        if real != esperado:
+            raise SystemExit(f"{oficial.LOCAL} no es el oficial fijado: {real} ≠ {esperado}")
+    return [
+        {
+            "id": oficial.ID,
+            "fuera_de_git": True,
+            "rutas": oficial.RUTAS,
+            **oficial.MEDIDO,
+            "fuente": {
+                "original": f"{oficial.ORIGINAL} (fuera de git)",
+                "original_sha256": oficial.ORIGINAL_SHA256,
+                "generador": "ffmpeg (mp3 → PCM16) → tools/audio/normaliza.py --lufs -8; "
+                "el pico verdadero ≤ -1 dBTP limita la ganancia",
+                "derivado_local": f"{oficial.LOCAL} (fuera de git)",
+            },
+            "licencia": {
+                "audio": "sonido oficial del SASMEX, propiedad del CIRES; se usa SIN licencia "
+                "escrita por decisión de Mauricio (D-50, 2026-10-01), que revoca en parte "
+                "D-19 y D-40; pendiente de GATE-LEGAL",
+                "fuente": "fichero entregado por Mauricio; no se redistribuye en el repositorio",
+            },
+            "notas": "Suena con SASMEX (WR-1) y con el cuórum de red; con el umbral local "
+            "sigue takab-siren-v1. Se inyecta al publicar la release del gabinete y al "
+            "compilar la APK; sin él, el gabinete y la app usan el tono propio y lo declaran.",
+        }
+    ]
+
+
 def construir() -> dict:
     audios = []
     for e in EXISTENTES + GENERADOS + _voces():
@@ -188,6 +228,7 @@ def construir() -> dict:
                 "notas": e["notas"],
             }
         )
+    audios += _fuera_de_git()
     return {
         "_doc": "GENERADO por tools/audio/manifiesto.py; lo comprueba "
         "tools/audio/verifica_manifiesto.py y api/tests/test_censo_audio.py (T-9.10 · D-40).",

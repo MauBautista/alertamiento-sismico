@@ -101,6 +101,10 @@ class CommandDispatcher(EdgeModule):
         # atómico; el panel la lee vía status().network_alert y CERRAR ALERTA
         # la limpia). None = sin alerta de red viva.
         self._network_alert: dict | None = None
+        # [T-9.70 · D-50] Cuándo (reloj monótono) pidió la SIRENA el cuórum por última
+        # vez, o None. El audio la usa para sonar el oficial: el gpio sólo ve «la regla
+        # pide sirena», igual que con el umbral local.
+        self._quorum_siren_desde: float | None = None
         # [T-2.33] Enlace a gabinetes secundarios (espejo de sirena/estrobo).
         self._lora = lora
 
@@ -113,6 +117,17 @@ class CommandDispatcher(EdgeModule):
         if self._network_alert is not None:
             log.warning("alerta de red (quórum) cerrada por operador (LAN)")
         self._network_alert = None
+        self._quorum_siren_desde = None
+
+    def quorum_siren_desde(self) -> float | None:
+        """[T-9.70 · D-50] Instante (reloj monótono) en que el cuórum activó la SIRENA,
+        o ``None``. Se marca ANTES de energizar el relé —si no, el vigilante del audio
+        arrancaría el tono propio esos milisegundos— y se olvida con un DEACTIVATE de la
+        sirena o con CERRAR ALERTA (no con un acuse fallido: el relé pudo moverse). El
+        audio, además, sólo la acepta si es del episodio de alerta en curso. Vive en
+        memoria: si takab-edge se reinicia con la sirena del cuórum sonando, el jack
+        sigue con el tono propio (precio declarado en `D-50`)."""
+        return self._quorum_siren_desde
 
     # ------------------------------------------------------------- comandos
 
@@ -335,7 +350,24 @@ class CommandDispatcher(EdgeModule):
             cause=cause_for_command_origin(payload.get("origin")),
             actor=f"cloud:{command_id}",
         )
+        # [T-9.70 · D-50] La sirena del cuórum se marca ANTES de energizar el relé.
+        sirena_del_cuorum = (
+            payload.get("origin") == "quorum"
+            and action is ActuatorAction.ACTIVATE
+            and channel is ActuatorChannel.SIREN
+        )
+        # Un acuse FALLIDO no la borra: el cuórum es real, y en un gabinete D3 el relé
+        # pudo moverse con el acuse perdido (`pinlink/client.py`). Fuera de su episodio
+        # la marca no cuenta: eso lo decide el audio.
+        if sirena_del_cuorum:
+            self._quorum_siren_desde = _mono()
         result = self._actuators.execute(command)
+        if (
+            result.success
+            and action is ActuatorAction.DEACTIVATE
+            and channel is ActuatorChannel.SIREN
+        ):
+            self._quorum_siren_desde = None
         # reloj: monotonico — duración de la ejecución, aquí
         latency = _mono() - started
         # [T-2.32] Comando de ACTUACIÓN del quórum de red ejecutado: el panel

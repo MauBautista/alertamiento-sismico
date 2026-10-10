@@ -44,6 +44,25 @@ acreditar**. Lo que hace falta es el **Bloque B** de este runbook.
 
 ### A.0 · Preparar (las trampas ya pagadas, no las re-descubras)
 
+> **[T-9.70 · D-50] El sonido OFICIAL del SASMEX se mete al COMPILAR, no está en el repo.** Vive en
+> `audios/sasmex_oficial.wav` del checkout principal (lo genera `tools/audio/oficial.py`, con su
+> huella). Sin `TAKAB_TONO_OFICIAL` el prebuild avisa y la APK suena el tono propio también con
+> SASMEX. Como el plugin sólo corre en el PREBUILD, hay que repetirlo para meterlo:
+>
+> ```bash
+> RAIZ="$(git rev-parse --path-format=absolute --git-common-dir | sed 's#/\.git$##')"
+> cd mobile && TAKAB_TONO_OFICIAL="$RAIZ/audios/sasmex_oficial.wav" npx expo prebuild --platform android --no-install
+> ```
+>
+> Comprobarlo antes de instalar: el prebuild imprime `[tono oficial] empaquetado`, y
+> `unzip -p app/build/outputs/apk/release/app-release.apk assets/app.config | grep -o
+> '"tonoOficial":"[a-z]*"'` dice `oficial`. El orden de despliegue es **APK → abrir la app → nube →
+> edge**: con la nube primero, un teléfono sin el canal `alerta_oficial_v1` recibe la CRISIS en el
+> canal de reserva de FCM, que no salta «No molestar», y los canales se crean al ABRIR la app, no
+> al instalarla. Compilar con un `android/` anterior al plugin se cae a propósito con
+> `[tono oficial] android/ no trae res/raw/alerta_oficial.wav`: repite el prebuild. El gabinete lo recibe con `deploy/edge/deploy.sh`, que lo
+> inyecta desde el mismo `audios/` (y el panel lo dice en «Sonido de alerta»).
+
 ```bash
 cd mobile/android
 ./gradlew :app:assembleRelease -PreactNativeArchitectures=arm64-v8a

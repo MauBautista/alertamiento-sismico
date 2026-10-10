@@ -121,3 +121,10 @@ THIRD_PARTY_NOTICES.txt
 # La aritmética que los respalda vive en `cotizacion/`, ignorada arriba (línea 96),
 # así que los dos lados del BOM quedan fuera por el mismo criterio.
 takab-docs/BOM-GABINETE-*.md
+
+# [T-9.70 · D-50] El sonido OFICIAL del SASMEX (CIRES) nunca entra al repositorio: el
+# recibido y su derivado viven en `audios/` del checkout principal, y se inyectan al
+# publicar la release del gabinete y al compilar la APK. Lo vigila
+# `api/tests/test_censo_audio.py` por nombre y por huella.
+/audios/
+edge/takab_edge/audio/assets/sasmex_oficial.wav

@@ -99,6 +99,9 @@ def settings(tmp_path: Path) -> EdgeSettings:
             "local_api_port": 0,
             "gpio_lock_path": str(tmp_path / "gpio.lock"),
             "gpio_socket_path": str(tmp_path / "g.sock"),
+            # [T-9.70 · D-50] El oficial viaja FUERA de git: quien lo tenga en su árbol
+            # no puede ver cambiar los resultados de los tests de SASMEX.
+            "audio_oficial_path": str(tmp_path / "sin-oficial.wav"),
         }
     )  # dev_mode=True por defecto
 

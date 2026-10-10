@@ -16,18 +16,27 @@ import { useSessionStore } from "@/auth/session.store";
 
 import { esDeTodoElCliente } from "./alcanceCliente";
 import { type PermissionSnapshot } from "./alertability";
+import { RECURSO_OFICIAL, tonoOficialDeLaCompilacion } from "./tonoOficial";
 
 /** Fichero empaquetado por el plugin `expo-notifications` de `app.json`. Es el
  * MISMO tono que sale por el altavoz del gabinete (`edge/takab_edge/audio/assets/
- * siren.wav`, sha256 idéntico), y es propio de TAKAB — nunca el oficial del
- * SASMEX. La razón está escrita en `D-19` y es un deslinde, no una estética:
- * reproducir el tono oficial diría POR EL ALTAVOZ que esto es SASMEX, que es lo
- * contrario de lo que el sistema declara por escrito. Precedente medido: T-2.104.
+ * siren.wav`, sha256 idéntico), y es propio de TAKAB. `D-19` lo hizo el único tono
+ * de alerta, como deslinde: reproducir el oficial diría POR EL ALTAVOZ que esto es
+ * SASMEX (precedente medido: T-2.104).
  *
- * Revocación: solo con licencia de CIRES POR ESCRITO y visto bueno legal, y aun
- * así como tono ALTERNATIVO POR SITIO — jamás como sustituto silencioso. Cambiar
- * el sonido de una alarma que la gente ya aprendió es un cambio de producto. */
+ * [T-9.70 · D-50] Revocado en parte: desde el 2026-10-01 SASMEX y el cuórum de red
+ * suenan con el OFICIAL, por su propio canal (`OFFICIAL_CHANNEL_ID`). Éste sigue para
+ * la CRISIS que no autoriza evacuar y como sonido del canal oficial donde la
+ * compilación no trae el recurso. */
 export const SEISMIC_SOUND = "alerta_sismica.wav";
+
+/** [T-9.70 · D-50] El canal por el que la nube entrega la CRISIS que AUTORIZA evacuar
+ * (SASMEX o cuórum), con el sonido oficial del SASMEX. Su sonido es el RECURSO
+ * `res/raw/alerta_oficial.wav`, que el plugin de prebuild (`plugins/tonoOficial.js`)
+ * llena con el oficial o, sin él, con el tono propio. El canal guarda la referencia y
+ * no una copia: una APK posterior que traiga el oficial lo cambia sin reinstalar. */
+export const OFFICIAL_CHANNEL_ID = "alerta_oficial_v1";
+export const OFFICIAL_SOUND = RECURSO_OFICIAL;
 
 /** ⚠️ El sufijo `_v2` NO es cosmético y no se puede quitar.
  *
@@ -120,6 +129,18 @@ export async function configureAndroidChannels(): Promise<void> {
     vibrationPattern: [0, 500, 500, 500, 500, 500],
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
+  // [T-9.70 · D-50] La CRISIS de SASMEX y del cuórum: despierta igual que la sísmica y
+  // suena por el recurso del oficial. Sin recurso en la compilación (sin el plugin),
+  // el tono propio: el canal NUNCA apunta a un recurso inexistente.
+  await Notifications.setNotificationChannelAsync(OFFICIAL_CHANNEL_ID, {
+    name: "Alerta sísmica oficial",
+    importance: Notifications.AndroidImportance.MAX,
+    bypassDnd: true,
+    sound: tonoOficialDeLaCompilacion() === null ? SEISMIC_SOUND : OFFICIAL_SOUND,
+    audioAttributes: audioDeAlarma(),
+    vibrationPattern: [0, 500, 500, 500, 500, 500],
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
   // Despierta como una crisis (MAX + bypass de DND) y NO suena como una: sonido
   // del sistema y vibración propia. Vestir de sismo una activación manual es el
   // defecto de T-2.104, y aquí sería peor porque el tono propio ya está a mano.
@@ -188,8 +209,16 @@ export async function leerPasoNoMolestar(): Promise<boolean | null> {
     return null;
   }
   try {
-    const canal = await Notifications.getNotificationChannelAsync(SEISMIC_CHANNEL_ID);
-    return canal ? canal.bypassDnd === true : null;
+    // [T-9.70 · D-50] SASMEX y el cuórum llegan por el canal OFICIAL; la CRISIS que no
+    // autoriza, por el sísmico. Rompe «No molestar» sólo si LOS DOS lo hacen.
+    const marcas: boolean[] = [];
+    for (const id of [SEISMIC_CHANNEL_ID, OFFICIAL_CHANNEL_ID]) {
+      const canal = await Notifications.getNotificationChannelAsync(id);
+      if (canal) {
+        marcas.push(canal.bypassDnd === true);
+      }
+    }
+    return marcas.length === 0 ? null : marcas.every(Boolean);
   } catch {
     return null;
   }

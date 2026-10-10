@@ -13,6 +13,8 @@ import {
   getAlertabilitySnapshot,
   MOVEMENT_CHANNEL_ID,
   MOVEMENT_SOUND,
+  OFFICIAL_CHANNEL_ID,
+  OFFICIAL_SOUND,
   OPS_CHANNEL_ID,
   PANIC_CHANNEL_ID,
   registerDeviceForPush,
@@ -23,6 +25,8 @@ import {
 import type { MeResponse } from "@takab/sdk";
 
 import { useSessionStore } from "@/auth/session.store";
+
+import { tonoOficialDeLaCompilacion } from "./tonoOficial";
 
 jest.mock("expo-notifications", () => ({
   AndroidImportance: { MAX: 5, DEFAULT: 3 },
@@ -35,6 +39,13 @@ jest.mock("expo-notifications", () => ({
   requestPermissionsAsync: jest.fn(),
   getDevicePushTokenAsync: jest.fn(),
   getNotificationChannelAsync: jest.fn(),
+}));
+
+// [T-9.70 · D-50] Qué trae la compilación en `res/raw/alerta_oficial` (lo decide el
+// plugin de prebuild): por defecto, una APK hecha con el plugin.
+jest.mock("./tonoOficial", () => ({
+  ...jest.requireActual("./tonoOficial"),
+  tonoOficialDeLaCompilacion: jest.fn(() => "oficial"),
 }));
 
 jest.mock("@takab/sdk", () => ({
@@ -125,18 +136,50 @@ describe("configureAndroidChannels", () => {
     expect(mov?.[1].vibrationPattern).not.toEqual(pan?.[1].vibrationPattern);
   });
 
-  it("android: crea los CUATRO canales que la nube nombra", async () => {
+  it("android: crea los CINCO canales que la nube nombra", async () => {
     setPlatform("android");
     await configureAndroidChannels();
     const ids = mocked.setNotificationChannelAsync.mock.calls.map(([id]) => id);
     expect(new Set(ids)).toEqual(
       new Set([
         SEISMIC_CHANNEL_ID,
+        OFFICIAL_CHANNEL_ID,
         PANIC_CHANNEL_ID,
         MOVEMENT_CHANNEL_ID,
         OPS_CHANNEL_ID,
       ]),
     );
+  });
+
+  // [T-9.70 · D-50] SASMEX y el cuórum despiertan con el sonido OFICIAL. El canal
+  // apunta al RECURSO `raw/alerta_oficial`, que el plugin de prebuild llena con el
+  // oficial o, sin él, con el tono propio: una referencia, no una copia, así que una
+  // compilación posterior con el oficial lo cambia sin reinstalar.
+  it("android: el canal OFICIAL despierta como el sísmico y suena por su recurso", async () => {
+    setPlatform("android");
+    await configureAndroidChannels();
+    const [, oficial] = mocked.setNotificationChannelAsync.mock.calls.find(
+      ([id]) => id === OFFICIAL_CHANNEL_ID,
+    )!;
+    expect(oficial).toMatchObject({
+      importance: Notifications.AndroidImportance.MAX,
+      bypassDnd: true,
+      sound: OFFICIAL_SOUND,
+      audioAttributes: { usage: Notifications.AndroidAudioUsage.ALARM },
+    });
+  });
+
+  // En una APK no puede pasar: la compilación se cae sin el recurso
+  // (`plugins/tonoOficial.js` · `compilacionSinRecurso`). Queda para jest y Expo Go:
+  // un canal que apunta a un recurso inexistente sonaría el del sistema para siempre.
+  it("android: sin el recurso en la compilación, el canal oficial suena el propio", async () => {
+    setPlatform("android");
+    jest.mocked(tonoOficialDeLaCompilacion).mockReturnValueOnce(null);
+    await configureAndroidChannels();
+    const [, oficial] = mocked.setNotificationChannelAsync.mock.calls.find(
+      ([id]) => id === OFFICIAL_CHANNEL_ID,
+    )!;
+    expect(oficial).toMatchObject({ sound: SEISMIC_SOUND, bypassDnd: true });
   });
 
   // El sonido de un canal Android es INMUTABLE tras crearlo: sin retirar el v1, el
@@ -204,6 +247,7 @@ describe("configureAndroidChannels", () => {
     }
     for (const vigente of [
       SEISMIC_CHANNEL_ID,
+      OFFICIAL_CHANNEL_ID,
       PANIC_CHANNEL_ID,
       MOVEMENT_CHANNEL_ID,
     ]) {
@@ -452,6 +496,17 @@ describe("[T-9.13] getAlertabilitySnapshot · la alerta y «No molestar»", () =
     mocked.getPermissionsAsync.mockResolvedValue(concedido);
     mocked.getNotificationChannelAsync.mockResolvedValue({ bypassDnd: true } as never);
     expect((await getAlertabilitySnapshot()).androidDndBypass).toBe(true);
+  });
+
+  // [T-9.70 · D-50] SASMEX y el cuórum llegan ya por el canal OFICIAL: una alerta
+  // sólo rompe «No molestar» si los DOS sísmicos lo hacen.
+  it("con el canal oficial SIN la marca ⇒ false aunque el sísmico la tenga", async () => {
+    setPlatform("android");
+    mocked.getPermissionsAsync.mockResolvedValue(concedido);
+    mocked.getNotificationChannelAsync.mockImplementation(async (id: string) => {
+      return { id, bypassDnd: id !== OFFICIAL_CHANNEL_ID } as never;
+    });
+    expect((await getAlertabilitySnapshot()).androidDndBypass).toBe(false);
   });
 
   it("sin canal sísmico ⇒ null: no se inventa ni un sí ni un no", async () => {

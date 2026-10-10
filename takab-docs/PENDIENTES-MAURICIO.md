@@ -1082,6 +1082,11 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
 > **Lo que se paga y hay que compensar con diseño:** el tono oficial es el que la gente ya reconoce
 > y obedece. El propio tiene que ser **inconfundible**, no una notificación más.
 >
+> **⚠️ Revocado en parte el 2026-10-01 · [`D-50`](DECISIONES-MAURICIO.md#d-50):** SASMEX y el cuórum
+> suenan ya con el **oficial** en el gabinete y en Android, sin licencia del CIRES. iOS sigue con el
+> propio (una notificación no puede pasar de 30 s). El riesgo legal va a la consulta
+> ([`CONSULTA-LEGAL-TAKAB.md §4.5`](CONSULTA-LEGAL-TAKAB.md)).
+>
 > **⏸️ Bloqueado por [`D-16`](DECISIONES-MAURICIO.md#d-16):** sin cuenta Apple Developer
 > ($99/año, **no autorizada todavía**) esto no se puede ni empezar.
 

@@ -9,6 +9,10 @@ sin instalar nada. Comprueba, en las dos direcciones:
 2. Ningún audio empaquetado (``.wav``/``.mp3``/``.ogg``/``.caf``) en
    ``mobile/assets``, ``edge/`` o ``shared/audio`` falta en el manifiesto.
 
+[T-9.70 · D-50] Una entrada con ``"fuera_de_git": true`` (el sonido oficial del
+SASMEX) declara rutas donde el fichero se INYECTA al compilar o al publicar, nunca en
+el repositorio: si falta, es lo normal (CI, un clon); si está, se mide como cualquiera.
+
 Sale 0 si todo cuadra; 1 con un mensaje por discrepancia si no.
 
 Uso:  python3 tools/audio/verifica_manifiesto.py [RAIZ_DEL_REPO]
@@ -109,6 +113,8 @@ def verificar(raiz: Path) -> list[str]:
             if ruta in declaradas:
                 errores.append(f"{e['id']}: la ruta {ruta} ya figura en otra entrada")
             declaradas.add(ruta)
+            if e.get("fuera_de_git") is True and not (raiz / ruta).exists():
+                continue
             errores += _compara_wav(raiz, ruta, e)
 
     for ruta in sorted(empaquetados(raiz) - declaradas):

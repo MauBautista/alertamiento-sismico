@@ -535,6 +535,10 @@ class EdgeSettings(BaseSettings):
     #: [T-2.49] Tono del SELF-TEST de sirena. Vacío ⇒ `assets/prueba.wav` empaquetado.
     #: Si tampoco existe, una prueba CALLA: jamás cae al tono de alerta real.
     audio_test_path: str = ""
+    #: [T-9.70 · D-50] El sonido OFICIAL del SASMEX, que suena con SASMEX y con el cuórum.
+    #: Vacío ⇒ `assets/sasmex_oficial.wav`, que inyecta `deploy.sh` (FUERA de git). Sólo
+    #: suena si su huella es `catalog.OFICIAL_SHA256`; si falta, suena el tono propio.
+    audio_oficial_path: str = ""
     #: [T-9.72 · D-40] Música para PROBAR LOS PARLANTES del jack. Vacío ⇒
     #: `assets/musica_prueba.wav` empaquetado. Sale por el jack de la sirena por audio,
     #: así que sólo existe con `audio_siren_enabled` (ver `AudioNotifier.music_status`).

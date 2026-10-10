@@ -1,16 +1,25 @@
 // Loop del sonido de alerta mientras ALERT_ACTIVE (spec §7 · 1.2).
-// El asset es el MISMO tono de sirena del gabinete (edge T-1.68), y ES EL
-// DEFINITIVO: `D-19` (2026-08-17) decidió tono PROPIO de TAKAB y descartó pedirle
-// licencia a CIRES. No es estética, es el deslinde hecho sonido — reproducir el
-// tono oficial diría por el altavoz que esto es SASMEX, justo lo contrario de lo
-// que el sistema declara por escrito (precedente medido: T-2.104). Revocación:
-// solo con licencia por escrito Y visto bueno legal, y aun así como tono
-// ALTERNATIVO POR SITIO, nunca como sustituto silencioso.
-// El mismo fichero es ahora el sonido de la NOTIFICACIÓN (`services/push.ts`),
-// así que la app suena igual con la pantalla apagada y en primer plano.
+// [T-9.70 · D-50] `alert_active` sólo se sirve para un incidente que AUTORIZA evacuar
+// (SASMEX o cuórum), y desde el 2026-10-01 eso suena con el sonido OFICIAL del
+// SASMEX (revoca en parte `D-19`, que lo había descartado como deslinde). En Android
+// suena el MISMO recurso que el canal de la notificación (`raw/alerta_oficial`, que
+// el plugin de prebuild llena con el oficial o con el propio), así que la app suena
+// igual con la pantalla apagada y en primer plano. Sin ese recurso, y en iOS, el
+// tono propio empaquetado: el oficial no está en el repositorio y no se `require`.
 // Best-effort: un fallo de audio jamás rompe la pantalla (la push CRISIS ya sonó
 // al llegar — esto es refuerzo en primer plano).
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from "expo-audio";
+import { Platform } from "react-native";
+
+import { RECURSO_OFICIAL, tonoOficialDeLaCompilacion } from "@/services/tonoOficial";
+
+/** Lo que suena en bucle: el recurso de la compilación en Android, si lo hay. */
+function fuenteDelBucle(): number | { uri: string } {
+  if (Platform.OS === "android" && tonoOficialDeLaCompilacion() !== null) {
+    return { uri: RECURSO_OFICIAL.replace(/\.wav$/, "") };
+  }
+  return require("../../../assets/sounds/alerta_sismica.wav");
+}
 
 //
 // [T-9.06] ⚠️ CARRERA arranque/parada. `startAlertLoop` espera a
@@ -36,7 +45,7 @@ export async function startAlertLoop(): Promise<void> {
     if (mia !== generacion) {
       return; // la alerta terminó mientras se configuraba el audio
     }
-    const nuevo = createAudioPlayer(require("../../../assets/sounds/alerta_sismica.wav"));
+    const nuevo = createAudioPlayer(fuenteDelBucle());
     nuevo.loop = true;
     nuevo.play();
     player = nuevo;

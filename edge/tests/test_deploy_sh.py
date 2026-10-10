@@ -542,6 +542,10 @@ def gabinete(tmp_path: pathlib.Path):
             ).stdout.strip()
             (nube / "api" / "health").write_text(json.dumps({"build": cabeza}))
             env["TAKAB_CONSOLA_URL"] = f"file://{nube}"
+            # [T-9.70 · D-50] El sonido oficial vive FUERA de git, en el `audios/` del
+            # checkout principal: sin fijarlo, el de esta máquina se colaría en el
+            # gabinete de mentira. Sus dos caminos tienen tests propios abajo.
+            env["TAKAB_DEPLOY_TONO_OFICIAL"] = str(tmp_path / "sin-tono-oficial.wav")
             env.update(entorno_extra)
             return subprocess.run(
                 ["bash", str(_DEPLOY), "gabinete-falso", *args],
@@ -1859,3 +1863,67 @@ def test_sin_poder_leer_la_nube_no_se_despliega_salvo_que_se_declare(gabinete, t
     assert "sincronizando edge/" not in r.stdout
     r = gabinete.desplegar(TAKAB_CONSOLA_URL=sin_nube, TAKAB_DEPLOY_SIN_NUBE="1")
     assert "sincronizando edge/" in r.stdout
+
+
+# ---------------------------------------------------------------------------
+# [T-9.70 · D-50] El sonido OFICIAL del SASMEX se inyecta en la release, fuera de git.
+# ---------------------------------------------------------------------------
+
+_OFICIAL_EN_RELEASE = pathlib.Path("takab_edge") / "audio" / "assets" / "sasmex_oficial.wav"
+
+
+def _wav_de(ruta: pathlib.Path, bytes_: int = 44_100) -> pathlib.Path:
+    import wave
+
+    with wave.open(str(ruta), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(22050)
+        w.writeframes(b"\x10\x00" * (bytes_ // 2))
+    return ruta
+
+
+def _sha(ruta: pathlib.Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(ruta.read_bytes()).hexdigest()
+
+
+def test_sin_tono_oficial_el_despliegue_SIGUE_y_lo_dice(gabinete) -> None:
+    """Es lo normal desde un clon sin `audios/`: el gabinete suena el tono propio."""
+    r = gabinete.desplegar()
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "sin sonido oficial" in r.stdout
+    assert not (gabinete.vivo / _OFICIAL_EN_RELEASE).exists()
+
+
+def test_el_tono_oficial_AUDITADO_se_inyecta_en_la_release(gabinete, tmp_path) -> None:
+    wav = _wav_de(tmp_path / "sasmex_oficial.wav")
+    r = gabinete.desplegar(
+        TAKAB_DEPLOY_TONO_OFICIAL=str(wav), TAKAB_DEPLOY_TONO_OFICIAL_SHA256=_sha(wav)
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    copia = gabinete.vivo / _OFICIAL_EN_RELEASE
+    assert copia.is_file() and _sha(copia) == _sha(wav)
+    assert "sonido oficial inyectado" in r.stdout
+
+
+def test_un_tono_con_OTRA_huella_no_se_inyecta(gabinete, tmp_path) -> None:
+    """Por defecto la huella esperada es la del catálogo del edge: un WAV cualquiera no
+    la tiene. El gabinete lo rechazaría igual; aquí ni siquiera viaja."""
+    wav = _wav_de(tmp_path / "sasmex_oficial.wav")
+    r = gabinete.desplegar(TAKAB_DEPLOY_TONO_OFICIAL=str(wav))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (gabinete.vivo / _OFICIAL_EN_RELEASE).exists()
+    assert "sin sonido oficial (su huella no es la auditada" in r.stdout
+
+
+def test_un_tono_oficial_de_mas_de_6_MB_no_se_inyecta(gabinete, tmp_path) -> None:
+    """La cota de assets (6 MB por fichero) no ve lo inyectado: se aplica aquí."""
+    wav = _wav_de(tmp_path / "sasmex_oficial.wav", 7 * 1024 * 1024)
+    r = gabinete.desplegar(
+        TAKAB_DEPLOY_TONO_OFICIAL=str(wav), TAKAB_DEPLOY_TONO_OFICIAL_SHA256=_sha(wav)
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (gabinete.vivo / _OFICIAL_EN_RELEASE).exists()
+    assert "6 MB" in r.stdout

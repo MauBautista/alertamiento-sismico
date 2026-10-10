@@ -90,3 +90,91 @@ def test_ningun_modelo_de_voz_vive_en_el_repo() -> None:
             if f.startswith("es_MX-") and f.endswith((".onnx", ".onnx.json"))
         ]
     assert modelos == [], f"modelo de voz dentro del repo: {modelos}"
+
+
+# ---------------------------------------------------------------------------
+# [T-9.70 · D-50] El sonido OFICIAL del SASMEX viaja FUERA de git.
+#
+# Suena con SASMEX y con el cuórum, pero el fichero nunca entra al repositorio: se
+# inyecta al compilar la APK y al publicar la release del gabinete. El manifiesto lo
+# DECLARA (huella, formato, fuente) con `fuera_de_git`, y aquí se vigila que siga
+# fuera.
+# ---------------------------------------------------------------------------
+
+OFICIAL_ID = "sasmex-oficial-v1"
+
+
+def _oficial() -> dict:
+    [e] = [e for e in _entradas() if e["id"] == OFICIAL_ID]
+    return e
+
+
+def test_el_oficial_se_declara_fuera_de_git_con_su_huella() -> None:
+    e = _oficial()
+    assert e.get("fuera_de_git") is True
+    assert len(e["sha256"]) == 64 and e["sample_rate"] and e["canales"] == 1
+    assert "CIRES" in e["licencia"]["audio"] and "D-50" in e["licencia"]["audio"]
+
+
+def test_ningun_fichero_del_repositorio_es_el_oficial() -> None:
+    """Por NOMBRE y por HUELLA: ni el mp3 recibido ni el WAV derivado, se llamen como
+    se llamen. Un `git add -A` en el checkout principal lo subía: `audios/` no estaba
+    ignorado."""
+    import hashlib
+    import subprocess
+
+    e = _oficial()
+    prohibidas = {e["sha256"], e["fuente"]["original_sha256"]}
+    rastreados = (
+        subprocess.run(["git", "-C", str(RAIZ), "ls-files", "-z"], capture_output=True, check=True)
+        .stdout.decode()
+        .split("\0")
+    )
+    nombres = {Path(r).name for r in e["rutas"]} | {"Sonido_Alerta_Sismica_Oficial.mp3"}
+    for rel in filter(None, rastreados):
+        ruta = RAIZ / rel
+        assert ruta.name not in nombres, f"{rel}: el sonido oficial no se comitea (D-50)"
+        if ruta.suffix.lower() in (".wav", ".mp3", ".ogg", ".caf", ".m4a") and ruta.is_file():
+            huella = hashlib.sha256(ruta.read_bytes()).hexdigest()
+            assert huella not in prohibidas, f"{rel} ES el sonido oficial (D-50)"
+
+
+def test_las_rutas_del_oficial_estan_ignoradas_por_git() -> None:
+    import subprocess
+
+    e = _oficial()
+    locales = ["audios/Sonido_Alerta_Sismica_Oficial.mp3", "audios/sasmex_oficial.wav"]
+    for rel in [*e["rutas"], *locales]:
+        r = subprocess.run(["git", "-C", str(RAIZ), "check-ignore", "-q", rel])
+        assert r.returncode == 0, f"{rel} no está en .gitignore: un `git add -A` lo subiría"
+
+
+def test_el_verificador_acepta_el_oficial_ausente_y_mide_el_presente(tmp_path: Path) -> None:
+    import shutil
+
+    v = _verificador()
+    (tmp_path / "shared" / "audio").mkdir(parents=True)
+    wav = tmp_path / "edge" / "assets" / "oficial.wav"
+    entrada = {
+        "id": "x-oficial",
+        "fuera_de_git": True,
+        "rutas": ["edge/assets/oficial.wav"],
+        "sha256": "0" * 64,
+        "duracion_s": 1.0,
+        "sample_rate": 22050,
+        "canales": 1,
+    }
+    (tmp_path / "shared" / "audio" / "MANIFEST.json").write_text(
+        json.dumps({"audios": [entrada]}), encoding="utf-8"
+    )
+    assert v.verificar(tmp_path) == [], "ausente: es lo normal en CI y en un clon"
+
+    wav.parent.mkdir(parents=True)
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(22050)
+        w.writeframes(b"\0\0" * 22050)
+    errores = v.verificar(tmp_path)
+    assert any("sha256" in err for err in errores), "presente: se mide como cualquier otro"
+    shutil.rmtree(wav.parent)

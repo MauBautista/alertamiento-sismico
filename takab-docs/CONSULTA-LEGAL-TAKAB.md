@@ -182,6 +182,17 @@ cuando **no** acciona por una causa ajena (el WR-1 no recibió, el edificio cort
 El tono de alerta del SASMEX es el sonido que la población **ya asocia a evacuar**. Usarlo requiere
 licencia de **CIRES**. ¿Qué implica usarlo sin ella, y qué implica **no** usarlo?
 
+> **Actualización 2026-10-01 · [`D-50`](DECISIONES-MAURICIO.md#d-50): la pregunta ya no es
+> hipotética.** El sistema suena el sonido oficial **sin licencia escrita** en dos casos: cuando la
+> alerta viene del receptor del SASMEX y cuando la confirman 3 o más inmuebles de la red (el
+> cuórum), que **no** es una alerta del SASMEX. Con el umbral de un solo inmueble suena un tono
+> propio. Lo que hay que preguntar:
+> - ¿Qué riesgo trae usar el sonido sin licencia, en el gabinete y en la app?
+> - ¿Sonar el oficial con el cuórum hace que el sistema **parezca** emitir una alerta del SASMEX,
+>   aunque el texto en pantalla nombre el origen real? ¿Basta ese texto como deslinde?
+> - Si hay que dejar de usarlo, basta con no meter el fichero al compilar o al publicar: todo
+>   vuelve al tono propio sin tocar código.
+
 ---
 
 ## 5 · Qué esperamos llevarnos de la consulta

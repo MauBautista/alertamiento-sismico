@@ -723,3 +723,82 @@ def test_el_acuse_del_aborto_no_lleva_evidencia_de_audio_inventada() -> None:
     assert (
         "audio" not in segundo["results"]
     )  # el audio se acusó al arrancar; el aborto no lo repite
+
+
+# ---------------------------------------------------------------------------
+# [T-9.70 · D-50] El cuórum de SIRENA, para el sonido oficial del gabinete.
+#
+# El despachador es el único del gabinete que sabe que una actuación vino del
+# cuórum de red: el gpio sólo ve «la regla pide sirena», igual que con el umbral
+# local. El audio pregunta CUÁNDO se activó la sirena por cuórum.
+# ---------------------------------------------------------------------------
+
+
+def _quorum(channel: str = "siren", action: str = "activate", event_id: str = "EVT-Q") -> dict:
+    return {"channel": channel, "action": action, "event_id": event_id, "origin": "quorum"}
+
+
+def test_la_sirena_del_cuorum_queda_marcada_ANTES_de_energizar() -> None:
+    """Si se marcara después, el vigilante del audio (20 Hz) arrancaría el tono propio
+    los milisegundos que tarda el relé, y luego conmutaría."""
+    dispatcher, signer, _cloud, _store, actuators = _dispatcher()
+    vista: list = []
+    original = actuators.execute
+
+    def execute(command):  # noqa: ANN001, ANN202
+        vista.append(dispatcher.quorum_siren_desde())
+        return original(command)
+
+    actuators.execute = execute  # type: ignore[method-assign]
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-qa", NOW))
+    assert vista[0] is not None, "durante la ejecución ya tiene que estar marcada"
+    assert dispatcher.quorum_siren_desde() is not None
+
+
+def test_un_acuse_FALLIDO_del_cuorum_no_borra_la_marca() -> None:
+    """El cuórum es real aunque el acuse diga «falló»: en un gabinete D3 el relé pudo
+    moverse con el acuse perdido (`pinlink/client.py`). Borrar la marca haría sonar el
+    tono propio en una sirena de cuórum. Fuera de su episodio la marca no cuenta: eso
+    lo decide el audio, no el despachador."""
+    dispatcher, signer, _cloud, _store, actuators = _dispatcher()
+
+    def falla(command):  # noqa: ANN001, ANN202
+        return ActuatorAck(
+            channel=command.channel,
+            action=command.action,
+            event_id=command.event_id,
+            success=False,
+            latency_s=0.01,
+            detail="relé no respondió",
+        )
+
+    actuators.execute = falla  # type: ignore[method-assign]
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-qf", NOW))
+    assert dispatcher.quorum_siren_desde() is not None
+
+
+def test_un_cuorum_SOLO_de_estrobo_no_marca_la_sirena() -> None:
+    dispatcher, signer, _cloud, _store, _actuators = _dispatcher()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum("strobe"), "n-qs", NOW))
+    assert dispatcher.network_alert() is not None
+    assert dispatcher.quorum_siren_desde() is None
+
+
+def test_un_comando_manual_no_es_cuorum() -> None:
+    dispatcher, signer, _cloud, _store, _actuators = _dispatcher()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _siren_payload(), "n-qm", NOW))
+    assert dispatcher.quorum_siren_desde() is None
+
+
+def test_apagar_la_sirena_o_CERRAR_ALERTA_olvidan_el_cuorum() -> None:
+    """Sin esto la marca sobrevivía al episodio: sólo CERRAR ALERTA la limpiaba."""
+    dispatcher, signer, _cloud, _store, _actuators = _dispatcher()
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-q1", NOW))
+    apagar = {"channel": "siren", "action": "deactivate", "event_id": "EVT-OFF"}
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, apagar, "n-q2", NOW))
+    assert dispatcher.quorum_siren_desde() is None
+
+    dispatcher.on_command(CMD_TOPIC, _sign_command(signer, _quorum(), "n-q3", NOW))
+    assert dispatcher.quorum_siren_desde() is not None
+    dispatcher.clear_network_alert()
+    assert dispatcher.quorum_siren_desde() is None

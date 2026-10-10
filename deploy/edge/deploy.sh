@@ -322,6 +322,29 @@ rsync -az --delete \
   "$ROOT/edge/" "$HOST:${DESTINO_RELEASE}/edge/"
 rsync -az --delete "$ROOT/shared/schemas/" "$HOST:${DESTINO_RELEASE}/shared/schemas/"
 
+# [T-9.70 · D-50] EL SONIDO OFICIAL DEL SASMEX, FUERA DE GIT. Suena con SASMEX y con el
+# cuórum; el fichero es del CIRES y no entra al repositorio, así que se INYECTA aquí,
+# en la release recién sincronizada (después del `--delete`, que lo borraría). Vive en
+# `audios/` del checkout PRINCIPAL: la ruta sale de `git-common-dir`, que es la misma
+# desde un worktree. Si falta, no cuadra su huella o pesa más de 6 MB, el despliegue
+# SIGUE y lo dice: el gabinete suena el tono propio y lo declara en su salud.
+# `TAKAB_DEPLOY_TONO_OFICIAL_SHA256` sólo lo usa `edge/tests/test_deploy_sh.py`: el
+# gabinete vuelve a comprobar la huella contra SU catálogo y no suena otra cosa.
+COMUN_GIT="$(git -C "$ROOT" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
+TONO_OFICIAL="${TAKAB_DEPLOY_TONO_OFICIAL:-${COMUN_GIT%/.git}/audios/sasmex_oficial.wav}"
+TONO_OFICIAL_SHA="${TAKAB_DEPLOY_TONO_OFICIAL_SHA256:-$(sed -n 's/^OFICIAL_SHA256 = "\([0-9a-f]\{64\}\)"$/\1/p' "$ROOT/edge/takab_edge/audio/catalog.py")}"
+SIN_OFICIAL="SASMEX y el cuórum sonarán con el tono propio"
+if [[ ! -f "$TONO_OFICIAL" ]]; then
+  echo "  ⚠ sin sonido oficial ($(basename "$TONO_OFICIAL") no está): ${SIN_OFICIAL}"
+elif [[ "$(stat -c %s "$TONO_OFICIAL")" -gt 6291456 ]]; then
+  echo "  ⚠ sin sonido oficial (pesa más de 6 MB, la cota de assets): ${SIN_OFICIAL}"
+elif [[ "$(sha256sum "$TONO_OFICIAL" | cut -c1-64)" != "$TONO_OFICIAL_SHA" ]]; then
+  echo "  ⚠ sin sonido oficial (su huella no es la auditada del catálogo): ${SIN_OFICIAL}"
+else
+  rsync -az "$TONO_OFICIAL" "$HOST:${DESTINO_RELEASE}/edge/takab_edge/audio/assets/sasmex_oficial.wav"
+  echo "→ sonido oficial inyectado en la release (sha256 ${TONO_OFICIAL_SHA:0:16})"
+fi
+
 # El agente de canary/reversión va a `${RAIZ}/bin`, FUERA de toda release: es lo
 # único que puede revertir a una versión que no arranca, así que no puede vivir
 # dentro de la versión que se está sustituyendo. Se refresca en cada despliegue
