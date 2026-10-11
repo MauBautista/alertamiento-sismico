@@ -954,18 +954,19 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
 - **Ensayo 2** con el gabinete y el WR-1: es la segunda corrida de `T-7.28`. Antes, clasificar
   como `reproduccion` los dos incidentes del ensayo 1 (`d5af54e5`, `b420daaa`).
 
-### 3.9 · [`T-9.70`](TASKS.md) · El sonido oficial en el gabinete: el WR-1 y el dueño de los pines
+### 3.9 · [`T-9.70`](TASKS.md), [`T-9.71`](TASKS.md) · El dueño de los pines y el simulacro hablado
 
-[`D-50`](DECISIONES-MAURICIO.md#d-50) quedó desplegado el 2026-10-10 y **escuchado en el Pixel**.
-Faltan dos cosas, las dos físicas:
+El sonido oficial ([`D-50`](DECISIONES-MAURICIO.md#d-50)) ya se escuchó en el Pixel y en el
+gabinete con el WR-1 (2026-10-10). El simulacro hablado ([`D-51`](DECISIONES-MAURICIO.md#d-51))
+está desplegado en `ga433488`. Faltan dos cosas físicas:
 
-- **Escucharlo con el WR-1.** Es la cadena completa: sirena de relé, oficial por el jack y aviso a
-  los teléfonos. Va con el edificio avisado y con el modo prueba del WR-1 desarmado. El panel ya
-  dice «oficial con SASMEX y cuórum».
 - **Reiniciar a `takab-gpio`.** Corre el código anterior a `gf455905`. De lo suyo sólo cambió
   `settings.py`, con un campo que no lee, así que **protege igual**. Reiniciarlo mueve gas y
   retenedores y abre una ventana sin sirena: `deploy/edge/deploy.sh takab-pi5
-  --ventana-de-mantenimiento`. Puede ir en la misma visita, antes de la prueba del WR-1.
+  --ventana-de-mantenimiento`.
+- **Escuchar un simulacro de verdad.** Se lanza desde la consola con el gabinete en calma (con una
+  alerta enclavada se rechaza a propósito). Debe sonar «Esto es un simulacro» por el jack, y el PDF
+  del simulacro debe mostrar `takab-simulacro-v2` con su huella en vez de «SIN VOCEO».
 
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 

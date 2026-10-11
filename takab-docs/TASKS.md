@@ -18330,8 +18330,11 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       Mauricio, con el edificio avisado.
   - [x] Escuchado en el Pixel el 2026-10-10. La CRISIS SASMEX del arnés llegó con el teléfono
     bloqueado por `alerta_oficial_v1`, y Mauricio confirmó que sonó el oficial.
-  - [ ] Escuchado en el gabinete con una alerta SASMEX (prueba del WR-1): sirena de relé, oficial
-    por el jack y aviso a los teléfonos. Es actuación física, con el edificio avisado.
+  - [x] Escuchado en el gabinete con una alerta SASMEX el 2026-10-10 (14:45 hora local): Mauricio
+    hizo la prueba del WR-1 y confirmó que sonó el oficial por el parlante.
+    - El modo prueba del WR-1 no estaba armado: el gabinete lo trató como SASMEX real, enclavó
+      la sirena y el estrobo dos horas hasta CERRAR ALERTA, y el incidente se clasificó después
+      como `prueba`.
   - [ ] GATE-LEGAL: el uso sin licencia escrita del CIRES (`D-50`, el precio declarado).
 - **Huecos declarados:** iOS sigue con el tono propio; en primer plano la app puede sonar dos veces
   a la vez (notificación y bucle) durante el minuto del oficial; el oficial suena ~3,4 dB por debajo
