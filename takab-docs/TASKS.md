@@ -18239,6 +18239,8 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       - **Observado:** la lista «Sismos de México» trae un sismo de Nuevo México (EE. UU.). La caja
         de `CAJA_MEXICO` es un rectángulo que cubre también el sur de EE. UU. y Centroamérica;
         lo de Guatemala sí se siente en Chiapas, pero el título promete «de México».
+        **Decidido por Mauricio el mismo día:** se queda el rectángulo y el título pasa a «Sismos
+        de México y alrededores», en la lista y en el rótulo del mapa.
 
 ### [x] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-29**
 - **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media
