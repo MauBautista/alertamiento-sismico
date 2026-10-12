@@ -21,7 +21,9 @@ import { colorDeMmi, LEYENDA_ESCALA, radioDeMagnitud, romanoDeMmi, tintaSobre } 
 import { fechaLocal } from "./fecha";
 import { catalogoSinActualizar } from "./frescura";
 
-export const TITULO_SISMOS = "Sismos de México desde M 4.0 · últimos 90 días";
+// «y alrededores»: el catálogo pide un rectángulo (`CAJA_MEXICO` en la API) que cubre
+// también el sur de EE. UU. y Centroamérica; lo de Guatemala se siente en Chiapas.
+export const TITULO_SISMOS = "Sismos de México y alrededores desde M 4.0 · últimos 90 días";
 
 /** Diámetro del círculo: base legible para la cifra + el radio de la escala. */
 function diametro(magnitud: number): number {

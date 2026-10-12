@@ -119,7 +119,10 @@ describe("[T-9.62] la lista: encabezado, pie y procedencia", () => {
     const v = await montar(
       <SismosList nowMs={AHORA} onRefrescar={jest.fn()} refrescando={false} respuesta={respuesta()} />,
     );
-    expect(v.getByText("Sismos de México desde M 4.0 · últimos 90 días")).toBeTruthy();
+    // [T-9.62] «y alrededores»: el catálogo pide un rectángulo que cubre también el sur
+    // de EE. UU. y Centroamérica (lo de Guatemala se siente en Chiapas). Decidido el
+    // 2026-10-11 tras ver un sismo de Nuevo México en la lista del Pixel.
+    expect(v.getByText("Sismos de México y alrededores desde M 4.0 · últimos 90 días")).toBeTruthy();
     expect(v.getByText(LEYENDA_ESCALA)).toBeTruthy();
     expect(v.getByText("Datos: USGS Earthquake Hazards Program")).toBeTruthy();
     expect(v.getByTestId("sismos-actualizado")).toHaveTextContent(/^Actualizado: /);

@@ -135,6 +135,11 @@ it("si no se pudo escribir la imagen, se avisa en vez de un mapa sin calor calla
   expect(v.getByTestId("mapa-calor-sin-pintar")).toBeTruthy();
 });
 
+it("el rótulo no promete sólo México: el catálogo cubre también sus alrededores", async () => {
+  const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={SISMOS} />);
+  expect(v.getByText("SISMOS DE MÉXICO Y ALREDEDORES · ◉ SU INMUEBLE")).toBeTruthy();
+});
+
 it("el crédito del mapa base y el de los sismos están A LA VISTA", async () => {
   const v = await render(<MapaSismos mapa={SIN_EVENTO} nowMs={AHORA} sismos={SISMOS} />);
   const pie = within(v.getByTestId("mapa-atribucion"));
