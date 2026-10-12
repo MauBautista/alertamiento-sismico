@@ -18228,6 +18228,20 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       - El historial le trae sólo incidentes SASMEX (D-39).
       - El mismo flujo se corre en el Pixel cuando vuelva: `TAKAB_MAESTRO_ENV=.env.e2e
         .maestro/run.sh catalogo-sismos.yaml`.
+    - **En el Pixel, el 2026-10-11:** pasa entero contra la nube (`f4559055`), con la APK del
+      sonido oficial: lista sin error, VER EN EL MAPA con leyenda y crédito, «Sin mapa de calor» y
+      atrás a SISMOS.
+      - Las capturas confirman lo que dicen las aserciones.
+      - Tras el flujo hay que devolver el acceso a «No molestar»
+        (`adb shell cmd notification allow_dnd com.takab.ailert`) y relanzar la app: el
+        `clearState` lo quita, y los canales recreados sin él no saltan «No molestar» hasta que
+        la app los reaplica.
+      - **Observado:** la lista «Sismos de México» trae un sismo de Nuevo México (EE. UU.). La caja
+        de `CAJA_MEXICO` es un rectángulo que cubre también el sur de EE. UU. y Centroamérica;
+        lo de Guatemala sí se siente en Chiapas, pero el título promete «de México».
+        **Decidido por Mauricio el mismo día:** se queda el rectángulo y el título pasa a «Sismos
+        de México y alrededores», en la lista y en el rótulo del mapa. Visto en el Pixel con la APK
+        nueva: el flujo pasa con el texto nuevo y las dos cabeceras caben en una línea.
 
 ### [x] T-9.63 · **Un mapa en la app** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-09-29**
 - **Componente:** mobile · **Depende de:** T-9.62 · **Prioridad:** F6 · media

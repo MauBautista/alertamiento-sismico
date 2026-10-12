@@ -28,7 +28,7 @@ appId: com.takab.ailert
     timeout: 30000
 - tapOn: "SISMOS"
 - extendedWaitUntil:
-    visible: "Sismos de México desde M 4.0 · últimos 90 días"
+    visible: "Sismos de México y alrededores desde M 4.0 · últimos 90 días"
     timeout: 20000
 - assertNotVisible:
     id: "state-error"
@@ -43,7 +43,7 @@ appId: com.takab.ailert
     timeout: 20000
 - assertNotVisible:
     id: "state-error"
-- assertVisible: "SISMOS DE MÉXICO · ◉ SU INMUEBLE"
+- assertVisible: "SISMOS DE MÉXICO Y ALREDEDORES · ◉ SU INMUEBLE"
 - assertVisible: "Mapa © OpenStreetMap · OpenFreeMap · MapLibre"
 - assertVisible:
     text: "MAPA DE CALOR · .*|Sin mapa de calor: ningún sismo sentido en su inmueble lo tiene todavía."

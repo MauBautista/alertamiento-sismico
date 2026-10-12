@@ -104,7 +104,7 @@ export function MapaSismos(props: {
       </Map>
 
       <View pointerEvents="none" style={styles.leyenda} testID="mapa-leyenda">
-        <Text style={styles.eyebrow}>SISMOS DE MÉXICO · ◉ SU INMUEBLE</Text>
+        <Text style={styles.eyebrow}>SISMOS DE MÉXICO Y ALREDEDORES · ◉ SU INMUEBLE</Text>
         <Text style={styles.texto}>{LEYENDA_ESCALA}</Text>
         {franja !== null ? (
           <Text style={styles.aviso} testID="mapa-catalogo-sin-actualizar">
