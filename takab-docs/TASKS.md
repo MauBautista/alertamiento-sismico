@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **504** · `[x]` **438** · `[~]` **19** · `[ ]` **47**
+**Conteo de tareas:** total **504** · `[x]` **439** · `[~]` **18** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18435,7 +18435,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - Ahora cada id declara su ranura (`catalog.RANURAS`). Uno fuera de la suya conserva el tono
     anterior y lo dice en `wrong_slot`.
 
-### [~] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-10-21**
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
 - **Objetivo:** una prueba de audio continua desde el panel.
 - **Criterios de aceptación:**
@@ -18461,7 +18461,9 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - Su licencia va en `shared/audio/MANIFEST.json` (`takab-musica-prueba-v1`).
     - `edge/tests/test_cota_de_assets.py` fija ≤ 6 MB por archivo y ≤ 12 MB en total, y que el
       `rsync` del despliegue no deje un asset fuera.
-  - [ ] Escuchada y aprobada por Mauricio en el parlante del gabinete, tras desplegar el edge.
+  - [x] Escuchada y aprobada por Mauricio en el parlante del gabinete el 2026-10-21.
+    - Sonó de 9:30 a 10:00 y se cortó sola por el tope de 30 min, como debe.
+    - Después, a las 16:51, la DETENER del operador la cortó a los 2 s.
 - **La revisión adversaria (3 lentes, 2026-09-29) encontró 9 defectos; los 9 arreglados:**
   - La música exige el vigilante VIVO: si el módulo de audio no arrancó, nada la callaría.
   - Una reproducción de menos de 1 s es un reproductor muerto, y se corta con `fallo`. Antes lo
