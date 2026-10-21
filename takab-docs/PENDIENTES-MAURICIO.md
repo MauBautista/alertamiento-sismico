@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-10-10 · **32 puntos abiertos** (§2: 12 · §3: 10 · §4: 7 · §5: 3),
+> **Última actualización:** 2026-10-21 · **31 puntos abiertos** (§2: 12 · §3: 9 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -954,7 +954,14 @@ cronómetro. Antes: `deploy/demo/guion.sh --preflight` en verde.
 - **Ensayo 2** con el gabinete y el WR-1: es la segunda corrida de `T-7.28`. Antes, clasificar
   como `reproduccion` los dos incidentes del ensayo 1 (`d5af54e5`, `b420daaa`).
 
-### 3.9 · [`T-9.70`](TASKS.md), [`T-9.71`](TASKS.md) · El dueño de los pines y el simulacro hablado
+### 3.9 · ~~[`T-9.70`](TASKS.md), [`T-9.71`](TASKS.md) · El dueño de los pines y el simulacro hablado~~ — ✅ **HECHO el 2026-10-21**
+
+> **Cerrado en la visita al gabinete del 2026-10-21:**
+> - `takab-gpio` se reinició en ventana de mantenimiento (15:52:29, release `gbbf5203`) y volvió a
+>   reclamar los pines.
+> - El simulacro hablado sonó por el jack y Mauricio lo oyó (17:42:11).
+>
+> El texto de abajo queda como estaba.
 
 El sonido oficial ([`D-50`](DECISIONES-MAURICIO.md#d-50)) ya se escuchó en el Pixel y en el
 gabinete con el WR-1 (2026-10-10). El simulacro hablado ([`D-51`](DECISIONES-MAURICIO.md#d-51))
