@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **504** · `[x]` **439** · `[~]` **18** · `[ ]` **47**
+**Conteo de tareas:** total **504** · `[x]` **439** · `[~]` **19** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18523,7 +18523,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - Es discreto: quien tenga «reducir movimiento» activo en su equipo no lo verá pulsar, a
       propósito.
 
-### [ ] T-9.74 · **Un silencio sin alerta se queda puesto y calla el simulacro y la música** — `SOFTWARE`
+### [~] T-9.74 · **Un silencio sin alerta se queda puesto y calla el simulacro y la música** — `SOFTWARE`
 - **Componente:** edge · **Depende de:** T-9.71, T-9.72 · **Prioridad:** media
 - **Objetivo:** que un silencio pulsado sin una alerta viva no deje mudos, sin decirlo, el simulacro
   y la música, y que el panel pueda quitarlo.
@@ -18535,11 +18535,27 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     desde una terminal.
   - La seguridad no se ve afectada: una alerta real lo quita (`_activate_locked`, el SASMEX).
 - **Criterios de aceptación:**
-  - [ ] Con los audibles silenciados y sin alerta, el panel ofrece re-armarlos con el PIN y lo
+  - [x] Con los audibles silenciados y sin alerta, el panel ofrece re-armarlos con el PIN y lo
     deja en la bitácora, o el silencio de una prueba termina con la prueba. Hay que elegir uno, con
     su prueba.
-  - [ ] El panel dice «audibles silenciados» fuera de la fila de la sirena, cuando eso calla un
+    - **Elegido: re-armar desde el panel (2026-10-22).** Se descartó que el silencio termine con
+      la prueba: eso cambia el dueño de los pines (regla de oro 4) y le quita al operador un
+      silencio que pidió.
+    - El botón **RE-ARMAR AUDIBLES** aparece siempre que los audibles estén silenciados, con o
+      sin alerta, y lleva PIN como SILENCIAR. Con la alerta viva la sirena vuelve a sonar, igual
+      que con el botón físico.
+    - `POST /api/rearm-audibles` usa la acción `silence` que la costura ya admite, con
+      `silenced=False`. Así un `takab-gpio` sin reiniciar lo acepta (en D3 es otro proceso).
+    - En la bitácora la fila dice `action = rearm_audibles`, con la causa `lan_silence`. El
+      contrato no cambia: `action` es texto libre.
+    - Pruebas: `edge/tests/test_rearmar_audibles.py`, `test_pinlink.py` (el re-armado cruza el
+      transporte real) y `test_local_api_panel.py`.
+  - [x] El panel dice «audibles silenciados» fuera de la fila de la sirena, cuando eso calla un
     simulacro o la música.
+    - Una fila «Audibles» en la salud, en ámbar: «AUDIBLES SILENCIADOS · no sonarán ni el
+      simulacro ni la música · RE-ARMAR AUDIBLES con el PIN».
+  - [ ] Probado en el gabinete tras desplegar el edge: silenciar durante una prueba de sirena,
+    ver la fila y el botón, re-armar con el PIN y que un simulacro vuelva a hablar.
 
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
