@@ -2413,6 +2413,65 @@ def test_silenciar_solo_aparece_con_la_sirena_sonando(tmp_path):
     assert _posts(out, "api/silence")
 
 
+# [T-9.74] Un silencio pulsado sin alerta (p. ej. durante una prueba de sirena) se
+# quedaba puesto sin forma de quitarlo desde el panel, y callaba el simulacro y la
+# música. Medido en el gabinete el 2026-10-21.
+
+
+def test_rearmar_aparece_con_los_audibles_silenciados_aunque_no_haya_alerta(tmp_path):
+    st = _base()
+    st["audible_silenced"] = True
+    out = _render(tmp_path, status=st, clicks=["action:RE-ARMAR AUDIBLES"])
+    assert "RE-ARMAR AUDIBLES" in _txt(out, "action-btns")
+    assert _posts(out, "api/rearm-audibles"), "un clic con PIN re-arma, como SILENCIAR"
+
+
+def test_sin_silencio_no_se_ofrece_rearmar(tmp_path):
+    out = _render(tmp_path, status=_base())
+    assert "RE-ARMAR AUDIBLES" not in _txt(out, "action-btns")
+
+
+def test_con_la_alerta_viva_rearmar_avisa_de_que_vuelve_a_sonar_la_sirena(tmp_path):
+    """Con la alerta viva el simulacro y la música no sonarían de todos modos: decir
+    eso, e invitar a re-armar, ocultaría que re-armar hace sonar la sirena del edificio."""
+    st = _base()
+    st["audible_silenced"] = True
+    st["alert_latched"] = True
+    st["sasmex_active"] = True
+    out = _render(tmp_path, status=st)
+    assert "RE-ARMAR AUDIBLES" in _txt(out, "action-btns")
+    assert "la sirena vuelve a sonar" in _txt(out, "action-btns")
+    salud = _txt(out, "salud-grid")
+    assert "AUDIBLES SILENCIADOS" in salud and "la alerta sigue" in salud
+    assert "no sonarán ni el simulacro ni la música" not in salud
+
+
+def test_sin_poder_medir_el_silencio_no_se_ofrece_ni_se_afirma(tmp_path):
+    """`null` = el dueño de los pines no contestó: ni botón ni fila sobre un dato que
+    nadie midió (regla de oro 7)."""
+    st = _base()
+    st["audible_silenced"] = None
+    out = _render(tmp_path, status=st)
+    assert "RE-ARMAR AUDIBLES" not in _txt(out, "action-btns")
+    assert "AUDIBLES SILENCIADOS" not in _txt(out, "salud-grid")
+
+
+def test_el_silencio_se_dice_fuera_de_la_fila_de_la_sirena(tmp_path):
+    """Con los audibles silenciados no suenan ni el simulacro ni la música, y sólo lo
+    decía la fila de la sirena («SILENCIADA»): nadie lo relaciona con un simulacro."""
+    st = _base()
+    st["audible_silenced"] = True
+    out = _render(tmp_path, status=st)
+    salud = _txt(out, "salud-grid")
+    assert "AUDIBLES SILENCIADOS" in salud
+    assert "simulacro" in salud and "música" in salud
+    assert _value_color(out, "salud-grid", "AUDIBLES SILENCIADOS") == WARN
+
+    st["audible_silenced"] = False
+    out = _render(tmp_path, status=st)
+    assert "AUDIBLES SILENCIADOS" not in _txt(out, "salud-grid")
+
+
 def test_cerrar_alerta_aparece_con_el_enclave_y_exige_dos_clics(tmp_path):
     st = _base()
     st["alert_latched"] = True

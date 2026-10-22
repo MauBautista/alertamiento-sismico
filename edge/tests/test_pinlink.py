@@ -751,6 +751,18 @@ def test_lo_que_se_escribe_por_el_socket_se_lee_ya_en_la_cache(cliente, gpio) ->
     assert estados[ActuatorChannel.GAS_VALVE].activated is True
 
 
+def test_el_rearmado_cruza_el_transporte_con_la_accion_que_ya_existe(gpio, cliente) -> None:  # noqa: ANN001
+    """[T-9.74] El panel re-arma con `silence` + `silenced=False`, la acción que el dueño
+    de los pines ya admite: un `takab-gpio` que no se ha reiniciado lo acepta igual.
+    Con una acción NUEVA lo rechazaría hasta reiniciarlo en ventana de mantenimiento."""
+    gpio.simulate_sasmex(active=True)
+    cliente.action("silence", silenced=True)
+    assert cliente.snapshot().siren_sounding is False
+    cliente.action("silence", silenced=False)
+    snap = cliente.snapshot()  # SIN esperar: leer-lo-propio-escrito
+    assert snap.audible_silenced is False and snap.siren_sounding is True
+
+
 # ---------------------------------------------------------------------------
 # 4 · Reconexión: sin duplicar el incidente y sin desbordar el backoff
 # ---------------------------------------------------------------------------

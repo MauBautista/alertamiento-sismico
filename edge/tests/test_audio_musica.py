@@ -312,6 +312,10 @@ def test_cada_condicion_POR_SEPARADO_impide_arrancar(
     assert razon is not None
     assert ("silenciados" if motivo == "silencio" else "alerta") in razon
     assert musica.plays == []
+    if motivo == "silencio":
+        # [T-9.74] Sin alerta, CERRAR ALERTA ni siquiera aparece: el remedio que el
+        # panel ofrece es RE-ARMAR AUDIBLES, y el motivo tiene que mandar ahí.
+        assert "RE-ARMAR AUDIBLES" in razon and "cierre la alerta" not in razon
 
 
 def test_un_corte_que_falla_se_reintenta_hasta_callar(armado) -> None:  # noqa: ANN001

@@ -465,6 +465,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             return
         actions = {
             "/api/silence": dashboard.silence,
+            "/api/rearm-audibles": dashboard.rearm_audibles,  # T-9.74
             "/api/siren-test": dashboard.run_siren_test,
             "/api/actuator-test": dashboard.run_actuator_test,
             "/api/test-mode": dashboard.toggle_test_mode,
@@ -493,7 +494,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(409, {"error": str(exc)})
             return
         except Exception as exc:  # noqa: BLE001 — el operador merece una respuesta
-            # [T-2.70.a·D2/P1] Las SEIS acciones del panel cruzan la costura y
+            # [T-2.70.a·D2/P1] Las acciones del panel cruzan la costura y
             # ninguna tenía camino honesto de fallo: `do_POST` sólo traducía
             # `ActionUnavailable`, y cualquier otra excepción escapaba a
             # `BaseHTTPRequestHandler` — el operador que aprieta SILENCIO se
@@ -1462,7 +1463,7 @@ class LocalDashboard(EdgeModule):
         with self._actions_lock:
             self._actions.append({"at": utcnow().isoformat(), "action": action, "via": "lan"})
 
-    def _accion(self, nombre: str, **kwargs):
+    def _accion(self, nombre: str, *, etiqueta: str | None = None, **kwargs):
         """[T-2.86.a · RO-4.e] ÚNICA puerta del panel hacia el dueño de los pines.
 
         Existe para que la bitácora no dependa de que cada endpoint se acuerde: la
@@ -1474,6 +1475,11 @@ class LocalDashboard(EdgeModule):
         pulsa «probar» no puede quedarse esperando a un fsync. Y un intento FALLIDO
         también deja fila —«lo que se intentó y no pasó» es justo lo que faltaba—,
         pero la excepción se re-lanza igual: el panel la traduce a su código HTTP.
+
+        [T-9.74] ``etiqueta`` es lo que la fila dice como ``action`` cuando una misma
+        acción de la costura hace dos cosas: ``silence`` con ``silenced=False`` es el
+        RE-ARMADO, y no puede quedar escrito como un silencio. La causa se sigue
+        derivando de ``nombre``.
         """
         from takab_edge.audit import ACTOR_LAN, cause_for_gpio_action
 
@@ -1489,7 +1495,7 @@ class LocalDashboard(EdgeModule):
                     cause=cause_for_gpio_action(nombre),
                     actor=ACTOR_LAN,
                     channel=ActuatorChannel.SYSTEM,
-                    action=nombre,
+                    action=etiqueta or nombre,
                     success=exito,
                     detail=detalle,
                 )
@@ -1797,6 +1803,19 @@ class LocalDashboard(EdgeModule):
         self._accion("silence", silenced=True)
         self._record_action("silence")
         log.warning("silencio solicitado por LAN")
+
+    def rearm_audibles(self) -> None:
+        """[T-9.74] Re-armado por LAN: vuelve a habilitar los audibles silenciados.
+
+        Es lo que hace el botón físico al alternar (`silence_audibles(False)`): con la
+        alerta viva la sirena vuelve a sonar; sin alerta, el simulacro y la música
+        vuelven a poder sonar. Usa la acción `silence` que ya admite la costura, así
+        que el dueño de los pines (otro proceso en un gabinete D3) no necesita
+        reiniciarse para aceptarlo. En la bitácora queda como `rearm_audibles`.
+        """
+        self._accion("silence", etiqueta="rearm_audibles", silenced=False)
+        self._record_action("rearm_audibles")
+        log.warning("audibles re-armados por LAN")
 
     def run_siren_test(self) -> None:
         """Prueba de sirena por LAN (self-test acotado, no es una alerta real)."""

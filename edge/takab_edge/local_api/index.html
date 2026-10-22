@@ -1867,6 +1867,18 @@ function renderSalud(st){
     }[prof.tono_oficial] || ['S/D', C.warn];
     rows.push(['Sonido de alerta', tono[0], tono[1]]);
   }
+  /* [T-9.74] El silencio se dice FUERA de la fila de la sirena: con los audibles
+     silenciados no suenan ni el simulacro ni la música, y «SIRENA: SILENCIADA» no lo
+     relaciona nadie con un simulacro mudo. */
+  if (st.audible_silenced === true){
+    /* Con la alerta viva el simulacro y la música no sonarían de todos modos, y
+       re-armar hace sonar la sirena del edificio: eso es lo que hay que decir. */
+    const alertaViva = st.alert_latched === true || st.sasmex_active === true;
+    rows.push(['Audibles', alertaViva
+      ? 'AUDIBLES SILENCIADOS · la alerta sigue: RE-ARMAR AUDIBLES vuelve a hacer sonar la sirena'
+      : 'AUDIBLES SILENCIADOS · no sonarán ni el simulacro ni la música · RE-ARMAR AUDIBLES con el PIN',
+      C.warn]);
+  }
   /* [T-9.72] La música de prueba de parlantes. Texto fijo, sin animación (D-30).
      `music` null = el gabinete no pudo leerla: S/D, nunca «lista» ni «en silencio»
      afirmados sobre un dato que nadie midió. El último corte lleva su HORA del Pi
@@ -2481,6 +2493,13 @@ function renderActions(st){
   if (!st){ box.textContent = ''; S.actionBtns = {}; return; }
   const defs = [];
   if (st.siren_sounding) defs.push(['SILENCIAR AUDIBLES', st.audible_silenced ? 'ya silenciado' : 'no calla la rama de hardware', 'api/silence', false, 'primary']);
+  /* [T-9.74] Un silencio sin alerta (p. ej. pulsado durante una prueba de sirena) no
+     tenía cómo quitarse: SILENCIAR sólo aparece con la sirena sonando y CERRAR ALERTA
+     con una alerta. Mientras, el simulacro y la música callaban. */
+  if (st.audible_silenced === true) defs.push(['RE-ARMAR AUDIBLES',
+    (st.alert_latched || st.sasmex_active) ? 'la sirena vuelve a sonar: la alerta sigue'
+                                           : 'el simulacro y la música vuelven a poder sonar',
+    'api/rearm-audibles', false, '']);
   if (st.alert_latched || st.sasmex_active || st.last_tier === 'evacuate_or_hold' || st.last_tier === 'restricted')
     defs.push(['CERRAR ALERTA', 'libera el enclave · 2 clics + PIN', 'api/reset', true, 'danger']);
   /* [T-2.49] Sin tono de prueba el voceo CALLA a propósito (caer al tono de
