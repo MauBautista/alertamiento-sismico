@@ -636,7 +636,14 @@ def test_el_panel_degrada_a_S_D_en_vez_de_dar_500_al_kiosco(supervisor) -> None:
 
 @pytest.mark.parametrize(
     "ruta",
-    ["/api/silence", "/api/siren-test", "/api/actuator-test", "/api/test-mode", "/api/reset"],
+    [
+        "/api/silence",
+        "/api/rearm-audibles",  # [T-9.74]
+        "/api/siren-test",
+        "/api/actuator-test",
+        "/api/test-mode",
+        "/api/reset",
+    ],
 )
 def test_las_acciones_del_panel_tienen_camino_honesto_de_fallo(supervisor, ruta: str) -> None:  # noqa: ANN001
     """`silence()` daba 500 —o la conexión cortada— al operador que aprieta

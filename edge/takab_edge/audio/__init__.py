@@ -584,7 +584,11 @@ class AudioNotifier(EdgeModule):
             if bloqueo == "alerta":
                 return "hay una alerta, un enclavado o una prueba de sirena viva en el gabinete"
             if bloqueo == "silencio":
-                return "los audibles están silenciados: cierre la alerta antes de probar parlantes"
+                # [T-9.74] Sin alerta, CERRAR ALERTA ni aparece: el remedio es re-armar.
+                return (
+                    "los audibles están silenciados: pulse RE-ARMAR AUDIBLES (con el PIN) "
+                    "antes de probar parlantes"
+                )
             if self.sounding:
                 return "hay un voceo en curso"
             try:

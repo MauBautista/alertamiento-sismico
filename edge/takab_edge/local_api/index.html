@@ -1871,7 +1871,13 @@ function renderSalud(st){
      silenciados no suenan ni el simulacro ni la música, y «SIRENA: SILENCIADA» no lo
      relaciona nadie con un simulacro mudo. */
   if (st.audible_silenced === true){
-    rows.push(['Audibles', 'AUDIBLES SILENCIADOS · no sonarán ni el simulacro ni la música · RE-ARMAR AUDIBLES con el PIN', C.warn]);
+    /* Con la alerta viva el simulacro y la música no sonarían de todos modos, y
+       re-armar hace sonar la sirena del edificio: eso es lo que hay que decir. */
+    const alertaViva = st.alert_latched === true || st.sasmex_active === true;
+    rows.push(['Audibles', alertaViva
+      ? 'AUDIBLES SILENCIADOS · la alerta sigue: RE-ARMAR AUDIBLES vuelve a hacer sonar la sirena'
+      : 'AUDIBLES SILENCIADOS · no sonarán ni el simulacro ni la música · RE-ARMAR AUDIBLES con el PIN',
+      C.warn]);
   }
   /* [T-9.72] La música de prueba de parlantes. Texto fijo, sin animación (D-30).
      `music` null = el gabinete no pudo leerla: S/D, nunca «lista» ni «en silencio»

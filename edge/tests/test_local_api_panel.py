@@ -2431,6 +2431,31 @@ def test_sin_silencio_no_se_ofrece_rearmar(tmp_path):
     assert "RE-ARMAR AUDIBLES" not in _txt(out, "action-btns")
 
 
+def test_con_la_alerta_viva_rearmar_avisa_de_que_vuelve_a_sonar_la_sirena(tmp_path):
+    """Con la alerta viva el simulacro y la música no sonarían de todos modos: decir
+    eso, e invitar a re-armar, ocultaría que re-armar hace sonar la sirena del edificio."""
+    st = _base()
+    st["audible_silenced"] = True
+    st["alert_latched"] = True
+    st["sasmex_active"] = True
+    out = _render(tmp_path, status=st)
+    assert "RE-ARMAR AUDIBLES" in _txt(out, "action-btns")
+    assert "la sirena vuelve a sonar" in _txt(out, "action-btns")
+    salud = _txt(out, "salud-grid")
+    assert "AUDIBLES SILENCIADOS" in salud and "la alerta sigue" in salud
+    assert "no sonarán ni el simulacro ni la música" not in salud
+
+
+def test_sin_poder_medir_el_silencio_no_se_ofrece_ni_se_afirma(tmp_path):
+    """`null` = el dueño de los pines no contestó: ni botón ni fila sobre un dato que
+    nadie midió (regla de oro 7)."""
+    st = _base()
+    st["audible_silenced"] = None
+    out = _render(tmp_path, status=st)
+    assert "RE-ARMAR AUDIBLES" not in _txt(out, "action-btns")
+    assert "AUDIBLES SILENCIADOS" not in _txt(out, "salud-grid")
+
+
 def test_el_silencio_se_dice_fuera_de_la_fila_de_la_sirena(tmp_path):
     """Con los audibles silenciados no suenan ni el simulacro ni la música, y sólo lo
     decía la fila de la sirena («SILENCIADA»): nadie lo relaciona con un simulacro."""

@@ -494,7 +494,7 @@ class _DashboardHandler(BaseHTTPRequestHandler):
             self._send_json(409, {"error": str(exc)})
             return
         except Exception as exc:  # noqa: BLE001 — el operador merece una respuesta
-            # [T-2.70.a·D2/P1] Las SEIS acciones del panel cruzan la costura y
+            # [T-2.70.a·D2/P1] Las acciones del panel cruzan la costura y
             # ninguna tenía camino honesto de fallo: `do_POST` sólo traducía
             # `ActionUnavailable`, y cualquier otra excepción escapaba a
             # `BaseHTTPRequestHandler` — el operador que aprieta SILENCIO se

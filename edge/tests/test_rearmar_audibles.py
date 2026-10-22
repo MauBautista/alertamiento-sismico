@@ -75,18 +75,59 @@ def test_rearmar_con_la_alerta_viva_la_vuelve_a_hacer_sonar(supervisor) -> None:
     assert supervisor.gpio.relay_state(ActuatorChannel.SIREN).energized is True
 
 
-def test_la_bitacora_distingue_el_rearmado_del_silencio(supervisor) -> None:  # noqa: ANN001
-    supervisor.local_api.silence()
-    supervisor.local_api.rearm_audibles()
-    filas = [
-        (r["action"], r["cause"])
-        for r in supervisor.ledger.read_all()
-        if r["cause"] == ActuationCause.LAN_SILENCE.value
+@pytest.fixture
+def aislado(settings, tmp_path):  # noqa: ANN001, ANN201
+    """Supervisor con su PROPIA bitácora: la de por defecto vive en /tmp y la comparten
+    todas las corridas de la máquina, así que «las dos últimas filas» podían ser de
+    otro proceso (revisión de T-9.74)."""
+    from takab_edge.supervisor import EdgeSupervisor
+
+    sup = EdgeSupervisor(
+        settings.model_copy(update={"cloud_spool_dir": str(tmp_path / "spool")}),
+        seedlink_source=None,
+    )
+    sup.start()
+    try:
+        yield sup
+    finally:
+        sup.stop()
+
+
+def test_la_bitacora_distingue_el_rearmado_del_silencio(aislado) -> None:  # noqa: ANN001
+    aislado.local_api.silence()
+    aislado.local_api.rearm_audibles()
+    filas = [(r["action"], r["cause"], r["success"]) for r in aislado.ledger.read_all()]
+    assert filas == [
+        ("silence", ActuationCause.LAN_SILENCE.value, True),
+        ("rearm_audibles", ActuationCause.LAN_SILENCE.value, True),
     ]
-    assert filas[-2:] == [
-        ("silence", ActuationCause.LAN_SILENCE.value),
-        ("rearm_audibles", ActuationCause.LAN_SILENCE.value),
-    ]
+
+
+def test_un_rearmado_FALLIDO_tampoco_queda_escrito_como_un_silencio(aislado) -> None:  # noqa: ANN001
+    """Con el dueño de los pines sin contestar: 503 al operador, el silencio sigue, y la
+    fila dice que lo que falló fue un re-armado."""
+    from takab_edge.gpio_link import GpioLinkUnavailable
+
+    aislado.gpio.silence_audibles(True)
+
+    class _NoContesta:
+        """La costura con el dueño de los pines caído para las ACCIONES."""
+
+        def __init__(self, real) -> None:  # noqa: ANN001
+            self._real = real
+
+        def action(self, nombre, **params):  # noqa: ANN001, ANN201
+            raise GpioLinkUnavailable("el dueño de los pines no contesta")
+
+        def __getattr__(self, nombre: str):  # noqa: ANN204
+            return getattr(self._real, nombre)
+
+    aislado.local_api._link = _NoContesta(aislado.local_api._link)
+    assert _post(aislado.local_api, "/api/rearm-audibles") == 503
+    assert aislado.gpio.audible_silenced is True
+    ultima = aislado.ledger.read_all()[-1]
+    assert (ultima["action"], ultima["success"]) == ("rearm_audibles", False)
+    assert "no contesta" in ultima["detail"]
 
 
 def test_rearmar_exige_el_pin(pinned, supervisor) -> None:  # noqa: ANN001
