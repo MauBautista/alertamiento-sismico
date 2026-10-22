@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **503** · `[x]` **436** · `[~]` **21** · `[ ]` **46**
+**Conteo de tareas:** total **504** · `[x]` **439** · `[~]` **18** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18364,7 +18364,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
 - **Candidatos descartados**, para quien quiera retomarlos: `~/Música/TAKAB-candidatos-F7-2026-09-28/`
   (A, B, C y el generador `candidatos_def.py` de D, E, F).
 
-### [~] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.71 · **El simulacro hablado** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-10-21**
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-41`
 - **Objetivo:** que un simulacro suene a alerta sin que nadie lo confunda.
 - **Criterios de aceptación:**
@@ -18413,7 +18413,16 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       - El aborto callaba también la voz de sismo: ahora existe `stop_simulacro`.
       - El panel decía «en curso» toda la ventana.
       - Tres comentarios quedaron desfasados.
-  - [ ] Escuchado en un simulacro de verdad en el gabinete, tras desplegar el edge.
+  - [x] Escuchado en un simulacro de verdad en el gabinete el 2026-10-21, con la release
+    `gbbf5203`:
+    - Lanzado desde la consola (`DRILL-e04a5768…`). El jack reprodujo el hablado a las 17:42:11,
+      en el mismo instante del arranque, una sola vez y sin mover un relé.
+    - La evidencia dice `takab-simulacro-v2`, `will_sound: true` y huella `6a9e8aa4…`.
+      Mauricio lo oyó.
+    - **El primer intento de ese día (16:56) no habló, y fue correcto.** Los audibles seguían
+      silenciados desde una prueba de sirena: la guarda lo omitió y la evidencia lo dijo
+      («audibles silenciados por el operador»).
+    - Ese silencio no se podía quitar desde el panel sin una alerta: es `T-9.74`.
 - **⚠️ El candidato del 2026-09-28 NO cumplía D-41:** `simulacro_hablado_v2.wav` ponía la voz
   sobre el carillón de v1, y D-41 pide el tono de alerta («ensayar con el sonido que la gente va a
   oír de verdad»). Falla tres de las pruebas nuevas. Lo que hay que escuchar es el empaquetado.
@@ -18426,7 +18435,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - Ahora cada id declara su ranura (`catalog.RANURAS`). Uno fuera de la suya conserva el tono
     anterior y lo dice en `wrong_slot`.
 
-### [~] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO`
+### [x] T-9.72 · **La música para probar los parlantes** — `SOFTWARE` + `FÍSICO` · **CERRADA 2026-10-21**
 - **Componente:** edge · **Depende de:** T-9.10 · **Prioridad:** F7 · media · **Decisión:** `D-40`
 - **Objetivo:** una prueba de audio continua desde el panel.
 - **Criterios de aceptación:**
@@ -18452,7 +18461,9 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - Su licencia va en `shared/audio/MANIFEST.json` (`takab-musica-prueba-v1`).
     - `edge/tests/test_cota_de_assets.py` fija ≤ 6 MB por archivo y ≤ 12 MB en total, y que el
       `rsync` del despliegue no deje un asset fuera.
-  - [ ] Escuchada y aprobada por Mauricio en el parlante del gabinete, tras desplegar el edge.
+  - [x] Escuchada y aprobada por Mauricio en el parlante del gabinete el 2026-10-21.
+    - Sonó de 9:30 a 10:00 y se cortó sola por el tope de 30 min, como debe.
+    - Después, a las 16:51, la DETENER del operador la cortó a los 2 s.
 - **La revisión adversaria (3 lentes, 2026-09-29) encontró 9 defectos; los 9 arreglados:**
   - La música exige el vigilante VIVO: si el módulo de audio no arrancó, nada la callaría.
   - Una reproducción de menos de 1 s es un reproductor muerto, y se corta con `fallo`. Antes lo
@@ -18490,7 +18501,7 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     configurada no pasa por ahí jamás. Lo prueba `edge/tests/test_directorios_efimeros.py`, que
     también exige que ningún `mkdtemp` del paquete quede suelto.
 
-### [~] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE`
+### [x] T-9.73 · **Animaciones más vistosas con sismo confirmado** — `SOFTWARE` · **CERRADA 2026-10-21**
 - **Componente:** web · mobile · edge · **Depende de:** T-9.11 · **Prioridad:** F7 · media · **Decisión:** `D-47`
 - **Objetivo:** que la alerta confirmada se vea, sin mover el texto.
 - **Criterios de aceptación:**
@@ -18500,10 +18511,35 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     - app: `AnillosAlerta`, sólo con SASMEX o cuórum.
   - [x] Todo con «reducir movimiento» y censado. El panel deja de hacer parpadear el texto: el
     pulso pasa a `#banner-alert::after` (`edge/tests/test_panel_movimiento_d30.py`).
-  - [ ] Visto en el Pixel y en el gabinete.
+  - [x] Visto en el Pixel y en el gabinete.
     - El Pixel, hecho el 2026-09-30: toma de crisis con los anillos (7 % de píxeles cambian entre
       dos capturas) y el titular quieto (52 576 contra 52 581 píxeles blancos), más 2 min 31 s de
       vibración en la app. Falta el gabinete.
+    - El gabinete, hecho el 2026-10-21. En la prueba del WR-1 (17:32) Mauricio vio la animación
+      roja en el panel local.
+    - El pulso es el halo `#banner-alert::after` (`tk-halo`), medido en un navegador contra el
+      gabinete con `?demo=alerta`: anima con «reducir movimiento» apagado y se queda quieto con
+      él encendido. El texto no tiene animación (D-30).
+    - Es discreto: quien tenga «reducir movimiento» activo en su equipo no lo verá pulsar, a
+      propósito.
+
+### [ ] T-9.74 · **Un silencio sin alerta se queda puesto y calla el simulacro y la música** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** T-9.71, T-9.72 · **Prioridad:** media
+- **Objetivo:** que un silencio pulsado sin una alerta viva no deje mudos, sin decirlo, el simulacro
+  y la música, y que el panel pueda quitarlo.
+- **Encontrado en el gabinete el 2026-10-21:**
+  - Mauricio pulsó SILENCIAR AUDIBLES durante una prueba de sirena. `audible_silenced` se quedó en
+    `true` hasta un `reset()`, y el simulacro de las 16:56 no habló.
+  - El panel no ofrecía cómo quitarlo: SILENCIAR sólo aparece con la sirena sonando, y CERRAR
+    ALERTA sólo con una alerta o un escalón elevado. Hubo que llamar a `api/reset` con el PIN
+    desde una terminal.
+  - La seguridad no se ve afectada: una alerta real lo quita (`_activate_locked`, el SASMEX).
+- **Criterios de aceptación:**
+  - [ ] Con los audibles silenciados y sin alerta, el panel ofrece re-armarlos con el PIN y lo
+    deja en la bitácora, o el silencio de una prueba termina con la prueba. Hay que elegir uno, con
+    su prueba.
+  - [ ] El panel dice «audibles silenciados» fuera de la fila de la sirena, cuando eso calla un
+    simulacro o la música.
 
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
