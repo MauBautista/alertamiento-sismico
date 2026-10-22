@@ -968,10 +968,13 @@ class AudioNotifier(EdgeModule):
         """Lo que sonaría AHORA en un simulacro. Cadena vacía = no hay asset."""
         return self._simulacro_path or ""
 
-    def play_simulacro(self) -> None:
-        """Drill del panel LAN (con PIN): mensaje de SIMULACRO, sin tocar relés."""
+    def play_simulacro(self) -> bool:
+        """Drill del panel LAN (con PIN): mensaje de SIMULACRO, sin tocar relés.
+
+        Devuelve si la voz arrancó de verdad: el panel no puede decir «ORDEN ACEPTADA»
+        sobre un simulacro que se omitió (silencio, alerta, sin vigilante…)."""
         self._cortar_musica("voceo")  # [T-9.72] antes de vocear, como en el sismo
-        self._play("simulacro", self.simulacro_path)
+        return self._play("simulacro", self.simulacro_path)
 
     def simulacro_evidence(self) -> dict:
         """[T-5.17] QUÉ va a sonar en el simulacro, con su sha256, AHORA MISMO.
@@ -1038,8 +1041,11 @@ class AudioNotifier(EdgeModule):
         if actual == "simulacro":
             self._callar_voz(gen)
 
-    def _play(self, kind: str, path: str) -> None:
+    def _play(self, kind: str, path: str) -> bool:
         """[T-2.70.a·D2/P1] La lectura del silencio va DENTRO del try.
+
+        Devuelve ``True`` sólo si la voz arrancó: quien la pidió por el panel tiene
+        que poder distinguir «sonó» de «se omitió».
 
         Estaba fuera, y `supervisor._act_and_publish` llama a `on_tier` SIN try:
         una excepción aquí abortaba todo lo que venía después —espejo LoRa a los
@@ -1057,13 +1063,13 @@ class AudioNotifier(EdgeModule):
             bloqueo = self._simulacro_bloqueo()
             if bloqueo is not None:
                 log.warning("voceo de simulacro omitido: %s", bloqueo)
-                return
+                return False
         elif not self.enabled:
-            return
+            return False
         try:
             if kind != "simulacro" and self._link.snapshot().audible_silenced:
                 log.warning("voceo %s omitido: audibles SILENCIADOS por el operador", kind)
-                return
+                return False
             self._backend.stop()
             self._backend.play(path)
             with self._voz_lock:
@@ -1072,8 +1078,10 @@ class AudioNotifier(EdgeModule):
                 self._voz_corte_avisado = False
                 self._voz_fallos = 0
             log.warning("voceo %s reproduciendo (%s)", kind, path)
+            return True
         except Exception:  # noqa: BLE001 — la sirena de relé es la primaria; esto jamás propaga
             log.exception("el voceo %s falló — canal advisory aislado", kind)
+            return False
 
     def _on_silence(self, silenced: bool) -> None:
         if silenced:
