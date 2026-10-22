@@ -513,6 +513,7 @@ el primer clic arma, el segundo ejecuta, y **si tardas más de 5 segundos se des
 | Botón | Qué hace de verdad | Cuándo usarlo |
 |---|---|---|
 | `SILENCIAR AUDIBLES` | Calla la sirena. **Solo aparece si la sirena está sonando** | Cuando la sirena ya cumplió su función y estorba la coordinación. **La alerta sigue viva; solo callas el ruido** |
+| `RE-ARMAR AUDIBLES` | Deshace el silencio. **Solo aparece si los audibles están silenciados**, con o sin alerta | Con la alerta viva, **la sirena vuelve a sonar**. Sin alerta, sirve para que vuelvan a sonar el simulacro y la música: mientras haya silencio, el simulacro **no habla** y la prueba de audio **no arranca**. La salud del panel lo avisa en la fila «Audibles» |
 | `CERRAR ALERTA` · **2 clics** | Libera el enclave: los relés vuelven a reposo | **Solo cuando una persona responsable decida que la emergencia terminó.** Esto reabre el gas y devuelve los ascensores a servicio |
 | `PROBAR SIRENA` | Suena 2 segundos | Prueba mensual. **Avisa antes por radio** |
 | `PROBAR ACTUADORES` · **2 clics** | Sostiene sirena y estrobo, y da un pulso de verificación a gas, ascensores y puertas leyendo el retorno. **No abre incidente ni manda correos** | Prueba programada. **Avisa antes: se va a mover el gas y los ascensores.** Si entra una alerta real a media prueba, la alerta gana |
@@ -520,6 +521,7 @@ el primer clic arma, el segundo ejecuta, y **si tardas más de 5 segundos se des
 | `MODO PRUEBA WR-1` | Abre una ventana de 120 segundos donde el gabinete **protege igual** pero **no le cuenta nada a la nube** | Solo el técnico, para probar el receptor sin abrir un incidente real ni disparar correos |
 | `SALIR DE PRUEBA WR-1` | Cierra esa ventana antes de tiempo | Cuando termine la prueba. Si se te olvida, se cierra sola |
 | `SIMULACRO DE VOCEO` | Reproduce el mensaje hablado de simulacro. **No toca ningún relé** | Simulacros. **Solo aparece si este sitio tiene bocina** |
+| `PRUEBA DE AUDIO CONTINUA` / `DETENER` | Pone música de prueba por los parlantes, hasta 30 minutos. Cualquier alerta, prueba de sirena o silencio la corta | Para revisar los parlantes. Con los audibles silenciados no arranca: pulsa antes `RE-ARMAR AUDIBLES` |
 
 `edge/takab_edge/local_api/index.html:1702-1714`;
 `takab-docs/design/edge-panel/ESPECIFICACION-PANEL-GABINETE.md:854-876`.
