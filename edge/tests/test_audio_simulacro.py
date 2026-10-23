@@ -224,7 +224,11 @@ def test_el_boton_del_panel_deja_fila_PERSISTIDA_no_solo_en_memoria(tmp_path, se
         ledger = ActuationLedger(con_spool)
         panel = LocalDashboard(gpio, None, None, audio=audio, ledger=ledger)
 
-        panel.drill_audio()
+        # Sin jack ni voceo la voz no suena: el botón lo dice (409) y la fila queda.
+        from takab_edge.local_api import ActionUnavailable
+
+        with pytest.raises(ActionUnavailable):
+            panel.drill_audio()
 
         filas = ledger.read_all()
         vocea = [f for f in filas if f.get("action") == "drill_audio"]

@@ -1939,18 +1939,29 @@ class LocalDashboard(EdgeModule):
         """
         if self._audio is None:
             log.warning("drill de voceo solicitado sin módulo de audio")
-            return
+            raise ActionUnavailable("el gabinete no tiene módulo de audio: no hay voz que sonar")
         evidencia = {}
         try:
             evidencia = dict(self._audio.simulacro_evidence())
         except Exception:  # noqa: BLE001 — advisory: la evidencia no puede tumbar el voceo
             log.exception("no se pudo resolver la evidencia de audio del voceo LAN (aislado)")
-        self._audio.play_simulacro()
+        # La fila y la respuesta dicen lo que PASÓ, no lo que se preveía: se respondía
+        # 200 —«ORDEN ACEPTADA»— aunque la voz se omitiera (regla de oro 7).
+        sono = bool(self._audio.play_simulacro())
         self._record_action("drill_audio")
-        self._registrar_voceo(evidencia)
+        self._registrar_voceo(evidencia, sono=sono)
+        if not sono:
+            try:
+                motivo = str(self._audio.simulacro_evidence().get("reason") or "")
+            except Exception:  # noqa: BLE001 — advisory
+                motivo = ""
+            log.warning("voceo de SIMULACRO por LAN NO sonó (%s)", motivo or "sin motivo")
+            raise ActionUnavailable(
+                "el simulacro NO sonó: " + (motivo or "el gabinete no reprodujo la voz")
+            )
         log.warning("voceo de SIMULACRO solicitado por LAN (%s)", evidencia.get("path"))
 
-    def _registrar_voceo(self, evidencia: dict) -> None:
+    def _registrar_voceo(self, evidencia: dict, *, sono: bool) -> None:
         """[T-5.17] La fila persistida del voceo. Aislada: jamás tumba el botón."""
         if self._ledger is None:
             return
@@ -1969,10 +1980,10 @@ class LocalDashboard(EdgeModule):
                 actor=ACTOR_LAN,
                 channel=ActuatorChannel.SYSTEM,
                 action="drill_audio",
-                # `will_sound=False` NO es un fallo: el voceo puede estar apagado
-                # por su gate de hardware y el simulacro corre igual. Se registra
-                # como intento no ejecutado para que la fila no afirme un sonido.
-                success=bool(evidencia.get("will_sound")),
+                # Lo que PASÓ, no lo que la evidencia preveía: un voceo omitido (sin
+                # voceo, silencio, alerta…) queda como intento no ejecutado, para que
+                # la fila no afirme un sonido que nadie oyó.
+                success=sono,
                 detail=detalle,
             )
         except Exception:  # noqa: BLE001 — la bitácora jamás propaga

@@ -18556,6 +18556,16 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
       simulacro ni la música · RE-ARMAR AUDIBLES con el PIN».
   - [ ] Probado en el gabinete tras desplegar el edge: silenciar durante una prueba de sirena,
     ver la fila y el botón, re-armar con el PIN y que un simulacro vuelva a hablar.
+    - Desplegado el 2026-10-22 (release `gc964416`). Sin PIN, `/api/rearm-audibles` responde 401
+      (la ruta existe). `takab-gpio` no se reinició.
+- **Encontrado en la revisión y arreglado aparte (2026-10-22): SIMULACRO DE VOCEO decía «ORDEN
+  ACEPTADA» aunque la voz no sonara.**
+  - `drill_audio` respondía 200 aunque el simulacro se omitiera por el silencio, una alerta o la
+    falta de vigilante. La bitácora anotaba como éxito la previsión (`will_sound`), no lo que pasó.
+  - Ahora `play_simulacro()` dice si la voz arrancó. Si no arrancó, el panel recibe un 409 con el
+    motivo («NO SE HIZO · el simulacro NO sonó: …»), y la fila queda como intento fallido.
+  - Las pruebas están en `edge/tests/test_drill_audio_honesto.py`, incluido el reproductor que
+    falla con la previsión en verde.
 
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
