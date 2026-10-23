@@ -18558,6 +18558,8 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     ver la fila y el botón, re-armar con el PIN y que un simulacro vuelva a hablar.
     - Desplegado el 2026-10-22 (release `gc964416`). Sin PIN, `/api/rearm-audibles` responde 401
       (la ruta existe). `takab-gpio` no se reinició.
+    - **Pendiente en `PENDIENTES §3.10`.** La prueba física, y el despliegue del #320
+      (`5b0fd6d2`): el 2026-10-23 el gabinete no estaba en la red.
 - **Encontrado en la revisión y arreglado aparte (2026-10-22): SIMULACRO DE VOCEO decía «ORDEN
   ACEPTADA» aunque la voz no sonara.**
   - `drill_audio` respondía 200 aunque el simulacro se omitiera por el silencio, una alerta o la
