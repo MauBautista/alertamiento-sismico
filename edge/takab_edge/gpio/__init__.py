@@ -1261,6 +1261,7 @@ class GpioController(EdgeModule):
                 siren_reason=self._siren_reason_locked(),
                 audible_silenced=self._audible_silenced,
                 alert_latched=self._sasmex_latched or any(self._rules_demand.values()),
+                siren_demanded=self._alert_demand(ActuatorChannel.SIREN),
                 actuation_test_active=self._actuation_test_active,
                 test_mode_active=ahora < self._test_mode_until,
                 test_mode_remaining_s=max(0.0, self._test_mode_until - ahora),

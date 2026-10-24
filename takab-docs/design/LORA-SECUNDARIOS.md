@@ -122,6 +122,10 @@ su RSSI/SNR medidos. Sin claves en el módem.
   La especificación ejecutable de esas cuatro reglas vive en
   `edge/simulators/lora.py::FakeSecondaryCabinet` y la ejercitan los tests de
   `edge/tests/test_lora_link.py` — el firmware en C debería pasar los mismos casos.
+- **Los flags de un `SILENCE` no se obedecen** (T-9.75). El principal lo manda
+  siempre con `alarm_active|strobe`, también al silenciar un gabinete en calma.
+  «Deja el estrobo» quiere decir que NO SE TOCA. El simulador lo encendía, y con
+  eso un silencio sin alerta prendía el estrobo de todo el inmueble.
 - **Un `SILENCE` que el firmware no entienda NO debe ackearse.** Ackear lo que no
   se ejecutó le diría al principal que el edificio calló mientras esa sirena sigue
   sonando, y es peor que rechazarlo: el operador se iría convencido.

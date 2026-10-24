@@ -33,6 +33,20 @@ ssh takab-pi5 'sudo /opt/takab/bin/canary.sh estado'    # veredicto de la últim
 ssh takab-pi5 'sudo /opt/takab/bin/canary.sh revertir --motivo "..."'   # vuelta atrás a mano
 ```
 
+> ### ⚠️ Revertir después de una ventana de mantenimiento deja al dueño MÁS NUEVO
+> `canary.sh revertir` sólo reinicia `takab-edge`. Si el despliegue que se revierte
+> reinició también a `takab-gpio` (`--ventana-de-mantenimiento`) y su release
+> añadía un campo a la instantánea del gabinete —T-9.75 añade `siren_demanded`—,
+> el cliente viejo **rechaza cada instantánea** del dueño nuevo
+> (`pinlink/codec.py`, «el despliegue va al revés»). El reflejo SASMEX y las
+> órdenes de relé siguen funcionando, pero:
+> - el panel se queda sin datos;
+> - la nube ve el gabinete DEGRADADO;
+> - el re-armado no llega a los secundarios.
+>
+> Esa vuelta atrás se hace **en la misma ventana** y reiniciando también
+> `takab-gpio` a la release anterior.
+
 > ### ⚠️ El primer despliegue A/B de un gabinete es una MIGRACIÓN
 > Convierte `/opt/takab/edge` de directorio a symlink, o sea que **cambia la ruta
 > desde la que arranca el camino de vida**. `deploy.sh` se niega a hacerlo sin

@@ -63,8 +63,11 @@ class FakeSecondaryCabinet:
         elif frame.msg_type == fr.SILENCE:
             # [T-5.25] Cae lo AUDIBLE y solo lo audible: el estrobo sigue y la
             # alerta sigue viva. Es el espejo de `gpio.silence_audibles()`.
+            #
+            # [T-9.75] «Sigue» es que NO SE TOCA. El bit del estrobo viaja puesto
+            # siempre, también al silenciar un gabinete en calma, y leerlo como
+            # «enciéndelo» prendía el estrobo de todo el inmueble.
             self.siren_on = False
-            self.strobe_on = self.strobe_on or bool(frame.flags & fr.FLAG_STROBE)
             self.flags_seen = frame.flags
         elif frame.msg_type == fr.TEST:
             # Destella el estrobo SIN sirena y no cambia `alarm_active` — ni los
