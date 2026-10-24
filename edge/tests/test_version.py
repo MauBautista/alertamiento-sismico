@@ -15,15 +15,17 @@ from __future__ import annotations
 
 import pytest
 from takab_edge import version as version_mod
-from takab_edge.version import fw_version, running_version
+from takab_edge.version import fw_version, running_root, running_version
 
 
 @pytest.fixture(autouse=True)
 def _restaura_la_captura():
     """La captura del arranque es estado de PROCESO: se restaura entre tests."""
     previo = version_mod._RUNNING
+    raiz_previa = version_mod._RUNNING_ROOT
     yield
     version_mod._RUNNING = previo
+    version_mod._RUNNING_ROOT = raiz_previa
 
 
 def test_sin_archivo_no_inventa_version(tmp_path):
@@ -98,3 +100,42 @@ def test_la_captura_ocurre_al_importar_el_modulo():
     llamada, un proceso que preguntara por primera vez DESPUÉS de un deploy
     capturaría la versión nueva sin haberla cargado nunca."""
     assert version_mod._RUNNING is not version_mod._SIN_CAPTURAR
+
+
+# --------------------------------------------------------------------------
+# [T-8.17 · A-076] DESDE QUÉ RELEASE CORRE, que no es la que apunta el enlace.
+#
+# Con el layout A/B el código vive en `releases/<id>/edge` y `/opt/takab/edge` es
+# un SYMLINK que cada despliegue repunta. El dueño de los pines no se reinicia en
+# un despliegue normal, así que puede seguir ejecutando una release que el enlace
+# ya no nombra. `deploy.sh` tiene que saber CUÁL para compararla y para no
+# podarla, y sólo el proceso puede decirlo: lo captura al importar, como la
+# versión.
+# --------------------------------------------------------------------------
+
+
+def test_la_release_que_corre_se_congela_al_arrancar_aunque_se_repunte_el_enlace(tmp_path):
+    """El proceso declara la release que CARGÓ, resuelta, no el enlace."""
+    julio = tmp_path / "releases" / "julio" / "edge"
+    octubre = tmp_path / "releases" / "octubre" / "edge"
+    julio.mkdir(parents=True)
+    octubre.mkdir(parents=True)
+    vivo = tmp_path / "edge"
+    vivo.symlink_to(julio)
+
+    version_mod._capture(vivo)  # el proceso arranca a través del enlace
+    vivo.unlink()
+    vivo.symlink_to(octubre)  # un despliegue repunta el enlace bajo sus pies
+
+    assert running_root() == julio.resolve(), (
+        "la release que corre tiene que ser la RESUELTA al arrancar: resolverla "
+        "al preguntar daría la del enlace de ahora, que es justo la que el dueño "
+        "de los pines NO está ejecutando"
+    )
+
+
+def test_la_release_que_corre_se_captura_al_importar():
+    """Igual que la versión: si se capturara en la primera llamada, un proceso que
+    preguntara después de un despliegue declararía la release nueva."""
+    assert version_mod._RUNNING_ROOT is not None
+    assert (running_root() / "takab_edge" / "version.py").is_file()

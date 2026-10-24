@@ -52,6 +52,12 @@ _DEPLOY = _RAIZ / "deploy" / "edge" / "deploy.sh"
 #: árbol vivo NO se tocó; si desapareció, el `rsync --delete` ya pasó por encima.
 _CENTINELA = "CODIGO_ANTERIOR.txt"
 
+#: [T-8.17 · A-076] Lo que el intérprete falso compara entre DOS releases para
+#: decidir si el código del dueño de los pines cambió. Ausente en las dos (el
+#: caso normal del arnés) es «el mismo código». Un test que quiera una release
+#: con otro código del dueño le escribe un contenido distinto.
+_HUELLA_FALSA = "HUELLA_FALSA_DEL_DUENO.txt"
+
 
 def _console_scripts() -> list[str]:
     """Los console scripts DECLARADOS hoy en `edge/pyproject.toml`."""
@@ -100,12 +106,21 @@ def gabinete(tmp_path: pathlib.Path):
     # segundo, el gate se salta la huella y todo sale verde; en un runner más
     # lento caen en segundos distintos, el gate SÍ pregunta, el falso no
     # contestaba nada y ocho tests se ponían rojos. Verde por velocidad no es
-    # verde, y el rojo estaba en el único sitio donde nadie miraba.
+    # verde, y el rojo estaba en el único sitio donde nadie miraba. [T-8.17] Esa
+    # carrera ya no existe: 7.b no mira el reloj, mira la release que declara el
+    # dueño. El default sigue siendo «igual» porque es lo cierto.
     #
     # Los dos escenarios que sí quieren medir la frescura lo DECLARAN:
     #   DUENO_CODIGO_CAMBIO=1 → el dueño se quedó con el código anterior.
     #   DUENO_HUELLA_MUDA=1   → el intérprete revienta y NO se puede medir; el
     #                           gate tiene que salir rojo igual (fail-closed).
+    #
+    # [T-8.17 · A-076] Sin esas variables, la huella COMPARA DE VERDAD las dos
+    # releases que recibe (`$3` la activa, `$4` contra la que se mide), por el
+    # contenido de `_HUELLA_FALSA`. Con un «igual» constante no se podía medir
+    # CONTRA QUÉ release comparaba el script, y ése era el defecto: comparaba
+    # contra la que el enlace apuntaba antes del despliegue, no contra la que
+    # ejecuta el dueño. Cada pregunta queda en la bitácora.
     py_venv = f"""
         case "$1 $2" in
           "-m compileall")
@@ -114,9 +129,13 @@ def gabinete(tmp_path: pathlib.Path):
         esac
         case "$2" in
           *HUELLA-DEL-DUENO*)
+            echo "huella activa=$3 contra=$4" >> "{bitacora}"
             [ -n "${{DUENO_HUELLA_MUDA:-}}" ] && exit 0
             if [ -n "${{DUENO_CODIGO_CAMBIO:-}}" ]; then
               echo "DUENO-CAMBIO takab_edge/gpio/__main__.py"
+            elif [ "$(cat "$3/{_HUELLA_FALSA}" 2>/dev/null)" != \\
+                   "$(cat "$4/{_HUELLA_FALSA}" 2>/dev/null)" ]; then
+              echo "DUENO-CAMBIO takab_edge/gpio/__init__.py"
             else
               echo "DUENO-IGUAL"
             fi
@@ -317,6 +336,30 @@ def gabinete(tmp_path: pathlib.Path):
             done
           fi
         fi
+        # [T-8.17 · A-076] DUENO_SE_RELEVA_DESDE=<release> → durante la
+        # activación (el `restart takab-edge` del canary) el dueño muere y se
+        # RELEVA solo (`Restart=always`), ya pasada la activación, pero cargando
+        # esa release. En el Pi es el hueco entre la marca de activación y el
+        # repunte del enlace; aquí se fuerza con un retraso para que el veredicto
+        # no pueda salir bien por mirar el RELOJ en vez de la release.
+        if [ -n "${{DUENO_SE_RELEVA_DESDE:-}}" ] && [ "$1 $2" = "restart takab-edge" ] \\
+           && [ -s "{pid_dueno}" ]; then
+          kill -9 "$(cat "{pid_dueno}")" 2>/dev/null || true
+          for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+            flock -n "{cerrojo}" true && break
+            sleep 0.05
+          done
+          sleep 2
+          (
+            exec 9<>"{cerrojo}"
+            flock -n 9 || exit 1
+            echo "$BASHPID" > "{pid_dueno}"
+            printf 'pid=%s\\nunit=takab-gpio\\nrelease=%s\\n' \\
+              "$BASHPID" "$DUENO_SE_RELEVA_DESDE" > "{cerrojo}"
+            exec sleep 120
+          ) </dev/null >/dev/null 2>&1 &
+          sleep 0.3
+        fi
         if [ "$ARRANCA" = 1 ] && [ -z "${{NO_RECLAMA_PINES:-}}" ]; then
           # `exec` y no `flock -n <archivo> sleep 120`: util-linux hace fork, así
           # que ahí `$!` era el PID de FLOCK y el que se queda con el descriptor
@@ -349,6 +392,10 @@ def gabinete(tmp_path: pathlib.Path):
               fi
               printf 'pid=%s\\nunit=%s\\n' \\
                 "${{PID_FALSO:-$BASHPID}}" "${{UNIDAD_DUENA:-$2}}" >> "{cerrojo}"
+              # [T-8.17 · A-076] Lo que escribe el dueño de hoy: la release que
+              # cargó al arrancar, resuelta. Arranca AHORA, así que es la que el
+              # enlace nombra en este instante.
+              printf 'release=%s\\n' "$(readlink -f "{vivo}")" >> "{cerrojo}"
             fi
             exec sleep 120
           ) </dev/null >/dev/null 2>&1 &
@@ -454,7 +501,13 @@ def gabinete(tmp_path: pathlib.Path):
             lineas += [f"{k}={v}" for k, v in claves.items()]
             entorno.write_text("\n".join(lineas) + "\n")
 
-        def dueno_preexistente(self, unidad: str = "takab-gpio") -> int:
+        def dueno_preexistente(
+            self,
+            unidad: str = "takab-gpio",
+            *,
+            release: pathlib.Path | None = None,
+            legado: bool = False,
+        ) -> int:
             """Un dueño de pines que YA estaba corriendo ANTES de este despliegue.
 
             Es el estado normal de un gabinete con `TAKAB_EDGE_GPIO_OWNER=gpio`:
@@ -466,26 +519,34 @@ def gabinete(tmp_path: pathlib.Path):
             Mismo `exec` que el systemctl falso: `$BASHPID` ES el proceso que
             sostiene el descriptor, así que el registro nombra al dueño de verdad
             y el teardown puede matarlo.
+
+            [T-8.17 · A-076] El registro dice además desde qué release arrancó:
+            por defecto la que el enlace nombra ahora, que es de donde arrancó un
+            dueño que lleva días de pie; `release=` fija otra. `legado=True` es un
+            dueño anterior a T-8.17, que no escribe esa línea.
             """
+            linea_release = ""
+            if not legado:
+                origen = (release or self.vivo).resolve()
+                linea_release = f"printf 'release=%s\\n' '{origen}' >> \"{cerrojo}\""
             guion = f"""
             (
               exec 9<>"{cerrojo}"
               flock -n 9 || exit 1
               echo "$BASHPID" > "{pid_dueno}"
               printf 'pid=%s\\nunit=%s\\n' "$BASHPID" "{unidad}" > "{cerrojo}"
+              {linea_release}
               exec sleep 120
             ) </dev/null >/dev/null 2>&1 &
             """
             subprocess.run(["bash", "-c", textwrap.dedent(guion)], check=True, timeout=30)
-            # El arranque del dueño tiene que quedar en un SEGUNDO distinto al del
-            # swap: el veredicto compara epochs enteros y sin esta separación un
-            # dueño rancio podría leerse como recién arrancado. En el Pi la
-            # distancia real son días; aquí, 1.2 s.
+            # [T-8.17] Ya no hace falta separar su arranque del de la activación
+            # por un segundo: el veredicto no mira el reloj sino la release que
+            # el dueño declara.
             for _ in range(100):
                 if pid_dueno.exists() and pid_dueno.read_text().strip().isdigit():
                     break
                 time.sleep(0.05)
-            time.sleep(1.2)
             return int(pid_dueno.read_text().strip())
 
         def desplegar(self, *args: str, **entorno_extra: str) -> subprocess.CompletedProcess[str]:
@@ -795,21 +856,12 @@ def test_el_primer_despliegue_de_un_gabinete_virgen_completa(gabinete) -> None:
         "un gabinete virgen tiene que ENTERARSE de que no tiene vuelta atrás"
     )
 
-    # El VEREDICTO no se puede exigir verde aquí, y exigirlo era codificar un
-    # accidente de esta máquina. Sin release anterior no hay con qué comparar el
-    # código del dueño, así que el script sólo puede certificar el despliegue si
-    # LEE que el dueño arrancó después de la activación — y esa lectura es de
-    # `/proc/<pid>/stat`, que en un contenedor endurecido (el runner de CI) puede
-    # no estar disponible. Cuando no lo está, el rojo es CORRECTO: fail-closed.
-    #
-    # Lo que sí se exige, y es más fuerte que el `rc == 0` de antes: si se niega
-    # a certificar, tiene que decir la razón que MIDIÓ. El script llegó a afirmar
-    # "arrancó ANTES del swap" con INICIO_DUENO=0 por no haber podido leer nada.
-    if r.returncode != 0:
-        assert "no se pudo LEER el arranque" in r.stderr or "no hay release anterior" in r.stderr, (
-            "se negó a certificar el despliegue sin decir cuál de las dos cosas "
-            f"le faltó.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
-        )
+    # [T-8.17] El VEREDICTO ya se puede exigir verde. Antes dependía de leer en
+    # `/proc/<pid>/stat` que el dueño arrancó después de la activación, y en un
+    # contenedor endurecido (el runner de CI) esa lectura podía faltar. Ahora el
+    # dueño declara la release que cargó, y es la activa.
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert "✓ pines del gabinete en poder de takab-edge" in r.stdout
 
 
 def test_sin_release_anterior_el_aborto_no_ofrece_una_vuelta_atras_inexistente(gabinete) -> None:
@@ -1417,6 +1469,7 @@ def test_si_la_huella_del_dueno_NO_SE_PUEDE_MEDIR_el_gate_sale_rojo(gabinete) ->
         "operador no puede distinguirlo de un dueño realmente rancio"
     )
     assert "✓ pines del gabinete en poder" not in r.stdout
+    assert "CÓDIGO ANTERIOR" not in r.stderr, "afirmó que el código cambió sin haberlo medido"
 
 
 def test_un_dueno_de_pines_VIEJO_con_el_MISMO_codigo_no_obliga_a_ciclar_gas(gabinete) -> None:
@@ -1482,6 +1535,192 @@ def test_la_ventana_de_mantenimiento_reinicia_al_dueno_DESPUES_de_activar(gabine
         "reinició al DUEÑO antes del repunte del symlink: habría estrenado la "
         "versión VIEJA y ciclado gas y retenedores a cambio de nada"
     )
+
+
+# --- [T-8.17 · A-076] Contra QUÉ release se mide al dueño ---------------------
+#
+# El paso 7.b comparaba el código del dueño contra `RELEASE_ANTERIOR`, que es a lo
+# que apuntaba el enlace ANTES de este despliegue. Eso sólo coincide con lo que el
+# dueño ejecuta mientras ningún despliegue lo haya dejado atrás. Tras un rojo sin
+# ventana, el enlace ya apunta a la release N y el dueño sigue en la N-1: el
+# despliegue N+1, que no toca su código, comparaba N+1 contra N, salía igual, y
+# daba ✓ con el dueño en la N-1.
+
+
+def _ultima_huella(gabinete) -> str:  # noqa: ANN001
+    """Contra qué release comparó la huella del dueño la ÚLTIMA vez."""
+    lineas = [x for x in gabinete.registro().splitlines() if x.startswith("huella ")]
+    assert lineas, "premisa: el paso 7.b tenía que llegar a comparar el código del dueño"
+    return lineas[-1].split(" contra=", 1)[1]
+
+
+def test_el_SEGUNDO_despliegue_sin_ventana_no_blanquea_al_dueno_de_codigo_anterior(
+    gabinete,
+) -> None:
+    """El escenario exacto de la auditoría (A-076), con dos despliegues de verdad.
+
+    El dueño arrancó de la release previa, y su código difiere del de hoy. El
+    primer despliegue lo dice en rojo y deja el enlace en la release nueva, como
+    debe. El operador no abre ventana y vuelve a desplegar: con el código de
+    antes, el segundo despliegue comparaba contra la release del primero, salía
+    igual y declaraba ✓ sobre un dueño que sigue en la previa.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    (gabinete.release_previa / _HUELLA_FALSA).write_text("el código del dueño de julio\n")
+    pid = gabinete.dueno_preexistente("takab-gpio")
+
+    primero = gabinete.desplegar()
+    assert primero.returncode != 0 and "CÓDIGO ANTERIOR" in primero.stderr, (
+        "premisa: el primer despliegue ya cambia el código del dueño y tiene que "
+        f"salir en rojo.\nstdout:\n{primero.stdout}\nstderr:\n{primero.stderr}"
+    )
+    assert gabinete.vivo.resolve() != gabinete.release_previa.resolve(), (
+        "premisa: el rojo del paso 7.b llega DESPUÉS de activar, así que el enlace "
+        "ya apunta a la release del primer despliegue"
+    )
+
+    segundo = gabinete.desplegar()
+
+    assert gabinete.dueno_de_los_pines()["pid"] == str(pid), (
+        "premisa: sin ventana, el dueño sigue siendo el proceso de antes"
+    )
+    assert segundo.returncode != 0, (
+        "el segundo despliegue sin ventana declaró bueno a un dueño que sigue "
+        f"ejecutando la release previa.\nstdout:\n{segundo.stdout}\nstderr:\n{segundo.stderr}"
+    )
+    assert "✓ pines del gabinete en poder" not in segundo.stdout
+    assert "CÓDIGO ANTERIOR" in segundo.stderr
+    assert _ultima_huella(gabinete) == str(gabinete.release_previa.resolve()), (
+        "comparó el código del dueño contra una release que el dueño no ejecuta"
+    )
+
+
+def test_el_dueno_se_mide_contra_la_release_DESDE_LA_QUE_ARRANCO(gabinete) -> None:
+    """La otra mitad: con el mismo código que la release del dueño, es verde.
+
+    Aquí el enlace apunta a una release cuyo código del dueño difiere del de
+    hoy, pero el dueño arrancó de otra, con el código de hoy. Lo que importa es
+    lo que ejecuta el dueño, no lo que nombraba el enlace.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    del_dueno = gabinete.releases / "20260101T000001Z-del-dueno" / "edge"
+    del_dueno.mkdir(parents=True)
+    (gabinete.release_previa / _HUELLA_FALSA).write_text("otro código del dueño\n")
+    gabinete.dueno_preexistente("takab-gpio", release=del_dueno)
+
+    r = gabinete.desplegar()
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert "✓ pines del gabinete en poder de takab-gpio" in r.stdout
+    assert _ultima_huella(gabinete) == str(del_dueno.resolve())
+
+
+def test_un_dueno_que_se_RELEVA_durante_la_activacion_desde_la_release_vieja_no_es_nuevo(
+    gabinete,
+) -> None:
+    """Arrancar después de la activación no es cargar la release activa.
+
+    7.b daba por nuevo a un dueño que arrancó después de una marca de tiempo
+    tomada ANTES de que el canary repuntara el enlace, con relojes de segundos
+    enteros. Un dueño que arranca en ese hueco (el `start` de 6.a, un
+    `Restart=always`) carga la release vieja. Aquí arranca claramente después y
+    declara la vieja: el veredicto tiene que salir de lo que declara.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    (gabinete.release_previa / _HUELLA_FALSA).write_text("el código del dueño de julio\n")
+    gabinete.dueno_preexistente("takab-gpio")
+
+    r = gabinete.desplegar(DUENO_SE_RELEVA_DESDE=str(gabinete.release_previa.resolve()))
+
+    assert r.returncode != 0, (
+        "un dueño que cargó la release vieja se dio por nuevo porque arrancó tarde."
+        f"\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "CÓDIGO ANTERIOR" in r.stderr
+    assert _ultima_huella(gabinete) == str(gabinete.release_previa.resolve())
+
+
+def test_un_registro_VACIO_en_un_gabinete_D3_sin_ventana_no_se_declara_bueno(gabinete) -> None:
+    """Pines tomados, registro vacío y un dueño que este despliegue no reinició.
+
+    En D1 el canary reinicia al dueño (es `takab-edge`), y en una ventana también:
+    ahí un registro vacío sólo es un disco lleno y el ✓ con aviso es honesto.
+    En D3 sin ventana nada dice qué código ejecuta el dueño, y el ✓ era del
+    mismo tipo que A-076.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    gabinete.dueno_preexistente("takab-gpio")
+    gabinete.cerrojo.write_text("")  # el dueño sigue con el flock; el texto se perdió
+
+    r = gabinete.desplegar()
+
+    assert r.returncode != 0, (
+        "registro vacío en D3 sin ventana y el despliegue salió en VERDE."
+        f"\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "✓ pines del gabinete" not in r.stdout
+    assert "VACÍO" in r.stderr and "df -h" in r.stderr, "tiene que mandar al disco"
+    assert "CÓDIGO ANTERIOR" not in r.stderr, "afirmó que el código cambió sin haberlo medido"
+    assert "(pid )" not in r.stderr, "un mensaje con el pid en blanco no le dice nada al operador"
+
+
+def test_si_la_release_del_dueno_YA_NO_ESTA_en_disco_sale_rojo(gabinete) -> None:
+    """Un árbol podado debajo de un dueño vivo: sus imports perezosos fallarán.
+
+    Compararlo contra un directorio que no existe no mide nada, y con el código
+    de antes ni siquiera se miraba: se comparaba contra la release anterior.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    borrada = gabinete.releases / "20250101T000000Z-podada" / "edge"
+    gabinete.dueno_preexistente("takab-gpio", release=borrada)
+
+    r = gabinete.desplegar()
+
+    assert r.returncode != 0, (
+        "el dueño corre una release que ya no está en disco y el despliegue salió "
+        f"en VERDE.\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    assert "ya no está en disco" in r.stderr
+    assert str(borrada.resolve()) in r.stderr, "el mensaje tiene que nombrar la release que falta"
+    assert "CÓDIGO ANTERIOR" not in r.stderr, "afirmó que el código cambió sin haberlo medido"
+    assert "--ventana-de-mantenimiento" in r.stderr
+    assert "✓ pines del gabinete en poder" not in r.stdout
+
+
+def test_un_dueno_ANTERIOR_a_la_ficha_no_se_declara_bueno_ni_se_poda_a_ciegas(gabinete) -> None:
+    """Un dueño que no escribe `release=` corre código anterior a T-8.17.
+
+    No hay manera de saber qué árbol ejecuta, así que el paso 7.b no puede
+    declararlo al día y la poda no puede saber qué no borrar: se aplaza, y se
+    dice. Es transitorio: la ventana que lo reinicia deja escrita la línea.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    antiguas = []
+    for i in range(3):
+        vieja = gabinete.releases / f"20250101T00000{i}Z-vieja" / "edge"
+        vieja.mkdir(parents=True)
+        os.utime(vieja.parent, (1_700_000_000 + i, 1_700_000_000 + i))
+        antiguas.append(vieja)
+    gabinete.dueno_preexistente("takab-gpio", legado=True)
+
+    r = gabinete.desplegar(TAKAB_DEPLOY_RELEASES_VIVAS="1")
+
+    assert r.returncode != 0, (
+        "no consta qué release ejecuta el dueño y el despliegue salió en VERDE."
+        f"\nstdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    )
+    # El texto propio de 7.b, no el del aviso de la poda, que también lo dice.
+    assert "corre código anterior a esa ficha" in r.stderr, (
+        "7.b no dijo por qué no puede comparar: el registro no trae la release"
+    )
+    assert "ya no está en disco" not in r.stderr, "confundió «no lo dice» con «lo borraron»"
+    assert "CÓDIGO ANTERIOR" not in r.stderr, "afirmó que el código cambió sin haberlo medido"
+    assert "--ventana-de-mantenimiento" in r.stderr
+    assert all(v.exists() for v in antiguas), (
+        "sin saber qué release ejecuta el dueño, la poda borró releases: una de "
+        "ellas podía ser la suya"
+    )
+    assert "poda APLAZADA" in r.stdout + r.stderr
 
 
 def test_del_edge_env_gana_la_ULTIMA_asignacion_del_dueno(gabinete) -> None:
@@ -1635,6 +1874,45 @@ def test_la_poda_jamas_borra_la_release_activa_ni_la_anterior(gabinete) -> None:
         "la poda se llevó la release ANTERIOR: el gabinete se quedó sin vuelta atrás"
     )
     assert sorted(gabinete.releases.glob("*vieja")) == [], "la poda no llegó a las antiguas"
+
+
+def test_la_poda_JAMAS_borra_la_release_que_ejecuta_el_dueno_de_los_pines(gabinete) -> None:
+    """[T-8.17 · A-076] Tres despliegues sin ventana y el dueño se quedaba sin árbol.
+
+    La poda protegía la activa, la anterior y las heredadas. La del dueño de los
+    pines, si no era ninguna de esas, era la más vieja y la primera en caer: un
+    `rm -rf` del código de un proceso vivo, cuyos imports perezosos fallarían al
+    siguiente uso.
+
+    Y con la raíz del despliegue detrás de un ENLACE: el dueño declara la ruta
+    física y la poda lista por el enlace. Comparar las rutas en crudo no las
+    reconoce iguales, ni la del dueño ni la anterior.
+    """
+    gabinete.provisionar(TAKAB_EDGE_GPIO_OWNER="gpio")
+    del_dueno = gabinete.releases / "20250101T000000Z-del-dueno" / "edge"
+    del_dueno.mkdir(parents=True)
+    (del_dueno / _CENTINELA).write_text("el árbol que ejecuta el dueño\n")
+    os.utime(del_dueno.parent, (1_600_000_000, 1_600_000_000))  # la MÁS antigua
+    for i in range(3):
+        otra = gabinete.releases / f"20250601T00000{i}Z-vieja" / "edge"
+        otra.mkdir(parents=True)
+        os.utime(otra.parent, (1_700_000_000 + i, 1_700_000_000 + i))
+    gabinete.dueno_preexistente("takab-gpio", release=del_dueno)
+    raiz_por_enlace = gabinete.raiz.parent / "opt-takab-por-enlace"
+    raiz_por_enlace.symlink_to(gabinete.raiz)
+
+    r = gabinete.desplegar(TAKAB_DEPLOY_RELEASES_VIVAS="1", TAKAB_REMOTE_ROOT=str(raiz_por_enlace))
+
+    assert r.returncode == 0, f"stdout:\n{r.stdout}\nstderr:\n{r.stderr}"
+    assert (del_dueno / _CENTINELA).exists(), (
+        "la poda borró la release que el dueño de los pines está ejecutando"
+    )
+    assert (gabinete.release_previa / _CENTINELA).exists(), (
+        "la poda borró la release ANTERIOR: el gabinete se quedó sin vuelta atrás"
+    )
+    assert sorted(gabinete.releases.glob("*vieja")) == [], (
+        "premisa: la poda SÍ tenía que llevarse las otras antiguas"
+    )
 
 
 def test_un_venv_cuyo_interprete_ProtectHome_esconde_NO_se_activa(gabinete, tmp_path) -> None:
