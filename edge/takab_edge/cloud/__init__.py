@@ -31,6 +31,7 @@ from takab_edge.config import EdgeSettings
 from takab_edge.durable import escribir_durable
 from takab_edge.efimero import directorio_efimero
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono
 
 log = logging.getLogger("takab_edge.cloud")
 
@@ -220,6 +221,9 @@ class CloudConnector(EdgeModule):
         self._lock = threading.RLock()
         self._flush_lock = threading.Lock()  # un solo drenado a la vez
         self._reconnect_stop = threading.Event()
+        #: [T-8.17 · A-078] `publish()` la sube para que el hilo de la nube drene ya.
+        self._despertar = threading.Event()
+        self._hilo_muerto_avisado = False
         self._reconnect_thread: threading.Thread | None = None
         # Suscripciones nube→edge (cmd/cfg, T-1.23): se registran aquí y se
         # (re)aplican al transporte en cada conexión (la sesión MQTT puede
@@ -486,7 +490,7 @@ class CloudConnector(EdgeModule):
             return False
 
     def publish(self, topic: str, payload: BaseModel) -> bool:
-        """Encola durable + envía si hay enlace. NUNCA lanza/bloquea al llamador.
+        """Encola durable y despierta al que envía. NUNCA lanza ni espera al broker.
 
         Regla de oro 4.2: publicar no es prerequisito de actuar, así que un fallo de disco
         o de enlace jamás propaga a la vía de actuación. La escalación de tier (mismo
@@ -495,6 +499,13 @@ class CloudConnector(EdgeModule):
 
         [T-2.84.a] Antes de nada, la regla de oro 9: una serie de muestras se rechaza
         AQUÍ y no llega ni al spool. Encolarla sería aplazar el problema al reconectar.
+
+        [T-8.17 · A-078] Quien envía es el hilo `cloud-reconnect`, no el que publica.
+        Este docstring ya decía «nunca bloquea» cuando aquí se drenaba la cola en el
+        hilo del llamador, que casi siempre es el de SeedLink: con un enlace medio
+        abierto, cada publicación esperaba el PUBACK hasta `_PUBACK_TIMEOUT_S` y la
+        detección se quedaba ciega ese tiempo. Lo único que se hace aquí sigue siendo
+        lo que no puede esperar: la escritura durable al spool.
         """
         if not self._pasa_la_regla_9(topic, payload):
             return False
@@ -521,8 +532,31 @@ class CloudConnector(EdgeModule):
             if key is not None:
                 self._seen.add(key)  # SÓLO tras encolar → un fallo de escritura no lo envenena
             self._evict_over_cap(topic)
-        self.flush()
+        self._drenar()
         return True
+
+    def _drenar(self) -> None:
+        """[T-8.17 · A-078] Que la cola salga, sin esperar al broker si se puede.
+
+        Con el hilo de la nube vivo, se le despierta y vuelve en el acto: es él quien
+        espera los PUBACK. Sin él —un conector sin arrancar, o ya parado— no hay
+        nadie más que drene, así que lo hace quien publica, como antes.
+
+        Un hilo arrancado y muerto no debería existir (su bucle atrapa todo), pero si
+        existiera, volver a drenar aquí es volver a A-078: se grita una vez.
+        """
+        hilo = self._reconnect_thread
+        if hilo is not None and hilo.is_alive():
+            self._despertar.set()
+            return
+        if hilo is not None and not self._hilo_muerto_avisado:
+            self._hilo_muerto_avisado = True
+            log.critical(
+                "el hilo de la nube murió: drena quien publica, y con el enlace medio "
+                "abierto eso puede detener la detección hasta %.0f s por mensaje",
+                _PUBACK_TIMEOUT_S,
+            )
+        self.flush()
 
     def _evict_over_cap(self, topic: str) -> None:
         """Descarta lo más antiguo de un topic ACOTADO (telemetría reponible).
@@ -611,8 +645,13 @@ class CloudConnector(EdgeModule):
             # producción con un OverflowError del backoff (ver `_backoff_delay`).
             try:
                 if self.online:
+                    # [T-8.17 · A-078] Se baja ANTES de drenar: lo que se publique
+                    # mientras tanto vuelve a subirla y no se queda esperando turno.
+                    self._despertar.clear()
+                    if self._reconnect_stop.is_set():
+                        break  # la parada subió el aviso y el `clear` se lo comió
                     self.flush()
-                    self._reconnect_stop.wait(base)
+                    self._despertar.wait(base)
                     continue
                 try:
                     self._transport.connect()
@@ -620,6 +659,10 @@ class CloudConnector(EdgeModule):
                     log.info("enlace cloud restablecido; backfill de %d mensajes", self.queued)
                     self._announce_online()
                     self._apply_subscriptions()
+                    # [T-8.17 · A-078] Lo encolado sale ANTES que la bitácora y la
+                    # evidencia de `_fire_online`: la bitácora espera un PUBACK por
+                    # fila, y un evento detrás de ella llega tarde al quórum.
+                    self.flush()
                     self._fire_online()
                     self.flush()
                 except Exception as exc:  # noqa: BLE001 — sin enlace: backoff y reintenta
@@ -634,10 +677,30 @@ class CloudConnector(EdgeModule):
                         delay + jitter,
                         exc,
                     )
-                    self._reconnect_stop.wait(delay + jitter)
+                    self._esperar_el_backoff(delay + jitter, base)
             except Exception:  # noqa: BLE001 — cualquier fallo inesperado: log y sigue vivo
                 log.exception("fallo inesperado en el hilo de reconexión; reintento en %.0fs", base)
                 self._reconnect_stop.wait(base)
+
+    def _esperar_el_backoff(self, segundos: float, paso: float) -> None:
+        """[T-8.17 · A-078] Duerme el backoff, pero no más allá de que el enlace vuelva.
+
+        awscrt puede reanudar SOLO la conexión que se cortó (`_on_resumed`) mientras
+        este hilo duerme el backoff de un `connect()` fallido, que llega a
+        `cloud_backoff_max_s`. Antes daba igual: el que publicaba drenaba él mismo.
+        Ahora drena este hilo, así que mira el enlace a cada `paso` y en cuanto
+        alguien publica. Sin enlace, el backoff dura lo mismo que antes.
+        """
+        # reloj: monotonico — el backoff lo mide y lo consume esta máquina
+        limite = mono() + segundos
+        while not self._reconnect_stop.is_set() and not self.online:
+            resto = limite - mono()
+            if resto <= 0:
+                return
+            self._despertar.clear()
+            if self.online:
+                return
+            self._despertar.wait(min(resto, paso))
 
     def _on_start(self) -> None:
         endpoint = self.settings.mqtt_endpoint or "<sin definir>"
@@ -651,6 +714,7 @@ class CloudConnector(EdgeModule):
 
     def _on_stop(self) -> None:
         self._reconnect_stop.set()
+        self._despertar.set()  # que no duerma su turno entero antes de ver la parada
         if self._reconnect_thread is not None:
             self._reconnect_thread.join(timeout=2.0)
             self._reconnect_thread = None

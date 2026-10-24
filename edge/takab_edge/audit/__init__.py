@@ -253,6 +253,9 @@ class ActuationLedger:
         self._max_bytes = max_bytes
         self._keep = max(1, keep)
         self._lock = threading.Lock()
+        #: [T-8.17] Un drenado a la vez, con SU propio lock: el de las filas no
+        #: puede quedarse tomado mientras el `sink` espera a la nube.
+        self._drain_lock = threading.Lock()
         self._seq = 0
         self._write_failures = 0
         self._last_error: str = ""
@@ -485,14 +488,20 @@ class ActuationLedger:
         La marca sólo avanza sobre filas CONFIRMADAS y en orden: un sink a medias
         deja lo no entregado pendiente en vez de darlo por subido. Reiniciar no
         re-sube nada, que es la mitad «sin duplicarse» de la regla de oro 3.
+
+        [T-8.17 · A-078] El `sink` se llama SIN el lock de las filas. Cada fila
+        espera su PUBACK, hasta 10 s con el enlace medio abierto, y `record()` —que
+        está en el camino de la actuación— toma ese lock: con él tomado aquí, una
+        orden de relé esperaba a que la nube contestara para poder anotarse.
         """
         if self.sink is None:
             return 0
         subidos = 0
         try:
-            with self._lock:
-                marca = self._read_watermark()
-                pendientes = [f for f in self._read_all_unlocked() if f.get("seq", 0) > marca]
+            with self._drain_lock:
+                with self._lock:
+                    marca = self._read_watermark()
+                    pendientes = [f for f in self._read_all_unlocked() if f.get("seq", 0) > marca]
                 for fila in pendientes:
                     try:
                         ok = bool(self.sink(fila))
@@ -504,7 +513,8 @@ class ActuationLedger:
                     marca = fila.get("seq", marca)
                     subidos += 1
                 if subidos:
-                    self._write_watermark(marca)
+                    with self._lock:
+                        self._write_watermark(marca)
         except Exception:  # noqa: BLE001 — jamás al hilo que la llama
             log.exception("bitácora de actuación: el drenado falló")
         if subidos:
