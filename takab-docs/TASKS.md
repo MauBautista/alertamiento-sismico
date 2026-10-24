@@ -17713,10 +17713,43 @@ se registra en su RUNBOOK.
 - **Criterios de aceptación:**
   - [ ] El despliegue compara contra la release que el dueño de los pines cargó al arrancar, y la
     poda no la borra.
-  - [ ] Publicar a la nube no bloquea el hilo de SeedLink.
+  - [x] Publicar a la nube no bloquea el hilo de SeedLink. *(2026-10-24, A-078.)*
+    > **Era un defecto, no una sospecha: medido.** `publish()` drenaba la cola en el hilo del
+    > llamador y el transporte real espera el PUBACK hasta 10 s. Con un enlace medio abierto
+    > (awscrt lo sigue dando por conectado hasta que vence el keepalive, unos 30 s),
+    > `publish()` esperó **3.0 s** a un broker callado de 3 s. En un sismo simulado, el hilo
+    > que alimenta la detección habló con el broker. Ahora `publish()` escribe al spool, durable
+    > como antes, y despierta al hilo `cloud-reconnect`, que es quien espera. Sin ese hilo (un
+    > conector sin arrancar) drena quien publica, porque no lo haría nadie; si el hilo muriera,
+    > se grita en CRITICAL.
+    >
+    > **Lo que cazó la revisión adversarial, corregido aquí:**
+    > - Con el hilo durmiendo el backoff de un `connect()` fallido, awscrt puede reanudar solo
+    >   la conexión vieja. Antes el evento salía en el acto porque drenaba quien publicaba;
+    >   con el primer arreglo esperaba el backoff, **hasta 60 s**. Ahora el backoff se despierta
+    >   cuando se publica y mira el enlace a cada `cloud_backoff_s`.
+    > - **El mismo síntoma por otra puerta:** `ActuationLedger.drain()` llamaba al `sink` con el
+    >   lock de las filas tomado, un PUBACK por fila. `record()` toma ese lock y está en el
+    >   camino de la actuación. Anotar una actuación esperó **3.0 s** a la nube. Ahora el drenado
+    >   tiene su propio lock y el `sink` se llama fuera del de las filas.
+    > - Al reconectar, lo encolado sale **antes** que la bitácora y la evidencia de
+    >   `_fire_online`: un evento detrás de N filas llegaba N PUBACK tarde al quórum.
+    > - El aviso se baja antes de drenar (si no, un evento que llega justo después espera el
+    >   turno), la parada lo sube, y un aviso que no se baja haría girar el hilo al 100 %.
+    >
+    > `edge/tests/test_publicar_no_bloquea.py`, 12 casos. Caen los diez mutantes, entre ellos
+    > los cuatro que la revisión vio sobrevivir: el hilo que gira, el aviso perdido, la parada
+    > que duerme su turno y el hilo muerto sin grito.
+    - **Sin medir, fuera de este arreglo:** con la ruta S3 en curso (corte de más de 15 min), un
+      evento nuevo espera a la subida del backfill o viaja dentro de su NDJSON. Además,
+      `AwsIotMqttTransport.connect()` no cierra la conexión interrumpida, así que pueden quedar
+      dos con el mismo `client_id`.
+    - **Lo que se queda en el hilo del llamador, a propósito:** la escritura durable al spool
+      (`fsync`). Es lo que hace que un evento no se pierda si se va la luz justo después de
+      actuar. Su coste en la microSD del Pi está sin medir.
   - [ ] Watchdog real, latido con memoria, subtensión, uptime y cola MQTT, y temperatura ausente
     en vez de 0.
-- **Hallazgos:** A-076, A-077, A-078 y los P2/P3 de edge del documento.
+- **Hallazgos:** A-076, A-077, A-078 (cerrado) y los P2/P3 de edge del documento.
 
 ### [ ] T-8.18 · **Móvil: sin red, con la sesión vencida y en teléfono compartido** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-8.04 · **Prioridad:** después de la presentación
