@@ -43,7 +43,7 @@ from takab_edge.contracts import (
 from takab_edge.dispatch import CommandDispatcher
 from takab_edge.drill import DrillController
 from takab_edge.gpio import LOCAL_RELAY_CHANNELS, GpioController, _proceso_vivo
-from takab_edge.gpio_link import build_gpio_link
+from takab_edge.gpio_link import GpioSnapshot, build_gpio_link
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
 from takab_edge.module import EdgeModule
@@ -110,6 +110,22 @@ def _dueno_segun_el_registro_del_cerrojo(ruta: str) -> str | None:
     if not pid.isdigit() or not _proceso_vivo(int(pid)):
         return None
     return f"{campos.get('unit') or 'un proceso sin unidad declarada'} (pid {pid})"
+
+
+def _sirena_pedida_por_alerta(snap: GpioSnapshot) -> bool:
+    """[T-9.75] ¿Alguna alerta del principal pide la sirena, según su dueño?
+
+    Lo dice `siren_demanded`, que el silencio no cambia. No vale `alert_latched`,
+    que también es verdad con un enclave que sólo pide el ascensor. Tampoco «la
+    sirena suena»: en D3 el aviso de silencio llega ANTES que el estado nuevo, así
+    que quien pregunta al re-armar puede estar viendo la instantánea silenciada.
+
+    Un `takab-gpio` sin reiniciar no conoce el campo. Entonces se hace lo de
+    antes, que se pasa de más y nunca deja callado a un secundario.
+    """
+    if "siren_demanded" in snap.campos_desconocidos:
+        return snap.alert_latched
+    return snap.siren_demanded
 
 
 def _toposort(modules: dict[str, EdgeModule]) -> list[EdgeModule]:
@@ -579,9 +595,16 @@ class EdgeSupervisor:
         **Solo lo audible.** La orden lleva `alarm_active` y el estrobo puestos:
         la alerta sigue viva en cada nodo y su protección no audible no se toca.
 
-        **El re-armado también viaja**, y solo si hay algo que re-armar: sin
-        alerta enclavada, volver a activar sería inventar una alarma en el otro
-        extremo del inmueble a partir de un botón que solo dice «ya no silencio».
+        **El re-armado también viaja**, y solo si hay una sirena que devolver: sin
+        eso, volver a activar sería inventar una alarma en el otro extremo del
+        inmueble a partir de un botón que solo dice «ya no silencio».
+
+        [T-9.75] Hay sirena que devolver si se les MANDÓ desde el último cierre de
+        alerta (lo que el silencio les quitó, aunque el principal no tenga sirena
+        instalada) o si una alerta del principal la PIDE. La segunda cubre el
+        reinicio de `takab-edge`, que vacía la memoria del radio y no las demandas
+        del dueño de los pines. Antes decidía `alert_latched`, que también es verdad
+        con un enclave que sólo pide el ascensor.
 
         Advisory de punta a punta: `propagate()` es fire-and-forget y esto corre
         FUERA del lock de los pines (`gpio.on_silence` aísla cada observador), así
@@ -593,7 +616,9 @@ class EdgeSupervisor:
             if silenciado:
                 self.lora.propagate("silence")
                 return
-            if self.gpio_link.snapshot().alert_latched:
+            # La memoria del radio va primero: si ya dice que sí, no hace falta leer
+            # al gabinete, y una instantánea fuera de plazo no deja mudo a nadie.
+            if self.lora.sirena_enviada or _sirena_pedida_por_alerta(self.gpio_link.snapshot()):
                 self.lora.propagate("activate", siren=True, strobe=True)
         except Exception:  # noqa: BLE001 — advisory: jamás al camino de vida
             log.exception("espejo del silencio a secundarios falló (aislado)")

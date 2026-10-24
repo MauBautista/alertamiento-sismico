@@ -88,6 +88,14 @@ class GpioSnapshot:
     siren_reason: SirenReason | None
     audible_silenced: bool
     alert_latched: bool
+    #: [T-9.75] ¿Alguna ALERTA pide la sirena? SASMEX enclavado, o una demanda de
+    #: `rules` —la regla o el cuórum— sobre la sirena.
+    #:
+    #: No es `siren_sounding`: el silencio la calla y la demanda sigue, que es lo
+    #: que el re-armado necesita saber. Y no es `alert_latched`, que también es
+    #: verdad con un enclave que sólo pide el ascensor. Excluye las pruebas, que
+    #: no son alertas.
+    siren_demanded: bool
     actuation_test_active: bool
     test_mode_active: bool
     test_mode_remaining_s: float

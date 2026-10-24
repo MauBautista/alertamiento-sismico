@@ -93,6 +93,7 @@ class _Dueno:
             siren_reason=None,
             audible_silenced=False,
             alert_latched=False,
+            siren_demanded=False,
             actuation_test_active=False,
             test_mode_active=False,
             test_mode_remaining_s=0.0,

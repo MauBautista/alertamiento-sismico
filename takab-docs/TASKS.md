@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **505** · `[x]` **439** · `[~]` **19** · `[ ]` **47**
+**Conteo de tareas:** total **505** · `[x]` **440** · `[~]` **19** · `[ ]` **46**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18570,10 +18570,11 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     falla con la previsión en verde.
 
 
-### [ ] T-9.75 · **Re-armar pide la sirena a los secundarios aunque el principal no la tenga pedida** — `SOFTWARE`
-- **Componente:** edge · **Depende de:** T-9.74 y la llegada del radio LoRa · **Prioridad:** baja (latente)
-- **Objetivo:** que el re-armado de los audibles propague a los secundarios lo mismo que vuelve a
-  sonar en el principal, ni más ni menos.
+### [x] T-9.75 · **Re-armar pide la sirena a los secundarios aunque el principal no la tenga pedida** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** T-9.74 · **Prioridad:** baja (latente)
+- **Objetivo:** que el re-armado de los audibles devuelva a los secundarios lo que el silencio les
+  quitó, ni más ni menos. *(Decía «lo mismo que vuelve a sonar en el principal». Se enmendó el
+  2026-10-24 porque la revisión encontró el caso en que no es lo mismo; ver abajo.)*
 - **Medido el 2026-10-23** con una prueba temporal sobre el supervisor:
   - Una regla pide sólo el ascensor (escalón RESTRICTED, con la actuación instrumental activada).
     Después, silenciar y re-armar.
@@ -18590,11 +18591,53 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   audibles están silenciados. Decidir con «la sirena suena» dejaría MUDOS a los secundarios al
   re-armar durante un SASMEX real, que es el error en la dirección peligrosa.
 - **Criterios de aceptación:**
-  - [ ] El re-armado propaga la sirena sólo si el principal la tiene PEDIDA por alerta: SASMEX
-    enclavado o demanda de la sirena por regla o por cuórum. El dato se toma de una fuente que no
-    cambia con el silencio, por ejemplo las demandas que `takab-edge` mandó al dueño de los pines.
-  - [ ] Una prueba por cada lado, en modo local y en D3 (pinlink real): una demanda sin sirena no
-    activa a los secundarios, y un SASMEX enclavado sí lo hace tras re-armar.
+  - [x] El re-armado propaga la sirena sólo si hay una sirena que devolver, y lo decide con datos
+    que el silencio no cambia. Hay dos fuentes, y basta una:
+    - **Lo que se les mandó.** `LoraLink.sirena_enviada` vale verdadero desde que una activación
+      lleva la sirena y hasta el siguiente `clear` (CERRAR ALERTA).
+    - **Lo que el principal tiene pedido.** Es `siren_demanded`, un campo nuevo de la instantánea
+      del gabinete que calcula el dueño de los pines: SASMEX enclavado, o una demanda de la regla o
+      del cuórum sobre la sirena. Las pruebas no cuentan.
+    - *(Enmienda del 2026-10-24: el criterio pedía sólo la segunda fuente.)* La revisión
+      adversarial midió el hueco en las dos costuras:
+      - un sitio con actuación instrumental y sin sirena en el principal;
+      - en EVACUATE, `_act_and_publish` manda la sirena por radio sin mirar el equipo del
+        principal;
+      - ese principal no la pide, así que con sólo `siren_demanded` el secundario se quedaba
+        callado tras re-armar. Antes volvía a sonar.
+    - La segunda fuente cubre lo que la primera pierde: un reinicio de `takab-edge` vacía la
+      memoria del radio, y las demandas siguen en `takab-gpio`.
+  - [x] Una prueba por cada lado, en modo local y en D3 (pinlink real). Están en
+    `edge/tests/test_rearmado_a_los_secundarios.py`:
+    - una demanda sin sirena no activa a los secundarios;
+    - un SASMEX enclavado y una sirena pedida por cuórum sí vuelven;
+    - el EVACUATE sin sirena en el principal también vuelve;
+    - CERRAR ALERTA olvida la sirena enviada.
+  - [x] La trampa de D3 se prueba sin depender de una carrera. La revisión midió que el arreglo
+    ingenuo («la sirena suena») pasaba 14 de 15 corridas del caso SASMEX: el hilo lector suele
+    refrescar la caché antes de que llegue el aviso. Ahora un caso le da a la decisión la
+    instantánea silenciada a mano, con la memoria del radio vacía como tras un reinicio.
+  - [x] **Mutantes.** Fallan los cuatro:
+    - la regla vieja (`alert_latched`);
+    - el arreglo ingenuo;
+    - sólo la memoria del radio;
+    - sólo el dueño de los pines.
+- **De paso, el mismo espejo inventaba otra alarma.** El silencio viaja con el bit del estrobo
+  puesto, también al silenciar un gabinete en calma, como en la visita del 2026-10-21. El
+  simulador `FakeSecondaryCabinet` lo leía como «enciéndelo», contra `LORA-SECUNDARIOS.md` §2
+  («deja el estrobo»). Ya no lo enciende, y §6 dice ahora que el firmware no obedece los flags de
+  un `SILENCE`. Los vectores de §3 no cambian.
+- **Mientras `takab-gpio` no se reinicie**, el gabinete D3 no conoce `siren_demanded`. El códec lo
+  deja en `campos_desconocidos` (T-2.165), y el re-armado hace lo de antes: se pasa de más y nunca
+  deja callado a un secundario. Lo tiene un caso de prueba. El campo entra en vigor en la próxima
+  ventana de mantenimiento, que hará falta de todos modos para instalar el radio.
+- **El reverso tiene una trampa, y quedó escrita en `deploy/edge/README.md`.** Es el primer campo
+  que se añade a la instantánea desde T-2.165. Revertir con `canary.sh` después de una ventana
+  deja al dueño más nuevo que su cliente, y el cliente viejo rechaza cada instantánea. Esa vuelta
+  atrás se hace en la misma ventana y reiniciando también `takab-gpio`.
+- **Queda como estaba:** un DEACTIVATE de la sirena desde la consola no viaja por radio. Si a los
+  secundarios se les mandó la sirena, siguen sonando, y el re-armado se la devuelve tras un
+  silencio.
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
 ### [~] T-9.80 · **Contactos de emergencia del ocupante** — `SOFTWARE` + `DECISIÓN`

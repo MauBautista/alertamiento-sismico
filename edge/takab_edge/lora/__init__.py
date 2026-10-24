@@ -132,6 +132,9 @@ class LoraLink(EdgeModule):
         self._wake = threading.Event()
         self._stop_evt = threading.Event()
         self._sender: threading.Thread | None = None
+        # [T-9.75] ¿Se les mandó la sirena desde el último CLEAR? El silencio no lo
+        # borra, y es lo que el re-armado tiene que devolverles.
+        self._sirena_enviada = False
         self._keys = {c.id: fr.derive_key(site_key, c.id) for c in self._cfg.secondaries}
         self._reg: dict[int, dict] = {
             c.id: {
@@ -184,6 +187,10 @@ class LoraLink(EdgeModule):
             flags = fr.FLAG_ALARM_ACTIVE | fr.FLAG_STROBE
         now = _mono()
         with self._lock:
+            if kind is fr.ALARM_ACT and siren:
+                self._sirena_enviada = True
+            elif kind is fr.ALARM_CLEAR:
+                self._sirena_enviada = False
             for entry in self._reg.values():
                 pending = entry["pending"]
                 merged = flags
@@ -200,6 +207,16 @@ class LoraLink(EdgeModule):
                     "sent_seq": None,
                 }
         self._wake.set()
+
+    @property
+    def sirena_enviada(self) -> bool:
+        """[T-9.75] ¿Se mandó la sirena a los secundarios desde el último ``clear``?
+
+        Es lo que el silencio les quitó. No sobrevive a un reinicio de
+        ``takab-edge``: por eso el re-armado pregunta además al dueño de los pines.
+        """
+        with self._lock:
+            return self._sirena_enviada
 
     def snapshot(self) -> dict:
         """Estado para el panel (vía ``/api/status``, sección ``lora``)."""
