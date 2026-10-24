@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **504** · `[x]` **439** · `[~]` **19** · `[ ]` **46**
+**Conteo de tareas:** total **505** · `[x]` **439** · `[~]` **19** · `[ ]` **47**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -18558,6 +18558,8 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
     ver la fila y el botón, re-armar con el PIN y que un simulacro vuelva a hablar.
     - Desplegado el 2026-10-22 (release `gc964416`). Sin PIN, `/api/rearm-audibles` responde 401
       (la ruta existe). `takab-gpio` no se reinició.
+    - **Pendiente en `PENDIENTES §3.10`.** La prueba física, y el despliegue del #320
+      (`5b0fd6d2`): el 2026-10-23 el gabinete no estaba en la red.
 - **Encontrado en la revisión y arreglado aparte (2026-10-22): SIMULACRO DE VOCEO decía «ORDEN
   ACEPTADA» aunque la voz no sonara.**
   - `drill_audio` respondía 200 aunque el simulacro se omitiera por el silencio, una alerta o la
@@ -18567,6 +18569,32 @@ nuevos. Las escrituras en Cognito, terraform y la base de producción las corre 
   - Las pruebas están en `edge/tests/test_drill_audio_honesto.py`, incluido el reproductor que
     falla con la previsión en verde.
 
+
+### [ ] T-9.75 · **Re-armar pide la sirena a los secundarios aunque el principal no la tenga pedida** — `SOFTWARE`
+- **Componente:** edge · **Depende de:** T-9.74 y la llegada del radio LoRa · **Prioridad:** baja (latente)
+- **Objetivo:** que el re-armado de los audibles propague a los secundarios lo mismo que vuelve a
+  sonar en el principal, ni más ni menos.
+- **Medido el 2026-10-23** con una prueba temporal sobre el supervisor:
+  - Una regla pide sólo el ascensor (escalón RESTRICTED, con la actuación instrumental activada).
+    Después, silenciar y re-armar.
+  - El principal no hace sonar su sirena, porque nadie la pidió. Pero
+    `_al_silencio_de_los_secundarios` manda `activate {siren: True, strobe: True}` por LoRa: decide
+    con `alert_latched`, que también es verdadero con un enclave sin sirena.
+  - Lo mismo pasaría con un cuórum en un sitio declarado sin sirena (`equipment`), y lo mismo con
+    el botón físico.
+- **Hoy no pasa en ningún gabinete:** `lora.enabled=False` de fábrica, porque el Pi aún no tiene
+  radio.
+- **La trampa del arreglo ingenuo.** En D3 el aviso «silence» llega ANTES que el estado nuevo: el
+  servidor del pinlink encola el evento y después empuja el estado. Así, la instantánea que ve la
+  llamada de vuelta es la de antes del re-armado. Y `siren_reason` vale `None` mientras los
+  audibles están silenciados. Decidir con «la sirena suena» dejaría MUDOS a los secundarios al
+  re-armar durante un SASMEX real, que es el error en la dirección peligrosa.
+- **Criterios de aceptación:**
+  - [ ] El re-armado propaga la sirena sólo si el principal la tiene PEDIDA por alerta: SASMEX
+    enclavado o demanda de la sirena por regla o por cuórum. El dato se toma de una fuente que no
+    cambia con el silencio, por ejemplo las demandas que `takab-edge` mandó al dueño de los pines.
+  - [ ] Una prueba por cada lado, en modo local y en D3 (pinlink real): una demanda sin sirena no
+    activa a los secundarios, y un SASMEX enclavado sí lo hace tras re-armar.
 ## Fase 9.8 · Contactos de emergencia y baja de los alias
 
 ### [~] T-9.80 · **Contactos de emergencia del ocupante** — `SOFTWARE` + `DECISIÓN`

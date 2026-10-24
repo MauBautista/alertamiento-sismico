@@ -9,7 +9,7 @@
 > **con su razón**, porque una decisión sin razón no se puede revocar con conocimiento — solo
 > olvidar.
 >
-> **Última actualización:** 2026-10-21 · **31 puntos abiertos** (§2: 12 · §3: 9 · §4: 7 · §5: 3),
+> **Última actualización:** 2026-10-23 · **32 puntos abiertos** (§2: 12 · §3: 10 · §4: 7 · §5: 3),
 > más el §3.6 marcado **opcional** y el NTP que sigue vivo dentro del §3.3.b, ya cerrado en todo
 > lo demás.
 >
@@ -974,6 +974,22 @@ está desplegado en `ga433488`. Faltan dos cosas físicas:
 - **Escuchar un simulacro de verdad.** Se lanza desde la consola con el gabinete en calma (con una
   alerta enclavada se rechaza a propósito). Debe sonar «Esto es un simulacro» por el jack, y el PDF
   del simulacro debe mostrar `takab-simulacro-v2` con su huella en vez de «SIN VOCEO».
+
+### 3.10 · [`T-9.74`](TASKS.md) · Desplegar el edge pendiente y probar el re-armado en el gabinete
+
+El 2026-10-23 el gabinete no estaba en la red: no respondían ni `raspberry-cerebro.local`, ni el
+sensor (`rs.local`), ni la cámara. Quedó sin desplegar `main` en `5b0fd6d2`, que trae el **#320**
+(SIMULACRO DE VOCEO deja de decir «ORDEN ACEPTADA» si la voz no sonó). El #319 (re-armar los
+audibles) sí está desplegado desde el 2026-10-22 (`gc964416`).
+
+En la próxima visita, con el gabinete encendido y en la red:
+- **Desplegar el edge** desde `takab-wt-deploy` en `main`. Es un despliegue normal, sin
+  `--ventana-de-mantenimiento`: no reinicia `takab-gpio` ni mueve el gas.
+- **Probar T-9.74:**
+  1. pulsar PROBAR SIRENA y, mientras suena, SILENCIAR AUDIBLES;
+  2. ver la fila «Audibles · AUDIBLES SILENCIADOS» y el botón RE-ARMAR AUDIBLES;
+  3. re-armar con el PIN;
+  4. lanzar un simulacro desde la consola y comprobar que vuelve a decir «Esto es un simulacro».
 
 ## 4 · LEGAL Y COMERCIAL — plazo externo, arrancar YA
 
