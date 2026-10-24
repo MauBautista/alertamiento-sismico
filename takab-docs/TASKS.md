@@ -11,7 +11,7 @@
 
 ## Estado actual (2026-09-02)
 
-**Conteo de tareas:** total **505** · `[x]` **440** · `[~]` **19** · `[ ]` **46**
+**Conteo de tareas:** total **505** · `[x]` **441** · `[~]` **19** · `[ ]` **45**
 
 > ⚠️ **OBLIGACIÓN PERMANENTE — lee esto antes de cambiar el estado de una tarea.**
 > Esa línea de arriba **la verifica un test**:
@@ -5856,7 +5856,7 @@ no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_
   - *Pico único* (150 ms una sola vez en `_on_contact_closed`): **165.9 ms → 5.9 ms**, pasa con el aviso. El pico simulado cayó casi exacto sobre los **165.8 ms** que enrojecieron `main`.
 - **No sustituye a la acreditación física.** La medida que vale sigue siendo la del gabinete con el WR-1 real —**6.65 ms y 4.16 ms**, dos órdenes de magnitud de margen—; esto solo evita que el guardián de CI se corroa entre visitas.
 
-### [ ] T-2.172 · El fail-open del modo prueba **grita 24 veces** en cada ventana de mantenimiento — `SOFTWARE`
+### [x] T-2.172 · El fail-open del modo prueba **grita 24 veces** en cada ventana de mantenimiento — `SOFTWARE` · COMPLETA (2026-10-24)
 - **Componente:** edge (`supervisor.py:_modo_prueba_activo`) · **Sale de:** el despliegue con
   `--ventana-de-mantenimiento` del 2026-08-30 (release `20260830T222850Z-71ac7df`), medido en el
   gabinete real.
@@ -5878,14 +5878,45 @@ no lee `/proc` — lee `TAKAB_GPIO_UNIT` o `sys.argv[0]`; `/proc` solo lo usa `_
 - **⚠️ La corrección prohibida:** bajar el nivel del log o quitar el aviso. El fail-open es
   correcto —callar un sismo real es peor que un incidente de más— y **tiene que verse**.
 - **Criterios de aceptación:**
-  - [ ] El mensaje distingue **lo que va a pasar de verdad** de lo que podría pasar: con
+  - [x] El mensaje distingue **lo que va a pasar de verdad** de lo que podría pasar: con
         `Tier.NORMAL` no se publica nada y el texto no puede decir que sí.
-  - [ ] El reinicio del dueño **no produce 24 líneas**: o se agrupan mientras dura la
+        > Dice «En tier normal NO se publica ninguna alerta», y no «nada»: el cierre de un
+        > episodio por cota (`EpisodeTracker`) no mira el enclavado y sí puede salir dentro de
+        > la ventana. No despierta a nadie, pero «nada» habría sido mentira.
+  - [x] El reinicio del dueño **no produce 24 líneas**: o se agrupan mientras dura la
         indisponibilidad, o se registra una al entrar y una al salir con el conteo.
-  - [ ] **No se resuelve esperando al dueño**: `_modo_prueba_activo` no puede bloquear la
+        > Una al entrar (`ERROR`, con la traza) y una al salir con el conteo, la duración y lo
+        > que salió a ciegas: `INFO` si no salió ninguna alerta, `WARNING` si salió alguna. Las
+        > dos llevan el número de ventana, porque con dos hilos la entrada de uno puede quedar
+        > en el journal después del cierre que hizo el otro.
+  - [x] **No se resuelve esperando al dueño**: `_modo_prueba_activo` no puede bloquear la
         actuación, y esa es la razón de que falle abierto en primer lugar.
-  - [ ] Un test que ejerza la ventana: costura caída durante N ticks con tier `NORMAL` ⇒
+        > Una sola lectura, sin reintento; el lock sólo cubre un contador en memoria y nunca
+        > se escribe el log con él tomado.
+  - [x] Un test que ejerza la ventana: costura caída durante N ticks con tier `NORMAL` ⇒
         **cero publicaciones** y **una sola** línea de aviso.
+        > `edge/tests/test_modo_prueba_ilegible.py`, 11 casos. Los 24 ticks del gabinete van
+        > por `_act_and_publish` y otra vez por la cadena exacta del hilo de SeedLink, con ruido
+        > de fondo del simulador RS4D: un canal en ceros no es reposo, es un sensor mudo, y el
+        > motor lo saca de `NORMAL` (sale `MANUAL_ONLY`, que sí publica).
+- **Lo que sí sale a ciegas tiene su propia línea**, una por cada **(evento, tier, fuente)**. Es
+  como deduplica la nube (`CloudConnector._dedup_key`). La fuente la encontró la revisión
+  adversarial: un SASMEX que llega detrás de un umbral del mismo episodio y el mismo tier es
+  otra publicación, la que ordena evacuar (T-9.02). Con la clave (evento, tier) quedaba
+  escondida en la línea del umbral, y antes del arreglo sí tenía la suya.
+- **El nivel no se bajó**: la entrada y cada publicación a ciegas siguen en `ERROR`, y un test lo
+  exige.
+- **Lo que se dejó como está, a propósito.** Si el dueño no vuelve, la ventana no se cierra y no
+  hay más líneas: eso ya lo dice el latido (relés en `null`, `gpio_unreachable`). Si el dueño
+  oscila, cada caída abre su ventana con su línea, y está bien que se vea: un dueño que oscila
+  no es la rutina de una ventana de mantenimiento.
+- **Mutantes que caen**: bajar el nivel, quitar el dedup, la clave sin la fuente, avisar sólo de
+  la primera alerta, no cerrar la ventana, no escribir la salida, excluir `MANUAL_ONLY`, tratar
+  `NORMAL` como publicación y quitar el lock. El de los hilos se prueba con un intercalado
+  forzado (el primer hilo se detiene dentro de la apertura): con el GIL la carrera sola salía 1
+  de cada 5 corridas.
+- **Despliegue**: el despliegue normal del edge basta, porque el cambio es del cliente
+  (`takab-edge`) y la costura no cambia. Se verá en la próxima ventana de mantenimiento.
 
 ### [x] T-2.171 · Nada comprueba que lo que se despliega sea lo que está en `main` — `SOFTWARE` · COMPLETA (2026-08-27)
 - **Componente:** deploy (`cloud` + `edge`) + Makefile · **Sale de:** dos despliegues del 2026-08-27, medidos, no supuestos.

@@ -16,6 +16,7 @@ import os
 import signal as _signal
 import threading
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 
@@ -47,6 +48,7 @@ from takab_edge.gpio_link import GpioSnapshot, build_gpio_link
 from takab_edge.health import HealthMonitor
 from takab_edge.local_api import LocalDashboard
 from takab_edge.module import EdgeModule
+from takab_edge.reloj import mono
 from takab_edge.rules import RuleEngine, commands_for
 from takab_edge.rules.episode import EpisodeTracker
 from takab_edge.security import SecurityManager
@@ -128,6 +130,17 @@ def _sirena_pedida_por_alerta(snap: GpioSnapshot) -> bool:
     return snap.siren_demanded
 
 
+@dataclass
+class _VentanaIlegible:
+    """[T-2.172] De la primera lectura rota del modo prueba a la primera buena."""
+
+    numero: int
+    desde: float
+    lecturas: int = 0
+    #: Lo que salió a la nube sin poder leerlo, como (evento, tier, fuente).
+    publicadas: list[tuple[str, str, str]] = field(default_factory=list)
+
+
 def _toposort(modules: dict[str, EdgeModule]) -> list[EdgeModule]:
     """Orden de arranque respetando `depends_on` (Kahn)."""
     ordered: list[EdgeModule] = []
@@ -172,6 +185,11 @@ class EdgeSupervisor:
         self._lora_site_key = lora_site_key
         self._built = False
         self._stop_event = threading.Event()
+        # [T-2.172] El hilo de SeedLink y el observador del WR-1 leen el modo
+        # prueba por separado, y comparten la ventana en la que no se puede.
+        self._ilegible: _VentanaIlegible | None = None
+        self._ventanas_ilegibles = 0
+        self._ilegible_lock = threading.Lock()
 
     def _build_seedlink(self, s: EdgeSettings) -> SeedLinkClient:
         """En dev usa el simulador RS4D; en producción, el transporte SeedLink real.
@@ -770,18 +788,17 @@ class EdgeSupervisor:
         lectura es una llamada directa en el mismo proceso, sin transporte que
         pueda caerse, y hoy no hay camino que la haga lanzar. Se escribe ahora
         —mientras no puede fallar— precisamente porque después no habrá tiempo.
+
+        [T-2.172] Con D3 sí lanza: en cada ventana de mantenimiento, mientras
+        `takab-gpio` se reinicia. Lo que se registra entonces está en
+        `_avisar_modo_prueba_ilegible`.
         """
         try:
             snap = self.gpio_link.snapshot()
         except Exception:  # noqa: BLE001 — jamás al hilo de SeedLink
-            log.exception(
-                "no se pudo leer el modo prueba del WR-1; se PUBLICA a la nube. "
-                "Fail-open DELIBERADO: esto puede abrir incidente y disparar la "
-                "push CRISIS a los teléfonos del sitio, y aun así callar un sismo "
-                "real es peor. event_id=%s",
-                decision.event_id,
-            )
+            self._avisar_modo_prueba_ilegible(decision)
             return False
+        self._cerrar_ventana_ilegible()
         if not snap.test_mode_active:
             return False
         log.warning(
@@ -791,6 +808,96 @@ class EdgeSupervisor:
             snap.test_mode_remaining_s,
         )
         return True
+
+    def _avisar_modo_prueba_ilegible(self, decision: TierDecision) -> None:
+        """[T-2.172] El aviso del fail-open dice lo que de verdad pasa, y una vez.
+
+        Medido en la ventana de mantenimiento del 2026-08-30: los ~3 s que
+        `takab-gpio` tarda en reiniciarse dejaban 24 líneas en `ERROR` diciendo
+        que se publicaba a la nube, y no salía nada. En reposo todas las
+        decisiones son `NORMAL`, y con `NORMAL` no hay `LocalEvent`. Un aviso que
+        grita el peor caso en la situación más rutinaria enseña a ignorarlo
+        justo el día que publique de verdad.
+
+        Ahora la primera lectura rota abre la ventana con una línea y las demás
+        sólo cuentan. Lo que sí sale a ciegas tiene su propia línea, una por
+        cada (evento, tier, fuente): es como distingue la nube
+        (`CloudConnector._dedup_key`), y la fuente cuenta porque un SASMEX detrás
+        de un umbral del mismo episodio y el mismo tier es otra publicación, la
+        que ordena evacuar (T-9.02). Es el caso por el que existe el fail-open y
+        no puede quedar escondido en un conteo.
+
+        Sigue en `ERROR`, porque el fail-open está armado y tiene que verse. Si
+        el dueño no vuelve, la ventana no se cierra y no hay más líneas: eso ya
+        lo dice el latido, con los relés en `null` (`gpio_unreachable`). Si
+        oscila, cada caída abre su ventana con su línea, y está bien que se vea:
+        un dueño que oscila no es la rutina de una ventana de mantenimiento.
+        """
+        publica = decision.tier is not Tier.NORMAL
+        clave = (decision.event_id, decision.tier.value, decision.source.value)
+        with self._ilegible_lock:
+            abre = self._ilegible is None
+            if self._ilegible is None:
+                self._ventanas_ilegibles += 1
+                self._ilegible = _VentanaIlegible(numero=self._ventanas_ilegibles, desde=mono())
+            ventana = self._ilegible
+            ventana.lecturas += 1
+            sale_a_ciegas = publica and clave not in ventana.publicadas
+            if sale_a_ciegas:
+                ventana.publicadas.append(clave)
+        # El número de ventana va en la entrada y en la salida: con dos hilos,
+        # la línea de un hilo puede salir después del cierre que hizo el otro.
+        if sale_a_ciegas:
+            log.error(
+                "no se pudo leer el modo prueba del WR-1 (ventana #%d); se PUBLICA a "
+                "la nube el evento event_id=%s tier=%s fuente=%s. Fail-open "
+                "DELIBERADO: puede abrir incidente y disparar la push CRISIS a los "
+                "teléfonos del sitio, y aun así callar un sismo real es peor.",
+                ventana.numero,
+                *clave,
+                exc_info=abre,
+            )
+        elif abre:
+            # «Ninguna alerta» y no «nada»: el cierre de un episodio por cota
+            # (`EpisodeTracker`) sí puede salir, y no despierta a nadie.
+            log.error(
+                "no se pudo leer el modo prueba del WR-1 (ventana #%d). En tier normal "
+                "NO se publica ninguna alerta a la nube. Si llega una antes de poder "
+                "leerlo, SE PUBLICARÁ como si no hubiera prueba armada (fail-open "
+                "DELIBERADO), con su propia línea.",
+                ventana.numero,
+                exc_info=True,
+            )
+
+    def _cerrar_ventana_ilegible(self) -> None:
+        """[T-2.172] La primera lectura buena cierra la ventana con su conteo."""
+        if self._ilegible is None:  # lo de siempre: sin lock en cada paquete
+            return
+        with self._ilegible_lock:
+            ventana, self._ilegible = self._ilegible, None
+        if ventana is None:
+            return
+        # reloj: monotonico — la ventana la abre y la cierra esta máquina
+        duracion = mono() - ventana.desde
+        if ventana.publicadas:
+            log.warning(
+                "modo prueba del WR-1 legible otra vez (ventana #%d): %d lecturas "
+                "fallidas en %.1f s desde la primera; publicado a la nube sin poder "
+                "leerlo: %s",
+                ventana.numero,
+                ventana.lecturas,
+                duracion,
+                ", ".join(f"event_id={e} tier={t} fuente={f}" for e, t, f in ventana.publicadas),
+            )
+        else:
+            log.info(
+                "modo prueba del WR-1 legible otra vez (ventana #%d): %d lecturas "
+                "fallidas en %.1f s desde la primera; publicado a la nube sin poder "
+                "leerlo: ninguna alerta",
+                ventana.numero,
+                ventana.lecturas,
+                duracion,
+            )
 
     def _act_and_publish(self, decision: TierDecision, feature: Feature1s | None) -> None:
         # Secuencia de actuación del tier. En evacuate incluye la sirena general:
