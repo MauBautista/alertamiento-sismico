@@ -26,6 +26,7 @@ La polaridad eléctrica real de cada relé se re-valida con hardware (**gate #3*
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import logging
 import os
@@ -47,6 +48,7 @@ from takab_edge.contracts import (
 )
 from takab_edge.gpio_link import ChannelOutcome, GpioSnapshot
 from takab_edge.module import EdgeModule
+from takab_edge.version import running_root, running_version
 
 log = logging.getLogger("takab_edge.gpio")
 
@@ -554,9 +556,33 @@ class GpioController(EdgeModule):
         # es razón para dejar la sirena, el gas y los retenedores sin dueño.
         # Ruidoso, eso sí: sin este WARNING el operador leería un cerrojo con el
         # dueño ANTERIOR escrito —o vacío— y no sabría por qué.
+        #
+        # [T-8.17 · A-076] Y DESDE QUÉ RELEASE corre. Con el layout A/B el dueño
+        # no se reinicia en un despliegue normal y puede seguir ejecutando una
+        # release que el enlace ya no nombra. `deploy.sh` compara su código contra
+        # ESTA, no contra la que el enlace apuntaba antes del despliegue (eso
+        # blanqueaba el rojo en el segundo despliegue sin ventana), y la poda no la
+        # borra. Sin dato, la línea no se escribe: `deploy.sh` lee la ausencia como
+        # «no consta» y sale en rojo.
+        registro = f"pid={os.getpid()}\nunit={unidad}\n"
+        release = running_root()
+        if release is not None:
+            registro += f"release={release}\n"
+        version = running_version()
+        if version is not None:
+            registro += f"version={version}\n"
+        datos = registro.encode()
         try:
             os.ftruncate(fd, 0)
-            os.pwrite(fd, f"pid={os.getpid()}\nunit={unidad}\n".encode(), 0)
+            escritos = os.pwrite(fd, datos, 0)
+            if escritos != len(datos):
+                # Un `release=` cortado nombraría un directorio que no existe y la
+                # poda no protegería el de verdad. Vacío, `deploy.sh` lo lee como
+                # «no consta» y aplaza la poda.
+                os.ftruncate(fd, 0)
+                raise OSError(
+                    errno.EIO, f"escritura corta del registro ({escritos} de {len(datos)} bytes)"
+                )
         except OSError as exc:
             log.warning(
                 "PINES TOMADOS por %s (pid %s), pero el registro informativo de %s "

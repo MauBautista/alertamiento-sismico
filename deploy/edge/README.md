@@ -47,6 +47,30 @@ ssh takab-pi5 'sudo /opt/takab/bin/canary.sh revertir --motivo "..."'   # vuelta
 > Esa vuelta atrás se hace **en la misma ventana** y reiniciando también
 > `takab-gpio` a la release anterior.
 
+### Qué release ejecuta el dueño de los pines (T-8.17 · A-076)
+
+Un despliegue normal no reinicia `takab-gpio`, así que el dueño puede seguir en
+una release que el symlink ya no nombra. Él mismo lo dice en el registro del
+cerrojo:
+
+```bash
+ssh takab-pi5 'cat /var/lib/takab/gpio.lock'
+# pid=812  unit=takab-gpio  release=/opt/takab/releases/<id>/edge  version=<sha>
+```
+
+`deploy.sh` lo usa para dos cosas:
+- **7.b** da por nuevo al dueño sólo si esa release **es** la activa; si no,
+  compara su código contra ella. Antes comparaba contra la que el symlink
+  apuntaba antes del despliegue (un segundo despliegue sin ventana daba ✓ con el
+  dueño todavía en código anterior) y miraba la hora de arranque.
+- **La poda** nunca la borra.
+
+Un dueño anterior a T-8.17 no escribe `release=`. Mientras siga vivo, 7.b sale ✗
+(«no dice desde qué release arrancó») y **la poda se aplaza**. La ventana de
+mantenimiento que lo reinicia deja la línea escrita. Un registro **vacío** (disco
+lleno al arrancar el dueño) también aplaza la poda, y en un gabinete D3 sin
+ventana sale ✗: mira `df -h /var/lib/takab`.
+
 > ### ⚠️ El primer despliegue A/B de un gabinete es una MIGRACIÓN
 > Convierte `/opt/takab/edge` de directorio a symlink, o sea que **cambia la ruta
 > desde la que arranca el camino de vida**. `deploy.sh` se niega a hacerlo sin

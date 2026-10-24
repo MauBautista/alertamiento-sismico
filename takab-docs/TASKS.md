@@ -17711,8 +17711,50 @@ se registra en su RUNBOOK.
 - **Componente:** edge · deploy · **Depende de:** T-8.13 · **Prioridad:** después de la presentación, con
   ventana de mantenimiento
 - **Criterios de aceptación:**
-  - [ ] El despliegue compara contra la release que el dueño de los pines cargó al arrancar, y la
-    poda no la borra.
+  - [x] El despliegue compara contra la release que el dueño de los pines cargó al arrancar, y la
+    poda no la borra. *(2026-10-24, A-076.)*
+    > **Medido con dos despliegues de verdad contra el gabinete de mentira.** El dueño arranca de
+    > una release cuyo código difiere del de hoy. El primer despliegue sale ✗, como debe, y deja
+    > el enlace en la release nueva. El segundo, sin ventana, comparaba contra la release del
+    > primero (`RELEASE_ANTERIOR`, lo que el enlace apuntaba antes), salía igual y daba ✓ con el
+    > dueño en código anterior. Y la poda, con `RELEASES_VIVAS=1`, borraba la release del dueño.
+    >
+    > Ahora el dueño escribe en el registro del cerrojo `release=` (la release que cargó,
+    > resuelta y congelada al importar: `version.running_root()`) y `version=`. El paso 7.b
+    > da por nuevo al dueño sólo si esa release ES la activa, y si no compara su código contra
+    > ella. La poda no la borra. Sin esa línea —un dueño anterior a esta ficha— o con la release
+    > ya fuera del disco, 7.b sale ✗ diciendo por qué, sin afirmar que el código cambió, y la
+    > poda se **aplaza**: no se sabe qué árbol ejecuta.
+    >
+    > **Lo que cazó la revisión adversarial, corregido aquí:**
+    > - **Un dueño que arrancaba durante la activación se daba por nuevo.** 7.b miraba primero
+    >   CUÁNDO arrancó (`/proc/<pid>/stat` contra una marca tomada antes de que el canary
+    >   repuntara el enlace, con relojes de segundos). El `start` de 6.a o un `Restart=always`
+    >   en ese hueco cargan la release vieja. La heurística de tiempo se retiró: decide la
+    >   release que declara el dueño. De paso, el test del gabinete virgen ya exige verde.
+    > - **Registro vacío en D3 sin ventana daba ✓** («dueño anónimo»): nada dice qué ejecuta un
+    >   dueño que este despliegue no reinició. Ahora es ✗ y manda al disco. En D1 y en ventana
+    >   sigue siendo ✓ con aviso, porque ahí el dueño sí se reinició.
+    > - La poda ya no sondea el cerrojo con `flock`: el sondeo lo toma un instante y un dueño que
+    >   arranca con `LOCK_NB` abortaría. Basta el registro.
+    > - La poda compara las tres releases protegidas (activa, anterior y la del dueño)
+    >   **resueltas**: con `/opt/takab` detrás de un enlace, en crudo no reconocía ni la del dueño
+    >   ni la anterior.
+    > - Una escritura corta del registro lo deja vacío, no con un `release=` cortado.
+    >
+    > Catorce tests nuevos o reforzados en `edge/tests/test_deploy_sh.py`,
+    > `test_gpio_ownership.py` y `test_version.py`. El intérprete falso compara de verdad las dos
+    > releases que recibe: antes contestaba «igual» a todo y no podía medir contra qué release
+    > comparaba el script.
+    - **Despliegue:** cambia código del dueño (`gpio/__init__.py`, `version.py`), así que el
+      primer despliegue sale ✗ en 7.b y aplaza la poda hasta la ventana de mantenimiento
+      (`PENDIENTES-MAURICIO.md` §3.10). `version.py` entra en el código del dueño: cambiarlo
+      obliga desde ahora a una ventana.
+    - **Sin medir, fuera de este arreglo:** la poda sólo protege a quien sostiene el cerrojo.
+      `takab-cctv` (cuando se habilite, `D-25`) y el simulador de flota arrancan del mismo
+      venv y `deploy.sh` no los reinicia. Mirar `/proc/*/maps` antes del `rm -rf` lo cubriría.
+  - [ ] La versión que corre el dueño de los pines llega al latido y a la consola (A-077). El
+    registro del cerrojo ya la lleva (`version=`), pero sólo se ve por ssh.
   - [x] Publicar a la nube no bloquea el hilo de SeedLink. *(2026-10-24, A-078.)*
     > **Era un defecto, no una sospecha: medido.** `publish()` drenaba la cola en el hilo del
     > llamador y el transporte real espera el PUBACK hasta 10 s. Con un enlace medio abierto
@@ -17749,7 +17791,7 @@ se registra en su RUNBOOK.
       actuar. Su coste en la microSD del Pi está sin medir.
   - [ ] Watchdog real, latido con memoria, subtensión, uptime y cola MQTT, y temperatura ausente
     en vez de 0.
-- **Hallazgos:** A-076, A-077, A-078 (cerrado) y los P2/P3 de edge del documento.
+- **Hallazgos:** A-076 (cerrado), A-077, A-078 (cerrado) y los P2/P3 de edge del documento.
 
 ### [ ] T-8.18 · **Móvil: sin red, con la sesión vencida y en teléfono compartido** — `SOFTWARE`
 - **Componente:** mobile · **Depende de:** T-8.04 · **Prioridad:** después de la presentación

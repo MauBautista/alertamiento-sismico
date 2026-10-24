@@ -90,6 +90,10 @@ _SIN_CAPTURAR = object()
 
 _RUNNING: object | str | None = _SIN_CAPTURAR
 
+#: [T-8.17 · A-076] La release desde la que este proceso cargó su código,
+#: RESUELTA (`releases/<id>/edge`, no el enlace `/opt/takab/edge`).
+_RUNNING_ROOT: pathlib.Path | None = None
+
 
 def _capture(root: pathlib.Path | None = None) -> str | None:
     """Congela la versión del código que este proceso acaba de cargar.
@@ -97,9 +101,18 @@ def _capture(root: pathlib.Path | None = None) -> str | None:
     Se llama UNA vez, al importar el módulo (ver el final del archivo), que es lo
     más temprano que el proceso puede saberlo y —lo que importa— mucho antes de
     que cualquier despliegue posterior pueda tocar el disco.
+
+    [T-8.17 · A-076] Congela también DESDE QUÉ RELEASE. Resolver el enlace ahora
+    da la release que se está cargando; resolverlo al preguntar daría la que el
+    enlace nombre entonces, que tras un despliegue sin reinicio ya es otra.
     """
-    global _RUNNING
+    global _RUNNING, _RUNNING_ROOT
     _RUNNING = fw_version(root)
+    try:
+        _RUNNING_ROOT = (root or _default_root()).resolve()
+    except (OSError, RuntimeError):
+        # Un enlace en bucle o un disco que no responde: «no sé», como la versión.
+        _RUNNING_ROOT = None
     return _RUNNING
 
 
@@ -111,6 +124,16 @@ def running_version() -> str | None:
     hecho que una actualización remota necesita comprobar.
     """
     return None if _RUNNING is _SIN_CAPTURAR else _RUNNING  # type: ignore[return-value]
+
+
+def running_root() -> pathlib.Path | None:
+    """[T-8.17 · A-076] Release que ESTE PROCESO cargó, resuelta, o ``None``.
+
+    Inmutable como `running_version()`. El dueño de los pines la escribe en el
+    registro del cerrojo: `deploy.sh` compara su código contra ella y la poda no
+    la borra mientras ese proceso viva.
+    """
+    return _RUNNING_ROOT
 
 
 # Captura AL IMPORTAR. No se delega a la primera llamada: un proceso que

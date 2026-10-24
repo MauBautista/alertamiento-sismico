@@ -507,6 +507,8 @@ fi
 # «¿a qué release apunta el symlink AHORA y sigue entera?». Se responde antes de
 # tocar nada, porque de ella depende el mensaje que el operador se lleva.
 RELEASE_ANTERIOR="$(readlink "$VIVO" 2>/dev/null || true)"
+# [T-8.17] Resuelta, para la poda: el dueño de los pines declara rutas físicas.
+RELEASE_ANTERIOR_REAL="$(readlink -f "$VIVO" 2>/dev/null || true)"
 if [ -n "$RELEASE_ANTERIOR" ] && [ -x "${RELEASE_ANTERIOR}/.venv/bin/takab-edge" ]; then
   HAY_INSTANTANEA=1
 else
@@ -716,7 +718,6 @@ fi
 #
 # Vive fuera de toda release a propósito: si la versión nueva no arranca, el
 # reversor no puede ser parte de ella.
-MARCA_ACTIVACION="$(date +%s)"
 # `--atendido` porque esto lo lanzó una persona por ssh y está leyendo esta
 # salida: en un gabinete cuyo dueño de pines siga siendo `takab-edge`, el canary
 # AVISA del ciclo de gas y retenedores y sigue, que es lo que este script ya
@@ -768,24 +769,69 @@ fi
 # necesita, y podarlas convertiría la poda en el defecto que el canary existe
 # para evitar. La release que acaba de fallar un canary tampoco se borra aquí:
 # es la evidencia.
+#
+# [T-8.17 · A-076] Y LA DEL DUEÑO DE LOS PINES, que no tiene por qué ser ninguna
+# de las dos. Un despliegue normal no lo reinicia, así que tras tres despliegues
+# sin ventana su release era la más vieja y la primera en caer: un `rm -rf` del
+# código de un proceso vivo, cuyos imports perezosos fallan al siguiente uso. El
+# dueño escribe en el registro del cerrojo desde qué release arrancó. Si el
+# registro existe y no lo dice (un dueño anterior a T-8.17, o un registro que no
+# se pudo escribir), no se sabe qué árbol no borrar: la poda se APLAZA. Llenar la
+# microSD un despliegue más es reversible; dejar al dueño sin código no.
+#
+# Se lee el registro y NO se sondea el cerrojo: un `flock` de sondeo lo TOMA un
+# instante, y un dueño que arranca justo entonces (`LOCK_NB`, sin reintento)
+# abortaría. Sin registro no hace falta saber si hay dueño: se aplaza igual.
+#
+# El cerrojo lo interroga el paso 7 (ver allí por qué esta ruta).
+CERROJO="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}"
+RELEASE_DEL_DUENO=""
+PODA_APLAZADA=0
+if [ -e "$CERROJO" ]; then
+  RELEASE_DEL_DUENO="$(sed -n 's/^release=//p' "$CERROJO" 2>/dev/null | tail -1 || true)"
+  [ -n "$RELEASE_DEL_DUENO" ] || PODA_APLAZADA=1
+fi
+RELEASE_DEL_DUENO_REAL=""
+if [ -n "$RELEASE_DEL_DUENO" ]; then
+  RELEASE_DEL_DUENO_REAL="$(readlink -f "$RELEASE_DEL_DUENO" 2>/dev/null || echo "$RELEASE_DEL_DUENO")"
+fi
 RETENCION="${TAKAB_DEPLOY_RELEASES_VIVAS:-3}"
 ACTIVA_AHORA="$(readlink "$VIVO" 2>/dev/null || true)"
-ls -1dt "${RELEASES}"/*/ 2>/dev/null | tail -n +$((RETENCION + 1)) | while read -r vieja; do
-  vieja="${vieja%/}"
-  case "$ACTIVA_AHORA" in "${vieja}/edge") continue ;; esac
-  case "$RELEASE_ANTERIOR" in "${vieja}/edge") continue ;; esac
-  # [T-2.70·CAMPO 2026-08-23] LA HEREDADA NO SE PODA NUNCA, y la razón es que la
-  # RECENCIA es el criterio equivocado para ella. Es el árbol que este gabinete
-  # llevaba corriendo ANTES de que existiera el layout A/B: meses de operación
-  # real detrás, y la única versión de la que se sabe que este edificio sobrevive
-  # a un corte de luz. Todas las releases nuevas son, por definición, más
-  # recientes que ella, así que una poda por fecha se la lleva la primera — y
-  # eso pasó la misma noche del estreno: tres releases en disco, todas del mismo
-  # día, y ninguna con historia. Ocupa un venv; la red de seguridad vale más.
-  case "${vieja##*/}" in heredada-*) continue ;; esac
-  echo "  podando release antigua: ${vieja}"
-  rm -rf "$vieja"
-done
+ACTIVA_AHORA_REAL="$(readlink -f "$VIVO" 2>/dev/null || true)"
+if [ "$PODA_APLAZADA" = 1 ]; then
+  echo "⚠ poda APLAZADA: el registro de ${CERROJO} no dice desde qué release" >&2
+  echo "  arrancó el dueño de los pines, así que no se sabe qué árbol no borrar." >&2
+  echo "  No se borra ninguna release hasta saberlo. O el dueño es anterior a" >&2
+  echo "  T-8.17 (escribe la línea al arrancar: lo resuelve la próxima ventana de" >&2
+  echo "  mantenimiento), o el registro no se pudo escribir: revisa" >&2
+  echo "  df -h /var/lib/takab." >&2
+else
+  ls -1dt "${RELEASES}"/*/ 2>/dev/null | tail -n +$((RETENCION + 1)) | while read -r vieja; do
+    vieja="${vieja%/}"
+    case "$ACTIVA_AHORA" in "${vieja}/edge") continue ;; esac
+    case "$RELEASE_ANTERIOR" in "${vieja}/edge") continue ;; esac
+    # [T-8.17] Las tres, también RESUELTAS: el dueño declara la ruta física y
+    # `ls` lista por `${RELEASES}`, que puede estar detrás de un enlace.
+    VIEJA_REAL="$(readlink -f "${vieja}/edge" 2>/dev/null || true)"
+    if [ -n "$VIEJA_REAL" ]; then
+      case "$VIEJA_REAL" in
+      "$ACTIVA_AHORA_REAL" | "$RELEASE_ANTERIOR_REAL" | "$RELEASE_DEL_DUENO_REAL") continue ;;
+      esac
+    fi
+    # [T-2.70·CAMPO 2026-08-23] LA HEREDADA NO SE PODA NUNCA, y la razón es que
+    # la RECENCIA es el criterio equivocado para ella. Es el árbol que este
+    # gabinete llevaba corriendo ANTES de que existiera el layout A/B: meses de
+    # operación real detrás, y la única versión de la que se sabe que este
+    # edificio sobrevive a un corte de luz. Todas las releases nuevas son, por
+    # definición, más recientes que ella, así que una poda por fecha se la lleva
+    # la primera — y eso pasó la misma noche del estreno: tres releases en disco,
+    # todas del mismo día, y ninguna con historia. Ocupa un venv; la red de
+    # seguridad vale más.
+    case "${vieja##*/}" in heredada-*) continue ;; esac
+    echo "  podando release antigua: ${vieja}"
+    rm -rf "$vieja"
+  done
+fi
 
 # --- 7. VERIFICACIÓN: ¿QUIÉN ES DUEÑO DE LOS PINES? --------------------------
 # [T-2.70.a·D1.5] Aquí decía `systemctl is-active takab-edge`, y eso mide EL
@@ -806,8 +852,8 @@ done
 # producción nadie lo exporta y vale el default, que es lo que
 # `EdgeSettings.gpio_lock_file` resuelve para un gabinete (`dev_mode=false`) —
 # dentro de /var/lib/takab, que es `WorkingDirectory=` y `ReadWritePaths=` de
-# LAS DOS unidades.
-CERROJO="${TAKAB_EDGE_GPIO_LOCK_PATH:-/var/lib/takab/gpio.lock}"
+# LAS DOS unidades. `CERROJO` se fija en 6.e, que lo lee antes para no podar la
+# release del dueño.
 PLAZO="${TAKAB_DEPLOY_PLAZO_PROPIEDAD:-45}"
 
 # [T-2.70.a·D1·MENOR-1] SE SONDEA, NO SE DUERME. Aquí había un `sleep 3` tras el
@@ -843,6 +889,7 @@ TOMADO_EN=""
 ESTADO_CERROJO=0
 DUENO_PID=""
 DUENO_UNIDAD=""
+DUENO_RELEASE=""
 PROPIEDAD=""
 
 while : ; do
@@ -873,6 +920,8 @@ while : ; do
       # `set -e`.
       DUENO_PID="$(sed -n 's/^pid=//p' "$CERROJO" 2>/dev/null | tail -1 || true)"
       DUENO_UNIDAD="$(sed -n 's/^unit=//p' "$CERROJO" 2>/dev/null | tail -1 || true)"
+      # [T-8.17 · A-076] Desde qué release arrancó: contra ella se mide en 7.b.
+      DUENO_RELEASE="$(sed -n 's/^release=//p' "$CERROJO" 2>/dev/null | tail -1 || true)"
 
       # `/proc` y no `kill -0`: el proceso corre como root y el usuario del
       # deploy no, así que `kill -0` daría EPERM y abortaría un despliegue sano.
@@ -980,18 +1029,30 @@ esac
 #
 # Se mide en dos pasos, y el segundo es lo que hace usable al primero:
 #
-#   1. ¿ARRANCÓ DESPUÉS DEL SWAP? El swap reescribe el árbol bajo los pies de
-#      quien corre (venv editable, in-place), así que quien arrancó antes tiene,
-#      por construcción, el código anterior en memoria. El arranque del proceso
-#      sale de `/proc/<pid>/stat` (campo 22, ticks desde el boot) + `btime` de
-#      `/proc/stat`; NO del mtime de `/proc/<pid>`, que se actualiza y da la hora
-#      ACTUAL (medido: un proceso de 6 s de vida reportaba mtime = ahora).
-#   2. Si arrancó antes: ¿CAMBIÓ SU CÓDIGO? Un gate que dijera «no se reinició ⇒
-#      rojo» saldría rojo en TODOS los despliegues de un gabinete D3 —el dueño no
-#      se reinicia nunca, por diseño— y eso entrena al operador a ignorar el
-#      único rojo que dice si la sirena tiene dueño. La mayoría de los
+#   1. ¿CARGÓ LA RELEASE ACTIVA? [T-8.17 · A-076] Lo dice el propio dueño: al
+#      tomar el cerrojo escribe `release=`, la release desde la que cargó su
+#      código, resuelta y congelada al importar. Aquí se miraba CUÁNDO arrancó
+#      (`/proc/<pid>/stat` contra una marca de la activación), y ese sustituto
+#      tenía un hueco: la marca se tomaba ANTES de que el canary repuntara el
+#      enlace, y los dos relojes truncaban a segundos. Un dueño que arrancaba
+#      ahí —el `start` de 6.a, un `Restart=always`— cargaba la release vieja y
+#      se daba por nuevo.
+#   2. Si no: ¿CAMBIÓ SU CÓDIGO respecto a ESA release? Un gate que dijera «no se
+#      reinició ⇒ rojo» saldría rojo en TODOS los despliegues de un gabinete D3
+#      —el dueño no se reinicia nunca, por diseño— y eso entrena al operador a
+#      ignorar el único rojo que dice si la sirena tiene dueño. La mayoría de los
 #      despliegues tocan el supervisor, la nube o el panel, y el código del dueño
 #      no cambia: ahí no hay nada que ciclar y el ✓ es honesto.
+#      [T-8.17 · A-076] Se comparaba contra `RELEASE_ANTERIOR`, lo que el enlace
+#      apuntaba antes de ESTE despliegue, y eso sólo es lo que ejecuta el dueño
+#      mientras ningún despliegue lo haya dejado atrás. Tras un ✗ sin ventana el
+#      enlace ya apunta a la release N y el dueño sigue en la N-1: el despliegue
+#      N+1, que no toca su código, comparaba N+1 contra N, salía igual y daba ✓.
+#
+# Un registro que no dice la release (dueño anterior a esta ficha) o una release
+# que ya no está en disco no se pueden comparar, y eso es rojo como cualquier
+# otra duda. Igual que un registro VACÍO en un gabinete D3 sin ventana: los pines
+# tienen dueño, pero este despliegue no lo reinició y nada dice qué ejecuta.
 #
 # La lista de archivos del dueño se DERIVA de sus imports (los módulos bajo el
 # árbol vivo que arrastra `takab_edge.gpio.__main__`, que es su `ExecStart`), no
@@ -1001,48 +1062,22 @@ esac
 # «no se puede medir» no puede resolverse imprimiendo un ✓, igual que en la rama
 # `ilegible` de arriba.
 DUENO_RANCIO=0
+CAMBIO_MEDIDO=0
 CAMBIOS_DEL_DUENO=""
-if [ "$PROPIEDAD" = con_dueno ]; then
-  INICIO_DUENO=0
-  # ¿LLEGAMOS A MEDIR el arranque, o sólo no pudimos? Sin esta distinción, un
-  # `/proc/<pid>/stat` ilegible (contenedor con hidepid, kernel endurecido) dejaba
-  # INICIO_DUENO=0, y 0 es "antes" que cualquier swap: el script pasaba a AFIRMAR
-  # "arrancó ANTES del swap", que es un hecho que no había medido. El veredicto
-  # rojo es correcto en los dos casos —fail-closed—, pero la razón que se le da al
-  # operador no puede ser inventada: mandarlo a una ventana de mantenimiento a
-  # ciclar gas y retenedores por un dato que nadie leyó es caro y es mentira.
-  ARRANQUE_MEDIDO=0
-  if [ -r "/proc/${DUENO_PID}/stat" ]; then
-    ARRANQUE_CRUDO="$(cat "/proc/${DUENO_PID}/stat" 2>/dev/null || true)"
-    # El `comm` del campo 2 puede llevar espacios y paréntesis: se corta por el
-    # ÚLTIMO ')' y a partir de ahí el primer campo es `state` (el 3), así que el
-    # 22 —starttime— queda en el índice 19 de lo que queda.
-    ARRANQUE_CAMPOS="${ARRANQUE_CRUDO##*) }"
-    read -r -a CAMPOS_PROC <<<"$ARRANQUE_CAMPOS"
-    TICKS="${CAMPOS_PROC[19]:-}"
-    BOOT="$(sed -n 's/^btime //p' /proc/stat | tail -1 || true)"
-    HZ="$(getconf CLK_TCK 2>/dev/null || echo 100)"
-    # Los tres se validan por separado: concatenarlos dejaba pasar un TICKS vacío
-    # con un BOOT numérico, y la aritmética de bash lo habría leído como 0. Aquí
-    # eso «sólo» habría dado un falso RANCIO, pero un parser que se cree lo que
-    # no midió es cómo se llega a los otros defectos de este archivo.
-    case "$TICKS" in "" | *[!0-9]*) TICKS="" ;; esac
-    case "$BOOT" in "" | *[!0-9]*) BOOT="" ;; esac
-    case "$HZ" in "" | 0 | *[!0-9]*) HZ=100 ;; esac
-    if [ -n "$TICKS" ] && [ -n "$BOOT" ]; then
-      INICIO_DUENO=$((BOOT + TICKS / HZ))
-      ARRANQUE_MEDIDO=1
-    fi
-  fi
-
-  if [ "$ARRANQUE_MEDIDO" != 1 ]; then
+if [ "$PROPIEDAD" = registro_mudo ] && [ "$DUENO_CONFIGURADO" = gpio ] && [ "$VENTANA" != 1 ]; then
+  DUENO_RANCIO=1
+  CAMBIOS_DEL_DUENO="(el registro de ${CERROJO} está VACÍO: no dice quién tiene los pines ni desde qué release arrancó. Suele ser el disco: revisa df -h /var/lib/takab y dmesg | tail)"
+elif [ "$PROPIEDAD" = con_dueno ]; then
+  RELEASE_ACTIVA_REAL="$(readlink -f "$VIVO" 2>/dev/null || true)"
+  if [ -z "$DUENO_RELEASE" ]; then
     DUENO_RANCIO=1
-    CAMBIOS_DEL_DUENO="(no se pudo LEER el arranque del dueño en /proc/${DUENO_PID}/stat)"
-  elif [ "$INICIO_DUENO" -ge "$MARCA_ACTIVACION" ]; then
-    : # arrancó DESPUÉS del repunte: corre lo que acabamos de activar
-  elif [ "$HAY_INSTANTANEA" != 1 ]; then
+    CAMBIOS_DEL_DUENO="(el registro de ${CERROJO} no dice desde qué release arrancó el dueño: lo escribe desde T-8.17, así que corre código anterior a esa ficha o no pudo saberlo)"
+  elif [ ! -d "$DUENO_RELEASE" ]; then
     DUENO_RANCIO=1
-    CAMBIOS_DEL_DUENO="(no hay release anterior con la que comparar)"
+    CAMBIOS_DEL_DUENO="(la release desde la que arrancó, ${DUENO_RELEASE}, ya no está en disco: sus imports perezosos pueden fallar, y si se reinicia solo lo hará con el código nuevo y sin ventana)"
+  elif [ -n "$RELEASE_ACTIVA_REAL" ] &&
+       [ "$(readlink -f "$DUENO_RELEASE" 2>/dev/null || true)" = "$RELEASE_ACTIVA_REAL" ]; then
+    : # cargó la release activa: corre lo que acabamos de activar
   else
     # `-c` con un guion suelto: sin escribir archivos en el gabinete y con el
     # intérprete DEL VENV, que es el que ejecuta el ExecStart de la unidad.
@@ -1051,7 +1086,7 @@ if [ "$PROPIEDAD" = con_dueno ]; then
 import importlib, pathlib, sys
 
 # `.resolve()` atraviesa el symlink: `vivo` acaba siendo la release ACTIVA
-# y `previo` la anterior, que es justo la comparación que interesa.
+# y `previo` la que ejecuta el dueño, que es justo la comparación que interesa.
 vivo = pathlib.Path(sys.argv[1]).resolve()
 previo = pathlib.Path(sys.argv[2]).resolve()
 importlib.import_module("takab_edge.gpio.__main__")
@@ -1070,11 +1105,12 @@ for modulo in list(sys.modules.values()):
     if nuevo != viejo:
         cambiados.append(str(relativa))
 print("DUENO-CAMBIO " + " ".join(sorted(cambiados)) if cambiados else "DUENO-IGUAL")
-' "$VIVO" "$RELEASE_ANTERIOR" 2>/dev/null || true)"
+' "$VIVO" "$DUENO_RELEASE" 2>/dev/null || true)"
     case "$HUELLA" in
     DUENO-IGUAL) : ;; # mismo código: no hay nada que reiniciar
     DUENO-CAMBIO*)
       DUENO_RANCIO=1
+      CAMBIO_MEDIDO=1
       CAMBIOS_DEL_DUENO="${HUELLA#DUENO-CAMBIO }"
       ;;
     *)
@@ -1086,18 +1122,24 @@ print("DUENO-CAMBIO " + " ".join(sorted(cambiados)) if cambiados else "DUENO-IGU
 fi
 
 if [ "$DUENO_RANCIO" = 1 ]; then
-  if [ "${ARRANQUE_MEDIDO:-0}" = 1 ]; then
+  if [ "$CAMBIO_MEDIDO" = 1 ]; then
     echo "✗ DESPLIEGUE NO VERIFICADO: el DUEÑO DE LOS PINES corre CÓDIGO ANTERIOR." >&2
     echo "  Los pines los tiene '${DUENO_UNIDAD}' (pid ${DUENO_PID}), que arrancó" >&2
-    echo "  ANTES del swap de este despliegue y cuyo código SÍ cambió:" >&2
+    echo "  ANTES del swap de este despliegue, desde ${DUENO_RELEASE}," >&2
+    echo "  y cuyo código SÍ cambió:" >&2
   else
     # Sin medición NO se afirma cuándo arrancó ni que su código cambiara: sólo
     # que no se pudo comprobar. El desenlace es el mismo —rojo— y el operador
     # sigue teniendo que ir a la ventana de mantenimiento; lo que cambia es que
-    # ya no se le da como hecho algo que nadie leyó.
+    # ya no se le da como hecho algo que nadie leyó. [T-8.17] Lo mismo sin una
+    # release con la que comparar: no se dice que cambió, se dice que no consta.
     echo "✗ DESPLIEGUE NO VERIFICADO: no consta que el DUEÑO DE LOS PINES corra" >&2
     echo "  el código que acabamos de desplegar." >&2
-    echo "  Los pines los tiene '${DUENO_UNIDAD}' (pid ${DUENO_PID}) y NO SE PUDO" >&2
+    if [ -n "$DUENO_PID" ]; then
+      echo "  Los pines los tiene '${DUENO_UNIDAD}' (pid ${DUENO_PID}) y NO SE PUDO" >&2
+    else
+      echo "  Los pines están TOMADOS, pero el registro no dice por quién, y NO SE PUDO" >&2
+    fi
     echo "  COMPROBAR que ejecute lo recién desplegado:" >&2
   fi
   echo "    ${CAMBIOS_DEL_DUENO}" >&2

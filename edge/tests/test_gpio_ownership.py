@@ -330,6 +330,97 @@ def test_un_registro_rancio_no_bloquea_el_arranque(settings, caplog) -> None:
         dueno.stop()
 
 
+def _campos_del_registro(ruta: Path) -> dict[str, str]:
+    return dict(linea.split("=", 1) for linea in ruta.read_text().splitlines() if "=" in linea)
+
+
+def test_el_registro_dice_DESDE_QUE_RELEASE_arranco_el_dueno(settings, monkeypatch) -> None:
+    """[T-8.17 · A-076] El registro nombra la release y la versión que este proceso CARGÓ.
+
+    `deploy.sh` lo necesita para dos cosas que hacía mal. Comparaba el código del
+    dueño contra la release a la que apuntaba el enlace ANTES del despliegue, que
+    no es la que el dueño ejecuta si un despliegue anterior ya lo dejó atrás: el
+    segundo despliegue sin ventana «blanqueaba» el rojo del primero. Y la poda no
+    sabía qué árbol estaba corriendo, así que podía borrarlo.
+
+    Se fijan valores que ningún cálculo de ahora daría: si el registro los
+    recalculara del enlace al tomar los pines, nombraría otra release.
+    """
+    from takab_edge import version as version_mod
+
+    julio = "/opt/takab/releases/20260701T000000Z-julio01/edge"
+    monkeypatch.setattr(version_mod, "_RUNNING_ROOT", Path(julio))
+    monkeypatch.setattr(version_mod, "_RUNNING", "julio01")
+    ruta = Path(settings.gpio_lock_file)
+
+    dueno = GpioController(settings)
+    dueno.start()
+    try:
+        campos = _campos_del_registro(ruta)
+        assert campos.get("release") == julio, (
+            f"el registro no dice desde qué release arrancó el dueño: {campos!r}"
+        )
+        assert campos.get("version") == "julio01"
+        # Y sigue diciendo QUIÉN, que es lo que leen el canary y el paso 7.
+        assert campos.get("pid") == str(os.getpid())
+        assert campos.get("unit")
+    finally:
+        dueno.stop()
+
+
+def test_sin_saber_desde_donde_corre_el_registro_no_se_lo_inventa(settings, monkeypatch) -> None:
+    """«No sé» se escribe callando, no con un valor plausible.
+
+    `deploy.sh` lee una línea ausente como «no consta qué release ejecuta el
+    dueño» y sale en rojo. Una línea vacía o inventada lo mandaría a comparar
+    contra el árbol equivocado.
+    """
+    from takab_edge import version as version_mod
+
+    monkeypatch.setattr(version_mod, "_RUNNING_ROOT", None)
+    monkeypatch.setattr(version_mod, "_RUNNING", None)
+    ruta = Path(settings.gpio_lock_file)
+
+    dueno = GpioController(settings)
+    dueno.start()
+    try:
+        campos = _campos_del_registro(ruta)
+        assert "release" not in campos, campos
+        assert "version" not in campos, campos
+        assert campos.get("pid") == str(os.getpid())
+    finally:
+        dueno.stop()
+
+
+def test_una_escritura_CORTA_del_registro_lo_deja_vacio_y_no_cortado(
+    settings, monkeypatch, caplog
+) -> None:
+    """Un `release=` a medias nombra un directorio que no existe.
+
+    Con él, `deploy.sh` no protegería de la poda el árbol de verdad y diría que la
+    release del dueño «ya no está en disco». Vacío, lo lee como «no consta»:
+    aplaza la poda y no afirma nada.
+    """
+    pwrite_real = os.pwrite
+
+    def a_medias(fd: int, datos: bytes, offset: int) -> int:
+        return pwrite_real(fd, datos[: len(datos) // 2], offset)
+
+    monkeypatch.setattr(os, "pwrite", a_medias)
+    ruta = Path(settings.gpio_lock_file)
+
+    dueno = GpioController(settings)
+    with caplog.at_level(logging.WARNING, logger="takab_edge.gpio"):
+        dueno.start()
+    try:
+        assert ruta.read_text() == "", f"quedó un registro cortado: {ruta.read_text()!r}"
+        assert len(dueno.relay_states()) == 5, "el registro es informativo: los pines son suyos"
+        assert "escritura corta" in caplog.text
+    finally:
+        monkeypatch.undo()
+        dueno.stop()
+
+
 def test_el_mensaje_distingue_un_dueno_VIVO_de_un_registro_RANCIO(settings) -> None:
     """[B3] EL ANCLA DE `_proceso_vivo`: las DOS ramas, medidas por separado.
 

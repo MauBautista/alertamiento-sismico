@@ -983,8 +983,13 @@ sensor (`rs.local`), ni la cámara. Quedó sin desplegar `main` en `5b0fd6d2`, q
 audibles) sí está desplegado desde el 2026-10-22 (`gc964416`).
 
 En la próxima visita, con el gabinete encendido y en la red:
-- **Desplegar el edge** desde `takab-wt-deploy` en `main`. Es un despliegue normal, sin
-  `--ventana-de-mantenimiento`: no reinicia `takab-gpio` ni mueve el gas.
+- **Desplegar el edge** desde `takab-wt-deploy` en `main`. Un despliegue normal, sin
+  `--ventana-de-mantenimiento`, no reinicia `takab-gpio` ni mueve el gas. **Pero saldrá ✗ en el
+  paso 7.b**, y es lo esperado: desde el #322 (T-9.75) y el arreglo de T-8.17 (A-076) cambió
+  código del dueño de los pines, que se queda en la release de antes. Mientras no se reinicie, el
+  dueño no dice desde qué release corre y `deploy.sh` **aplaza la poda**. El cliente corre lo
+  nuevo y el gabinete protege. Para que el dueño corra lo nuevo hace falta la ventana: con el
+  edificio avisado, porque cicla gas y retenedores. Decides tú cuándo.
 - **Probar T-9.74:**
   1. pulsar PROBAR SIRENA y, mientras suena, SILENCIAR AUDIBLES;
   2. ver la fila «Audibles · AUDIBLES SILENCIADOS» y el botón RE-ARMAR AUDIBLES;
